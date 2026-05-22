@@ -27,6 +27,12 @@ importers:
         specifier: 2.1.8
         version: 2.1.8(@types/node@22.10.7)
 
+  packages/core:
+    devDependencies:
+      typescript:
+        specifier: 5.7.3
+        version: 5.7.3
+
 packages:
 
   '@esbuild/aix-ppc64@0.21.5':
