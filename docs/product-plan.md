@@ -398,6 +398,8 @@ Selected mandatory implementation stack:
 
 This stack is locked for implementation. It is selected because it keeps management UI, overlay UI, backend services, service interfaces, provider adapters, and tests in TypeScript while the product architecture is still forming. Runtime schemas remain mandatory because TypeScript does not validate external payloads, database rows, or WebSocket messages at runtime.
 
+Dependency resolution must be deterministic. All direct npm dependencies and dev dependencies must be pinned to exact versions without semver ranges such as `^`, `~`, `>`, or `*`, transitive dependencies must be locked in the committed `pnpm-lock.yaml` with integrity data, and release/build automation must install from the committed lockfile using frozen-lockfile behavior. It must not be possible for the app to produce a different artifact or behavior without a repository change. This is especially important for npm ecosystem dependencies because compromised package releases and supply-chain attacks can otherwise alter builds without local source changes.
+
 SQLite must be accessed through repository interfaces rather than directly from domain services, HTTP handlers, React components, or overlay renderers. Repository implementations are responsible for SQL, migrations, row mapping, transaction boundaries, and persistence-specific validation.
 
 The first implementation remains a plain local app. Electron is the selected packaged desktop target once the MVP stabilizes. The codebase should be designed so an Electron shell can launch or supervise the local Node/Fastify service and load the management UI without rewriting domain logic. Electron-specific work should live at the application shell boundary; browser UIs should not directly access filesystem, secret storage, SQLite, or Node APIs.
@@ -486,6 +488,7 @@ The MVP should include:
 - The app is local-first and runs on the streamer's machine.
 - Twitch is the first event provider.
 - The first implementation stack is React, Vite, Node.js, Fastify, TypeScript, and SQLite behind typed repository interfaces.
+- npm/pnpm dependencies are pinned to exact versions and builds install from the committed lockfile with frozen-lockfile behavior.
 - The first implementation is a plain local app.
 - Electron is the selected packaged desktop shell after the MVP stabilizes.
 - Docker/cloud hosting is a nice-to-have future deployment mode.
