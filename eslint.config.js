@@ -8,6 +8,14 @@ export default tseslint.config(
     ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**"]
   },
   {
-    files: ["**/*.{ts,tsx}"]
+    files: ["**/*.{ts,tsx}"],
+    languageOptions: {
+      parserOptions: {
+        projectService: {
+          allowDefaultProject: ["vitest.config.ts"]
+        },
+        tsconfigRootDir: import.meta.dirname
+      }
+    }
   }
 );
