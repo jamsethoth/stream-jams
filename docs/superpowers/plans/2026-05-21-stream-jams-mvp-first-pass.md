@@ -157,6 +157,8 @@ Docker image support is a future deployment mode. It should expose the same HTTP
 ## Architectural Principles
 
 - TypeScript strict mode is required across frontend, backend, shared packages, and future Electron shell code.
+- Dependency resolution must be deterministic: all direct npm dependencies and dev dependencies are pinned to exact versions with no semver ranges, transitive dependencies are locked in the committed `pnpm-lock.yaml` with integrity data, and release/build automation installs from the committed lockfile using frozen-lockfile behavior.
+- The app must not produce a different artifact or behavior without a repository change; dependency updates are explicit repo changes that update package manifests and the lockfile together.
 - Domain logic lives outside HTTP handlers and React components.
 - Service contracts are defined as TypeScript interfaces before concrete adapters.
 - Fastify handlers delegate to service interfaces instead of owning business rules.
@@ -825,7 +827,8 @@ export interface ProviderErrorLogRecord {
 
 **Acceptance Checks:**
 
-- `pnpm install` completes.
+- `pnpm install --frozen-lockfile` completes after the lockfile has been intentionally updated for dependency changes.
+- Package manifests use exact dependency versions, and the committed lockfile is the source of truth for installs.
 - `pnpm test` passes with sample tests.
 - `pnpm typecheck` passes.
 - `pnpm build` passes.
