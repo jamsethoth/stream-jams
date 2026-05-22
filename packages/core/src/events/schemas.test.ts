@@ -37,8 +37,12 @@ describe("normalizedStreamEventSchema", () => {
   });
 
   it("rejects missing required event identity", () => {
-    const { id: _id, ...payloadWithoutId } = {
-      ...baseEvent,
+    const payloadWithoutId = {
+      providerId: baseEvent.providerId,
+      occurredAt: baseEvent.occurredAt,
+      actor: baseEvent.actor,
+      message: baseEvent.message,
+      metadata: baseEvent.metadata,
       type: "follow",
       amount: null
     };
