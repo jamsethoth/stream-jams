@@ -1,8 +1,10 @@
 # Stream Jams Slice 1 Repository And Quality Foundation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** Break Slice 1 from `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md` into small, independently achievable, testable sub-slices that leave the repository with a strict runnable TypeScript workspace, a React/Vite web shell, a Node/Fastify server shell, and working quality gates.
+
+**Status:** Complete. Implementation verified at branch commit `9eda2a5`.
 
 **Architecture:** This plan creates only the repository and quality foundation. It establishes package boundaries for `apps/server`, `apps/web`, `packages/core`, and `packages/test-support`, with strict TypeScript and test scaffolding, but it intentionally avoids domain models, persistence, auth, overlay routing, provider integrations, and real product workflows.
 
@@ -130,7 +132,7 @@ Original Slice 1 acceptance checks:
 
 **Scoped Boundary:** This sub-slice creates root-level tooling only. It must not create package source files except empty directories.
 
-- [ ] **Step 1: Create root workspace metadata**
+- [x] **Step 1: Create root workspace metadata**
 
 Create `package.json`:
 
@@ -161,7 +163,7 @@ Create `package.json`:
 }
 ```
 
-- [ ] **Step 2: Create workspace package globs**
+- [x] **Step 2: Create workspace package globs**
 
 Create `pnpm-workspace.yaml`:
 
@@ -171,7 +173,7 @@ packages:
   - "packages/*"
 ```
 
-- [ ] **Step 3: Create strict shared TypeScript config**
+- [x] **Step 3: Create strict shared TypeScript config**
 
 Create `tsconfig.base.json`:
 
@@ -198,7 +200,7 @@ Create `tsconfig.base.json`:
 }
 ```
 
-- [ ] **Step 4: Create lint configuration**
+- [x] **Step 4: Create lint configuration**
 
 Create `eslint.config.js`:
 
@@ -224,7 +226,7 @@ export default tseslint.config(
 );
 ```
 
-- [ ] **Step 5: Create ignore rules**
+- [x] **Step 5: Create ignore rules**
 
 Create `.gitignore`:
 
@@ -241,7 +243,7 @@ coverage/
 !.env.example
 ```
 
-- [ ] **Step 6: Verify root package metadata**
+- [x] **Step 6: Verify root package metadata**
 
 Run:
 
@@ -259,7 +261,7 @@ Expected:
 - `pnpm lint` succeeds with no source files.
 - `pnpm test:e2e` prints the placeholder Playwright message and exits with status 0.
 
-- [ ] **Step 7: Commit Sub-Slice 1.1**
+- [x] **Step 7: Commit Sub-Slice 1.1**
 
 ```bash
 git add .gitignore eslint.config.js package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json
@@ -281,7 +283,7 @@ git commit -m "chore: add workspace foundation"
 
 **Scoped Boundary:** This sub-slice may define only scaffold-level helpers. It must not introduce Stream Jams domain models.
 
-- [ ] **Step 1: Create the core package manifest**
+- [x] **Step 1: Create the core package manifest**
 
 Create `packages/core/package.json`:
 
@@ -309,7 +311,7 @@ Create `packages/core/package.json`:
 }
 ```
 
-- [ ] **Step 2: Create core TypeScript config**
+- [x] **Step 2: Create core TypeScript config**
 
 Create `packages/core/tsconfig.json`:
 
@@ -327,7 +329,7 @@ Create `packages/core/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 3: Add a scaffold version helper**
+- [x] **Step 3: Add a scaffold version helper**
 
 Create `packages/core/src/version.ts`:
 
@@ -345,7 +347,7 @@ export function createAppVersion(version = "0.0.0"): AppVersion {
 }
 ```
 
-- [ ] **Step 4: Export the helper**
+- [x] **Step 4: Export the helper**
 
 Create `packages/core/src/index.ts`:
 
@@ -354,7 +356,7 @@ export type { AppVersion } from "./version.js";
 export { createAppVersion } from "./version.js";
 ```
 
-- [ ] **Step 5: Add the core unit test**
+- [x] **Step 5: Add the core unit test**
 
 Create `packages/core/src/version.test.ts`:
 
@@ -372,7 +374,7 @@ describe("createAppVersion", () => {
 });
 ```
 
-- [ ] **Step 6: Add root Vitest config**
+- [x] **Step 6: Add root Vitest config**
 
 Create `vitest.config.ts`:
 
@@ -389,7 +391,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 7: Verify core sub-slice**
+- [x] **Step 7: Verify core sub-slice**
 
 Run:
 
@@ -409,7 +411,7 @@ Expected:
 - Core typecheck passes.
 - Core build emits `packages/core/dist`.
 
-- [ ] **Step 8: Commit Sub-Slice 1.2**
+- [x] **Step 8: Commit Sub-Slice 1.2**
 
 ```bash
 git add package.json pnpm-lock.yaml vitest.config.ts packages/core
@@ -430,7 +432,7 @@ git commit -m "chore: add core package baseline"
 
 **Scoped Boundary:** This sub-slice may add only `GET /health`. It must not add configurable ports, config persistence, startup collision handling, management APIs, overlay routes, or auth.
 
-- [ ] **Step 1: Create server package manifest**
+- [x] **Step 1: Create server package manifest**
 
 Create `apps/server/package.json`:
 
@@ -463,7 +465,7 @@ Create `apps/server/package.json`:
 }
 ```
 
-- [ ] **Step 2: Create server TypeScript config**
+- [x] **Step 2: Create server TypeScript config**
 
 Create `apps/server/tsconfig.json`:
 
@@ -484,7 +486,7 @@ Create `apps/server/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 3: Add dependency-injected Fastify app factory**
+- [x] **Step 3: Add dependency-injected Fastify app factory**
 
 Create `apps/server/src/app.ts`:
 
@@ -513,7 +515,7 @@ export function createServerApp(
 }
 ```
 
-- [ ] **Step 4: Add server health test**
+- [x] **Step 4: Add server health test**
 
 Create `apps/server/src/app.test.ts`:
 
@@ -543,7 +545,7 @@ describe("createServerApp", () => {
 });
 ```
 
-- [ ] **Step 5: Add minimal local server entry point**
+- [x] **Step 5: Add minimal local server entry point**
 
 Create `apps/server/src/index.ts`:
 
@@ -563,7 +565,7 @@ try {
 }
 ```
 
-- [ ] **Step 6: Verify server sub-slice**
+- [x] **Step 6: Verify server sub-slice**
 
 Run:
 
@@ -583,7 +585,7 @@ Expected:
 - Server typecheck passes.
 - Server build emits `apps/server/dist`.
 
-- [ ] **Step 7: Commit Sub-Slice 1.3**
+- [x] **Step 7: Commit Sub-Slice 1.3**
 
 ```bash
 git add package.json pnpm-lock.yaml apps/server packages/core
@@ -609,7 +611,7 @@ git commit -m "chore: add server package baseline"
 
 **Scoped Boundary:** This sub-slice may add only a minimal management shell placeholder. It must not add navigation, API clients, overlay rendering, module screens, alert workflows, or real management UI.
 
-- [ ] **Step 1: Create web package manifest**
+- [x] **Step 1: Create web package manifest**
 
 Create `apps/web/package.json`:
 
@@ -641,7 +643,7 @@ Create `apps/web/package.json`:
 }
 ```
 
-- [ ] **Step 2: Create web TypeScript config**
+- [x] **Step 2: Create web TypeScript config**
 
 Create `apps/web/tsconfig.json`:
 
@@ -657,7 +659,7 @@ Create `apps/web/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 3: Create Vite config with test environment**
+- [x] **Step 3: Create Vite config with test environment**
 
 Create `apps/web/vite.config.ts`:
 
@@ -674,7 +676,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 4: Create app HTML entry**
+- [x] **Step 4: Create app HTML entry**
 
 Create `apps/web/index.html`:
 
@@ -693,7 +695,7 @@ Create `apps/web/index.html`:
 </html>
 ```
 
-- [ ] **Step 5: Add minimal React shell**
+- [x] **Step 5: Add minimal React shell**
 
 Create `apps/web/src/App.tsx`:
 
@@ -708,7 +710,7 @@ export function App() {
 }
 ```
 
-- [ ] **Step 6: Add browser entry point**
+- [x] **Step 6: Add browser entry point**
 
 Create `apps/web/src/main.tsx`:
 
@@ -730,7 +732,7 @@ createRoot(rootElement).render(
 );
 ```
 
-- [ ] **Step 7: Add test setup**
+- [x] **Step 7: Add test setup**
 
 Create `apps/web/src/test-setup.ts`:
 
@@ -738,7 +740,7 @@ Create `apps/web/src/test-setup.ts`:
 import "@testing-library/jest-dom/vitest";
 ```
 
-- [ ] **Step 8: Add web component test**
+- [x] **Step 8: Add web component test**
 
 Create `apps/web/src/App.test.tsx`:
 
@@ -760,7 +762,7 @@ describe("App", () => {
 });
 ```
 
-- [ ] **Step 9: Add root jsdom support for the shared Vitest runner**
+- [x] **Step 9: Add root jsdom support for the shared Vitest runner**
 
 Modify root `package.json`:
 
@@ -792,7 +794,7 @@ Modify root `package.json`:
 }
 ```
 
-- [ ] **Step 10: Update root Vitest config for React component tests**
+- [x] **Step 10: Update root Vitest config for React component tests**
 
 Modify `vitest.config.ts`:
 
@@ -812,7 +814,7 @@ export default defineConfig({
 });
 ```
 
-- [ ] **Step 11: Verify web sub-slice**
+- [x] **Step 11: Verify web sub-slice**
 
 Run:
 
@@ -832,7 +834,7 @@ Expected:
 - Web typecheck passes.
 - Web build emits `apps/web/dist`.
 
-- [ ] **Step 12: Commit Sub-Slice 1.4**
+- [x] **Step 12: Commit Sub-Slice 1.4**
 
 ```bash
 git add package.json pnpm-lock.yaml vitest.config.ts apps/web
@@ -852,7 +854,7 @@ git commit -m "chore: add web package baseline"
 
 **Scoped Boundary:** This sub-slice may add only generic test helper utilities. It must not add provider mocks, database fixtures, browser fixtures, or domain-specific builders.
 
-- [ ] **Step 1: Create test-support package manifest**
+- [x] **Step 1: Create test-support package manifest**
 
 Create `packages/test-support/package.json`:
 
@@ -880,7 +882,7 @@ Create `packages/test-support/package.json`:
 }
 ```
 
-- [ ] **Step 2: Create test-support TypeScript config**
+- [x] **Step 2: Create test-support TypeScript config**
 
 Create `packages/test-support/tsconfig.json`:
 
@@ -898,7 +900,7 @@ Create `packages/test-support/tsconfig.json`:
 }
 ```
 
-- [ ] **Step 3: Add a generic test helper**
+- [x] **Step 3: Add a generic test helper**
 
 Create `packages/test-support/src/index.ts`:
 
@@ -908,7 +910,7 @@ export function expectNever(value: never): never {
 }
 ```
 
-- [ ] **Step 4: Add a test for the helper**
+- [x] **Step 4: Add a test for the helper**
 
 Create `packages/test-support/src/expect-never.test.ts`:
 
@@ -925,7 +927,7 @@ describe("expectNever", () => {
 });
 ```
 
-- [ ] **Step 5: Verify test-support sub-slice**
+- [x] **Step 5: Verify test-support sub-slice**
 
 Run:
 
@@ -945,7 +947,7 @@ Expected:
 - Test support typecheck passes.
 - Test support build emits `packages/test-support/dist`.
 
-- [ ] **Step 6: Commit Sub-Slice 1.5**
+- [x] **Step 6: Commit Sub-Slice 1.5**
 
 ```bash
 git add package.json pnpm-lock.yaml packages/test-support
@@ -965,7 +967,7 @@ git commit -m "chore: add test support package baseline"
 
 **Scoped Boundary:** This sub-slice is validation and cleanup only. It must not add new product behavior or new packages.
 
-- [ ] **Step 1: Run full Slice 1 verification**
+- [x] **Step 1: Run full Slice 1 verification**
 
 Run:
 
@@ -987,7 +989,7 @@ Expected:
 - `pnpm test:e2e` exits 0 with the placeholder message.
 - `pnpm build` passes for every workspace package.
 
-- [ ] **Step 2: Confirm no accidental out-of-scope files exist**
+- [x] **Step 2: Confirm no accidental out-of-scope files exist**
 
 Run:
 
@@ -1022,7 +1024,7 @@ packages/test-support/src/index.ts
 packages/test-support/tsconfig.json
 ```
 
-- [ ] **Step 3: Confirm dependency versions are exact**
+- [x] **Step 3: Confirm dependency versions are exact**
 
 Run:
 
@@ -1034,7 +1036,7 @@ Expected:
 
 - No matches.
 
-- [ ] **Step 4: Confirm no Slice 2+ behavior was introduced**
+- [x] **Step 4: Confirm no Slice 2+ behavior was introduced**
 
 Run:
 
@@ -1047,7 +1049,7 @@ Expected:
 - No matches, except harmless occurrences in package names or comments if a worker added explanatory text.
 - If matches include implementation code, remove that code from Slice 1.
 
-- [ ] **Step 5: Commit final Slice 1 verification**
+- [x] **Step 5: Commit final Slice 1 verification**
 
 If Step 1 required fixes:
 
@@ -1060,19 +1062,36 @@ If Step 1 required no fixes, do not create an empty commit.
 
 ## Final Slice 1 Acceptance Checklist
 
-- [ ] `pnpm install --frozen-lockfile` completes.
-- [ ] `pnpm lint` passes.
-- [ ] `pnpm typecheck` passes.
-- [ ] `pnpm test` passes.
-- [ ] `pnpm test:e2e` exits successfully with a placeholder message.
-- [ ] `pnpm build` passes.
-- [ ] `packages/core` builds and has one unit test.
-- [ ] `apps/server` builds and has one Fastify `GET /health` injection test.
-- [ ] `apps/web` builds and has one React component test.
-- [ ] `packages/test-support` builds and is usable by tests.
-- [ ] TypeScript strict mode is inherited by all packages.
-- [ ] No app logic exists outside `apps/*` and `packages/*`.
-- [ ] No Slice 2+ domain, persistence, auth, overlay, provider, or diagnostics behavior exists.
+- [x] `pnpm install --frozen-lockfile` completes.
+- [x] `pnpm lint` passes.
+- [x] `pnpm typecheck` passes.
+- [x] `pnpm test` passes.
+- [x] `pnpm test:e2e` exits successfully with a placeholder message.
+- [x] `pnpm build` passes.
+- [x] `packages/core` builds and has one unit test.
+- [x] `apps/server` builds and has one Fastify `GET /health` injection test.
+- [x] `apps/web` builds and has one React component test.
+- [x] `packages/test-support` builds and is usable by tests.
+- [x] TypeScript strict mode is inherited by all packages.
+- [x] No app logic exists outside `apps/*` and `packages/*`.
+- [x] No Slice 2+ domain, persistence, auth, overlay, provider, or diagnostics behavior exists.
+
+## Completion Evidence
+
+Fresh verification on `codex/slice-1-features` confirmed:
+
+- `corepack pnpm install --frozen-lockfile`
+- `corepack pnpm lint`
+- `corepack pnpm typecheck`
+- `corepack pnpm test`
+- `corepack pnpm test:e2e`
+- `corepack pnpm build`
+- Package-specific builds for `@stream-jams/core`, `@stream-jams/server`, `@stream-jams/web`, and `@stream-jams/test-support`
+- Source file-list check against `apps` and `packages`
+- Exact dependency version scan with no semver range matches
+- Slice 2+ scope scan with no domain, persistence, auth, overlay, provider, or diagnostics matches
+
+No Slice 1 functionality gaps were identified.
 
 ## Execution Notes For Agentic Workers
 

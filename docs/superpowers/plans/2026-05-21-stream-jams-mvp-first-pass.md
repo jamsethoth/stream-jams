@@ -798,6 +798,8 @@ export interface ProviderErrorLogRecord {
 
 **Category:** Engineering foundation.
 
+**Status:** Complete. Implementation verified at branch commit `9eda2a5`.
+
 **Value:** Establishes a runnable mandatory TypeScript workspace with React/Vite web packages, Node/Fastify server packages, and fast feedback standards.
 
 **Files:**
@@ -815,26 +817,33 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Create the strict TypeScript workspace and package scripts for `dev`, `build`, `test`, `test:unit`, `test:e2e`, `lint`, and `typecheck`.
-- [ ] Configure the web package as a React and Vite TypeScript application shell.
-- [ ] Configure the server package as a Node.js and Fastify TypeScript application shell.
-- [ ] Configure Vitest for unit tests across `packages/core`, `apps/server`, and `apps/web`.
-- [ ] Add a sample core unit test proving the workspace test runner works.
-- [ ] Add a minimal server health test proving server modules can be tested without binding a real production port.
-- [ ] Add a minimal web test proving React components can render under the test runner.
-- [ ] Run `pnpm test`, `pnpm typecheck`, and `pnpm build`.
-- [ ] Commit with message `chore: scaffold typescript workspace`.
+- [x] Create the strict TypeScript workspace and package scripts for `dev`, `build`, `test`, `test:unit`, `test:e2e`, `lint`, and `typecheck`.
+- [x] Configure the web package as a React and Vite TypeScript application shell.
+- [x] Configure the server package as a Node.js and Fastify TypeScript application shell.
+- [x] Configure Vitest for unit tests across `packages/core`, `apps/server`, and `apps/web`.
+- [x] Add a sample core unit test proving the workspace test runner works.
+- [x] Add a minimal server health test proving server modules can be tested without binding a real production port.
+- [x] Add a minimal web test proving React components can render under the test runner.
+- [x] Run `pnpm test`, `pnpm typecheck`, and `pnpm build`.
+- [x] Commit with message `chore: scaffold typescript workspace`.
 
 **Acceptance Checks:**
 
-- `pnpm install --frozen-lockfile` completes after the lockfile has been intentionally updated for dependency changes.
-- Package manifests use exact dependency versions, and the committed lockfile is the source of truth for installs.
-- `pnpm test` passes with sample tests.
-- `pnpm typecheck` passes.
-- `pnpm build` passes.
-- TypeScript strict mode is enabled for all packages.
-- The scaffold uses React/Vite for web UI code and Node/Fastify for server code.
-- No app logic exists outside the intended packages.
+- [x] `pnpm install --frozen-lockfile` completes after the lockfile has been intentionally updated for dependency changes.
+- [x] Package manifests use exact dependency versions, and the committed lockfile is the source of truth for installs.
+- [x] `pnpm test` passes with sample tests.
+- [x] `pnpm typecheck` passes.
+- [x] `pnpm build` passes.
+- [x] TypeScript strict mode is enabled for all packages.
+- [x] The scaffold uses React/Vite for web UI code and Node/Fastify for server code.
+- [x] No app logic exists outside the intended packages.
+
+**Completion Evidence:**
+
+- Fresh Slice 1 verification passed with `corepack pnpm install --frozen-lockfile`, `corepack pnpm lint`, `corepack pnpm typecheck`, `corepack pnpm test`, `corepack pnpm test:e2e`, and `corepack pnpm build`.
+- Package-specific builds passed for `@stream-jams/core`, `@stream-jams/server`, `@stream-jams/web`, and `@stream-jams/test-support`.
+- Source file-list, exact dependency version, and out-of-scope behavior scans matched the Slice 1 repository-quality plan.
+- No Slice 1 gaps were identified, so no additional carry-forward items were added to Slice 2.
 
 ### Slice 2: Core Domain Types And Validation Schemas
 
