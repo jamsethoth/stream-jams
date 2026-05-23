@@ -133,7 +133,7 @@ packages/core/
 
 **Ownership:** Only this sub-slice edits `packages/core/package.json`.
 
-- [ ] **Step 1: Add Zod as an exact runtime dependency**
+- [x] **Step 1: Add Zod as an exact runtime dependency**
 
 Modify `packages/core/package.json` so it includes:
 
@@ -164,7 +164,7 @@ Modify `packages/core/package.json` so it includes:
 }
 ```
 
-- [ ] **Step 2: Install dependency and update lockfile**
+- [x] **Step 2: Install dependency and update lockfile**
 
 Run:
 
@@ -178,7 +178,7 @@ Expected:
 - `pnpm-lock.yaml` changes to include `zod@3.24.1`.
 - The frozen install exits with status 0.
 
-- [ ] **Step 3: Create shared schema primitives**
+- [x] **Step 3: Create shared schema primitives**
 
 Create `packages/core/src/shared/schemas.ts`:
 
@@ -216,7 +216,7 @@ export type OverlayScope = z.infer<typeof overlayScopeSchema>;
 export type OverlayElementLayout = z.infer<typeof overlayElementLayoutSchema>;
 ```
 
-- [ ] **Step 4: Verify the foundation compiles**
+- [x] **Step 4: Verify the foundation compiles**
 
 Run:
 
@@ -228,7 +228,7 @@ Expected:
 
 - TypeScript exits with status 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -249,7 +249,7 @@ git commit -m "chore: add core schema foundation"
 
 **Ownership:** This worker owns only `packages/core/src/events/**`.
 
-- [ ] **Step 1: Create event types**
+- [x] **Step 1: Create event types**
 
 Create `packages/core/src/events/types.ts`:
 
@@ -321,7 +321,7 @@ export type NormalizedStreamEvent =
   | ChannelPointRedemptionEvent;
 ```
 
-- [ ] **Step 2: Create event schemas**
+- [x] **Step 2: Create event schemas**
 
 Create `packages/core/src/events/schemas.ts`:
 
@@ -400,7 +400,7 @@ export const normalizedStreamEventSchema = z.discriminatedUnion("type", [
 export type NormalizedStreamEventInput = z.infer<typeof normalizedStreamEventSchema>;
 ```
 
-- [ ] **Step 3: Test valid and invalid event payloads**
+- [x] **Step 3: Test valid and invalid event payloads**
 
 Create `packages/core/src/events/schemas.test.ts`:
 
@@ -465,7 +465,7 @@ describe("normalizedStreamEventSchema", () => {
 });
 ```
 
-- [ ] **Step 4: Verify event tests**
+- [x] **Step 4: Verify event tests**
 
 Run:
 
@@ -479,7 +479,7 @@ Expected:
 - Event schema tests pass.
 - TypeScript exits with status 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -502,7 +502,7 @@ git commit -m "feat: define normalized stream events"
 
 **Ownership:** This worker owns only `packages/core/src/overlay-modules/**` and `packages/core/src/overlays/**`.
 
-- [ ] **Step 1: Create overlay module types**
+- [x] **Step 1: Create overlay module types**
 
 Create `packages/core/src/overlay-modules/types.ts`:
 
@@ -556,7 +556,7 @@ export interface OverlayModuleSnapshot {
 }
 ```
 
-- [ ] **Step 2: Create overlay types**
+- [x] **Step 2: Create overlay types**
 
 Create `packages/core/src/overlays/types.ts`:
 
@@ -616,7 +616,7 @@ export interface OverlayInstruction {
 }
 ```
 
-- [ ] **Step 3: Create overlay module schemas**
+- [x] **Step 3: Create overlay module schemas**
 
 Create `packages/core/src/overlay-modules/schemas.ts`:
 
@@ -665,7 +665,7 @@ export const overlayModuleConfigSchema = z.object({
 });
 ```
 
-- [ ] **Step 4: Create overlay schemas**
+- [x] **Step 4: Create overlay schemas**
 
 Create `packages/core/src/overlays/schemas.ts`:
 
@@ -734,7 +734,7 @@ export const overlayCompositionSchema = z.object({
 });
 ```
 
-- [ ] **Step 5: Test overlay boundary rejection**
+- [x] **Step 5: Test overlay boundary rejection**
 
 Create `packages/core/src/overlays/schemas.test.ts`:
 
@@ -787,7 +787,7 @@ describe("overlay schemas", () => {
 });
 ```
 
-- [ ] **Step 6: Verify overlay tests**
+- [x] **Step 6: Verify overlay tests**
 
 Run:
 
@@ -801,7 +801,7 @@ Expected:
 - Overlay schema tests pass.
 - TypeScript exits with status 0.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 Run:
 
@@ -824,7 +824,7 @@ git commit -m "feat: define overlay contracts"
 
 **Ownership:** This worker owns only `packages/core/src/alerts/**` and `packages/core/src/assets/**`.
 
-- [ ] **Step 1: Create asset types and schemas**
+- [x] **Step 1: Create asset types and schemas**
 
 Create `packages/core/src/assets/types.ts`:
 
@@ -873,7 +873,7 @@ export const assetValidationResultSchema = z.object({
 });
 ```
 
-- [ ] **Step 2: Create alert types**
+- [x] **Step 2: Create alert types**
 
 Create `packages/core/src/alerts/types.ts`:
 
@@ -932,7 +932,7 @@ export interface AlertActivationState {
 }
 ```
 
-- [ ] **Step 3: Create alert schemas**
+- [x] **Step 3: Create alert schemas**
 
 Create `packages/core/src/alerts/schemas.ts`:
 
@@ -1005,7 +1005,7 @@ export const alertActivationStateSchema = z.object({
 });
 ```
 
-- [ ] **Step 4: Test alert duration rejection**
+- [x] **Step 4: Test alert duration rejection**
 
 Create `packages/core/src/alerts/schemas.test.ts`:
 
@@ -1065,7 +1065,7 @@ describe("alertRuleSchema", () => {
 });
 ```
 
-- [ ] **Step 5: Verify alert and asset tests**
+- [x] **Step 5: Verify alert and asset tests**
 
 Run:
 
@@ -1079,7 +1079,7 @@ Expected:
 - Alert schema tests pass.
 - TypeScript exits with status 0.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 Run:
 
@@ -1103,7 +1103,7 @@ git commit -m "feat: define alert and asset contracts"
 
 **Ownership:** This worker owns only `packages/core/src/playback/**`, `packages/core/src/tts/**`, and `packages/core/src/security/**`.
 
-- [ ] **Step 1: Create TTS types and schemas**
+- [x] **Step 1: Create TTS types and schemas**
 
 Create `packages/core/src/tts/types.ts`:
 
@@ -1168,7 +1168,7 @@ export const ttsVoiceSchema = z.object({
 });
 ```
 
-- [ ] **Step 2: Create playback types and schemas**
+- [x] **Step 2: Create playback types and schemas**
 
 Create `packages/core/src/playback/types.ts`:
 
@@ -1238,7 +1238,7 @@ export const playbackQueueSnapshotSchema = z.object({
 });
 ```
 
-- [ ] **Step 3: Create security types and schemas**
+- [x] **Step 3: Create security types and schemas**
 
 Create `packages/core/src/security/types.ts`:
 
@@ -1313,7 +1313,7 @@ export const createOverlayKeyInputSchema = z.object({
 });
 ```
 
-- [ ] **Step 4: Verify playback, TTS, and security compilation**
+- [x] **Step 4: Verify playback, TTS, and security compilation**
 
 Run:
 
@@ -1325,7 +1325,7 @@ Expected:
 
 - TypeScript exits with status 0.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -1344,7 +1344,7 @@ git commit -m "feat: define playback tts and security contracts"
 
 **Ownership:** Only this sub-slice edits `packages/core/src/index.ts`.
 
-- [ ] **Step 1: Replace the package barrel exports**
+- [x] **Step 1: Replace the package barrel exports**
 
 Modify `packages/core/src/index.ts`:
 
@@ -1434,7 +1434,7 @@ export {
 } from "./tts/schemas.js";
 ```
 
-- [ ] **Step 2: Run full verification**
+- [x] **Step 2: Run full verification**
 
 Run:
 
@@ -1454,7 +1454,7 @@ Expected:
 - ESLint exits with status 0.
 - Frozen install exits with status 0.
 
-- [ ] **Step 3: Confirm no out-of-scope files changed**
+- [x] **Step 3: Confirm no out-of-scope files changed**
 
 Run:
 
@@ -1491,7 +1491,7 @@ packages/core/src/tts/schemas.ts
 packages/core/src/tts/types.ts
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 Run:
 

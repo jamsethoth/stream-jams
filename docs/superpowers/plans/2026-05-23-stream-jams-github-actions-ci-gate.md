@@ -109,7 +109,7 @@ docs/
 
 - Create: `.github/workflows/ci.yml`
 
-- [ ] **Step 1: Create the workflow file**
+- [x] **Step 1: Create the workflow file**
 
 Create `.github/workflows/ci.yml`:
 
@@ -244,7 +244,7 @@ jobs:
           fail-on-severity: high
 ```
 
-- [ ] **Step 2: Run local validation commands**
+- [x] **Step 2: Run local validation commands**
 
 Run:
 
@@ -267,7 +267,7 @@ Expected:
 - Build exits with status 0 for every package.
 - Static analysis is verified in GitHub Actions because CodeQL and Dependency Review require GitHub code scanning/dependency review context.
 
-- [ ] **Step 3: Commit the workflow**
+- [x] **Step 3: Commit the workflow**
 
 Run:
 
@@ -282,7 +282,7 @@ git commit -m "ci: add required validation workflow"
 
 - Create: `.github/workflows/dependency-audit.yml`
 
-- [ ] **Step 1: Create the non-blocking dependency audit workflow**
+- [x] **Step 1: Create the non-blocking dependency audit workflow**
 
 Create `.github/workflows/dependency-audit.yml`:
 
@@ -352,7 +352,7 @@ jobs:
           if-no-files-found: error
 ```
 
-- [ ] **Step 2: Commit the dependency audit workflow**
+- [x] **Step 2: Commit the dependency audit workflow**
 
 Run:
 
@@ -367,7 +367,7 @@ git commit -m "ci: add scheduled dependency audit"
 
 - Modify: `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`
 
-- [ ] **Step 1: Add a cross-cutting CI gate note before Slice 3**
+- [x] **Step 1: Add a cross-cutting CI gate note before Slice 3**
 
 In `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`, add this section after Slice 2 and before Slice 3:
 
@@ -385,15 +385,15 @@ In `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`, add this s
 
 **Steps:**
 
-- [ ] Add a GitHub Actions workflow with required `validate`, `build`, `codeql`, and `dependency-review` jobs.
-- [ ] Trigger the workflow on pull requests targeting `main`, new commits to open pull requests, pushes to `main`, and manual dispatch.
-- [ ] Run `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` in `validate`.
-- [ ] Run `pnpm build` in a separate `build` job.
-- [ ] Run CodeQL JavaScript/TypeScript analysis with security and quality queries.
-- [ ] Run dependency review on pull requests and fail if a dependency change introduces high-severity or worse vulnerabilities.
-- [ ] Add a non-blocking scheduled dependency audit workflow that runs `pnpm audit --audit-level high` and uploads the audit report.
-- [ ] Configure `main` branch protection so all required CI checks must pass before merge.
-- [ ] Verify a pull request cannot merge while any required CI check is failing or pending.
+- [x] Add a GitHub Actions workflow with required `validate`, `build`, `codeql`, and `dependency-review` jobs.
+- [x] Trigger the workflow on pull requests targeting `main`, new commits to open pull requests, pushes to `main`, and manual dispatch.
+- [x] Run `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` in `validate`.
+- [x] Run `pnpm build` in a separate `build` job.
+- [x] Run CodeQL JavaScript/TypeScript analysis with security and quality queries.
+- [x] Run dependency review on pull requests and fail if a dependency change introduces high-severity or worse vulnerabilities.
+- [x] Add a non-blocking scheduled dependency audit workflow that runs `pnpm audit --audit-level high` and uploads the audit report.
+- [x] Configure `main` branch protection so all required CI checks must pass before merge.
+- [x] Verify a pull request cannot merge while any required CI check is failing or pending.
 
 **Acceptance Checks:**
 
@@ -404,7 +404,7 @@ In `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`, add this s
 - `main` requires all required CI checks before pull requests can merge.
 ```
 
-- [ ] **Step 2: Commit the MVP plan update**
+- [x] **Step 2: Commit the MVP plan update**
 
 Run:
 
@@ -419,7 +419,7 @@ git commit -m "docs: add github actions ci gate to mvp plan"
 
 - No file edits.
 
-- [ ] **Step 1: Push the branch**
+- [x] **Step 1: Push the branch**
 
 Run:
 
@@ -431,7 +431,7 @@ Expected:
 
 - The branch exists on GitHub.
 
-- [ ] **Step 2: Create a draft PR**
+- [x] **Step 2: Create a draft PR**
 
 Run:
 
@@ -473,7 +473,7 @@ Expected:
 
 **Important:** This task changes GitHub repository settings. Use escalated `gh` commands in this Codex environment because GitHub CLI authentication is stored in the OS keyring.
 
-- [ ] **Step 1: Verify GitHub authentication**
+- [x] **Step 1: Verify GitHub authentication**
 
 Run with escalated execution:
 
@@ -485,7 +485,7 @@ Expected:
 
 - The active GitHub account is authenticated with repository permissions.
 
-- [ ] **Step 2: Confirm the PR check name**
+- [x] **Step 2: Confirm the PR check name**
 
 Run with escalated execution after the PR check has started:
 
@@ -498,7 +498,7 @@ Expected:
 - The check list includes `validate`, `build`, `codeql`, and `dependency-review`.
 - All required checks pass.
 
-- [ ] **Step 3: Apply or update branch protection for `main`**
+- [x] **Step 3: Apply or update branch protection for `main`**
 
 Run with escalated execution:
 
@@ -539,7 +539,7 @@ Expected:
 
 If GitHub returns that branch protection is unavailable because the repository is private and the account plan does not support it, stop and report the blocker. Do not change repository visibility unless the owner explicitly requests it after understanding the disclosure risk.
 
-- [ ] **Step 4: Verify branch protection**
+- [x] **Step 4: Verify branch protection**
 
 Run with escalated execution:
 
@@ -561,7 +561,7 @@ Expected response properties:
 
 - No repository file edits unless a temporary verification branch is used.
 
-- [ ] **Step 1: Verify the PR cannot merge before required checks pass**
+- [x] **Step 1: Verify the PR cannot merge before required checks pass**
 
 Use the GitHub PR UI or run with escalated execution:
 
@@ -574,7 +574,7 @@ Expected:
 - While any required check is pending or failing, the PR is not mergeable.
 - After all required checks pass and review requirements are satisfied, the PR becomes mergeable.
 
-- [ ] **Step 2: Add final evidence to the PR**
+- [x] **Step 2: Add final evidence to the PR**
 
 Add a PR comment:
 
