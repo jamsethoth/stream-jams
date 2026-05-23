@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=24.16.0 <25",
+    "pnpm": "11.2.2"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
     "build": "pnpm -r build",
