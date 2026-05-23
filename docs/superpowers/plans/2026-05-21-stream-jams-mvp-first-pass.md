@@ -882,6 +882,37 @@ export interface ProviderErrorLogRecord {
 - Boundary schemas reject malformed data before it reaches service logic.
 - Unit tests cover representative valid and invalid payloads.
 
+### Cross-Cutting Gate: GitHub Actions CI
+
+**Category:** Repository quality and merge protection.
+
+**Value:** Prevents unvalidated changes from merging into `main` before feature work continues.
+
+**Files:**
+
+- Create `.github/workflows/ci.yml`
+- Create `.github/workflows/dependency-audit.yml`
+
+**Steps:**
+
+- [ ] Add a GitHub Actions workflow with required `validate`, `build`, `codeql`, and `dependency-review` jobs.
+- [ ] Trigger the workflow on pull requests targeting `main`, new commits to open pull requests, pushes to `main`, and manual dispatch.
+- [ ] Run `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` in `validate`.
+- [ ] Run `pnpm build` in a separate `build` job.
+- [ ] Run CodeQL JavaScript/TypeScript analysis with security and quality queries.
+- [ ] Run dependency review on pull requests and fail if a dependency change introduces high-severity or worse vulnerabilities.
+- [ ] Add a non-blocking scheduled dependency audit workflow that runs `pnpm audit --audit-level high` and uploads the audit report.
+- [ ] Configure `main` branch protection so all required CI checks must pass before merge.
+- [ ] Verify a pull request cannot merge while any required CI check is failing or pending.
+
+**Acceptance Checks:**
+
+- Every pull request targeting `main` gets `validate`, `build`, `codeql`, and `dependency-review` status checks.
+- Every new commit pushed to a branch with an open pull request targeting `main` reruns required CI checks.
+- Every merge or direct push to `main` runs `validate`, `build`, and `codeql`.
+- `pnpm audit` runs on a weekly schedule and manual dispatch without blocking unrelated pull requests.
+- `main` requires all required CI checks before pull requests can merge.
+
 ### Slice 3: Local Config And Secret Storage Boundary
 
 **Category:** Security and persistence.
