@@ -866,21 +866,68 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Define `NormalizedStreamEvent` as a discriminated union for the MVP Twitch event types.
-- [ ] Define `OverlayModuleDefinition`, `OverlayModuleConfig`, `OverlayComposition`, `ModuleOutputRequest`, and `UnifiedOutputRequest`.
-- [ ] Define `AlertRule`, `AlertVariant`, `AlertCollection`, `AlertCondition`, and `AlertActivationState`.
-- [ ] Define `ResolvedAlert`, `OverlayInstruction`, `PlaybackQueueItem`, and `PlaybackQueueSnapshot`.
-- [ ] Define `AssetRecord`, `TtsPlaybackInstruction`, `TtsProviderCapabilities`, `SecretRef`, and `OverlayAccessKey`.
-- [ ] Add Zod schemas for all HTTP/WebSocket boundary payloads.
-- [ ] Unit test schema acceptance for valid follow, subscription, cheer, raid, and channel point event examples.
-- [ ] Unit test schema rejection for missing required event identity, invalid event type, invalid alert duration, and invalid overlay purpose.
-- [ ] Commit with message `feat: define core domain types`.
+- [x] Define `NormalizedStreamEvent` as a discriminated union for the MVP Twitch event types.
+- [x] Define `OverlayModuleDefinition`, `OverlayModuleConfig`, `OverlayComposition`, `ModuleOutputRequest`, and `UnifiedOutputRequest`.
+- [x] Define `AlertRule`, `AlertVariant`, `AlertCollection`, `AlertCondition`, and `AlertActivationState`.
+- [x] Define `ResolvedAlert`, `OverlayInstruction`, `PlaybackQueueItem`, and `PlaybackQueueSnapshot`.
+- [x] Define `AssetRecord`, `TtsPlaybackInstruction`, `TtsProviderCapabilities`, `SecretRef`, and `OverlayAccessKey`.
+- [x] Add Zod schemas for all HTTP/WebSocket boundary payloads owned by Slice 2 domain contracts.
+- [x] Unit test schema acceptance for valid follow, subscription, cheer, raid, and channel point event examples.
+- [x] Unit test schema rejection for missing required event identity, invalid event type, invalid alert duration, and invalid overlay purpose.
+- [x] Commit with message `feat: define core domain types`.
 
 **Acceptance Checks:**
 
 - Event, overlay module, alert, asset, overlay, playback, TTS, and security types compile from `packages/core`.
 - Boundary schemas reject malformed data before it reaches service logic.
 - Unit tests cover representative valid and invalid payloads.
+
+**Completion Evidence:**
+
+- Slice 2 core contracts were implemented in `packages/core/src/events`, `alerts`, `assets`, `overlay-modules`, `overlays`, `playback`, `tts`, `security`, and `shared`.
+- `@stream-jams/core` exports the Slice 2 types and Zod schemas from `packages/core/src/index.ts`.
+- Fresh verification passed with `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, and `pnpm build`.
+- GitHub PR checks passed for `validate`, `build`, `codeql`, `CodeQL`, and `dependency-review`.
+- Review reconciliation identified the `AppConfig` shared contract as a carry-forward planning gap and added it to Slice 3.
+
+### Cross-Cutting Gate: GitHub Actions CI
+
+**Category:** Repository quality and merge protection.
+
+**Value:** Prevents unvalidated changes from merging into `main` before feature work continues.
+
+**Files:**
+
+- Create `.github/workflows/ci.yml`
+- Create `.github/workflows/dependency-audit.yml`
+
+**Steps:**
+
+- [x] Add a GitHub Actions workflow with required `validate`, `build`, `codeql`, and `dependency-review` jobs.
+- [x] Trigger the workflow on pull requests targeting `main`, new commits to open pull requests, pushes to `main`, and manual dispatch.
+- [x] Run `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` in `validate`.
+- [x] Run `pnpm build` in a separate `build` job.
+- [x] Run CodeQL JavaScript/TypeScript analysis with security and quality queries.
+- [x] Run dependency review on pull requests and fail if a dependency change introduces high-severity or worse vulnerabilities.
+- [x] Add a non-blocking scheduled dependency audit workflow that runs `pnpm audit --audit-level high` and uploads the audit report.
+- [x] Configure `main` branch protection so all required CI checks must pass before merge.
+- [x] Verify a pull request cannot merge while any required CI check is failing or pending.
+
+**Acceptance Checks:**
+
+- Every pull request targeting `main` gets `validate`, `build`, `codeql`, and `dependency-review` status checks.
+- Every new commit pushed to a branch with an open pull request targeting `main` reruns required CI checks.
+- Every merge or direct push to `main` runs `validate`, `build`, and `codeql`.
+- `pnpm audit` runs on a weekly schedule and manual dispatch without blocking unrelated pull requests.
+- `main` requires all required CI checks before pull requests can merge.
+
+**Completion Evidence:**
+
+- `.github/workflows/ci.yml` defines separate `validate`, `build`, `codeql`, and `dependency-review` jobs.
+- `.github/workflows/dependency-audit.yml` defines the non-blocking scheduled/manual `pnpm-audit` workflow.
+- GitHub PR checks passed for `validate`, `build`, `codeql`, `CodeQL`, and `dependency-review`.
+- `main` branch protection readback requires `validate`, `build`, `codeql`, `CodeQL`, and `dependency-review`, with strict status checks, pull request review, conversation resolution, linear history, no force pushes, and no deletion.
+- `pnpm audit --audit-level high --json` was run once and confirmed the current known high/critical dependency baseline, so `pnpm-audit` intentionally remains non-blocking.
 
 ### Slice 3: Local Config And Secret Storage Boundary
 
@@ -890,6 +937,8 @@ export interface ProviderErrorLogRecord {
 
 **Files:**
 
+- Create `packages/core/src/config/types.ts`
+- Create `packages/core/src/config/schemas.ts`
 - Create `packages/core/src/config/config-store.ts`
 - Create `packages/core/src/security/secret-store.ts`
 - Create `apps/server/src/config/file-config-store.ts`
@@ -900,7 +949,9 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
+- [ ] Define `AppConfig` and an `appConfigSchema` in `packages/core` for host, port, data directory, and asset directory.
 - [ ] Define `ConfigStore`, `SecretStore`, and `Redactor` interfaces in `packages/core`.
+- [ ] Ensure `SecretStore` uses the Slice 2 `SecretRef` type and `secretRefSchema` instead of redefining secret identity fields.
 - [ ] Implement file-backed config storage for non-secret values including host, port, data directory, and asset directory.
 - [ ] Implement an OS credential-store adapter behind `SecretStore`.
 - [ ] Implement a development secret-store adapter that is explicitly gated to development mode.
@@ -911,6 +962,7 @@ export interface ProviderErrorLogRecord {
 
 **Acceptance Checks:**
 
+- `AppConfig` is exported from `@stream-jams/core` and validates persisted config data before server code consumes it.
 - Config can be read and updated without exposing secret values.
 - Secret lookup always goes through `SecretStore`.
 - Redactor can be used by logs and diagnostics without knowing provider details.

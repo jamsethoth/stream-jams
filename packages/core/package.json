@@ -15,6 +15,9 @@
     "build": "tsc -p tsconfig.json --emitDeclarationOnly false",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
+  "dependencies": {
+    "zod": "3.24.1"
+  },
   "devDependencies": {
     "typescript": "5.7.3"
   }
