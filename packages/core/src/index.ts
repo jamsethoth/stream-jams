@@ -1,6 +1,15 @@
 export type { AppVersion } from "./version.js";
 export { createAppVersion } from "./version.js";
 
+export type * from "./config/types.js";
+export type { ConfigStore } from "./config/config-store.js";
+export {
+  appConfigSchema,
+  appConfigUpdateSchema,
+  appServerConfigSchema,
+  appStorageConfigSchema
+} from "./config/schemas.js";
+
 export type * from "./alerts/types.js";
 export {
   alertActivationStateSchema,
@@ -53,6 +62,7 @@ export type * from "./playback/types.js";
 export { playbackQueueItemSchema, playbackQueueSnapshotSchema, resolvedAlertSchema } from "./playback/schemas.js";
 
 export type * from "./security/types.js";
+export type { Redactor, SecretStore } from "./security/secret-store.js";
 export {
   createOverlayKeyInputSchema,
   managementSessionSchema,

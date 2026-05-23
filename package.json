@@ -15,7 +15,7 @@
     "test:unit": "vitest run",
     "test:e2e": "node -e \"console.log('Playwright e2e tests are introduced in a later slice.')\"",
     "lint": "eslint .",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm --filter @stream-jams/core build && pnpm -r typecheck"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
