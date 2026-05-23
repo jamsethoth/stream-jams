@@ -890,6 +890,8 @@ export interface ProviderErrorLogRecord {
 
 **Files:**
 
+- Create `packages/core/src/config/types.ts`
+- Create `packages/core/src/config/schemas.ts`
 - Create `packages/core/src/config/config-store.ts`
 - Create `packages/core/src/security/secret-store.ts`
 - Create `apps/server/src/config/file-config-store.ts`
@@ -900,7 +902,9 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
+- [ ] Define `AppConfig` and an `appConfigSchema` in `packages/core` for host, port, data directory, and asset directory.
 - [ ] Define `ConfigStore`, `SecretStore`, and `Redactor` interfaces in `packages/core`.
+- [ ] Ensure `SecretStore` uses the Slice 2 `SecretRef` type and `secretRefSchema` instead of redefining secret identity fields.
 - [ ] Implement file-backed config storage for non-secret values including host, port, data directory, and asset directory.
 - [ ] Implement an OS credential-store adapter behind `SecretStore`.
 - [ ] Implement a development secret-store adapter that is explicitly gated to development mode.
@@ -911,6 +915,7 @@ export interface ProviderErrorLogRecord {
 
 **Acceptance Checks:**
 
+- `AppConfig` is exported from `@stream-jams/core` and validates persisted config data before server code consumes it.
 - Config can be read and updated without exposing secret values.
 - Secret lookup always goes through `SecretStore`.
 - Redactor can be used by logs and diagnostics without knowing provider details.
