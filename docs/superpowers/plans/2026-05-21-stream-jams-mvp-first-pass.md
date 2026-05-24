@@ -949,16 +949,16 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Define `AppConfig` and an `appConfigSchema` in `packages/core` for host, port, data directory, and asset directory.
-- [ ] Define `ConfigStore`, `SecretStore`, and `Redactor` interfaces in `packages/core`.
-- [ ] Ensure `SecretStore` uses the Slice 2 `SecretRef` type and `secretRefSchema` instead of redefining secret identity fields.
-- [ ] Implement file-backed config storage for non-secret values including host, port, data directory, and asset directory.
-- [ ] Implement an OS credential-store adapter behind `SecretStore`.
-- [ ] Implement a development secret-store adapter that is explicitly gated to development mode.
-- [ ] Implement redaction for OAuth tokens, API keys, overlay keys, auth headers, signed URLs, and configured secret names.
-- [ ] Unit test that raw secrets are not written to config data.
-- [ ] Unit test redaction for nested objects, arrays, headers, and URLs.
-- [ ] Commit with message `feat: add config and secret storage boundary`.
+- [x] Define `AppConfig` and an `appConfigSchema` in `packages/core` for host, port, data directory, and asset directory.
+- [x] Define `ConfigStore`, `SecretStore`, and `Redactor` interfaces in `packages/core`.
+- [x] Ensure `SecretStore` uses the Slice 2 `SecretRef` type and `secretRefSchema` instead of redefining secret identity fields.
+- [x] Implement file-backed config storage for non-secret values including host, port, data directory, and asset directory.
+- [x] Implement an OS credential-store adapter behind `SecretStore`.
+- [x] Implement a development secret-store adapter that is explicitly gated to development mode.
+- [x] Implement redaction for OAuth tokens, API keys, overlay keys, auth headers, signed URLs, and configured secret names.
+- [x] Unit test that raw secrets are not written to config data.
+- [x] Unit test redaction for nested objects, arrays, headers, and URLs.
+- [x] Commit with message `feat: add config and secret storage boundary`.
 
 **Acceptance Checks:**
 
@@ -966,6 +966,18 @@ export interface ProviderErrorLogRecord {
 - Config can be read and updated without exposing secret values.
 - Secret lookup always goes through `SecretStore`.
 - Redactor can be used by logs and diagnostics without knowing provider details.
+
+**Completion Evidence:**
+
+- Slice 3 detailed execution plan was added at `docs/superpowers/plans/2026-05-23-stream-jams-slice-3-local-config-secret-storage-boundary.md`.
+- `@stream-jams/core` exports `AppConfig`, `appConfigSchema`, `appConfigUpdateSchema`, `ConfigStore`, `SecretStore`, and `Redactor`.
+- `apps/server/src/config/file-config-store.ts` validates config reads and updates through core schemas and strips secret-shaped patch fields before persisting JSON.
+- `apps/server/src/modules/security/os-secret-store.ts` wraps an injected credential backend behind `SecretStore`, using the existing `SecretRef` and `secretRefSchema`.
+- `apps/server/src/modules/security/dev-secret-store.ts` provides a development-only in-memory fallback and refuses construction in `test` or `production` modes.
+- `apps/server/src/modules/security/redactor.ts` redacts nested objects, arrays, auth headers, OAuth/API/overlay keys, signed URL query parameters, and configured secret names without mutating inputs.
+- Focused Slice 3 tests passed for config schemas, file config storage, OS secret storage, development secret storage, and redaction: 5 test files and 14 tests.
+- Full repository validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, and `pnpm build`.
+- No Slice 3 carry-forward gaps were identified.
 
 ### Slice 4: Structured Logging Foundation
 

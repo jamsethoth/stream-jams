@@ -32,6 +32,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@stream-jams/core':
+        specifier: workspace:0.0.0
+        version: link:../../packages/core
       fastify:
         specifier: 5.8.5
         version: 5.8.5
