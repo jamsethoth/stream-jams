@@ -159,6 +159,9 @@ Docker image support is a future deployment mode. It should expose the same HTTP
 - TypeScript strict mode is required across frontend, backend, shared packages, and future Electron shell code.
 - Dependency resolution must be deterministic: all direct npm dependencies and dev dependencies are pinned to exact versions with no semver ranges, transitive dependencies are locked in the committed `pnpm-lock.yaml` with integrity data, and release/build automation installs from the committed lockfile using frozen-lockfile behavior.
 - The app must not produce a different artifact or behavior without a repository change; dependency updates are explicit repo changes that update package manifests and the lockfile together.
+- pnpm workspaces remain the MVP package-management and workspace-script orchestration layer.
+- TypeScript project references define TypeScript package relationships so shared packages build and typecheck before dependent applications.
+- Turborepo is a possible future task-orchestration and caching layer if workspace scale or CI runtime warrants it, but it is not required for MVP implementation.
 - Domain logic lives outside HTTP handlers and React components.
 - Service contracts are defined as TypeScript interfaces before concrete adapters.
 - Fastify handlers delegate to service interfaces instead of owning business rules.
