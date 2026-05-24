@@ -10,7 +10,7 @@ export const positiveIntegerSchema = z.number().int().positive();
 
 export const nonNegativeIntegerSchema = z.number().int().min(0);
 
-export const metadataSchema = z.record(z.unknown());
+export const metadataSchema = z.record(z.string(), z.unknown());
 
 export const uuidLikeIdSchema = nonEmptyStringSchema;
 

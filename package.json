@@ -3,7 +3,11 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": "24.16.0",
+    "pnpm": "11.2.2"
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
     "build": "pnpm -r build",
@@ -14,12 +18,12 @@
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
-    "@eslint/js": "9.18.0",
-    "@types/node": "22.10.7",
-    "eslint": "9.18.0",
-    "jsdom": "25.0.1",
-    "typescript": "5.7.3",
-    "typescript-eslint": "8.20.0",
-    "vitest": "2.1.9"
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.12.4",
+    "eslint": "10.4.0",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.59.4",
+    "vitest": "4.1.7"
   }
 }
