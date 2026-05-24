@@ -2,10 +2,25 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["packages/**/*.test.ts", "apps/**/*.test.ts", "apps/**/*.test.tsx"],
-    environment: "node",
-    environmentMatchGlobs: [["apps/web/**/*.test.tsx", "jsdom"]],
-    setupFiles: ["apps/web/src/test-setup.ts"],
+    projects: [
+      {
+        test: {
+          name: "node",
+          include: ["packages/**/*.test.ts", "apps/server/**/*.test.ts"],
+          environment: "node",
+          testTimeout: 10_000
+        }
+      },
+      {
+        extends: "./apps/web/vite.config.ts",
+        test: {
+          name: "web",
+          include: ["apps/web/**/*.test.tsx"],
+          environment: "jsdom",
+          setupFiles: ["apps/web/src/test-setup.ts"]
+        }
+      }
+    ],
     coverage: {
       reporter: ["text", "html"]
     }
