@@ -82,7 +82,7 @@ The existing `AppConfig` contains `server` and `storage`. Slice 4 extends it wit
 - Modify: `packages/core/src/config/schemas.test.ts`
 - Modify: `packages/core/src/index.ts`
 
-- [ ] **Step 1: Write failing core logging tests**
+- [x] **Step 1: Write failing core logging tests**
 
 Add tests that assert:
 
@@ -101,7 +101,7 @@ pnpm test -- packages/core/src/diagnostics/logging.test.ts packages/core/src/con
 
 Expected before implementation: fail because `packages/core/src/diagnostics/logging.ts` does not exist.
 
-- [ ] **Step 2: Implement core logging contracts**
+- [x] **Step 2: Implement core logging contracts**
 
 Create `packages/core/src/diagnostics/logging.ts` with:
 
@@ -144,17 +144,17 @@ export interface Logger {
 }
 ```
 
-- [ ] **Step 3: Extend app config with logging settings**
+- [x] **Step 3: Extend app config with logging settings**
 
 Modify `packages/core/src/config/types.ts` so `AppConfig` has `readonly logging: LogSettings`, and `AppConfigUpdate` has `readonly logging?: LogSettingsUpdate`.
 
 Modify `packages/core/src/config/schemas.ts` so `appConfigSchema` includes `logging: logSettingsSchema.default(defaultLogSettings)` and `appConfigUpdateSchema` includes `logging: logSettingsUpdateSchema.optional()`.
 
-- [ ] **Step 4: Export diagnostics contracts**
+- [x] **Step 4: Export diagnostics contracts**
 
 Modify `packages/core/src/index.ts` to export `Logger`, `LogContext`, `LogLevel`, `LogSettings`, `LogSettingsUpdate`, `CorrelationId`, `ProcessingId`, `logContextSchema`, `logLevelSchema`, `logSettingsSchema`, and `logSettingsUpdateSchema`.
 
-- [ ] **Step 5: Verify and commit Sub-Slice 4.1**
+- [x] **Step 5: Verify and commit Sub-Slice 4.1**
 
 Run:
 
@@ -470,8 +470,8 @@ git commit -m "docs: reconcile slice 4 logging foundation"
 
 Record fresh command output after each sub-slice is implemented.
 
-- Baseline validation before implementation: pending execution.
-- Sub-Slice 4.1 focused tests and typecheck: pending execution.
+- Baseline validation before implementation: `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed. The environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
+- Sub-Slice 4.1 focused tests and typecheck: `pnpm test -- packages/core/src/diagnostics/logging.test.ts packages/core/src/config/schemas.test.ts` passed with 13 test files and 31 tests; `pnpm --filter @stream-jams/core typecheck` passed.
 - Sub-Slice 4.2 focused tests and typecheck: pending execution.
 - Sub-Slice 4.3 focused tests and typecheck: pending execution.
 - Sub-Slice 4.4 focused tests and typecheck: pending execution.
@@ -479,10 +479,10 @@ Record fresh command output after each sub-slice is implemented.
 
 ## Reconciliation Checklist
 
-- [ ] Define `Logger`, `LogContext`, `LogLevel`, `CorrelationId`, and `ProcessingId` in `packages/core`.
+- [x] Define `Logger`, `LogContext`, `LogLevel`, `CorrelationId`, and `ProcessingId` in `packages/core`.
 - [ ] Implement structured server logging with timestamp, level, message, module/service name, source identifier, correlation ID, processing ID, and sanitized metadata.
-- [ ] Set default log level to `INFO`.
-- [ ] Add configurable log level in app settings.
+- [x] Set default log level to `INFO`.
+- [x] Add configurable log level in app settings.
 - [ ] Implement hourly log rollover by default.
 - [ ] Implement configurable log retention with a default of deleting files older than 48 hours.
 - [ ] Ensure every log write passes through `Redactor`.

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { defaultLogSettings, logSettingsSchema, logSettingsUpdateSchema } from "../diagnostics/logging.js";
 import { nonEmptyStringSchema } from "../shared/schemas.js";
 
 export const appServerConfigSchema = z.object({
@@ -13,10 +14,12 @@ export const appStorageConfigSchema = z.object({
 
 export const appConfigSchema = z.object({
   server: appServerConfigSchema,
-  storage: appStorageConfigSchema
+  storage: appStorageConfigSchema,
+  logging: logSettingsSchema.default(defaultLogSettings)
 });
 
 export const appConfigUpdateSchema = z.object({
   server: appServerConfigSchema.partial().optional(),
-  storage: appStorageConfigSchema.partial().optional()
+  storage: appStorageConfigSchema.partial().optional(),
+  logging: logSettingsUpdateSchema.optional()
 });
