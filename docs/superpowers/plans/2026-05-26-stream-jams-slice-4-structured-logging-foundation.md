@@ -182,7 +182,7 @@ git commit -m "feat: add logging config contracts"
 - Create: `apps/server/src/modules/diagnostics/log-config-service.ts`
 - Create: `apps/server/src/modules/diagnostics/log-config-service.test.ts`
 
-- [ ] **Step 1: Write failing log config service tests**
+- [x] **Step 1: Write failing log config service tests**
 
 Add tests that assert:
 
@@ -199,7 +199,7 @@ pnpm test -- apps/server/src/modules/diagnostics/log-config-service.test.ts
 
 Expected before implementation: fail because `log-config-service.ts` does not exist.
 
-- [ ] **Step 2: Extend file config store tests for logging defaults**
+- [x] **Step 2: Extend file config store tests for logging defaults**
 
 Update `apps/server/src/config/file-config-store.test.ts` so `defaultConfig` includes:
 
@@ -213,7 +213,7 @@ logging: {
 
 Add assertions that an older persisted config without `logging` reads back with default logging settings, and that log settings updates are persisted without writing secret-shaped fields.
 
-- [ ] **Step 3: Implement `LogConfigService`**
+- [x] **Step 3: Implement `LogConfigService`**
 
 Create `apps/server/src/modules/diagnostics/log-config-service.ts`:
 
@@ -240,7 +240,7 @@ export class LogConfigService {
 }
 ```
 
-- [ ] **Step 4: Verify and commit Sub-Slice 4.2**
+- [x] **Step 4: Verify and commit Sub-Slice 4.2**
 
 Run:
 
@@ -472,7 +472,7 @@ Record fresh command output after each sub-slice is implemented.
 
 - Baseline validation before implementation: `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed. The environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
 - Sub-Slice 4.1 focused tests and typecheck: `pnpm test -- packages/core/src/diagnostics/logging.test.ts packages/core/src/config/schemas.test.ts` passed with 13 test files and 31 tests; `pnpm --filter @stream-jams/core typecheck` passed.
-- Sub-Slice 4.2 focused tests and typecheck: pending execution.
+- Sub-Slice 4.2 focused tests and typecheck: `pnpm test -- apps/server/src/modules/diagnostics/log-config-service.test.ts apps/server/src/config/file-config-store.test.ts` passed with 14 test files and 36 tests; `pnpm --filter @stream-jams/server typecheck` passed.
 - Sub-Slice 4.3 focused tests and typecheck: pending execution.
 - Sub-Slice 4.4 focused tests and typecheck: pending execution.
 - Full repository validation: pending execution.
