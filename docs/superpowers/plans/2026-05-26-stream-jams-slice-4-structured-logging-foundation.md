@@ -267,7 +267,7 @@ git commit -m "feat: add log config service"
 - Create: `apps/server/src/modules/diagnostics/logger.ts`
 - Create: `apps/server/src/modules/diagnostics/logger.test.ts`
 
-- [ ] **Step 1: Write failing structured logger tests**
+- [x] **Step 1: Write failing structured logger tests**
 
 Add tests that assert:
 
@@ -285,7 +285,7 @@ pnpm test -- apps/server/src/modules/diagnostics/logger.test.ts
 
 Expected before implementation: fail because `logger.ts` does not exist.
 
-- [ ] **Step 2: Implement logger sink and helpers**
+- [x] **Step 2: Implement logger sink and helpers**
 
 Create:
 
@@ -309,7 +309,7 @@ export function shouldLogLevel(candidate: LogLevel, configured: LogLevel): boole
 
 The default sink uses `node:fs/promises.appendFile`, creates the target directory with `mkdir`, and appends one newline-delimited JSON record per write.
 
-- [ ] **Step 3: Implement structured log writes**
+- [x] **Step 3: Implement structured log writes**
 
 Each emitted record must be shaped as:
 
@@ -328,7 +328,7 @@ Each emitted record must be shaped as:
 
 Before serializing, call `redactor.redactText(message)` and `redactor.redact(context.metadata ?? {})`. Do not mutate the caller's metadata object.
 
-- [ ] **Step 4: Verify and commit Sub-Slice 4.3**
+- [x] **Step 4: Verify and commit Sub-Slice 4.3**
 
 Run:
 
@@ -473,21 +473,21 @@ Record fresh command output after each sub-slice is implemented.
 - Baseline validation before implementation: `pnpm lint`, `pnpm typecheck`, and `pnpm test` passed. The environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
 - Sub-Slice 4.1 focused tests and typecheck: `pnpm test -- packages/core/src/diagnostics/logging.test.ts packages/core/src/config/schemas.test.ts` passed with 13 test files and 31 tests; `pnpm --filter @stream-jams/core typecheck` passed.
 - Sub-Slice 4.2 focused tests and typecheck: `pnpm test -- apps/server/src/modules/diagnostics/log-config-service.test.ts apps/server/src/config/file-config-store.test.ts` passed with 14 test files and 36 tests; `pnpm --filter @stream-jams/server typecheck` passed.
-- Sub-Slice 4.3 focused tests and typecheck: pending execution.
+- Sub-Slice 4.3 focused tests and typecheck: `pnpm test -- apps/server/src/modules/diagnostics/logger.test.ts` passed with 15 test files and 40 tests; `pnpm --filter @stream-jams/server typecheck` passed.
 - Sub-Slice 4.4 focused tests and typecheck: pending execution.
 - Full repository validation: pending execution.
 
 ## Reconciliation Checklist
 
 - [x] Define `Logger`, `LogContext`, `LogLevel`, `CorrelationId`, and `ProcessingId` in `packages/core`.
-- [ ] Implement structured server logging with timestamp, level, message, module/service name, source identifier, correlation ID, processing ID, and sanitized metadata.
+- [x] Implement structured server logging with timestamp, level, message, module/service name, source identifier, correlation ID, processing ID, and sanitized metadata.
 - [x] Set default log level to `INFO`.
 - [x] Add configurable log level in app settings.
-- [ ] Implement hourly log rollover by default.
+- [x] Implement hourly log rollover by default.
 - [ ] Implement configurable log retention with a default of deleting files older than 48 hours.
-- [ ] Ensure every log write passes through `Redactor`.
-- [ ] Unit test level filtering.
-- [ ] Unit test hourly rollover naming.
+- [x] Ensure every log write passes through `Redactor`.
+- [x] Unit test level filtering.
+- [x] Unit test hourly rollover naming.
 - [ ] Unit test 48-hour retention.
-- [ ] Unit test redaction.
-- [ ] Unit test correlation ID propagation.
+- [x] Unit test redaction.
+- [x] Unit test correlation ID propagation.
