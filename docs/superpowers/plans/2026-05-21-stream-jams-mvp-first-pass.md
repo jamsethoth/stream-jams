@@ -986,6 +986,8 @@ export interface ProviderErrorLogRecord {
 
 **Category:** Observability and operations.
 
+**Status:** Complete. Implementation verified on branch `codex/slice-4-development`.
+
 **Value:** Makes logging a first-class system capability before runtime services start emitting events.
 
 **Files:**
@@ -998,21 +1000,33 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Define `Logger`, `LogContext`, `LogLevel`, `CorrelationId`, and `ProcessingId` types in `packages/core`.
-- [ ] Implement structured server logging with timestamp, level, message, module/service name, source identifier, correlation ID, processing ID, and sanitized metadata.
-- [ ] Set default log level to `INFO`.
-- [ ] Add configurable log level in app settings.
-- [ ] Implement hourly log rollover by default.
-- [ ] Implement configurable log retention with a default of deleting files older than 48 hours.
-- [ ] Ensure every log write passes through `Redactor`.
-- [ ] Unit test level filtering, hourly rollover naming, 48-hour retention, redaction, and correlation ID propagation.
-- [ ] Commit with message `feat: add structured logging`.
+- [x] Define `Logger`, `LogContext`, `LogLevel`, `CorrelationId`, and `ProcessingId` types in `packages/core`.
+- [x] Implement structured server logging with timestamp, level, message, module/service name, source identifier, correlation ID, processing ID, and sanitized metadata.
+- [x] Set default log level to `INFO`.
+- [x] Add configurable log level in app settings.
+- [x] Implement hourly log rollover by default.
+- [x] Implement configurable log retention with a default of deleting files older than 48 hours.
+- [x] Ensure every log write passes through `Redactor`.
+- [x] Unit test level filtering, hourly rollover naming, 48-hour retention, redaction, and correlation ID propagation.
+- [x] Commit Slice 4 work in validated sub-slice commits.
 
 **Acceptance Checks:**
 
 - Every service can receive a logger through dependency injection.
 - Log lines include enough source and correlation data to trace runtime behavior.
 - Logging configuration is user-configurable without exposing secrets.
+
+**Completion Evidence:**
+
+- Slice 4 detailed execution plan was added at `docs/superpowers/plans/2026-05-26-stream-jams-slice-4-structured-logging-foundation.md`.
+- `@stream-jams/core` exports logging contracts and schemas for `Logger`, `LogContext`, `LogLevel`, `LogSettings`, `LogSettingsUpdate`, `CorrelationId`, and `ProcessingId`.
+- App config now includes defaulted logging settings with `INFO` level, hourly rollover, and 48-hour retention, while older config files without `logging` are backfilled during validation.
+- `apps/server/src/modules/diagnostics/log-config-service.ts` reads and updates logging settings through `ConfigStore`.
+- `apps/server/src/modules/diagnostics/logger.ts` writes redacted structured JSONL records to UTC hourly log files through an injectable sink.
+- `apps/server/src/modules/diagnostics/log-retention-service.ts` deletes only Stream Jams log files older than the configured retention window and treats missing log directories as empty.
+- Focused Slice 4 tests passed for logging contracts, config schemas, file config behavior, log config service, structured logger, and retention service: 16 test files and 43 tests.
+- Full repository validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, and `pnpm build`. The local environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
+- No Slice 4 carry-forward gaps were identified.
 
 ### Slice 5: Local Server Shell And Configurable Port
 
