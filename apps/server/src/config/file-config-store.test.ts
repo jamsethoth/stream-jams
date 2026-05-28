@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { AppConfig, AppConfigUpdate } from "@stream-jams/core";
@@ -13,6 +13,11 @@ const defaultConfig: AppConfig = {
   storage: {
     dataDirectory: "/tmp/stream-jams/data",
     assetDirectory: "/tmp/stream-jams/assets"
+  },
+  logging: {
+    level: "INFO",
+    rollover: "hourly",
+    retentionHours: 48
   }
 };
 
@@ -56,10 +61,21 @@ describe("FileConfigStore", () => {
       storage: {
         dataDirectory: "/tmp/stream-jams/data",
         assetDirectory: "/tmp/stream-jams/imported-assets"
-      }
+      },
+      logging: defaultConfig.logging
     });
 
-    await expect(new FileConfigStore({ configFilePath, defaultConfig }).readConfig()).resolves.toEqual(updated);
+    await expect(new FileConfigStore({ configFilePath, defaultConfig }).readConfig()).resolves.toEqual({
+      server: {
+        host: "127.0.0.1",
+        port: 39188
+      },
+      storage: {
+        dataDirectory: "/tmp/stream-jams/data",
+        assetDirectory: "/tmp/stream-jams/imported-assets"
+      },
+      logging: defaultConfig.logging
+    });
   });
 
   it("rejects invalid persisted config before returning it", async () => {
@@ -79,6 +95,20 @@ describe("FileConfigStore", () => {
     await expect(store.readConfig()).rejects.toThrow("Invalid app config");
   });
 
+  it("backfills default logging settings for older persisted config files", async () => {
+    await mkdir(join(tempDirectory, "nested"), { recursive: true });
+    await writeFile(
+      configFilePath,
+      JSON.stringify({
+        server: defaultConfig.server,
+        storage: defaultConfig.storage
+      })
+    );
+    const store = new FileConfigStore({ configFilePath, defaultConfig });
+
+    await expect(store.readConfig()).resolves.toEqual(defaultConfig);
+  });
+
   it("does not write secret-shaped patch fields to config data", async () => {
     const store = new FileConfigStore({ configFilePath, defaultConfig });
     const patchWithSecrets = {
@@ -90,6 +120,11 @@ describe("FileConfigStore", () => {
         dataDirectory: "/tmp/stream-jams/new-data",
         oauthToken: "storage-oauth-token"
       },
+      logging: {
+        level: "DEBUG",
+        retentionHours: 72,
+        apiKey: "logging-secret"
+      },
       twitch: {
         accessToken: "twitch-access-token"
       }
@@ -99,8 +134,11 @@ describe("FileConfigStore", () => {
 
     const persisted = await readFile(configFilePath, "utf8");
     expect(persisted).toContain("\"port\": 39189");
+    expect(persisted).toContain("\"level\": \"DEBUG\"");
+    expect(persisted).toContain("\"retentionHours\": 72");
     expect(persisted).not.toContain("server-api-key");
     expect(persisted).not.toContain("storage-oauth-token");
+    expect(persisted).not.toContain("logging-secret");
     expect(persisted).not.toContain("twitch-access-token");
     expect(persisted).not.toContain("apiKey");
     expect(persisted).not.toContain("oauthToken");

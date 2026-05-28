@@ -51,6 +51,10 @@ export class FileConfigStore implements ConfigStore {
       storage: {
         ...current.storage,
         ...parsedPatch.storage
+      },
+      logging: {
+        ...current.logging,
+        ...parsedPatch.logging
       }
     });
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appConfigSchema, appConfigUpdateSchema } from "./schemas.js";
-import { appConfigSchema as exportedAppConfigSchema } from "../index.js";
+import { appConfigSchema as exportedAppConfigSchema, defaultLogSettings } from "../index.js";
 
 const validConfig = {
   server: {
@@ -10,6 +10,11 @@ const validConfig = {
   storage: {
     dataDirectory: "/tmp/stream-jams/data",
     assetDirectory: "/tmp/stream-jams/assets"
+  },
+  logging: {
+    level: "INFO",
+    rollover: "hourly",
+    retentionHours: 48
   }
 };
 
@@ -17,6 +22,18 @@ describe("appConfigSchema", () => {
   it("accepts local-only server and storage settings", () => {
     expect(appConfigSchema.parse(validConfig)).toEqual(validConfig);
     expect(exportedAppConfigSchema.parse(validConfig)).toEqual(validConfig);
+  });
+
+  it("backfills default logging settings when reading older config files", () => {
+    const legacyConfig = {
+      server: validConfig.server,
+      storage: validConfig.storage
+    };
+
+    expect(appConfigSchema.parse(legacyConfig)).toEqual({
+      ...legacyConfig,
+      logging: defaultLogSettings
+    });
   });
 
   it("rejects non-local hosts, invalid ports, and empty directories", () => {
@@ -44,6 +61,11 @@ describe("appConfigUpdateSchema", () => {
         assetDirectory: "/tmp/stream-jams/new-assets",
         oauthToken: "storage-secret"
       },
+      logging: {
+        level: "DEBUG",
+        retentionHours: 72,
+        apiKey: "logging-secret"
+      },
       twitch: {
         accessToken: "twitch-secret"
       }
@@ -55,6 +77,10 @@ describe("appConfigUpdateSchema", () => {
       },
       storage: {
         assetDirectory: "/tmp/stream-jams/new-assets"
+      },
+      logging: {
+        level: "DEBUG",
+        retentionHours: 72
       }
     });
   });

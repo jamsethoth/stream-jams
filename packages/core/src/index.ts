@@ -1,6 +1,23 @@
 export type { AppVersion } from "./version.js";
 export { createAppVersion } from "./version.js";
 
+export type {
+  CorrelationId,
+  Logger,
+  LogContext,
+  LogLevel,
+  LogSettings,
+  LogSettingsUpdate,
+  ProcessingId
+} from "./diagnostics/logging.js";
+export {
+  defaultLogSettings,
+  logContextSchema,
+  logLevelSchema,
+  logSettingsSchema,
+  logSettingsUpdateSchema
+} from "./diagnostics/logging.js";
+
 export type * from "./config/types.js";
 export type { ConfigStore } from "./config/config-store.js";
 export {
