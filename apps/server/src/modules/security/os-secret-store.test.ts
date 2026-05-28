@@ -8,6 +8,7 @@ const twitchTokenRef: SecretRef = {
   name: "oauth-token"
 };
 
+/** OS secret-store test adapter that records credential calls in memory. */
 class FakeCredentialAdapter implements OsCredentialAdapter {
   readonly values = new Map<string, string>();
 

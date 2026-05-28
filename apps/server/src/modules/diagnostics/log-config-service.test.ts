@@ -70,6 +70,7 @@ describe("LogConfigService", () => {
   });
 });
 
+/** Logging-config test store that records patches and emulates config merges. */
 class RecordingConfigStore implements ConfigStore {
   readCount = 0;
   readonly updates: AppConfigUpdate[] = [];

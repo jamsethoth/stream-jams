@@ -5,6 +5,7 @@ import {
   type LogSettingsUpdate
 } from "@stream-jams/core";
 
+/** Reads and updates logging settings through the shared non-secret config store. */
 export class LogConfigService {
   readonly #configStore: ConfigStore;
 

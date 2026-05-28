@@ -11,6 +11,7 @@ export interface OsSecretStoreOptions {
   readonly servicePrefix?: string;
 }
 
+/** Stores secrets in an injected OS credential adapter without exposing provider details. */
 export class OsSecretStore implements SecretStore {
   readonly #credentials: OsCredentialAdapter;
   readonly #servicePrefix: string;

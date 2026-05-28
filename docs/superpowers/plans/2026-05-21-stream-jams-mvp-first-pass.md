@@ -1032,6 +1032,8 @@ export interface ProviderErrorLogRecord {
 
 **Category:** Local hosting.
 
+**Status:** Complete. Implementation verified on branch `codex/slice-5-local-server-shell`.
+
 **Value:** Establishes the local app process and makes port collisions visible and recoverable.
 
 **Files:**
@@ -1045,21 +1047,35 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Build a Fastify app factory that accepts dependencies instead of constructing them internally.
-- [ ] Add `GET /health` returning app status and version.
-- [ ] Add read/update endpoints for non-secret server config.
-- [ ] Validate port updates before saving.
-- [ ] Bind to `127.0.0.1` by default.
-- [ ] Detect occupied ports at startup and return a structured startup error listing the configured port and suggested alternates.
-- [ ] Unit test config update behavior.
-- [ ] Integration test health route and port collision detection.
-- [ ] Commit with message `feat: add local server shell`.
+- [x] Build a Fastify app factory that accepts dependencies instead of constructing them internally.
+- [x] Add `GET /health` returning app status and version.
+- [x] Add read/update endpoints for non-secret server config.
+- [x] Validate port updates before saving.
+- [x] Bind to `127.0.0.1` by default.
+- [x] Detect occupied ports at startup and return a structured startup error listing the configured port and suggested alternates.
+- [x] Unit test config update behavior.
+- [x] Integration test health route and port collision detection.
+- [x] Commit with message `feat: add local server shell`.
 
 **Acceptance Checks:**
 
 - The server can run on a configured localhost port.
 - Port collision returns a clear actionable error.
 - HTTP route handlers remain thin and delegate to services.
+
+**Completion Evidence:**
+
+- Slice 5 detailed execution plan was added at `docs/superpowers/plans/2026-05-28-stream-jams-slice-5-local-server-shell.md`.
+- `apps/server/src/app.ts` now builds a Fastify app from injected metadata and optional server-config services, with health and config routes registered through route modules.
+- `apps/server/src/http/routes/health.ts` owns `GET /health`, returning app status and injected version metadata without requiring the process to bind a port.
+- `apps/server/src/config/server-config-service.ts` reads non-secret server config, validates server config patches through the core app-config schema, strips extra fields, checks changed ports before persistence, and rejects unavailable ports.
+- `apps/server/src/http/routes/config.ts` exposes `GET /config/server` and `PATCH /config/server` while returning structured `400` validation responses and `409` unavailable-port responses.
+- `apps/server/src/config/default-config.ts` centralizes the MVP default host `127.0.0.1`, default port `39187`, local data paths, and config-file override behavior.
+- `apps/server/src/server/port-availability.ts` provides injectable port availability checks and alternate-port suggestions.
+- `apps/server/src/server/start-server.ts` reads persisted config, starts the app on the configured localhost port, and returns a structured `PORT_IN_USE_AT_STARTUP` result with suggested alternates for startup port collisions.
+- Focused Slice 5 tests passed for health routing, default config, server config service behavior, config HTTP routes, port suggestions, and startup collision handling: 6 test files and 17 tests.
+- TypeScript validation passed with `pnpm typecheck`. The local environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
+- Gap analysis found no remaining in-scope Slice 5 behavior gaps. Future Slice 6 still owns management sessions and overlay route keys; future Slice 8 still owns SQLite-backed persistence.
 
 ### Slice 6: Management Session And Overlay Route Keys
 

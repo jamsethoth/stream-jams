@@ -4,8 +4,10 @@ import { createServerApp } from "./app.js";
 describe("createServerApp", () => {
   it("returns health without binding a production port", async () => {
     const app = createServerApp({
-      appName: "stream-jams",
-      version: "1.2.3"
+      metadata: {
+        appName: "stream-jams",
+        version: "1.2.3"
+      }
     });
 
     const response = await app.inject({
@@ -19,5 +21,6 @@ describe("createServerApp", () => {
       app: "stream-jams",
       version: "1.2.3"
     });
+    expect(response.headers["content-type"]).toContain("application/json");
   });
 });

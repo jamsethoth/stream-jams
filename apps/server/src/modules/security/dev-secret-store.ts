@@ -6,6 +6,7 @@ export interface DevSecretStoreOptions {
   readonly mode: DevSecretStoreMode;
 }
 
+/** Development-only in-memory secret store used before OS credential wiring is available. */
 export class DevSecretStore implements SecretStore {
   readonly #secrets = new Map<string, string>();
 
