@@ -274,11 +274,11 @@ Slice 5 required behavior:
 - [x] Run `pnpm test:e2e`.
 - [x] Run `pnpm build`.
 - [x] Review `git diff --check`, `git diff --stat`, and the full diff for unrelated changes.
-- [ ] Commit with message `feat: add local server shell`.
-- [ ] Push branch `codex/slice-5-local-server-shell`.
-- [ ] Create a draft PR into `main` with summary, implementation details, files changed, tests, validation, and reconciliation notes.
-- [ ] Start an independent review subagent in a new workspace to review the PR for security vulnerabilities and code clarity.
-- [ ] If the review subagent finds required changes, let it branch from the Slice 5 branch, implement, commit, push, and open a separate review PR with justification.
+- [x] Commit with message `feat: add local server shell`.
+- [x] Push branch `codex/slice-5-local-server-shell`.
+- [x] Create a draft PR into `main` with summary, implementation details, files changed, tests, validation, and reconciliation notes.
+- [x] Start an independent review subagent in a new workspace to review the PR for security vulnerabilities and code clarity.
+- [x] If the review subagent finds required changes, let it branch from the Slice 5 branch, implement, commit, push, and open a separate review PR with justification.
 
 **Positive test cases:**
 
