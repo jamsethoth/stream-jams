@@ -287,6 +287,7 @@ Slice 5 required behavior:
 **Negative test cases:**
 
 - A failing validation command blocks commit/PR until fixed or explicitly documented as unavailable.
+- Cross-platform filesystem gaps discovered during PR review must be covered by tests before the PR is updated.
 
 **Non-trivial assertions:**
 
@@ -305,3 +306,4 @@ Slice 5 required behavior:
 - Branch is pushed.
 - Draft PR exists.
 - Independent review workflow is attempted and the result is reported.
+- POSIX and Windows path semantics are covered for local config defaults, and repository text files have explicit UTF-8/LF guidance.

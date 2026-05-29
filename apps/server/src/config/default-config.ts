@@ -1,10 +1,24 @@
-import { join } from "node:path";
+import path from "node:path";
 import { defaultLogSettings, type AppConfig } from "@stream-jams/core";
 
 const appDataDirectoryName = ".stream-jams";
 
-export function createDefaultAppConfig(homeDirectory: string): AppConfig {
-  const dataRoot = join(homeDirectory, appDataDirectoryName);
+export interface PathOperations {
+  join(...paths: string[]): string;
+}
+
+export interface DefaultAppConfigOptions {
+  readonly path?: PathOperations;
+}
+
+export interface ConfigFilePathOptions {
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly path?: PathOperations;
+}
+
+export function createDefaultAppConfig(homeDirectory: string, options: DefaultAppConfigOptions = {}): AppConfig {
+  const pathOperations = options.path ?? path;
+  const dataRoot = pathOperations.join(homeDirectory, appDataDirectoryName);
 
   return {
     server: {
@@ -12,17 +26,20 @@ export function createDefaultAppConfig(homeDirectory: string): AppConfig {
       port: 39187
     },
     storage: {
-      dataDirectory: join(dataRoot, "data"),
-      assetDirectory: join(dataRoot, "assets")
+      dataDirectory: pathOperations.join(dataRoot, "data"),
+      assetDirectory: pathOperations.join(dataRoot, "assets")
     },
     logging: defaultLogSettings
   };
 }
 
-export function resolveConfigFilePath(homeDirectory: string, environment: NodeJS.ProcessEnv = process.env): string {
+export function resolveConfigFilePath(homeDirectory: string, options: ConfigFilePathOptions = {}): string {
+  const environment = options.environment ?? process.env;
+  const pathOperations = options.path ?? path;
+
   if (environment.STREAM_JAMS_CONFIG_PATH !== undefined && environment.STREAM_JAMS_CONFIG_PATH.trim() !== "") {
     return environment.STREAM_JAMS_CONFIG_PATH;
   }
 
-  return join(homeDirectory, appDataDirectoryName, "config.json");
+  return pathOperations.join(homeDirectory, appDataDirectoryName, "config.json");
 }
