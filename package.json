@@ -8,6 +8,13 @@
     "node": "24.16.0",
     "pnpm": "11.2.2"
   },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "24.16.0",
+      "onFail": "download"
+    }
+  },
   "scripts": {
     "dev": "pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
     "build": "pnpm -r build",

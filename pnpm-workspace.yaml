@@ -1,6 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+nodeVersion: 24.16.0
+engineStrict: true
+runtimeOnFail: download
 allowBuilds:
   esbuild: true
 onlyBuiltDependencies:

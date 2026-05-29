@@ -21,6 +21,7 @@ export interface ManagementSession {
   readonly id: string;
   readonly createdAt: string;
   readonly expiresAt: string;
+  readonly revokedAt: string | null;
 }
 
 export interface CreateOverlayKeyInput {

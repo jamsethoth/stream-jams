@@ -21,7 +21,8 @@ export const overlayAccessKeySchema = z.object({
 export const managementSessionSchema = z.object({
   id: nonEmptyStringSchema,
   createdAt: isoDateTimeSchema,
-  expiresAt: isoDateTimeSchema
+  expiresAt: isoDateTimeSchema,
+  revokedAt: isoDateTimeSchema.nullable()
 });
 
 export const createOverlayKeyInputSchema = z.object({
