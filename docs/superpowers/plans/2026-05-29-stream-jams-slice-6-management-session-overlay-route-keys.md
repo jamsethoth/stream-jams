@@ -347,11 +347,11 @@ Slice 6 required behavior:
 - [x] Run `pnpm test:e2e`.
 - [x] Run `pnpm build`.
 - [x] Review `git diff --check`, `git diff --stat`, and the full diff for unrelated changes.
-- [ ] Commit with message `feat: add local auth boundaries`.
-- [ ] Push branch `codex/slice-6-implementation`.
-- [ ] Create a draft PR into `main` with summary, implementation details, files changed, tests, validation, and reconciliation notes.
-- [ ] Start an independent review subagent in a new context to review the PR for security vulnerabilities and code smells.
-- [ ] If the review subagent finds required changes, implement them with tests, commit, push, and comment on the PR with the update details.
+- [x] Commit with message `feat: add local auth boundaries`.
+- [x] Push branch `codex/slice-6-implementation`.
+- [x] Create a draft PR into `main` with summary, implementation details, files changed, tests, validation, and reconciliation notes.
+- [x] Start an independent review subagent in a new context to review the PR for security vulnerabilities and code smells.
+- [x] If the review subagent finds required changes, implement them with tests, commit, push, and comment on the PR with the update details.
 
 **Positive test cases:**
 
@@ -381,6 +381,13 @@ Slice 6 required behavior:
 - Draft PR exists.
 - Independent review workflow is attempted and the result is reported.
 - Any required review fixes are committed and pushed.
+
+**Completion evidence:**
+
+- Initial implementation commit: `55f32cb feat: add local auth boundaries`.
+- Draft PR: `https://github.com/jamsethoth/stream-jams/pull/18`.
+- Review follow-up commit: `c6484c5 docs: restore CodeQL rate-limit suppression`.
+- Review follow-up PR comment: `https://github.com/jamsethoth/stream-jams/pull/18#issuecomment-4571942009`.
 
 ## Gap Analysis Result
 
