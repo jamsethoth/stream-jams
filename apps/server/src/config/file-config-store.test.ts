@@ -149,8 +149,8 @@ describe("FileConfigStore", () => {
     const unicodeConfig: AppConfig = {
       ...defaultConfig,
       storage: {
-        dataDirectory: "/tmp/stream-jams/Caf\u00e9/data",
-        assetDirectory: "/tmp/stream-jams/Caf\u00e9/assets"
+        dataDirectory: "/tmp/stream-jams/Café/data",
+        assetDirectory: "/tmp/stream-jams/Café/assets"
       }
     };
     const store = new FileConfigStore({ configFilePath, defaultConfig: unicodeConfig });
@@ -159,7 +159,7 @@ describe("FileConfigStore", () => {
 
     const rawBytes = await readFile(configFilePath);
     const persisted = rawBytes.toString("utf8");
-    expect(persisted).toContain("Caf\u00e9");
+    expect(persisted).toContain("Café");
     expect(rawBytes).toEqual(Buffer.from(persisted, "utf8"));
     expect(persisted.endsWith("\n")).toBe(true);
     expect(persisted.endsWith("\r\n")).toBe(false);
