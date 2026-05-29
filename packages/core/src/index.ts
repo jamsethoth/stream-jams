@@ -27,6 +27,8 @@ export {
   appStorageConfigSchema
 } from "./config/schemas.js";
 
+export type * from "./auth/management-session-service.js";
+
 export type * from "./alerts/types.js";
 export {
   alertActivationStateSchema,
@@ -64,6 +66,7 @@ export {
 } from "./overlay-modules/schemas.js";
 
 export type * from "./overlays/types.js";
+export type * from "./overlays/overlay-access-service.js";
 export {
   moduleOutputRequestSchema,
   overlayAudioInstructionSchema,

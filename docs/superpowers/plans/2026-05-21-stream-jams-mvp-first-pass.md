@@ -1083,6 +1083,8 @@ export interface ProviderErrorLogRecord {
 
 **Category:** Local authorization.
 
+**Status:** Complete after first-pass implementation and gap closure on branch `codex/slice-6-implementation`; pending final PR review workflow.
+
 **Value:** Creates separate security boundaries for management/configuration operations and overlay output.
 
 **Files:**
@@ -1094,21 +1096,22 @@ export interface ProviderErrorLogRecord {
 - Create `apps/server/src/http/middleware/management-auth.ts`
 - Create `apps/server/src/http/middleware/overlay-auth.ts`
 - Create or explicitly reject a shared local management rate-limit middleware for filesystem-backed and mutation-capable management routes.
+- Create a rate-limited no-password MVP management session issuance route so protected management routes have a coherent local session source.
 - Create auth and overlay access tests.
 
 **Steps:**
 
-- [ ] Implement management sessions with opaque random session IDs and expiry.
-- [ ] Implement overlay route keys with opaque random raw keys and stored hashes.
-- [ ] Add separate live and test overlay key generation.
-- [ ] Scope overlay keys to either one module-specific output or one unified output.
-- [ ] Add overlay key verification by route segment, not query string.
-- [ ] Add key revocation.
-- [ ] Revisit the Slice 5 GitHub Advanced Security `js/missing-rate-limiting` warning for `GET /config/server`, and either add a shared local rate-limit/throttling control to management routes or document why the bounded local non-secret config read remains an accepted low-risk exception.
-- [ ] Unit test that a test key cannot authorize live overlay access.
-- [ ] Unit test that revoked keys fail verification.
-- [ ] Unit test that stored overlay keys are hashes, not raw keys.
-- [ ] If rate limiting is added, unit test that repeated unauthenticated or unauthorized requests to management routes are rejected before repeated filesystem-backed work.
+- [x] Implement management sessions with opaque random session IDs and expiry.
+- [x] Implement overlay route keys with opaque random raw keys and stored hashes.
+- [x] Add separate live and test overlay key generation.
+- [x] Scope overlay keys to either one module-specific output or one unified output.
+- [x] Add overlay key verification by route segment, not query string.
+- [x] Add key revocation.
+- [x] Revisit the Slice 5 GitHub Advanced Security `js/missing-rate-limiting` warning for `GET /config/server`, and either add a shared local rate-limit/throttling control to management routes or document why the bounded local non-secret config read remains an accepted low-risk exception.
+- [x] Unit test that a test key cannot authorize live overlay access.
+- [x] Unit test that revoked keys fail verification.
+- [x] Unit test that stored overlay keys are hashes, not raw keys.
+- [x] If rate limiting is added, unit test that repeated unauthenticated or unauthorized requests to management routes are rejected before repeated filesystem-backed work.
 - [ ] Commit with message `feat: add local auth boundaries`.
 
 **Acceptance Checks:**
@@ -1118,6 +1121,22 @@ export interface ProviderErrorLogRecord {
 - Module-specific overlay keys cannot authorize unified overlay output, and unified overlay keys cannot authorize module-specific output.
 - Overlay keys are redacted from logs.
 - Management/config routes have an explicit request-throttling decision before they become broader user-facing APIs: either shared local rate limiting with tests, or a documented exception for bounded localhost-only non-secret reads.
+
+**Completion Evidence And Gap Analysis:**
+
+- Slice 6 detailed execution plan was added at `docs/superpowers/plans/2026-05-29-stream-jams-slice-6-management-session-overlay-route-keys.md`.
+- Core authorization contracts were added in `packages/core/src/auth/management-session-service.ts` and `packages/core/src/overlays/overlay-access-service.ts`, with explicit authorized/denied result unions.
+- `apps/server/src/modules/auth/management-session-service.ts` implements `mgmt_` management sessions with injectable clocks/id generation, expiry, revocation, and an in-memory MVP repository.
+- `apps/server/src/http/routes/management-session.ts` issues no-password MVP management sessions through the shared local rate limiter.
+- `apps/server/src/modules/overlays/overlay-access-service.ts` generates `ovl_` raw route keys, stores only `sha256:` hashes, verifies live/test and module/unified scope boundaries, and revokes keys.
+- `apps/server/src/http/middleware/management-auth.ts` protects management routes with bearer sessions, and `apps/server/src/http/middleware/overlay-auth.ts` verifies overlay route keys from path segments through injected route-shape resolvers.
+- `apps/server/src/http/middleware/local-management-rate-limit.ts` resolves the Slice 5 missing-rate-limiting warning by applying a fixed-window local throttle before management route handlers can perform filesystem-backed reads or writes.
+- `apps/server/src/http/routes/config.ts` now runs local throttling and management auth before `GET /config/server` and `PATCH /config/server`.
+- Tests cover test-key rejection for live overlay output, revoked key rejection, hash-only overlay key storage, module/unified scope isolation in both directions, query-string overlay key rejection, overlay keys failing config mutation, generated-style overlay key redaction, and repeated unauthenticated or over-limit management requests not reaching the config store.
+- First-pass gap analysis found one runtime coherence gap: protected management routes needed an HTTP session issuance source. The gap was closed with `POST /auth/management/sessions` and route tests.
+- Focused validation after gap closure passed: `pnpm test -- apps/server/src/http/routes/management-session.test.ts apps/server/src/http/routes/config.test.ts apps/server/src/app.test.ts` reported 27 test files and 83 tests passing; `pnpm test -- apps/server/src/http/routes/config.test.ts apps/server/src/http/middleware/overlay-auth.test.ts` reported 26 test files and 81 tests passing.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (27 test files and 83 tests), `pnpm test:e2e` (existing Playwright placeholder), `pnpm build`, and `git diff --check`. The local environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
+- Gap analysis found no remaining in-scope Slice 6 behavior gaps before final validation.
 
 ### Slice 7: Overlay Module Registry And Composition Model
 

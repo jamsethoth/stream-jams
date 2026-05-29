@@ -6,6 +6,8 @@ export interface HttpErrorBody {
     readonly message: string;
     readonly host?: "127.0.0.1";
     readonly port?: number;
+    readonly reason?: string;
+    readonly retryAfterSeconds?: number;
   };
 }
 

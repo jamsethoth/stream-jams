@@ -3,6 +3,12 @@ import { createServerApp } from "./app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "./config/default-config.js";
 import { FileConfigStore } from "./config/file-config-store.js";
 import { ServerConfigService } from "./config/server-config-service.js";
+import {
+  createLocalManagementRateLimitPreHandler,
+  LocalManagementRateLimiter
+} from "./http/middleware/local-management-rate-limit.js";
+import { createManagementAuthPreHandler } from "./http/middleware/management-auth.js";
+import { LocalManagementSessionService } from "./modules/auth/management-session-service.js";
 import { findSuggestedPorts, NodePortAvailabilityChecker } from "./server/port-availability.js";
 import { startServer } from "./server/start-server.js";
 
@@ -16,6 +22,11 @@ const serverConfigService = new ServerConfigService({
   configStore,
   portAvailability
 });
+const managementSessionService = new LocalManagementSessionService();
+const managementRateLimiter = new LocalManagementRateLimiter({
+  maxRequests: 120,
+  windowMs: 60_000
+});
 
 try {
   const result = await startServer({
@@ -26,7 +37,10 @@ try {
           appName: "stream-jams",
           version: "0.0.0"
         },
-        serverConfigService
+        managementSessionService,
+        serverConfigService,
+        managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+        managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
       }),
     suggestPorts: (host, port) =>
       findSuggestedPorts({

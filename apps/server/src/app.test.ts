@@ -23,4 +23,29 @@ describe("createServerApp", () => {
     });
     expect(response.headers["content-type"]).toContain("application/json");
   });
+
+  it("does not register config routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        serverConfigService: {
+          async getServerConfig() {
+            return {
+              host: "127.0.0.1",
+              port: 39187
+            };
+          },
+          async updateServerConfig() {
+            return {
+              host: "127.0.0.1",
+              port: 39187
+            };
+          }
+        }
+      })
+    ).toThrow("Config routes require management auth and rate-limit hooks");
+  });
 });

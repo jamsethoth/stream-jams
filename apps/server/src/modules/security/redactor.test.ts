@@ -53,4 +53,16 @@ describe("createRedactor", () => {
       )
     ).toBe("Authorization: Bearer [REDACTED]; overlay=http://127.0.0.1:39187/overlay/unified/test/[REDACTED]");
   });
+
+  it("redacts generated-style overlay route keys from module and unified URLs", () => {
+    const redactor = createRedactor();
+
+    expect(
+      redactor.redactText(
+        "module=http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_abcDEF123_- unified=http://127.0.0.1:39187/overlay/unified/test/ovl_XYZ789_-"
+      )
+    ).toBe(
+      "module=http://127.0.0.1:39187/overlay/modules/alerts/live/[REDACTED] unified=http://127.0.0.1:39187/overlay/unified/test/[REDACTED]"
+    );
+  });
 });
