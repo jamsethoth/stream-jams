@@ -15,6 +15,10 @@ export interface ServerConfigRouteDependencies {
 export function registerConfigRoutes(app: FastifyInstance, dependencies: ServerConfigRouteDependencies): void {
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
 
+  // CodeQL does not model this custom Fastify preHandler as a rate limiter. The first
+  // hook is required by ServerConfigRouteDependencies and tested to reject repeated
+  // requests before filesystem-backed config reads; see docs/security/codeql-suppressions.md.
+  // codeql[js/missing-rate-limiting]
   app.get("/config/server", { preHandler }, async () => dependencies.serverConfigService.getServerConfig());
 
   app.patch(

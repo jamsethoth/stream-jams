@@ -401,6 +401,21 @@ Full validation:
 - `pnpm build` passed.
 - `git diff --check` passed.
 
+## Independent Review Follow-Up
+
+The independent review workflow investigated GitHub Advanced Security's separate `CodeQL` check reporting `js/missing-rate-limiting` on `apps/server/src/http/routes/config.ts`.
+
+The finding was reviewed as a static-analysis false positive against the implemented mitigation: `registerConfigRoutes` applies `managementRateLimitPreHandler` before both filesystem-backed config handlers, and tests prove over-limit and unauthenticated requests do not reach the config store. A narrow CodeQL suppression comment was added immediately above the flagged route, and `docs/security/codeql-suppressions.md` records the tested custom Fastify pre-handler mitigation.
+
+Review-fix validation:
+
+- `pnpm test -- apps/server/src/http/routes/config.test.ts` passed: 27 test files, 83 tests.
+- `pnpm lint` passed.
+- `pnpm typecheck` passed.
+- `pnpm test` passed: 27 test files, 83 tests.
+- `pnpm test:e2e` passed with the existing placeholder message: `Playwright e2e tests are introduced in a later slice.`
+- `pnpm build` passed.
+
 ## Gap Analysis Checklist
 
 - [x] Management credentials and overlay route keys are separate.
