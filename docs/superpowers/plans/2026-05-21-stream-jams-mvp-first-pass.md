@@ -1076,6 +1076,7 @@ export interface ProviderErrorLogRecord {
 - Focused Slice 5 tests passed for health routing, default config, server config service behavior, config HTTP routes, port suggestions, and startup collision handling: 6 test files and 17 tests.
 - TypeScript validation passed with `pnpm typecheck`. The local environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
 - Gap analysis found no remaining in-scope Slice 5 behavior gaps. Future Slice 6 still owns management sessions and overlay route keys; future Slice 8 still owns SQLite-backed persistence.
+- Independent review of the GitHub Advanced Security `js/missing-rate-limiting` comment on `GET /config/server` found a technically accurate but low-impact local filesystem-access warning. Slice 6 should decide whether management routes use shared local rate limiting, another request-throttling control, or an explicit documented suppression for bounded non-secret config reads.
 
 ### Slice 6: Management Session And Overlay Route Keys
 
@@ -1091,6 +1092,7 @@ export interface ProviderErrorLogRecord {
 - Create `apps/server/src/modules/overlays/overlay-access-service.ts`
 - Create `apps/server/src/http/middleware/management-auth.ts`
 - Create `apps/server/src/http/middleware/overlay-auth.ts`
+- Create or explicitly reject a shared local management rate-limit middleware for filesystem-backed and mutation-capable management routes.
 - Create auth and overlay access tests.
 
 **Steps:**
@@ -1101,9 +1103,11 @@ export interface ProviderErrorLogRecord {
 - [ ] Scope overlay keys to either one module-specific output or one unified output.
 - [ ] Add overlay key verification by route segment, not query string.
 - [ ] Add key revocation.
+- [ ] Revisit the Slice 5 GitHub Advanced Security `js/missing-rate-limiting` warning for `GET /config/server`, and either add a shared local rate-limit/throttling control to management routes or document why the bounded local non-secret config read remains an accepted low-risk exception.
 - [ ] Unit test that a test key cannot authorize live overlay access.
 - [ ] Unit test that revoked keys fail verification.
 - [ ] Unit test that stored overlay keys are hashes, not raw keys.
+- [ ] If rate limiting is added, unit test that repeated unauthenticated or unauthorized requests to management routes are rejected before repeated filesystem-backed work.
 - [ ] Commit with message `feat: add local auth boundaries`.
 
 **Acceptance Checks:**
@@ -1112,6 +1116,7 @@ export interface ProviderErrorLogRecord {
 - Overlay route keys cannot mutate app config.
 - Module-specific overlay keys cannot authorize unified overlay output, and unified overlay keys cannot authorize module-specific output.
 - Overlay keys are redacted from logs.
+- Management/config routes have an explicit request-throttling decision before they become broader user-facing APIs: either shared local rate limiting with tests, or a documented exception for bounded localhost-only non-secret reads.
 
 ### Slice 7: Overlay Module Registry And Composition Model
 
