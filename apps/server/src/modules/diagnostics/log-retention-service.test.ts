@@ -65,6 +65,7 @@ describe("LogRetentionService", () => {
   });
 });
 
+/** Retention test filesystem that records deletes against an in-memory file listing. */
 class RecordingRetentionFileSystem implements LogRetentionFileSystem {
   readonly deletedFilePaths: string[] = [];
 
@@ -79,6 +80,7 @@ class RecordingRetentionFileSystem implements LogRetentionFileSystem {
   }
 }
 
+/** Retention test filesystem that simulates a missing log directory. */
 class MissingDirectoryRetentionFileSystem implements LogRetentionFileSystem {
   async listFiles(): Promise<readonly LogFileEntry[]> {
     throw Object.assign(new Error("missing directory"), { code: "ENOENT" });

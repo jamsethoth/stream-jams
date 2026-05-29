@@ -13,6 +13,7 @@ export interface FileConfigStoreOptions {
   readonly defaultConfig: AppConfig;
 }
 
+/** Persists non-secret app configuration as validated JSON on the local filesystem. */
 export class FileConfigStore implements ConfigStore {
   readonly #configFilePath: string;
   readonly #defaultConfig: AppConfig;

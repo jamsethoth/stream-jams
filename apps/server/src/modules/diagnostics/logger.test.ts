@@ -119,6 +119,7 @@ describe("structured logger", () => {
   });
 });
 
+/** Logger test sink that captures structured log lines without touching the filesystem. */
 class RecordingSink implements StructuredLogSink {
   readonly records: Array<{ readonly filePath: string; readonly line: string }> = [];
 

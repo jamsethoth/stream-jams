@@ -144,4 +144,24 @@ describe("FileConfigStore", () => {
     expect(persisted).not.toContain("oauthToken");
     expect(persisted).not.toContain("accessToken");
   });
+
+  it("writes UTF-8 JSON with a stable line-feed terminator", async () => {
+    const unicodeConfig: AppConfig = {
+      ...defaultConfig,
+      storage: {
+        dataDirectory: "/tmp/stream-jams/Café/data",
+        assetDirectory: "/tmp/stream-jams/Café/assets"
+      }
+    };
+    const store = new FileConfigStore({ configFilePath, defaultConfig: unicodeConfig });
+
+    await store.readConfig();
+
+    const rawBytes = await readFile(configFilePath);
+    const persisted = rawBytes.toString("utf8");
+    expect(persisted).toContain("Café");
+    expect(rawBytes).toEqual(Buffer.from(persisted, "utf8"));
+    expect(persisted.endsWith("\n")).toBe(true);
+    expect(persisted.endsWith("\r\n")).toBe(false);
+  });
 });

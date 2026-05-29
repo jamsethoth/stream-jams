@@ -1032,6 +1032,8 @@ export interface ProviderErrorLogRecord {
 
 **Category:** Local hosting.
 
+**Status:** Complete. Implementation verified on branch `codex/slice-5-local-server-shell`.
+
 **Value:** Establishes the local app process and makes port collisions visible and recoverable.
 
 **Files:**
@@ -1045,21 +1047,37 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Build a Fastify app factory that accepts dependencies instead of constructing them internally.
-- [ ] Add `GET /health` returning app status and version.
-- [ ] Add read/update endpoints for non-secret server config.
-- [ ] Validate port updates before saving.
-- [ ] Bind to `127.0.0.1` by default.
-- [ ] Detect occupied ports at startup and return a structured startup error listing the configured port and suggested alternates.
-- [ ] Unit test config update behavior.
-- [ ] Integration test health route and port collision detection.
-- [ ] Commit with message `feat: add local server shell`.
+- [x] Build a Fastify app factory that accepts dependencies instead of constructing them internally.
+- [x] Add `GET /health` returning app status and version.
+- [x] Add read/update endpoints for non-secret server config.
+- [x] Validate port updates before saving.
+- [x] Bind to `127.0.0.1` by default.
+- [x] Detect occupied ports at startup and return a structured startup error listing the configured port and suggested alternates.
+- [x] Unit test config update behavior.
+- [x] Integration test health route and port collision detection.
+- [x] Commit with message `feat: add local server shell`.
 
 **Acceptance Checks:**
 
 - The server can run on a configured localhost port.
 - Port collision returns a clear actionable error.
 - HTTP route handlers remain thin and delegate to services.
+
+**Completion Evidence:**
+
+- Slice 5 detailed execution plan was added at `docs/superpowers/plans/2026-05-28-stream-jams-slice-5-local-server-shell.md`.
+- `apps/server/src/app.ts` now builds a Fastify app from injected metadata and optional server-config services, with health and config routes registered through route modules.
+- `apps/server/src/http/routes/health.ts` owns `GET /health`, returning app status and injected version metadata without requiring the process to bind a port.
+- `apps/server/src/config/server-config-service.ts` reads non-secret server config, validates server config patches through the core app-config schema, strips extra fields, checks changed ports before persistence, and rejects unavailable ports.
+- `apps/server/src/http/routes/config.ts` exposes `GET /config/server` and `PATCH /config/server` while returning structured `400` validation responses and `409` unavailable-port responses.
+- `apps/server/src/config/default-config.ts` centralizes the MVP default host `127.0.0.1`, default port `39187`, local data paths, and config-file override behavior.
+- Default config path construction is covered for POSIX and Windows path semantics, and repository text checkout/writeback is normalized through `.gitattributes` and `.editorconfig`.
+- `apps/server/src/server/port-availability.ts` provides injectable port availability checks and alternate-port suggestions.
+- `apps/server/src/server/start-server.ts` reads persisted config, starts the app on the configured localhost port, and returns a structured `PORT_IN_USE_AT_STARTUP` result with suggested alternates for startup port collisions.
+- Focused Slice 5 tests passed for health routing, default config, server config service behavior, config HTTP routes, port suggestions, startup collision handling, cross-platform config paths, and UTF-8 config persistence: 6 test files and 19 tests.
+- TypeScript validation passed with `pnpm typecheck`. The local environment emitted the expected Node engine warning because it is running Node v26.2.0 while the repo pins Node 24.16.0.
+- Gap analysis found no remaining in-scope Slice 5 behavior gaps. Future Slice 6 still owns management sessions and overlay route keys; future Slice 8 still owns SQLite-backed persistence.
+- Independent review of the GitHub Advanced Security `js/missing-rate-limiting` comment on `GET /config/server` found a technically accurate but low-impact local filesystem-access warning. Slice 6 should decide whether management routes use shared local rate limiting, another request-throttling control, or an explicit documented suppression for bounded non-secret config reads.
 
 ### Slice 6: Management Session And Overlay Route Keys
 
@@ -1075,6 +1093,7 @@ export interface ProviderErrorLogRecord {
 - Create `apps/server/src/modules/overlays/overlay-access-service.ts`
 - Create `apps/server/src/http/middleware/management-auth.ts`
 - Create `apps/server/src/http/middleware/overlay-auth.ts`
+- Create or explicitly reject a shared local management rate-limit middleware for filesystem-backed and mutation-capable management routes.
 - Create auth and overlay access tests.
 
 **Steps:**
@@ -1085,9 +1104,11 @@ export interface ProviderErrorLogRecord {
 - [ ] Scope overlay keys to either one module-specific output or one unified output.
 - [ ] Add overlay key verification by route segment, not query string.
 - [ ] Add key revocation.
+- [ ] Revisit the Slice 5 GitHub Advanced Security `js/missing-rate-limiting` warning for `GET /config/server`, and either add a shared local rate-limit/throttling control to management routes or document why the bounded local non-secret config read remains an accepted low-risk exception.
 - [ ] Unit test that a test key cannot authorize live overlay access.
 - [ ] Unit test that revoked keys fail verification.
 - [ ] Unit test that stored overlay keys are hashes, not raw keys.
+- [ ] If rate limiting is added, unit test that repeated unauthenticated or unauthorized requests to management routes are rejected before repeated filesystem-backed work.
 - [ ] Commit with message `feat: add local auth boundaries`.
 
 **Acceptance Checks:**
@@ -1096,6 +1117,7 @@ export interface ProviderErrorLogRecord {
 - Overlay route keys cannot mutate app config.
 - Module-specific overlay keys cannot authorize unified overlay output, and unified overlay keys cannot authorize module-specific output.
 - Overlay keys are redacted from logs.
+- Management/config routes have an explicit request-throttling decision before they become broader user-facing APIs: either shared local rate limiting with tests, or a documented exception for bounded localhost-only non-secret reads.
 
 ### Slice 7: Overlay Module Registry And Composition Model
 

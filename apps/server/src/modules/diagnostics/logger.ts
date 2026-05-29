@@ -87,6 +87,7 @@ export function resolveHourlyLogFilePath(logDirectory: string, timestamp: Date):
   return join(logDirectory, `stream-jams-${year}-${month}-${day}-${hour}.log`);
 }
 
+/** Appends structured log lines to hourly files, creating log directories on demand. */
 class FileStructuredLogSink implements StructuredLogSink {
   async appendLine(filePath: string, line: string): Promise<void> {
     await mkdir(dirname(filePath), { recursive: true });

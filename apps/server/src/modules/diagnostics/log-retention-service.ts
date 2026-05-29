@@ -28,6 +28,7 @@ export interface LogRetentionResult {
   readonly retainedFilePaths: readonly string[];
 }
 
+/** Deletes expired Stream Jams log files while leaving unrelated files untouched. */
 export class LogRetentionService {
   readonly #fileSystem: LogRetentionFileSystem;
 
@@ -76,6 +77,7 @@ export class LogRetentionService {
   }
 }
 
+/** Adapts Node filesystem calls to the log-retention service boundary. */
 class NodeLogRetentionFileSystem implements LogRetentionFileSystem {
   async listFiles(logDirectory: string): Promise<readonly LogFileEntry[]> {
     const entries = await readdir(logDirectory, { withFileTypes: true });
