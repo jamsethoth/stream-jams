@@ -1,6 +1,6 @@
 import { overlayModuleConfigSchema } from "./schemas.js";
 import type { OverlayModuleRegistry } from "./module-registry.js";
-import type { OverlayModuleConfig } from "./types.js";
+import type { OverlayModuleConfig, OverlayModuleDefinition } from "./types.js";
 
 export interface SaveOverlayModuleConfigInput {
   readonly moduleId: string;
@@ -63,15 +63,15 @@ export class DefaultOverlayModuleConfigService implements OverlayModuleConfigSer
       };
     }
 
-    return this.#parseConfig(savedConfig);
+    return this.#parseConfig(moduleDefinition, savedConfig);
   }
 
   async saveModuleConfig(input: SaveOverlayModuleConfigInput): Promise<OverlayModuleConfig> {
-    this.#getModuleDefinition(input.moduleId);
-    const config = this.#parseConfig({
+    const moduleDefinition = this.#getModuleDefinition(input.moduleId);
+    const config = this.#parseConfig(moduleDefinition, {
       moduleId: input.moduleId,
       enabled: input.enabled,
-      config: cloneConfig(input.config),
+      config: validateModuleConfig(moduleDefinition, input.config),
       updatedAt: this.#clock().toISOString()
     });
 
@@ -81,7 +81,7 @@ export class DefaultOverlayModuleConfigService implements OverlayModuleConfigSer
 
   async setModuleEnabled(moduleId: string, enabled: boolean): Promise<OverlayModuleConfig> {
     const currentConfig = await this.getModuleConfig(moduleId);
-    const nextConfig = this.#parseConfig({
+    const nextConfig = this.#parseConfig(this.#getModuleDefinition(moduleId), {
       ...currentConfig,
       enabled,
       updatedAt: this.#clock().toISOString()
@@ -100,12 +100,13 @@ export class DefaultOverlayModuleConfigService implements OverlayModuleConfigSer
     return moduleDefinition;
   }
 
-  #parseConfig(config: OverlayModuleConfig): OverlayModuleConfig {
+  #parseConfig(moduleDefinition: OverlayModuleDefinition, config: OverlayModuleConfig): OverlayModuleConfig {
     const result = overlayModuleConfigSchema.safeParse(config);
     if (!result.success) {
       throw new InvalidOverlayModuleConfigError(config.moduleId);
     }
 
+    validateModuleConfig(moduleDefinition, result.data.config);
     return result.data;
   }
 }
@@ -130,4 +131,17 @@ export class InMemoryOverlayModuleConfigRepository implements OverlayModuleConfi
 
 function cloneConfig<TConfig>(config: TConfig): TConfig {
   return structuredClone(config);
+}
+
+function validateModuleConfig(moduleDefinition: OverlayModuleDefinition, config: unknown): unknown {
+  if (moduleDefinition.configSchema === undefined) {
+    return cloneConfig(config);
+  }
+
+  const result = moduleDefinition.configSchema.safeParse(config);
+  if (!result.success) {
+    throw new InvalidOverlayModuleConfigError(moduleDefinition.id);
+  }
+
+  return cloneConfig(result.data);
 }

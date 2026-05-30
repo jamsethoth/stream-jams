@@ -57,7 +57,7 @@ export {
 
 export type * from "./overlay-modules/types.js";
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
-export { alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
+export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
 export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry } from "./overlay-modules/module-registry.js";
 export type { OverlayModuleConfigRepository, OverlayModuleConfigService, SaveOverlayModuleConfigInput } from "./overlay-modules/module-config-service.js";

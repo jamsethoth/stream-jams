@@ -84,13 +84,28 @@ export class DefaultOverlayCompositionService implements OverlayCompositionServi
     }
 
     const snapshot = await this.#runtime.getModuleSnapshot(request);
-    if (snapshot.moduleId !== request.moduleId) {
-      throw new InvalidOverlayModuleSnapshotError(request.moduleId, snapshot.moduleId);
-    }
+    validateSnapshotForRequest(snapshot, request);
 
     return {
       ...snapshot,
       enabled: moduleConfig.enabled
     };
+  }
+}
+
+function validateSnapshotForRequest(snapshot: OverlayModuleSnapshot, request: OverlayModuleSnapshotRequest): void {
+  if (snapshot.moduleId !== request.moduleId) {
+    throw new InvalidOverlayModuleSnapshotError(request.moduleId, snapshot.moduleId);
+  }
+
+  for (const instruction of snapshot.instructions) {
+    if (
+      instruction.moduleId !== request.moduleId ||
+      instruction.overlayId !== request.overlayId ||
+      instruction.purpose !== request.purpose ||
+      instruction.scope !== request.scope
+    ) {
+      throw new InvalidOverlayModuleSnapshotError(request.moduleId, instruction.moduleId);
+    }
   }
 }

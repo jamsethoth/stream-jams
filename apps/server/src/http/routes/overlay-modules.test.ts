@@ -31,6 +31,7 @@ describe("overlay module routes", () => {
         }
       })
     ]);
+    expect(response.json()[0]).not.toHaveProperty("configSchema");
   });
 
   it("returns default module config before any config has been saved", async () => {
@@ -83,6 +84,35 @@ describe("overlay module routes", () => {
           width: 1280,
           height: 720
         }
+      }
+    });
+  });
+
+
+  it("returns 400 for invalid Alerts canvas config", async () => {
+    const { app, authHeaders } = await createAppWithOverlayModules();
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/overlay-modules/alerts/config",
+      headers: authHeaders,
+      payload: {
+        enabled: true,
+        config: {
+          canvas: {
+            width: "wide",
+            height: -720
+          }
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INVALID_OVERLAY_MODULE_CONFIG",
+        message: "Invalid overlay module config for \"alerts\"",
+        moduleId: "alerts"
       }
     });
   });

@@ -303,6 +303,6 @@ Non-goals:
 
 ## Validation Evidence
 
-- Focused Slice 7 tests passed: pnpm test -- packages/core/src/overlay-modules/module-registry.test.ts packages/core/src/overlay-modules/schemas.test.ts packages/core/src/overlay-modules/module-config-service.test.ts packages/core/src/overlay-modules/overlay-composition-service.test.ts apps/server/src/http/routes/overlay-modules.test.ts apps/server/src/app.test.ts. Result: 32 test files and 109 tests passed.
+- Focused Slice 7 tests passed: pnpm test -- packages/core/src/overlay-modules/module-registry.test.ts packages/core/src/overlay-modules/schemas.test.ts packages/core/src/overlay-modules/module-config-service.test.ts packages/core/src/overlay-modules/overlay-composition-service.test.ts apps/server/src/http/routes/overlay-modules.test.ts apps/server/src/app.test.ts. Result: 32 test files and 113 tests passed.
 - Full validation passed: pnpm lint, pnpm typecheck, pnpm test, pnpm test:e2e, pnpm build, and git diff --check.
-- Self-review found no remaining in-scope Slice 7 behavior gaps and no forbidden core dependency leaks into Fastify, SQLite, React, Twitch, TTS providers, or alert matching internals.
+- Self-review and independent review found no remaining in-scope Slice 7 behavior gaps after fixing instruction metadata validation and Alerts config schema validation. Core overlay-module code has no forbidden dependency leaks into Fastify, SQLite, React, Twitch, TTS providers, or alert matching internals.

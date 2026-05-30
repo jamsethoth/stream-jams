@@ -169,6 +169,35 @@ describe("overlay composition service", () => {
     ).rejects.toBeInstanceOf(UnknownOverlayModuleError);
   });
 
+
+  it("rejects runtime instructions that do not match the requested output", async () => {
+    const runtime: OverlayModuleRuntime = {
+      async getModuleSnapshot(request) {
+        return {
+          moduleId: request.moduleId,
+          enabled: true,
+          instructions: [
+            createInstruction({
+              overlayId: request.overlayId,
+              moduleId: request.moduleId,
+              purpose: "test",
+              scope: request.scope
+            })
+          ]
+        };
+      }
+    };
+    const { compositionService } = createCompositionService(runtime);
+
+    await expect(
+      compositionService.resolveModuleOutput({
+        moduleId: "alerts",
+        overlayId: "overlay-main",
+        purpose: "live"
+      })
+    ).rejects.toBeInstanceOf(InvalidOverlayModuleSnapshotError);
+  });
+
   it("rejects runtime snapshots for a different module", async () => {
     const runtime = new RecordingRuntime("music");
     const { compositionService } = createCompositionService(runtime);

@@ -30,6 +30,7 @@ export const overlayModuleDefinitionSchema = z.object({
   defaultEnabled: z.boolean(),
   configSchemaVersion: nonNegativeIntegerSchema,
   defaultConfig: z.unknown(),
+  configSchema: z.unknown().optional(),
   wizard: overlayModuleWizardDefinitionSchema,
   renderer: overlayModuleRendererDefinitionSchema
 });

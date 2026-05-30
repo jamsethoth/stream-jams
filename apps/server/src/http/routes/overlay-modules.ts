@@ -20,7 +20,9 @@ export interface OverlayModuleRouteDependencies {
 export function registerOverlayModuleRoutes(app: FastifyInstance, dependencies: OverlayModuleRouteDependencies): void {
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
 
-  app.get("/overlay-modules", { preHandler }, async () => dependencies.overlayModuleRegistry.listModules());
+  app.get("/overlay-modules", { preHandler }, async () =>
+    dependencies.overlayModuleRegistry.listModules().map(serializeModuleDefinition)
+  );
 
   app.get("/overlay-modules/:moduleId/config", { preHandler }, async (request, reply) => {
     try {
@@ -120,4 +122,12 @@ function sendOverlayModuleError(reply: Parameters<typeof sendHttpError>[0], erro
   }
 
   throw error;
+}
+
+function serializeModuleDefinition<TModule extends { readonly configSchema?: unknown }>(
+  moduleDefinition: TModule
+): Omit<TModule, "configSchema"> {
+  const serializableModuleDefinition = { ...moduleDefinition };
+  Reflect.deleteProperty(serializableModuleDefinition, "configSchema");
+  return serializableModuleDefinition;
 }

@@ -1183,7 +1183,7 @@ export interface ProviderErrorLogRecord {
 - Module config defaults, saves, and enabled-state toggles are handled through a typed service and repository boundary; the MVP server uses an in-memory repository until Slice 8 adds SQLite.
 - Overlay composition resolves module-specific and unified outputs through a runtime snapshot interface, excludes disabled modules, rejects unknown module ids, and validates mismatched runtime snapshots without importing alert internals.
 - Management-protected overlay module routes list modules, read config, save config, and toggle enabled state through thin Fastify handlers.
-- Focused Slice 7 tests passed for registry, schemas, module config, composition, HTTP routes, and app route guards: 32 test files and 109 tests.
+- Focused Slice 7 tests passed for registry, schemas, module config, composition, HTTP routes, and app route guards: 32 test files and 113 tests.
 - Full repository validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 
 ### Slice 8: Persistence Layer And Repositories

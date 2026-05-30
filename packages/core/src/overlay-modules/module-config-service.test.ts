@@ -67,6 +67,24 @@ describe("overlay module config service", () => {
     await expect(service.getModuleConfig("alerts")).resolves.toEqual(savedConfig);
   });
 
+
+  it("rejects invalid Alerts canvas config before saving", async () => {
+    const { service } = createService();
+
+    await expect(
+      service.saveModuleConfig({
+        moduleId: "alerts",
+        enabled: true,
+        config: {
+          canvas: {
+            width: -1,
+            height: "1080"
+          }
+        }
+      })
+    ).rejects.toBeInstanceOf(InvalidOverlayModuleConfigError);
+  });
+
   it("toggles enabled state without replacing existing module config", async () => {
     const { service } = createService(() => later);
     await service.saveModuleConfig({
@@ -107,6 +125,30 @@ describe("overlay module config service", () => {
       })
     ).rejects.toBeInstanceOf(UnknownOverlayModuleError);
     await expect(service.setModuleEnabled("music", true)).rejects.toBeInstanceOf(UnknownOverlayModuleError);
+  });
+
+
+  it("rejects invalid persisted Alerts config records before returning them", async () => {
+    const repository = new InMemoryOverlayModuleConfigRepository([
+      {
+        moduleId: "alerts",
+        enabled: true,
+        config: {
+          canvas: {
+            width: 1920,
+            height: 0
+          }
+        },
+        updatedAt: now.toISOString()
+      }
+    ]);
+    const service = new DefaultOverlayModuleConfigService({
+      registry: createDefaultOverlayModuleRegistry(),
+      repository,
+      clock: () => now
+    });
+
+    await expect(service.getModuleConfig("alerts")).rejects.toBeInstanceOf(InvalidOverlayModuleConfigError);
   });
 
   it("rejects invalid persisted config records before returning them", async () => {

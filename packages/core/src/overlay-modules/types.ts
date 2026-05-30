@@ -1,3 +1,4 @@
+import type { z } from "zod";
 import type { OverlayInstruction } from "../overlays/types.js";
 
 export interface OverlayModuleWizardField {
@@ -29,6 +30,7 @@ export interface OverlayModuleDefinition<TConfig = unknown> {
   readonly defaultEnabled: boolean;
   readonly configSchemaVersion: number;
   readonly defaultConfig: TConfig;
+  readonly configSchema?: z.ZodType<TConfig>;
   readonly wizard: OverlayModuleWizardDefinition;
   readonly renderer: OverlayModuleRendererDefinition;
 }

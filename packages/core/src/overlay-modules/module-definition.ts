@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { OverlayModuleDefinition } from "./types.js";
 
 export interface AlertsOverlayModuleConfig {
@@ -6,6 +7,13 @@ export interface AlertsOverlayModuleConfig {
     readonly height: number;
   };
 }
+
+export const alertsOverlayModuleConfigSchema = z.object({
+  canvas: z.object({
+    width: z.number().int().positive(),
+    height: z.number().int().positive()
+  })
+});
 
 export const alertsOverlayModuleDefinition = {
   id: "alerts",
@@ -19,6 +27,7 @@ export const alertsOverlayModuleDefinition = {
       height: 1080
     }
   },
+  configSchema: alertsOverlayModuleConfigSchema,
   wizard: {
     steps: [
       {
