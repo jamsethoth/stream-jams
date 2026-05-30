@@ -45,6 +45,13 @@ Non-goals:
 - Local shell sandbox wrapper is unavailable in this session, so repository commands are run with explicit escalated execution.
 - Node runtime exposes built-in `node:sqlite` (`DatabaseSync`, `StatementSync`), avoiding native dependency and lockfile churn for this slice.
 
+## Completion Evidence
+
+- Focused database initialization tests passed for deterministic migration creation, idempotent migration re-runs, foreign-key enforcement, and transaction rollback.
+- Focused repository tests passed for overlay module config, overlay route keys, alerts, assets, and diagnostic logs.
+- Architecture scan found no SQLite imports in core packages, web code, Fastify route handlers, or app wiring; SQLite concrete adapters are confined to server module boundaries and tests.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (38 test files and 127 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+
 ## File Ownership
 
 - Create `apps/server/src/modules/db/database.ts`: database open/close helpers, deterministic migration runner, and transaction helper.
@@ -71,14 +78,14 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests for creating all Slice 8 tables in an isolated database.
-- [ ] Write failing tests for idempotent migration re-runs and sorted migration application.
-- [ ] Write failing tests proving foreign-key enforcement is enabled.
-- [ ] Run focused tests and confirm missing database modules fail.
-- [ ] Implement the database open helper using Node `node:sqlite` with defensive defaults.
-- [ ] Implement a migration runner backed by a `schema_migrations` table.
-- [ ] Implement a transaction helper that commits successful work and rolls back failures.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests for creating all Slice 8 tables in an isolated database.
+- [x] Write failing tests for idempotent migration re-runs and sorted migration application.
+- [x] Write failing tests proving foreign-key enforcement is enabled.
+- [x] Run focused tests and confirm missing database modules fail.
+- [x] Implement the database open helper using Node `node:sqlite` with defensive defaults.
+- [x] Implement a migration runner backed by a `schema_migrations` table.
+- [x] Implement a transaction helper that commits successful work and rolls back failures.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -117,12 +124,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing module-config repository tests for save/read/update and JSON config round trips.
-- [ ] Write failing overlay-key repository tests for create/find/update/candidate lookup and revoked-key persistence.
-- [ ] Run focused tests and confirm missing repository failures.
-- [ ] Implement SQLite module config row mapper behind `OverlayModuleConfigRepository`.
-- [ ] Implement SQLite overlay key row mapper behind `OverlayAccessKeyRepository`.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing module-config repository tests for save/read/update and JSON config round trips.
+- [x] Write failing overlay-key repository tests for create/find/update/candidate lookup and revoked-key persistence.
+- [x] Run focused tests and confirm missing repository failures.
+- [x] Implement SQLite module config row mapper behind `OverlayModuleConfigRepository`.
+- [x] Implement SQLite overlay key row mapper behind `OverlayAccessKeyRepository`.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -164,15 +171,15 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing alert repository tests for collection save/list/find/delete and rule save/find/list/delete with variants.
-- [ ] Write failing alert repository tests proving rule plus condition/variant writes are transactional.
-- [ ] Write failing tests proving deleted collections are removed from persisted rule collection IDs.
-- [ ] Write failing asset repository tests for save/find/list/delete.
-- [ ] Run focused tests and confirm missing contracts/adapters fail.
-- [ ] Add core alert and asset repository interfaces.
-- [ ] Implement explicit SQLite row mappers and JSON mapping for conditions, TTS config, and layouts.
-- [ ] Implement transaction boundaries around alert rule, condition, collection-link, and variant writes.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing alert repository tests for collection save/list/find/delete and rule save/find/list/delete with variants.
+- [x] Write failing alert repository tests proving rule plus condition/variant writes are transactional.
+- [x] Write failing tests proving deleted collections are removed from persisted rule collection IDs.
+- [x] Write failing asset repository tests for save/find/list/delete.
+- [x] Run focused tests and confirm missing contracts/adapters fail.
+- [x] Add core alert and asset repository interfaces.
+- [x] Implement explicit SQLite row mappers and JSON mapping for conditions, TTS config, and layouts.
+- [x] Implement transaction boundaries around alert rule, condition, collection-link, and variant writes.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -211,12 +218,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing diagnostics repository tests for appending and listing event logs, alert match logs, and playback logs.
-- [ ] Write failing tests for bounded list ordering.
-- [ ] Run focused tests and confirm missing contract/adapters fail.
-- [ ] Add core diagnostic log record types and repository interface.
-- [ ] Implement SQLite row mappers using JSON for normalized events and alert IDs.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing diagnostics repository tests for appending and listing event logs, alert match logs, and playback logs.
+- [x] Write failing tests for bounded list ordering.
+- [x] Run focused tests and confirm missing contract/adapters fail.
+- [x] Add core diagnostic log record types and repository interface.
+- [x] Implement SQLite row mappers using JSON for normalized events and alert IDs.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -252,12 +259,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Run architecture scans proving SQLite implementations are imported only by server SQLite adapter tests or future wiring boundaries.
-- [ ] Update the base MVP plan Slice 8 checklist and completion evidence.
-- [ ] Update this detailed plan with validation evidence.
-- [ ] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
-- [ ] Self-review the diff for scope creep and weak tests.
-- [ ] Commit with message `feat: add sqlite repositories`.
+- [x] Run architecture scans proving SQLite implementations are imported only by server SQLite adapter tests or future wiring boundaries.
+- [x] Update the base MVP plan Slice 8 checklist and completion evidence.
+- [x] Update this detailed plan with validation evidence.
+- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- [x] Self-review the diff for scope creep and weak tests.
+- [x] Commit with message `feat: add sqlite repositories`.
 
 **Positive test cases:**
 

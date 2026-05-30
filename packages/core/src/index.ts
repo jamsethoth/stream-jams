@@ -17,6 +17,7 @@ export {
   logSettingsSchema,
   logSettingsUpdateSchema
 } from "./diagnostics/logging.js";
+export type * from "./diagnostics/repository.js";
 
 export type * from "./config/types.js";
 export type { ConfigStore } from "./config/config-store.js";
@@ -30,6 +31,7 @@ export {
 export type * from "./auth/management-session-service.js";
 
 export type * from "./alerts/types.js";
+export type * from "./alerts/repository.js";
 export {
   alertActivationStateSchema,
   alertCollectionSchema,
@@ -41,6 +43,7 @@ export {
 } from "./alerts/schemas.js";
 
 export type * from "./assets/types.js";
+export type * from "./assets/repository.js";
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";

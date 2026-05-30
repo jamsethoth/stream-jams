@@ -1197,20 +1197,22 @@ export interface ProviderErrorLogRecord {
 - Create `apps/server/src/modules/db/database.ts`
 - Create `apps/server/src/modules/db/migrations/`
 - Create `apps/server/src/modules/overlay-modules/sqlite-module-config-repository.ts`
+- Create `apps/server/src/modules/overlays/sqlite-overlay-access-key-repository.ts`
 - Create `apps/server/src/modules/alerts/sqlite-alert-repository.ts`
 - Create `apps/server/src/modules/assets/sqlite-asset-repository.ts`
 - Create `apps/server/src/modules/diagnostics/sqlite-log-repository.ts`
+- Create core repository contracts for alerts, assets, and diagnostic logs.
 - Create repository tests.
 
 **Steps:**
 
-- [ ] Add SQLite database initialization and migration runner.
-- [ ] Create tables for overlay module config, alert collections, alert rules, alert variants, asset metadata, overlay keys, event logs, alert match logs, and playback logs.
-- [ ] Implement typed repositories behind core interfaces, with explicit row mappers between SQLite rows and domain types.
-- [ ] Use transaction boundaries for alert rule plus variant writes.
-- [ ] Unit test repositories against isolated temporary databases.
-- [ ] Unit test that deleted alert collections do not leave rules in an impossible activation state.
-- [ ] Commit with message `feat: add sqlite repositories`.
+- [x] Add SQLite database initialization and migration runner.
+- [x] Create tables for overlay module config, alert collections, alert rules, alert variants, asset metadata, overlay keys, event logs, alert match logs, and playback logs.
+- [x] Implement typed repositories behind core interfaces, with explicit row mappers between SQLite rows and domain types.
+- [x] Use transaction boundaries for alert rule plus variant writes.
+- [x] Unit test repositories against isolated temporary databases.
+- [x] Unit test that deleted alert collections do not leave rules in an impossible activation state.
+- [x] Commit with message `feat: add sqlite repositories`.
 
 **Acceptance Checks:**
 
@@ -1218,6 +1220,17 @@ export interface ProviderErrorLogRecord {
 - Domain services depend on repository interfaces, not SQLite modules.
 - No React component, Fastify route handler, overlay renderer, or domain service imports a SQLite implementation directly.
 - Data migrations are deterministic.
+
+**Completion Evidence:**
+
+- Slice 8 detailed execution plan was added at `docs/superpowers/plans/2026-05-30-stream-jams-slice-8-sqlite-repositories.md`.
+- SQLite setup uses Node `node:sqlite` with foreign-key enforcement, deterministic migration records, defensive defaults, and a transaction helper.
+- Initial migration creates tables for module config, overlay keys, alert collections/rules/collection links/conditions/variants, asset metadata, event logs, alert match logs, and playback logs.
+- SQLite adapters persist existing overlay module config and overlay access key interfaces plus new core alert, asset, and diagnostics repository contracts.
+- Alert rule writes persist rule rows, collection links, conditions, and variants in one transaction; rollback coverage verifies failed variant writes leave the previous rule intact.
+- Deleted alert collections cascade through rule collection links, and repository reads return remaining valid collection IDs rather than stale references.
+- Focused repository tests and full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (38 test files and 127 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Architecture scan found SQLite imports only in server database/repository modules and their tests, not in core domain services, route handlers, overlay renderers, React code, or app wiring.
 
 ### Slice 9: Asset Import And Serving
 
