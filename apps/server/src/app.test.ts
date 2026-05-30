@@ -49,6 +49,35 @@ describe("createServerApp", () => {
     ).toThrow("Config routes require management auth and rate-limit hooks");
   });
 
+  it("does not register asset routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        assetRepository: {
+          async list() {
+            return [];
+          },
+          async findById() {
+            return null;
+          }
+        },
+        mediaImportPipeline: {
+          async importMedia() {
+            throw new Error("not called");
+          }
+        },
+        assetStore: {
+          async read() {
+            throw new Error("not called");
+          }
+        }
+      })
+    ).toThrow("Asset routes require repository, import pipeline, asset store, management auth, and rate-limit hooks");
+  });
+
   it("does not register overlay module routes without management auth and rate-limit hooks", () => {
     expect(() =>
       createServerApp({

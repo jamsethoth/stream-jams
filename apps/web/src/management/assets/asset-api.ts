@@ -1,0 +1,90 @@
+export interface AssetRecord {
+  readonly id: string;
+  readonly originalFileName: string;
+  readonly mediaType: "image" | "gif" | "video" | "audio";
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly checksum: string;
+  readonly storagePath: string;
+}
+
+export interface AssetApi {
+  listAssets(): Promise<readonly AssetRecord[]>;
+  importAsset(file: File): Promise<AssetRecord>;
+}
+
+export interface HttpAssetApiOptions {
+  readonly fetch?: typeof fetch;
+}
+
+interface ManagementSessionResponse {
+  readonly id: string;
+}
+
+export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi {
+  const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
+  let sessionId: string | null = null;
+
+  async function getSessionId(): Promise<string> {
+    if (sessionId !== null) {
+      return sessionId;
+    }
+
+    const response = await fetcher("/auth/management/sessions", {
+      method: "POST"
+    });
+    if (!response.ok) {
+      throw new Error(await readHttpError(response, "Unable to create management session."));
+    }
+
+    const session = (await response.json()) as ManagementSessionResponse;
+    sessionId = session.id;
+    return session.id;
+  }
+
+  async function managementHeaders(extraHeaders: HeadersInit = {}): Promise<HeadersInit> {
+    return {
+      ...extraHeaders,
+      authorization: `Bearer ${await getSessionId()}`
+    };
+  }
+
+  return {
+    async listAssets() {
+      const response = await fetcher("/assets", {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to load assets."));
+      }
+
+      return (await response.json()) as readonly AssetRecord[];
+    },
+
+    async importAsset(file: File) {
+      const response = await fetcher("/assets/import", {
+        method: "POST",
+        headers: await managementHeaders({
+          "content-type": "application/octet-stream",
+          "x-stream-jams-file-name": file.name,
+          "x-stream-jams-mime-type": file.type || "application/octet-stream"
+        }),
+        body: await file.arrayBuffer()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to import asset."));
+      }
+
+      return (await response.json()) as AssetRecord;
+    }
+  };
+}
+
+async function readHttpError(response: Response, fallback: string): Promise<string> {
+  try {
+    const body = (await response.json()) as { readonly error?: { readonly message?: unknown } };
+    return typeof body.error?.message === "string" ? body.error.message : fallback;
+  } catch {
+    return fallback;
+  }
+}

@@ -44,6 +44,10 @@ export {
 
 export type * from "./assets/types.js";
 export type * from "./assets/repository.js";
+export type * from "./assets/asset-validator.js";
+export type * from "./assets/media-import-pipeline.js";
+export { DefaultAssetValidator, defaultAssetValidationPolicy } from "./assets/asset-validator.js";
+export { DefaultMediaImportPipeline, InvalidMediaImportError, NoopMediaTranscodingStage } from "./assets/media-import-pipeline.js";
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";

@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
 import { registerConfigRoutes, type ServerConfigRouteDependencies } from "./http/routes/config.js";
 import { registerHealthRoutes, type ServerAppMetadata } from "./http/routes/health.js";
 import {
@@ -10,7 +11,8 @@ import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
-    Partial<OverlayModuleRouteDependencies> {
+    Partial<OverlayModuleRouteDependencies>,
+    Partial<AssetRouteDependencies> {
   readonly metadata: ServerAppMetadata;
 }
 
@@ -29,6 +31,18 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
       managementSessionService: dependencies.managementSessionService,
       managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
     });
+  }
+
+  if (
+    dependencies.assetRepository !== undefined ||
+    dependencies.mediaImportPipeline !== undefined ||
+    dependencies.assetStore !== undefined
+  ) {
+    if (!hasAssetRouteDependencies(dependencies)) {
+      throw new Error("Asset routes require repository, import pipeline, asset store, management auth, and rate-limit hooks");
+    }
+
+    registerAssetRoutes(app, dependencies);
   }
 
   if (dependencies.overlayModuleRegistry !== undefined || dependencies.overlayModuleConfigService !== undefined) {
@@ -64,6 +78,18 @@ function hasOverlayModuleRouteDependencies(
   return (
     dependencies.overlayModuleRegistry !== undefined &&
     dependencies.overlayModuleConfigService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasAssetRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & AssetRouteDependencies {
+  return (
+    dependencies.assetRepository !== undefined &&
+    dependencies.mediaImportPipeline !== undefined &&
+    dependencies.assetStore !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

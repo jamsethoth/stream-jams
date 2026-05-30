@@ -14,4 +14,5 @@ export interface AssetValidationResult {
   readonly accepted: boolean;
   readonly reason: string | null;
   readonly mediaType: AssetMediaType | null;
+  readonly normalizedExtension: string | null;
 }
