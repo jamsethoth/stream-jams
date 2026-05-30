@@ -13,6 +13,7 @@ export interface PlaybackQueueItem {
   readonly id: string;
   readonly sourceEvent: NormalizedStreamEvent;
   readonly alerts: readonly ResolvedAlert[];
+  readonly priority: number;
   readonly status: "queued" | "playing" | "completed" | "skipped";
   readonly enqueuedAt: string;
   readonly startedAt: string | null;
@@ -25,4 +26,5 @@ export interface PlaybackQueueSnapshot {
   readonly recent: readonly PlaybackQueueItem[];
   readonly paused: boolean;
   readonly muted: boolean;
+  readonly doNotDisturb: boolean;
 }
