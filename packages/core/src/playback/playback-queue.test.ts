@@ -122,6 +122,28 @@ describe("DefaultPlaybackQueue", () => {
     });
   });
 
+  it("returns defensive snapshots that cannot mutate queue internals", () => {
+    const queue = createQueue(new MutableClock("2026-05-30T12:00:00.000Z"));
+    queue.enqueue({
+      sourceEvent: createCheerEvent({ id: "immutable" }),
+      alerts: [createResolvedAlert("immutable")],
+      priority: 0
+    });
+
+    const snapshot = queue.getSnapshot();
+    if (snapshot.current === null) {
+      throw new Error("Expected current item");
+    }
+
+    (snapshot.current.alerts as ResolvedAlert[]).push(createResolvedAlert("mutated"));
+    (snapshot.current.sourceEvent as { id: string }).id = "mutated-event";
+
+    const nextSnapshot = queue.getSnapshot();
+
+    expect(nextSnapshot.current?.sourceEvent.id).toBe("immutable");
+    expect(nextSnapshot.current?.alerts.map((alert) => alert.id)).toEqual(["immutable"]);
+  });
+
   it("ignores empty alert batches", () => {
     const queue = createQueue(new MutableClock("2026-05-30T12:00:00.000Z"));
 

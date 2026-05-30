@@ -1405,8 +1405,9 @@ export interface ProviderErrorLogRecord {
 - Cooldown and dedupe tests cover rule/event-type cooldown windows, zero cooldowns, expired cooldowns, repeated provider event IDs, and expired dedupe windows.
 - Added a server playback coordinator that dedupes before matching, suppresses cooldowned matches before resolution, resolves all ready alerts, enqueues one prioritized item per accepted event, and exposes queue controls.
 - Added management-protected playback routes for snapshot, pause, resume, mute, unmute, do-not-disturb, skip, and replay controls.
+- Review hardening added defensive queue snapshots and production asset media type lookup for visual alert assets, with regression coverage.
 - Architecture import scan found no SQLite, Fastify, React, Twitch, server/web package, filesystem, Node runtime, or WebSocket imports in the new core playback files; the only provider wording is use of normalized `providerId` for dedupe keys.
-- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (56 test files and 210 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (56 test files and 212 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 
 ### Slice 13: Overlay WebSocket Gateway And Browser Overlay Shell
 

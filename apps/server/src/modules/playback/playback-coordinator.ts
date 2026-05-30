@@ -1,8 +1,10 @@
 import type {
   AlertMatcher,
+  AlertMatch,
   AlertResolver,
   AlertResolverTarget,
   AlertService,
+  AssetRepository,
   NormalizedStreamEvent,
   PlaybackCooldownService,
   PlaybackDedupeService,
@@ -29,6 +31,7 @@ export interface PlaybackCoordinatorDependencies {
   readonly dedupeService: PlaybackDedupeService;
   readonly defaultTarget: AlertResolverTarget;
   readonly visualAssetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
+  readonly assetRepository?: Pick<AssetRepository, "findById">;
 }
 
 export class PlaybackCoordinator {
@@ -40,6 +43,7 @@ export class PlaybackCoordinator {
   readonly #dedupeService: PlaybackDedupeService;
   readonly #defaultTarget: AlertResolverTarget;
   readonly #visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
+  readonly #assetRepository: Pick<AssetRepository, "findById"> | null;
 
   constructor(dependencies: PlaybackCoordinatorDependencies) {
     this.#alertService = dependencies.alertService;
@@ -50,6 +54,7 @@ export class PlaybackCoordinator {
     this.#dedupeService = dependencies.dedupeService;
     this.#defaultTarget = dependencies.defaultTarget;
     this.#visualAssetMediaTypes = dependencies.visualAssetMediaTypes ?? {};
+    this.#assetRepository = dependencies.assetRepository ?? null;
   }
 
   getSnapshot(): PlaybackQueueSnapshot {
@@ -85,7 +90,7 @@ export class PlaybackCoordinator {
     const resolvedAlerts = this.#resolver.resolveMatches({
       matches: readyMatches,
       target: this.#defaultTarget,
-      visualAssetMediaTypes: this.#visualAssetMediaTypes
+      visualAssetMediaTypes: await this.#resolveVisualAssetMediaTypes(readyMatches)
     });
     const snapshot = this.#queue.enqueue({
       sourceEvent: event,
@@ -135,6 +140,35 @@ export class PlaybackCoordinator {
 
   setDoNotDisturb(enabled: boolean): PlaybackQueueSnapshot {
     return this.#queue.setDoNotDisturb(enabled);
+  }
+
+  async #resolveVisualAssetMediaTypes(
+    matches: readonly AlertMatch[]
+  ): Promise<Readonly<Record<string, "image" | "gif" | "video">>> {
+    const mediaTypes: Record<string, "image" | "gif" | "video"> = {
+      ...this.#visualAssetMediaTypes
+    };
+    if (this.#assetRepository === null) {
+      return mediaTypes;
+    }
+
+    const visualAssetIds = new Set<string>();
+    for (const match of matches) {
+      for (const variant of match.rule.variants) {
+        if (variant.visualAssetId !== null && mediaTypes[variant.visualAssetId] === undefined) {
+          visualAssetIds.add(variant.visualAssetId);
+        }
+      }
+    }
+
+    for (const assetId of visualAssetIds) {
+      const asset = await this.#assetRepository.findById(assetId);
+      if (asset?.mediaType === "image" || asset?.mediaType === "gif" || asset?.mediaType === "video") {
+        mediaTypes[assetId] = asset.mediaType;
+      }
+    }
+
+    return mediaTypes;
   }
 
   #result(

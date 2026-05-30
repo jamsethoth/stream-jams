@@ -187,7 +187,7 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
 }
 
 function toPlaybackQueueItem(item: InternalPlaybackQueueItem): PlaybackQueueItem {
-  return {
+  return structuredClone({
     id: item.id,
     sourceEvent: item.sourceEvent,
     alerts: item.alerts,
@@ -196,5 +196,5 @@ function toPlaybackQueueItem(item: InternalPlaybackQueueItem): PlaybackQueueItem
     enqueuedAt: item.enqueuedAt,
     startedAt: item.startedAt,
     completedAt: item.completedAt
-  };
+  });
 }

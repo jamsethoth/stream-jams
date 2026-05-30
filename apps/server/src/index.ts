@@ -85,7 +85,8 @@ const playbackCoordinator = new PlaybackCoordinator({
     overlayId: "main",
     purpose: "live",
     scope: "module"
-  }
+  },
+  assetRepository
 });
 
 try {

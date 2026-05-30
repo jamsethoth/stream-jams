@@ -189,7 +189,7 @@ Non-goals:
 - [x] Write failing app registration test for missing playback route protection.
 - [x] Implement route registration and dependency checks.
 - [x] Wire production server index with in-memory playback services.
-- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- apps/server/src/http/routes/playback.test.ts apps/server/src/app.test.ts` passed (56 files, 210 tests).
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- apps/server/src/http/routes/playback.test.ts apps/server/src/app.test.ts` passed (56 files, 212 tests).
 
 **Positive test cases:**
 
@@ -223,7 +223,7 @@ Non-goals:
 - [x] Run architecture scans proving core playback files do not import SQLite, Fastify, React, Twitch, provider adapters, filesystem APIs, or WebSocket code. Evidence: import-only scan returned no matches; broad scan only found normalized `providerId` use for dedupe keys.
 - [x] Update the base MVP plan Slice 12 checklist and completion evidence.
 - [x] Update this detailed plan with validation evidence.
-- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`. Evidence: all commands passed; `pnpm test` reported 56 files and 210 tests.
+- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`. Evidence: all commands passed; `pnpm test` reported 56 files and 212 tests.
 - [x] Self-review the diff for scope creep and weak tests. Evidence: reviewed new core queue/cooldown/dedupe services, server coordinator/routes, production wiring, tests, exports, schema/type updates, and plan diffs.
 - [x] Commit with message `feat: add playback queue`.
 
@@ -245,6 +245,7 @@ Non-goals:
 - Playback queue focused validation: `pnpm test -- packages/core/src/playback/playback-queue.test.ts` passed (52 files, 196 tests).
 - Cooldown/dedupe focused validation: `pnpm test -- packages/core/src/playback/cooldown-service.test.ts packages/core/src/playback/dedupe-service.test.ts` passed (54 files, 201 tests).
 - Playback coordinator focused validation: `pnpm test -- apps/server/src/modules/playback/playback-coordinator.test.ts` passed (55 files, 204 tests).
-- Playback route focused validation: `pnpm test -- apps/server/src/http/routes/playback.test.ts apps/server/src/app.test.ts` passed (56 files, 210 tests).
+- Playback route focused validation: `pnpm test -- apps/server/src/http/routes/playback.test.ts apps/server/src/app.test.ts` passed (56 files, 212 tests).
 - Architecture import scan found no SQLite, Fastify, React, Twitch, provider adapter, server/web package, filesystem, Node runtime, or WebSocket imports in new core playback files.
-- Full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (56 files, 210 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Review hardening validation: `pnpm test -- packages/core/src/playback/playback-queue.test.ts apps/server/src/modules/playback/playback-coordinator.test.ts` passed (56 files, 212 tests), covering defensive snapshots and asset-backed visual media type lookup.
+- Full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (56 files, 212 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.

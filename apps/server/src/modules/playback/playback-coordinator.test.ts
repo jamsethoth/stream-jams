@@ -7,6 +7,7 @@ import {
   type AlertRule,
   type AlertService,
   type AlertVariant,
+  type AssetRepository,
   type NormalizedStreamEvent
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
@@ -59,6 +60,28 @@ describe("PlaybackCoordinator", () => {
     expect(result.snapshot.current).toBeNull();
     expect(result.matchedRuleIds).toEqual(["rule-cheer"]);
     expect(result.enqueuedAlertIds).toEqual([]);
+  });
+
+  it("resolves visual media types from the asset repository", async () => {
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([
+        createRule({
+          id: "rule-gif",
+          variants: [createVariant({ id: "variant-gif", visualAssetId: "asset-gif" })]
+        })
+      ]),
+      assetRepository: new InMemoryAssetRepository({
+        "asset-gif": "gif"
+      })
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent({ amount: 500 }));
+
+    expect(result.status).toBe("queued");
+    expect(result.snapshot.current?.alerts[0]?.overlayInstruction.visual).toMatchObject({
+      assetId: "asset-gif",
+      mediaType: "gif"
+    });
   });
 
   it("matches, resolves, and enqueues all ready alerts from one accepted event", async () => {
@@ -127,6 +150,7 @@ function createCoordinator(
     readonly alertService?: Pick<AlertService, "listActiveRules">;
     readonly cooldownService?: DefaultPlaybackCooldownService;
     readonly dedupeService?: DefaultPlaybackDedupeService;
+    readonly assetRepository?: Pick<AssetRepository, "findById">;
     readonly clock?: MutableClock;
   } = {}
 ): PlaybackCoordinator {
@@ -156,7 +180,8 @@ function createCoordinator(
       overlayId: "overlay-1",
       purpose: "live",
       scope: "module"
-    }
+    },
+    ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository })
   });
 }
 
@@ -239,4 +264,23 @@ function createVariant(overrides: Partial<AlertVariant> = {}): AlertVariant {
     },
     ...overrides
   };
+}
+
+class InMemoryAssetRepository implements Pick<AssetRepository, "findById"> {
+  constructor(readonly mediaTypes: Readonly<Record<string, "image" | "gif" | "video" | "audio">>) {}
+
+  async findById(assetId: string) {
+    const mediaType = this.mediaTypes[assetId];
+    return mediaType === undefined
+      ? null
+      : {
+          id: assetId,
+          originalFileName: assetId + ".bin",
+          mediaType,
+          mimeType: "application/octet-stream",
+          sizeBytes: 1,
+          checksum: "sha256:test",
+          storagePath: "/assets/" + assetId
+        };
+  }
 }
