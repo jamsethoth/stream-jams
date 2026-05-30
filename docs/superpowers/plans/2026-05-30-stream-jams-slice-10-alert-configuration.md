@@ -48,6 +48,15 @@ Non-goals:
 - Existing management routes use Fastify dependency injection plus management auth/rate-limit pre-handlers.
 - Existing web shell hosts focused management panels with API clients injected for tests.
 
+## Completion Evidence
+
+- Core alert service tests passed for collection/rule CRUD, variant upsert/delete, multiple active collections, disabled-rule precedence, duplicate suppression for rules in multiple active collections, and typed not-found/final-variant errors.
+- Alerts module registry/schema tests passed with wizard metadata for canvas, collections, rules, and variants.
+- Server route tests passed for authenticated collection CRUD/toggles, rule CRUD/toggles, variant upsert/delete, activation state, invalid payloads, missing records, and missing management sessions.
+- Web alert configuration tests passed for loaded collection/rule rows, empty states, independent toggles, refreshes, and visible diagnostics.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (47 test files and 168 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Architecture scans found no core/server/Node/SQLite imports in web UI code and no direct SQLite access in production alert HTTP routes.
+
 ## File Ownership
 
 - Create `packages/core/src/alerts/alert-service.ts`: service operations, activation state, active-rule filtering, and typed errors.
@@ -74,12 +83,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing service tests for creating/updating/deleting collections, rules, and variants.
-- [ ] Write failing service tests for multiple active collections, disabled-rule precedence, and duplicate suppression for rules in multiple active collections.
-- [ ] Write failing service tests for not-found and last-variant deletion errors.
-- [ ] Run focused tests and confirm missing service failures.
-- [ ] Implement `DefaultAlertService`, input schemas, active-rule filtering, and typed errors.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing service tests for creating/updating/deleting collections, rules, and variants.
+- [x] Write failing service tests for multiple active collections, disabled-rule precedence, and duplicate suppression for rules in multiple active collections.
+- [x] Write failing service tests for not-found and last-variant deletion errors.
+- [x] Run focused tests and confirm missing service failures.
+- [x] Implement `DefaultAlertService`, input schemas, active-rule filtering, and typed errors.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -113,9 +122,9 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing registry/schema tests asserting the Alerts wizard exposes canvas, collections, rules, and variants steps.
-- [ ] Update Alerts module wizard metadata with configuration steps that management shell can render later.
-- [ ] Run focused registry/schema tests and confirm they pass.
+- [x] Write failing registry/schema tests asserting the Alerts wizard exposes canvas, collections, rules, and variants steps.
+- [x] Update Alerts module wizard metadata with configuration steps that management shell can render later.
+- [x] Run focused registry/schema tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -149,13 +158,13 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing route tests for authenticated collection CRUD and enabled toggles.
-- [ ] Write failing route tests for authenticated rule CRUD, rule enabled toggles, variant upsert/delete, and activation state.
-- [ ] Write failing route tests for invalid payloads, not-found IDs, and missing management sessions.
-- [ ] Run focused route tests and confirm missing route failures.
-- [ ] Implement route handlers with management auth/rate-limit pre-handlers and structured errors.
-- [ ] Add app dependency guards and runtime wiring for `SqliteAlertRepository` and `DefaultAlertService`.
-- [ ] Run focused route tests and confirm they pass.
+- [x] Write failing route tests for authenticated collection CRUD and enabled toggles.
+- [x] Write failing route tests for authenticated rule CRUD, rule enabled toggles, variant upsert/delete, and activation state.
+- [x] Write failing route tests for invalid payloads, not-found IDs, and missing management sessions.
+- [x] Run focused route tests and confirm missing route failures.
+- [x] Implement route handlers with management auth/rate-limit pre-handlers and structured errors.
+- [x] Add app dependency guards and runtime wiring for `SqliteAlertRepository` and `DefaultAlertService`.
+- [x] Run focused route tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -193,11 +202,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing component tests for loaded collection/rule rows, empty states, collection toggle calls, rule toggle calls, and error diagnostics.
-- [ ] Run focused web tests and confirm missing component failures.
-- [ ] Implement an alert API client and management panel with injected API for tests.
-- [ ] Update the app shell to host alert configuration alongside the asset panel.
-- [ ] Run focused web tests and confirm they pass.
+- [x] Write failing component tests for loaded collection/rule rows, empty states, collection toggle calls, rule toggle calls, and error diagnostics.
+- [x] Run focused web tests and confirm missing component failures.
+- [x] Implement an alert API client and management panel with injected API for tests.
+- [x] Update the app shell to host alert configuration alongside the asset panel.
+- [x] Run focused web tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -227,12 +236,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Run architecture scans proving routes depend on services and web UI has no server/core/Node-only imports.
-- [ ] Update the base MVP plan Slice 10 checklist and completion evidence.
-- [ ] Update this detailed plan with validation evidence.
-- [ ] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
-- [ ] Self-review the diff for scope creep and weak tests.
-- [ ] Commit with message `feat: add alert configuration`.
+- [x] Run architecture scans proving routes depend on services and web UI has no server/core/Node-only imports.
+- [x] Update the base MVP plan Slice 10 checklist and completion evidence.
+- [x] Update this detailed plan with validation evidence.
+- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- [x] Self-review the diff for scope creep and weak tests.
+- [x] Commit with message `feat: add alert configuration`.
 
 **Validation commands:**
 

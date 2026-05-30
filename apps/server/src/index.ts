@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  DefaultAlertService,
   DefaultAssetValidator,
   DefaultMediaImportPipeline,
   DefaultOverlayModuleConfigService,
@@ -17,6 +18,7 @@ import {
 } from "./http/middleware/local-management-rate-limit.js";
 import { createManagementAuthPreHandler } from "./http/middleware/management-auth.js";
 import { LocalManagementSessionService } from "./modules/auth/management-session-service.js";
+import { SqliteAlertRepository } from "./modules/alerts/sqlite-alert-repository.js";
 import { LocalAssetStore } from "./modules/assets/local-asset-store.js";
 import { openStreamJamsDatabase } from "./modules/db/database.js";
 import { InMemoryServerOverlayModuleConfigRepository } from "./modules/overlay-modules/in-memory-module-config-repository.js";
@@ -33,6 +35,11 @@ const configStore = new FileConfigStore({
 });
 const initialConfig = await configStore.readConfig();
 const database = openStreamJamsDatabase(join(initialConfig.storage.dataDirectory, "stream-jams.sqlite"));
+const alertRepository = new SqliteAlertRepository(database.connection);
+const alertService = new DefaultAlertService({
+  repository: alertRepository,
+  generateId: generateAlertConfigurationId
+});
 const assetRepository = new SqliteAssetRepository(database.connection);
 const assetStore = new LocalAssetStore({ assetDirectory: initialConfig.storage.assetDirectory });
 const mediaImportPipeline = new DefaultMediaImportPipeline({
@@ -71,6 +78,7 @@ try {
         serverConfigService,
         overlayModuleRegistry,
         overlayModuleConfigService,
+        alertService,
         assetRepository,
         mediaImportPipeline,
         assetStore,
@@ -100,6 +108,10 @@ try {
 
 function formatSuggestedPorts(ports: readonly number[]): string {
   return ports.length > 0 ? ports.join(", ") : "none found";
+}
+
+function generateAlertConfigurationId(kind: "collection" | "rule" | "variant"): string {
+  return `alert_${kind}_${randomBytes(16).toString("base64url")}`;
 }
 
 function generateAssetId(): string {
