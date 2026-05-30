@@ -4,7 +4,7 @@ name = "stream-jams"
 
 [setup]
 script = '''
-export CODEX_ENV_NODE_VERSION=22
+export CODEX_ENV_NODE_VERSION=24
 corepack enable
 pnpm install
 pnpm exec playwright install --with-deps chromium
