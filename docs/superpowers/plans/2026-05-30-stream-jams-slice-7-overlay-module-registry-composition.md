@@ -1,6 +1,6 @@
 # Stream Jams Slice 7 Overlay Module Registry And Composition Model Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement Slice 7 by registering Alerts as the first overlay module, adding module enable/disable configuration, exposing module configuration routes, and resolving module-specific and unified overlay compositions without coupling composition to alert internals.
 
