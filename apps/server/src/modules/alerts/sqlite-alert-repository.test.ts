@@ -25,6 +25,32 @@ describe("SqliteAlertRepository", () => {
     await expect(repository.findCollectionById("collection-1")).resolves.toBeNull();
   });
 
+  it("round-trips variant conditions and priority", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteAlertRepository(database.connection);
+    const collection = createCollection("collection-1", "Main Alerts");
+    const rule = createRule("rule-1", ["collection-1"]);
+    const variant = rule.variants[0];
+    if (variant === undefined) {
+      throw new Error("Missing variant fixture");
+    }
+    const ruleWithVariantSelection = {
+      ...rule,
+      variants: [
+        {
+          ...variant,
+          conditions: [{ field: "amount", operator: "min" as const, value: 500 }],
+          priority: 5
+        }
+      ]
+    };
+
+    await repository.saveCollection(collection);
+    await repository.saveRule(ruleWithVariantSelection);
+
+    await expect(repository.findRuleById("rule-1")).resolves.toEqual(ruleWithVariantSelection);
+  });
+
   it("removes deleted collections from persisted rule collection ids", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);

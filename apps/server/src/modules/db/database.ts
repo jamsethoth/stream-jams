@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync, type StatementResultingChanges } from "node:sqlite";
 import { initialSchemaMigration } from "./migrations/001-initial-schema.js";
+import { alertVariantSelectionMigration } from "./migrations/002-alert-variant-selection.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -14,7 +15,7 @@ export interface StreamJamsDatabase extends Disposable {
   close(): void;
 }
 
-const migrations = [initialSchemaMigration] satisfies readonly StreamJamsMigration[];
+const migrations = [initialSchemaMigration, alertVariantSelectionMigration] satisfies readonly StreamJamsMigration[];
 
 export function openStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
   mkdirSync(dirname(databasePath), { recursive: true });

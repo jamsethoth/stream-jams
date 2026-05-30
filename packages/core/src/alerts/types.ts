@@ -26,6 +26,8 @@ export interface AlertVariant {
   readonly name: string;
   readonly enabled: boolean;
   readonly weight: number;
+  readonly conditions?: readonly AlertCondition[] | undefined;
+  readonly priority?: number | undefined;
   readonly visualAssetId: string | null;
   readonly audioAssetId: string | null;
   readonly textTemplate: string;

@@ -21,11 +21,11 @@ describe("Stream Jams SQLite database", () => {
     using database = createInMemoryStreamJamsDatabase();
 
     expect(listTables(database.connection)).toEqual(expectedTables);
-    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema"]);
+    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection"]);
 
     database.runMigrations();
 
-    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema"]);
+    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection"]);
   });
 
   it("enforces foreign keys for child records", () => {

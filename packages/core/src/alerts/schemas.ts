@@ -31,6 +31,8 @@ export const alertVariantSchema = z.object({
   name: nonEmptyStringSchema,
   enabled: z.boolean(),
   weight: positiveIntegerSchema,
+  conditions: z.array(alertConditionSchema).optional(),
+  priority: z.number().int().optional(),
   visualAssetId: nonEmptyStringSchema.nullable(),
   audioAssetId: nonEmptyStringSchema.nullable(),
   textTemplate: z.string(),

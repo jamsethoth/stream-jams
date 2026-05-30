@@ -39,6 +39,8 @@ interface AlertVariantRow {
   readonly name: unknown;
   readonly enabled: unknown;
   readonly weight: unknown;
+  readonly conditions_json: unknown;
+  readonly priority: unknown;
   readonly visual_asset_id: unknown;
   readonly audio_asset_id: unknown;
   readonly text_template: unknown;
@@ -136,13 +138,15 @@ export class SqliteAlertRepository implements AlertRepository {
           name,
           enabled,
           weight,
+          conditions_json,
+          priority,
           visual_asset_id,
           audio_asset_id,
           text_template,
           tts_config_json,
           duration_ms,
           layout_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       );
       for (const variant of parsed.variants) {
         insertVariant.run(
@@ -151,6 +155,8 @@ export class SqliteAlertRepository implements AlertRepository {
           variant.name,
           booleanToInteger(variant.enabled),
           variant.weight,
+          JSON.stringify(variant.conditions ?? []),
+          variant.priority ?? 0,
           variant.visualAssetId,
           variant.audioAssetId,
           variant.textTemplate,
@@ -238,7 +244,7 @@ export class SqliteAlertRepository implements AlertRepository {
   #listVariantsForRule(ruleId: string): readonly AlertVariant[] {
     return this.#connection
       .prepare(
-        `SELECT id, name, enabled, weight, visual_asset_id, audio_asset_id, text_template, tts_config_json, duration_ms, layout_json
+        `SELECT id, name, enabled, weight, conditions_json, priority, visual_asset_id, audio_asset_id, text_template, tts_config_json, duration_ms, layout_json
          FROM alert_variants
          WHERE rule_id = ?
          ORDER BY id`
@@ -265,11 +271,16 @@ function mapConditionRow(row: AlertConditionRow): AlertCondition {
 }
 
 function mapVariantRow(row: AlertVariantRow): AlertVariant {
+  const conditions = JSON.parse(String(row.conditions_json)) as readonly AlertCondition[];
+  const priority = Number(row.priority);
+
   return {
     id: String(row.id),
     name: String(row.name),
     enabled: integerToBoolean(row.enabled),
     weight: Number(row.weight),
+    ...(conditions.length > 0 ? { conditions } : {}),
+    ...(priority !== 0 ? { priority } : {}),
     visualAssetId: row.visual_asset_id === null ? null : String(row.visual_asset_id),
     audioAssetId: row.audio_asset_id === null ? null : String(row.audio_asset_id),
     textTemplate: String(row.text_template),
