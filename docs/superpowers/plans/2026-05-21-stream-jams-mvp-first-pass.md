@@ -1295,16 +1295,16 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Implement `AlertService` with collection, rule, and variant operations.
-- [ ] Register the Alerts module configuration wizard with the overlay module registry.
-- [ ] Enforce that an alert can be individually disabled.
-- [ ] Enforce that multiple collections can be enabled at once.
-- [ ] Enforce that an alert in multiple active collections is considered once per event.
-- [ ] Add management UI lists for rules and collections.
-- [ ] Add management UI toggles for individual alert enabled state and collection active state.
-- [ ] Unit test collection activation and individual rule disable precedence.
-- [ ] Integration test alert CRUD routes.
-- [ ] Commit with message `feat: add alert configuration`.
+- [x] Implement `AlertService` with collection, rule, and variant operations.
+- [x] Register the Alerts module configuration wizard with the overlay module registry.
+- [x] Enforce that an alert can be individually disabled.
+- [x] Enforce that multiple collections can be enabled at once.
+- [x] Enforce that an alert in multiple active collections is considered once per event.
+- [x] Add management UI lists for rules and collections.
+- [x] Add management UI toggles for individual alert enabled state and collection active state.
+- [x] Unit test collection activation and individual rule disable precedence.
+- [x] Integration test alert CRUD routes.
+- [x] Commit with message `feat: add alert configuration`.
 
 **Acceptance Checks:**
 
@@ -1312,6 +1312,16 @@ export interface ProviderErrorLogRecord {
 - Disabled alert rules do not match even when their collection is active.
 - Alert configuration is accessible through services, not direct database calls from routes.
 - Alert configuration is owned by the Alerts module and exposed to the management shell through module routes and API clients.
+
+**Completion Evidence:**
+
+- Slice 10 detailed execution plan was added at `docs/superpowers/plans/2026-05-30-stream-jams-slice-10-alert-configuration.md`.
+- `DefaultAlertService` provides collection, rule, and variant operations over `AlertRepository`, plus activation state, active-rule filtering for multiple active collections, disabled-rule precedence, duplicate suppression, and service-level duplicate/cross-rule variant ID conflict checks.
+- Alerts module wizard metadata now exposes canvas, collections, rules, and variants steps through the overlay module registry.
+- Management-protected alert routes expose collection CRUD/toggles, rule CRUD/toggles, variant upsert/delete, and activation state through `AlertService` rather than direct database calls, with structured errors for missing collection references and variant ID conflicts.
+- The web management shell includes an Alerts panel for listing collections/rules and toggling collection active state and individual rule enabled state through an API client.
+- Focused tests and full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (47 test files and 171 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Architecture scans found no core/server/Node/SQLite imports in web UI code and no direct SQLite access in production alert HTTP routes.
 
 ### Slice 11: Alert Matching And Resolution Engine
 

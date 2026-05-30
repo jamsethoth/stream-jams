@@ -32,6 +32,21 @@ export type * from "./auth/management-session-service.js";
 
 export type * from "./alerts/types.js";
 export type * from "./alerts/repository.js";
+export type * from "./alerts/alert-service.js";
+export {
+  AlertCollectionNotFoundError,
+  AlertRuleNotFoundError,
+  AlertVariantIdConflictError,
+  AlertVariantNotFoundError,
+  LastAlertVariantError,
+  DefaultAlertService,
+  createAlertCollectionInputSchema,
+  createAlertRuleInputSchema,
+  createAlertVariantInputSchema,
+  updateAlertCollectionInputSchema,
+  updateAlertRuleInputSchema,
+  updateAlertVariantInputSchema
+} from "./alerts/alert-service.js";
 export {
   alertActivationStateSchema,
   alertCollectionSchema,

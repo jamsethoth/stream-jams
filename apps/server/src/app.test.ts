@@ -49,6 +49,60 @@ describe("createServerApp", () => {
     ).toThrow("Config routes require management auth and rate-limit hooks");
   });
 
+  it("does not register alert routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        alertService: {
+          async listCollections() {
+            return [];
+          },
+          async createCollection() {
+            throw new Error("not called");
+          },
+          async updateCollection() {
+            throw new Error("not called");
+          },
+          async setCollectionEnabled() {
+            throw new Error("not called");
+          },
+          async deleteCollection() {},
+          async listRules() {
+            return [];
+          },
+          async createRule() {
+            throw new Error("not called");
+          },
+          async updateRule() {
+            throw new Error("not called");
+          },
+          async setRuleEnabled() {
+            throw new Error("not called");
+          },
+          async deleteRule() {},
+          async saveVariant() {
+            throw new Error("not called");
+          },
+          async deleteVariant() {
+            throw new Error("not called");
+          },
+          async getActivationState() {
+            return {
+              enabledCollectionIds: [],
+              disabledRuleIds: []
+            };
+          },
+          async listActiveRules() {
+            return [];
+          }
+        }
+      })
+    ).toThrow("Alert routes require alert service, management auth, and rate-limit hooks");
+  });
+
   it("does not register asset routes without management auth and rate-limit hooks", () => {
     expect(() =>
       createServerApp({

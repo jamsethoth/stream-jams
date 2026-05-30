@@ -7,8 +7,9 @@ describe("overlay module schemas", () => {
     const result = overlayModuleDefinitionSchema.safeParse(alertsOverlayModuleDefinition);
 
     expect(result.success).toBe(true);
-    expect(alertsOverlayModuleDefinition.wizard.steps).toHaveLength(1);
+    expect(alertsOverlayModuleDefinition.wizard.steps).toHaveLength(4);
     expect(alertsOverlayModuleDefinition.wizard.steps[0]?.fields.some((field) => field.required)).toBe(true);
+    expect(JSON.stringify(alertsOverlayModuleDefinition.wizard)).not.toContain("configSchema");
   });
 
   it("rejects module definitions without wizard steps", () => {

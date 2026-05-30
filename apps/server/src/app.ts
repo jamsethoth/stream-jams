@@ -1,4 +1,6 @@
 import Fastify, { type FastifyInstance } from "fastify";
+import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/routes/alerts.js";
+import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
 import { registerConfigRoutes, type ServerConfigRouteDependencies } from "./http/routes/config.js";
 import { registerHealthRoutes, type ServerAppMetadata } from "./http/routes/health.js";
@@ -12,7 +14,9 @@ export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
     Partial<OverlayModuleRouteDependencies>,
-    Partial<AssetRouteDependencies> {
+    Partial<AssetRouteDependencies>,
+    Partial<AlertRuleRouteDependencies>,
+    Partial<AlertCollectionRouteDependencies> {
   readonly metadata: ServerAppMetadata;
 }
 
@@ -31,6 +35,15 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
       managementSessionService: dependencies.managementSessionService,
       managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
     });
+  }
+
+  if (dependencies.alertService !== undefined) {
+    if (!hasAlertRouteDependencies(dependencies)) {
+      throw new Error("Alert routes require alert service, management auth, and rate-limit hooks");
+    }
+
+    registerAlertCollectionRoutes(app, dependencies);
+    registerAlertRoutes(app, dependencies);
   }
 
   if (
@@ -90,6 +103,16 @@ function hasAssetRouteDependencies(
     dependencies.assetRepository !== undefined &&
     dependencies.mediaImportPipeline !== undefined &&
     dependencies.assetStore !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasAlertRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & AlertRuleRouteDependencies & AlertCollectionRouteDependencies {
+  return (
+    dependencies.alertService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );
