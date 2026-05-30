@@ -9,12 +9,14 @@ import {
   type ManagementSessionRouteDependencies
 } from "./http/routes/management-session.js";
 import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
+import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/routes/overlays.js";
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
     Partial<OverlayModuleRouteDependencies>,
+    Partial<OverlayRouteDependencies>,
     Partial<AssetRouteDependencies>,
     Partial<AlertRuleRouteDependencies>,
     Partial<AlertCollectionRouteDependencies>,
@@ -60,7 +62,19 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerAssetRoutes(app, dependencies);
   }
 
-  if (dependencies.overlayModuleRegistry !== undefined || dependencies.overlayModuleConfigService !== undefined) {
+  if (
+    dependencies.overlayAccessService !== undefined ||
+    dependencies.overlayCompositionService !== undefined ||
+    dependencies.overlayGateway !== undefined
+  ) {
+    if (!hasOverlayRouteDependencies(dependencies)) {
+      throw new Error("Overlay routes require access service, composition service, and module registry");
+    }
+
+    registerOverlayRoutes(app, dependencies);
+  }
+
+  if (dependencies.overlayModuleConfigService !== undefined) {
     if (!hasOverlayModuleRouteDependencies(dependencies)) {
       throw new Error("Overlay module routes require registry, config service, management auth, and rate-limit hooks");
     }
@@ -103,6 +117,16 @@ function hasOverlayModuleRouteDependencies(
     dependencies.overlayModuleConfigService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasOverlayRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & OverlayRouteDependencies {
+  return (
+    dependencies.overlayAccessService !== undefined &&
+    dependencies.overlayCompositionService !== undefined &&
+    dependencies.overlayModuleRegistry !== undefined
   );
 }
 

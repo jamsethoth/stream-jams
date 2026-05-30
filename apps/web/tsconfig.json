@@ -3,9 +3,20 @@
   "compilerOptions": {
     "composite": true,
     "jsx": "react-jsx",
-    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "types": [
+      "vitest/globals",
+      "@testing-library/jest-dom"
+    ],
     "outDir": "dist",
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
-  "include": ["src", "vite.config.ts"]
+  "include": [
+    "src",
+    "vite.config.ts"
+  ],
+  "references": [
+    {
+      "path": "../../packages/core"
+    }
+  ]
 }

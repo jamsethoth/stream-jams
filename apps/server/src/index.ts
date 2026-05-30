@@ -6,6 +6,7 @@ import {
   DefaultAssetValidator,
   DefaultMediaImportPipeline,
   DefaultOverlayModuleConfigService,
+  DefaultOverlayCompositionService,
   DefaultAlertMatcher,
   DefaultAlertResolver,
   DefaultPlaybackCooldownService,
@@ -29,8 +30,11 @@ import { openStreamJamsDatabase } from "./modules/db/database.js";
 import { InMemoryServerOverlayModuleConfigRepository } from "./modules/overlay-modules/in-memory-module-config-repository.js";
 import { SqliteAssetRepository } from "./modules/assets/sqlite-asset-repository.js";
 import { createStaticOverlayModuleRegistry } from "./modules/overlay-modules/static-module-registry.js";
+import { LocalOverlayAccessService } from "./modules/overlays/overlay-access-service.js";
+import { SqliteOverlayAccessKeyRepository } from "./modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "./modules/playback/playback-coordinator.js";
 import { findSuggestedPorts, NodePortAvailabilityChecker } from "./server/port-availability.js";
+import { OverlayGateway } from "./websocket/overlay-gateway.js";
 import { startServer } from "./server/start-server.js";
 
 const homeDirectory = homedir();
@@ -70,23 +74,62 @@ const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
   registry: overlayModuleRegistry,
   repository: new InMemoryServerOverlayModuleConfigRepository()
 });
+const overlayAccessService = new LocalOverlayAccessService({
+  repository: new SqliteOverlayAccessKeyRepository(database.connection)
+});
+const overlayGateway = new OverlayGateway({
+  overlayAccessService,
+  generateClientId: generateOverlayClientId,
+  onPlaybackReport(report) {
+    if (report.status === "completed" || report.status === "failed") {
+      playbackCoordinator.completeCurrent();
+    }
+  }
+});
+const playbackQueue = new DefaultPlaybackQueue({
+  generateId: generatePlaybackQueueItemId
+});
 const playbackCoordinator = new PlaybackCoordinator({
   alertService,
   matcher: new DefaultAlertMatcher(),
   resolver: new DefaultAlertResolver({
     generateId: generateResolvedAlertId
   }),
-  queue: new DefaultPlaybackQueue({
-    generateId: generatePlaybackQueueItemId
-  }),
+  queue: playbackQueue,
   cooldownService: new DefaultPlaybackCooldownService(),
   dedupeService: new DefaultPlaybackDedupeService(),
   defaultTarget: {
-    overlayId: "main",
+    overlayId: "default",
     purpose: "live",
     scope: "module"
   },
-  assetRepository
+  assetRepository,
+  overlayPlaybackSink: overlayGateway
+});
+const overlayCompositionService = new DefaultOverlayCompositionService({
+  configService: overlayModuleConfigService,
+  runtime: {
+    async getModuleSnapshot(request) {
+      const current = playbackQueue.getSnapshot().current;
+      const instructions = current === null
+        ? []
+        : current.alerts
+            .map((alert) => alert.overlayInstruction)
+            .filter(
+              (instruction) =>
+                instruction.overlayId === request.overlayId &&
+                instruction.moduleId === request.moduleId &&
+                instruction.purpose === request.purpose &&
+                instruction.scope === request.scope
+            );
+
+      return {
+        moduleId: request.moduleId,
+        enabled: true,
+        instructions
+      };
+    }
+  }
 });
 
 try {
@@ -102,6 +145,9 @@ try {
         serverConfigService,
         overlayModuleRegistry,
         overlayModuleConfigService,
+        overlayAccessService,
+        overlayCompositionService,
+        overlayGateway,
         alertService,
         assetRepository,
         mediaImportPipeline,
@@ -149,6 +195,10 @@ function generateResolvedAlertId(kind: "resolved-alert" | "overlay-instruction")
 
 function generatePlaybackQueueItemId(): string {
   return `playback_item_${randomBytes(16).toString("base64url")}`;
+}
+
+function generateOverlayClientId(): string {
+  return "overlay_client_" + randomBytes(16).toString("base64url");
 }
 
 function calculateChecksum(bytes: Uint8Array): string {

@@ -1426,20 +1426,20 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Add live and test overlay HTTP routes using route keys.
-- [ ] Add module-specific overlay HTTP routes using module-scoped route keys.
-- [ ] Add unified overlay HTTP routes using unified route keys.
-- [ ] Add authenticated overlay WebSocket connections.
-- [ ] Register overlay clients with overlay ID, module ID, purpose, and output scope.
-- [ ] Deliver playback instructions only to matching module-specific or unified overlay clients.
-- [ ] Render transparent fullscreen overlay root.
-- [ ] Render module snapshots from `OverlayCompositionService`.
-- [ ] Render image, GIF, video, text, and audio playback instructions.
-- [ ] Report playback start, completion, and failure to the server.
-- [ ] Unit test gateway client registration and authorization.
-- [ ] Component test overlay rendering for image, video, text, and audio instruction shapes.
-- [ ] Playwright test that a test overlay renders a test alert.
-- [ ] Commit with message `feat: add browser source overlay`.
+- [x] Add live and test overlay HTTP routes using route keys.
+- [x] Add module-specific overlay HTTP routes using module-scoped route keys.
+- [x] Add unified overlay HTTP routes using unified route keys.
+- [x] Add authenticated overlay WebSocket connections.
+- [x] Register overlay clients with overlay ID, module ID, purpose, and output scope.
+- [x] Deliver playback instructions only to matching module-specific or unified overlay clients.
+- [x] Render transparent fullscreen overlay root.
+- [x] Render module snapshots from `OverlayCompositionService`.
+- [x] Render image, GIF, video, text, and audio playback instructions.
+- [x] Report playback start, completion, and failure to the server.
+- [x] Unit test gateway client registration and authorization.
+- [x] Component test overlay rendering for image, video, text, and audio instruction shapes.
+- [x] Playwright test that a test overlay renders a test alert.
+- [x] Commit with message `feat: add browser source overlay`.
 
 **Acceptance Checks:**
 
@@ -1448,6 +1448,15 @@ export interface ProviderErrorLogRecord {
 - Disabled modules do not render in either output mode.
 - Overlay can reconnect without requiring a server restart.
 - Overlay does not receive management-only data.
+
+**Completion Evidence (2026-05-30):**
+
+- Added route-key-protected module and unified overlay HTTP routes for shell and composition responses, using the existing path-segment overlay key middleware.
+- Added route-key-protected WebSocket overlay routes and a testable `OverlayGateway` that authorizes registrations, tracks reconnectable clients, scopes playback delivery by overlay/module/purpose/scope, and records playback lifecycle reports.
+- Added server composition-root wiring for overlay access storage, composition snapshots backed by the current playback queue, and playback instruction delivery into the gateway.
+- Added the React overlay runtime, route parser/client, transparent fullscreen root, module snapshot rendering, image/GIF/video/text/audio playback surfaces, browser-speech handling, and lifecycle reporting over WebSocket.
+- Added Playwright coverage for a test overlay rendering a test alert; local browser execution is blocked by missing `libnspr4.so` on Ubuntu 26.04 without sudo access, so CI validate is pinned to Ubuntu 24.04 and installs Chromium plus dependencies before `pnpm test:e2e`.
+- Local validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (59 test files and 224 tests), `pnpm build`, and `git diff --check`; `pnpm test:e2e` is expected to validate in CI on the supported runner.
 
 ### Slice 14: Management UI Shell And Core Workflows
 
