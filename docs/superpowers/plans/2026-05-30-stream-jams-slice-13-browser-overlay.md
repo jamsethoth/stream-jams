@@ -203,7 +203,7 @@
 - [x] `pnpm lint` passed locally.
 - [x] `pnpm typecheck` passed locally.
 - [x] `pnpm test` passed locally: 59 files, 224 tests.
-- [ ] `pnpm test:e2e` is implemented but blocked locally by missing Linux browser library `libnspr4.so` on Ubuntu 26.04 without sudo access; CI validate is pinned to Ubuntu 24.04 and runs `pnpm exec playwright install --with-deps chromium` before `pnpm test:e2e`.
+- [x] `pnpm test:e2e` passed in CI validate on Ubuntu 24.04 after `pnpm exec playwright install --with-deps chromium`; local execution remains blocked by missing `libnspr4.so` on Ubuntu 26.04 without sudo access.
 - [x] `pnpm build` passed locally.
 - [x] `git diff --check` passed locally.
 - [x] Diff self-review completed; generated Playwright artifacts are ignored and not committed.

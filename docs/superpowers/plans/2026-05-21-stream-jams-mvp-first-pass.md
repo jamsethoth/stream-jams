@@ -1455,8 +1455,8 @@ export interface ProviderErrorLogRecord {
 - Added route-key-protected WebSocket overlay routes and a testable `OverlayGateway` that authorizes registrations, tracks reconnectable clients, scopes playback delivery by overlay/module/purpose/scope, and records playback lifecycle reports.
 - Added server composition-root wiring for overlay access storage, composition snapshots backed by the current playback queue, and playback instruction delivery into the gateway.
 - Added the React overlay runtime, route parser/client, transparent fullscreen root, module snapshot rendering, image/GIF/video/text/audio playback surfaces, browser-speech handling, and lifecycle reporting over WebSocket.
-- Added Playwright coverage for a test overlay rendering a test alert; local browser execution is blocked by missing `libnspr4.so` on Ubuntu 26.04 without sudo access, so CI validate is pinned to Ubuntu 24.04 and installs Chromium plus dependencies before `pnpm test:e2e`.
-- Local validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (59 test files and 224 tests), `pnpm build`, and `git diff --check`; `pnpm test:e2e` is expected to validate in CI on the supported runner.
+- Added Playwright coverage for a test overlay rendering a test alert; CI validate passed on Ubuntu 24.04 after installing Chromium plus dependencies, while local browser execution remains blocked by missing `libnspr4.so` on Ubuntu 26.04 without sudo access.
+- Local validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (59 test files and 224 tests), `pnpm build`, and `git diff --check`; `pnpm test:e2e` passed in CI validate on the supported runner.
 
 ### Slice 14: Management UI Shell And Core Workflows
 
