@@ -46,6 +46,14 @@ Non-goals:
 - Existing web shell is minimal React/Vite with Testing Library.
 - Existing server route pattern uses Fastify app dependency injection plus management auth/rate-limit pre-handlers.
 
+## Completion Evidence
+
+- Core validator and media import pipeline tests passed for browser-safe MIME/extension acceptance, unsupported media rejection, extension mismatch, size limits, no-op transcoding, checksum/id/storage metadata, and invalid-before-storage behavior.
+- Server asset store and route tests passed for generated storage paths, safe reads, path traversal rejection, missing-file diagnostics, authenticated listing, raw octet-stream import, invalid import rejection, and asset serving by asset ID.
+- Web asset manager tests passed for loaded rows, empty state, successful import refresh, and visible import diagnostics without clearing the existing list.
+- Architecture scans found no Node-only imports or direct `@stream-jams/core` imports in web UI code; filesystem and SQLite implementations remain in server module/runtime boundaries.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (43 test files and 148 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+
 ## File Ownership
 
 - Create `packages/core/src/assets/asset-validator.ts`: MIME/extension/size validation and media type normalization.
@@ -73,12 +81,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing validator tests for accepted PNG, GIF, MP4, and MP3 examples.
-- [ ] Write failing validator tests for unsupported MIME, unsupported extension, MIME/extension mismatch, zero-byte size, and over-limit size.
-- [ ] Run focused tests and confirm missing validator failures.
-- [ ] Implement allowed media table and deterministic validation errors.
-- [ ] Export validator contracts and schemas.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing validator tests for accepted PNG, GIF, MP4, and MP3 examples.
+- [x] Write failing validator tests for unsupported MIME, unsupported extension, MIME/extension mismatch, zero-byte size, and over-limit size.
+- [x] Run focused tests and confirm missing validator failures.
+- [x] Implement allowed media table and deterministic validation errors.
+- [x] Export validator contracts and schemas.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -110,12 +118,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing pipeline tests for accepted imports saving a complete `AssetRecord`.
-- [ ] Write failing pipeline tests proving invalid files do not call storage or repository dependencies.
-- [ ] Write failing tests proving the no-op transcoder preserves bytes while remaining replaceable.
-- [ ] Run focused tests and confirm missing pipeline failures.
-- [ ] Implement pipeline interfaces, typed errors, and default no-op transcoder.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing pipeline tests for accepted imports saving a complete `AssetRecord`.
+- [x] Write failing pipeline tests proving invalid files do not call storage or repository dependencies.
+- [x] Write failing tests proving the no-op transcoder preserves bytes while remaining replaceable.
+- [x] Run focused tests and confirm missing pipeline failures.
+- [x] Implement pipeline interfaces, typed errors, and default no-op transcoder.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -144,12 +152,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests for writing generated asset file names under media-type subdirectories.
-- [ ] Write failing tests for reading stored files back as bytes.
-- [ ] Write failing tests for rejecting path traversal and missing files.
-- [ ] Run focused tests and confirm missing store failures.
-- [ ] Implement UTF-8/path-safe filesystem operations using platform-aware path APIs.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests for writing generated asset file names under media-type subdirectories.
+- [x] Write failing tests for reading stored files back as bytes.
+- [x] Write failing tests for rejecting path traversal and missing files.
+- [x] Run focused tests and confirm missing store failures.
+- [x] Implement UTF-8/path-safe filesystem operations using platform-aware path APIs.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -182,14 +190,14 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing route tests for authenticated list/import/serve flows.
-- [ ] Write failing route tests for invalid metadata, unsupported media, missing auth, missing asset records, missing files, and path traversal records.
-- [ ] Run focused tests and confirm missing route failures.
-- [ ] Register an octet-stream parser for import bytes.
-- [ ] Implement thin route handlers under management auth/rate-limit hooks.
-- [ ] Add app dependency guards for asset routes.
-- [ ] Wire runtime asset repository, asset store, and pipeline.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing route tests for authenticated list/import/serve flows.
+- [x] Write failing route tests for invalid metadata, unsupported media, missing auth, missing asset records, missing files, and path traversal records.
+- [x] Run focused tests and confirm missing route failures.
+- [x] Register an octet-stream parser for import bytes.
+- [x] Implement thin route handlers under management auth/rate-limit hooks.
+- [x] Add app dependency guards for asset routes.
+- [x] Wire runtime asset repository, asset store, and pipeline.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -223,11 +231,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing component tests for loaded asset rows, import success refresh, invalid import diagnostics, and empty/error states.
-- [ ] Run focused web tests and confirm missing component failures.
-- [ ] Implement a small asset API client and asset panel with stable controls and no Node-only access.
-- [ ] Update the app shell to host the asset panel.
-- [ ] Run focused web tests and confirm they pass.
+- [x] Write failing component tests for loaded asset rows, import success refresh, invalid import diagnostics, and empty/error states.
+- [x] Run focused web tests and confirm missing component failures.
+- [x] Implement a small asset API client and asset panel with stable controls and no Node-only access.
+- [x] Update the app shell to host the asset panel.
+- [x] Run focused web tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -257,12 +265,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Run architecture scans proving filesystem/SQLite code is confined to server adapters and web UI has no Node-only imports.
-- [ ] Update the base MVP plan Slice 9 checklist and completion evidence.
-- [ ] Update this detailed plan with validation evidence.
-- [ ] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
-- [ ] Self-review the diff for scope creep and weak tests.
-- [ ] Commit with message `feat: add asset management`.
+- [x] Run architecture scans proving filesystem/SQLite code is confined to server adapters and web UI has no Node-only imports.
+- [x] Update the base MVP plan Slice 9 checklist and completion evidence.
+- [x] Update this detailed plan with validation evidence.
+- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- [x] Self-review the diff for scope creep and weak tests.
+- [x] Commit with message `feat: add asset management`.
 
 **Validation commands:**
 

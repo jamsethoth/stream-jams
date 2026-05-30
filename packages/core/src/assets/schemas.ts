@@ -16,5 +16,6 @@ export const assetRecordSchema = z.object({
 export const assetValidationResultSchema = z.object({
   accepted: z.boolean(),
   reason: z.string().nullable(),
-  mediaType: assetMediaTypeSchema.nullable()
+  mediaType: assetMediaTypeSchema.nullable(),
+  normalizedExtension: z.string().nullable()
 });

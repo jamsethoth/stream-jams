@@ -1249,15 +1249,15 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Implement `AssetValidator` with allowed MIME types, file extensions, and size limits for common browser-safe formats.
-- [ ] Define `MediaImportPipeline` with validation and future transcoding stages, but make the MVP transcoding stage a no-op.
-- [ ] Copy imported files into the configured asset directory using generated file names.
-- [ ] Store original file name, normalized media type, size, checksum, and relative storage path.
-- [ ] Serve assets through authenticated local routes that prevent path traversal.
-- [ ] Add management UI for listing and importing assets.
-- [ ] Unit test file type, file size, extension mismatch, path traversal attempts, and missing file behavior.
-- [ ] Integration test asset import and asset serving.
-- [ ] Commit with message `feat: add asset management`.
+- [x] Implement `AssetValidator` with allowed MIME types, file extensions, and size limits for common browser-safe formats.
+- [x] Define `MediaImportPipeline` with validation and future transcoding stages, but make the MVP transcoding stage a no-op.
+- [x] Copy imported files into the configured asset directory using generated file names.
+- [x] Store original file name, normalized media type, size, checksum, and relative storage path.
+- [x] Serve assets through authenticated local routes that prevent path traversal.
+- [x] Add management UI for listing and importing assets.
+- [x] Unit test file type, file size, extension mismatch, path traversal attempts, and missing file behavior.
+- [x] Integration test asset import and asset serving.
+- [x] Commit with message `feat: add asset management`.
 
 **Acceptance Checks:**
 
@@ -1265,6 +1265,17 @@ export interface ProviderErrorLogRecord {
 - Invalid media files are rejected before storage.
 - Import-time transcoding can be added later by replacing the no-op transcoding stage without changing alert, module, or asset repository contracts.
 - Missing assets produce a user-visible diagnostic.
+
+**Completion Evidence:**
+
+- Slice 9 detailed execution plan was added at `docs/superpowers/plans/2026-05-30-stream-jams-slice-9-asset-management.md`.
+- Core asset validation accepts common browser-safe image, GIF, video, and audio MIME/extension pairs and rejects unsupported media, extension mismatches, empty files, and over-limit files before storage.
+- Media import orchestration validates first, runs an MVP no-op transcoder, computes checksums, writes generated storage paths, and persists typed asset metadata.
+- Local asset storage writes generated media-type paths and rejects absolute paths, backslash paths, and `..` traversal before filesystem reads.
+- Management-protected asset routes list assets, import octet-stream file bytes with explicit file metadata headers, serve assets by asset ID, and return structured diagnostics for invalid imports, missing records, missing files, and invalid storage paths.
+- The web management shell includes an asset panel for listing assets, selecting a file, importing, refreshing the list, and showing import diagnostics.
+- Focused tests and full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (43 test files and 148 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Architecture scans found no Node-only imports or direct `@stream-jams/core` imports in web UI code; filesystem and SQLite concrete implementations are confined to server module/runtime boundaries.
 
 ### Slice 10: Alerts Module Configuration: Collections, Rules, And Variants CRUD
 

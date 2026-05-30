@@ -1,0 +1,169 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f7f8fa;
+  color: #20242c;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100vh;
+  padding: 32px;
+}
+
+.app-header {
+  align-items: baseline;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin: 0 auto 24px;
+  max-width: 1120px;
+}
+
+.app-header h1 {
+  font-size: 28px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.app-header p {
+  color: #5f6673;
+  margin: 0;
+}
+
+.asset-panel {
+  background: #ffffff;
+  border: 1px solid #d9dee8;
+  border-radius: 8px;
+  margin: 0 auto;
+  max-width: 1120px;
+  padding: 20px;
+}
+
+.asset-panel__header {
+  align-items: end;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+}
+
+.asset-panel h2 {
+  font-size: 22px;
+  line-height: 1.25;
+  margin: 0 0 4px;
+}
+
+.asset-panel p {
+  color: #5f6673;
+  margin: 0;
+}
+
+.asset-import {
+  align-items: end;
+  display: flex;
+  gap: 12px;
+}
+
+.asset-import label {
+  display: grid;
+  gap: 6px;
+}
+
+.asset-import span {
+  color: #3d4654;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.asset-import input {
+  max-width: 280px;
+}
+
+.asset-import button {
+  background: #166c5f;
+  border: 1px solid #166c5f;
+  border-radius: 6px;
+  color: #ffffff;
+  cursor: pointer;
+  min-height: 38px;
+  padding: 0 14px;
+}
+
+.asset-import button:disabled {
+  background: #a7b2bd;
+  border-color: #a7b2bd;
+  cursor: not-allowed;
+}
+
+.asset-diagnostic {
+  background: #eef7f3;
+  border: 1px solid #cde6dc;
+  border-radius: 6px;
+  color: #24564d;
+  margin-top: 16px !important;
+  padding: 10px 12px;
+}
+
+.asset-empty {
+  border: 1px dashed #c8ced8;
+  border-radius: 6px;
+  margin-top: 16px !important;
+  padding: 16px;
+}
+
+.asset-table-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.asset-table {
+  border-collapse: collapse;
+  min-width: 760px;
+  width: 100%;
+}
+
+.asset-table th,
+.asset-table td {
+  border-bottom: 1px solid #e4e8ef;
+  padding: 10px 8px;
+  text-align: left;
+}
+
+.asset-table th {
+  color: #4a5361;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.asset-table td {
+  color: #20242c;
+  font-size: 14px;
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding: 16px;
+  }
+
+  .app-header,
+  .asset-panel__header,
+  .asset-import {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
