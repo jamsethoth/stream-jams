@@ -21,7 +21,7 @@ describe("DefaultMediaImportPipeline", () => {
       generateId: () => "asset_1",
       calculateChecksum: () => "sha256:abc123"
     });
-    const bytes = new Uint8Array([1, 2, 3]);
+    const bytes = pngBytes;
 
     await expect(
       pipeline.importMedia({
@@ -34,7 +34,7 @@ describe("DefaultMediaImportPipeline", () => {
       originalFileName: "Alert.PNG",
       mediaType: "image",
       mimeType: "image/png",
-      sizeBytes: 3,
+      sizeBytes: pngBytes.byteLength,
       checksum: "sha256:abc123",
       storagePath: "image/asset_1.png"
     });
@@ -66,7 +66,7 @@ describe("DefaultMediaImportPipeline", () => {
       pipeline.importMedia({
         originalFileName: "photo.png",
         mimeType: "image/jpeg",
-        bytes: new Uint8Array([1, 2, 3])
+        bytes: pngBytes
       })
     ).rejects.toEqual(new InvalidMediaImportError("File extension does not match media type"));
     expect(store.writes).toEqual([]);
@@ -124,3 +124,5 @@ class RecordingMediaAssetStore implements MediaAssetStore {
     };
   }
 }
+
+const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);

@@ -16,6 +16,9 @@ import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } 
 import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
 
 const temporaryDirectories: string[] = [];
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const pngBytes = Buffer.concat([pngSignature, Buffer.from([1, 2, 3])]);
+const invalidBytes = Buffer.from("not a png", "utf8");
 
 describe("asset routes", () => {
   afterEach(async () => {
@@ -48,7 +51,7 @@ describe("asset routes", () => {
         "x-stream-jams-file-name": "Alert.PNG",
         "x-stream-jams-mime-type": "image/png"
       },
-      payload: Buffer.from([1, 2, 3])
+      payload: pngBytes
     });
 
     expect(importResponse.statusCode).toBe(201);
@@ -57,7 +60,7 @@ describe("asset routes", () => {
       originalFileName: "Alert.PNG",
       mediaType: "image",
       mimeType: "image/png",
-      sizeBytes: 3,
+      sizeBytes: pngBytes.byteLength,
       checksum: "sha256:test",
       storagePath: "image/asset_1.png"
     });
@@ -70,7 +73,36 @@ describe("asset routes", () => {
 
     expect(fileResponse.statusCode).toBe(200);
     expect(fileResponse.headers["content-type"]).toContain("image/png");
-    expect(fileResponse.rawPayload).toEqual(Buffer.from([1, 2, 3]));
+    expect(fileResponse.headers["x-content-type-options"]).toBe("nosniff");
+    expect(fileResponse.rawPayload).toEqual(pngBytes);
+  });
+
+  it("accepts imports above Fastify's default body limit when they fit the asset policy", async () => {
+    const { app, authHeaders } = await createAppWithAssets();
+    const payload = Buffer.alloc(1_048_576 + pngSignature.byteLength + 1);
+    pngSignature.copy(payload, 0);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/assets/import",
+      headers: {
+        ...authHeaders,
+        "content-type": "application/octet-stream",
+        "x-stream-jams-file-name": "large.png",
+        "x-stream-jams-mime-type": "image/png"
+      },
+      payload
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json()).toMatchObject({
+      id: "asset_1",
+      originalFileName: "large.png",
+      mediaType: "image",
+      mimeType: "image/png",
+      sizeBytes: payload.byteLength,
+      storagePath: "image/asset_1.png"
+    });
   });
 
   it("rejects invalid media imports before persisting metadata", async () => {
@@ -85,7 +117,7 @@ describe("asset routes", () => {
         "x-stream-jams-file-name": "photo.png",
         "x-stream-jams-mime-type": "image/jpeg"
       },
-      payload: Buffer.from([1, 2, 3])
+      payload: pngBytes
     });
 
     expect(response.statusCode).toBe(400);
@@ -93,6 +125,31 @@ describe("asset routes", () => {
       error: {
         code: "INVALID_ASSET_IMPORT",
         message: "File extension does not match media type"
+      }
+    });
+    await expect(repository.list()).resolves.toEqual([]);
+  });
+
+  it("rejects media imports whose bytes do not match their declared type", async () => {
+    const { app, authHeaders, repository } = await createAppWithAssets();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/assets/import",
+      headers: {
+        ...authHeaders,
+        "content-type": "application/octet-stream",
+        "x-stream-jams-file-name": "photo.png",
+        "x-stream-jams-mime-type": "image/png"
+      },
+      payload: invalidBytes
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INVALID_ASSET_IMPORT",
+        message: "File signature does not match media type"
       }
     });
     await expect(repository.list()).resolves.toEqual([]);

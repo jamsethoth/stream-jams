@@ -1,5 +1,6 @@
 import {
   InvalidMediaImportError,
+  defaultAssetValidationPolicy,
   type AssetRepository,
   type MediaImportPipeline
 } from "@stream-jams/core";
@@ -16,6 +17,12 @@ export interface AssetRouteDependencies {
 }
 
 const importContentType = "application/octet-stream";
+const maximumAssetImportBodyBytes = Math.max(
+  defaultAssetValidationPolicy.image.maxSizeBytes,
+  defaultAssetValidationPolicy.gif.maxSizeBytes,
+  defaultAssetValidationPolicy.video.maxSizeBytes,
+  defaultAssetValidationPolicy.audio.maxSizeBytes
+);
 
 export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRouteDependencies): void {
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
@@ -28,7 +35,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
 
   app.get("/assets", { preHandler }, async () => dependencies.assetRepository.list());
 
-  app.post("/assets/import", { preHandler }, async (request, reply) => {
+  app.post("/assets/import", { preHandler, bodyLimit: maximumAssetImportBodyBytes }, async (request, reply) => {
     const importRequest = parseImportRequest(request.body, request.headers);
     if (importRequest === null) {
       return sendHttpError(reply, 400, {
@@ -64,7 +71,7 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
 
     try {
       const bytes = await dependencies.assetStore.read(record.storagePath);
-      return reply.type(record.mimeType).send(bytes);
+      return reply.header("x-content-type-options", "nosniff").type(record.mimeType).send(bytes);
     } catch (error) {
       if (error instanceof AssetPathTraversalError) {
         return sendHttpError(reply, 400, {

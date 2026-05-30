@@ -1269,12 +1269,12 @@ export interface ProviderErrorLogRecord {
 **Completion Evidence:**
 
 - Slice 9 detailed execution plan was added at `docs/superpowers/plans/2026-05-30-stream-jams-slice-9-asset-management.md`.
-- Core asset validation accepts common browser-safe image, GIF, video, and audio MIME/extension pairs and rejects unsupported media, extension mismatches, empty files, and over-limit files before storage.
+- Core asset validation accepts common browser-safe image, GIF, video, and audio MIME/extension/signature combinations and rejects unsupported media, extension mismatches, signature mismatches, empty files, and over-limit files before storage.
 - Media import orchestration validates first, runs an MVP no-op transcoder, computes checksums, writes generated storage paths, and persists typed asset metadata.
 - Local asset storage writes generated media-type paths and rejects absolute paths, backslash paths, and `..` traversal before filesystem reads.
-- Management-protected asset routes list assets, import octet-stream file bytes with explicit file metadata headers, serve assets by asset ID, and return structured diagnostics for invalid imports, missing records, missing files, and invalid storage paths.
+- Management-protected asset routes list assets, import octet-stream file bytes with explicit file metadata headers and a body limit aligned to the largest allowed asset policy, serve assets by asset ID with `X-Content-Type-Options: nosniff`, and return structured diagnostics for invalid imports, missing records, missing files, and invalid storage paths.
 - The web management shell includes an asset panel for listing assets, selecting a file, importing, refreshing the list, and showing import diagnostics.
-- Focused tests and full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (43 test files and 148 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Focused tests and full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (43 test files and 151 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 - Architecture scans found no Node-only imports or direct `@stream-jams/core` imports in web UI code; filesystem and SQLite concrete implementations are confined to server module/runtime boundaries.
 
 ### Slice 10: Alerts Module Configuration: Collections, Rules, And Variants CRUD

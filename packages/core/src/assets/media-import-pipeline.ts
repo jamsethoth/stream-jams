@@ -81,7 +81,8 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
     const validation = this.#validator.validate({
       originalFileName: input.originalFileName,
       mimeType: input.mimeType,
-      sizeBytes: input.bytes.byteLength
+      sizeBytes: input.bytes.byteLength,
+      bytes: input.bytes
     });
     if (!validation.accepted || validation.mediaType === null || validation.normalizedExtension === null) {
       throw new InvalidMediaImportError(validation.reason ?? "Invalid media import");

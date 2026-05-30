@@ -48,11 +48,11 @@ Non-goals:
 
 ## Completion Evidence
 
-- Core validator and media import pipeline tests passed for browser-safe MIME/extension acceptance, unsupported media rejection, extension mismatch, size limits, no-op transcoding, checksum/id/storage metadata, and invalid-before-storage behavior.
-- Server asset store and route tests passed for generated storage paths, safe reads, path traversal rejection, missing-file diagnostics, authenticated listing, raw octet-stream import, invalid import rejection, and asset serving by asset ID.
+- Core validator and media import pipeline tests passed for browser-safe MIME/extension/signature acceptance, unsupported media rejection, extension mismatch, signature mismatch, size limits, no-op transcoding, checksum/id/storage metadata, and invalid-before-storage behavior.
+- Server asset store and route tests passed for generated storage paths, safe reads, path traversal rejection, missing-file diagnostics, authenticated listing, raw octet-stream import above Fastify's default body limit, invalid import rejection, nosniff asset serving, and asset serving by asset ID.
 - Web asset manager tests passed for loaded rows, empty state, successful import refresh, and visible import diagnostics without clearing the existing list.
 - Architecture scans found no Node-only imports or direct `@stream-jams/core` imports in web UI code; filesystem and SQLite implementations remain in server module/runtime boundaries.
-- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (43 test files and 148 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (43 test files and 151 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 
 ## File Ownership
 
@@ -82,7 +82,7 @@ Non-goals:
 **Implementation steps:**
 
 - [x] Write failing validator tests for accepted PNG, GIF, MP4, and MP3 examples.
-- [x] Write failing validator tests for unsupported MIME, unsupported extension, MIME/extension mismatch, zero-byte size, and over-limit size.
+- [x] Write failing validator tests for unsupported MIME, unsupported extension, MIME/extension mismatch, byte-signature mismatch, zero-byte size, and over-limit size.
 - [x] Run focused tests and confirm missing validator failures.
 - [x] Implement allowed media table and deterministic validation errors.
 - [x] Export validator contracts and schemas.
@@ -95,7 +95,7 @@ Non-goals:
 **Negative test cases:**
 
 - Dangerous or unsupported extensions are rejected even when MIME looks acceptable.
-- Mismatched MIME/extension pairs are rejected before storage.
+- Mismatched MIME/extension pairs and media byte signatures are rejected before storage.
 - Oversized files are rejected with a user-facing reason.
 
 **Validation commands:**
@@ -191,7 +191,7 @@ Non-goals:
 **Implementation steps:**
 
 - [x] Write failing route tests for authenticated list/import/serve flows.
-- [x] Write failing route tests for invalid metadata, unsupported media, missing auth, missing asset records, missing files, and path traversal records.
+- [x] Write failing route tests for invalid metadata, unsupported media bytes, body-limit alignment, missing auth, missing asset records, missing files, and path traversal records.
 - [x] Run focused tests and confirm missing route failures.
 - [x] Register an octet-stream parser for import bytes.
 - [x] Implement thin route handlers under management auth/rate-limit hooks.
@@ -206,6 +206,7 @@ Non-goals:
 **Negative test cases:**
 
 - Missing management sessions cannot list, import, or serve assets.
+- Valid imports above Fastify's default body limit but inside the asset policy are accepted.
 - Path traversal storage records return structured errors instead of reading arbitrary files.
 
 **Validation commands:**
