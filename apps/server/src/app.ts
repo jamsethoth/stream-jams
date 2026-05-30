@@ -5,10 +5,12 @@ import {
   registerManagementSessionRoutes,
   type ManagementSessionRouteDependencies
 } from "./http/routes/management-session.js";
+import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
-    Partial<ManagementSessionRouteDependencies> {
+    Partial<ManagementSessionRouteDependencies>,
+    Partial<OverlayModuleRouteDependencies> {
   readonly metadata: ServerAppMetadata;
 }
 
@@ -29,6 +31,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     });
   }
 
+  if (dependencies.overlayModuleRegistry !== undefined || dependencies.overlayModuleConfigService !== undefined) {
+    if (!hasOverlayModuleRouteDependencies(dependencies)) {
+      throw new Error("Overlay module routes require registry, config service, management auth, and rate-limit hooks");
+    }
+
+    registerOverlayModuleRoutes(app, dependencies);
+  }
+
   if (dependencies.serverConfigService !== undefined) {
     if (!hasConfigRouteProtection(dependencies)) {
       throw new Error("Config routes require management auth and rate-limit hooks");
@@ -45,5 +55,16 @@ function hasConfigRouteProtection(
 ): dependencies is ServerAppDependencies & ServerConfigRouteDependencies {
   return (
     dependencies.managementAuthPreHandler !== undefined && dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasOverlayModuleRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & OverlayModuleRouteDependencies {
+  return (
+    dependencies.overlayModuleRegistry !== undefined &&
+    dependencies.overlayModuleConfigService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
   );
 }

@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { DefaultOverlayModuleConfigService } from "@stream-jams/core";
 import { createServerApp } from "./app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "./config/default-config.js";
 import { FileConfigStore } from "./config/file-config-store.js";
@@ -9,6 +10,8 @@ import {
 } from "./http/middleware/local-management-rate-limit.js";
 import { createManagementAuthPreHandler } from "./http/middleware/management-auth.js";
 import { LocalManagementSessionService } from "./modules/auth/management-session-service.js";
+import { InMemoryServerOverlayModuleConfigRepository } from "./modules/overlay-modules/in-memory-module-config-repository.js";
+import { createStaticOverlayModuleRegistry } from "./modules/overlay-modules/static-module-registry.js";
 import { findSuggestedPorts, NodePortAvailabilityChecker } from "./server/port-availability.js";
 import { startServer } from "./server/start-server.js";
 
@@ -27,6 +30,11 @@ const managementRateLimiter = new LocalManagementRateLimiter({
   maxRequests: 120,
   windowMs: 60_000
 });
+const overlayModuleRegistry = createStaticOverlayModuleRegistry();
+const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
+  registry: overlayModuleRegistry,
+  repository: new InMemoryServerOverlayModuleConfigRepository()
+});
 
 try {
   const result = await startServer({
@@ -39,6 +47,8 @@ try {
         },
         managementSessionService,
         serverConfigService,
+        overlayModuleRegistry,
+        overlayModuleConfigService,
         managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
         managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
       }),

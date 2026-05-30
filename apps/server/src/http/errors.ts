@@ -8,6 +8,7 @@ export interface HttpErrorBody {
     readonly port?: number;
     readonly reason?: string;
     readonly retryAfterSeconds?: number;
+    readonly moduleId?: string;
   };
 }
 

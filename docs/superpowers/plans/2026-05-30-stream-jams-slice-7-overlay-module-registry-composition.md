@@ -1,6 +1,6 @@
 # Stream Jams Slice 7 Overlay Module Registry And Composition Model Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement Slice 7 by registering Alerts as the first overlay module, adding module enable/disable configuration, exposing module configuration routes, and resolving module-specific and unified overlay compositions without coupling composition to alert internals.
 
@@ -84,14 +84,14 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests that expect `createDefaultOverlayModuleRegistry().listModules()` to include exactly the built-in Alerts module.
-- [ ] Write failing tests that expect unknown module lookup to return `null`.
-- [ ] Write failing schema tests for valid Alerts wizard metadata and invalid empty wizard steps.
-- [ ] Run focused tests and confirm they fail for missing registry/definition exports.
-- [ ] Implement the Alerts module definition with id `alerts`, display name `Alerts`, default enabled state, config schema version, default config, wizard steps, and renderer metadata.
-- [ ] Implement `StaticOverlayModuleRegistry` with duplicate-id rejection, stable list ordering, and `getModule`.
-- [ ] Export the registry, definition, and helpers from `@stream-jams/core`.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests that expect `createDefaultOverlayModuleRegistry().listModules()` to include exactly the built-in Alerts module.
+- [x] Write failing tests that expect unknown module lookup to return `null`.
+- [x] Write failing schema tests for valid Alerts wizard metadata and invalid empty wizard steps.
+- [x] Run focused tests and confirm they fail for missing registry/definition exports.
+- [x] Implement the Alerts module definition with id `alerts`, display name `Alerts`, default enabled state, config schema version, default config, wizard steps, and renderer metadata.
+- [x] Implement `StaticOverlayModuleRegistry` with duplicate-id rejection, stable list ordering, and `getModule`.
+- [x] Export the registry, definition, and helpers from `@stream-jams/core`.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -131,13 +131,13 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests for default config creation, reading saved config, saving valid config, toggling enabled state, and unknown module rejection.
-- [ ] Run focused tests and confirm missing-service failures.
-- [ ] Define `OverlayModuleConfigRepository` and `OverlayModuleConfigService` contracts.
-- [ ] Implement service behavior that falls back to registry defaults when no persisted config exists.
-- [ ] Validate module config records before returning or saving them.
-- [ ] Implement an in-memory repository for focused tests and MVP server wiring.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests for default config creation, reading saved config, saving valid config, toggling enabled state, and unknown module rejection.
+- [x] Run focused tests and confirm missing-service failures.
+- [x] Define `OverlayModuleConfigRepository` and `OverlayModuleConfigService` contracts.
+- [x] Implement service behavior that falls back to registry defaults when no persisted config exists.
+- [x] Validate module config records before returning or saving them.
+- [x] Implement an in-memory repository for focused tests and MVP server wiring.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -176,13 +176,13 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests for resolving enabled module-specific output, disabled module-specific output, unified output with selected enabled modules, disabled module exclusion, and unknown module rejection.
-- [ ] Run focused tests and confirm missing-service failures.
-- [ ] Define `OverlayModuleRuntime` or snapshot-provider contract for retrieving module snapshots without importing module internals.
-- [ ] Implement `DefaultOverlayCompositionService.resolveModuleOutput`.
-- [ ] Implement `DefaultOverlayCompositionService.resolveUnifiedOutput`.
-- [ ] Validate returned compositions with `overlayCompositionSchema` in tests.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests for resolving enabled module-specific output, disabled module-specific output, unified output with selected enabled modules, disabled module exclusion, and unknown module rejection.
+- [x] Run focused tests and confirm missing-service failures.
+- [x] Define `OverlayModuleRuntime` or snapshot-provider contract for retrieving module snapshots without importing module internals.
+- [x] Implement `DefaultOverlayCompositionService.resolveModuleOutput`.
+- [x] Implement `DefaultOverlayCompositionService.resolveUnifiedOutput`.
+- [x] Validate returned compositions with `overlayCompositionSchema` in tests.
+- [x] Run focused tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -224,14 +224,14 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing route tests for listing modules, reading default config, saving config, toggling enabled state, unauthorized access, and invalid payload rejection.
-- [ ] Run focused route tests and confirm missing-route failures.
-- [ ] Add server registry adapter that returns the core static registry.
-- [ ] Add in-memory module-config repository adapter for MVP runtime.
-- [ ] Implement thin route handlers under management auth/rate-limit hooks.
-- [ ] Register overlay module routes through app dependencies.
-- [ ] Wire default runtime services in `apps/server/src/index.ts`.
-- [ ] Run focused server route and app tests and confirm they pass.
+- [x] Write failing route tests for listing modules, reading default config, saving config, toggling enabled state, unauthorized access, and invalid payload rejection.
+- [x] Run focused route tests and confirm missing-route failures.
+- [x] Add server registry adapter that returns the core static registry.
+- [x] Add in-memory module-config repository adapter for MVP runtime.
+- [x] Implement thin route handlers under management auth/rate-limit hooks.
+- [x] Register overlay module routes through app dependencies.
+- [x] Wire default runtime services in `apps/server/src/index.ts`.
+- [x] Run focused server route and app tests and confirm they pass.
 
 **Positive test cases:**
 
@@ -269,12 +269,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Compare implemented behavior against Slice 7 source requirements.
-- [ ] Update the base MVP plan Slice 7 section with completion evidence only after validation passes.
-- [ ] Update this plan with completed checkboxes and validation evidence.
-- [ ] Run full validation.
-- [ ] Self-review `git diff` for unrelated changes, weak assertions, and accidental scope creep.
-- [ ] Commit implementation and documentation changes.
+- [x] Compare implemented behavior against Slice 7 source requirements.
+- [x] Update the base MVP plan Slice 7 section with completion evidence only after validation passes.
+- [x] Update this plan with completed checkboxes and validation evidence.
+- [x] Run full validation.
+- [x] Self-review `git diff` for unrelated changes, weak assertions, and accidental scope creep.
+- [x] Commit implementation and documentation changes.
 
 **Positive test cases:**
 
@@ -300,3 +300,9 @@ Non-goals:
 **Acceptance criteria:**
 
 - Slice 7 is implemented, tested, reconciled, committed, pushed, and ready for human review in a GitHub PR.
+
+## Validation Evidence
+
+- Focused Slice 7 tests passed: pnpm test -- packages/core/src/overlay-modules/module-registry.test.ts packages/core/src/overlay-modules/schemas.test.ts packages/core/src/overlay-modules/module-config-service.test.ts packages/core/src/overlay-modules/overlay-composition-service.test.ts apps/server/src/http/routes/overlay-modules.test.ts apps/server/src/app.test.ts. Result: 32 test files and 109 tests passed.
+- Full validation passed: pnpm lint, pnpm typecheck, pnpm test, pnpm test:e2e, pnpm build, and git diff --check.
+- Self-review found no remaining in-scope Slice 7 behavior gaps and no forbidden core dependency leaks into Fastify, SQLite, React, Twitch, TTS providers, or alert matching internals.

@@ -56,6 +56,14 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./overlay-modules/types.js";
+export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
+export { alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
+export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
+export { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry } from "./overlay-modules/module-registry.js";
+export type { OverlayModuleConfigRepository, OverlayModuleConfigService, SaveOverlayModuleConfigInput } from "./overlay-modules/module-config-service.js";
+export { DefaultOverlayModuleConfigService, InMemoryOverlayModuleConfigRepository, InvalidOverlayModuleConfigError, UnknownOverlayModuleError } from "./overlay-modules/module-config-service.js";
+export type { OverlayCompositionService, OverlayModuleRuntime, OverlayModuleSnapshotRequest } from "./overlay-modules/overlay-composition-service.js";
+export { DefaultOverlayCompositionService, InvalidOverlayModuleSnapshotError } from "./overlay-modules/overlay-composition-service.js";
 export {
   overlayModuleConfigSchema,
   overlayModuleDefinitionSchema,

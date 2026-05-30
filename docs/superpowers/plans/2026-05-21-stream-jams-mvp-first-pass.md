@@ -1142,36 +1142,49 @@ export interface ProviderErrorLogRecord {
 
 **Category:** Overlay platform foundation.
 
+**Status:** Complete. Implementation verified on branch codex/slice-7-overlay-module-registry.
+
 **Value:** Makes alerts the first module in a broader overlay platform instead of hard-coding the app around alert-only output.
 
 **Files:**
 
-- Create `packages/core/src/overlay-modules/module-definition.ts`
-- Create `packages/core/src/overlay-modules/module-registry.ts`
-- Create `packages/core/src/overlay-modules/module-config-service.ts`
-- Create `packages/core/src/overlay-modules/overlay-composition-service.ts`
-- Create `apps/server/src/modules/overlay-modules/static-module-registry.ts`
-- Create `apps/server/src/modules/overlay-modules/sqlite-module-config-repository.ts`
-- Create `apps/server/src/http/routes/overlay-modules.ts`
+- Create packages/core/src/overlay-modules/module-definition.ts
+- Create packages/core/src/overlay-modules/module-registry.ts
+- Create packages/core/src/overlay-modules/module-config-service.ts
+- Create packages/core/src/overlay-modules/overlay-composition-service.ts
+- Create apps/server/src/modules/overlay-modules/static-module-registry.ts
+- Create apps/server/src/modules/overlay-modules/in-memory-module-config-repository.ts
+- Create apps/server/src/http/routes/overlay-modules.ts
 - Create overlay module tests.
 
 **Steps:**
 
-- [ ] Implement `OverlayModuleRegistry` with static registration for the Alerts module.
-- [ ] Implement `OverlayModuleConfigService` with enabled/disabled state per module.
-- [ ] Implement wizard/form metadata support using `OverlayModuleWizardDefinition`.
-- [ ] Implement `OverlayCompositionService.resolveModuleOutput` for one module-specific overlay.
-- [ ] Implement `OverlayCompositionService.resolveUnifiedOutput` for all enabled modules selected for a unified overlay.
-- [ ] Add HTTP routes for listing modules, reading module config, saving module config, and toggling module enabled state.
-- [ ] Unit test module registration, unknown module lookup, module enable/disable, and wizard schema validation.
-- [ ] Unit test that disabled modules are excluded from module-specific and unified overlay composition.
-- [ ] Commit with message `feat: add overlay module registry`.
+- [x] Implement OverlayModuleRegistry with static registration for the Alerts module.
+- [x] Implement OverlayModuleConfigService with enabled/disabled state per module.
+- [x] Implement wizard/form metadata support using OverlayModuleWizardDefinition.
+- [x] Implement OverlayCompositionService.resolveModuleOutput for one module-specific overlay.
+- [x] Implement OverlayCompositionService.resolveUnifiedOutput for all enabled modules selected for a unified overlay.
+- [x] Add HTTP routes for listing modules, reading module config, saving module config, and toggling module enabled state.
+- [x] Unit test module registration, unknown module lookup, module enable/disable, and wizard schema validation.
+- [x] Unit test that disabled modules are excluded from module-specific and unified overlay composition.
+- [x] Commit with message feat: add overlay module registry.
 
 **Acceptance Checks:**
 
 - Alerts are registered as an overlay module.
 - Module enable/disable is independent from alert rule enable/disable.
 - The composition service can resolve both module-specific and unified overlay outputs without importing alert internals.
+
+**Completion Evidence:**
+
+- Slice 7 detailed execution plan was added at docs/superpowers/plans/2026-05-30-stream-jams-slice-7-overlay-module-registry-composition.md.
+- @stream-jams/core now exports the built-in Alerts module definition, static overlay module registry, module config service, and overlay composition service.
+- Alerts is registered as the first built-in overlay module with module-specific and unified output support, default canvas config, and wizard metadata.
+- Module config defaults, saves, and enabled-state toggles are handled through a typed service and repository boundary; the MVP server uses an in-memory repository until Slice 8 adds SQLite.
+- Overlay composition resolves module-specific and unified outputs through a runtime snapshot interface, excludes disabled modules, rejects unknown module ids, and validates mismatched runtime snapshots without importing alert internals.
+- Management-protected overlay module routes list modules, read config, save config, and toggle enabled state through thin Fastify handlers.
+- Focused Slice 7 tests passed for registry, schemas, module config, composition, HTTP routes, and app route guards: 32 test files and 109 tests.
+- Full repository validation passed with pnpm lint, pnpm typecheck, pnpm test, pnpm test:e2e, pnpm build, and git diff --check.
 
 ### Slice 8: Persistence Layer And Repositories
 

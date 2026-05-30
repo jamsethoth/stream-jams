@@ -48,4 +48,31 @@ describe("createServerApp", () => {
       })
     ).toThrow("Config routes require management auth and rate-limit hooks");
   });
+
+  it("does not register overlay module routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        overlayModuleRegistry: {
+          listModules() {
+            return [];
+          }
+        },
+        overlayModuleConfigService: {
+          async getModuleConfig() {
+            throw new Error("not called");
+          },
+          async saveModuleConfig() {
+            throw new Error("not called");
+          },
+          async setModuleEnabled() {
+            throw new Error("not called");
+          }
+        }
+      })
+    ).toThrow("Overlay module routes require registry, config service, management auth, and rate-limit hooks");
+  });
 });
