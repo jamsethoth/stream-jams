@@ -1,23 +1,110 @@
 import type { AssetRecord } from "./management/assets/asset-api.js";
 import type { AlertCollection, AlertRule } from "./management/modules/alerts/alert-api.js";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { App } from "./App.js";
 import type { AssetApi } from "./management/assets/AssetManager.js";
+import type { ManagementApi } from "./management/management-api.js";
 
 describe("App", () => {
-  it("renders the management shell name", async () => {
-    render(<App alertApi={createAlertApi()} assetApi={createAssetApi()} />);
+  it("renders the management shell and keeps alerts and assets reachable", async () => {
+    const user = userEvent.setup();
+    render(<App alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
 
     expect(
       screen.getByRole("heading", {
         name: "Stream Jams"
       })
     ).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Alerts" }));
     expect(await screen.findByText("No alert collections configured.")).toBeInTheDocument();
-    expect(screen.getByText("No assets imported yet.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("tab", { name: "Assets" }));
+    expect(await screen.findByText("No assets imported yet.")).toBeInTheDocument();
   });
 });
+
+function createManagementApi(): ManagementApi {
+  const playback = {
+    current: null,
+    queuedCount: 0,
+    paused: false,
+    muted: false,
+    doNotDisturb: false,
+    recent: []
+  };
+
+  return {
+    async getDashboard() {
+      return {
+        twitch: {
+          connected: false,
+          label: "Twitch disconnected"
+        },
+        overlay: {
+          connectedClientCount: 0,
+          label: "0 overlay clients"
+        },
+        queue: {
+          label: "Queue idle",
+          queuedCount: 0
+        },
+        recentErrors: []
+      };
+    },
+    async getServerConfig() {
+      return {
+        host: "127.0.0.1",
+        port: 39187
+      };
+    },
+    async updateServerConfig(input) {
+      return input;
+    },
+    async listModules() {
+      return [];
+    },
+    async setModuleEnabled(moduleId, enabled) {
+      return { moduleId, enabled };
+    },
+    async saveModuleConfig(moduleId, input) {
+      return { moduleId, ...input };
+    },
+    async listOverlayOutputs() {
+      return [];
+    },
+    async listOverlayClients() {
+      return [];
+    },
+    async getPlayback() {
+      return playback;
+    },
+    async pausePlayback() {
+      return playback;
+    },
+    async resumePlayback() {
+      return playback;
+    },
+    async skipPlayback() {
+      return playback;
+    },
+    async replayRecent() {
+      return playback;
+    },
+    async mutePlayback() {
+      return playback;
+    },
+    async unmutePlayback() {
+      return playback;
+    },
+    async setDoNotDisturb(enabled) {
+      return { ...playback, doNotDisturb: enabled };
+    }
+  };
+}
 
 function createAssetApi(): AssetApi {
   return {
