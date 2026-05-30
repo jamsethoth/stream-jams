@@ -13,7 +13,8 @@ import {
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
   NoopMediaTranscodingStage,
-  DefaultModerationService
+  DefaultModerationService,
+  DefaultTtsService
 } from "@stream-jams/core";
 import { createServerApp } from "./app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "./config/default-config.js";
@@ -34,6 +35,7 @@ import { createStaticOverlayModuleRegistry } from "./modules/overlay-modules/sta
 import { LocalOverlayAccessService } from "./modules/overlays/overlay-access-service.js";
 import { SqliteOverlayAccessKeyRepository } from "./modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "./modules/playback/playback-coordinator.js";
+import { createDefaultTtsProviderRegistry } from "./modules/tts/tts-provider-registry.js";
 import { findSuggestedPorts, NodePortAvailabilityChecker } from "./server/port-availability.js";
 import { OverlayGateway } from "./websocket/overlay-gateway.js";
 import { startServer } from "./server/start-server.js";
@@ -79,6 +81,11 @@ const overlayAccessService = new LocalOverlayAccessService({
   repository: new SqliteOverlayAccessKeyRepository(database.connection)
 });
 const moderationService = new DefaultModerationService();
+const ttsProviderRegistry = createDefaultTtsProviderRegistry();
+const ttsService = new DefaultTtsService({
+  registry: ttsProviderRegistry,
+  moderationService
+});
 const overlayGateway = new OverlayGateway({
   overlayAccessService,
   generateClientId: generateOverlayClientId,
@@ -149,6 +156,7 @@ try {
         overlayModuleRegistry,
         overlayModuleConfigService,
         moderationService,
+        ttsService,
         overlayAccessService,
         overlayCompositionService,
         overlayGateway,

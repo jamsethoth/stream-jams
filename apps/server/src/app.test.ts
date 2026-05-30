@@ -195,4 +195,23 @@ describe("createServerApp", () => {
       })
     ).toThrow("Overlay module routes require registry, config service, management auth, and rate-limit hooks");
   });
+  it("does not register TTS routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        ttsService: {
+          async listProviders() {
+            return [];
+          },
+          async testProvider() {
+            throw new Error("not called");
+          }
+        }
+      })
+    ).toThrow("TTS routes require service, management auth, and rate-limit hooks");
+  });
+
 });

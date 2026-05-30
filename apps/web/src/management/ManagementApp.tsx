@@ -9,6 +9,7 @@ import { ManagementNavigation, type ManagementTabId } from "./navigation/Managem
 import { OverlayOutputsPanel } from "./overlays/OverlayOutputsPanel.js";
 import { PlaybackPanel } from "./playback/PlaybackPanel.js";
 import { SettingsPanel } from "./settings/SettingsPanel.js";
+import { TtsPanel } from "./tts/TtsPanel.js";
 
 export interface ManagementAppProps {
   readonly assetApi: AssetApi;
@@ -40,6 +41,7 @@ export function ManagementApp({ assetApi, alertApi, managementApi }: ManagementA
           {activeTab === "modules" ? <ModuleManagementPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "overlays" ? <OverlayOutputsPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "playback" ? <PlaybackPanel managementApi={resolvedManagementApi} /> : null}
+          {activeTab === "tts" ? <TtsPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "settings" ? <SettingsPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "alerts" ? <AlertConfigurationPanel alertApi={alertApi} /> : null}
           {activeTab === "assets" ? <AssetManager assetApi={assetApi} /> : null}

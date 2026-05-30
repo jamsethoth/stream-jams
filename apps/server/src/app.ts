@@ -12,6 +12,7 @@ import { registerModerationRoutes, type ModerationRouteDependencies } from "./ht
 import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
 import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/routes/overlays.js";
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
+import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.js";
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
@@ -22,7 +23,8 @@ export interface ServerAppDependencies
     Partial<AssetRouteDependencies>,
     Partial<AlertRuleRouteDependencies>,
     Partial<AlertCollectionRouteDependencies>,
-    Partial<PlaybackRouteDependencies> {
+    Partial<PlaybackRouteDependencies>,
+    Partial<TtsRouteDependencies> {
   readonly metadata: ServerAppMetadata;
 }
 
@@ -100,6 +102,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerPlaybackRoutes(app, dependencies);
   }
 
+  if (dependencies.ttsService !== undefined) {
+    if (!hasTtsRouteDependencies(dependencies)) {
+      throw new Error("TTS routes require service, management auth, and rate-limit hooks");
+    }
+
+    registerTtsRoutes(app, dependencies);
+  }
+
   if (dependencies.serverConfigService !== undefined) {
     if (!hasConfigRouteProtection(dependencies)) {
       throw new Error("Config routes require management auth and rate-limit hooks");
@@ -167,6 +177,16 @@ function hasPlaybackRouteDependencies(
 ): dependencies is ServerAppDependencies & PlaybackRouteDependencies {
   return (
     dependencies.playbackCoordinator !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasTtsRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & TtsRouteDependencies {
+  return (
+    dependencies.ttsService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

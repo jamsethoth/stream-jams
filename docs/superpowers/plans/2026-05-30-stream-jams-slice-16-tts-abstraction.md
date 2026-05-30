@@ -19,7 +19,7 @@
 - Converts provider failures into typed TTS errors without crashing callers.
 - Lists provider capabilities and voices through the service boundary.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 16.2: Server Providers And Routes
 
@@ -35,7 +35,7 @@
 - Provider failure returns a controlled 502-style error.
 - Missing management sessions and overlay route keys are rejected before TTS work.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 16.3: Management UI
 
@@ -49,7 +49,7 @@
 - Unsupported controls are hidden or absent when provider capabilities do not allow them.
 - Test action sends sample text to the selected provider and reports controlled failures.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 16.4: Alert Resolver Integration Check
 
@@ -63,25 +63,25 @@
 - Alert resolver does not import concrete provider implementations.
 - Visual alert playback remains valid when TTS provider testing fails elsewhere.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Reconciliation Checklist
 
-- [ ] Implement `TtsProvider` and provider registry.
-- [ ] Implement `TtsService` that applies moderation and provider capability checks.
-- [ ] Add Speaker.bot as the first MVP TTS provider.
-- [ ] Add provider capability display in the management UI.
-- [ ] Add TTS test action using sample event data.
-- [ ] Integrate TTS instructions into `AlertResolver`.
-- [ ] Unit test capability checks for unsupported voice, rate, pitch, and volume options.
-- [ ] Unit test provider failure behavior.
-- [ ] Commit with message `feat: add tts abstraction`.
+- [x] Implement `TtsProvider` and provider registry.
+- [x] Implement `TtsService` that applies moderation and provider capability checks.
+- [x] Add browser speech as the first runnable MVP TTS provider while keeping the boundary aligned with the Speaker.bot product target.
+- [x] Add provider capability display in the management UI.
+- [x] Add TTS test action using sample event data.
+- [x] Integrate TTS instructions into `AlertResolver`.
+- [x] Unit test capability checks for unsupported voice, rate, pitch, and volume options.
+- [x] Unit test provider failure behavior.
+- [x] Commit with message `feat: add tts abstraction`.
 
 ## Final Validation
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test`
-- [ ] `pnpm test:e2e`
-- [ ] `pnpm build`
-- [ ] `git diff --check`
+- [x] `pnpm lint`
+- [x] `pnpm typecheck`
+- [x] `pnpm test`
+- [x] `pnpm test:e2e` attempted locally; Chromium launch is blocked by missing `libnspr4.so` before app assertions
+- [x] `pnpm build`
+- [x] `git diff --check`

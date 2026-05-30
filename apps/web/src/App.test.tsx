@@ -119,6 +119,22 @@ function createManagementApi(): ManagementApi {
     },
     async setDoNotDisturb(enabled) {
       return { ...playback, doNotDisturb: enabled };
+    },
+    async listTtsProviders() {
+      return [];
+    },
+    async testTts(input) {
+      return {
+        instruction: {
+          mode: "browser-speech" as const,
+          text: input.text,
+          audioAssetId: null,
+          providerPayload: {
+            providerId: input.providerId
+          }
+        },
+        moderationActions: []
+      };
     }
   };
 }
