@@ -47,7 +47,7 @@ test("management navigation shows copyable overlay URLs", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await page.getByRole("tab", { name: "Overlays" }).click();
 
-  await expect(page.getByText("Alerts test")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Alerts test" })).toBeVisible();
   await expect(page.getByText("http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test")).toBeVisible();
   await expect(page.getByRole("button", { name: "Copy Alerts test" })).toBeVisible();
 });
