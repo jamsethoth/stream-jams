@@ -502,3 +502,19 @@ input {
   border-radius: 0;
   padding: 0;
 }
+
+.management-form--wide {
+  margin-top: 12px;
+}
+
+.management-form__wide-field {
+  grid-column: 1 / -1;
+}
+
+.management-form textarea {
+  border: 1px solid #c8ced8;
+  border-radius: 6px;
+  min-height: 96px;
+  padding: 10px;
+  resize: vertical;
+}

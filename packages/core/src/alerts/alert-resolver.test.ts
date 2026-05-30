@@ -2,6 +2,7 @@ import type { AlertMatch } from "./alert-matcher.js";
 import type { CheerEvent } from "../events/types.js";
 import type { AlertRule, AlertVariant } from "./types.js";
 import { describe, expect, it } from "vitest";
+import { DefaultModerationService } from "../moderation/moderation-service.js";
 import { resolvedAlertSchema } from "../playback/schemas.js";
 import { AlertVariantSelectionError, DefaultAlertResolver } from "./alert-resolver.js";
 
@@ -131,6 +132,47 @@ describe("DefaultAlertResolver", () => {
     expect(JSON.stringify(resolved)).not.toContain("do-not-leak");
   });
 
+  it("moderates rendered and TTS text before playback instructions leave the resolver", () => {
+    const event = createCheerEvent({
+      message: "badword https://example.test/secret"
+    });
+    const rule = createRule({
+      variants: [
+        createVariant({
+          textTemplate: "{message} extra",
+          ttsConfig: {
+            enabled: true,
+            providerId: "browser",
+            voiceId: null,
+            template: "Read {message}",
+            minimumAmount: null
+          }
+        })
+      ]
+    });
+    const resolver = createResolver({
+      moderationService: new DefaultModerationService({
+        settings: {
+          renderedText: {
+            maxLength: 80,
+            blockedTerms: ["badword"],
+            stripUrls: true
+          },
+          ttsText: {
+            maxLength: 80,
+            blockedTerms: ["badword"],
+            stripUrls: true
+          }
+        }
+      })
+    });
+
+    const resolved = resolver.resolveMatches({ matches: [createMatch(rule, event)], target });
+
+    expect(resolved[0]?.overlayInstruction.text?.text).toBe("[moderated] [link removed] extra");
+    expect(resolved[0]?.overlayInstruction.tts?.text).toBe("Read [moderated] [link removed]");
+  });
+
   it("selects the highest-priority matching variant before applying weighted randomness", () => {
     const event = createCheerEvent({ amount: 600 });
     const rule = createRule({
@@ -231,13 +273,14 @@ const layout = {
   zIndex: 1
 };
 
-function createResolver(options: { readonly randomValues?: readonly number[] } = {}): DefaultAlertResolver {
+function createResolver(options: { readonly randomValues?: readonly number[]; readonly moderationService?: DefaultModerationService } = {}): DefaultAlertResolver {
   let nextId = 1;
   let nextRandom = 0;
 
   return new DefaultAlertResolver({
     generateId: (kind) => `${kind}-${nextId++}`,
-    random: () => options.randomValues?.[nextRandom++] ?? 0
+    random: () => options.randomValues?.[nextRandom++] ?? 0,
+    moderationService: options.moderationService
   });
 }
 

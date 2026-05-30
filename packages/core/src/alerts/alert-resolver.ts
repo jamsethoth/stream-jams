@@ -9,6 +9,8 @@ import type {
   OverlayVisualInstruction
 } from "../overlays/types.js";
 import type { TtsPlaybackInstruction } from "../tts/types.js";
+import { DefaultModerationService, type ModerationService } from "../moderation/moderation-service.js";
+import { SafeTemplateRenderer } from "../templates/safe-template-renderer.js";
 import { DefaultTemplateRenderer, type TemplateRenderer } from "../templates/template-renderer.js";
 import type { AlertTtsConfig, AlertVariant } from "./types.js";
 
@@ -35,6 +37,9 @@ export interface AlertResolverDependencies {
   readonly generateId: (kind: AlertResolverIdKind) => string;
   readonly random?: () => number;
   readonly templateRenderer?: TemplateRenderer;
+  readonly renderedTextTemplateRenderer?: TemplateRenderer;
+  readonly ttsTemplateRenderer?: TemplateRenderer;
+  readonly moderationService?: ModerationService | undefined;
   readonly conditionEvaluator?: AlertConditionEvaluator;
 }
 
@@ -48,13 +53,29 @@ export class AlertVariantSelectionError extends Error {
 export class DefaultAlertResolver implements AlertResolver {
   readonly #generateId: (kind: AlertResolverIdKind) => string;
   readonly #random: () => number;
-  readonly #templateRenderer: TemplateRenderer;
+  readonly #renderedTextTemplateRenderer: TemplateRenderer;
+  readonly #ttsTemplateRenderer: TemplateRenderer;
   readonly #conditionEvaluator: AlertConditionEvaluator;
 
   constructor(dependencies: AlertResolverDependencies) {
     this.#generateId = dependencies.generateId;
     this.#random = dependencies.random ?? Math.random;
-    this.#templateRenderer = dependencies.templateRenderer ?? new DefaultTemplateRenderer();
+    const templateRenderer = dependencies.templateRenderer ?? new DefaultTemplateRenderer();
+    const moderationService = dependencies.moderationService ?? new DefaultModerationService();
+    this.#renderedTextTemplateRenderer =
+      dependencies.renderedTextTemplateRenderer ??
+      new SafeTemplateRenderer({
+        moderationService,
+        templateRenderer,
+        target: "rendered"
+      });
+    this.#ttsTemplateRenderer =
+      dependencies.ttsTemplateRenderer ??
+      new SafeTemplateRenderer({
+        moderationService,
+        templateRenderer,
+        target: "tts"
+      });
     this.#conditionEvaluator = dependencies.conditionEvaluator ?? new DefaultAlertConditionEvaluator();
   }
 
@@ -140,7 +161,7 @@ export class DefaultAlertResolver implements AlertResolver {
               volume: 1
             },
       text: {
-        text: this.#templateRenderer.render({
+        text: this.#renderedTextTemplateRenderer.render({
           template: variant.textTemplate,
           values: createTemplateContext(match.event)
         }),
@@ -158,7 +179,7 @@ export class DefaultAlertResolver implements AlertResolver {
 
     return {
       mode: "browser-speech",
-      text: this.#templateRenderer.render({
+      text: this.#ttsTemplateRenderer.render({
         template: config.template,
         values: createTemplateContext(match.event)
       }),

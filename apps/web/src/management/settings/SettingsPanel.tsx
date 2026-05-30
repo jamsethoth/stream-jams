@@ -1,27 +1,33 @@
 import { useEffect, useState, type FormEvent } from "react";
-import type { ManagementApi, ServerConfigView } from "../management-api.js";
+import type { ManagementApi, ModerationSettingsView, ServerConfigView } from "../management-api.js";
 
 export interface SettingsPanelProps {
-  readonly managementApi: Pick<ManagementApi, "getServerConfig" | "updateServerConfig">;
+  readonly managementApi: Pick<
+    ManagementApi,
+    "getServerConfig" | "updateServerConfig" | "getModerationSettings" | "updateModerationSettings"
+  >;
 }
 
 export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   const [config, setConfig] = useState<ServerConfigView>({ host: "127.0.0.1", port: 39187 });
+  const [moderation, setModeration] = useState<ModerationSettingsView>(defaultModerationSettings);
+  const [blockedTermsText, setBlockedTermsText] = useState("");
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void managementApi
-      .getServerConfig()
-      .then((loadedConfig) => {
+    void Promise.all([managementApi.getServerConfig(), managementApi.getModerationSettings()])
+      .then(([loadedConfig, loadedModeration]) => {
         if (!cancelled) {
           setConfig(loadedConfig);
+          setModeration(loadedModeration);
+          setBlockedTermsText(loadedModeration.renderedText.blockedTerms.join("\n"));
           setDiagnostic(null);
         }
       })
       .catch((error: unknown) => {
         if (!cancelled) {
-          setDiagnostic(readErrorMessage(error, "Unable to load server settings."));
+          setDiagnostic(readErrorMessage(error, "Unable to load settings."));
         }
       });
 
@@ -30,7 +36,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     };
   }, [managementApi]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleServerSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
       const savedConfig = await managementApi.updateServerConfig(config);
@@ -41,16 +47,40 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     }
   }
 
+  async function handleModerationSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const blockedTerms = parseBlockedTerms(blockedTermsText);
+    const nextModeration = {
+      renderedText: {
+        ...moderation.renderedText,
+        blockedTerms
+      },
+      ttsText: {
+        ...moderation.ttsText,
+        blockedTerms
+      }
+    };
+
+    try {
+      const savedModeration = await managementApi.updateModerationSettings(nextModeration);
+      setModeration(savedModeration);
+      setBlockedTermsText(savedModeration.renderedText.blockedTerms.join("\n"));
+      setDiagnostic("Moderation settings saved.");
+    } catch (error) {
+      setDiagnostic(readErrorMessage(error, "Unable to update moderation settings."));
+    }
+  }
+
   return (
     <section className="management-panel" aria-labelledby="settings-title">
       <div className="management-panel__header">
         <div>
           <h2 id="settings-title">Settings</h2>
-          <p>{`${config.host}:${config.port}`}</p>
+          <p>{config.host + ":" + config.port}</p>
         </div>
       </div>
       {diagnostic !== null ? <p className="management-diagnostic">{diagnostic}</p> : null}
-      <form className="management-form" onSubmit={handleSubmit}>
+      <form className="management-form" onSubmit={handleServerSubmit}>
         <label>
           <span>Host</span>
           <input value={config.host} onChange={(event) => setConfig({ ...config, host: event.currentTarget.value })} />
@@ -67,10 +97,76 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
         </label>
         <button type="submit">Save server settings</button>
       </form>
+      <section className="management-subsection" aria-labelledby="moderation-settings-title">
+        <h3 id="moderation-settings-title">Moderation</h3>
+        <form className="management-form management-form--wide" onSubmit={handleModerationSubmit}>
+          <label className="management-form__wide-field">
+            <span>Blocked terms</span>
+            <textarea value={blockedTermsText} onChange={(event) => setBlockedTermsText(event.currentTarget.value)} />
+          </label>
+          <label className="management-toggle">
+            <input
+              checked={moderation.renderedText.stripUrls}
+              onChange={(event) =>
+                setModeration({
+                  ...moderation,
+                  renderedText: { ...moderation.renderedText, stripUrls: event.currentTarget.checked }
+                })
+              }
+              type="checkbox"
+            />
+            Strip rendered URLs
+          </label>
+          <label className="management-toggle">
+            <input
+              checked={moderation.ttsText.stripUrls}
+              onChange={(event) =>
+                setModeration({
+                  ...moderation,
+                  ttsText: { ...moderation.ttsText, stripUrls: event.currentTarget.checked }
+                })
+              }
+              type="checkbox"
+            />
+            Strip TTS URLs
+          </label>
+          <button type="submit">Save moderation settings</button>
+        </form>
+      </section>
     </section>
   );
+}
+
+function parseBlockedTerms(value: string): readonly string[] {
+  const seen = new Set<string>();
+  const blockedTerms: string[] = [];
+
+  for (const term of value.split(/\r?\n/).map((candidate) => candidate.trim())) {
+    const key = term.toLocaleLowerCase();
+    if (term.length === 0 || seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    blockedTerms.push(term);
+  }
+
+  return blockedTerms;
 }
 
 function readErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
+
+const defaultModerationSettings: ModerationSettingsView = {
+  renderedText: {
+    maxLength: 240,
+    blockedTerms: [],
+    stripUrls: false
+  },
+  ttsText: {
+    maxLength: 180,
+    blockedTerms: [],
+    stripUrls: true
+  }
+};

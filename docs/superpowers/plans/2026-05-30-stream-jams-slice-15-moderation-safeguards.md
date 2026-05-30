@@ -19,7 +19,7 @@
 - Enforces per-target maximum lengths.
 - Reports moderation actions without carrying raw input text.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 15.2: Safe Template Rendering And Alert Integration
 
@@ -34,7 +34,7 @@
 - TTS text is moderated before the instruction/provider payload boundary.
 - Blocked terms and URLs are removed from resolved alert instructions.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 15.3: Backend Moderation Settings Routes
 
@@ -49,7 +49,7 @@
 - Missing management sessions and overlay route keys are rejected before settings are read or updated.
 - Rate limiting runs before repeated moderation settings work.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 15.4: Management UI Controls
 
@@ -63,23 +63,24 @@
 - Saving settings calls the management API with normalized blocked terms.
 - Rendered and TTS URL stripping can be toggled independently.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Reconciliation Checklist
 
-- [ ] Implement max length controls for rendered alert text and TTS text.
-- [ ] Implement blocked terms with case-insensitive matching.
-- [ ] Implement URL stripping option for TTS and rendered messages.
-- [ ] Implement HTML escaping as the default rendering behavior.
-- [ ] Add management UI for basic blocked terms and URL stripping settings.
-- [ ] Unit test XSS-like strings, long messages, URL stripping, and blocked term replacement.
-- [ ] Commit with message `feat: add moderation safeguards`.
+- [x] Implement max length controls for rendered alert text and TTS text.
+- [x] Implement blocked terms with case-insensitive matching.
+- [x] Implement URL stripping option for TTS and rendered messages.
+- [x] Implement HTML escaping as the default rendering behavior.
+- [x] Add management UI for basic blocked terms and URL stripping settings.
+- [x] Unit test XSS-like strings, long messages, URL stripping, and blocked term replacement.
+- [x] Commit with message `feat: add moderation safeguards`.
 
 ## Final Validation
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test`
-- [ ] `pnpm test:e2e`
-- [ ] `pnpm build`
-- [ ] `git diff --check`
+- [x] `pnpm lint` passed locally.
+- [x] `pnpm typecheck` passed locally.
+- [x] `pnpm test` passed locally: 64 files, 238 tests.
+- [x] `pnpm test:e2e` was attempted locally; Chromium fails before test execution because `libnspr4.so` is missing in this Ubuntu 26.04 environment.
+- [x] `pnpm build` passed locally.
+- [x] `git diff --check` passed locally.
+- [x] Diff self-review completed; generated Playwright artifacts were removed.

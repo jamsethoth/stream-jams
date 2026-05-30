@@ -148,6 +148,19 @@ function createManagementApi(): ManagementApi {
       port: 39187
     })),
     updateServerConfig: vi.fn(async (input) => input),
+    getModerationSettings: vi.fn(async () => ({
+      renderedText: {
+        maxLength: 240,
+        blockedTerms: [],
+        stripUrls: false
+      },
+      ttsText: {
+        maxLength: 180,
+        blockedTerms: [],
+        stripUrls: true
+      }
+    })),
+    updateModerationSettings: vi.fn(async (input) => input),
     listModules: vi.fn(async () => [
       {
         id: "alerts",

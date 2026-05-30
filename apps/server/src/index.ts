@@ -12,7 +12,8 @@ import {
   DefaultPlaybackCooldownService,
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
-  NoopMediaTranscodingStage
+  NoopMediaTranscodingStage,
+  DefaultModerationService
 } from "@stream-jams/core";
 import { createServerApp } from "./app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "./config/default-config.js";
@@ -77,6 +78,7 @@ const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
 const overlayAccessService = new LocalOverlayAccessService({
   repository: new SqliteOverlayAccessKeyRepository(database.connection)
 });
+const moderationService = new DefaultModerationService();
 const overlayGateway = new OverlayGateway({
   overlayAccessService,
   generateClientId: generateOverlayClientId,
@@ -93,7 +95,8 @@ const playbackCoordinator = new PlaybackCoordinator({
   alertService,
   matcher: new DefaultAlertMatcher(),
   resolver: new DefaultAlertResolver({
-    generateId: generateResolvedAlertId
+    generateId: generateResolvedAlertId,
+    moderationService
   }),
   queue: playbackQueue,
   cooldownService: new DefaultPlaybackCooldownService(),
@@ -145,6 +148,7 @@ try {
         serverConfigService,
         overlayModuleRegistry,
         overlayModuleConfigService,
+        moderationService,
         overlayAccessService,
         overlayCompositionService,
         overlayGateway,
