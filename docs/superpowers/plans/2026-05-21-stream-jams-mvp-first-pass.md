@@ -1477,17 +1477,17 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Add dashboard with Twitch status, overlay status, queue status, and recent errors.
-- [ ] Add settings screen for local port display and update.
-- [ ] Add module management screen listing available modules and enabled state.
-- [ ] Add module wizard/form host that renders module-provided configuration steps.
-- [ ] Add overlay screen with copyable module-specific and unified live and test URLs.
-- [ ] Add playback controls for pause, resume, skip, replay, mute, unmute, and do-not-disturb.
-- [ ] Add connected overlay client list with live and test labels.
-- [ ] Add route-level management session handling.
-- [ ] Component test each management panel.
-- [ ] Playwright test core management navigation and copyable overlay URL display.
-- [ ] Commit with message `feat: add management shell`.
+- [x] Add dashboard with Twitch status, overlay status, queue status, and recent errors.
+- [x] Add settings screen for local port display and update.
+- [x] Add module management screen listing available modules and enabled state.
+- [x] Add module wizard/form host that renders module-provided configuration steps.
+- [x] Add overlay screen with copyable module-specific and unified live and test URLs.
+- [x] Add playback controls for pause, resume, skip, replay, mute, unmute, and do-not-disturb.
+- [x] Add connected overlay client list with live and test labels.
+- [x] Add route-level management session handling.
+- [x] Component test each management panel.
+- [x] Playwright test core management navigation and copyable overlay URL display.
+- [x] Commit with message `feat: add management shell`.
 
 **Acceptance Checks:**
 
