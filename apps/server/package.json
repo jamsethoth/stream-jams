@@ -17,6 +17,7 @@
     "typecheck": "tsc -b tsconfig.json"
   },
   "dependencies": {
+    "@fastify/websocket": "11.2.0",
     "@stream-jams/core": "workspace:0.0.0",
     "fastify": "5.8.5"
   },

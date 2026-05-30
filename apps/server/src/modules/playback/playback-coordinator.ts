@@ -10,7 +10,8 @@ import type {
   PlaybackDedupeService,
   PlaybackQueue,
   PlaybackQueueSnapshot,
-  ResolvedAlert
+  ResolvedAlert,
+  OverlayInstruction
 } from "@stream-jams/core";
 
 export type PlaybackEnqueueStatus = "queued" | "duplicate" | "no-matches" | "cooldown";
@@ -20,6 +21,10 @@ export interface PlaybackEnqueueResult {
   readonly snapshot: PlaybackQueueSnapshot;
   readonly matchedRuleIds: readonly string[];
   readonly enqueuedAlertIds: readonly string[];
+}
+
+export interface OverlayPlaybackInstructionSink {
+  deliverPlaybackInstruction(instruction: OverlayInstruction): void;
 }
 
 export interface PlaybackCoordinatorDependencies {
@@ -32,6 +37,7 @@ export interface PlaybackCoordinatorDependencies {
   readonly defaultTarget: AlertResolverTarget;
   readonly visualAssetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly assetRepository?: Pick<AssetRepository, "findById">;
+  readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
 }
 
 export class PlaybackCoordinator {
@@ -44,6 +50,8 @@ export class PlaybackCoordinator {
   readonly #defaultTarget: AlertResolverTarget;
   readonly #visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly #assetRepository: Pick<AssetRepository, "findById"> | null;
+  readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
+  #lastDeliveredCurrentItemId: string | null = null;
 
   constructor(dependencies: PlaybackCoordinatorDependencies) {
     this.#alertService = dependencies.alertService;
@@ -55,6 +63,7 @@ export class PlaybackCoordinator {
     this.#defaultTarget = dependencies.defaultTarget;
     this.#visualAssetMediaTypes = dependencies.visualAssetMediaTypes ?? {};
     this.#assetRepository = dependencies.assetRepository ?? null;
+    this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
   }
 
   getSnapshot(): PlaybackQueueSnapshot {
@@ -97,6 +106,7 @@ export class PlaybackCoordinator {
       alerts: resolvedAlerts,
       priority: Math.max(...readyMatches.map((match) => match.rule.priority))
     });
+    this.#deliverCurrent(snapshot);
 
     for (const subject of readySubjects) {
       this.#cooldownService.recordPlayback(subject);
@@ -111,15 +121,21 @@ export class PlaybackCoordinator {
   }
 
   completeCurrent(): PlaybackQueueSnapshot {
-    return this.#queue.completeCurrent();
+    const snapshot = this.#queue.completeCurrent();
+    this.#deliverCurrent(snapshot);
+    return snapshot;
   }
 
   skipCurrent(): PlaybackQueueSnapshot {
-    return this.#queue.skipCurrent();
+    const snapshot = this.#queue.skipCurrent();
+    this.#deliverCurrent(snapshot);
+    return snapshot;
   }
 
   replayRecent(itemId: string): PlaybackQueueSnapshot {
-    return this.#queue.replayRecent(itemId);
+    const snapshot = this.#queue.replayRecent(itemId);
+    this.#deliverCurrent(snapshot);
+    return snapshot;
   }
 
   pause(): PlaybackQueueSnapshot {
@@ -127,7 +143,9 @@ export class PlaybackCoordinator {
   }
 
   resume(): PlaybackQueueSnapshot {
-    return this.#queue.resume();
+    const snapshot = this.#queue.resume();
+    this.#deliverCurrent(snapshot);
+    return snapshot;
   }
 
   mute(): PlaybackQueueSnapshot {
@@ -139,7 +157,29 @@ export class PlaybackCoordinator {
   }
 
   setDoNotDisturb(enabled: boolean): PlaybackQueueSnapshot {
-    return this.#queue.setDoNotDisturb(enabled);
+    const snapshot = this.#queue.setDoNotDisturb(enabled);
+    this.#deliverCurrent(snapshot);
+    return snapshot;
+  }
+
+  #deliverCurrent(snapshot: PlaybackQueueSnapshot): void {
+    if (this.#overlayPlaybackSink === null) {
+      return;
+    }
+
+    if (snapshot.current === null) {
+      this.#lastDeliveredCurrentItemId = null;
+      return;
+    }
+
+    if (snapshot.current.id === this.#lastDeliveredCurrentItemId) {
+      return;
+    }
+
+    this.#lastDeliveredCurrentItemId = snapshot.current.id;
+    for (const alert of snapshot.current.alerts) {
+      this.#overlayPlaybackSink.deliverPlaybackInstruction(alert.overlayInstruction);
+    }
   }
 
   async #resolveVisualAssetMediaTypes(

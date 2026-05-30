@@ -84,6 +84,29 @@ describe("PlaybackCoordinator", () => {
     });
   });
 
+  it("delivers each newly started current overlay instruction to the overlay sink once", async () => {
+    const deliveredInstructionIds: string[] = [];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([
+        createRule({
+          id: "rule-overlay",
+          variants: [createVariant({ id: "variant-overlay" })]
+        })
+      ]),
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          deliveredInstructionIds.push(instruction.id);
+        }
+      }
+    });
+
+    await coordinator.enqueueEvent(createCheerEvent({ amount: 500 }));
+    coordinator.pause();
+    coordinator.resume();
+
+    expect(deliveredInstructionIds).toEqual(["overlay-instruction-2"]);
+  });
+
   it("matches, resolves, and enqueues all ready alerts from one accepted event", async () => {
     const clock = new MutableClock("2026-05-30T12:00:00.000Z");
     const coordinator = createCoordinator({
@@ -151,6 +174,7 @@ function createCoordinator(
     readonly cooldownService?: DefaultPlaybackCooldownService;
     readonly dedupeService?: DefaultPlaybackDedupeService;
     readonly assetRepository?: Pick<AssetRepository, "findById">;
+    readonly overlayPlaybackSink?: { deliverPlaybackInstruction(instruction: import("@stream-jams/core").OverlayInstruction): void };
     readonly clock?: MutableClock;
   } = {}
 ): PlaybackCoordinator {
@@ -181,7 +205,8 @@ function createCoordinator(
       purpose: "live",
       scope: "module"
     },
-    ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository })
+    ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
+    ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink })
   });
 }
 
