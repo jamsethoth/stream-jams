@@ -1,4 +1,4 @@
-export type ManagementTabId = "dashboard" | "modules" | "overlays" | "playback" | "settings" | "alerts" | "assets";
+export type ManagementTabId = "dashboard" | "modules" | "overlays" | "playback" | "tts" | "settings" | "alerts" | "assets";
 
 export interface ManagementTab {
   readonly id: ManagementTabId;
@@ -10,6 +10,7 @@ export const managementTabs: readonly ManagementTab[] = [
   { id: "modules", label: "Modules" },
   { id: "overlays", label: "Overlays" },
   { id: "playback", label: "Playback" },
+  { id: "tts", label: "TTS" },
   { id: "settings", label: "Settings" },
   { id: "alerts", label: "Alerts" },
   { id: "assets", label: "Assets" }

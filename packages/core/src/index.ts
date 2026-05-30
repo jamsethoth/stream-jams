@@ -155,6 +155,14 @@ export type * from "./templates/safe-template-renderer.js";
 export { SafeTemplateRenderer } from "./templates/safe-template-renderer.js";
 
 export type * from "./tts/types.js";
+export type * from "./tts/tts-provider.js";
+export type * from "./tts/tts-service.js";
+export {
+  DefaultTtsService,
+  TtsProviderFailureError,
+  UnknownTtsProviderError,
+  UnsupportedTtsOptionError
+} from "./tts/tts-service.js";
 export {
   ttsPlaybackInstructionSchema,
   ttsPlaybackModeSchema,

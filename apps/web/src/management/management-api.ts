@@ -84,6 +84,50 @@ export interface PlaybackView {
   readonly recent: readonly PlaybackItemView[];
 }
 
+export type TtsPlaybackModeView = "audio-file" | "remote-trigger" | "browser-speech";
+
+export interface TtsProviderCapabilitiesView {
+  readonly supportsVoices: boolean;
+  readonly supportsRate: boolean;
+  readonly supportsPitch: boolean;
+  readonly supportsVolume: boolean;
+  readonly playbackMode: TtsPlaybackModeView;
+}
+
+export interface TtsVoiceView {
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface TtsProviderView {
+  readonly id: string;
+  readonly label: string;
+  readonly capabilities: TtsProviderCapabilitiesView;
+  readonly voices: readonly TtsVoiceView[];
+}
+
+export interface TtsTestRequestView {
+  readonly providerId: string;
+  readonly text: string;
+  readonly voiceId?: string | null | undefined;
+  readonly rate?: number | null | undefined;
+  readonly pitch?: number | null | undefined;
+  readonly volume?: number | null | undefined;
+  readonly metadata?: Record<string, unknown> | undefined;
+}
+
+export interface TtsPlaybackInstructionView {
+  readonly mode: TtsPlaybackModeView;
+  readonly text: string;
+  readonly audioAssetId: string | null;
+  readonly providerPayload: Record<string, unknown> | null;
+}
+
+export interface TtsTestResultView {
+  readonly instruction: TtsPlaybackInstructionView;
+  readonly moderationActions: readonly { readonly type: string }[];
+}
+
 export interface ManagementApi {
   getDashboard(): Promise<DashboardSummary>;
   getServerConfig(): Promise<ServerConfigView>;
@@ -103,6 +147,8 @@ export interface ManagementApi {
   mutePlayback(): Promise<PlaybackView>;
   unmutePlayback(): Promise<PlaybackView>;
   setDoNotDisturb(enabled: boolean): Promise<PlaybackView>;
+  listTtsProviders(): Promise<readonly TtsProviderView[]>;
+  testTts(input: TtsTestRequestView): Promise<TtsTestResultView>;
 }
 
 export interface HttpManagementApiOptions {
@@ -353,6 +399,30 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     listOverlayClients() {
       return optionalJsonList<OverlayClientView>("/management/overlay-clients");
+    },
+
+    async listTtsProviders() {
+      const response = await fetcher("/tts/providers", {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to load TTS providers."));
+      }
+
+      return (await response.json()) as readonly TtsProviderView[];
+    },
+
+    async testTts(input: TtsTestRequestView) {
+      const response = await fetcher("/tts/test", {
+        method: "POST",
+        headers: await jsonHeaders(),
+        body: JSON.stringify(input)
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to run TTS test."));
+      }
+
+      return (await response.json()) as TtsTestResultView;
     },
 
     getPlayback,

@@ -106,6 +106,37 @@ describe("ManagementApp", () => {
     expect(managementApi.unmutePlayback).toHaveBeenCalledOnce();
     expect(managementApi.setDoNotDisturb).toHaveBeenCalledWith(true);
   });
+
+  it("shows TTS provider capabilities and runs a sample test without unsupported voice controls", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("tab", { name: "TTS" }));
+    const ttsPanel = screen.getByRole("tabpanel", { name: "TTS" });
+    expect(await within(ttsPanel).findByRole("heading", { name: "TTS" })).toBeInTheDocument();
+    expect(within(ttsPanel).getAllByText("Browser Speech").length).toBeGreaterThan(0);
+    expect(within(ttsPanel).getAllByText("browser-speech").length).toBeGreaterThan(0);
+    expect(within(ttsPanel).queryByLabelText("Voice")).not.toBeInTheDocument();
+
+    await user.click(within(ttsPanel).getByRole("button", { name: "Run TTS test" }));
+
+    expect(managementApi.testTts).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "browser-speech",
+        text: "Sample cheer from Viewer for 500 bits",
+        rate: 1,
+        pitch: 1,
+        volume: 1,
+        metadata: {
+          sampleEventType: "cheer",
+          sampleAmount: 500,
+          sampleActor: "Viewer"
+        }
+      })
+    );
+    expect(await within(ttsPanel).findByText("TTS test ready: browser-speech.")).toBeInTheDocument();
+  });
 });
 
 function createManagementApi(): ManagementApi {
@@ -241,7 +272,32 @@ function createManagementApi(): ManagementApi {
     replayRecent: vi.fn(async () => playback),
     mutePlayback: vi.fn(async () => playback),
     unmutePlayback: vi.fn(async () => playback),
-    setDoNotDisturb: vi.fn(async () => ({ ...playback, doNotDisturb: true }))
+    setDoNotDisturb: vi.fn(async () => ({ ...playback, doNotDisturb: true })),
+    listTtsProviders: vi.fn(async () => [
+      {
+        id: "browser-speech",
+        label: "Browser Speech",
+        capabilities: {
+          supportsVoices: false,
+          supportsRate: true,
+          supportsPitch: true,
+          supportsVolume: true,
+          playbackMode: "browser-speech" as const
+        },
+        voices: []
+      }
+    ]),
+    testTts: vi.fn(async (input) => ({
+      instruction: {
+        mode: "browser-speech" as const,
+        text: input.text,
+        audioAssetId: null,
+        providerPayload: {
+          providerId: input.providerId
+        }
+      },
+      moderationActions: []
+    }))
   };
 }
 
