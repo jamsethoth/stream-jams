@@ -114,6 +114,53 @@ describe("createHttpManagementApi", () => {
       enabled: false
     });
   });
+
+
+  it("loads and updates moderation settings with management headers", async () => {
+    const settings = {
+      renderedText: {
+        maxLength: 240,
+        blockedTerms: ["spoiler"],
+        stripUrls: true
+      },
+      ttsText: {
+        maxLength: 180,
+        blockedTerms: ["spoiler"],
+        stripUrls: false
+      }
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse({ id: "mgmt_session" });
+      }
+
+      if (url === "/moderation/settings" && init?.method === undefined) {
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session"
+        });
+        return jsonResponse(settings);
+      }
+
+      if (url === "/moderation/settings") {
+        expect(init).toMatchObject({
+          method: "PATCH",
+          body: JSON.stringify(settings)
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json"
+        });
+        return jsonResponse(settings);
+      }
+
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getModerationSettings()).resolves.toEqual(settings);
+    await expect(api.updateModerationSettings(settings)).resolves.toEqual(settings);
+  });
 });
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {

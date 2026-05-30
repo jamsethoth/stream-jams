@@ -19,6 +19,17 @@ export interface ServerConfigView {
   readonly port: number;
 }
 
+export interface ModerationTargetSettingsView {
+  readonly maxLength: number;
+  readonly blockedTerms: readonly string[];
+  readonly stripUrls: boolean;
+}
+
+export interface ModerationSettingsView {
+  readonly renderedText: ModerationTargetSettingsView;
+  readonly ttsText: ModerationTargetSettingsView;
+}
+
 export interface ManagementModuleField {
   readonly id: string;
   readonly label: string;
@@ -77,6 +88,8 @@ export interface ManagementApi {
   getDashboard(): Promise<DashboardSummary>;
   getServerConfig(): Promise<ServerConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
+  getModerationSettings(): Promise<ModerationSettingsView>;
+  updateModerationSettings(input: ModerationSettingsView): Promise<ModerationSettingsView>;
   listModules(): Promise<readonly ManagementModuleView[]>;
   setModuleEnabled(moduleId: string, enabled: boolean): Promise<unknown>;
   saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }): Promise<unknown>;
@@ -252,6 +265,30 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       }
 
       return (await response.json()) as ServerConfigView;
+    },
+
+    async getModerationSettings() {
+      const response = await fetcher("/moderation/settings", {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to load moderation settings."));
+      }
+
+      return (await response.json()) as ModerationSettingsView;
+    },
+
+    async updateModerationSettings(input: ModerationSettingsView) {
+      const response = await fetcher("/moderation/settings", {
+        method: "PATCH",
+        headers: await jsonHeaders(),
+        body: JSON.stringify(input)
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to update moderation settings."));
+      }
+
+      return (await response.json()) as ModerationSettingsView;
     },
 
     async listModules() {

@@ -145,8 +145,14 @@ export {
   uuidLikeIdSchema
 } from "./shared/schemas.js";
 
+export type * from "./moderation/moderation-service.js";
+export { DefaultModerationService, InvalidModerationSettingsError } from "./moderation/moderation-service.js";
+export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplacement } from "./moderation/default-rules.js";
+
 export type * from "./templates/template-renderer.js";
 export { DefaultTemplateRenderer } from "./templates/template-renderer.js";
+export type * from "./templates/safe-template-renderer.js";
+export { SafeTemplateRenderer } from "./templates/safe-template-renderer.js";
 
 export type * from "./tts/types.js";
 export {

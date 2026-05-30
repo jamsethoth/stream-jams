@@ -64,6 +64,23 @@ function createManagementApi(): ManagementApi {
     async updateServerConfig(input) {
       return input;
     },
+    async getModerationSettings() {
+      return {
+        renderedText: {
+          maxLength: 240,
+          blockedTerms: [],
+          stripUrls: false
+        },
+        ttsText: {
+          maxLength: 180,
+          blockedTerms: [],
+          stripUrls: true
+        }
+      };
+    },
+    async updateModerationSettings(input) {
+      return input;
+    },
     async listModules() {
       return [];
     },

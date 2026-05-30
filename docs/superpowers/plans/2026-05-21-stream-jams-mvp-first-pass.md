@@ -1512,13 +1512,13 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Implement max length controls for rendered alert text and TTS text.
-- [ ] Implement blocked terms with case-insensitive matching.
-- [ ] Implement URL stripping option for TTS and rendered messages.
-- [ ] Implement HTML escaping as the default rendering behavior.
-- [ ] Add management UI for basic blocked terms and URL stripping settings.
-- [ ] Unit test XSS-like strings, long messages, URL stripping, and blocked term replacement.
-- [ ] Commit with message `feat: add moderation safeguards`.
+- [x] Implement max length controls for rendered alert text and TTS text.
+- [x] Implement blocked terms with case-insensitive matching.
+- [x] Implement URL stripping option for TTS and rendered messages.
+- [x] Implement HTML escaping as the default rendering behavior.
+- [x] Add management UI for basic blocked terms and URL stripping settings.
+- [x] Unit test XSS-like strings, long messages, URL stripping, and blocked term replacement.
+- [x] Commit with message `feat: add moderation safeguards`.
 
 **Acceptance Checks:**
 

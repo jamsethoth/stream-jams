@@ -8,6 +8,7 @@ import {
   registerManagementSessionRoutes,
   type ManagementSessionRouteDependencies
 } from "./http/routes/management-session.js";
+import { registerModerationRoutes, type ModerationRouteDependencies } from "./http/routes/moderation.js";
 import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
 import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/routes/overlays.js";
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
@@ -15,6 +16,7 @@ import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/r
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
+    Partial<ModerationRouteDependencies>,
     Partial<OverlayModuleRouteDependencies>,
     Partial<OverlayRouteDependencies>,
     Partial<AssetRouteDependencies>,
@@ -39,6 +41,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
       managementSessionService: dependencies.managementSessionService,
       managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
     });
+  }
+
+  if (dependencies.moderationService !== undefined) {
+    if (!hasModerationRouteDependencies(dependencies)) {
+      throw new Error("Moderation routes require service, management auth, and rate-limit hooks");
+    }
+
+    registerModerationRoutes(app, dependencies);
   }
 
   if (dependencies.alertService !== undefined) {
@@ -99,6 +109,16 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
   }
 
   return app;
+}
+
+function hasModerationRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & ModerationRouteDependencies {
+  return (
+    dependencies.moderationService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
 }
 
 function hasConfigRouteProtection(
