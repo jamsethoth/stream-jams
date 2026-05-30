@@ -132,6 +132,43 @@ describe("createServerApp", () => {
     ).toThrow("Asset routes require repository, import pipeline, asset store, management auth, and rate-limit hooks");
   });
 
+  it("does not register playback routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        playbackCoordinator: {
+          getSnapshot() {
+            throw new Error("not called");
+          },
+          pause() {
+            throw new Error("not called");
+          },
+          resume() {
+            throw new Error("not called");
+          },
+          mute() {
+            throw new Error("not called");
+          },
+          unmute() {
+            throw new Error("not called");
+          },
+          setDoNotDisturb() {
+            throw new Error("not called");
+          },
+          skipCurrent() {
+            throw new Error("not called");
+          },
+          replayRecent() {
+            throw new Error("not called");
+          }
+        }
+      })
+    ).toThrow("Playback routes require coordinator, management auth, and rate-limit hooks");
+  });
+
   it("does not register overlay module routes without management auth and rate-limit hooks", () => {
     expect(() =>
       createServerApp({

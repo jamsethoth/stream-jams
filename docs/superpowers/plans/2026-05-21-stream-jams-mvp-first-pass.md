@@ -1382,21 +1382,31 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Implement queue enqueue behavior for all resolved alerts from one event.
-- [ ] Implement priority ordering within an event and across queued items.
-- [ ] Implement cooldown checks by rule ID and event type.
-- [ ] Implement duplicate event protection using provider event IDs.
-- [ ] Implement skip, replay recent, pause, resume, mute, unmute, and do-not-disturb.
-- [ ] Unit test sequential playback snapshots.
-- [ ] Unit test cooldown and dedupe behavior.
-- [ ] Integration test playback control routes.
-- [ ] Commit with message `feat: add playback queue`.
+- [x] Implement queue enqueue behavior for all resolved alerts from one event.
+- [x] Implement priority ordering within an event and across queued items.
+- [x] Implement cooldown checks by rule ID and event type.
+- [x] Implement duplicate event protection using provider event IDs.
+- [x] Implement skip, replay recent, pause, resume, mute, unmute, and do-not-disturb.
+- [x] Unit test sequential playback snapshots.
+- [x] Unit test cooldown and dedupe behavior.
+- [x] Integration test playback control routes.
+- [x] Commit with message `feat: add playback queue`.
 
 **Acceptance Checks:**
 
 - Queue logic is testable without WebSocket clients.
 - Queue snapshots are serializable for management UI and overlay clients.
 - Playback controls do not require direct mutation of queue internals.
+
+**Completion Evidence (2026-05-30):**
+
+- Added pure core playback queue, cooldown, and duplicate-event services exported from `@stream-jams/core`.
+- Queue tests cover one queue item per source event, alert ordering within an event, priority/FIFO ordering across queued items, pause/resume, mute/unmute, do-not-disturb, complete, skip, replay recent, unknown replay rejection, and empty alert batches.
+- Cooldown and dedupe tests cover rule/event-type cooldown windows, zero cooldowns, expired cooldowns, repeated provider event IDs, and expired dedupe windows.
+- Added a server playback coordinator that dedupes before matching, suppresses cooldowned matches before resolution, resolves all ready alerts, enqueues one prioritized item per accepted event, and exposes queue controls.
+- Added management-protected playback routes for snapshot, pause, resume, mute, unmute, do-not-disturb, skip, and replay controls.
+- Architecture import scan found no SQLite, Fastify, React, Twitch, server/web package, filesystem, Node runtime, or WebSocket imports in the new core playback files; the only provider wording is use of normalized `providerId` for dedupe keys.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (56 test files and 210 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 
 ### Slice 13: Overlay WebSocket Gateway And Browser Overlay Shell
 

@@ -15,6 +15,7 @@ export const playbackQueueItemSchema = z.object({
   id: nonEmptyStringSchema,
   sourceEvent: normalizedStreamEventSchema,
   alerts: z.array(resolvedAlertSchema),
+  priority: z.number().int(),
   status: z.enum(["queued", "playing", "completed", "skipped"]),
   enqueuedAt: isoDateTimeSchema,
   startedAt: isoDateTimeSchema.nullable(),
@@ -26,5 +27,6 @@ export const playbackQueueSnapshotSchema = z.object({
   queued: z.array(playbackQueueItemSchema),
   recent: z.array(playbackQueueItemSchema),
   paused: z.boolean(),
-  muted: z.boolean()
+  muted: z.boolean(),
+  doNotDisturb: z.boolean()
 });

@@ -6,6 +6,11 @@ import {
   DefaultAssetValidator,
   DefaultMediaImportPipeline,
   DefaultOverlayModuleConfigService,
+  DefaultAlertMatcher,
+  DefaultAlertResolver,
+  DefaultPlaybackCooldownService,
+  DefaultPlaybackDedupeService,
+  DefaultPlaybackQueue,
   NoopMediaTranscodingStage
 } from "@stream-jams/core";
 import { createServerApp } from "./app.js";
@@ -24,6 +29,7 @@ import { openStreamJamsDatabase } from "./modules/db/database.js";
 import { InMemoryServerOverlayModuleConfigRepository } from "./modules/overlay-modules/in-memory-module-config-repository.js";
 import { SqliteAssetRepository } from "./modules/assets/sqlite-asset-repository.js";
 import { createStaticOverlayModuleRegistry } from "./modules/overlay-modules/static-module-registry.js";
+import { PlaybackCoordinator } from "./modules/playback/playback-coordinator.js";
 import { findSuggestedPorts, NodePortAvailabilityChecker } from "./server/port-availability.js";
 import { startServer } from "./server/start-server.js";
 
@@ -64,6 +70,23 @@ const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
   registry: overlayModuleRegistry,
   repository: new InMemoryServerOverlayModuleConfigRepository()
 });
+const playbackCoordinator = new PlaybackCoordinator({
+  alertService,
+  matcher: new DefaultAlertMatcher(),
+  resolver: new DefaultAlertResolver({
+    generateId: generateResolvedAlertId
+  }),
+  queue: new DefaultPlaybackQueue({
+    generateId: generatePlaybackQueueItemId
+  }),
+  cooldownService: new DefaultPlaybackCooldownService(),
+  dedupeService: new DefaultPlaybackDedupeService(),
+  defaultTarget: {
+    overlayId: "main",
+    purpose: "live",
+    scope: "module"
+  }
+});
 
 try {
   const result = await startServer({
@@ -82,6 +105,7 @@ try {
         assetRepository,
         mediaImportPipeline,
         assetStore,
+        playbackCoordinator,
         managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
         managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
       }),
@@ -116,6 +140,14 @@ function generateAlertConfigurationId(kind: "collection" | "rule" | "variant"): 
 
 function generateAssetId(): string {
   return `asset_${randomBytes(16).toString("base64url")}`;
+}
+
+function generateResolvedAlertId(kind: "resolved-alert" | "overlay-instruction"): string {
+  return `playback_${kind}_${randomBytes(16).toString("base64url")}`;
+}
+
+function generatePlaybackQueueItemId(): string {
+  return `playback_item_${randomBytes(16).toString("base64url")}`;
 }
 
 function calculateChecksum(bytes: Uint8Array): string {

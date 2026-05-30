@@ -9,6 +9,7 @@ import {
   type ManagementSessionRouteDependencies
 } from "./http/routes/management-session.js";
 import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
+import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
@@ -16,7 +17,8 @@ export interface ServerAppDependencies
     Partial<OverlayModuleRouteDependencies>,
     Partial<AssetRouteDependencies>,
     Partial<AlertRuleRouteDependencies>,
-    Partial<AlertCollectionRouteDependencies> {
+    Partial<AlertCollectionRouteDependencies>,
+    Partial<PlaybackRouteDependencies> {
   readonly metadata: ServerAppMetadata;
 }
 
@@ -66,6 +68,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerOverlayModuleRoutes(app, dependencies);
   }
 
+  if (dependencies.playbackCoordinator !== undefined) {
+    if (!hasPlaybackRouteDependencies(dependencies)) {
+      throw new Error("Playback routes require coordinator, management auth, and rate-limit hooks");
+    }
+
+    registerPlaybackRoutes(app, dependencies);
+  }
+
   if (dependencies.serverConfigService !== undefined) {
     if (!hasConfigRouteProtection(dependencies)) {
       throw new Error("Config routes require management auth and rate-limit hooks");
@@ -103,6 +113,16 @@ function hasAssetRouteDependencies(
     dependencies.assetRepository !== undefined &&
     dependencies.mediaImportPipeline !== undefined &&
     dependencies.assetStore !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasPlaybackRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & PlaybackRouteDependencies {
+  return (
+    dependencies.playbackCoordinator !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

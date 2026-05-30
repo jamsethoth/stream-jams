@@ -71,11 +71,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests for enqueueing all resolved alerts from one source event.
-- [ ] Write failing tests for item priority ordering across queued events and preserved alert ordering within one item.
-- [ ] Write failing tests for pause, resume, mute, unmute, do-not-disturb, skip, complete, and replay recent state transitions.
-- [ ] Implement `DefaultPlaybackQueue` with injected clock and ID generator.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests for enqueueing all resolved alerts from one source event.
+- [x] Write failing tests for item priority ordering across queued events and preserved alert ordering within one item.
+- [x] Write failing tests for pause, resume, mute, unmute, do-not-disturb, skip, complete, and replay recent state transitions.
+- [x] Implement `DefaultPlaybackQueue` with injected clock and ID generator.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/playback/playback-queue.test.ts` passed (52 files, 196 tests).
 
 **Positive test cases:**
 
@@ -111,11 +111,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing cooldown tests for rule ID and event type windows.
-- [ ] Write failing cooldown tests for zero-second cooldowns and expired cooldowns.
-- [ ] Write failing dedupe tests for repeated provider event IDs and expired dedupe windows.
-- [ ] Implement pure cooldown and dedupe services with injected clock.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing cooldown tests for rule ID and event type windows.
+- [x] Write failing cooldown tests for zero-second cooldowns and expired cooldowns.
+- [x] Write failing dedupe tests for repeated provider event IDs and expired dedupe windows.
+- [x] Implement pure cooldown and dedupe services with injected clock.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/playback/cooldown-service.test.ts packages/core/src/playback/dedupe-service.test.ts` passed (54 files, 201 tests).
 
 **Positive test cases:**
 
@@ -146,11 +146,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing coordinator tests for duplicate event rejection before matching.
-- [ ] Write failing coordinator tests for cooldown-suppressed matches.
-- [ ] Write failing coordinator tests for enqueueing all resolved alerts from one accepted event.
-- [ ] Implement coordinator with injected `AlertService`, `AlertMatcher`, `AlertResolver`, `PlaybackQueue`, cooldown service, dedupe service, clock, and overlay target defaults.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing coordinator tests for duplicate event rejection before matching.
+- [x] Write failing coordinator tests for cooldown-suppressed matches.
+- [x] Write failing coordinator tests for enqueueing all resolved alerts from one accepted event.
+- [x] Implement coordinator with injected `AlertService`, `AlertMatcher`, `AlertResolver`, `PlaybackQueue`, cooldown service, dedupe service, clock, and overlay target defaults.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- apps/server/src/modules/playback/playback-coordinator.test.ts` passed (55 files, 204 tests).
 
 **Positive test cases:**
 
@@ -184,12 +184,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing route tests for protected snapshot access.
-- [ ] Write failing route tests for pause/resume/mute/unmute/do-not-disturb/skip/replay controls.
-- [ ] Write failing app registration test for missing playback route protection.
-- [ ] Implement route registration and dependency checks.
-- [ ] Wire production server index with in-memory playback services.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing route tests for protected snapshot access.
+- [x] Write failing route tests for pause/resume/mute/unmute/do-not-disturb/skip/replay controls.
+- [x] Write failing app registration test for missing playback route protection.
+- [x] Implement route registration and dependency checks.
+- [x] Wire production server index with in-memory playback services.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- apps/server/src/http/routes/playback.test.ts apps/server/src/app.test.ts` passed (56 files, 210 tests).
 
 **Positive test cases:**
 
@@ -220,12 +220,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Run architecture scans proving core playback files do not import SQLite, Fastify, React, Twitch, provider adapters, filesystem APIs, or WebSocket code.
-- [ ] Update the base MVP plan Slice 12 checklist and completion evidence.
-- [ ] Update this detailed plan with validation evidence.
-- [ ] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
-- [ ] Self-review the diff for scope creep and weak tests.
-- [ ] Commit with message `feat: add playback queue`.
+- [x] Run architecture scans proving core playback files do not import SQLite, Fastify, React, Twitch, provider adapters, filesystem APIs, or WebSocket code. Evidence: import-only scan returned no matches; broad scan only found normalized `providerId` use for dedupe keys.
+- [x] Update the base MVP plan Slice 12 checklist and completion evidence.
+- [x] Update this detailed plan with validation evidence.
+- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`. Evidence: all commands passed; `pnpm test` reported 56 files and 210 tests.
+- [x] Self-review the diff for scope creep and weak tests. Evidence: reviewed new core queue/cooldown/dedupe services, server coordinator/routes, production wiring, tests, exports, schema/type updates, and plan diffs.
+- [x] Commit with message `feat: add playback queue`.
 
 **Validation commands:**
 
@@ -239,3 +239,12 @@ Non-goals:
 **Acceptance criteria:**
 
 - Slice 12 is implemented, tested, documented, and ready for PR review.
+
+## Validation Evidence
+
+- Playback queue focused validation: `pnpm test -- packages/core/src/playback/playback-queue.test.ts` passed (52 files, 196 tests).
+- Cooldown/dedupe focused validation: `pnpm test -- packages/core/src/playback/cooldown-service.test.ts packages/core/src/playback/dedupe-service.test.ts` passed (54 files, 201 tests).
+- Playback coordinator focused validation: `pnpm test -- apps/server/src/modules/playback/playback-coordinator.test.ts` passed (55 files, 204 tests).
+- Playback route focused validation: `pnpm test -- apps/server/src/http/routes/playback.test.ts apps/server/src/app.test.ts` passed (56 files, 210 tests).
+- Architecture import scan found no SQLite, Fastify, React, Twitch, provider adapter, server/web package, filesystem, Node runtime, or WebSocket imports in new core playback files.
+- Full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (56 files, 210 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
