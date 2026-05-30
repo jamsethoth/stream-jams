@@ -37,6 +37,24 @@ describe("alertRuleSchema", () => {
     expect(alertRuleSchema.safeParse(validRule).success).toBe(true);
   });
 
+  it("preserves optional variant conditions and priority", () => {
+    const rule = {
+      ...validRule,
+      variants: [
+        {
+          ...validRule.variants[0],
+          conditions: [{ field: "amount", operator: "min", value: 500 }],
+          priority: 5
+        }
+      ]
+    };
+
+    const parsed = alertRuleSchema.parse(rule);
+
+    expect(parsed.variants[0]?.conditions).toEqual([{ field: "amount", operator: "min", value: 500 }]);
+    expect(parsed.variants[0]?.priority).toBe(5);
+  });
+
   it("rejects invalid alert duration", () => {
     const invalidRule = {
       ...validRule,

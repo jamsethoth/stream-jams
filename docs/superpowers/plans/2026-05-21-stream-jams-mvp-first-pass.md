@@ -1360,9 +1360,10 @@ export interface ProviderErrorLogRecord {
 - Added pure core alert condition evaluation, alert matching, alert resolution, and safe template rendering APIs exported from `@stream-jams/core`.
 - Matcher tests cover multiple matching alerts, deterministic priority ordering, disabled/mismatched/failing rules, and duplicate rule-ID suppression across active collection expansion.
 - Resolver tests cover priority ordering, injected weighted randomness, disabled variant exclusion, all-disabled fail-closed behavior, escaped text/TTS rendering, visual/audio/TTS instructions, and no raw provider payload leakage.
+- Review hardening added sanitized resolver template context, variant-level condition/priority selection, duplicate-match suppression after eligibility checks, optional variant selection persistence, and regression tests for each issue.
 - Added a safe root `.env.example` documenting `STREAM_JAMS_CONFIG_PATH` without committing secrets.
 - Architecture import scan found no SQLite, Fastify, React, Twitch, server/web package, or Node runtime imports in the new core matcher/resolver/template files.
-- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (51 test files and 186 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (51 test files and 191 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 
 ### Slice 12: Playback Queue Service
 

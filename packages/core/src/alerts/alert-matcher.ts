@@ -32,22 +32,20 @@ export class DefaultAlertMatcher implements AlertMatcher {
     const matches: AlertMatch[] = [];
 
     for (const rule of input.rules) {
-      if (seenRuleIds.has(rule.id)) {
-        continue;
-      }
-      seenRuleIds.add(rule.id);
-
       if (!rule.enabled || rule.eventType !== input.event.type) {
         continue;
       }
 
       const conditionsMatch = rule.conditions.every((condition) => this.#conditionEvaluator.evaluate(condition, input.event));
-      if (conditionsMatch) {
-        matches.push({
-          event: input.event,
-          rule
-        });
+      if (!conditionsMatch || seenRuleIds.has(rule.id)) {
+        continue;
       }
+
+      seenRuleIds.add(rule.id);
+      matches.push({
+        event: input.event,
+        rule
+      });
     }
 
     return matches.sort((left, right) => {

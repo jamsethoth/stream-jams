@@ -100,6 +100,68 @@ describe("DefaultAlertResolver", () => {
     expect(JSON.stringify(resolved)).not.toContain("do-not-leak");
   });
 
+  it("uses a sanitized template context that cannot render raw provider payloads", () => {
+    const event = createCheerEvent({
+      metadata: {
+        giftCount: 3,
+        rawProviderPayload: {
+          accessToken: "do-not-leak"
+        }
+      }
+    });
+    const rule = createRule({
+      variants: [
+        createVariant({
+          textTemplate: "{metadata.rawProviderPayload.accessToken}:{metadata.giftCount}:{giftCount}",
+          ttsConfig: {
+            enabled: true,
+            providerId: "browser",
+            voiceId: null,
+            template: "{metadata.rawProviderPayload.accessToken}:{giftCount}",
+            minimumAmount: null
+          }
+        })
+      ]
+    });
+
+    const resolved = createResolver().resolveMatches({ matches: [createMatch(rule, event)], target });
+
+    expect(resolved[0]?.overlayInstruction.text?.text).toBe(":3:3");
+    expect(resolved[0]?.overlayInstruction.tts?.text).toBe(":3");
+    expect(JSON.stringify(resolved)).not.toContain("do-not-leak");
+  });
+
+  it("selects the highest-priority matching variant before applying weighted randomness", () => {
+    const event = createCheerEvent({ amount: 600 });
+    const rule = createRule({
+      variants: [
+        createVariant({ id: "low-priority-match", priority: 0, weight: 100 }),
+        createVariant({
+          id: "high-priority-nonmatch",
+          priority: 10,
+          weight: 100,
+          conditions: [{ field: "amount", operator: "min", value: 1000 }]
+        }),
+        createVariant({
+          id: "high-priority-common",
+          priority: 5,
+          weight: 1,
+          conditions: [{ field: "amount", operator: "min", value: 500 }]
+        }),
+        createVariant({
+          id: "high-priority-rare",
+          priority: 5,
+          weight: 3,
+          conditions: [{ field: "amount", operator: "min", value: 500 }]
+        })
+      ]
+    });
+
+    expect(createResolver({ randomValues: [0.5] }).resolveMatches({ matches: [createMatch(rule, event)], target }).map((alert) => alert.variantId)).toEqual([
+      "high-priority-rare"
+    ]);
+  });
+
   it("selects enabled variants with injected weighted randomness", () => {
     const event = createCheerEvent();
     const rule = createRule({

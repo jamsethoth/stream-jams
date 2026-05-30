@@ -71,7 +71,7 @@ Non-goals:
 - [x] Write failing tests for unknown variables rendering as empty text.
 - [x] Write failing tests for default HTML escaping.
 - [x] Implement `DefaultTemplateRenderer` with optional escaping override.
-- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/templates/template-renderer.test.ts` passed (51 files, 186 tests).
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/templates/template-renderer.test.ts packages/core/src/alerts/alert-resolver.test.ts` passed (51 files, 191 tests).
 
 **Positive test cases:**
 
@@ -178,7 +178,7 @@ Non-goals:
 - [x] Write failing resolver tests proving disabled variants are ignored and all-disabled variants fail closed.
 - [x] Write failing resolver tests proving output contains source event ID, rule ID, variant ID, rendered text, visual/audio/tts instructions, and no raw provider payload.
 - [x] Implement resolver with injected random source, ID generator, template renderer, and optional visual asset media type lookup.
-- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/alerts/alert-resolver.test.ts` passed (51 files, 186 tests).
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/templates/template-renderer.test.ts packages/core/src/alerts/alert-resolver.test.ts` passed (51 files, 191 tests).
 
 **Positive test cases:**
 
@@ -212,7 +212,7 @@ Non-goals:
 - [x] Run architecture scans proving matcher/resolver code is core-only and does not import SQLite, Fastify, React, or provider adapters. Evidence: import-only scan for SQLite/Fastify/React/Twitch/server/web/Node imports returned no matches.
 - [x] Update the base MVP plan Slice 11 checklist and completion evidence.
 - [x] Update this detailed plan with validation evidence.
-- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`. Evidence: all commands passed; `pnpm test` reported 51 files and 186 tests.
+- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`. Evidence: all commands passed; `pnpm test` reported 51 files and 191 tests.
 - [x] Self-review the diff for scope creep and weak tests. Evidence: reviewed new matcher/evaluator/resolver/template files, tests, exports, `.env.example`, and plan diffs; added missing explicit tier/rewardTitle template coverage.
 - [x] Commit with message `feat: add alert matching engine`.
 
@@ -231,9 +231,10 @@ Non-goals:
 
 ## Validation Evidence
 
-- Template renderer focused validation: `pnpm test -- packages/core/src/templates/template-renderer.test.ts` passed (51 files, 186 tests).
+- Template renderer focused validation: `pnpm test -- packages/core/src/templates/template-renderer.test.ts` passed (51 files, 191 tests).
 - Condition evaluator focused validation: `pnpm test -- packages/core/src/alerts/condition-evaluator.test.ts` passed (49 files, 178 tests).
 - Alert matcher focused validation: `pnpm test -- packages/core/src/alerts/alert-matcher.test.ts` passed (50 files, 181 tests).
-- Alert resolver focused validation: `pnpm test -- packages/core/src/alerts/alert-resolver.test.ts` passed (51 files, 186 tests).
+- Alert resolver focused validation: `pnpm test -- packages/core/src/alerts/alert-resolver.test.ts` passed (51 files, 191 tests).
 - Architecture import scan found no SQLite, Fastify, React, Twitch, server/web package, or Node runtime imports in the new Slice 11 core files.
-- Full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (51 files, 186 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Review hardening validation: focused regression run passed for matcher, resolver, alert schemas, SQLite alert repository, and database migration tests (51 files, 191 tests); full validation passed again after fixes.
+- Full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (51 files, 191 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.

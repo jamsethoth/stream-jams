@@ -43,6 +43,31 @@ describe("DefaultAlertMatcher", () => {
     expect(matches.map((match) => match.rule.id)).toEqual(["shared-cheer"]);
   });
 
+  it("does not let an ineligible duplicate hide a later matching rule", () => {
+    const event = createCheerEvent({ amount: 300 });
+    const activeCopy = createRule({
+      id: "shared-cheer",
+      conditions: [{ field: "amount", operator: "min", value: 100 }]
+    });
+
+    const matches = matcher.findMatches({
+      event,
+      rules: [
+        {
+          ...activeCopy,
+          enabled: false,
+          collectionIds: ["disabled-collection"]
+        },
+        {
+          ...activeCopy,
+          collectionIds: ["active-collection"]
+        }
+      ]
+    });
+
+    expect(matches.map((match) => match.rule.id)).toEqual(["shared-cheer"]);
+  });
+
   it("excludes disabled rules, mismatched event types, and rules whose conditions fail", () => {
     const event = createCheerEvent({ amount: 100 });
     const matches = matcher.findMatches({
