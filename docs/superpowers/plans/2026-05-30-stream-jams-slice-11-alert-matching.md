@@ -67,11 +67,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests for dot-path variable replacement.
-- [ ] Write failing tests for unknown variables rendering as empty text.
-- [ ] Write failing tests for default HTML escaping.
-- [ ] Implement `DefaultTemplateRenderer` with optional escaping override.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests for dot-path variable replacement.
+- [x] Write failing tests for unknown variables rendering as empty text.
+- [x] Write failing tests for default HTML escaping.
+- [x] Implement `DefaultTemplateRenderer` with optional escaping override.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/templates/template-renderer.test.ts` passed (51 files, 186 tests).
 
 **Positive test cases:**
 
@@ -101,11 +101,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing tests for exact equality, includes, minimum, maximum, and range operators.
-- [ ] Write failing tests for tier, tenure/streak, gift count metadata, raid viewer amount, cheer amount, and channel point reward fields.
-- [ ] Write failing tests for missing/non-numeric fields returning false.
-- [ ] Implement dot-path and alias-aware condition evaluation.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing tests for exact equality, includes, minimum, maximum, and range operators.
+- [x] Write failing tests for tier, tenure/streak, gift count metadata, raid viewer amount, cheer amount, and channel point reward fields.
+- [x] Write failing tests for missing/non-numeric fields returning false.
+- [x] Implement dot-path and alias-aware condition evaluation.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/alerts/condition-evaluator.test.ts` passed (49 files, 178 tests).
 
 **Positive test cases:**
 
@@ -137,11 +137,11 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing matcher tests for multiple matching alerts for one event.
-- [ ] Write failing matcher tests for duplicate rule IDs appearing through multiple active collections.
-- [ ] Write failing matcher tests for disabled rules, mismatched event types, and failing conditions.
-- [ ] Implement `DefaultAlertMatcher.findMatches` using `DefaultAlertConditionEvaluator` by default.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing matcher tests for multiple matching alerts for one event.
+- [x] Write failing matcher tests for duplicate rule IDs appearing through multiple active collections.
+- [x] Write failing matcher tests for disabled rules, mismatched event types, and failing conditions.
+- [x] Implement `DefaultAlertMatcher.findMatches` using `DefaultAlertConditionEvaluator` by default.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/alerts/alert-matcher.test.ts` passed (50 files, 181 tests).
 
 **Positive test cases:**
 
@@ -173,12 +173,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Write failing resolver tests for priority-ordered matches producing overlay instructions.
-- [ ] Write failing resolver tests for weighted random enabled variant selection.
-- [ ] Write failing resolver tests proving disabled variants are ignored and all-disabled variants fail closed.
-- [ ] Write failing resolver tests proving output contains source event ID, rule ID, variant ID, rendered text, visual/audio/tts instructions, and no raw provider payload.
-- [ ] Implement resolver with injected random source, ID generator, template renderer, and optional visual asset media type lookup.
-- [ ] Run focused tests and confirm they pass.
+- [x] Write failing resolver tests for priority-ordered matches producing overlay instructions.
+- [x] Write failing resolver tests for weighted random enabled variant selection.
+- [x] Write failing resolver tests proving disabled variants are ignored and all-disabled variants fail closed.
+- [x] Write failing resolver tests proving output contains source event ID, rule ID, variant ID, rendered text, visual/audio/tts instructions, and no raw provider payload.
+- [x] Implement resolver with injected random source, ID generator, template renderer, and optional visual asset media type lookup.
+- [x] Run focused tests and confirm they pass. Evidence: `pnpm test -- packages/core/src/alerts/alert-resolver.test.ts` passed (51 files, 186 tests).
 
 **Positive test cases:**
 
@@ -209,12 +209,12 @@ Non-goals:
 
 **Implementation steps:**
 
-- [ ] Run architecture scans proving matcher/resolver code is core-only and does not import SQLite, Fastify, React, or provider adapters.
-- [ ] Update the base MVP plan Slice 11 checklist and completion evidence.
-- [ ] Update this detailed plan with validation evidence.
-- [ ] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
-- [ ] Self-review the diff for scope creep and weak tests.
-- [ ] Commit with message `feat: add alert matching engine`.
+- [x] Run architecture scans proving matcher/resolver code is core-only and does not import SQLite, Fastify, React, or provider adapters. Evidence: import-only scan for SQLite/Fastify/React/Twitch/server/web/Node imports returned no matches.
+- [x] Update the base MVP plan Slice 11 checklist and completion evidence.
+- [x] Update this detailed plan with validation evidence.
+- [x] Run full validation: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:e2e`, `pnpm build`, and `git diff --check`. Evidence: all commands passed; `pnpm test` reported 51 files and 186 tests.
+- [x] Self-review the diff for scope creep and weak tests. Evidence: reviewed new matcher/evaluator/resolver/template files, tests, exports, `.env.example`, and plan diffs; added missing explicit tier/rewardTitle template coverage.
+- [x] Commit with message `feat: add alert matching engine`.
 
 **Validation commands:**
 
@@ -228,3 +228,12 @@ Non-goals:
 **Acceptance criteria:**
 
 - Slice 11 is implemented, tested, documented, and ready for PR review.
+
+## Validation Evidence
+
+- Template renderer focused validation: `pnpm test -- packages/core/src/templates/template-renderer.test.ts` passed (51 files, 186 tests).
+- Condition evaluator focused validation: `pnpm test -- packages/core/src/alerts/condition-evaluator.test.ts` passed (49 files, 178 tests).
+- Alert matcher focused validation: `pnpm test -- packages/core/src/alerts/alert-matcher.test.ts` passed (50 files, 181 tests).
+- Alert resolver focused validation: `pnpm test -- packages/core/src/alerts/alert-resolver.test.ts` passed (51 files, 186 tests).
+- Architecture import scan found no SQLite, Fastify, React, Twitch, server/web package, or Node runtime imports in the new Slice 11 core files.
+- Full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (51 files, 186 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.

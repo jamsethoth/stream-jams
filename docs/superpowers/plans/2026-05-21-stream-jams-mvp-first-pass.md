@@ -1339,21 +1339,30 @@ export interface ProviderErrorLogRecord {
 
 **Steps:**
 
-- [ ] Implement condition evaluation for exact, minimum, maximum, range, tier, tenure, gift count, raid viewers, cheer amount, and channel point reward.
-- [ ] Implement `AlertMatcher.findMatches`.
-- [ ] Implement variant selection by condition, priority, and weighted random selection.
-- [ ] Implement template rendering with event variables.
-- [ ] Implement HTML escaping for rendered alert text by default.
-- [ ] Unit test multiple matching alerts for one event.
-- [ ] Unit test duplicate suppression for rules present in multiple active collections.
-- [ ] Unit test template rendering and escaping.
-- [ ] Commit with message `feat: add alert matching engine`.
+- [x] Implement condition evaluation for exact, minimum, maximum, range, tier, tenure, gift count, raid viewers, cheer amount, and channel point reward.
+- [x] Implement `AlertMatcher.findMatches`.
+- [x] Implement variant selection by condition, priority, and weighted random selection.
+- [x] Implement template rendering with event variables.
+- [x] Implement HTML escaping for rendered alert text by default.
+- [x] Unit test multiple matching alerts for one event.
+- [x] Unit test duplicate suppression for rules present in multiple active collections.
+- [x] Unit test template rendering and escaping.
+- [x] Commit with message `feat: add alert matching engine`.
 
 **Acceptance Checks:**
 
 - Matching is deterministic except where weighted random selection is explicitly configured.
 - The matcher returns all active matching alerts.
 - Alert resolution returns overlay-ready instructions without raw provider payloads.
+
+**Completion Evidence (2026-05-30):**
+
+- Added pure core alert condition evaluation, alert matching, alert resolution, and safe template rendering APIs exported from `@stream-jams/core`.
+- Matcher tests cover multiple matching alerts, deterministic priority ordering, disabled/mismatched/failing rules, and duplicate rule-ID suppression across active collection expansion.
+- Resolver tests cover priority ordering, injected weighted randomness, disabled variant exclusion, all-disabled fail-closed behavior, escaped text/TTS rendering, visual/audio/TTS instructions, and no raw provider payload leakage.
+- Added a safe root `.env.example` documenting `STREAM_JAMS_CONFIG_PATH` without committing secrets.
+- Architecture import scan found no SQLite, Fastify, React, Twitch, server/web package, or Node runtime imports in the new core matcher/resolver/template files.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (51 test files and 186 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 
 ### Slice 12: Playback Queue Service
 

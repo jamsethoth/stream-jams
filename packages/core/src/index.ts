@@ -33,6 +33,12 @@ export type * from "./auth/management-session-service.js";
 export type * from "./alerts/types.js";
 export type * from "./alerts/repository.js";
 export type * from "./alerts/alert-service.js";
+export type * from "./alerts/condition-evaluator.js";
+export { DefaultAlertConditionEvaluator } from "./alerts/condition-evaluator.js";
+export type * from "./alerts/alert-matcher.js";
+export { DefaultAlertMatcher } from "./alerts/alert-matcher.js";
+export type * from "./alerts/alert-resolver.js";
+export { AlertVariantSelectionError, DefaultAlertResolver } from "./alerts/alert-resolver.js";
 export {
   AlertCollectionNotFoundError,
   AlertRuleNotFoundError,
@@ -132,6 +138,9 @@ export {
   positiveIntegerSchema,
   uuidLikeIdSchema
 } from "./shared/schemas.js";
+
+export type * from "./templates/template-renderer.js";
+export { DefaultTemplateRenderer } from "./templates/template-renderer.js";
 
 export type * from "./tts/types.js";
 export {
