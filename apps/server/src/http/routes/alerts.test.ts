@@ -161,9 +161,53 @@ describe("alert rule routes", () => {
     });
   });
 
+  it("returns structured conflicts for duplicate and cross-rule variant IDs", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const { app, alertService, authHeaders } = await createAppWithAlerts(database);
+    const collection = await alertService.createCollection({ name: "Main Alerts", enabled: true });
+    const firstRule = await alertService.createRule(createRulePayload([collection.id]));
+    const secondRule = await alertService.createRule(createRulePayload([collection.id]));
+    const firstVariant = firstRule.variants[0];
+    const secondVariant = secondRule.variants[0];
+    if (firstVariant === undefined || secondVariant === undefined) {
+      throw new Error("Missing variant fixture");
+    }
+
+    const duplicateVariantResponse = await app.inject({
+      method: "PUT",
+      url: `/alerts/rules/${firstRule.id}`,
+      headers: authHeaders,
+      payload: omitRuleId({
+        ...firstRule,
+        variants: [firstVariant, firstVariant]
+      })
+    });
+    expect(duplicateVariantResponse.statusCode).toBe(409);
+    expect(duplicateVariantResponse.json()).toEqual({
+      error: {
+        code: "ALERT_VARIANT_ID_CONFLICT",
+        message: `Alert variant id "${firstVariant.id}" is duplicated`
+      }
+    });
+
+    const crossRuleVariantResponse = await app.inject({
+      method: "PUT",
+      url: `/alerts/rules/${secondRule.id}/variants/${firstVariant.id}`,
+      headers: authHeaders,
+      payload: omitVariantId(secondVariant)
+    });
+    expect(crossRuleVariantResponse.statusCode).toBe(409);
+    expect(crossRuleVariantResponse.json()).toEqual({
+      error: {
+        code: "ALERT_VARIANT_ID_CONFLICT",
+        message: `Alert variant "${firstVariant.id}" already belongs to rule "${firstRule.id}"`
+      }
+    });
+  });
+
   it("returns structured errors for invalid payloads and missing alert rules", async () => {
     using database = createInMemoryStreamJamsDatabase();
-    const { app, authHeaders } = await createAppWithAlerts(database);
+    const { app, alertService, authHeaders } = await createAppWithAlerts(database);
 
     const invalidResponse = await app.inject({
       method: "POST",
@@ -178,6 +222,39 @@ describe("alert rule routes", () => {
       error: {
         code: "INVALID_ALERT_RULE_REQUEST",
         message: "Invalid alert rule request"
+      }
+    });
+
+    const missingCollectionResponse = await app.inject({
+      method: "POST",
+      url: "/alerts/rules",
+      headers: authHeaders,
+      payload: createRulePayload(["missing_collection"])
+    });
+    expect(missingCollectionResponse.statusCode).toBe(404);
+    expect(missingCollectionResponse.json()).toEqual({
+      error: {
+        code: "ALERT_COLLECTION_NOT_FOUND",
+        message: 'Alert collection "missing_collection" was not found'
+      }
+    });
+
+    const collection = await alertService.createCollection({ name: "Main Alerts", enabled: true });
+    const rule = await alertService.createRule(createRulePayload([collection.id]));
+    const missingCollectionUpdateResponse = await app.inject({
+      method: "PUT",
+      url: `/alerts/rules/${rule.id}`,
+      headers: authHeaders,
+      payload: omitRuleId({
+        ...rule,
+        collectionIds: ["missing_collection"]
+      })
+    });
+    expect(missingCollectionUpdateResponse.statusCode).toBe(404);
+    expect(missingCollectionUpdateResponse.json()).toEqual({
+      error: {
+        code: "ALERT_COLLECTION_NOT_FOUND",
+        message: 'Alert collection "missing_collection" was not found'
       }
     });
 

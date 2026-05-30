@@ -1316,11 +1316,11 @@ export interface ProviderErrorLogRecord {
 **Completion Evidence:**
 
 - Slice 10 detailed execution plan was added at `docs/superpowers/plans/2026-05-30-stream-jams-slice-10-alert-configuration.md`.
-- `DefaultAlertService` provides collection, rule, and variant operations over `AlertRepository`, plus activation state and active-rule filtering for multiple active collections, disabled-rule precedence, and duplicate suppression.
+- `DefaultAlertService` provides collection, rule, and variant operations over `AlertRepository`, plus activation state, active-rule filtering for multiple active collections, disabled-rule precedence, duplicate suppression, and service-level duplicate/cross-rule variant ID conflict checks.
 - Alerts module wizard metadata now exposes canvas, collections, rules, and variants steps through the overlay module registry.
-- Management-protected alert routes expose collection CRUD/toggles, rule CRUD/toggles, variant upsert/delete, and activation state through `AlertService` rather than direct database calls.
+- Management-protected alert routes expose collection CRUD/toggles, rule CRUD/toggles, variant upsert/delete, and activation state through `AlertService` rather than direct database calls, with structured errors for missing collection references and variant ID conflicts.
 - The web management shell includes an Alerts panel for listing collections/rules and toggling collection active state and individual rule enabled state through an API client.
-- Focused tests and full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (47 test files and 168 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Focused tests and full validation passed: `pnpm lint`, `pnpm typecheck`, `pnpm test` (47 test files and 171 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 - Architecture scans found no core/server/Node/SQLite imports in web UI code and no direct SQLite access in production alert HTTP routes.
 
 ### Slice 11: Alert Matching And Resolution Engine

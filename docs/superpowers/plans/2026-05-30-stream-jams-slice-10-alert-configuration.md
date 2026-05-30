@@ -50,11 +50,11 @@ Non-goals:
 
 ## Completion Evidence
 
-- Core alert service tests passed for collection/rule CRUD, variant upsert/delete, multiple active collections, disabled-rule precedence, duplicate suppression for rules in multiple active collections, and typed not-found/final-variant errors.
+- Core alert service tests passed for collection/rule CRUD, variant upsert/delete, multiple active collections, disabled-rule precedence, duplicate suppression for rules in multiple active collections, duplicate/cross-rule variant ID conflicts, and typed not-found/final-variant errors.
 - Alerts module registry/schema tests passed with wizard metadata for canvas, collections, rules, and variants.
-- Server route tests passed for authenticated collection CRUD/toggles, rule CRUD/toggles, variant upsert/delete, activation state, invalid payloads, missing records, and missing management sessions.
+- Server route tests passed for authenticated collection CRUD/toggles, rule CRUD/toggles, variant upsert/delete, activation state, invalid payloads, missing collection references, duplicate/cross-rule variant ID conflicts, missing records, and missing management sessions.
 - Web alert configuration tests passed for loaded collection/rule rows, empty states, independent toggles, refreshes, and visible diagnostics.
-- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (47 test files and 168 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
+- Full validation passed with `pnpm lint`, `pnpm typecheck`, `pnpm test` (47 test files and 171 tests), `pnpm test:e2e`, `pnpm build`, and `git diff --check`.
 - Architecture scans found no core/server/Node/SQLite imports in web UI code and no direct SQLite access in production alert HTTP routes.
 
 ## File Ownership

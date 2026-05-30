@@ -36,6 +36,7 @@ export type * from "./alerts/alert-service.js";
 export {
   AlertCollectionNotFoundError,
   AlertRuleNotFoundError,
+  AlertVariantIdConflictError,
   AlertVariantNotFoundError,
   LastAlertVariantError,
   DefaultAlertService,

@@ -1,5 +1,7 @@
 import {
+  AlertCollectionNotFoundError,
   AlertRuleNotFoundError,
+  AlertVariantIdConflictError,
   AlertVariantNotFoundError,
   LastAlertVariantError,
   type AlertService,
@@ -119,6 +121,13 @@ function sendAlertError(reply: Parameters<typeof sendHttpError>[0], error: unkno
     });
   }
 
+  if (error instanceof AlertCollectionNotFoundError) {
+    return sendHttpError(reply, 404, {
+      code: "ALERT_COLLECTION_NOT_FOUND",
+      message: error.message
+    });
+  }
+
   if (error instanceof AlertRuleNotFoundError) {
     return sendHttpError(reply, 404, {
       code: "ALERT_RULE_NOT_FOUND",
@@ -129,6 +138,13 @@ function sendAlertError(reply: Parameters<typeof sendHttpError>[0], error: unkno
   if (error instanceof AlertVariantNotFoundError) {
     return sendHttpError(reply, 404, {
       code: "ALERT_VARIANT_NOT_FOUND",
+      message: error.message
+    });
+  }
+
+  if (error instanceof AlertVariantIdConflictError) {
+    return sendHttpError(reply, 409, {
+      code: "ALERT_VARIANT_ID_CONFLICT",
       message: error.message
     });
   }

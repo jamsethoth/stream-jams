@@ -102,6 +102,20 @@ export class LastAlertVariantError extends Error {
   }
 }
 
+export class AlertVariantIdConflictError extends Error {
+  constructor(
+    readonly variantId: string,
+    readonly ownerRuleId: string | null = null
+  ) {
+    super(
+      ownerRuleId === null
+        ? `Alert variant id "${variantId}" is duplicated`
+        : `Alert variant "${variantId}" already belongs to rule "${ownerRuleId}"`
+    );
+    this.name = "AlertVariantIdConflictError";
+  }
+}
+
 export class DefaultAlertService implements AlertService {
   readonly #repository: AlertRepository;
   readonly #generateId: (kind: AlertConfigurationIdKind) => string;
@@ -157,15 +171,20 @@ export class DefaultAlertService implements AlertService {
     const parsed = createAlertRuleInputSchema.parse(input);
     const collectionIds = dedupeIds(parsed.collectionIds);
     await this.#requireCollections(collectionIds);
+    const ruleId = this.#generateId("rule");
+    const variants = parsed.variants.map((variant) => ({
+      id: this.#generateId("variant"),
+      ...variant
+    }));
+    assertUniqueVariantIds(variants);
+    await this.#requireVariantIdsAvailable(ruleId, variants);
+
     return this.#repository.saveRule(
       alertRuleSchema.parse({
         ...parsed,
-        id: this.#generateId("rule"),
+        id: ruleId,
         collectionIds,
-        variants: parsed.variants.map((variant) => ({
-          id: this.#generateId("variant"),
-          ...variant
-        }))
+        variants
       })
     );
   }
@@ -175,6 +194,9 @@ export class DefaultAlertService implements AlertService {
     const parsed = updateAlertRuleInputSchema.parse(input);
     const collectionIds = dedupeIds(parsed.collectionIds);
     await this.#requireCollections(collectionIds);
+    assertUniqueVariantIds(parsed.variants);
+    await this.#requireVariantIdsAvailable(ruleId, parsed.variants);
+
     return this.#repository.saveRule(
       alertRuleSchema.parse({
         ...parsed,
@@ -205,6 +227,8 @@ export class DefaultAlertService implements AlertService {
       existingIndex >= 0
         ? rule.variants.map((candidate) => (candidate.id === parsedVariant.id ? parsedVariant : candidate))
         : [...rule.variants, parsedVariant];
+    assertUniqueVariantIds(variants);
+    await this.#requireVariantIdsAvailable(ruleId, variants);
 
     return this.#repository.saveRule(
       alertRuleSchema.parse({
@@ -283,6 +307,33 @@ export class DefaultAlertService implements AlertService {
     }
 
     return rule;
+  }
+
+  async #requireVariantIdsAvailable(ruleId: string, variants: readonly Pick<AlertVariant, "id">[]): Promise<void> {
+    const variantIds = new Set(variants.map((variant) => variant.id));
+    const rules = await this.#repository.listRules();
+    for (const rule of rules) {
+      if (rule.id === ruleId) {
+        continue;
+      }
+
+      for (const variant of rule.variants) {
+        if (variantIds.has(variant.id)) {
+          throw new AlertVariantIdConflictError(variant.id, rule.id);
+        }
+      }
+    }
+  }
+}
+
+function assertUniqueVariantIds(variants: readonly Pick<AlertVariant, "id">[]): void {
+  const seenVariantIds = new Set<string>();
+  for (const variant of variants) {
+    if (seenVariantIds.has(variant.id)) {
+      throw new AlertVariantIdConflictError(variant.id);
+    }
+
+    seenVariantIds.add(variant.id);
   }
 }
 

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   AlertCollectionNotFoundError,
   AlertRuleNotFoundError,
+  AlertVariantIdConflictError,
   LastAlertVariantError,
   DefaultAlertService
 } from "./alert-service.js";
@@ -127,6 +128,44 @@ describe("DefaultAlertService", () => {
     await expect(service.deleteVariant(rule.id, originalVariant.id)).rejects.toEqual(
       new LastAlertVariantError(rule.id)
     );
+  });
+
+  it("rejects duplicate variant IDs before repository persistence", async () => {
+    const repository = new InMemoryAlertRepository();
+    const service = createService(repository);
+    const collection = await service.createCollection({ name: "Main", enabled: true });
+    const rule = await service.createRule(createRuleInput([collection.id]));
+    const originalVariant = rule.variants[0];
+    if (originalVariant === undefined) {
+      throw new Error("Missing variant fixture");
+    }
+
+    await expect(
+      service.updateRule(rule.id, {
+        ...rule,
+        variants: [originalVariant, originalVariant]
+      })
+    ).rejects.toEqual(new AlertVariantIdConflictError(originalVariant.id));
+  });
+
+  it("rejects variant IDs already owned by another rule", async () => {
+    const repository = new InMemoryAlertRepository();
+    const service = createService(repository);
+    const collection = await service.createCollection({ name: "Main", enabled: true });
+    const firstRule = await service.createRule(createRuleInput([collection.id], { name: "First" }));
+    const secondRule = await service.createRule(createRuleInput([collection.id], { name: "Second" }));
+    const firstVariant = firstRule.variants[0];
+    const secondVariant = secondRule.variants[0];
+    if (firstVariant === undefined || secondVariant === undefined) {
+      throw new Error("Missing variant fixture");
+    }
+
+    await expect(
+      service.saveVariant(secondRule.id, {
+        ...secondVariant,
+        id: firstVariant.id
+      })
+    ).rejects.toEqual(new AlertVariantIdConflictError(firstVariant.id, firstRule.id));
   });
 
   it("returns typed not-found errors for missing alert configuration records", async () => {
