@@ -8,8 +8,11 @@ export interface SettingsPanelProps {
   >;
 }
 
+const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 };
+
 export function SettingsPanel({ managementApi }: SettingsPanelProps) {
-  const [config, setConfig] = useState<ServerConfigView>({ host: "127.0.0.1", port: 39187 });
+  const [savedConfig, setSavedConfig] = useState<ServerConfigView>(defaultServerConfig);
+  const [configDraft, setConfigDraft] = useState<ServerConfigView>(defaultServerConfig);
   const [moderation, setModeration] = useState<ModerationSettingsView>(defaultModerationSettings);
   const [blockedTermsText, setBlockedTermsText] = useState("");
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
@@ -19,7 +22,8 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     void Promise.all([managementApi.getServerConfig(), managementApi.getModerationSettings()])
       .then(([loadedConfig, loadedModeration]) => {
         if (!cancelled) {
-          setConfig(loadedConfig);
+          setSavedConfig(loadedConfig);
+          setConfigDraft(loadedConfig);
           setModeration(loadedModeration);
           setBlockedTermsText(loadedModeration.renderedText.blockedTerms.join("\n"));
           setDiagnostic(null);
@@ -39,8 +43,9 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   async function handleServerSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
-      const savedConfig = await managementApi.updateServerConfig(config);
-      setConfig(savedConfig);
+      const savedServerConfig = await managementApi.updateServerConfig(configDraft);
+      setSavedConfig(savedServerConfig);
+      setConfigDraft(savedServerConfig);
       setDiagnostic("Server settings saved.");
     } catch (error) {
       setDiagnostic(readErrorMessage(error, "Unable to update server settings."));
@@ -76,14 +81,17 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
       <div className="management-panel__header">
         <div>
           <h2 id="settings-title">Settings</h2>
-          <p>{config.host + ":" + config.port}</p>
+          <p>{savedConfig.host + ":" + savedConfig.port}</p>
         </div>
       </div>
       {diagnostic !== null ? <p className="management-diagnostic">{diagnostic}</p> : null}
       <form className="management-form" onSubmit={handleServerSubmit}>
         <label>
           <span>Host</span>
-          <input value={config.host} onChange={(event) => setConfig({ ...config, host: event.currentTarget.value })} />
+          <input
+            value={configDraft.host}
+            onChange={(event) => setConfigDraft({ ...configDraft, host: event.currentTarget.value })}
+          />
         </label>
         <label>
           <span>Port</span>
@@ -91,8 +99,8 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
             min={1}
             max={65535}
             type="number"
-            value={config.port}
-            onChange={(event) => setConfig({ ...config, port: Number(event.currentTarget.value) })}
+            value={configDraft.port}
+            onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })}
           />
         </label>
         <button type="submit">Save server settings</button>

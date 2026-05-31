@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { AlertConfigurationPanel, type AlertConfigurationApi } from "./AlertConfigurationPanel.js";
-import type { AlertCollection, AlertRule } from "./alert-api.js";
+import type { AlertCollection, AlertRule, CreateAlertCollectionInput, CreateAlertRuleInput } from "./alert-api.js";
 
 describe("AlertConfigurationPanel", () => {
   afterEach(() => {
@@ -10,14 +10,7 @@ describe("AlertConfigurationPanel", () => {
   });
 
   it("renders loaded alert collections and rules", async () => {
-    render(
-      <AlertConfigurationPanel
-        alertApi={createAlertApi({
-          collections: [[createCollection()]],
-          rules: [[createRule()]]
-        })}
-      />
-    );
+    render(<AlertConfigurationPanel alertApi={createAlertApi({ collections: [createCollection()], rules: [createRule()] })} />);
 
     expect(await screen.findByRole("cell", { name: "Main Alerts" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "Follow Alert" })).toBeInTheDocument();
@@ -25,24 +18,57 @@ describe("AlertConfigurationPanel", () => {
   });
 
   it("shows empty states when no alert configuration exists", async () => {
-    render(
-      <AlertConfigurationPanel
-        alertApi={createAlertApi({
-          collections: [[]],
-          rules: [[]]
-        })}
-      />
-    );
+    render(<AlertConfigurationPanel alertApi={createAlertApi()} />);
 
     expect(await screen.findByText("No alert collections configured.")).toBeInTheDocument();
     expect(screen.getByText("No alert rules configured.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create alert rule" })).toBeDisabled();
+  });
+
+  it("creates a collection and default alert rule from the browser form", async () => {
+    const user = userEvent.setup();
+    const api = createAlertApi();
+    render(<AlertConfigurationPanel alertApi={api} />);
+
+    await user.type(await screen.findByLabelText("Collection name"), "Raid Alerts");
+    await user.click(screen.getByRole("button", { name: "Create collection" }));
+
+    await waitFor(() => expect(api.collectionCreations).toEqual([{ name: "Raid Alerts", enabled: true }]));
+    expect(await screen.findByRole("cell", { name: "Raid Alerts" })).toBeInTheDocument();
+    expect(await screen.findByText("Alert collection created.")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Rule name"), "Raid Welcome");
+    await user.selectOptions(screen.getByLabelText("Event type"), "raid");
+    await user.type(screen.getByLabelText("Alert text"), "E2E test alert");
+    await user.click(screen.getByRole("button", { name: "Create alert rule" }));
+
+    await waitFor(() => expect(api.ruleCreations).toHaveLength(1));
+    expect(api.ruleCreations[0]).toMatchObject({
+      name: "Raid Welcome",
+      eventType: "raid",
+      enabled: true,
+      collectionIds: ["collection_1"],
+      cooldownSeconds: 0,
+      priority: 10,
+      variants: [
+        expect.objectContaining({
+          name: "Default",
+          enabled: true,
+          weight: 1,
+          textTemplate: "E2E test alert",
+          durationMs: 4000
+        })
+      ]
+    });
+    expect(await screen.findByRole("cell", { name: "Raid Welcome" })).toBeInTheDocument();
+    expect(await screen.findByText("Alert rule created.")).toBeInTheDocument();
   });
 
   it("toggles collection active state and refreshes configuration", async () => {
     const user = userEvent.setup();
     const api = createAlertApi({
-      collections: [[createCollection({ enabled: true })], [createCollection({ enabled: false })]],
-      rules: [[createRule()], [createRule()]]
+      collections: [createCollection({ enabled: true })],
+      rules: [createRule()]
     });
     render(<AlertConfigurationPanel alertApi={api} />);
 
@@ -60,8 +86,8 @@ describe("AlertConfigurationPanel", () => {
   it("toggles individual alert enabled state independently from collection state", async () => {
     const user = userEvent.setup();
     const api = createAlertApi({
-      collections: [[createCollection()], [createCollection()]],
-      rules: [[createRule({ enabled: true })], [createRule({ enabled: false })]]
+      collections: [createCollection()],
+      rules: [createRule({ enabled: true })]
     });
     render(<AlertConfigurationPanel alertApi={api} />);
 
@@ -79,9 +105,9 @@ describe("AlertConfigurationPanel", () => {
   it("shows diagnostics when alert configuration actions fail", async () => {
     const user = userEvent.setup();
     const api = createAlertApi({
-      collections: [[createCollection()]],
-      rules: [[createRule()]],
-      toggleError: new Error("Alert rule unavailable")
+      collections: [createCollection()],
+      rules: [createRule()],
+      actionError: new Error("Alert rule unavailable")
     });
     render(<AlertConfigurationPanel alertApi={api} />);
 
@@ -126,45 +152,81 @@ function createRule(overrides: Partial<AlertRule> = {}): AlertRule {
 }
 
 function createAlertApi(options: {
-  readonly collections: readonly (readonly AlertCollection[])[];
-  readonly rules: readonly (readonly AlertRule[])[];
-  readonly toggleError?: Error;
-}): AlertConfigurationApi & {
+  readonly collections?: readonly AlertCollection[];
+  readonly rules?: readonly AlertRule[];
+  readonly actionError?: Error;
+} = {}): AlertConfigurationApi & {
+  readonly collectionCreations: CreateAlertCollectionInput[];
+  readonly ruleCreations: CreateAlertRuleInput[];
   readonly collectionToggles: Array<{ readonly collectionId: string; readonly enabled: boolean }>;
   readonly ruleToggles: Array<{ readonly ruleId: string; readonly enabled: boolean }>;
 } {
-  let collectionIndex = 0;
-  let ruleIndex = 0;
+  let collections = [...(options.collections ?? [])];
+  let rules = [...(options.rules ?? [])];
+  const collectionCreations: CreateAlertCollectionInput[] = [];
+  const ruleCreations: CreateAlertRuleInput[] = [];
   const collectionToggles: Array<{ readonly collectionId: string; readonly enabled: boolean }> = [];
   const ruleToggles: Array<{ readonly ruleId: string; readonly enabled: boolean }> = [];
 
+  function maybeThrow() {
+    if (options.actionError !== undefined) {
+      throw options.actionError;
+    }
+  }
+
   return {
+    collectionCreations,
+    ruleCreations,
     collectionToggles,
     ruleToggles,
     async listCollections() {
-      const collections = options.collections[Math.min(collectionIndex, options.collections.length - 1)] ?? [];
-      collectionIndex += 1;
       return collections;
     },
     async listRules() {
-      const rules = options.rules[Math.min(ruleIndex, options.rules.length - 1)] ?? [];
-      ruleIndex += 1;
       return rules;
+    },
+    async createCollection(input: CreateAlertCollectionInput) {
+      maybeThrow();
+      collectionCreations.push(input);
+      const collection = createCollection({
+        id: "collection_" + String(collections.length + 1),
+        name: input.name,
+        enabled: input.enabled ?? true
+      });
+      collections = [...collections, collection];
+      return collection;
+    },
+    async createRule(input: CreateAlertRuleInput) {
+      maybeThrow();
+      ruleCreations.push(input);
+      const rule = createRule({
+        id: "rule_" + String(rules.length + 1),
+        name: input.name,
+        eventType: input.eventType,
+        enabled: input.enabled,
+        collectionIds: input.collectionIds,
+        variants: input.variants.map((variant, index) => ({
+          id: "variant_" + String(index + 1),
+          name: variant.name,
+          enabled: variant.enabled
+        })),
+        priority: input.priority
+      });
+      rules = [...rules, rule];
+      return rule;
     },
     async setCollectionEnabled(collectionId: string, enabled: boolean) {
       collectionToggles.push({ collectionId, enabled });
-      if (options.toggleError !== undefined) {
-        throw options.toggleError;
-      }
-
+      maybeThrow();
+      collections = collections.map((collection) =>
+        collection.id === collectionId ? { ...collection, enabled } : collection
+      );
       return createCollection({ id: collectionId, enabled });
     },
     async setRuleEnabled(ruleId: string, enabled: boolean) {
       ruleToggles.push({ ruleId, enabled });
-      if (options.toggleError !== undefined) {
-        throw options.toggleError;
-      }
-
+      maybeThrow();
+      rules = rules.map((rule) => (rule.id === ruleId ? { ...rule, enabled } : rule));
       return createRule({ id: ruleId, enabled });
     }
   };

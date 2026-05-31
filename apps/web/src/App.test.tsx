@@ -212,6 +212,12 @@ function createAlertApi() {
     async listRules(): Promise<readonly AlertRule[]> {
       return [];
     },
+    async createCollection(): Promise<AlertCollection> {
+      throw new Error("not called");
+    },
+    async createRule(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
     async setCollectionEnabled(): Promise<AlertCollection> {
       throw new Error("not called");
     },

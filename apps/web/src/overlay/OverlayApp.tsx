@@ -32,7 +32,9 @@ export function OverlayApp() {
           setError(null);
           setComposition(message.composition);
         } else if (message.type === "playback") {
-          setComposition((current) => appendInstruction(current, route, message.instruction));
+          if (instructionMatchesRoute(route, message.instruction)) {
+            setComposition((current) => appendInstruction(current, route, message.instruction));
+          }
         } else {
           setError(message.message);
         }
@@ -108,6 +110,25 @@ function appendInstruction(
     ...currentComposition,
     modules
   };
+}
+
+function instructionMatchesRoute(
+  route: NonNullable<ReturnType<typeof parseOverlayRoute>>,
+  instruction: OverlayInstruction
+): boolean {
+  if (
+    route.overlayId !== instruction.overlayId ||
+    route.purpose !== instruction.purpose ||
+    route.scope !== instruction.scope
+  ) {
+    return false;
+  }
+
+  if (route.scope === "module") {
+    return route.moduleId === instruction.moduleId;
+  }
+
+  return route.moduleId === null;
 }
 
 function resolveAssetUrl(assetId: string): string {

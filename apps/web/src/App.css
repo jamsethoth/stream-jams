@@ -201,6 +201,14 @@ textarea {
   margin: 0 0 10px;
 }
 
+.alert-panel__forms {
+  border-bottom: 1px solid #e4e8ef;
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+  padding-bottom: 18px;
+}
+
 .management-toggle {
   align-items: center;
   color: #20242c;
