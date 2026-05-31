@@ -1,4 +1,4 @@
-export type ManagementTabId = "dashboard" | "twitch" | "modules" | "overlays" | "playback" | "tts" | "settings" | "alerts" | "assets";
+export type ManagementTabId = "dashboard" | "twitch" | "diagnostics" | "modules" | "overlays" | "playback" | "tts" | "settings" | "alerts" | "assets";
 
 export interface ManagementTab {
   readonly id: ManagementTabId;
@@ -8,6 +8,7 @@ export interface ManagementTab {
 export const managementTabs: readonly ManagementTab[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "twitch", label: "Twitch" },
+  { id: "diagnostics", label: "Diagnostics" },
   { id: "modules", label: "Modules" },
   { id: "overlays", label: "Overlays" },
   { id: "playback", label: "Playback" },

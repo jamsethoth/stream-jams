@@ -136,6 +136,24 @@ function createManagementApi(): ManagementApi {
         moderationActions: []
       };
     },
+    async getDiagnostics() {
+      return {
+        eventLogs: [],
+        alertMatchLogs: [],
+        playbackLogs: [],
+        providerErrors: []
+      };
+    },
+    async exportDiagnostics() {
+      return {
+        generatedAt: "2026-05-31T02:05:00.000Z",
+        rawEventLogs: [],
+        eventLogs: [],
+        alertMatchLogs: [],
+        playbackLogs: [],
+        providerErrors: []
+      };
+    },
     async getTwitchStatus() {
       return {
         connected: false as const,

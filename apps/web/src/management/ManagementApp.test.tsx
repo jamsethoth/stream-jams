@@ -137,6 +137,30 @@ describe("ManagementApp", () => {
     );
     expect(await within(ttsPanel).findByText("TTS test ready: browser-speech.")).toBeInTheDocument();
   });
+  it("shows diagnostics logs and delegates filtered redacted exports", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("tab", { name: "Diagnostics" }));
+    const diagnosticsPanel = screen.getByRole("tabpanel", { name: "Diagnostics" });
+    expect(await within(diagnosticsPanel).findByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
+    expect(within(diagnosticsPanel).getByText("twitch follow event-1")).toBeInTheDocument();
+    expect(within(diagnosticsPanel).getByText("rule-1")).toBeInTheDocument();
+    expect(within(diagnosticsPanel).getByText("queue-item-1")).toBeInTheDocument();
+    expect(within(diagnosticsPanel).getByText("Twitch EventSub" )).toBeInTheDocument();
+
+    await user.clear(within(diagnosticsPanel).getByLabelText("Diagnostics limit"));
+    await user.type(within(diagnosticsPanel).getByLabelText("Diagnostics limit"), "2");
+    await user.click(within(diagnosticsPanel).getByRole("button", { name: "Reload diagnostics" }));
+    await user.click(within(diagnosticsPanel).getByRole("button", { name: "Export diagnostics" }));
+
+    expect(managementApi.getDiagnostics).toHaveBeenLastCalledWith({ limit: 2 });
+    expect(managementApi.exportDiagnostics).toHaveBeenCalledWith({ limit: 2 });
+    expect(await within(diagnosticsPanel).findByText("Diagnostics export generated at 2026-05-31T02:05:00.000Z.")).toBeInTheDocument();
+    expect(within(diagnosticsPanel).getByText("1 events, 1 matches, 1 playback rows, 1 provider errors exported.")).toBeInTheDocument();
+  });
+
   it("shows Twitch connection status and delegates connect, refresh, and disconnect", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
@@ -352,6 +376,110 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
         }
       },
       moderationActions: []
+    })),
+    getDiagnostics: vi.fn(async () => ({
+      eventLogs: [
+        {
+          id: "event-log-1",
+          eventId: "event-1",
+          providerId: "twitch",
+          eventType: "follow",
+          actorDisplayName: "Viewer",
+          status: "processed" as const,
+          receivedAt: "2026-05-31T02:00:00.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1",
+          errorMessage: null
+        }
+      ],
+      alertMatchLogs: [
+        {
+          id: "match-log-1",
+          sourceEventId: "event-1",
+          ruleId: "rule-1",
+          variantId: "variant-1",
+          matchedAt: "2026-05-31T02:00:01.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1"
+        }
+      ],
+      playbackLogs: [
+        {
+          id: "playback-log-1",
+          queueItemId: "queue-item-1",
+          sourceEventId: "event-1",
+          alertIds: ["resolved-alert-1"],
+          status: "queued" as const,
+          occurredAt: "2026-05-31T02:00:02.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1",
+          message: null
+        }
+      ],
+      providerErrors: [
+        {
+          id: "provider-status:twitch",
+          providerId: "twitch",
+          label: "Twitch EventSub",
+          occurredAt: "2026-05-31T02:00:03.000Z",
+          message: "Reconnect failed",
+          correlationId: null,
+          processingId: null
+        }
+      ]
+    })),
+    exportDiagnostics: vi.fn(async () => ({
+      generatedAt: "2026-05-31T02:05:00.000Z",
+      rawEventLogs: [],
+      eventLogs: [
+        {
+          id: "event-log-1",
+          eventId: "event-1",
+          providerId: "twitch",
+          eventType: "follow",
+          actorDisplayName: "Viewer",
+          status: "processed" as const,
+          receivedAt: "2026-05-31T02:00:00.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1",
+          errorMessage: null
+        }
+      ],
+      alertMatchLogs: [
+        {
+          id: "match-log-1",
+          sourceEventId: "event-1",
+          ruleId: "rule-1",
+          variantId: "variant-1",
+          matchedAt: "2026-05-31T02:00:01.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1"
+        }
+      ],
+      playbackLogs: [
+        {
+          id: "playback-log-1",
+          queueItemId: "queue-item-1",
+          sourceEventId: "event-1",
+          alertIds: ["resolved-alert-1"],
+          status: "queued" as const,
+          occurredAt: "2026-05-31T02:00:02.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1",
+          message: null
+        }
+      ],
+      providerErrors: [
+        {
+          id: "provider-status:twitch",
+          providerId: "twitch",
+          label: "Twitch EventSub",
+          occurredAt: "2026-05-31T02:00:03.000Z",
+          message: "Reconnect failed",
+          correlationId: null,
+          processingId: null
+        }
+      ]
     })),
     getTwitchStatus: vi.fn(async () => initialTwitchStatus),
     getTwitchEventSubStatus: vi.fn(async () => ({

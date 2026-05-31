@@ -3,6 +3,7 @@ import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/rou
 import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
 import { registerConfigRoutes, type ServerConfigRouteDependencies } from "./http/routes/config.js";
+import { registerDiagnosticsRoutes, type DiagnosticsRouteDependencies } from "./http/routes/diagnostics.js";
 import { registerHealthRoutes, type ServerAppMetadata } from "./http/routes/health.js";
 import {
   registerManagementSessionRoutes,
@@ -20,6 +21,7 @@ export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
     Partial<ModerationRouteDependencies>,
+    Partial<DiagnosticsRouteDependencies>,
     Partial<OverlayModuleRouteDependencies>,
     Partial<OverlayRouteDependencies>,
     Partial<AssetRouteDependencies>,
@@ -55,6 +57,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     }
 
     registerModerationRoutes(app, dependencies);
+  }
+
+  if (dependencies.diagnosticsService !== undefined) {
+    if (!hasDiagnosticsRouteDependencies(dependencies)) {
+      throw new Error("Diagnostics routes require service, management auth, and rate-limit hooks");
+    }
+
+    registerDiagnosticsRoutes(app, dependencies);
   }
 
   if (dependencies.alertService !== undefined) {
@@ -146,6 +156,16 @@ function hasModerationRouteDependencies(
 ): dependencies is ServerAppDependencies & ModerationRouteDependencies {
   return (
     dependencies.moderationService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasDiagnosticsRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & DiagnosticsRouteDependencies {
+  return (
+    dependencies.diagnosticsService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

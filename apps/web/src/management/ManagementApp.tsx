@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { DashboardPanel } from "./dashboard/DashboardPanel.js";
+import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
 import { createHttpManagementApi, type ManagementApi } from "./management-api.js";
 import { AlertConfigurationPanel, type AlertConfigurationApi } from "./modules/alerts/AlertConfigurationPanel.js";
 import { ModuleManagementPanel } from "./modules/ModuleManagementPanel.js";
@@ -40,6 +41,7 @@ export function ManagementApp({ assetApi, alertApi, managementApi }: ManagementA
         >
           {activeTab === "dashboard" ? <DashboardPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "twitch" ? <TwitchPanel managementApi={resolvedManagementApi} /> : null}
+          {activeTab === "diagnostics" ? <DiagnosticsPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "modules" ? <ModuleManagementPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "overlays" ? <OverlayOutputsPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "playback" ? <PlaybackPanel managementApi={resolvedManagementApi} /> : null}

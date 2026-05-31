@@ -32,7 +32,7 @@ Out of scope:
 - Provider errors include failed event logs and optional provider status sources with redacted messages.
 - Export output includes generated timestamp, all diagnostics sections, and redacted nested event metadata.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 20.2: Diagnostics Routes
 
@@ -45,7 +45,7 @@ Out of scope:
 - Routes require management session authorization and rate limiting.
 - Invalid limits return a controlled 400 response.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 20.3: Management UI
 
@@ -58,7 +58,7 @@ Out of scope:
 - The export action fetches redacted export data and shows a generated timestamp and section counts.
 - Empty and error states are visible.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Test Plan
 
@@ -69,21 +69,28 @@ Out of scope:
 
 ## Reconciliation Checklist
 
-- [ ] Add event ingestion log view.
-- [ ] Add alert match log view.
-- [ ] Add playback log view.
-- [ ] Add provider error log view.
-- [ ] Add redacted diagnostic export endpoint.
-- [ ] Add management UI for diagnostics filters.
-- [ ] Unit test redacted exports with representative sensitive data.
-- [ ] Integration test diagnostics endpoints.
-- [ ] Commit with message `feat: add diagnostics`.
+- [x] Add event ingestion log view.
+- [x] Add alert match log view.
+- [x] Add playback log view.
+- [x] Add provider error log view.
+- [x] Add redacted diagnostic export endpoint.
+- [x] Add management UI for diagnostics filters.
+- [x] Unit test redacted exports with representative sensitive data.
+- [x] Integration test diagnostics endpoints.
+- [x] Commit with message `feat: add diagnostics`.
 
 ## Final Validation
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test`
-- [ ] `pnpm test:e2e`
-- [ ] `pnpm build`
-- [ ] `git diff --check`
+- [x] `pnpm lint` - passed.
+- [x] `pnpm typecheck` - passed.
+- [x] `pnpm test` - passed: 79 files, 303 tests.
+- [x] `pnpm test:e2e` - attempted; local Chromium failed before app assertions because `libnspr4.so` is missing from the Playwright runtime.
+- [x] `pnpm build` - passed.
+- [x] `git diff --check` - passed.
+
+## Verification Evidence
+
+- Focused: `pnpm test:unit apps/server/src/modules/diagnostics/diagnostics-service.test.ts apps/server/src/http/routes/diagnostics.test.ts apps/server/src/app.test.ts apps/web/src/management/diagnostics/DiagnosticsPanel.test.tsx apps/web/src/management/management-api.test.ts apps/web/src/management/ManagementApp.test.tsx apps/web/src/App.test.tsx` - passed: 6 files, 26 tests.
+- Full suite: `pnpm test` - passed: 79 files, 303 tests.
+- E2E blocker: both Chromium specs fail at browser launch with `error while loading shared libraries: libnspr4.so: cannot open shared object file`; no application assertions ran.
+- Review refinement: read-only explorer review flagged export atomicity, UI unmount guards, strict limit parsing, and route/app guard coverage; these were addressed before final validation.
