@@ -141,6 +141,16 @@ export type TwitchConnectionStatusView =
   | { readonly connected: false; readonly account: null }
   | { readonly connected: true; readonly account: TwitchConnectedAccountView };
 
+export interface TwitchEventSubStatusView {
+  readonly state: "idle" | "ready" | "degraded";
+  readonly acceptedCount: number;
+  readonly duplicateCount: number;
+  readonly rejectedCount: number;
+  readonly lastEventAt: string | null;
+  readonly lastErrorAt: string | null;
+  readonly message: string | null;
+}
+
 export interface TwitchAuthStartRequestView {
   readonly redirectUri: string;
 }
@@ -173,6 +183,7 @@ export interface ManagementApi {
   listTtsProviders(): Promise<readonly TtsProviderView[]>;
   testTts(input: TtsTestRequestView): Promise<TtsTestResultView>;
   getTwitchStatus(): Promise<TwitchConnectionStatusView>;
+  getTwitchEventSubStatus(): Promise<TwitchEventSubStatusView>;
   startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
   refreshTwitchAuth(): Promise<TwitchConnectionStatusView>;
   disconnectTwitch(): Promise<TwitchConnectionStatusView>;
@@ -437,6 +448,17 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       }
 
       return (await response.json()) as TwitchConnectionStatusView;
+    },
+
+    async getTwitchEventSubStatus() {
+      const response = await fetcher("/twitch/eventsub/status", {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to load Twitch EventSub status."));
+      }
+
+      return (await response.json()) as TwitchEventSubStatusView;
     },
 
     async startTwitchAuth(input: TwitchAuthStartRequestView) {

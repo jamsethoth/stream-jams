@@ -242,4 +242,20 @@ describe("createServerApp", () => {
     ).toThrow("Twitch auth routes require service, management auth, and rate-limit hooks");
   });
 
+  it("does not register Twitch EventSub routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        twitchEventIngestionService: {
+          getStatus() {
+            throw new Error("not called");
+          }
+        }
+      })
+    ).toThrow("Twitch EventSub routes require service, management auth, and rate-limit hooks");
+  });
+
 });

@@ -32,7 +32,7 @@
 - Uses the user access token and Client-Id headers for Create EventSub Subscription.
 - Rejects malformed EventSub API responses without logging token values.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 18.2: WebSocket Session Lifecycle
 
@@ -48,7 +48,7 @@
 - Unexpected close schedules a fresh connection with backoff and recreates subscriptions for the new session.
 - Revocation messages set provider status to degraded/error without stopping the local server.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 18.3: Twitch Event Normalizer
 
@@ -63,7 +63,7 @@
 - Handles anonymous cheers with `actor.id = null`.
 - Rejects unsupported EventSub subscription types and malformed payloads.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 18.4: Event Ingestion Service And Management Status
 
@@ -78,24 +78,31 @@
 - Management sessions can read EventSub provider status.
 - Twitch management UI renders account and EventSub connection state.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Reconciliation Checklist
 
-- [ ] Implement EventSub WebSocket session lifecycle.
-- [ ] Register subscriptions for MVP Twitch event types based on granted scopes.
-- [ ] Normalize Twitch EventSub messages into `NormalizedStreamEvent`.
-- [ ] Reconnect with backoff on WebSocket disconnect.
-- [ ] Surface provider status to diagnostics and management UI.
-- [ ] Unit test each Twitch event normalizer.
-- [ ] Integration test reconnect behavior with a mocked EventSub WebSocket server.
-- [ ] Commit with message `feat: add twitch eventsub ingestion`.
+- [x] Implement EventSub WebSocket session lifecycle.
+- [x] Register subscriptions for MVP Twitch event types based on granted scopes.
+- [x] Normalize Twitch EventSub messages into `NormalizedStreamEvent`.
+- [x] Reconnect with backoff on WebSocket disconnect.
+- [x] Surface provider status to diagnostics and management UI.
+- [x] Unit test each Twitch event normalizer.
+- [x] Integration test reconnect behavior with a mocked EventSub WebSocket server.
+- [x] Commit with message `feat: add twitch eventsub ingestion`.
 
 ## Final Validation
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test`
-- [ ] `pnpm test:e2e`
-- [ ] `pnpm build`
-- [ ] `git diff --check`
+- [x] `pnpm lint`
+- [x] `pnpm typecheck`
+- [x] `pnpm test`
+- [ ] `pnpm test:e2e` - attempted locally; blocked because Playwright Chromium cannot load `libnspr4.so` before app assertions run.
+- [x] `pnpm build`
+- [x] `git diff --check`
+
+## Validation Evidence
+
+- Focused tests passed: `pnpm test:unit apps/server/src/modules/twitch/twitch-event-normalizer.test.ts apps/server/src/modules/twitch/twitch-eventsub-client.test.ts apps/server/src/modules/events/event-ingestion-service.test.ts apps/server/src/http/routes/twitch-eventsub.test.ts apps/server/src/app.test.ts apps/web/src/management/ManagementApp.test.tsx apps/web/src/App.test.tsx` - 7 files, 30 tests.
+- Full unit suite passed: `pnpm test` - 75 files, 288 tests.
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `git diff --check` passed.
+- `pnpm test:e2e` was attempted locally and failed before app assertions because the Playwright Chromium runtime is missing `libnspr4.so`.

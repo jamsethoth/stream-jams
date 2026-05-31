@@ -161,6 +161,42 @@ describe("createHttpManagementApi", () => {
     await expect(api.getModerationSettings()).resolves.toEqual(settings);
     await expect(api.updateModerationSettings(settings)).resolves.toEqual(settings);
   });
+  it("loads Twitch EventSub status with management headers", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse({ id: "mgmt_session" });
+      }
+
+      if (url === "/twitch/eventsub/status") {
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session"
+        });
+        return jsonResponse({
+          state: "ready",
+          acceptedCount: 3,
+          duplicateCount: 1,
+          rejectedCount: 0,
+          lastEventAt: "2026-05-30T12:00:00.000Z",
+          lastErrorAt: null,
+          message: null
+        });
+      }
+
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getTwitchEventSubStatus()).resolves.toEqual({
+      state: "ready",
+      acceptedCount: 3,
+      duplicateCount: 1,
+      rejectedCount: 0,
+      lastEventAt: "2026-05-30T12:00:00.000Z",
+      lastErrorAt: null,
+      message: null
+    });
+  });
 });
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {

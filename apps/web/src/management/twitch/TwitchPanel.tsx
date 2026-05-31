@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
+import type { ManagementApi, TwitchConnectionStatusView, TwitchEventSubStatusView } from "../management-api.js";
 
 export interface TwitchPanelProps {
   readonly managementApi: Pick<
     ManagementApi,
-    "getTwitchStatus" | "startTwitchAuth" | "refreshTwitchAuth" | "disconnectTwitch"
+    "getTwitchStatus" | "getTwitchEventSubStatus" | "startTwitchAuth" | "refreshTwitchAuth" | "disconnectTwitch"
   >;
 }
 
 export function TwitchPanel({ managementApi }: TwitchPanelProps) {
   const [status, setStatus] = useState<TwitchConnectionStatusView | null>(null);
+  const [eventSubStatus, setEventSubStatus] = useState<TwitchEventSubStatusView | null>(null);
   const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null);
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
 
@@ -17,9 +18,14 @@ export function TwitchPanel({ managementApi }: TwitchPanelProps) {
     let cancelled = false;
     void managementApi
       .getTwitchStatus()
+      .then(async (loadedStatus) => ({
+        connection: loadedStatus,
+        eventSub: await managementApi.getTwitchEventSubStatus()
+      }))
       .then((loadedStatus) => {
         if (!cancelled) {
-          setStatus(loadedStatus);
+          setStatus(loadedStatus.connection);
+          setEventSubStatus(loadedStatus.eventSub);
           setDiagnostic(null);
         }
       })
@@ -50,6 +56,7 @@ export function TwitchPanel({ managementApi }: TwitchPanelProps) {
   async function refreshConnection() {
     try {
       setStatus(await managementApi.refreshTwitchAuth());
+      setEventSubStatus(await managementApi.getTwitchEventSubStatus());
       setDiagnostic("Twitch connection refreshed.");
     } catch (error) {
       setDiagnostic(readErrorMessage(error, "Unable to refresh Twitch connection."));
@@ -75,6 +82,9 @@ export function TwitchPanel({ managementApi }: TwitchPanelProps) {
         </div>
       </div>
       {diagnostic !== null ? <p className="management-diagnostic">{diagnostic}</p> : null}
+      {eventSubStatus !== null ? (
+        <p className="management-diagnostic">EventSub {eventSubStatus.state}</p>
+      ) : null}
       {status === null ? <p className="management-empty">Loading Twitch connection...</p> : null}
       {status !== null && !status.connected ? (
         <section className="management-subsection" aria-labelledby="twitch-disconnected-title">
