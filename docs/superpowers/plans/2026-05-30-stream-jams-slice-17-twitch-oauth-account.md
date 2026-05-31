@@ -21,7 +21,7 @@
 - Successful callback stores only access/refresh tokens through `SecretStore` and persists non-secret account metadata.
 - Disconnect deletes token secret refs and non-secret account metadata.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 17.2: Twitch API Client
 
@@ -35,7 +35,7 @@
 - Sends Bearer and Client-Id headers when validating tokens and reading Helix user data.
 - Rejects malformed Twitch token, validation, and user responses without logging token values.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 17.3: HTTP Routes And Server Wiring
 
@@ -51,7 +51,7 @@
 - Missing management sessions and overlay route keys are rejected before protected Twitch auth work.
 - Refresh failures return controlled provider errors without exposing token values.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Sub-Slice 17.4: Management UI
 
@@ -66,25 +66,32 @@
 - Refresh and disconnect delegate to the management API and update status.
 - Error diagnostics never include token-shaped values.
 
-- [ ] Complete.
+- [x] Complete.
 
 ## Reconciliation Checklist
 
-- [ ] Implement Twitch OAuth authorization URL generation with required scopes.
-- [ ] Implement OAuth callback handling.
-- [ ] Store access and refresh tokens through `SecretStore`.
-- [ ] Store non-secret account metadata in SQLite.
-- [ ] Implement token refresh through a Twitch API client adapter.
-- [ ] Add management UI connection status and disconnect action.
-- [ ] Unit test scope generation and secret references.
-- [ ] Integration test OAuth callback with mocked Twitch responses.
-- [ ] Commit with message `feat: add twitch account connection`.
+- [x] Implement Twitch OAuth authorization URL generation with required scopes.
+- [x] Implement OAuth callback handling.
+- [x] Store access and refresh tokens through `SecretStore`.
+- [x] Store non-secret account metadata in SQLite.
+- [x] Implement token refresh through a Twitch API client adapter.
+- [x] Add management UI connection status and disconnect action.
+- [x] Unit test scope generation and secret references.
+- [x] Integration test OAuth callback with mocked Twitch responses.
+- [x] Commit with message `feat: add twitch account connection`.
 
 ## Final Validation
 
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm test`
-- [ ] `pnpm test:e2e`
-- [ ] `pnpm build`
-- [ ] `git diff --check`
+- [x] `pnpm lint`
+- [x] `pnpm typecheck`
+- [x] `pnpm test`
+- [ ] `pnpm test:e2e` - attempted locally; blocked because Playwright Chromium cannot load `libnspr4.so` in this environment before app assertions run.
+- [x] `pnpm build`
+- [x] `git diff --check`
+
+## Validation Evidence
+
+- Focused tests passed: `pnpm test:unit apps/server/src/modules/twitch/twitch-api-client.test.ts apps/server/src/modules/twitch/twitch-oauth-service.test.ts apps/server/src/modules/twitch/sqlite-twitch-account-repository.test.ts apps/server/src/modules/db/database.test.ts apps/server/src/http/routes/twitch-auth.test.ts apps/server/src/app.test.ts apps/web/src/management/ManagementApp.test.tsx apps/web/src/App.test.tsx` - 8 files, 37 tests.
+- Full unit suite passed: `pnpm test` - 71 files, 273 tests.
+- `pnpm lint`, `pnpm typecheck`, `pnpm build`, and `git diff --check` passed.
+- `pnpm test:e2e` was attempted locally and failed before app assertions because the Playwright Chromium runtime is missing `libnspr4.so`.

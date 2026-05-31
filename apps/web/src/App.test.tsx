@@ -135,6 +135,31 @@ function createManagementApi(): ManagementApi {
         },
         moderationActions: []
       };
+    },
+    async getTwitchStatus() {
+      return {
+        connected: false as const,
+        account: null
+      };
+    },
+    async startTwitchAuth() {
+      return {
+        authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=state-1",
+        state: "state-1",
+        scopes: ["bits:read"]
+      };
+    },
+    async refreshTwitchAuth() {
+      return {
+        connected: false as const,
+        account: null
+      };
+    },
+    async disconnectTwitch() {
+      return {
+        connected: false as const,
+        account: null
+      };
     }
   };
 }

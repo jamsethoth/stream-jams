@@ -13,6 +13,7 @@ import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from
 import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/routes/overlays.js";
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
 import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.js";
+import { registerTwitchAuthRoutes, type TwitchAuthRouteDependencies } from "./http/routes/twitch-auth.js";
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
@@ -24,7 +25,8 @@ export interface ServerAppDependencies
     Partial<AlertRuleRouteDependencies>,
     Partial<AlertCollectionRouteDependencies>,
     Partial<PlaybackRouteDependencies>,
-    Partial<TtsRouteDependencies> {
+    Partial<TtsRouteDependencies>,
+    Partial<TwitchAuthRouteDependencies> {
   readonly metadata: ServerAppMetadata;
 }
 
@@ -110,6 +112,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerTtsRoutes(app, dependencies);
   }
 
+  if (dependencies.twitchAuthService !== undefined) {
+    if (!hasTwitchAuthRouteDependencies(dependencies)) {
+      throw new Error("Twitch auth routes require service, management auth, and rate-limit hooks");
+    }
+
+    registerTwitchAuthRoutes(app, dependencies);
+  }
+
   if (dependencies.serverConfigService !== undefined) {
     if (!hasConfigRouteProtection(dependencies)) {
       throw new Error("Config routes require management auth and rate-limit hooks");
@@ -187,6 +197,16 @@ function hasTtsRouteDependencies(
 ): dependencies is ServerAppDependencies & TtsRouteDependencies {
   return (
     dependencies.ttsService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasTwitchAuthRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & TwitchAuthRouteDependencies {
+  return (
+    dependencies.twitchAuthService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

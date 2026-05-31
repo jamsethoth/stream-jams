@@ -137,9 +137,46 @@ describe("ManagementApp", () => {
     );
     expect(await within(ttsPanel).findByText("TTS test ready: browser-speech.")).toBeInTheDocument();
   });
+  it("shows Twitch connection status and delegates connect, refresh, and disconnect", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("tab", { name: "Twitch" }));
+    const twitchPanel = screen.getByRole("tabpanel", { name: "Twitch" });
+    expect(await within(twitchPanel).findByRole("heading", { name: "Twitch" })).toBeInTheDocument();
+    expect(within(twitchPanel).getByText("Twitch disconnected")).toBeInTheDocument();
+
+    await user.click(within(twitchPanel).getByRole("button", { name: "Connect Twitch" }));
+
+    expect(managementApi.startTwitchAuth).toHaveBeenCalledWith({
+      redirectUri: "http://localhost:3000/twitch/auth/callback"
+    });
+    expect(await within(twitchPanel).findByRole("link", { name: "Open Twitch authorization" })).toHaveAttribute(
+      "href",
+      "https://id.twitch.tv/oauth2/authorize?state=state-1"
+    );
+  });
+
+  it("refreshes and disconnects connected Twitch accounts", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi({ twitchConnected: true });
+    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("tab", { name: "Twitch" }));
+    const twitchPanel = screen.getByRole("tabpanel", { name: "Twitch" });
+    expect((await within(twitchPanel).findAllByText("Streamer")).length).toBeGreaterThan(0);
+
+    await user.click(within(twitchPanel).getByRole("button", { name: "Refresh Twitch" }));
+    await user.click(within(twitchPanel).getByRole("button", { name: "Disconnect Twitch" }));
+
+    expect(managementApi.refreshTwitchAuth).toHaveBeenCalledOnce();
+    expect(managementApi.disconnectTwitch).toHaveBeenCalledOnce();
+  });
+
 });
 
-function createManagementApi(): ManagementApi {
+function createManagementApi(options: { readonly twitchConnected?: boolean } = {}): ManagementApi {
   const playback = {
     current: {
       id: "current-1",
@@ -158,6 +195,23 @@ function createManagementApi(): ManagementApi {
       }
     ]
   };
+  const twitchConnectedStatus = {
+    connected: true as const,
+    account: {
+      accountId: "141981764",
+      login: "streamer",
+      displayName: "Streamer",
+      scopes: ["bits:read"],
+      connectedAt: "2026-05-30T12:00:00.000Z",
+      updatedAt: "2026-05-30T12:00:00.000Z"
+    }
+  };
+  const twitchDisconnectedStatus = {
+    connected: false as const,
+    account: null
+  };
+  const initialTwitchStatus = options.twitchConnected === true ? twitchConnectedStatus : twitchDisconnectedStatus;
+
   return {
     getDashboard: vi.fn(async () => ({
       twitch: {
@@ -297,7 +351,15 @@ function createManagementApi(): ManagementApi {
         }
       },
       moderationActions: []
-    }))
+    })),
+    getTwitchStatus: vi.fn(async () => initialTwitchStatus),
+    startTwitchAuth: vi.fn(async () => ({
+      authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=state-1",
+      state: "state-1",
+      scopes: ["bits:read"]
+    })),
+    refreshTwitchAuth: vi.fn(async () => twitchConnectedStatus),
+    disconnectTwitch: vi.fn(async () => twitchDisconnectedStatus)
   };
 }
 

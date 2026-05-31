@@ -214,4 +214,32 @@ describe("createServerApp", () => {
     ).toThrow("TTS routes require service, management auth, and rate-limit hooks");
   });
 
+  it("does not register Twitch auth routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        twitchAuthService: {
+          async getStatus() {
+            throw new Error("not called");
+          },
+          createConnectionStart() {
+            throw new Error("not called");
+          },
+          async completeCallback() {
+            throw new Error("not called");
+          },
+          async refreshConnectedAccount() {
+            throw new Error("not called");
+          },
+          async disconnect() {
+            throw new Error("not called");
+          }
+        }
+      })
+    ).toThrow("Twitch auth routes require service, management auth, and rate-limit hooks");
+  });
+
 });
