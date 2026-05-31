@@ -1,8 +1,8 @@
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
-import type { EventIngestionService } from "../../modules/events/event-ingestion-service.js";
+import type { TwitchEventSubRuntimeService } from "../../modules/twitch/twitch-eventsub-runtime-service.js";
 
 export interface TwitchEventSubRouteDependencies {
-  readonly twitchEventIngestionService: Pick<EventIngestionService, "getStatus">;
+  readonly twitchEventSubStatusService: Pick<TwitchEventSubRuntimeService, "getStatus">;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
 }
@@ -10,5 +10,5 @@ export interface TwitchEventSubRouteDependencies {
 export function registerTwitchEventSubRoutes(app: FastifyInstance, dependencies: TwitchEventSubRouteDependencies): void {
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
 
-  app.get("/twitch/eventsub/status", { preHandler }, async () => dependencies.twitchEventIngestionService.getStatus());
+  app.get("/twitch/eventsub/status", { preHandler }, async () => dependencies.twitchEventSubStatusService.getStatus());
 }

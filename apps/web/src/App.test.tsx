@@ -163,6 +163,11 @@ function createManagementApi(): ManagementApi {
     async getTwitchEventSubStatus() {
       return {
         state: "idle" as const,
+        connectionState: "idle" as const,
+        sessionId: null,
+        connectedAt: null,
+        lastMessageAt: null,
+        subscriptionTypes: [],
         acceptedCount: 0,
         duplicateCount: 0,
         rejectedCount: 0,

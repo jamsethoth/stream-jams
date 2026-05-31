@@ -142,7 +142,12 @@ export type TwitchConnectionStatusView =
   | { readonly connected: true; readonly account: TwitchConnectedAccountView };
 
 export interface TwitchEventSubStatusView {
-  readonly state: "idle" | "ready" | "degraded";
+  readonly state: "idle" | "connecting" | "connected" | "reconnecting" | "degraded" | "error";
+  readonly connectionState: "idle" | "connecting" | "connected" | "reconnecting" | "error";
+  readonly sessionId: string | null;
+  readonly connectedAt: string | null;
+  readonly lastMessageAt: string | null;
+  readonly subscriptionTypes: readonly string[];
   readonly acceptedCount: number;
   readonly duplicateCount: number;
   readonly rejectedCount: number;

@@ -42,6 +42,12 @@ import { PlaybackCoordinator } from "./modules/playback/playback-coordinator.js"
 import { DevSecretStore } from "./modules/security/dev-secret-store.js";
 import { createRedactor } from "./modules/security/redactor.js";
 import { DefaultTwitchApiClient } from "./modules/twitch/twitch-api-client.js";
+import {
+  DefaultTwitchEventSubApiClient,
+  TwitchEventSubClient,
+  type TwitchEventSubSocket
+} from "./modules/twitch/twitch-eventsub-client.js";
+import { TwitchEventSubRuntimeService, type TwitchEventSubRuntimeState } from "./modules/twitch/twitch-eventsub-runtime-service.js";
 import { TwitchOAuthService } from "./modules/twitch/twitch-oauth-service.js";
 import { SqliteTwitchAccountRepository } from "./modules/twitch/sqlite-twitch-account-repository.js";
 import { createDefaultTtsProviderRegistry } from "./modules/tts/tts-provider-registry.js";
@@ -98,14 +104,7 @@ const ttsService = new DefaultTtsService({
   registry: ttsProviderRegistry,
   moderationService
 });
-const twitchAuthService = new TwitchOAuthService({
-  apiClient: new DefaultTwitchApiClient(),
-  clientId: process.env.TWITCH_CLIENT_ID ?? "",
-  clientSecret: process.env.TWITCH_CLIENT_SECRET ?? "",
-  generateState: () => randomBytes(24).toString("base64url"),
-  repository: twitchAccountRepository,
-  secretStore
-});
+const twitchApiClient = new DefaultTwitchApiClient();
 const overlayGateway = new OverlayGateway({
   overlayAccessService,
   generateClientId: generateOverlayClientId,
@@ -151,17 +150,42 @@ const eventPipeline = new EventPipeline({
 const eventIngestionService = new EventIngestionService({
   sink: eventPipeline
 });
+const twitchEventSubClient = new TwitchEventSubClient({
+  apiClient: new DefaultTwitchEventSubApiClient(),
+  socketFactory: createNodeWebSocket,
+  onNotification: async (message) => {
+    await eventIngestionService.ingestTwitchEventSubNotification(message);
+  }
+});
+const twitchEventSubRuntimeService = new TwitchEventSubRuntimeService({
+  accountRepository: twitchAccountRepository,
+  clientId: process.env.TWITCH_CLIENT_ID ?? "",
+  eventSubClient: twitchEventSubClient,
+  ingestionService: eventIngestionService,
+  secretStore
+});
+const twitchAuthService = new TwitchOAuthService({
+  apiClient: twitchApiClient,
+  clientId: process.env.TWITCH_CLIENT_ID ?? "",
+  clientSecret: process.env.TWITCH_CLIENT_SECRET ?? "",
+  generateState: () => randomBytes(24).toString("base64url"),
+  onConnectionChanged: async () => {
+    await twitchEventSubRuntimeService.connectStoredAccount();
+  },
+  repository: twitchAccountRepository,
+  secretStore
+});
 const diagnosticsService = new DiagnosticsService({
   repository: diagnosticsLogRepository,
   redactor: createRedactor(),
   providerStatusSources: [
     {
       getStatus() {
-        const status = eventIngestionService.getStatus();
+        const status = twitchEventSubRuntimeService.getStatus();
         return {
           providerId: "twitch",
           label: "Twitch EventSub",
-          state: status.state,
+          state: toDiagnosticsProviderState(status.state),
           lastErrorAt: status.lastErrorAt,
           message: status.message
         };
@@ -211,7 +235,7 @@ try {
         moderationService,
         ttsService,
         twitchAuthService,
-        twitchEventIngestionService: eventIngestionService,
+        twitchEventSubStatusService: twitchEventSubRuntimeService,
         diagnosticsService,
         overlayAccessService,
         overlayCompositionService,
@@ -233,6 +257,7 @@ try {
   });
 
   if (result.status === "started") {
+    await twitchEventSubRuntimeService.connectStoredAccount();
     console.info(`Stream Jams server listening on ${result.url}`);
   } else {
     console.error(
@@ -247,6 +272,33 @@ try {
 
 function formatSuggestedPorts(ports: readonly number[]): string {
   return ports.length > 0 ? ports.join(", ") : "none found";
+}
+
+function toDiagnosticsProviderState(state: TwitchEventSubRuntimeState): "idle" | "ready" | "degraded" {
+  switch (state) {
+    case "connected":
+      return "ready";
+    case "idle":
+    case "connecting":
+      return "idle";
+    case "reconnecting":
+    case "degraded":
+    case "error":
+      return "degraded";
+  }
+}
+
+interface NodeWebSocketConstructor {
+  new (url: string): TwitchEventSubSocket;
+}
+
+function createNodeWebSocket(url: string): TwitchEventSubSocket {
+  const WebSocketConstructor = (globalThis as typeof globalThis & { readonly WebSocket?: NodeWebSocketConstructor }).WebSocket;
+  if (WebSocketConstructor === undefined) {
+    throw new Error("Global WebSocket runtime is unavailable");
+  }
+
+  return new WebSocketConstructor(url);
 }
 
 function generateAlertConfigurationId(kind: "collection" | "rule" | "variant"): string {
