@@ -37,6 +37,7 @@ export interface TwitchOAuthServiceOptions {
   readonly clientSecret: string;
   readonly generateState: () => string;
   readonly now?: (() => Date) | undefined;
+  readonly onConnectionChanged?: ((status: TwitchConnectionStatus) => void | Promise<void>) | undefined;
   readonly repository: TwitchAccountRepository;
   readonly scopes?: readonly string[] | undefined;
   readonly secretStore: SecretStore;
@@ -70,6 +71,7 @@ export class TwitchOAuthService {
   readonly #clientSecret: string;
   readonly #generateState: () => string;
   readonly #now: () => Date;
+  readonly #onConnectionChanged: ((status: TwitchConnectionStatus) => void | Promise<void>) | undefined;
   readonly #pendingStates = new Map<string, PendingOAuthState>();
   readonly #repository: TwitchAccountRepository;
   readonly #scopes: readonly string[];
@@ -81,6 +83,7 @@ export class TwitchOAuthService {
     this.#clientSecret = options.clientSecret;
     this.#generateState = options.generateState;
     this.#now = options.now ?? (() => new Date());
+    this.#onConnectionChanged = options.onConnectionChanged;
     this.#repository = options.repository;
     this.#scopes = [...(options.scopes ?? defaultTwitchOAuthScopes)].sort();
     this.#secretStore = options.secretStore;
@@ -159,7 +162,9 @@ export class TwitchOAuthService {
     await this.#secretStore.deleteSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
     await this.#secretStore.deleteSecret(createTwitchTokenSecretRef(account.accountId, "refresh_token"));
     await this.#repository.deleteAccount(account.accountId);
-    return toTwitchConnectionStatus(null);
+    const status = toTwitchConnectionStatus(null);
+    await this.#notifyConnectionChanged(status);
+    return status;
   }
 
   #assertConfigured(): void {
@@ -199,7 +204,13 @@ export class TwitchOAuthService {
       await this.#secretStore.deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "refresh_token"));
     }
 
-    return toTwitchConnectionStatus(savedAccount);
+    const status = toTwitchConnectionStatus(savedAccount);
+    await this.#notifyConnectionChanged(status);
+    return status;
+  }
+
+  async #notifyConnectionChanged(status: TwitchConnectionStatus): Promise<void> {
+    await this.#onConnectionChanged?.(status);
   }
 }
 

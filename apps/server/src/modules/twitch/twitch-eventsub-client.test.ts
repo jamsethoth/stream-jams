@@ -153,6 +153,19 @@ describe("TwitchEventSubClient", () => {
     });
   });
 
+  it("closes the previous socket before connecting a stored account again", () => {
+    const harness = createClientHarness();
+
+    harness.client.connect(connectionInput());
+    harness.client.connect(connectionInput());
+
+    expect(harness.openedUrls).toEqual([
+      "wss://eventsub.wss.twitch.tv/ws",
+      "wss://eventsub.wss.twitch.tv/ws"
+    ]);
+    expect(harness.sockets[0]?.closeCount).toBe(1);
+  });
+
   it("handles keepalive, notification, reconnect, revocation, and unexpected close", async () => {
     const harness = createClientHarness();
 
@@ -270,6 +283,7 @@ class RecordingEventSubApiClient {
 }
 
 class FakeSocket {
+  closeCount = 0;
   readonly #listeners = {
     message: [] as ((event: { readonly data: unknown }) => void)[],
     close: [] as ((event: { readonly code?: number; readonly reason?: string }) => void)[],
@@ -286,7 +300,9 @@ class FakeSocket {
     }
   }
 
-  close(): void {}
+  close(): void {
+    this.closeCount += 1;
+  }
 
   async emitMessage(message: unknown): Promise<void> {
     for (const listener of this.#listeners.message) {

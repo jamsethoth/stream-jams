@@ -6,7 +6,7 @@ import type {
   TwitchRefreshTokenRequest,
   TwitchTokenGrant
 } from "./twitch-api-client.js";
-import type { TwitchAccount, TwitchAccountRepository } from "./twitch-account-repository.js";
+import type { TwitchAccount, TwitchAccountRepository, TwitchConnectionStatus } from "./twitch-account-repository.js";
 import {
   createTwitchTokenSecretRef,
   defaultTwitchOAuthScopes,
@@ -122,6 +122,34 @@ describe("TwitchOAuthService", () => {
     await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBeNull();
     await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBeNull();
   });
+  it("notifies connection lifecycle hooks after account connection changes", async () => {
+    const notifications: TwitchConnectionStatus[] = [];
+    const { service } = createService({
+      onConnectionChanged(status) {
+        notifications.push(status);
+      }
+    });
+    const authorization = service.createConnectionStart({
+      redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
+    });
+
+    await service.completeCallback({ code: "oauth-code", state: authorization.state });
+    await service.refreshConnectedAccount();
+    await service.disconnect();
+
+    expect(notifications.map((status) => status.connected)).toEqual([true, true, false]);
+    expect(notifications[0]).toMatchObject({
+      connected: true,
+      account: {
+        accountId: "141981764",
+        scopes: defaultTwitchOAuthScopes
+      }
+    });
+    expect(notifications[2]).toEqual({
+      connected: false,
+      account: null
+    });
+  });
   it("removes prior account token secrets when a different broadcaster connects", async () => {
     const { repository, secretStore, service } = createService();
     await repository.saveAccount({
@@ -155,7 +183,7 @@ describe("TwitchOAuthService", () => {
   });
 });
 
-function createService() {
+function createService(options: { readonly onConnectionChanged?: (status: TwitchConnectionStatus) => void | Promise<void> } = {}) {
   const apiClient = new FakeTwitchApiClient();
   const repository = new InMemoryTwitchAccountRepository();
   const secretStore = new InMemorySecretStore();
@@ -165,6 +193,7 @@ function createService() {
     clientSecret: "client-secret",
     generateState: () => "state-1",
     now: () => new Date("2026-05-30T12:00:00.000Z"),
+    ...(options.onConnectionChanged === undefined ? {} : { onConnectionChanged: options.onConnectionChanged }),
     repository,
     secretStore
   });

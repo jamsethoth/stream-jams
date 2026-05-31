@@ -66,6 +66,7 @@ export function TwitchPanel({ managementApi }: TwitchPanelProps) {
   async function disconnect() {
     try {
       setStatus(await managementApi.disconnectTwitch());
+      setEventSubStatus(await managementApi.getTwitchEventSubStatus());
       setAuthorizationUrl(null);
       setDiagnostic("Twitch disconnected.");
     } catch (error) {

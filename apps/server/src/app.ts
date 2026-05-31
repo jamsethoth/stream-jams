@@ -132,7 +132,7 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerTwitchAuthRoutes(app, dependencies);
   }
 
-  if (dependencies.twitchEventIngestionService !== undefined) {
+  if (dependencies.twitchEventSubStatusService !== undefined) {
     if (!hasTwitchEventSubRouteDependencies(dependencies)) {
       throw new Error("Twitch EventSub routes require service, management auth, and rate-limit hooks");
     }
@@ -246,7 +246,7 @@ function hasTwitchEventSubRouteDependencies(
   dependencies: ServerAppDependencies
 ): dependencies is ServerAppDependencies & TwitchEventSubRouteDependencies {
   return (
-    dependencies.twitchEventIngestionService !== undefined &&
+    dependencies.twitchEventSubStatusService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

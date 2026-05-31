@@ -19,7 +19,12 @@ describe("twitch eventsub routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({
-      state: "ready",
+      state: "connected",
+      connectionState: "connected",
+      sessionId: "session-1",
+      connectedAt: "2026-05-30T11:59:59.000Z",
+      lastMessageAt: "2026-05-30T12:00:00.000Z",
+      subscriptionTypes: ["channel.follow"],
       acceptedCount: 3,
       duplicateCount: 1,
       rejectedCount: 0,
@@ -60,7 +65,7 @@ async function createAppWithEventSubStatus() {
       appName: "stream-jams",
       version: "1.2.3"
     },
-    twitchEventIngestionService: service,
+    twitchEventSubStatusService: service,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
@@ -80,7 +85,12 @@ class RecordingEventSubStatusService {
   getStatus() {
     this.statusReads += 1;
     return {
-      state: "ready" as const,
+      state: "connected" as const,
+      connectionState: "connected" as const,
+      sessionId: "session-1",
+      connectedAt: "2026-05-30T11:59:59.000Z",
+      lastMessageAt: "2026-05-30T12:00:00.000Z",
+      subscriptionTypes: ["channel.follow"],
       acceptedCount: 3,
       duplicateCount: 1,
       rejectedCount: 0,

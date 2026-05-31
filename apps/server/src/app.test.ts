@@ -268,7 +268,7 @@ describe("createServerApp", () => {
           appName: "stream-jams",
           version: "1.2.3"
         },
-        twitchEventIngestionService: {
+        twitchEventSubStatusService: {
           getStatus() {
             throw new Error("not called");
           }

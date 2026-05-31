@@ -8,6 +8,7 @@ export interface TwitchEventSubStatus {
   readonly message: string | null;
   readonly connectedAt: string | null;
   readonly lastMessageAt: string | null;
+  readonly lastErrorAt: string | null;
   readonly subscriptionTypes: readonly string[];
 }
 
@@ -165,6 +166,7 @@ export class TwitchEventSubClient {
     message: null,
     connectedAt: null,
     lastMessageAt: null,
+    lastErrorAt: null,
     subscriptionTypes: []
   };
   #stopped = true;
@@ -180,6 +182,10 @@ export class TwitchEventSubClient {
   }
 
   connect(input: TwitchEventSubConnectionInput): void {
+    this.#stopped = true;
+    const previousSocket = this.#socket;
+    this.#socket = null;
+    previousSocket?.close();
     this.#connection = input;
     this.#stopped = false;
     this.#reconnectAttempt = 0;
@@ -196,6 +202,7 @@ export class TwitchEventSubClient {
       message: null,
       connectedAt: null,
       lastMessageAt: null,
+      lastErrorAt: null,
       subscriptionTypes: []
     };
   }
@@ -217,17 +224,21 @@ export class TwitchEventSubClient {
         this.#status = {
           ...this.#status,
           state: "error",
+          lastErrorAt: this.#now().toISOString(),
           message: "Twitch EventSub message handling failed"
         };
       });
     });
     socket.addEventListener("close", (event) => {
-      this.#handleClose(event);
+      if (this.#socket === socket) {
+        this.#handleClose(event);
+      }
     });
     socket.addEventListener("error", () => {
       this.#status = {
         ...this.#status,
         state: "error",
+        lastErrorAt: this.#now().toISOString(),
         message: "Twitch EventSub WebSocket error"
       };
     });
@@ -264,6 +275,7 @@ export class TwitchEventSubClient {
           ...this.#status,
           state: "error",
           lastMessageAt: timestamp,
+          lastErrorAt: timestamp,
           message: "Twitch EventSub subscription was revoked: " + String(message.payload.subscription?.status ?? "unknown")
         };
         return;
@@ -272,6 +284,7 @@ export class TwitchEventSubClient {
           ...this.#status,
           state: "error",
           lastMessageAt: timestamp,
+          lastErrorAt: timestamp,
           message: "Unsupported Twitch EventSub message type"
         };
     }
@@ -293,6 +306,7 @@ export class TwitchEventSubClient {
       message: null,
       connectedAt: session.connected_at,
       lastMessageAt: requiredString(message.metadata.message_timestamp),
+      lastErrorAt: null,
       subscriptionTypes: recreateSubscriptions ? subscriptionRequests.map((request) => request.type) : this.#status.subscriptionTypes
     };
     this.#reconnectAttempt = 0;
@@ -314,6 +328,7 @@ export class TwitchEventSubClient {
       this.#status = {
         ...this.#status,
         state: "error",
+        lastErrorAt: requiredString(message.metadata.message_timestamp),
         message: "Twitch EventSub reconnect URL was missing"
       };
       return;

@@ -46,4 +46,21 @@ The diagnostics export redacts sensitive values such as OAuth tokens, overlay ke
 
 ## Local UI Test Note
 
-CI installs Playwright dependencies on Ubuntu 24.04 with `pnpm exec playwright install --with-deps chromium`. On this Ubuntu 26.04 workstation, Playwright 1.60.0 cannot run `install-deps`; Chromium needs `libnspr4` and `libnss3`. If sudo is available, install them with `sudo apt-get install -y libnspr4 libnss3`.
+CI installs Playwright dependencies on Ubuntu 24.04 with `pnpm exec playwright install --with-deps chromium`. On this Ubuntu 26.04 workstation, Playwright 1.60.0 cannot run `install-deps`; Chromium needs `libnspr4` and `libnss3`.
+
+If sudo is available, install the missing system packages:
+
+```sh
+sudo apt-get install -y libnspr4 libnss3
+```
+
+If sudo is not available, a local extracted package workaround is enough for e2e validation:
+
+```sh
+mkdir -p /tmp/playwright-deps/downloads /tmp/playwright-deps/extract
+cd /tmp/playwright-deps/downloads
+apt-get download libnspr4 libnss3
+for package in *.deb; do dpkg-deb -x "$package" /tmp/playwright-deps/extract; done
+cd /home/jams/dev/stream-jams
+env LD_LIBRARY_PATH=/tmp/playwright-deps/extract/usr/lib/x86_64-linux-gnu pnpm test:e2e
+```
