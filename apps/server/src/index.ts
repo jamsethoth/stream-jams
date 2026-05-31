@@ -29,7 +29,9 @@ import { LocalManagementSessionService } from "./modules/auth/management-session
 import { SqliteAlertRepository } from "./modules/alerts/sqlite-alert-repository.js";
 import { LocalAssetStore } from "./modules/assets/local-asset-store.js";
 import { EventIngestionService } from "./modules/events/event-ingestion-service.js";
+import { EventPipeline } from "./modules/events/event-pipeline.js";
 import { openStreamJamsDatabase } from "./modules/db/database.js";
+import { SqliteDiagnosticsLogRepository } from "./modules/diagnostics/sqlite-log-repository.js";
 import { InMemoryServerOverlayModuleConfigRepository } from "./modules/overlay-modules/in-memory-module-config-repository.js";
 import { SqliteAssetRepository } from "./modules/assets/sqlite-asset-repository.js";
 import { createStaticOverlayModuleRegistry } from "./modules/overlay-modules/static-module-registry.js";
@@ -53,6 +55,7 @@ const configStore = new FileConfigStore({
 });
 const initialConfig = await configStore.readConfig();
 const database = openStreamJamsDatabase(join(initialConfig.storage.dataDirectory, "stream-jams.sqlite"));
+const diagnosticsLogRepository = new SqliteDiagnosticsLogRepository(database.connection);
 const alertRepository = new SqliteAlertRepository(database.connection);
 const alertService = new DefaultAlertService({
   repository: alertRepository,
@@ -93,13 +96,6 @@ const ttsService = new DefaultTtsService({
   registry: ttsProviderRegistry,
   moderationService
 });
-const eventIngestionService = new EventIngestionService({
-  sink: {
-    async handleEvent() {
-      // Slice 19 wires normalized events into the alert playback pipeline.
-    }
-  }
-});
 const twitchAuthService = new TwitchOAuthService({
   apiClient: new DefaultTwitchApiClient(),
   clientId: process.env.TWITCH_CLIENT_ID ?? "",
@@ -135,8 +131,23 @@ const playbackCoordinator = new PlaybackCoordinator({
     purpose: "live",
     scope: "module"
   },
+  additionalTargets: [
+    {
+      overlayId: "default",
+      purpose: "live",
+      scope: "unified"
+    }
+  ],
   assetRepository,
   overlayPlaybackSink: overlayGateway
+});
+const eventPipeline = new EventPipeline({
+  playbackCoordinator,
+  diagnosticsLogRepository,
+  generateId: generateEventPipelineId
+});
+const eventIngestionService = new EventIngestionService({
+  sink: eventPipeline
 });
 const overlayCompositionService = new DefaultOverlayCompositionService({
   configService: overlayModuleConfigService,
@@ -227,6 +238,10 @@ function generateAssetId(): string {
 
 function generateResolvedAlertId(kind: "resolved-alert" | "overlay-instruction"): string {
   return `playback_${kind}_${randomBytes(16).toString("base64url")}`;
+}
+
+function generateEventPipelineId(kind: "event-log" | "alert-match-log" | "playback-log" | "processing"): string {
+  return `event_pipeline_${kind}_${randomBytes(16).toString("base64url")}`;
 }
 
 function generatePlaybackQueueItemId(): string {
