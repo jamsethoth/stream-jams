@@ -161,6 +161,46 @@ describe("createHttpManagementApi", () => {
     await expect(api.getModerationSettings()).resolves.toEqual(settings);
     await expect(api.updateModerationSettings(settings)).resolves.toEqual(settings);
   });
+  it("loads diagnostics and redacted exports with management headers and limits", async () => {
+    const diagnostics = {
+      eventLogs: [],
+      alertMatchLogs: [],
+      playbackLogs: [],
+      providerErrors: []
+    };
+    const exported = {
+      generatedAt: "2026-05-31T02:05:00.000Z",
+      rawEventLogs: [],
+      ...diagnostics
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse({ id: "mgmt_session" });
+      }
+
+      if (url === "/diagnostics?limit=2") {
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session"
+        });
+        return jsonResponse(diagnostics);
+      }
+
+      if (url === "/diagnostics/export?limit=2") {
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session"
+        });
+        return jsonResponse(exported);
+      }
+
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getDiagnostics({ limit: 2 })).resolves.toEqual(diagnostics);
+    await expect(api.exportDiagnostics({ limit: 2 })).resolves.toEqual(exported);
+  });
+
   it("loads Twitch EventSub status with management headers", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

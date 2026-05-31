@@ -151,6 +151,67 @@ export interface TwitchEventSubStatusView {
   readonly message: string | null;
 }
 
+export interface DiagnosticsEventLogView {
+  readonly id: string;
+  readonly eventId: string;
+  readonly providerId: string;
+  readonly eventType: string;
+  readonly actorDisplayName: string;
+  readonly status: "received" | "processed" | "failed";
+  readonly receivedAt: string;
+  readonly correlationId: string;
+  readonly processingId: string | null;
+  readonly errorMessage: string | null;
+}
+
+export interface DiagnosticsAlertMatchLogView {
+  readonly id: string;
+  readonly sourceEventId: string;
+  readonly ruleId: string;
+  readonly variantId: string;
+  readonly matchedAt: string;
+  readonly correlationId: string;
+  readonly processingId: string | null;
+}
+
+export interface DiagnosticsPlaybackLogView {
+  readonly id: string;
+  readonly queueItemId: string;
+  readonly sourceEventId: string;
+  readonly alertIds: readonly string[];
+  readonly status: "queued" | "playing" | "completed" | "skipped" | "failed";
+  readonly occurredAt: string;
+  readonly correlationId: string;
+  readonly processingId: string | null;
+  readonly message: string | null;
+}
+
+export interface DiagnosticsProviderErrorView {
+  readonly id: string;
+  readonly providerId: string;
+  readonly label: string;
+  readonly occurredAt: string;
+  readonly message: string;
+  readonly correlationId: string | null;
+  readonly processingId: string | null;
+}
+
+export interface DiagnosticsView {
+  readonly eventLogs: readonly DiagnosticsEventLogView[];
+  readonly alertMatchLogs: readonly DiagnosticsAlertMatchLogView[];
+  readonly playbackLogs: readonly DiagnosticsPlaybackLogView[];
+  readonly providerErrors: readonly DiagnosticsProviderErrorView[];
+}
+
+export interface DiagnosticsExportView extends DiagnosticsView {
+  readonly generatedAt: string;
+  readonly rawEventLogs: readonly unknown[];
+}
+
+export interface DiagnosticsRequestView {
+  readonly limit?: number | undefined;
+}
+
 export interface TwitchAuthStartRequestView {
   readonly redirectUri: string;
 }
@@ -184,6 +245,8 @@ export interface ManagementApi {
   testTts(input: TtsTestRequestView): Promise<TtsTestResultView>;
   getTwitchStatus(): Promise<TwitchConnectionStatusView>;
   getTwitchEventSubStatus(): Promise<TwitchEventSubStatusView>;
+  getDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsView>;
+  exportDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsExportView>;
   startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
   refreshTwitchAuth(): Promise<TwitchConnectionStatusView>;
   disconnectTwitch(): Promise<TwitchConnectionStatusView>;
@@ -290,6 +353,10 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     }
 
     return mapPlaybackSnapshot((await response.json()) as PlaybackQueueSnapshotResponse);
+  }
+
+  function withLimit(path: string, input: DiagnosticsRequestView = {}): string {
+    return input.limit === undefined ? path : `${path}?limit=${encodeURIComponent(String(input.limit))}`;
   }
 
   async function optionalJsonList<T>(path: string): Promise<readonly T[]> {
@@ -437,6 +504,28 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     listOverlayClients() {
       return optionalJsonList<OverlayClientView>("/management/overlay-clients");
+    },
+
+    async getDiagnostics(input: DiagnosticsRequestView = {}) {
+      const response = await fetcher(withLimit("/diagnostics", input), {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to load diagnostics."));
+      }
+
+      return (await response.json()) as DiagnosticsView;
+    },
+
+    async exportDiagnostics(input: DiagnosticsRequestView = {}) {
+      const response = await fetcher(withLimit("/diagnostics/export", input), {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to export diagnostics."));
+      }
+
+      return (await response.json()) as DiagnosticsExportView;
     },
 
     async getTwitchStatus() {

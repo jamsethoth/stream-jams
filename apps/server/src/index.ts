@@ -31,6 +31,7 @@ import { LocalAssetStore } from "./modules/assets/local-asset-store.js";
 import { EventIngestionService } from "./modules/events/event-ingestion-service.js";
 import { EventPipeline } from "./modules/events/event-pipeline.js";
 import { openStreamJamsDatabase } from "./modules/db/database.js";
+import { DiagnosticsService } from "./modules/diagnostics/diagnostics-service.js";
 import { SqliteDiagnosticsLogRepository } from "./modules/diagnostics/sqlite-log-repository.js";
 import { InMemoryServerOverlayModuleConfigRepository } from "./modules/overlay-modules/in-memory-module-config-repository.js";
 import { SqliteAssetRepository } from "./modules/assets/sqlite-asset-repository.js";
@@ -39,6 +40,7 @@ import { LocalOverlayAccessService } from "./modules/overlays/overlay-access-ser
 import { SqliteOverlayAccessKeyRepository } from "./modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "./modules/playback/playback-coordinator.js";
 import { DevSecretStore } from "./modules/security/dev-secret-store.js";
+import { createRedactor } from "./modules/security/redactor.js";
 import { DefaultTwitchApiClient } from "./modules/twitch/twitch-api-client.js";
 import { TwitchOAuthService } from "./modules/twitch/twitch-oauth-service.js";
 import { SqliteTwitchAccountRepository } from "./modules/twitch/sqlite-twitch-account-repository.js";
@@ -149,6 +151,24 @@ const eventPipeline = new EventPipeline({
 const eventIngestionService = new EventIngestionService({
   sink: eventPipeline
 });
+const diagnosticsService = new DiagnosticsService({
+  repository: diagnosticsLogRepository,
+  redactor: createRedactor(),
+  providerStatusSources: [
+    {
+      getStatus() {
+        const status = eventIngestionService.getStatus();
+        return {
+          providerId: "twitch",
+          label: "Twitch EventSub",
+          state: status.state,
+          lastErrorAt: status.lastErrorAt,
+          message: status.message
+        };
+      }
+    }
+  ]
+});
 const overlayCompositionService = new DefaultOverlayCompositionService({
   configService: overlayModuleConfigService,
   runtime: {
@@ -192,6 +212,7 @@ try {
         ttsService,
         twitchAuthService,
         twitchEventIngestionService: eventIngestionService,
+        diagnosticsService,
         overlayAccessService,
         overlayCompositionService,
         overlayGateway,

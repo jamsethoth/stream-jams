@@ -49,6 +49,25 @@ describe("createServerApp", () => {
     ).toThrow("Config routes require management auth and rate-limit hooks");
   });
 
+  it("does not register diagnostics routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        diagnosticsService: {
+          async getDiagnostics() {
+            throw new Error("not called");
+          },
+          async createExport() {
+            throw new Error("not called");
+          }
+        }
+      })
+    ).toThrow("Diagnostics routes require service, management auth, and rate-limit hooks");
+  });
+
   it("does not register alert routes without management auth and rate-limit hooks", () => {
     expect(() =>
       createServerApp({
