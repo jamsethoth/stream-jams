@@ -142,6 +142,17 @@ function createManagementApi(): ManagementApi {
         account: null
       };
     },
+    async getTwitchEventSubStatus() {
+      return {
+        state: "idle" as const,
+        acceptedCount: 0,
+        duplicateCount: 0,
+        rejectedCount: 0,
+        lastEventAt: null,
+        lastErrorAt: null,
+        message: null
+      };
+    },
     async startTwitchAuth() {
       return {
         authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=state-1",

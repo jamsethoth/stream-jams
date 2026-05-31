@@ -28,6 +28,7 @@ import { createManagementAuthPreHandler } from "./http/middleware/management-aut
 import { LocalManagementSessionService } from "./modules/auth/management-session-service.js";
 import { SqliteAlertRepository } from "./modules/alerts/sqlite-alert-repository.js";
 import { LocalAssetStore } from "./modules/assets/local-asset-store.js";
+import { EventIngestionService } from "./modules/events/event-ingestion-service.js";
 import { openStreamJamsDatabase } from "./modules/db/database.js";
 import { InMemoryServerOverlayModuleConfigRepository } from "./modules/overlay-modules/in-memory-module-config-repository.js";
 import { SqliteAssetRepository } from "./modules/assets/sqlite-asset-repository.js";
@@ -91,6 +92,13 @@ const ttsProviderRegistry = createDefaultTtsProviderRegistry();
 const ttsService = new DefaultTtsService({
   registry: ttsProviderRegistry,
   moderationService
+});
+const eventIngestionService = new EventIngestionService({
+  sink: {
+    async handleEvent() {
+      // Slice 19 wires normalized events into the alert playback pipeline.
+    }
+  }
 });
 const twitchAuthService = new TwitchOAuthService({
   apiClient: new DefaultTwitchApiClient(),
@@ -172,6 +180,7 @@ try {
         moderationService,
         ttsService,
         twitchAuthService,
+        twitchEventIngestionService: eventIngestionService,
         overlayAccessService,
         overlayCompositionService,
         overlayGateway,

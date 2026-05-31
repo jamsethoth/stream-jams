@@ -14,6 +14,7 @@ import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/rou
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
 import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.js";
 import { registerTwitchAuthRoutes, type TwitchAuthRouteDependencies } from "./http/routes/twitch-auth.js";
+import { registerTwitchEventSubRoutes, type TwitchEventSubRouteDependencies } from "./http/routes/twitch-eventsub.js";
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
@@ -26,7 +27,8 @@ export interface ServerAppDependencies
     Partial<AlertCollectionRouteDependencies>,
     Partial<PlaybackRouteDependencies>,
     Partial<TtsRouteDependencies>,
-    Partial<TwitchAuthRouteDependencies> {
+    Partial<TwitchAuthRouteDependencies>,
+    Partial<TwitchEventSubRouteDependencies> {
   readonly metadata: ServerAppMetadata;
 }
 
@@ -120,6 +122,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerTwitchAuthRoutes(app, dependencies);
   }
 
+  if (dependencies.twitchEventIngestionService !== undefined) {
+    if (!hasTwitchEventSubRouteDependencies(dependencies)) {
+      throw new Error("Twitch EventSub routes require service, management auth, and rate-limit hooks");
+    }
+
+    registerTwitchEventSubRoutes(app, dependencies);
+  }
+
   if (dependencies.serverConfigService !== undefined) {
     if (!hasConfigRouteProtection(dependencies)) {
       throw new Error("Config routes require management auth and rate-limit hooks");
@@ -207,6 +217,16 @@ function hasTwitchAuthRouteDependencies(
 ): dependencies is ServerAppDependencies & TwitchAuthRouteDependencies {
   return (
     dependencies.twitchAuthService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasTwitchEventSubRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & TwitchEventSubRouteDependencies {
+  return (
+    dependencies.twitchEventIngestionService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

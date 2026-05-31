@@ -146,6 +146,7 @@ describe("ManagementApp", () => {
     const twitchPanel = screen.getByRole("tabpanel", { name: "Twitch" });
     expect(await within(twitchPanel).findByRole("heading", { name: "Twitch" })).toBeInTheDocument();
     expect(within(twitchPanel).getByText("Twitch disconnected")).toBeInTheDocument();
+    expect(await within(twitchPanel).findByText("EventSub ready")).toBeInTheDocument();
 
     await user.click(within(twitchPanel).getByRole("button", { name: "Connect Twitch" }));
 
@@ -353,6 +354,15 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
       moderationActions: []
     })),
     getTwitchStatus: vi.fn(async () => initialTwitchStatus),
+    getTwitchEventSubStatus: vi.fn(async () => ({
+      state: "ready" as const,
+      acceptedCount: 3,
+      duplicateCount: 1,
+      rejectedCount: 0,
+      lastEventAt: "2026-05-30T12:00:00.000Z",
+      lastErrorAt: null,
+      message: null
+    })),
     startTwitchAuth: vi.fn(async () => ({
       authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=state-1",
       state: "state-1",
