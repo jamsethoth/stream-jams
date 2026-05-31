@@ -13,7 +13,8 @@ const expectedTables = [
   "overlay_keys",
   "overlay_module_config",
   "playback_logs",
-  "schema_migrations"
+  "schema_migrations",
+  "twitch_accounts"
 ];
 
 describe("Stream Jams SQLite database", () => {
@@ -21,11 +22,11 @@ describe("Stream Jams SQLite database", () => {
     using database = createInMemoryStreamJamsDatabase();
 
     expect(listTables(database.connection)).toEqual(expectedTables);
-    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection"]);
+    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection", "003-twitch-accounts"]);
 
     database.runMigrations();
 
-    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection"]);
+    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection", "003-twitch-accounts"]);
   });
 
   it("enforces foreign keys for child records", () => {

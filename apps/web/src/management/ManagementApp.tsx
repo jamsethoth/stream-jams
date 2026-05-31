@@ -10,6 +10,7 @@ import { OverlayOutputsPanel } from "./overlays/OverlayOutputsPanel.js";
 import { PlaybackPanel } from "./playback/PlaybackPanel.js";
 import { SettingsPanel } from "./settings/SettingsPanel.js";
 import { TtsPanel } from "./tts/TtsPanel.js";
+import { TwitchPanel } from "./twitch/TwitchPanel.js";
 
 export interface ManagementAppProps {
   readonly assetApi: AssetApi;
@@ -38,6 +39,7 @@ export function ManagementApp({ assetApi, alertApi, managementApi }: ManagementA
           role="tabpanel"
         >
           {activeTab === "dashboard" ? <DashboardPanel managementApi={resolvedManagementApi} /> : null}
+          {activeTab === "twitch" ? <TwitchPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "modules" ? <ModuleManagementPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "overlays" ? <OverlayOutputsPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "playback" ? <PlaybackPanel managementApi={resolvedManagementApi} /> : null}

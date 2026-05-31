@@ -128,6 +128,29 @@ export interface TtsTestResultView {
   readonly moderationActions: readonly { readonly type: string }[];
 }
 
+export interface TwitchConnectedAccountView {
+  readonly accountId: string;
+  readonly login: string;
+  readonly displayName: string;
+  readonly scopes: readonly string[];
+  readonly connectedAt: string;
+  readonly updatedAt: string;
+}
+
+export type TwitchConnectionStatusView =
+  | { readonly connected: false; readonly account: null }
+  | { readonly connected: true; readonly account: TwitchConnectedAccountView };
+
+export interface TwitchAuthStartRequestView {
+  readonly redirectUri: string;
+}
+
+export interface TwitchAuthStartResultView {
+  readonly authorizationUrl: string;
+  readonly state: string;
+  readonly scopes: readonly string[];
+}
+
 export interface ManagementApi {
   getDashboard(): Promise<DashboardSummary>;
   getServerConfig(): Promise<ServerConfigView>;
@@ -149,6 +172,10 @@ export interface ManagementApi {
   setDoNotDisturb(enabled: boolean): Promise<PlaybackView>;
   listTtsProviders(): Promise<readonly TtsProviderView[]>;
   testTts(input: TtsTestRequestView): Promise<TtsTestResultView>;
+  getTwitchStatus(): Promise<TwitchConnectionStatusView>;
+  startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
+  refreshTwitchAuth(): Promise<TwitchConnectionStatusView>;
+  disconnectTwitch(): Promise<TwitchConnectionStatusView>;
 }
 
 export interface HttpManagementApiOptions {
@@ -399,6 +426,54 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     listOverlayClients() {
       return optionalJsonList<OverlayClientView>("/management/overlay-clients");
+    },
+
+    async getTwitchStatus() {
+      const response = await fetcher("/twitch/auth/status", {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to load Twitch status."));
+      }
+
+      return (await response.json()) as TwitchConnectionStatusView;
+    },
+
+    async startTwitchAuth(input: TwitchAuthStartRequestView) {
+      const response = await fetcher("/twitch/auth/start", {
+        method: "POST",
+        headers: await jsonHeaders(),
+        body: JSON.stringify(input)
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to start Twitch authorization."));
+      }
+
+      return (await response.json()) as TwitchAuthStartResultView;
+    },
+
+    async refreshTwitchAuth() {
+      const response = await fetcher("/twitch/auth/refresh", {
+        method: "POST",
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to refresh Twitch connection."));
+      }
+
+      return (await response.json()) as TwitchConnectionStatusView;
+    },
+
+    async disconnectTwitch() {
+      const response = await fetcher("/twitch/auth/disconnect", {
+        method: "POST",
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to disconnect Twitch."));
+      }
+
+      return (await response.json()) as TwitchConnectionStatusView;
     },
 
     async listTtsProviders() {

@@ -35,6 +35,10 @@ import { createStaticOverlayModuleRegistry } from "./modules/overlay-modules/sta
 import { LocalOverlayAccessService } from "./modules/overlays/overlay-access-service.js";
 import { SqliteOverlayAccessKeyRepository } from "./modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "./modules/playback/playback-coordinator.js";
+import { DevSecretStore } from "./modules/security/dev-secret-store.js";
+import { DefaultTwitchApiClient } from "./modules/twitch/twitch-api-client.js";
+import { TwitchOAuthService } from "./modules/twitch/twitch-oauth-service.js";
+import { SqliteTwitchAccountRepository } from "./modules/twitch/sqlite-twitch-account-repository.js";
 import { createDefaultTtsProviderRegistry } from "./modules/tts/tts-provider-registry.js";
 import { findSuggestedPorts, NodePortAvailabilityChecker } from "./server/port-availability.js";
 import { OverlayGateway } from "./websocket/overlay-gateway.js";
@@ -54,6 +58,7 @@ const alertService = new DefaultAlertService({
   generateId: generateAlertConfigurationId
 });
 const assetRepository = new SqliteAssetRepository(database.connection);
+const twitchAccountRepository = new SqliteTwitchAccountRepository(database.connection);
 const assetStore = new LocalAssetStore({ assetDirectory: initialConfig.storage.assetDirectory });
 const mediaImportPipeline = new DefaultMediaImportPipeline({
   validator: new DefaultAssetValidator(),
@@ -80,11 +85,20 @@ const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
 const overlayAccessService = new LocalOverlayAccessService({
   repository: new SqliteOverlayAccessKeyRepository(database.connection)
 });
+const secretStore = new DevSecretStore({ mode: "development" });
 const moderationService = new DefaultModerationService();
 const ttsProviderRegistry = createDefaultTtsProviderRegistry();
 const ttsService = new DefaultTtsService({
   registry: ttsProviderRegistry,
   moderationService
+});
+const twitchAuthService = new TwitchOAuthService({
+  apiClient: new DefaultTwitchApiClient(),
+  clientId: process.env.TWITCH_CLIENT_ID ?? "",
+  clientSecret: process.env.TWITCH_CLIENT_SECRET ?? "",
+  generateState: () => randomBytes(24).toString("base64url"),
+  repository: twitchAccountRepository,
+  secretStore
 });
 const overlayGateway = new OverlayGateway({
   overlayAccessService,
@@ -157,6 +171,7 @@ try {
         overlayModuleConfigService,
         moderationService,
         ttsService,
+        twitchAuthService,
         overlayAccessService,
         overlayCompositionService,
         overlayGateway,
