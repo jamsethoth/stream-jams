@@ -31,18 +31,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 11.2.2
-          run_install: false
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24.16.0"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          node-version-file: .nvmrc
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.2.2 --activate
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -56,12 +54,6 @@ jobs:
       - name: Test
         run: pnpm test
 
-      - name: Install Playwright browsers
-        run: pnpm exec playwright install --with-deps chromium
-
-      - name: E2E
-        run: pnpm test:e2e
-
   build:
     name: build
     runs-on: ubuntu-latest
@@ -71,24 +63,63 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Set up pnpm
-        uses: pnpm/action-setup@v6
-        with:
-          version: 11.2.2
-          run_install: false
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: "24.16.0"
-          cache: pnpm
-          cache-dependency-path: pnpm-lock.yaml
+          node-version-file: .nvmrc
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.2.2 --activate
+          pnpm --version
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
       - name: Build
         run: pnpm build
+
+  e2e:
+    name: e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.60.0-noble
+      options: --ipc=host
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.2.2 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Playwright tests
+        run: pnpm test:e2e
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
   codeql:
     name: codeql

@@ -8,6 +8,14 @@ export default tseslint.config(
     ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", ".agents/**", ".codex/**"]
   },
   {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: {
+      globals: {
+        console: "readonly"
+      }
+    }
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: {

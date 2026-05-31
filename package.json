@@ -21,6 +21,8 @@
     "test": "pnpm test:unit",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:report": "playwright show-report",
+    "playwright:docker-server": "node scripts/playwright-docker-server.mjs",
     "lint": "eslint .",
     "typecheck": "tsc -b tsconfig.json"
   },
