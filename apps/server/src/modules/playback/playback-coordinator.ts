@@ -23,6 +23,23 @@ export interface PlaybackEnqueueResult {
   readonly enqueuedAlertIds: readonly string[];
 }
 
+function dedupeTargets(targets: readonly AlertResolverTarget[]): readonly AlertResolverTarget[] {
+  const deduped: AlertResolverTarget[] = [];
+  const seen = new Set<string>();
+
+  for (const target of targets) {
+    const key = [target.overlayId, target.purpose, target.scope, target.moduleId ?? "alerts"].join(":");
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    deduped.push(target);
+  }
+
+  return deduped;
+}
+
 export interface OverlayPlaybackInstructionSink {
   deliverPlaybackInstruction(instruction: OverlayInstruction): void;
 }
@@ -35,6 +52,7 @@ export interface PlaybackCoordinatorDependencies {
   readonly cooldownService: PlaybackCooldownService;
   readonly dedupeService: PlaybackDedupeService;
   readonly defaultTarget: AlertResolverTarget;
+  readonly additionalTargets?: readonly AlertResolverTarget[];
   readonly visualAssetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly assetRepository?: Pick<AssetRepository, "findById">;
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
@@ -47,7 +65,7 @@ export class PlaybackCoordinator {
   readonly #queue: PlaybackQueue;
   readonly #cooldownService: PlaybackCooldownService;
   readonly #dedupeService: PlaybackDedupeService;
-  readonly #defaultTarget: AlertResolverTarget;
+  readonly #targets: readonly AlertResolverTarget[];
   readonly #visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly #assetRepository: Pick<AssetRepository, "findById"> | null;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
@@ -60,7 +78,7 @@ export class PlaybackCoordinator {
     this.#queue = dependencies.queue;
     this.#cooldownService = dependencies.cooldownService;
     this.#dedupeService = dependencies.dedupeService;
-    this.#defaultTarget = dependencies.defaultTarget;
+    this.#targets = dedupeTargets([dependencies.defaultTarget, ...(dependencies.additionalTargets ?? [])]);
     this.#visualAssetMediaTypes = dependencies.visualAssetMediaTypes ?? {};
     this.#assetRepository = dependencies.assetRepository ?? null;
     this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
@@ -96,11 +114,14 @@ export class PlaybackCoordinator {
       return this.#result("cooldown", matches.map((match) => match.rule.id), []);
     }
 
-    const resolvedAlerts = this.#resolver.resolveMatches({
-      matches: readyMatches,
-      target: this.#defaultTarget,
-      visualAssetMediaTypes: await this.#resolveVisualAssetMediaTypes(readyMatches)
-    });
+    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(readyMatches);
+    const resolvedAlerts = this.#targets.flatMap((target) =>
+      this.#resolver.resolveMatches({
+        matches: readyMatches,
+        target,
+        visualAssetMediaTypes
+      })
+    );
     const snapshot = this.#queue.enqueue({
       sourceEvent: event,
       alerts: resolvedAlerts,

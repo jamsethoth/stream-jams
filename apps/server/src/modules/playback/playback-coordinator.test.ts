@@ -4,6 +4,7 @@ import {
   DefaultPlaybackCooldownService,
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
+  type AlertResolverTarget,
   type AlertRule,
   type AlertService,
   type AlertVariant,
@@ -107,6 +108,40 @@ describe("PlaybackCoordinator", () => {
     expect(deliveredInstructionIds).toEqual(["overlay-instruction-2"]);
   });
 
+  it("resolves configured additional overlay targets into the same playback item", async () => {
+    const deliveredScopes: string[] = [];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([
+        createRule({
+          id: "rule-overlay",
+          variants: [createVariant({ id: "variant-overlay" })]
+        })
+      ]),
+      additionalTargets: [
+        {
+          overlayId: "overlay-1",
+          purpose: "live",
+          scope: "unified"
+        }
+      ],
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          deliveredScopes.push(instruction.scope);
+        }
+      }
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent({ amount: 500 }));
+
+    expect(result.status).toBe("queued");
+    expect(result.enqueuedAlertIds).toEqual(["resolved-alert-1", "resolved-alert-3"]);
+    expect(result.snapshot.current?.alerts.map((alert) => alert.overlayInstruction.scope)).toEqual([
+      "module",
+      "unified"
+    ]);
+    expect(deliveredScopes).toEqual(["module", "unified"]);
+  });
+
   it("matches, resolves, and enqueues all ready alerts from one accepted event", async () => {
     const clock = new MutableClock("2026-05-30T12:00:00.000Z");
     const coordinator = createCoordinator({
@@ -174,6 +209,7 @@ function createCoordinator(
     readonly cooldownService?: DefaultPlaybackCooldownService;
     readonly dedupeService?: DefaultPlaybackDedupeService;
     readonly assetRepository?: Pick<AssetRepository, "findById">;
+    readonly additionalTargets?: readonly AlertResolverTarget[];
     readonly overlayPlaybackSink?: { deliverPlaybackInstruction(instruction: import("@stream-jams/core").OverlayInstruction): void };
     readonly clock?: MutableClock;
   } = {}
@@ -205,6 +241,7 @@ function createCoordinator(
       purpose: "live",
       scope: "module"
     },
+    ...(options.additionalTargets === undefined ? {} : { additionalTargets: options.additionalTargets }),
     ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
     ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink })
   });
