@@ -12,6 +12,26 @@ const webServerHost = requestedWebServerHost;
 const defaultWebServerUrl = "http://127.0.0.1:4173";
 const webServerUrl = process.env.PLAYWRIGHT_WEB_SERVER_URL ?? defaultWebServerUrl;
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? webServerUrl;
+const viteAdditionalAllowedHostsKey = "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS";
+
+function allowViteHost(host: string): void {
+  const existingHosts = process.env[viteAdditionalAllowedHostsKey]
+    ?.split(",")
+    .map((allowedHost) => allowedHost.trim())
+    .filter((allowedHost) => allowedHost.length > 0) ?? [];
+
+  process.env[viteAdditionalAllowedHostsKey] = [...new Set([...existingHosts, host])].join(",");
+}
+
+try {
+  const baseURLHost = new URL(baseURL).hostname;
+
+  if (baseURLHost === "hostmachine") {
+    allowViteHost(baseURLHost);
+  }
+} catch {
+  // Let Playwright report invalid baseURL values with its normal config validation.
+}
 
 export default defineConfig({
   testDir: "./tests/e2e",

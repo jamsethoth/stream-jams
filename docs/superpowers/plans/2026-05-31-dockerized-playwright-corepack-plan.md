@@ -118,6 +118,26 @@ const webServerHost = requestedWebServerHost;
 const defaultWebServerUrl = "http://127.0.0.1:4173";
 const webServerUrl = process.env.PLAYWRIGHT_WEB_SERVER_URL ?? defaultWebServerUrl;
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? webServerUrl;
+const viteAdditionalAllowedHostsKey = "__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS";
+
+function allowViteHost(host: string): void {
+  const existingHosts = process.env[viteAdditionalAllowedHostsKey]
+    ?.split(",")
+    .map((allowedHost) => allowedHost.trim())
+    .filter((allowedHost) => allowedHost.length > 0) ?? [];
+
+  process.env[viteAdditionalAllowedHostsKey] = [...new Set([...existingHosts, host])].join(",");
+}
+
+try {
+  const baseURLHost = new URL(baseURL).hostname;
+
+  if (baseURLHost === "hostmachine") {
+    allowViteHost(baseURLHost);
+  }
+} catch {
+  // Let Playwright report invalid baseURL values with its normal config validation.
+}
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -148,6 +168,7 @@ Why the values are separate:
 - `PLAYWRIGHT_WEB_SERVER_HOST` controls the Vite bind address. Default `127.0.0.1` preserves Stream Jams' local-first default. Docker-backed E2E sets it to `0.0.0.0` for that test run only.
 - `PLAYWRIGHT_WEB_SERVER_URL` is checked by the host-side Playwright test runner while it waits for Vite. It normally remains `http://127.0.0.1:4173`, even when Vite binds to `0.0.0.0`.
 - `PLAYWRIGHT_BASE_URL` is used by browser pages. Docker-backed E2E sets it to `http://hostmachine:4173` because the browser process is inside the Playwright container.
+- When `PLAYWRIGHT_BASE_URL` uses `hostmachine`, `playwright.config.ts` appends that exact host to Vite's `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` value so Vite keeps host checks enabled while accepting the Docker bridge hostname.
 
 - [ ] **Step 2: Typecheck the config change**
 
@@ -258,7 +279,7 @@ Design notes:
 - `--host 0.0.0.0` follows Playwright's remote-server Docker guidance.
 - `-p 127.0.0.1:${port}:${port}` makes the Playwright RPC endpoint available to the host test runner without exposing it on the LAN.
 - `--add-host=hostmachine:host-gateway` gives browsers inside the container a stable hostname for the host machine.
-- The test command sets `PLAYWRIGHT_WEB_SERVER_HOST=0.0.0.0` so Vite accepts connections from the Docker bridge, and `PLAYWRIGHT_BASE_URL=http://hostmachine:4173` so browser pages navigate to the host server correctly.
+- The test command sets `PLAYWRIGHT_WEB_SERVER_HOST=0.0.0.0` so Vite binds for Docker bridge traffic, and `PLAYWRIGHT_BASE_URL=http://hostmachine:4173` so browser pages navigate to the host server correctly. The Playwright config then allows that exact `hostmachine` host through Vite's additional-host allowlist.
 
 - [ ] **Step 2: Add scripts-specific ESLint globals**
 
@@ -549,7 +570,7 @@ Run E2E tests directly on supported Playwright hosts with:
 corepack pnpm test:e2e
 ```
 
-On local operating systems where Playwright browser dependencies are unsupported or inconsistent, run browsers through the official Playwright Docker image instead. The Docker helper follows Playwright's remote-server model: the Playwright server binds to `0.0.0.0` inside the container, Docker publishes that port only to `127.0.0.1` on the host, and browser pages reach the host Vite server through `hostmachine`.
+On local operating systems where Playwright browser dependencies are unsupported or inconsistent, run browsers through the official Playwright Docker image instead. The Docker helper follows Playwright's remote-server model: the Playwright server binds to `0.0.0.0` inside the container, Docker publishes that port only to `127.0.0.1` on the host, and browser pages reach the host Vite server through `hostmachine`. When that Docker base URL is used, the Playwright config adds `hostmachine` to Vite's `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` allowlist rather than disabling host checks.
 
 Terminal 1:
 
@@ -646,6 +667,7 @@ Confirm:
 - Playwright E2E tests run in a dedicated GitHub Actions job inside `mcr.microsoft.com/playwright:v1.60.0-noble`.
 - Local Docker-backed E2E starts a Playwright server with `--host 0.0.0.0` inside the container and publishes the server port only to `127.0.0.1` on the host.
 - Local Docker-backed E2E uses `hostmachine:host-gateway` plus `PLAYWRIGHT_BASE_URL=http://hostmachine:4173` so containerized browsers can reach the host Vite server.
+- Local Docker-backed E2E allows the exact `hostmachine` Vite host through `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` without disabling Vite host checks.
 - `PLAYWRIGHT_WEB_SERVER_HOST` is allowlisted to `127.0.0.1` and `0.0.0.0` before it is interpolated into the web server command.
 - Normal local execution retains the default `127.0.0.1` Vite bind address.
 - `playwright.config.ts` supports environment-specific web server bind host, web server URL, and browser base URL while retaining current default local behavior.

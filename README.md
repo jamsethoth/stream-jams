@@ -36,7 +36,7 @@ Run E2E tests directly on supported Playwright hosts with:
 corepack pnpm test:e2e
 ```
 
-On local operating systems where Playwright browser dependencies are unsupported or inconsistent, run browsers through the official Playwright Docker image instead. The Docker helper follows Playwright's remote-server model: the Playwright server binds to `0.0.0.0` inside the container, Docker publishes that port only to `127.0.0.1` on the host, and browser pages reach the host Vite server through `hostmachine`.
+On local operating systems where Playwright browser dependencies are unsupported or inconsistent, run browsers through the official Playwright Docker image instead. The Docker helper follows Playwright's remote-server model: the Playwright server binds to `0.0.0.0` inside the container, Docker publishes that port only to `127.0.0.1` on the host, and browser pages reach the host Vite server through `hostmachine`. When that Docker base URL is used, the Playwright config adds `hostmachine` to Vite's `__VITE_ADDITIONAL_SERVER_ALLOWED_HOSTS` allowlist rather than disabling host checks.
 
 Terminal 1:
 
