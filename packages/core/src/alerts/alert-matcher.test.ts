@@ -88,6 +88,8 @@ function createCheerEvent(overrides: Partial<CheerEvent> = {}): CheerEvent {
   return {
     id: "event-cheer",
     providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
     occurredAt: "2026-05-30T09:00:00.000Z",
     type: "cheer",
     actor: {

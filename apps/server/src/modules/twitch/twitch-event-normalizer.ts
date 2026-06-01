@@ -149,6 +149,8 @@ function baseEvent(
   return {
     id: message.metadata.message_id,
     providerId: "twitch" as const,
+    sourcePlatform: "twitch" as const,
+    ingestProvider: "twitch" as const,
     occurredAt: requiredString(occurredAt),
     actor: {
       id: actorId,

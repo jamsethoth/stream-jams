@@ -75,10 +75,14 @@ export type * from "./events/types.js";
 export {
   channelPointRedemptionEventSchema,
   cheerEventSchema,
+  externalStreamEventSchema,
   followEventSchema,
+  ingestProviderIdSchema,
   normalizedStreamEventSchema,
   raidEventSchema,
   resubscriptionEventSchema,
+  sourcePlatformIdSchema,
+  streamerBotSubscriptionSelectionSchema,
   subscriptionEventSchema,
   subscriptionTierSchema
 } from "./events/schemas.js";

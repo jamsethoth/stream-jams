@@ -334,6 +334,8 @@ function createFollowEvent(): NormalizedStreamEvent {
   return {
     id: "event-follow",
     providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
     type: "follow",
     occurredAt: "2026-05-30T12:00:00.000Z",
     actor: {

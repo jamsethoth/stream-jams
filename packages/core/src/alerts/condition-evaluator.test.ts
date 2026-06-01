@@ -34,6 +34,19 @@ describe("DefaultAlertConditionEvaluator", () => {
     expect(evaluate({ field: "amount", operator: "range", value: [400, 600] }, event)).toBe(true);
   });
 
+  it("evaluates provider path conditions for source identity fields", () => {
+    const directEvent = createCheerEvent();
+    const streamerBotEvent = createCheerEvent({ ingestProvider: "streamerbot" });
+
+    expect(evaluate({ field: "providerId", operator: "equals", value: "twitch" }, directEvent)).toBe(true);
+    expect(evaluate({ field: "sourcePlatform", operator: "equals", value: "twitch" }, directEvent)).toBe(true);
+    expect(evaluate({ field: "ingestProvider", operator: "equals", value: "twitch" }, directEvent)).toBe(true);
+    expect(evaluate({ field: "providerId", operator: "equals", value: "twitch" }, streamerBotEvent)).toBe(true);
+    expect(evaluate({ field: "sourcePlatform", operator: "equals", value: "twitch" }, streamerBotEvent)).toBe(true);
+    expect(evaluate({ field: "ingestProvider", operator: "equals", value: "streamerbot" }, streamerBotEvent)).toBe(true);
+    expect(evaluate({ field: "ingestProvider", operator: "equals", value: "twitch" }, streamerBotEvent)).toBe(false);
+  });
+
   it("evaluates stack-specific aliases for tiers, tenure, gifts, raids, cheers, and rewards", () => {
     expect(evaluate({ field: "tier", operator: "equals", value: "2000" }, createSubscriptionEvent())).toBe(true);
     expect(evaluate({ field: "tenure", operator: "min", value: 12 }, createResubscriptionEvent())).toBe(true);
@@ -69,6 +82,8 @@ function createCheerEvent(overrides: Partial<CheerEvent> = {}): CheerEvent {
   return {
     id: "event-cheer",
     providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
     occurredAt: "2026-05-30T09:00:00.000Z",
     type: "cheer",
     actor: {
@@ -86,6 +101,8 @@ function createSubscriptionEvent(overrides: Partial<SubscriptionEvent> = {}): Su
   return {
     id: "event-subscription",
     providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
     occurredAt: "2026-05-30T09:00:00.000Z",
     type: "subscription",
     actor: {
@@ -104,6 +121,8 @@ function createResubscriptionEvent(overrides: Partial<ResubscriptionEvent> = {})
   return {
     id: "event-resubscription",
     providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
     occurredAt: "2026-05-30T09:00:00.000Z",
     type: "resubscription",
     actor: {
@@ -123,6 +142,8 @@ function createRaidEvent(overrides: Partial<RaidEvent> = {}): RaidEvent {
   return {
     id: "event-raid",
     providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
     occurredAt: "2026-05-30T09:00:00.000Z",
     type: "raid",
     actor: {
@@ -140,6 +161,8 @@ function createChannelPointEvent(overrides: Partial<ChannelPointRedemptionEvent>
   return {
     id: "event-channel-point",
     providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
     occurredAt: "2026-05-30T09:00:00.000Z",
     type: "channel_point_redemption",
     actor: {

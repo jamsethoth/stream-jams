@@ -1,3 +1,7 @@
+export type IngestProviderId = "twitch" | "streamerbot";
+
+export type SourcePlatformId = "twitch";
+
 export type StreamEventType =
   | "follow"
   | "subscription"
@@ -14,6 +18,8 @@ export interface StreamEventActor {
 export interface BaseNormalizedStreamEvent {
   readonly id: string;
   readonly providerId: "twitch";
+  readonly sourcePlatform: SourcePlatformId;
+  readonly ingestProvider: IngestProviderId;
   readonly occurredAt: string;
   readonly actor: StreamEventActor;
   readonly message: string | null;
@@ -63,3 +69,20 @@ export type NormalizedStreamEvent =
   | CheerEvent
   | RaidEvent
   | ChannelPointRedemptionEvent;
+
+export interface ExternalStreamEvent {
+  readonly id: string;
+  readonly ingestProvider: "streamerbot";
+  readonly subscriptionSourceKey: string | null;
+  readonly upstreamSource: string;
+  readonly upstreamType: string;
+  readonly occurredAt: string;
+  readonly receivedAt: string;
+  readonly payload: Record<string, unknown>;
+  readonly metadata: Record<string, unknown>;
+}
+
+export interface StreamerBotSubscriptionSelection {
+  readonly sourceKey: string;
+  readonly eventTypes: readonly string[];
+}

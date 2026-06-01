@@ -8,6 +8,12 @@ const twitchTokenRef: SecretRef = {
   name: "oauth-token"
 };
 
+const streamerBotTokenRef: SecretRef = {
+  namespace: "streamerbot",
+  accountId: "local-profile",
+  name: "websocket-token"
+};
+
 /** OS secret-store test adapter that records credential calls in memory. */
 class FakeCredentialAdapter implements OsCredentialAdapter {
   readonly values = new Map<string, string>();
@@ -35,6 +41,16 @@ describe("OsSecretStore", () => {
     expect(credentials.values.get("stream-jams-test:twitch:oauth-token:channel-123")).toBe("token-value");
     await expect(store.getSecret(twitchTokenRef)).resolves.toBe("token-value");
     await expect(store.deleteSecret(twitchTokenRef)).resolves.toBeUndefined();
+    await expect(store.getSecret(twitchTokenRef)).resolves.toBeNull();
+  });
+
+  it("stores Streamer.bot secrets under a distinct service namespace", async () => {
+    const credentials = new FakeCredentialAdapter();
+    const store = new OsSecretStore({ credentials, servicePrefix: "stream-jams-test" });
+
+    await store.setSecret(streamerBotTokenRef, "streamerbot-secret");
+
+    expect(credentials.values.get("stream-jams-test:streamerbot:websocket-token:local-profile")).toBe("streamerbot-secret");
     await expect(store.getSecret(twitchTokenRef)).resolves.toBeNull();
   });
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { isoDateTimeSchema, nonEmptyStringSchema, overlayPurposeSchema, overlayScopeSchema } from "../shared/schemas.js";
 
 export const secretRefSchema = z.object({
-  namespace: z.enum(["twitch", "tts", "management", "overlay"]),
+  namespace: z.enum(["twitch", "streamerbot", "tts", "management", "overlay"]),
   accountId: nonEmptyStringSchema,
   name: nonEmptyStringSchema
 });

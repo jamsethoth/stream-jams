@@ -7,6 +7,8 @@ const followEvent: NormalizedStreamEvent = {
   id: "event-follow-1",
   type: "follow",
   providerId: "twitch",
+  sourcePlatform: "twitch",
+  ingestProvider: "twitch",
   occurredAt: "2026-05-31T01:59:59.000Z",
   actor: {
     id: "user-1",

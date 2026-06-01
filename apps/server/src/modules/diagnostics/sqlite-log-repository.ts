@@ -216,7 +216,34 @@ function mapPlaybackLogRow(row: PlaybackLogRow): PlaybackLogRecord {
 }
 
 function parseEvent(value: unknown): NormalizedStreamEvent {
-  return normalizedStreamEventSchema.parse(JSON.parse(String(value)));
+  const parsedJson = JSON.parse(String(value)) as unknown;
+  const currentEvent = normalizedStreamEventSchema.safeParse(parsedJson);
+  if (currentEvent.success) {
+    return currentEvent.data;
+  }
+
+  if (isLegacyTwitchEventWithoutSourceIdentity(parsedJson)) {
+    return normalizedStreamEventSchema.parse({
+      ...parsedJson,
+      sourcePlatform: "twitch",
+      ingestProvider: "twitch"
+    });
+  }
+
+  return normalizedStreamEventSchema.parse(parsedJson);
+}
+
+function isLegacyTwitchEventWithoutSourceIdentity(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    value.providerId === "twitch" &&
+    !Object.prototype.hasOwnProperty.call(value, "sourcePlatform") &&
+    !Object.prototype.hasOwnProperty.call(value, "ingestProvider")
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function normalizeLimit(limit: number): number {

@@ -8,6 +8,10 @@ import {
   uuidLikeIdSchema
 } from "../shared/schemas.js";
 
+export const ingestProviderIdSchema = z.enum(["twitch", "streamerbot"]);
+
+export const sourcePlatformIdSchema = z.enum(["twitch"]);
+
 const streamEventActorSchema = z.object({
   id: nullableNonEmptyStringSchema,
   displayName: nonEmptyStringSchema
@@ -16,6 +20,8 @@ const streamEventActorSchema = z.object({
 const baseEventSchema = z.object({
   id: uuidLikeIdSchema,
   providerId: z.literal("twitch"),
+  sourcePlatform: sourcePlatformIdSchema,
+  ingestProvider: ingestProviderIdSchema,
   occurredAt: isoDateTimeSchema,
   actor: streamEventActorSchema,
   message: z.string().nullable(),
@@ -69,4 +75,25 @@ export const normalizedStreamEventSchema = z.discriminatedUnion("type", [
   channelPointRedemptionEventSchema
 ]);
 
+export const externalStreamEventSchema = z.object({
+  id: uuidLikeIdSchema,
+  ingestProvider: z.literal("streamerbot"),
+  subscriptionSourceKey: nonEmptyStringSchema.nullable(),
+  upstreamSource: nonEmptyStringSchema,
+  upstreamType: nonEmptyStringSchema,
+  occurredAt: isoDateTimeSchema,
+  receivedAt: isoDateTimeSchema,
+  payload: metadataSchema,
+  metadata: metadataSchema
+});
+
+export const streamerBotSubscriptionSelectionSchema = z.object({
+  sourceKey: nonEmptyStringSchema,
+  eventTypes: z.array(nonEmptyStringSchema).min(1)
+});
+
+export type IngestProviderIdInput = z.infer<typeof ingestProviderIdSchema>;
+export type SourcePlatformIdInput = z.infer<typeof sourcePlatformIdSchema>;
 export type NormalizedStreamEventInput = z.infer<typeof normalizedStreamEventSchema>;
+export type ExternalStreamEventInput = z.infer<typeof externalStreamEventSchema>;
+export type StreamerBotSubscriptionSelectionInput = z.infer<typeof streamerBotSubscriptionSelectionSchema>;

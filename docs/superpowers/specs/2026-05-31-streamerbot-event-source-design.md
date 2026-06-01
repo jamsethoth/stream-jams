@@ -1,7 +1,7 @@
 # Streamer.bot Event Source Umbrella Spec
 
 **Date:** 2026-05-31
-**Status:** Draft with reviewed assumptions
+**Status:** Ready for Slice 1 OpenSpec proposal
 **Scope:** Post-MVP event-source expansion
 
 ## Goal
@@ -24,16 +24,22 @@ Current Stream Jams MVP behavior:
 Streamer.bot source docs reviewed:
 
 - WebSocket server configuration defaults to local `127.0.0.1`, port `8080`, endpoint `/`, and optional authentication.
+- The official client default connects to `ws://127.0.0.1:8080/`; the built-in Streamer.bot WebSocket server does not expose a TLS setting in its local server configuration docs.
 - Streamer.bot events are sent only after subscription.
 - Event payloads use a generic envelope with `timeStamp`, `event.source`, `event.type`, and `data`.
+- The server sends an initial `Hello` message. When authentication is enabled, `Hello` includes `authentication.salt` and `authentication.challenge`; direct clients authenticate by sending an `Authenticate` request with the documented SHA-256/base64 challenge response.
 - `GetEvents`, `Subscribe`, `UnSubscribe`, and `GetInfo` are sufficient for passive event-source integration.
+- `GetEvents` response category keys are not guaranteed to have the same casing or display form as emitted `event.source` values, so subscription category keys must be stored separately from received envelope source/type values.
 - `DoAction`, `SendMessage`, and code-trigger execution are outside passive event intake and should be treated as a separate automation-control feature.
 
 Primary references:
 
 - https://docs.streamer.bot/api/websocket/guide/configuration
 - https://docs.streamer.bot/api/websocket/guide/events
+- https://docs.streamer.bot/api/websocket/guide/authentication
 - https://docs.streamer.bot/api/websocket/requests
+- https://docs.streamer.bot/api/websocket/recipes/remote-access
+- https://streamerbot.github.io/client/get-started/setup
 - https://streamerbot.github.io/client/guide/events/
 
 ## Design Position
@@ -83,13 +89,14 @@ The connection record stores non-secret WebSocket settings:
 - port
 - endpoint path
 - selected subscriptions grouped by source/category
-- connection status metadata
+- coarse status metadata needed for diagnostics snapshots
 
 The password, if configured, is stored through the existing `SecretStore` abstraction and is never returned from management APIs.
 
 Default settings should target local Streamer.bot:
 
 ```text
+protocol: ws
 host: 127.0.0.1
 port: 8080
 endpoint: /
@@ -99,25 +106,40 @@ LAN or remote Streamer.bot connections are an advanced future feature because th
 
 Deferred non-local Streamer.bot support is captured in `docs/future-features.md`.
 
-Default transport policy must require encrypted WebSocket connections. The connection model should distinguish `wss://` from `ws://`; `wss://` is the default for all connections and the default for credential-bearing authentication. Insecure `ws://` connections are allowed only for explicitly configured local connections. Credential-bearing authentication may use insecure local `ws://` only when the user has explicitly enabled an insecure-communication override such as `allowInsecureLocalConnection: true`.
+Default transport policy must match Streamer.bot's actual local-first behavior without normalizing remote insecurity into the model.
 
-Credential values must be encrypted at rest inside Stream Jams. Passwords and future tokens are stored only through the app secret-store boundary, backed by an encrypted OS or application credential store for real runtime use. They must not be stored in SQLite/plain config, exported diagnostics, logs, or raw payload records. In-flight credential encryption is required by default and waived only when the explicit insecure-communication override is enabled for a local connection.
+The first implementation default is `ws://127.0.0.1:8080/`. The connection model still stores `protocol: "ws" | "wss"` so future local proxies, trusted tunnels, or non-local support can use secure transport without replacing the provider boundary.
+
+For the local-only first wave:
+
+- `ws://` is allowed only for local loopback host values.
+- `wss://` is allowed for local loopback host values, but is not the default because Streamer.bot's documented server default is plain `ws://`.
+- non-local host values are rejected regardless of protocol;
+- credential-bearing `ws://` requires `allowInsecureLocalConnection: true` and a management warning;
+- unauthenticated local `ws://` requires both `allowUnauthenticatedLocalConnection: true` and `allowInsecureLocalConnection: true`;
+- non-local `ws://` remains invalid.
+
+Credential values must be encrypted at rest inside Stream Jams. Passwords and future tokens are stored only through the app secret-store boundary, backed by an encrypted OS or application credential store for real runtime use. They must not be stored in SQLite/plain config, exported diagnostics, logs, or raw payload records. In-flight credential protection uses `wss://` when available and is waived only when the explicit insecure-communication override is enabled for a local connection.
 
 ### Streamer.bot Protocol Client
 
 The protocol client owns:
 
 - WebSocket connection lifecycle.
+- Streamer.bot `Hello` parsing.
 - Optional authentication handshake.
+- `Authenticate` challenge response generation using the documented password, salt, and challenge flow.
 - `GetInfo` request.
 - `GetEvents` request.
 - `Subscribe` and `UnSubscribe` requests.
 - Parsing request responses by request ID.
+- Failing pending requests on socket close, socket error, request timeout, or malformed response.
 - Validating event envelopes.
 - Reconnect/backoff behavior.
+- Resubscribing after reconnect.
 - Status reporting.
 
-The first implementation should prefer a small direct protocol client over adding `@streamerbot/client`, unless slice work proves that the official client materially reduces complexity without conflicting with existing test and dependency rules. The protocol client must reject credential-bearing authentication over insecure `ws://` unless the connection is local and the explicit insecure-communication override is enabled.
+The first implementation should prefer a small direct protocol client over adding `@streamerbot/client`, unless slice work proves that the official client materially reduces complexity without conflicting with existing test and dependency rules. Default protocol-client behavior should use a 5 second request timeout, fail all pending requests on close/error, and start with bounded reconnect delays such as 1s, 2s, 5s, and 10s. The protocol client must reject credential-bearing authentication over insecure `ws://` unless the connection is local and the explicit insecure-communication override is enabled.
 
 ### External Event
 
@@ -129,6 +151,7 @@ Recommended shape:
 export interface ExternalStreamEvent {
   readonly id: string;
   readonly ingestProvider: "streamerbot" | "twitch";
+  readonly subscriptionSourceKey: string | null;
   readonly upstreamSource: string;
   readonly upstreamType: string;
   readonly occurredAt: string;
@@ -158,6 +181,9 @@ Known Streamer.bot events can map into existing alert-compatible events. Initial
 The normalized event should retain provenance:
 
 ```ts
+providerId: "twitch"; // backward-compatible alert source/platform alias
+sourcePlatform: "twitch";
+ingestProvider: "streamerbot";
 metadata: {
   ingestProvider: "streamerbot",
   upstreamSource: "Twitch",
@@ -167,10 +193,18 @@ metadata: {
 }
 ```
 
-The existing `providerId` field needs a design update before implementation. Two likely options remain under review:
+Resolved decision: Streamer.bot Twitch events are Twitch alert events with Streamer.bot provenance.
 
-1. Treat Streamer.bot Twitch events as Twitch alert events with `sourcePlatform: "twitch"` and `ingestProvider: "streamerbot"`.
-2. Treat Streamer.bot Twitch events as distinct Streamer.bot-originated alert sources.
+For first-wave compatibility:
+
+- keep `providerId: "twitch"` on Twitch-compatible normalized alert events;
+- add `sourcePlatform: "twitch"` as the explicit semantic replacement for the current Twitch-only `providerId` meaning;
+- add `ingestProvider: "twitch" | "streamerbot"` as a first-class normalized event field;
+- direct Twitch EventSub events set `sourcePlatform: "twitch"` and `ingestProvider: "twitch"`;
+- Streamer.bot Twitch events set `sourcePlatform: "twitch"` and `ingestProvider: "streamerbot"`;
+- Streamer.bot source/type values are also retained in metadata.
+
+`providerId` remains for existing alert rules, templates, diagnostics, and playback dedupe. Treat it as a backward-compatible alias for source platform until a later migration can rename it safely.
 
 ### Streamer.bot Twitch Alert Semantics Tradeoff
 
@@ -215,7 +249,9 @@ Cons:
 - Duplicates rule configuration unless shared/multi-source rule support is added first.
 - Can be conceptually awkward because the viewer-facing event still happened on Twitch.
 
-Current recommendation: use Option 1 for normalized Twitch parity, but make `ingestProvider` a first-class condition/diagnostic field before or alongside Streamer.bot alert normalizers. This keeps the user-facing behavior simple while preserving a clear way to separate direct Twitch and Streamer.bot Twitch behavior.
+Decision: use Option 1 for normalized Twitch parity, and make `ingestProvider` a first-class condition/diagnostic field before or alongside Streamer.bot alert normalizers. This keeps the user-facing behavior simple while preserving a clear way to separate direct Twitch and Streamer.bot Twitch behavior.
+
+Known normalizers must not rely on guessed payload fields. Before each event mapping is implemented, the slice must include committed fixtures for representative Streamer.bot `data` payloads. Acceptable fixture provenance is an official Streamer.bot schema/example, a captured local Streamer.bot payload, or a synthetic fixture clearly labeled as synthetic and derived from one of those sources.
 
 ### Generic Event Matching
 
@@ -253,7 +289,8 @@ Raw payload handling:
 - Redact secret-like keys.
 - Avoid logging Streamer.bot password, overlay keys, OAuth tokens, chat authorization, or configured secret refs.
 - Add retention controls from the first diagnostics implementation that stores raw payloads.
-- Default to time-based retention with a purge process. The exact default should be chosen in the diagnostics slice spec, but the implementation must not retain raw payloads indefinitely.
+- Default raw payload retention is 48 hours, matching the existing logging posture, with a purge process.
+- Default maximum stored raw payload size is 64 KiB per event. Larger payloads are truncated with an explicit truncation marker before persistence.
 - Leave room for future archival/export before purge, but do not require archival in the first implementation unless the slice can keep it small and testable.
 
 ### Duplicate Handling
@@ -292,12 +329,12 @@ Management APIs may test connection and update subscriptions. Overlay routes mus
 
 Unauthenticated local Streamer.bot connections are allowed only when explicitly configured. Insecure local transport is also allowed only when explicitly configured. The setup model must distinguish:
 
-- authenticated connection over `wss://` with a stored password;
-- authenticated local connection over `ws://` with a stored password and `allowInsecureLocalConnection: true`;
-- unauthenticated local connection over `wss://`;
+- authenticated local connection over `ws://` with a stored password and `allowInsecureLocalConnection: true`; this is allowed because Streamer.bot's documented local default is `ws://`;
+- authenticated local connection over `wss://` when a future local proxy or supported endpoint makes it available;
 - unauthenticated local connection over `ws://` with `allowUnauthenticatedLocalConnection: true` and `allowInsecureLocalConnection: true`;
+- unauthenticated local connection over `wss://` when available;
 - missing credentials where unauthenticated mode has not been explicitly allowed;
-- invalid configuration where insecure transport is used without the explicit insecure-communication override.
+- invalid configuration where insecure non-local transport is requested or local insecure transport is used without the explicit insecure-communication override.
 
 The management API and later UI must surface warnings for unauthenticated mode, insecure local transport, and credential-bearing insecure transport. It must reject non-local insecure transport.
 
@@ -331,25 +368,218 @@ Management UI should eventually provide:
 
 The UI should not imply Stream Jams can configure Streamer.bot itself. Setup text should make clear that the Streamer.bot WebSocket server must already be enabled in Streamer.bot.
 
-## Implementation Slice Outline
+## Agentic Slice Breakdown
 
-Slice specs will be generated separately after this umbrella spec is reviewed.
+Slice specs will be generated separately after this umbrella spec is reviewed. Each slice below is independently reviewable and should leave the app runnable. The first wave should cover slices 1 through 4.
 
-Recommended sequence:
+### Slice 1: Provider Boundary And Event Model
 
-1. Streamer.bot provider boundary and generic event model.
-2. Streamer.bot protocol client.
-3. Config, persistence, encrypted secrets, TLS-by-default transport policy, explicit unauthenticated/insecure-local opt-ins, and management API.
-4. Generic event intake, raw-payload diagnostics, and retention/purge.
-5. Known alert normalizers for Streamer.bot Twitch parity.
-6. Management UI MVP parity with the Twitch configuration UI.
-7. Management UI event discovery and subscription picker.
-8. Generic Streamer.bot event alert matching.
-9. Optional Streamer.bot action execution integration.
+Objective: make the current Twitch-only normalized event model able to represent source platform and ingestion provider without changing live behavior.
 
-The first wave should cover slices 1 through 4. That creates a correct aggregator foundation before alert behavior depends on it.
+In scope:
 
-## Assumptions For Review
+- Add core types and schemas for `IngestProviderId`, `SourcePlatformId`, `ExternalStreamEvent`, and Streamer.bot subscription selection records.
+- Add `"streamerbot"` to `SecretRef.namespace`.
+- Add `sourcePlatform` and `ingestProvider` to `BaseNormalizedStreamEvent`.
+- Keep direct Twitch EventSub normalized events at `providerId: "twitch"`, `sourcePlatform: "twitch"`, `ingestProvider: "twitch"`.
+- Make diagnostics event-log parsing tolerant of legacy rows that lack the new normalized event fields.
+- Add alert-condition tests proving `sourcePlatform`, `ingestProvider`, and existing `providerId` conditions work through the current condition evaluator.
+
+Out of scope:
+
+- No Streamer.bot network connection.
+- No Streamer.bot connection persistence.
+- No management UI.
+
+Acceptance:
+
+- Existing Twitch EventSub, alert matching, playback, diagnostics, and export tests pass.
+- New schema tests prove both legacy diagnostic rows and new normalized event rows are accepted as intended.
+
+### Slice 2: Streamer.bot Protocol Client
+
+Objective: add a small direct WebSocket protocol client that can connect to a local Streamer.bot server, authenticate when required, discover events, manage subscriptions, validate envelopes, reconnect, and report status.
+
+In scope:
+
+- Add `apps/server/src/modules/streamerbot/streamerbot-client.ts`.
+- Build URLs from `protocol`, `host`, `port`, and `endpoint` using URL/path APIs.
+- Default to `ws://127.0.0.1:8080/`.
+- Parse `Hello`, including optional authentication data.
+- Implement `Authenticate`, `GetInfo`, `GetEvents`, `Subscribe`, and `UnSubscribe`.
+- Correlate responses by request ID and fail pending requests on close/error/timeout.
+- Validate event envelopes with `timeStamp`, `event.source`, `event.type`, and object `data`.
+- Track `idle`, `connecting`, `connected`, `reconnecting`, `degraded`, and `error` states.
+- Reconnect with bounded backoff and resubscribe after reconnect.
+- Preserve subscription category keys separately from received `event.source`.
+
+Out of scope:
+
+- No `DoAction`, `SendMessage`, `ExecuteCodeTrigger`, command mutation, or global variable APIs.
+- No dependency on `@streamerbot/client` unless the slice spec explicitly justifies the dependency.
+
+Acceptance:
+
+- Unit tests cover Hello without auth, Hello with auth challenge, bad auth response, request correlation, malformed envelopes, subscribe/unsubscribe payloads, reconnect/resubscribe, and redacted status errors.
+
+### Slice 3: Connection Persistence, Secrets, And Management API
+
+Objective: persist local Streamer.bot connection settings, store password secrets only through `SecretStore`, validate local-only security policy, and expose management-protected APIs without building the full UI.
+
+In scope:
+
+- Add a SQLite migration and repository for one active Streamer.bot connection record.
+- Store non-secret settings: enabled, protocol, host, port, endpoint, selected subscriptions, warning opt-ins, and coarse status metadata needed for diagnostics snapshots.
+- Keep high-churn socket/runtime status in runtime services and diagnostics snapshots rather than treating it as durable connection configuration.
+- Store password values through `SecretStore` using the new Streamer.bot namespace; persist only secret refs.
+- Validate local-only host values: `127.0.0.1`, `localhost`, `::1`, and equivalent loopback forms that Node URL/address parsing can prove local.
+- Reject non-local hosts in first-wave APIs.
+- Reject credential-bearing `ws://` unless `allowInsecureLocalConnection` is true.
+- Reject unauthenticated local mode unless `allowUnauthenticatedLocalConnection` is true.
+- Add management routes for read/update config, test connection, connect, disconnect, discover events, and update subscriptions.
+- Return warning codes instead of secret values.
+
+Out of scope:
+
+- No browser UI.
+- No LAN/remote support.
+- No production secret-store backend selection beyond using the existing `SecretStore` interface.
+
+Acceptance:
+
+- Route tests cover auth/rate-limit guards, local-only validation, secret redaction, warning opt-ins, test-connection success/failure, and subscription update validation.
+
+### Slice 4: Runtime Wiring And External Event Diagnostics
+
+Objective: wire the Streamer.bot runtime into server startup/config changes and record generic external events without alert playback.
+
+In scope:
+
+- Add a `StreamerBotRuntimeService` that reads persisted config, fetches secrets, starts/stops the protocol client, and exposes status to diagnostics.
+- Add a generic external event intake service that accepts valid Streamer.bot envelopes and assigns Stream Jams event IDs.
+- Add external-event diagnostic persistence separate from the current normalized `event_logs` table.
+- Store bounded, redacted payload JSON with ingest provider, subscription source key, upstream source/type, occurred/received timestamps, correlation ID, processing ID, status, normalized output ID when present, and error message.
+- Use 48 hour default raw-payload retention and a 64 KiB default maximum stored payload size with explicit truncation markers.
+- Include Streamer.bot provider status in diagnostics and redacted export.
+- Accept unknown source/type pairs into diagnostics without alert matching.
+
+Out of scope:
+
+- No known Twitch alert normalization yet.
+- No generic alert matching yet.
+- No UI beyond existing diagnostics views/API extensions if needed to verify the stored records.
+
+Acceptance:
+
+- Unit/repository/route tests prove valid unknown events are stored, invalid envelopes are rejected with safe errors, payload size is bounded, secret-like keys are redacted, purge removes expired raw payload rows, and exports do not leak passwords or overlay keys.
+
+### Slice 5: Streamer.bot Twitch Normalizers
+
+Objective: normalize fixture-backed Streamer.bot Twitch events into existing Twitch alert behavior with first-class provenance.
+
+In scope:
+
+- Add committed fixtures for `Twitch.Follow`, `Twitch.Sub`, `Twitch.ReSub`, `Twitch.Cheer`, `Twitch.Raid`, and `Twitch.RewardRedemption`.
+- Add normalizers for only the fixture-backed fields required by current `NormalizedStreamEvent` variants.
+- Set `providerId: "twitch"`, `sourcePlatform: "twitch"`, and `ingestProvider: "streamerbot"`.
+- Preserve `upstreamSource`, `upstreamType`, Streamer.bot timestamp, and stable upstream IDs when present in metadata.
+- Use stable upstream payload IDs when present; otherwise generate deterministic IDs from timestamp, source/type, and selected stable fields.
+- Forward successful normalized events to the existing `EventPipeline`.
+- Surface duplicate-risk when direct Twitch EventSub and overlapping Streamer.bot Twitch subscriptions are both enabled, but do not suppress cross-provider duplicates automatically.
+
+Out of scope:
+
+- No generic JSON-path conditions.
+- No payload templating from raw Streamer.bot data.
+- No automatic subscription to every Twitch event.
+
+Acceptance:
+
+- Tests prove each supported fixture maps to the expected alert event, malformed supported payloads fail safely, unknown source/type pairs remain diagnostics-only, and direct Twitch alert rules fire for Streamer.bot Twitch events unless conditions exclude `ingestProvider: "streamerbot"`.
+
+### Slice 6: Management UI MVP Parity
+
+Objective: add a Streamer.bot management panel that reaches parity with the current Twitch status/configuration surface before richer discovery UX.
+
+In scope:
+
+- Add a Streamer.bot tab or event-source panel.
+- Show configured endpoint without exposing secrets.
+- Show disabled, disconnected, connecting, connected, degraded, and error states.
+- Provide test connection, connect/enable, disconnect/disable, and save-settings actions.
+- Show explicit warnings for unauthenticated local mode, insecure local transport, and credential-bearing insecure transport.
+- Prevent UI submission of non-local hosts or invalid insecure options.
+- Add management API client types and methods.
+
+Out of scope:
+
+- No event picker beyond showing currently configured subscriptions.
+- No action execution UI.
+
+Acceptance:
+
+- Component tests and Playwright coverage exercise status loading, warning states, validation failures, successful save/test/connect/disconnect flows, and prove password values are never rendered back.
+
+### Slice 7: Event Discovery And Subscription Picker
+
+Objective: add user-facing discovery and subscription selection grouped by Streamer.bot event category.
+
+In scope:
+
+- Use `GetEvents` through the management API.
+- Render discovered categories and event names grouped by source/category key.
+- Save selected subscriptions.
+- Show a duplicate-risk notice when direct Twitch EventSub is enabled and selected Streamer.bot subscriptions include Twitch parity event types.
+- Preserve source/category casing from `GetEvents` and received event source/type casing in diagnostics.
+
+Out of scope:
+
+- No generic alert matching.
+- No arbitrary payload field extraction.
+
+Acceptance:
+
+- UI tests cover discovery success, discovery failure, selection persistence, empty event lists, duplicate-risk notice, and grouped rendering.
+
+### Slice 8: Generic Streamer.bot Alert Matching
+
+Objective: allow alerts for non-normalized Streamer.bot events using only safe provider/source/type conditions.
+
+In scope:
+
+- Add a distinct generic alert event type named `streamerbot_external`.
+- Create a normalized generic alert event only from accepted external Streamer.bot events.
+- Match only `ingestProvider`, `upstreamSource`, and `upstreamType` conditions.
+- Expose only safe generic template fields: source, type, occurred timestamp, and received timestamp.
+
+Out of scope:
+
+- No arbitrary JSON-path matching.
+- No raw payload templating.
+- No script execution.
+
+Acceptance:
+
+- Tests prove generic rules can match exact source/type pairs, cannot inspect raw payload fields, and produce safe playback instructions without leaking raw payload content.
+
+### Slice 9: Streamer.bot Action Execution Design
+
+Objective: produce a separate design/spec for action execution if and when Stream Jams needs active Streamer.bot automation.
+
+This is not implementable from the passive event-source umbrella. It requires a separate threat model covering local automation control, request authorization, audit logging, UI affordances, and failure recovery.
+
+## Slice 1 OpenSpec Handoff
+
+Use this handoff when generating the first OpenSpec change:
+
+- Proposed change name: `add-streamerbot-event-source-foundation`.
+- First target slice: Slice 1, Provider Boundary And Event Model.
+- Primary capability name: `streamerbot-event-source`.
+- Source documents: this umbrella spec, `docs/product-plan.md`, `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`, and the current core event/security/diagnostics code.
+- Likely touched areas: `packages/core/src/events`, `packages/core/src/security`, Twitch normalizer tests, diagnostics repository parsing tests, alert condition tests, and type exports.
+- Explicit Slice 1 non-goals: no WebSocket client, no Streamer.bot connection persistence, no management API, no management UI, no external-event diagnostics table, and no Streamer.bot Twitch normalizers.
+
+## Validated Assumptions
 
 1. Streamer.bot should be a broad event aggregator, not a Twitch-only alternative.
 2. Passive event intake should ship before action execution.
@@ -366,8 +596,8 @@ The first wave should cover slices 1 through 4. That creates a correct aggregato
 13. A direct WebSocket protocol client is preferred initially over adding the official Streamer.bot client dependency.
 14. Streamer.bot action execution should require a separate design because it changes the feature from passive listening to local automation control.
 15. Unauthenticated local Streamer.bot connections are allowed only with explicit configuration and warning.
-16. Insecure local `ws://` transport is allowed only with explicit configuration and warning.
-17. Credential-bearing authentication uses encrypted transport by default, but explicit insecure local communication may carry credentials when `allowInsecureLocalConnection: true` is enabled. Credential storage at rest inside Stream Jams must remain encrypted.
+16. Local `ws://127.0.0.1:8080/` is the first implementation default because it is Streamer.bot's documented default. Treat it as local-only, not as a general insecure transport policy.
+17. Credential-bearing authentication uses `wss://` when available, but explicit insecure local communication may carry credentials when `allowInsecureLocalConnection: true` is enabled. Credential storage at rest inside Stream Jams must remain encrypted.
 18. The setup UI should wait until the integration APIs and diagnostics foundation are in place.
 19. The first Streamer.bot management UI slice should reach parity with the current Twitch connection/status panel before adding richer discovery or subscription-management UI.
 
@@ -381,9 +611,13 @@ The first wave should cover slices 1 through 4. That creates a correct aggregato
 
 4. Unauthenticated local Streamer.bot connections are allowed with explicit configuration and warning.
 
-## Remaining Review Question
+5. Streamer.bot Twitch alert semantics use Twitch alert behavior with `ingestProvider: "streamerbot"` provenance.
 
-1. For normalized Streamer.bot Twitch events, should alert semantics treat the source platform as Twitch with `ingestProvider: "streamerbot"`, or should Streamer.bot-originated Twitch events be distinct alert sources from direct Twitch EventSub?
+6. The earlier `wss://` default assumption was corrected. First-wave local Streamer.bot uses `ws://` by default and rejects non-local hosts.
+
+## Review Question Status
+
+No umbrella-level review questions remain. Slice-specific specs may still choose exact route names, migration IDs, UI copy, and fixture contents, but those choices are bounded by this design.
 
 ## Non-Goals
 

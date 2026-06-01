@@ -1,7 +1,7 @@
 import type { OverlayPurpose, OverlayScope } from "../shared/schemas.js";
 
 export interface SecretRef {
-  readonly namespace: "twitch" | "tts" | "management" | "overlay";
+  readonly namespace: "twitch" | "streamerbot" | "tts" | "management" | "overlay";
   readonly accountId: string;
   readonly name: string;
 }
