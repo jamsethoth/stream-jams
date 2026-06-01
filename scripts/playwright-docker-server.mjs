@@ -50,6 +50,17 @@ const child = spawn("docker", dockerArgs, {
   stdio: "inherit"
 });
 
+child.on("error", (error) => {
+  if (error.code === "ENOENT") {
+    console.error("Docker is required for playwright:docker-server, but the docker command was not found.");
+    process.exitCode = 1;
+    return;
+  }
+
+  console.error("Failed to start Docker Playwright server: " + error.message);
+  process.exitCode = 1;
+});
+
 child.on("exit", (code, signal) => {
   if (signal !== null) {
     console.error(`Docker Playwright server stopped by signal ${signal}`);
