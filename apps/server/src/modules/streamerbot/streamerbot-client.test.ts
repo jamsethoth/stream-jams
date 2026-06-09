@@ -695,6 +695,9 @@ function expectedAuthentication(password: string, salt: string, challenge: strin
 }
 
 function sha256Base64(value: string): string {
+  // Mirrors Streamer.bot's mandated SHA-256/base64 challenge response; this is not password storage.
+  // See docs/security/codeql-suppressions.md for the protocol reference and suppression rationale.
+  // codeql[js/insufficient-password-hash]
   return createHash("sha256").update(value, "utf8").digest("base64");
 }
 
