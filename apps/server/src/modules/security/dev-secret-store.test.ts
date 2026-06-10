@@ -8,6 +8,12 @@ const overlayKeyRef: SecretRef = {
   name: "live-key"
 };
 
+const streamerBotTokenRef: SecretRef = {
+  namespace: "streamerbot",
+  accountId: "local-profile",
+  name: "websocket-token"
+};
+
 describe("DevSecretStore", () => {
   it("stores, reads, and deletes secrets in development mode", async () => {
     const store = new DevSecretStore({ mode: "development" });
@@ -16,6 +22,15 @@ describe("DevSecretStore", () => {
 
     await expect(store.getSecret(overlayKeyRef)).resolves.toBe("ovl_secret_value");
     await expect(store.deleteSecret(overlayKeyRef)).resolves.toBeUndefined();
+    await expect(store.getSecret(overlayKeyRef)).resolves.toBeNull();
+  });
+
+  it("stores Streamer.bot secrets in their own namespace", async () => {
+    const store = new DevSecretStore({ mode: "development" });
+
+    await store.setSecret(streamerBotTokenRef, "streamerbot-secret");
+
+    await expect(store.getSecret(streamerBotTokenRef)).resolves.toBe("streamerbot-secret");
     await expect(store.getSecret(overlayKeyRef)).resolves.toBeNull();
   });
 

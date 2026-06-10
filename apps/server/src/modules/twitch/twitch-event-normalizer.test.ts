@@ -145,6 +145,11 @@ describe("normalizeTwitchEventSubNotification", () => {
     for (const testCase of cases) {
       const normalized = normalizeTwitchEventSubNotification(testCase.input);
       expect(normalizedStreamEventSchema.safeParse(normalized).success).toBe(true);
+      expect(normalized).toMatchObject({
+        providerId: "twitch",
+        sourcePlatform: "twitch",
+        ingestProvider: "twitch"
+      });
       expect(normalized).toMatchObject(testCase.expected);
       expect(normalized.metadata).toMatchObject({
         twitchEventSubType: testCase.input.metadata.subscription_type,
