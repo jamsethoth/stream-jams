@@ -1,3 +1,5 @@
+import { readHttpError } from "./http-errors.js";
+
 export interface DashboardSummary {
   readonly twitch: {
     readonly connected: boolean;
@@ -666,13 +668,4 @@ function mapPlaybackItem(item: PlaybackQueueItemResponse): PlaybackItemView {
     label: firstText ?? item.alerts[0]?.ruleId ?? item.id,
     status: item.status
   };
-}
-
-async function readHttpError(response: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await response.json()) as { readonly error?: { readonly message?: unknown } };
-    return typeof body.error?.message === "string" ? body.error.message : fallback;
-  } catch {
-    return fallback;
-  }
 }

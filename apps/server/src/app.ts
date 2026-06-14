@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
+import { HttpResponseError } from "./http/errors.js";
 import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/routes/alerts.js";
 import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
@@ -16,6 +18,17 @@ import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/r
 import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.js";
 import { registerTwitchAuthRoutes, type TwitchAuthRouteDependencies } from "./http/routes/twitch-auth.js";
 import { registerTwitchEventSubRoutes, type TwitchEventSubRouteDependencies } from "./http/routes/twitch-eventsub.js";
+import { registerWebShellRoutes, type WebShellRenderer } from "./http/routes/web-shell.js";
+
+export interface ServerErrorLogEntry {
+  readonly errorId: string;
+  readonly requestId: string;
+  readonly code: string;
+  readonly statusCode: number;
+  readonly method: string;
+  readonly url: string;
+  readonly error: unknown;
+}
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
@@ -32,14 +45,26 @@ export interface ServerAppDependencies
     Partial<TwitchAuthRouteDependencies>,
     Partial<TwitchEventSubRouteDependencies> {
   readonly metadata: ServerAppMetadata;
+  readonly webBuildDirectory?: string;
+  readonly webShellRenderer?: WebShellRenderer;
+  readonly generateServerErrorId?: () => string;
+  readonly serverErrorLogger?: (entry: ServerErrorLogEntry) => void;
 }
 
 export function createServerApp(dependencies: ServerAppDependencies): FastifyInstance {
   const app = Fastify({
     logger: false
   });
+  registerServerErrorHandler(app, dependencies);
 
   registerHealthRoutes(app, dependencies.metadata);
+  const webShellRenderer = dependencies.webBuildDirectory === undefined
+    ? dependencies.webShellRenderer
+    : registerWebShellRoutes(app, {
+        webBuildDirectory: dependencies.webBuildDirectory,
+        ...(dependencies.webShellRenderer === undefined ? {} : { webShellRenderer: dependencies.webShellRenderer })
+      });
+
   if (dependencies.managementSessionService !== undefined) {
     if (dependencies.managementRateLimitPreHandler === undefined) {
       throw new Error("Management session routes require a rate-limit hook");
@@ -93,11 +118,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     dependencies.overlayCompositionService !== undefined ||
     dependencies.overlayGateway !== undefined
   ) {
-    if (!hasOverlayRouteDependencies(dependencies)) {
-      throw new Error("Overlay routes require access service, composition service, and module registry");
+    if (!hasOverlayRouteDependencies(dependencies) || webShellRenderer === undefined) {
+      throw new Error("Overlay routes require access service, composition service, module registry, and web shell renderer");
     }
 
-    registerOverlayRoutes(app, dependencies);
+    registerOverlayRoutes(app, {
+      ...dependencies,
+      webShellRenderer
+    });
   }
 
   if (dependencies.overlayModuleConfigService !== undefined) {
@@ -158,6 +186,58 @@ function hasModerationRouteDependencies(
     dependencies.moderationService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function registerServerErrorHandler(app: FastifyInstance, dependencies: ServerAppDependencies): void {
+  const generateServerErrorId = dependencies.generateServerErrorId ?? (() => `err_${randomUUID()}`);
+  const logServerError = dependencies.serverErrorLogger ?? defaultServerErrorLogger;
+
+  app.setErrorHandler((error, request, reply) => {
+    const response = toServerErrorResponse(error);
+    const errorId = generateServerErrorId();
+    const requestId = String(request.id);
+
+    logServerError({
+      errorId,
+      requestId,
+      code: response.code,
+      statusCode: response.statusCode,
+      method: request.method,
+      url: request.url,
+      error
+    });
+
+    return reply.status(response.statusCode).send({
+      error: {
+        code: response.code,
+        id: errorId,
+        message: response.message
+      }
+    });
+  });
+}
+
+function toServerErrorResponse(error: unknown): { readonly statusCode: number; readonly code: string; readonly message: string } {
+  if (error instanceof HttpResponseError) {
+    return {
+      statusCode: error.statusCode,
+      code: error.code,
+      message: error.safeMessage
+    };
+  }
+
+  return {
+    statusCode: 500,
+    code: "INTERNAL_SERVER_ERROR",
+    message: "A server error occurred. Use the error ID to find details in backend logs."
+  };
+}
+
+function defaultServerErrorLogger(entry: ServerErrorLogEntry): void {
+  console.error(
+    `[${entry.errorId}] ${entry.code} ${entry.method} ${entry.url} request=${entry.requestId} status=${entry.statusCode}`,
+    entry.error
   );
 }
 

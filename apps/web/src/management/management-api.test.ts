@@ -237,6 +237,35 @@ describe("createHttpManagementApi", () => {
       message: null
     });
   });
+
+  it("includes backend error code and id in thrown messages", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse({ id: "mgmt_session" });
+      }
+
+      if (url === "/config/server") {
+        return jsonResponse(
+          {
+            error: {
+              code: "WEB_BUILD_UNAVAILABLE",
+              id: "err_reference",
+              message: "Web build assets are unavailable."
+            }
+          },
+          { status: 503 }
+        );
+      }
+
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getServerConfig()).rejects.toThrow(
+      "Web build assets are unavailable. (WEB_BUILD_UNAVAILABLE, err_reference)"
+    );
+  });
 });
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {

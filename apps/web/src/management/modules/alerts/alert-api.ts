@@ -1,3 +1,5 @@
+import { readHttpError } from "../../http-errors.js";
+
 export interface AlertCollection {
   readonly id: string;
   readonly name: string;
@@ -182,13 +184,4 @@ export function createHttpAlertConfigurationApi(options: HttpAlertConfigurationA
       return (await response.json()) as AlertRule;
     }
   };
-}
-
-async function readHttpError(response: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await response.json()) as { readonly error?: { readonly message?: unknown } };
-    return typeof body.error?.message === "string" ? body.error.message : fallback;
-  } catch {
-    return fallback;
-  }
 }

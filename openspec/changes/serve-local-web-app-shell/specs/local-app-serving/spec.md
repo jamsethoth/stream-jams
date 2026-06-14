@@ -11,6 +11,10 @@ The system SHALL serve the management UI from the configured Fastify origin at `
 - **WHEN** the management shell is loaded from `/manage`
 - **THEN** client API calls resolve against the same local origin as the page unless explicitly configured otherwise
 
+#### Scenario: Root redirects to management shell
+- **WHEN** a browser requests `/` from the local service
+- **THEN** the service redirects the browser to `/manage`
+
 ### Requirement: Overlay Shell Served From Overlay Routes
 The system SHALL serve browser-source overlay shells from the configured Fastify overlay routes using built client assets.
 
@@ -28,6 +32,19 @@ The system SHALL serve only the intended built web assets and SHALL NOT expose s
 #### Scenario: Source file is not served as a web asset
 - **WHEN** a browser requests a Vite source path such as `/src/main.tsx` from the Fastify service
 - **THEN** the service does not serve the source file as part of the production web surface
+
+### Requirement: Backend Error Responses Are Correlatable And Safe
+The system SHALL log server-side failures with backend detail and a unique error ID, and SHALL expose only safe, correlatable error data to frontend callers.
+
+#### Scenario: API server error includes safe correlation data
+- **WHEN** a management API request fails because of a server-side error
+- **THEN** the backend logs the detailed failure with an error ID and request ID
+- **AND** the HTTP response includes a safe error type, user-safe message, and the same error ID
+- **AND** the response does not include stack traces, filesystem paths, secrets, or raw internal exception detail
+
+#### Scenario: Frontend surfaces backend error envelope
+- **WHEN** the management UI receives a backend error envelope from an API request
+- **THEN** the UI displays a visible error notification or diagnostic that includes the safe error type and error ID
 
 ### Requirement: Documented Local Startup Is Usable
 The system SHALL provide a documented local startup command that launches a usable management UI and overlay shell on the configured local host and port.

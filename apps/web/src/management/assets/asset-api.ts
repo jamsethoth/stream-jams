@@ -1,3 +1,5 @@
+import { readHttpError } from "../http-errors.js";
+
 export interface AssetRecord {
   readonly id: string;
   readonly originalFileName: string;
@@ -78,13 +80,4 @@ export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi 
       return (await response.json()) as AssetRecord;
     }
   };
-}
-
-async function readHttpError(response: Response, fallback: string): Promise<string> {
-  try {
-    const body = (await response.json()) as { readonly error?: { readonly message?: unknown } };
-    return typeof body.error?.message === "string" ? body.error.message : fallback;
-  } catch {
-    return fallback;
-  }
 }
