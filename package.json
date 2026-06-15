@@ -16,9 +16,10 @@
     }
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
-    "build": "pnpm -r build",
-    "test": "pnpm test:unit",
+    "dev": "corepack pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
+    "start:local": "corepack pnpm build && node apps/server/dist/index.js",
+    "build": "corepack pnpm -r build",
+    "test": "corepack pnpm test:unit",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:report": "playwright show-report",

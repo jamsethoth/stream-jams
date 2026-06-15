@@ -4,7 +4,8 @@
 
 - [ ] 1.1 Fetch latest remote state and verify `serve-local-web-app-shell` is present in `origin/main`.
 - [ ] 1.2 Confirm the final `/manage` and overlay shell URL contract from remote `main`.
-- [ ] 1.3 Stop implementation if the dependency is absent or only exists in an unmerged branch.
+- [ ] 1.3 Confirm production-entrypoint smoke coverage uses the Fastify-served local runtime path, not the Vite hot-reload development server.
+- [ ] 1.4 Stop implementation if the dependency is absent or only exists in an unmerged branch.
 
 ## 2. Composition Test Harness
 

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   DefaultAlertService,
   DefaultAssetValidator,
@@ -56,6 +57,8 @@ import { OverlayGateway } from "./websocket/overlay-gateway.js";
 import { startServer } from "./server/start-server.js";
 
 const homeDirectory = homedir();
+const currentDirectory = dirname(fileURLToPath(import.meta.url));
+const webBuildDirectory = resolve(currentDirectory, "../../web/dist");
 const portAvailability = new NodePortAvailabilityChecker();
 const configStore = new FileConfigStore({
   configFilePath: resolveConfigFilePath(homeDirectory),
@@ -228,6 +231,7 @@ try {
           appName: "stream-jams",
           version: "0.0.0"
         },
+        webBuildDirectory,
         managementSessionService,
         serverConfigService,
         overlayModuleRegistry,
@@ -246,7 +250,13 @@ try {
         assetStore,
         playbackCoordinator,
         managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
-        managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
+        managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
+        serverErrorLogger(entry) {
+          console.error(
+            `[${entry.errorId}] ${entry.code} ${entry.method} ${entry.url} request=${entry.requestId} status=${entry.statusCode}`,
+            entry.error
+          );
+        }
       }),
     suggestPorts: (host, port) =>
       findSuggestedPorts({

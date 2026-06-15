@@ -5,7 +5,8 @@
 - [ ] 1.1 Fetch latest remote state and verify `serve-local-web-app-shell` is present in `origin/main`.
 - [ ] 1.2 Verify `add-overlay-output-management` is present in `origin/main`.
 - [ ] 1.3 Confirm final overlay output URL, route-key, and connected-client contracts before choosing media URL shape.
-- [ ] 1.4 Stop implementation if either dependency is absent from remote `main`.
+- [ ] 1.4 Confirm `/assets/` remains scoped to built Vite shell assets and does not become the media-serving surface for overlay-safe user assets.
+- [ ] 1.5 Stop implementation if either dependency is absent from remote `main`.
 
 ## 2. Contract Design
 

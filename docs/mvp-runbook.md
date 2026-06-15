@@ -2,10 +2,14 @@
 
 ## Startup
 
-1. Install dependencies with `pnpm install --frozen-lockfile`.
-2. Start the local app with `pnpm dev`.
+1. Install dependencies with `corepack pnpm install --frozen-lockfile`.
+2. Start the local runtime app with `corepack pnpm start:local`.
 3. Open the management UI at `http://127.0.0.1:39187/manage`.
 4. Keep Stream Jams on localhost. Management sessions and overlay keys are designed for local operation.
+
+`start:local` builds the Vite web bundle first, then starts the Fastify service that serves `/manage`, overlay shell routes, HTTP APIs, static web assets, and overlay WebSocket endpoints from the same local origin.
+
+For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for hot reload and is not the production-style local runtime that streamers should use for browser-source overlays.
 
 ## Port Changes
 

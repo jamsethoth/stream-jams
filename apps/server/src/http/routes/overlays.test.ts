@@ -28,7 +28,8 @@ describe("overlay routes", () => {
       },
       overlayAccessService,
       overlayCompositionService: compositionService,
-      overlayModuleRegistry: createRegistry(["alerts"])
+      overlayModuleRegistry: createRegistry(["alerts"]),
+      webShellRenderer: createTestWebShellRenderer()
     });
 
     const shell = await app.inject({
@@ -43,6 +44,8 @@ describe("overlay routes", () => {
     expect(shell.statusCode).toBe(200);
     expect(shell.headers["content-type"]).toContain("text/html");
     expect(shell.body).toContain('<div id="root"></div>');
+    expect(shell.body).toContain("/assets/index-test.js");
+    expect(shell.body).not.toContain("/src/main.tsx");
     expect(shell.body).not.toContain(created.rawKey);
     expect(composition.statusCode).toBe(200);
     expect(composition.json()).toEqual({
@@ -82,7 +85,8 @@ describe("overlay routes", () => {
       },
       overlayAccessService,
       overlayCompositionService: compositionService,
-      overlayModuleRegistry: createRegistry(["alerts", "music"])
+      overlayModuleRegistry: createRegistry(["alerts", "music"]),
+      webShellRenderer: createTestWebShellRenderer()
     });
 
     const response = await app.inject({
@@ -139,6 +143,7 @@ describe("overlay routes", () => {
       overlayAccessService,
       overlayCompositionService: new RecordingOverlayCompositionService(),
       overlayModuleRegistry: createRegistry(["alerts"]),
+      webShellRenderer: createTestWebShellRenderer(),
       overlayGateway
     });
     await app.ready();
@@ -201,7 +206,8 @@ describe("overlay routes", () => {
       },
       overlayAccessService,
       overlayCompositionService: new RecordingOverlayCompositionService(),
-      overlayModuleRegistry: createRegistry(["alerts"])
+      overlayModuleRegistry: createRegistry(["alerts"]),
+      webShellRenderer: createTestWebShellRenderer()
     });
 
     const missing = await app.inject({
@@ -268,6 +274,17 @@ function createRegistry(moduleIds: readonly string[]): Pick<OverlayModuleRegistr
             id
           }) as OverlayModuleDefinition
       );
+    }
+  };
+}
+
+function createTestWebShellRenderer() {
+  return {
+    async renderManagementShell() {
+      return "<!doctype html><html><body><div id=\"root\"></div><script type=\"module\" src=\"/assets/index-test.js\"></script></body></html>";
+    },
+    async renderOverlayShell() {
+      return "<!doctype html><html><body><div id=\"root\"></div><script type=\"module\" src=\"/assets/index-test.js\"></script></body></html>";
     }
   };
 }

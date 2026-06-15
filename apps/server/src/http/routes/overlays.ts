@@ -7,10 +7,11 @@ import {
   type OverlayPurpose,
   type OverlayRouteAccessRequest
 } from "@stream-jams/core";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
 import { createOverlayAuthPreHandler } from "../middleware/overlay-auth.js";
 import type { OverlayGateway, OverlayGatewaySocket } from "../../websocket/overlay-gateway.js";
+import { sendHtml, type WebShellRenderer } from "./web-shell.js";
 
 const defaultOverlayId = "default";
 
@@ -18,6 +19,7 @@ export interface OverlayRouteDependencies {
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly overlayCompositionService: OverlayCompositionService;
   readonly overlayModuleRegistry: Pick<OverlayModuleRegistry, "listModules">;
+  readonly webShellRenderer: Pick<WebShellRenderer, "renderOverlayShell">;
   readonly overlayGateway?: OverlayGateway;
 }
 
@@ -32,10 +34,10 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
   });
 
   app.get("/overlay/modules/:moduleId/:purpose", { preHandler: modulePreHandler }, async (_request, reply) =>
-    sendOverlayShell(reply)
+    sendHtml(reply, await dependencies.webShellRenderer.renderOverlayShell())
   );
   app.get("/overlay/modules/:moduleId/:purpose/:overlayKey", { preHandler: modulePreHandler }, async (_request, reply) =>
-    sendOverlayShell(reply)
+    sendHtml(reply, await dependencies.webShellRenderer.renderOverlayShell())
   );
   app.get(
     "/overlay/modules/:moduleId/:purpose/:overlayKey/composition",
@@ -57,7 +59,7 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
   );
 
   app.get("/overlay/unified/:purpose/:overlayKey", { preHandler: unifiedPreHandler }, async (_request, reply) =>
-    sendOverlayShell(reply)
+    sendHtml(reply, await dependencies.webShellRenderer.renderOverlayShell())
   );
   app.get(
     "/overlay/unified/:purpose/:overlayKey/composition",
@@ -198,30 +200,4 @@ function readUnifiedParams(params: unknown): {
 
 function parseOverlayPurpose(value: unknown): OverlayPurpose | null {
   return value === "live" || value === "test" ? value : null;
-}
-
-function sendOverlayShell(reply: FastifyReply) {
-  return reply.type("text/html; charset=utf-8").send(`<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Stream Jams Overlay</title>
-    <style>
-      html,
-      body,
-      #root {
-        background: transparent;
-        height: 100%;
-        margin: 0;
-        overflow: hidden;
-        width: 100%;
-      }
-    </style>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
-</html>`);
 }
