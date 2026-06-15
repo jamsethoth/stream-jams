@@ -39,5 +39,5 @@
 
 ## 6. Handoff
 
-- [ ] 6.1 Push and merge this change to remote `main` before starting `add-production-entrypoint-smoke-tests`, `add-overlay-output-management`, `serve-overlay-safe-assets`, or runtime security/origin work.
+- [x] 6.1 Push and merge this change to remote `main` before starting `add-production-entrypoint-smoke-tests`, `add-overlay-output-management`, `serve-overlay-safe-assets`, or runtime security/origin work.
 - [x] 6.2 Note any intentional serving limitations in the runbook and in follow-up OpenSpec tasks.
