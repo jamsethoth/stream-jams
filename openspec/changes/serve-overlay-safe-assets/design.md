@@ -34,9 +34,14 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` and `add-overlay
 ## Decisions
 
 - Prefer route-key-scoped media URLs over unauthenticated `/assets/:assetId` URLs. This keeps the overlay authorization model explicit and avoids making all imported media public to any local browser.
+- Use the existing overlay route key directly for media reads rather than minting a second media token. The media routes are:
+  - `/overlay/modules/:moduleId/:purpose/:overlayKey/assets/:assetId`
+  - `/overlay/unified/:purpose/:overlayKey/assets/:assetId`
+- Authorize media reads through the same overlay access verifier used by overlay shell/composition routes. A valid overlay key may read imported media by asset ID for its route scope; per-rule asset allowlists are deferred until output-specific asset manifests exist.
 - Keep management asset download at its existing management route or explicitly separate it from overlay media reads.
 - Centralize asset URL construction in one shared client/server contract so tests can catch path drift.
-- Return appropriate 401/403/404 responses without revealing whether a protected asset exists when authorization fails.
+- Return `401` for invalid, revoked, or wrong-scope overlay keys before asset lookup. Return `404 OVERLAY_ASSET_NOT_FOUND` for missing records, missing files, and invalid stored paths so overlay responses do not reveal storage implementation details.
+- Use `Cache-Control: no-store` for route-key-scoped media responses so long-lived OBS browser sources do not keep using media URLs after key revocation.
 
 ## Initial Implementation Plan
 
@@ -54,6 +59,4 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` and `add-overlay
 
 ## Open Questions
 
-1. Should overlay media URLs include the overlay route key directly, or should the server mint a derived media token per overlay connection/session?
-2. Should overlays be allowed to read any imported asset by ID, or only assets referenced by enabled rules for that output?
-3. What cache headers should local overlay media responses use for large video/audio files?
+None for this slice. Per-output asset manifests and range streaming can be added later if large-media playback or tighter asset scoping proves necessary.

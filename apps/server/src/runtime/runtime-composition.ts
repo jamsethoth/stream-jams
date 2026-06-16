@@ -243,9 +243,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
   });
+  const redactor = createRedactor();
   const diagnosticsService = new DiagnosticsService({
     repository: diagnosticsLogRepository,
-    redactor: createRedactor(),
+    redactor,
     providerStatusSources: [
       {
         getStatus() {
@@ -327,7 +328,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     serverErrorLogger(entry) {
       console.error(
-        `[${entry.errorId}] ${entry.code} ${entry.method} ${entry.url} request=${entry.requestId} status=${entry.statusCode}`,
+        `[${entry.errorId}] ${entry.code} ${entry.method} ${redactor.redactText(entry.url)} request=${entry.requestId} status=${entry.statusCode}`,
         entry.error
       );
     }

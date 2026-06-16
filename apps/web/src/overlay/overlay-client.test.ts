@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createOverlayAssetUrl,
   createOverlayPlaybackReporter,
   createOverlayWebSocketUrl,
   parseOverlayRoute
@@ -41,6 +42,15 @@ describe("overlay-client", () => {
     );
     expect(createOverlayWebSocketUrl("https://stream-jams.local", route!)).toBe(
       "wss://stream-jams.local/overlay/ws/modules/alerts/live/ovl_moduleKey"
+    );
+  });
+
+  it("builds overlay-scoped media URLs from parsed routes", () => {
+    expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/modules/alerts/live/ovl_moduleKey")!, "asset image")).toBe(
+      "/overlay/modules/alerts/live/ovl_moduleKey/assets/asset%20image"
+    );
+    expect(createOverlayAssetUrl(parseOverlayRoute("/overlay/unified/test/ovl_unifiedKey")!, "asset-audio")).toBe(
+      "/overlay/unified/test/ovl_unifiedKey/assets/asset-audio"
     );
   });
 
