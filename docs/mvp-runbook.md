@@ -15,6 +15,12 @@ For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for
 
 Run `corepack pnpm test` before PRs. This includes unit coverage and the production-entrypoint smoke coverage that composes the local runtime through the same factory as the CLI entrypoint, then validates the Fastify-served management shell, overlay shells, static assets, overlay WebSocket registration, and representative management APIs without starting Vite or Playwright.
 
+## Overlay Module Config
+
+The Alerts module is enabled by default on a fresh database. Changes to module enablement and canvas size are persisted in SQLite and survive local runtime restarts over the same data directory.
+
+The module config UI only saves schema-backed canvas fields. Alert collections, rules, variants, and media setup live in the alert configuration UI instead of the module config save path.
+
 ## Port Changes
 
 1. Open `Settings` in the management UI.

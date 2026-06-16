@@ -85,6 +85,37 @@ describe("overlay module config service", () => {
     ).rejects.toBeInstanceOf(InvalidOverlayModuleConfigError);
   });
 
+  it("rejects unknown Alerts config fields without replacing saved config", async () => {
+    const { service } = createService(() => later);
+    const savedConfig = await service.saveModuleConfig({
+      moduleId: "alerts",
+      enabled: false,
+      config: {
+        canvas: {
+          width: 1280,
+          height: 720
+        }
+      }
+    });
+
+    await expect(
+      service.saveModuleConfig({
+        moduleId: "alerts",
+        enabled: true,
+        config: {
+          canvas: {
+            width: 1920,
+            height: 1080
+          },
+          collection: {
+            name: "Default"
+          }
+        }
+      })
+    ).rejects.toBeInstanceOf(InvalidOverlayModuleConfigError);
+    await expect(service.getModuleConfig("alerts")).resolves.toEqual(savedConfig);
+  });
+
   it("toggles enabled state without replacing existing module config", async () => {
     const { service } = createService(() => later);
     await service.saveModuleConfig({

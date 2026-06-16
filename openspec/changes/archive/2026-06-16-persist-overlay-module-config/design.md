@@ -33,7 +33,10 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` has landed in re
 
 - Wire `SqliteOverlayModuleConfigRepository` in runtime composition rather than adding a second persistence layer.
 - Add a restart-style integration test over the same temp database to prove durability.
-- Treat non-schema wizard fields as a UI/product gap rather than persisting unknown keys. This keeps persistence predictable and avoids hiding accidental config loss.
+- Remove or hide non-schema wizard fields from the module config UI rather than persisting unknown keys. This keeps persistence predictable and avoids hiding accidental config loss.
+- Keep the current Alerts module default enabled state on fresh databases. A future startup wizard can let users choose which modules to configure first once multiple modules exist.
+- Add one narrow production-runtime smoke check that proves runtime composition uses durable module config wiring; keep edge cases in lower-level integration tests.
+- Reject unknown module config fields and leave persisted config unchanged.
 - Keep the module config service responsible for validation and repository orchestration.
 
 ## Initial Implementation Plan
@@ -41,17 +44,18 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` has landed in re
 1. Confirm app-shell runtime composition has landed in remote `main`.
 2. Replace runtime in-memory repository wiring with the SQLite repository.
 3. Add integration tests for save, restart, read-back, invalid config rejection, and default config behavior.
-4. Audit the module UI fields against the config schema and remove or label non-persistent fields as appropriate.
+4. Audit the module UI fields against the config schema and remove or hide non-persistent fields.
 5. Update final-review docs and run validation.
 
 ## Risks / Trade-offs
 
-- Unknown wizard fields may currently appear to save but are stripped by schema validation. Mitigation: make schema-backed fields explicit and move alert-specific setup to the alert UI change.
+- Unknown wizard fields may currently appear to save but are rejected by schema validation. Mitigation: show only schema-backed fields and move alert-specific setup to the alert UI change.
 - A direct repository swap can conflict with other runtime composition changes. Mitigation: gate on the app-shell branch and keep the edit narrow.
 - Existing local databases may have no row for module config. Mitigation: preserve default config behavior when no row exists.
 
-## Open Questions
+## Resolved Questions
 
-1. Should non-schema wizard fields be removed from the module wizard now, or left visible but clearly handled by a later alert-configuration slice?
-2. Should module enabled state default to enabled or disabled on a fresh database?
-3. Should module config persistence be included in the production-entrypoint smoke suite once that suite exists?
+1. Non-schema wizard fields should be removed or hidden from this module config UI.
+2. Alerts should remain enabled by default on a fresh database.
+3. Module config persistence should get one narrow production-runtime smoke check now that the harness exists.
+4. Unknown module config fields should be rejected rather than silently omitted.

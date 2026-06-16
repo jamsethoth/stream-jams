@@ -19,11 +19,11 @@ The system SHALL return module definition defaults when no persisted config exis
 
 #### Scenario: Fresh database returns default config
 - **WHEN** the app starts with a fresh database and management requests Alerts module config
-- **THEN** the system returns the default enabled state and canvas config defined by the module definition
+- **THEN** the system returns the enabled default state and canvas config defined by the Alerts module definition
 
 ### Requirement: Unknown Config Fields Are Not Treated As Durable
 The system SHALL NOT silently depend on unknown module config fields that are not accepted by the module config schema.
 
-#### Scenario: Unknown field is not durable config
+#### Scenario: Unknown field is rejected
 - **WHEN** a module config request includes fields outside the schema-backed config
-- **THEN** those fields are rejected or omitted according to the documented validation behavior
+- **THEN** the system rejects the save and does not update persisted config
