@@ -29,15 +29,15 @@ Validation after the hardening slice:
 
 **Validation:** `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build` passed during the `replace-dev-secret-store` implementation. Coverage includes credential adapter selection, unavailable-store failure behavior, token redaction, and restart-style token retrieval.
 
-### P1: Persist overlay module configuration in the default runtime
+### P1: Persist overlay module configuration in the default runtime - resolved
 
-**Repo evidence:** `apps/server/src/index.ts` wires `DefaultOverlayModuleConfigService` to `InMemoryServerOverlayModuleConfigRepository`. The durable `SqliteOverlayModuleConfigRepository` and `overlay_module_config` table already exist and are tested. Slice 8 explicitly deferred switching runtime wiring until later integration decisions, but no later slice replaced the in-memory runtime repository.
+**Repo evidence:** Runtime composition wires `DefaultOverlayModuleConfigService` to `SqliteOverlayModuleConfigRepository`, and the durable `overlay_module_config` table is created by the initial SQLite migration before runtime services are composed. In-memory module config storage remains limited to core/service tests and narrow route fixtures.
 
-**Why it matters:** Module enabled state and wizard configuration are user settings. SQLite is already the MVP local persistence boundary, and SQLite documents transactional, durable behavior for committed local data. Keeping module config in memory means management changes can be lost across server restarts while other MVP records persist.
+**Why it matters:** Module enabled state and wizard configuration are user settings. SQLite is already the MVP local persistence boundary, and SQLite documents transactional, durable behavior for committed local data. Runtime module config now survives local server restarts over the same database.
 
 **Sources:** SQLite transactional guarantees: https://www.sqlite.org/transactional.html
 
-**Suggested next step:** Wire `SqliteOverlayModuleConfigRepository` into `apps/server/src/index.ts`, add an app-level persistence test, and include a restart-style integration test that saves module config, recreates services over the same temp database, and reads it back.
+**Validation:** Coverage includes repository tests, API invalid/unknown config rejection, fresh database defaults, UI canvas-config saves, and a restart-style runtime composition smoke test that saves module config, recreates services over the same temp database, and reads it back.
 
 ### P1: Add dependency update automation, not only audit reporting
 

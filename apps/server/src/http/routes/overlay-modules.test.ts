@@ -117,6 +117,67 @@ describe("overlay module routes", () => {
     });
   });
 
+  it("returns 400 for unknown Alerts config fields without replacing saved config", async () => {
+    const { app, authHeaders } = await createAppWithOverlayModules();
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/overlay-modules/alerts/config",
+      headers: authHeaders,
+      payload: {
+        enabled: false,
+        config: {
+          canvas: {
+            width: 1280,
+            height: 720
+          }
+        }
+      }
+    });
+
+    const rejected = await app.inject({
+      method: "PUT",
+      url: "/overlay-modules/alerts/config",
+      headers: authHeaders,
+      payload: {
+        enabled: true,
+        config: {
+          canvas: {
+            width: 1920,
+            height: 1080
+          },
+          collection: {
+            name: "Default"
+          }
+        }
+      }
+    });
+    const current = await app.inject({
+      method: "GET",
+      url: "/overlay-modules/alerts/config",
+      headers: authHeaders
+    });
+
+    expect(saved.statusCode).toBe(200);
+    expect(rejected.statusCode).toBe(400);
+    expect(rejected.json()).toEqual({
+      error: {
+        code: "INVALID_OVERLAY_MODULE_CONFIG",
+        message: "Invalid overlay module config for \"alerts\"",
+        moduleId: "alerts"
+      }
+    });
+    expect(current.json()).toMatchObject({
+      moduleId: "alerts",
+      enabled: false,
+      config: {
+        canvas: {
+          width: 1280,
+          height: 720
+        }
+      }
+    });
+  });
+
   it("toggles module enabled state independently from module config", async () => {
     const { app, authHeaders } = await createAppWithOverlayModules();
     await app.inject({

@@ -183,6 +183,90 @@ describe("runtime app composition smoke", () => {
     socket.close();
   });
 
+  it("persists overlay module config across runtime restart", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const firstComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: {
+        TWITCH_CLIENT_ID: "test-client",
+        TWITCH_CLIENT_SECRET: "test-secret"
+      },
+      secretStore: new LocalSecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-06-16T12:00:00.000Z"),
+      generateManagementSessionId: () => "mgmt_module-config-restart"
+    });
+    runtimeCompositions.push(firstComposition);
+
+    const session = await firstComposition.app.inject({
+      method: "POST",
+      url: "/auth/management/sessions"
+    });
+    const authorization = `Bearer ${(session.json() as { readonly id: string }).id}`;
+    const saved = await firstComposition.app.inject({
+      method: "PUT",
+      url: "/overlay-modules/alerts/config",
+      headers: { authorization },
+      payload: {
+        enabled: false,
+        config: {
+          canvas: {
+            width: 1280,
+            height: 720
+          }
+        }
+      }
+    });
+
+    expect(saved.statusCode).toBe(200);
+    await firstComposition.close();
+    runtimeCompositions.splice(runtimeCompositions.indexOf(firstComposition), 1);
+
+    const secondComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: {
+        TWITCH_CLIENT_ID: "test-client",
+        TWITCH_CLIENT_SECRET: "test-secret"
+      },
+      secretStore: new LocalSecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-06-16T12:05:00.000Z"),
+      generateManagementSessionId: () => "mgmt_module-config-restarted"
+    });
+    runtimeCompositions.push(secondComposition);
+
+    const restartedSession = await secondComposition.app.inject({
+      method: "POST",
+      url: "/auth/management/sessions"
+    });
+    const restartedAuthorization = `Bearer ${(restartedSession.json() as { readonly id: string }).id}`;
+    const restored = await secondComposition.app.inject({
+      method: "GET",
+      url: "/overlay-modules/alerts/config",
+      headers: { authorization: restartedAuthorization }
+    });
+
+    expect(restored.statusCode).toBe(200);
+    expect(restored.json()).toMatchObject({
+      moduleId: "alerts",
+      enabled: false,
+      config: {
+        canvas: {
+          width: 1280,
+          height: 720
+        }
+      }
+    });
+  });
+
   it("uses the durable credential adapter path for normal development and production runtimes", async () => {
     for (const nodeEnv of ["development", "production"] as const) {
       const testRoot = await createTemporaryDirectory();
