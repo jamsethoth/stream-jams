@@ -42,6 +42,18 @@ Overlay route keys are secrets. Do not paste them into chat, logs, screenshots, 
 4. Return to the management UI and verify the connected account and EventSub status.
 5. Use `Refresh Twitch` after token or connection issues, and `Disconnect Twitch` before switching accounts.
 
+Twitch access and refresh tokens are stored through the OS credential store in both normal development and production-style local startup. Stream Jams uses Windows Credential Manager on Windows, macOS Keychain on macOS, and Linux Secret Service/libsecret on Linux. Token values are not stored in SQLite, config files, diagnostics exports, browser bundles, overlay URLs, or logs.
+
+The `@napi-rs/keyring` dependency is the Node adapter Stream Jams uses to call those industry-standard OS credential stores. It is not a separate secret store or plaintext persistence backend.
+
+If the OS credential store is unavailable, the local app still starts and unrelated features remain usable. Diagnostics show a `runtime-secret-store` provider error, and Twitch connect, refresh, and token-storage operations fail closed with this message:
+
+```text
+Credential store is unavailable. Configure Windows Credential Manager, macOS Keychain, or Linux Secret Service/libsecret before connecting Twitch.
+```
+
+On Linux, install and unlock a Secret Service-compatible keyring such as GNOME Keyring or KWallet through the desktop session before connecting Twitch. There is no plaintext fallback for real runtime tokens; in-memory or fake secret stores are only for automated tests.
+
 ## Diagnostics Export
 
 1. Open `Diagnostics` in the management UI.

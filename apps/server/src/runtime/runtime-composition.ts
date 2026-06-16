@@ -41,8 +41,12 @@ import { createStaticOverlayModuleRegistry } from "../modules/overlay-modules/st
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
 import { SqliteOverlayAccessKeyRepository } from "../modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "../modules/playback/playback-coordinator.js";
-import { DevSecretStore } from "../modules/security/dev-secret-store.js";
+import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
 import { createRedactor } from "../modules/security/redactor.js";
+import {
+  createRuntimeSecretStore,
+  type RuntimeSecretStoreStatus
+} from "../modules/security/runtime-secret-store.js";
 import { createDefaultTtsProviderRegistry } from "../modules/tts/tts-provider-registry.js";
 import { DefaultTwitchApiClient, type TwitchApiClient } from "../modules/twitch/twitch-api-client.js";
 import {
@@ -61,6 +65,7 @@ export interface RuntimeAppCompositionOptions {
   readonly homeDirectory: string;
   readonly webBuildDirectory: string;
   readonly environment?: NodeJS.ProcessEnv;
+  readonly credentialAdapter?: OsCredentialAdapter;
   readonly configStore?: ConfigStore;
   readonly portAvailability?: PortAvailabilityChecker;
   readonly secretStore?: SecretStore;
@@ -80,6 +85,7 @@ export interface RuntimeAppComposition {
   readonly database: StreamJamsDatabase;
   readonly managementSessionService: LocalManagementSessionService;
   readonly overlayAccessService: LocalOverlayAccessService;
+  readonly runtimeSecretStoreStatus: RuntimeSecretStoreStatus;
   readonly twitchEventSubRuntimeService: TwitchEventSubRuntimeService;
   close(): Promise<void>;
 }
@@ -137,7 +143,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ...(options.generateOverlayAccessKeyId === undefined ? {} : { generateId: options.generateOverlayAccessKeyId }),
     ...(options.generateRawOverlayRouteKey === undefined ? {} : { generateRawKey: options.generateRawOverlayRouteKey })
   });
-  const secretStore = options.secretStore ?? new DevSecretStore({ mode: "development" });
+  const runtimeSecretStore = await createRuntimeSecretStore({
+    ...(options.secretStore === undefined ? {} : { secretStore: options.secretStore }),
+    ...(options.credentialAdapter === undefined ? {} : { credentials: options.credentialAdapter }),
+    now
+  });
+  const secretStore = runtimeSecretStore.secretStore;
   const moderationService = new DefaultModerationService();
   const ttsProviderRegistry = createDefaultTtsProviderRegistry();
   const ttsService = new DefaultTtsService({
@@ -215,12 +226,25 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       await twitchEventSubRuntimeService.connectStoredAccount();
     },
     repository: twitchAccountRepository,
-    secretStore
+    secretStore,
+    assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
   });
   const diagnosticsService = new DiagnosticsService({
     repository: diagnosticsLogRepository,
     redactor: createRedactor(),
     providerStatusSources: [
+      {
+        getStatus() {
+          const status = runtimeSecretStore.status;
+          return {
+            providerId: "runtime-secret-store",
+            label: "Runtime secret store",
+            state: status.state,
+            lastErrorAt: status.lastErrorAt,
+            message: status.message
+          };
+        }
+      },
       {
         getStatus() {
           const status = twitchEventSubRuntimeService.getStatus();
@@ -300,6 +324,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     database,
     managementSessionService,
     overlayAccessService,
+    runtimeSecretStoreStatus: runtimeSecretStore.status,
     twitchEventSubRuntimeService,
     async close() {
       twitchEventSubRuntimeService.disconnect();

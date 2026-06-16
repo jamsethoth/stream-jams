@@ -1,5 +1,6 @@
 import type { SecretStore } from "@stream-jams/core";
 import type { EventIngestionStatus } from "../events/event-ingestion-service.js";
+import { runtimeSecretStoreUnavailableMessage } from "../security/runtime-secret-store.js";
 import type { TwitchAccountRepository } from "./twitch-account-repository.js";
 import { createTwitchTokenSecretRef } from "./twitch-oauth-service.js";
 import type {
@@ -79,7 +80,18 @@ export class TwitchEventSubRuntimeService {
       return this.getStatus();
     }
 
-    const accessToken = await this.#secretStore.getSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
+    let accessToken: string | null;
+    try {
+      accessToken = await this.#secretStore.getSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
+    } catch {
+      this.#eventSubClient.disconnect();
+      this.#runtimeError = {
+        message: runtimeSecretStoreUnavailableMessage,
+        occurredAt: this.#now().toISOString()
+      };
+      return this.getStatus();
+    }
+
     if (accessToken === null) {
       this.#eventSubClient.disconnect();
       this.#runtimeError = {

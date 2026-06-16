@@ -16,6 +16,10 @@ try {
     webBuildDirectory,
     portAvailability
   });
+  if (composition.runtimeSecretStoreStatus.state === "degraded") {
+    console.warn(composition.runtimeSecretStoreStatus.message);
+  }
+
   const result = await startServer({
     configStore: composition.configStore,
     createApp: () => composition.app,

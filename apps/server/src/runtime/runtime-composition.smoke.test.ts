@@ -6,9 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { TwitchApiClient, TwitchCurrentUser, TwitchTokenGrant, TwitchValidatedToken } from "../modules/twitch/twitch-api-client.js";
 import type {
   TwitchEventSubApiClient,
+  TwitchEventSubCreateSubscriptionInput,
   TwitchEventSubCreateSubscriptionResult,
   TwitchEventSubSocket
 } from "../modules/twitch/twitch-eventsub-client.js";
+import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
+import { runtimeSecretStoreUnavailableMessage } from "../modules/security/runtime-secret-store.js";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
 
 const temporaryDirectories: string[] = [];
@@ -179,6 +182,177 @@ describe("runtime app composition smoke", () => {
     });
     socket.close();
   });
+
+  it("uses the durable credential adapter path for normal development and production runtimes", async () => {
+    for (const nodeEnv of ["development", "production"] as const) {
+      const testRoot = await createTemporaryDirectory();
+      const credentials = new RecordingCredentialAdapter();
+      const composition = await createRuntimeAppComposition({
+        homeDirectory: testRoot,
+        webBuildDirectory: await createWebBuildFixture(testRoot),
+        configStore: new StaticConfigStore(createConfig(testRoot)),
+        credentialAdapter: credentials,
+        environment: {
+          NODE_ENV: nodeEnv,
+          TWITCH_CLIENT_ID: "test-client",
+          TWITCH_CLIENT_SECRET: "test-secret"
+        },
+        twitchApiClient: new ThrowingTwitchApiClient(),
+        twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+        twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+        now: () => new Date("2026-06-16T12:00:00.000Z")
+      });
+      runtimeCompositions.push(composition);
+
+      expect(composition.runtimeSecretStoreStatus.state).toBe("ready");
+      expect(credentials.operations.map((operation) => operation.kind)).toEqual(["set", "get", "delete"]);
+    }
+  });
+
+  it("keeps the app available but fails Twitch OAuth closed when credential storage is unavailable", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      credentialAdapter: new FailingCredentialAdapter(),
+      environment: {
+        TWITCH_CLIENT_ID: "test-client",
+        TWITCH_CLIENT_SECRET: "test-secret"
+      },
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-06-16T12:00:00.000Z"),
+      generateManagementSessionId: () => "mgmt_unavailable-secret-store"
+    });
+    runtimeCompositions.push(composition);
+
+    const app = composition.app;
+    const session = await app.inject({
+      method: "POST",
+      url: "/auth/management/sessions"
+    });
+    const authorization = `Bearer ${(session.json() as { readonly id: string }).id}`;
+    const diagnostics = await app.inject({
+      method: "GET",
+      url: "/diagnostics?limit=5",
+      headers: { authorization }
+    });
+    const start = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: { authorization },
+      payload: {
+        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
+      }
+    });
+
+    expect(composition.runtimeSecretStoreStatus).toEqual({
+      state: "degraded",
+      lastErrorAt: "2026-06-16T12:00:00.000Z",
+      message: runtimeSecretStoreUnavailableMessage
+    });
+    expect(diagnostics.statusCode).toBe(200);
+    expect(diagnostics.json()).toMatchObject({
+      providerErrors: [
+        expect.objectContaining({
+          providerId: "runtime-secret-store",
+          label: "Runtime secret store",
+          message: runtimeSecretStoreUnavailableMessage
+        })
+      ]
+    });
+    expect(start.statusCode).toBe(502);
+    expect(start.json()).toMatchObject({
+      error: {
+        code: "TWITCH_OAUTH_PROVIDER_ERROR",
+        message: runtimeSecretStoreUnavailableMessage
+      }
+    });
+  });
+
+  it("persists Twitch token references across runtime restart without exposing token material in diagnostics", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const credentials = new RecordingCredentialAdapter();
+    const firstComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      credentialAdapter: credentials,
+      environment: {
+        TWITCH_CLIENT_ID: "test-client",
+        TWITCH_CLIENT_SECRET: "test-secret"
+      },
+      twitchApiClient: new RecordingTwitchApiClient(),
+      twitchEventSubApiClient: new RecordingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-06-16T12:00:00.000Z"),
+      generateManagementSessionId: () => "mgmt_restart-secret-store"
+    });
+    runtimeCompositions.push(firstComposition);
+
+    const firstApp = firstComposition.app;
+    const session = await firstApp.inject({
+      method: "POST",
+      url: "/auth/management/sessions"
+    });
+    const authorization = `Bearer ${(session.json() as { readonly id: string }).id}`;
+    const start = await firstApp.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: { authorization },
+      payload: {
+        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
+      }
+    });
+    const callback = await firstApp.inject({
+      method: "GET",
+      url: `/twitch/auth/callback?code=oauth-code&state=${encodeURIComponent((start.json() as { readonly state: string }).state)}`
+    });
+    const diagnosticsExport = await firstApp.inject({
+      method: "GET",
+      url: "/diagnostics/export?limit=5",
+      headers: { authorization }
+    });
+
+    expect(callback.statusCode).toBe(200);
+    expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-1");
+    expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-1");
+    expect(JSON.stringify(diagnosticsExport.json())).not.toContain("access-token-1");
+    expect(JSON.stringify(diagnosticsExport.json())).not.toContain("refresh-token-1");
+
+    await firstComposition.close();
+    runtimeCompositions.splice(runtimeCompositions.indexOf(firstComposition), 1);
+
+    const eventSubApiClient = new RecordingTwitchEventSubApiClient();
+    const sockets: ControlledTwitchSocket[] = [];
+    const secondComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      credentialAdapter: credentials,
+      environment: {
+        TWITCH_CLIENT_ID: "test-client",
+        TWITCH_CLIENT_SECRET: "test-secret"
+      },
+      twitchApiClient: new RecordingTwitchApiClient(),
+      twitchEventSubApiClient: eventSubApiClient,
+      twitchEventSubSocketFactory: () => {
+        const socket = new ControlledTwitchSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      now: () => new Date("2026-06-16T12:05:00.000Z")
+    });
+    runtimeCompositions.push(secondComposition);
+
+    await secondComposition.twitchEventSubRuntimeService.connectStoredAccount();
+    sockets[0]?.emitWelcome();
+    await waitFor(() => eventSubApiClient.requests.length > 0);
+
+    expect(eventSubApiClient.requests[0]?.accessToken).toBe("access-token-1");
+  });
 });
 
 async function createWebBuildFixture(testRoot: string): Promise<string> {
@@ -277,6 +451,133 @@ class LocalSecretStore implements SecretStore {
   }
 }
 
+class RecordingCredentialAdapter implements OsCredentialAdapter {
+  readonly operations: { readonly kind: "set" | "get" | "delete"; readonly service: string; readonly account: string }[] = [];
+  readonly values = new Map<string, string>();
+
+  async setPassword(service: string, account: string, password: string): Promise<void> {
+    this.operations.push({ kind: "set", service, account });
+    this.values.set(secretKeyFromCredential(service, account), password);
+  }
+
+  async getPassword(service: string, account: string): Promise<string | null> {
+    this.operations.push({ kind: "get", service, account });
+    return this.values.get(secretKeyFromCredential(service, account)) ?? null;
+  }
+
+  async deletePassword(service: string, account: string): Promise<boolean> {
+    this.operations.push({ kind: "delete", service, account });
+    return this.values.delete(secretKeyFromCredential(service, account));
+  }
+}
+
+class FailingCredentialAdapter implements OsCredentialAdapter {
+  async setPassword(): Promise<void> {
+    throw new Error("secret service unavailable");
+  }
+
+  async getPassword(): Promise<string | null> {
+    throw new Error("secret service unavailable");
+  }
+
+  async deletePassword(): Promise<boolean> {
+    throw new Error("secret service unavailable");
+  }
+}
+
+class RecordingTwitchApiClient implements TwitchApiClient {
+  async exchangeAuthorizationCode(): Promise<TwitchTokenGrant> {
+    return {
+      accessToken: "access-token-1",
+      refreshToken: "refresh-token-1",
+      expiresIn: 14_400,
+      scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
+      tokenType: "bearer"
+    };
+  }
+
+  async refreshUserToken(): Promise<TwitchTokenGrant> {
+    throw new Error("Twitch token refresh must not run in runtime composition smoke tests");
+  }
+
+  async validateToken(): Promise<TwitchValidatedToken> {
+    return {
+      clientId: "test-client",
+      login: "streamer",
+      scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
+      userId: "141981764",
+      expiresIn: 14_000
+    };
+  }
+
+  async getCurrentUser(): Promise<TwitchCurrentUser> {
+    return {
+      id: "141981764",
+      login: "streamer",
+      displayName: "Streamer"
+    };
+  }
+}
+
+class RecordingTwitchEventSubApiClient implements TwitchEventSubApiClient {
+  readonly requests: TwitchEventSubCreateSubscriptionInput[] = [];
+
+  async createSubscription(input: TwitchEventSubCreateSubscriptionInput): Promise<TwitchEventSubCreateSubscriptionResult> {
+    this.requests.push(input);
+    return {
+      id: "subscription-" + this.requests.length,
+      status: "enabled",
+      type: input.subscription.type
+    };
+  }
+}
+
+class ControlledTwitchSocket implements TwitchEventSubSocket {
+  readonly #messageListeners: ((event: { readonly data: unknown }) => void)[] = [];
+  readonly #closeListeners: ((event: { readonly code?: number; readonly reason?: string }) => void)[] = [];
+
+  addEventListener(
+    event: "open" | "message" | "close" | "error",
+    listener: (event: never) => void
+  ): void {
+    if (event === "message") {
+      this.#messageListeners.push(listener as (event: { readonly data: unknown }) => void);
+    }
+
+    if (event === "close") {
+      this.#closeListeners.push(listener as (event: { readonly code?: number; readonly reason?: string }) => void);
+    }
+  }
+
+  emitWelcome(): void {
+    for (const listener of this.#messageListeners) {
+      listener({
+        data: {
+          metadata: {
+            message_id: "message-1",
+            message_type: "session_welcome",
+            message_timestamp: "2026-06-16T12:05:00.000Z"
+          },
+          payload: {
+            session: {
+              id: "session-1",
+              status: "connected",
+              connected_at: "2026-06-16T12:05:00.000Z",
+              reconnect_url: null
+            }
+          }
+        }
+      });
+    }
+  }
+
+  close(): void {
+    for (const listener of this.#closeListeners) {
+      listener({ code: 1000, reason: "closed" });
+    }
+  }
+}
+
 class ThrowingTwitchApiClient implements TwitchApiClient {
   async exchangeAuthorizationCode(): Promise<TwitchTokenGrant> {
     throw new Error("Twitch OAuth exchange must not run in runtime composition smoke tests");
@@ -307,4 +608,20 @@ function createForbiddenTwitchSocket(): TwitchEventSubSocket {
 
 function secretKey(ref: SecretRef): string {
   return `${ref.namespace}:${ref.accountId}:${ref.name}`;
+}
+
+function secretKeyFromCredential(service: string, account: string): string {
+  return `${service}:${account}`;
+}
+
+async function waitFor(condition: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    if (condition()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  throw new Error("Timed out waiting for condition");
 }
