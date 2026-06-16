@@ -39,16 +39,16 @@ Validation after the hardening slice:
 
 **Suggested next step:** Wire `SqliteOverlayModuleConfigRepository` into `apps/server/src/index.ts`, add an app-level persistence test, and include a restart-style integration test that saves module config, recreates services over the same temp database, and reads it back.
 
-### P1: Add dependency update automation, not only audit reporting
+### P1: Add dependency update automation, not only audit reporting - resolved
 
-**Repo evidence:** CI runs dependency review on PRs and CodeQL. `.github/workflows/dependency-audit.yml` runs `pnpm audit` weekly but is intentionally non-blocking. There is no `.github/dependabot.yml`.
+**Repo evidence:** `.github/dependabot.yml` now configures weekly grouped Dependabot version updates for npm workspace dependencies and GitHub Actions. CI still runs dependency review on PRs, CodeQL, and the intentionally non-blocking weekly `pnpm audit` workflow.
 
-**Why it matters:** Audit/reporting tells maintainers about known vulnerability or freshness issues, but it does not create routine update PRs. GitHub documents Dependabot version updates as repository `dependabot.yml` configuration that raises PRs, and Dependabot alerts as the default-branch vulnerability alerting layer.
+**Why it matters:** Audit/reporting tells maintainers about known vulnerability or freshness issues, but it does not create routine update PRs. GitHub documents Dependabot version updates as repository `dependabot.yml` configuration that raises PRs, and the Dependabot options reference defines package ecosystems, schedules, and grouping options. Normal CI workflow permissions remain least-privilege: validation and audit workflows use `contents: read`, while CodeQL and dependency review declare only their required job-level additions.
 
-**Sources:** Dependabot version updates: https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuring-dependabot-version-updates
-Dependabot alerts: https://docs.github.com/en/code-security/dependabot/dependabot-alerts/about-dependabot-alerts
+**Sources:** Dependabot options reference: https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
+GitHub Actions `GITHUB_TOKEN` permissions: https://docs.github.com/en/actions/tutorials/authenticate-with-github_token
 
-**Suggested next step:** Add `.github/dependabot.yml` for npm/pnpm and GitHub Actions, group low-risk updates, and decide whether the non-blocking audit should become blocking after the current baseline is triaged.
+**Validation:** `.github/dependabot.yml` uses Dependabot config syntax version `2`, `package-ecosystem: "npm"` at the repository root, `package-ecosystem: "github-actions"` at the repository root, weekly schedules, and groups for production dependencies, development dependencies, and GitHub Actions. Existing workflow permission blocks were reviewed and remain read-only by default except for documented job-level security scan and dependency review needs.
 
 ### P1: Add at least one production-entrypoint integration smoke test
 

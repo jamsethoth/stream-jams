@@ -5,6 +5,7 @@ import type {
   PlaybackLogRecord,
   Redactor
 } from "@stream-jams/core";
+import type { RuntimeLogEntry, RuntimeLogMetadata, RuntimeLogReadResult } from "./runtime-jsonl-logger.js";
 
 export interface DiagnosticsProviderStatus {
   readonly providerId: string;
@@ -18,10 +19,16 @@ export interface DiagnosticsProviderStatusSource {
   getStatus(): DiagnosticsProviderStatus;
 }
 
+export interface DiagnosticsRuntimeLogSource {
+  getMetadata(): Promise<RuntimeLogMetadata>;
+  listRecent(options: { readonly limit: number; readonly sinceHours?: number | undefined }): Promise<RuntimeLogReadResult>;
+}
+
 export interface DiagnosticsServiceOptions {
   readonly repository: Pick<DiagnosticsLogRepository, "listEventLogs" | "listAlertMatchLogs" | "listPlaybackLogs">;
   readonly redactor: Redactor;
   readonly providerStatusSources?: readonly DiagnosticsProviderStatusSource[];
+  readonly runtimeLogSource?: DiagnosticsRuntimeLogSource | undefined;
   readonly now?: (() => Date) | undefined;
   readonly defaultLimit?: number | undefined;
   readonly maxLimit?: number | undefined;
@@ -63,17 +70,28 @@ export interface DiagnosticsView {
   readonly alertMatchLogs: readonly DiagnosticsAlertMatchLogView[];
   readonly playbackLogs: readonly DiagnosticsPlaybackLogView[];
   readonly providerErrors: readonly DiagnosticsProviderErrorView[];
+  readonly runtimeLogging: RuntimeLogMetadata | null;
 }
 
 export interface DiagnosticsExport extends DiagnosticsView {
   readonly generatedAt: string;
+  readonly debugExport: false;
   readonly rawEventLogs: readonly EventLogRecord[];
+}
+
+export interface DiagnosticsDebugExport extends DiagnosticsView {
+  readonly generatedAt: string;
+  readonly debugExport: true;
+  readonly rawEventLogs: readonly EventLogRecord[];
+  readonly runtimeLogEntries: readonly RuntimeLogEntry[];
+  readonly runtimeLogTruncated: boolean;
 }
 
 export class DiagnosticsService {
   readonly #repository: Pick<DiagnosticsLogRepository, "listEventLogs" | "listAlertMatchLogs" | "listPlaybackLogs">;
   readonly #redactor: Redactor;
   readonly #providerStatusSources: readonly DiagnosticsProviderStatusSource[];
+  readonly #runtimeLogSource: DiagnosticsRuntimeLogSource | null;
   readonly #now: () => Date;
   readonly #defaultLimit: number;
   readonly #maxLimit: number;
@@ -82,6 +100,7 @@ export class DiagnosticsService {
     this.#repository = options.repository;
     this.#redactor = options.redactor;
     this.#providerStatusSources = options.providerStatusSources ?? [];
+    this.#runtimeLogSource = options.runtimeLogSource ?? null;
     this.#now = options.now ?? (() => new Date());
     this.#defaultLimit = options.defaultLimit ?? 50;
     this.#maxLimit = options.maxLimit ?? 200;
@@ -90,18 +109,38 @@ export class DiagnosticsService {
   async getDiagnostics(options: DiagnosticsListOptions = {}): Promise<DiagnosticsView> {
     const limit = this.#resolveLimit(options.limit);
     const [eventLogs, alertMatchLogs, playbackLogs] = await this.#readLogs(limit);
-    return this.#buildDiagnostics(eventLogs, alertMatchLogs, playbackLogs);
+    return this.#buildDiagnostics(eventLogs, alertMatchLogs, playbackLogs, await this.#readRuntimeLogMetadata());
   }
 
   async createExport(options: DiagnosticsListOptions = {}): Promise<DiagnosticsExport> {
     const limit = this.#resolveLimit(options.limit);
     const [eventLogs, alertMatchLogs, playbackLogs] = await this.#readLogs(limit);
-    const diagnostics = this.#buildDiagnostics(eventLogs, alertMatchLogs, playbackLogs);
+    const diagnostics = this.#buildDiagnostics(eventLogs, alertMatchLogs, playbackLogs, await this.#readRuntimeLogMetadata());
 
     return this.#redactor.redact({
       generatedAt: this.#now().toISOString(),
+      debugExport: false,
       ...diagnostics,
       rawEventLogs: eventLogs
+    });
+  }
+
+  async createDebugExport(
+    options: DiagnosticsListOptions & { readonly runtimeLogLimit?: number | undefined; readonly sinceHours?: number | undefined } = {}
+  ): Promise<DiagnosticsDebugExport> {
+    const limit = this.#resolveLimit(options.limit);
+    const runtimeLogLimit = this.#resolveLimit(options.runtimeLogLimit);
+    const [eventLogs, alertMatchLogs, playbackLogs] = await this.#readLogs(limit);
+    const runtimeLogResult = await this.#readRuntimeLogs(runtimeLogLimit, options.sinceHours);
+    const diagnostics = this.#buildDiagnostics(eventLogs, alertMatchLogs, playbackLogs, await this.#readRuntimeLogMetadata());
+
+    return this.#redactor.redact({
+      generatedAt: this.#now().toISOString(),
+      debugExport: true,
+      ...diagnostics,
+      rawEventLogs: eventLogs,
+      runtimeLogEntries: runtimeLogResult.entries,
+      runtimeLogTruncated: runtimeLogResult.truncated
     });
   }
 
@@ -118,13 +157,15 @@ export class DiagnosticsService {
   #buildDiagnostics(
     eventLogs: readonly EventLogRecord[],
     alertMatchLogs: readonly AlertMatchLogRecord[],
-    playbackLogs: readonly PlaybackLogRecord[]
+    playbackLogs: readonly PlaybackLogRecord[],
+    runtimeLogging: RuntimeLogMetadata | null
   ): DiagnosticsView {
     return {
       eventLogs: eventLogs.map((log) => this.#mapEventLog(log)),
       alertMatchLogs,
       playbackLogs: playbackLogs.map((log) => this.#mapPlaybackLog(log)),
-      providerErrors: this.#buildProviderErrors(eventLogs)
+      providerErrors: this.#buildProviderErrors(eventLogs),
+      runtimeLogging
     };
   }
 
@@ -190,6 +231,24 @@ export class DiagnosticsService {
     return [...providerStatusErrors, ...failedEventErrors].sort((left, right) =>
       right.occurredAt.localeCompare(left.occurredAt)
     );
+  }
+
+  async #readRuntimeLogMetadata(): Promise<RuntimeLogMetadata | null> {
+    return this.#runtimeLogSource === null ? null : this.#runtimeLogSource.getMetadata();
+  }
+
+  async #readRuntimeLogs(limit: number, sinceHours: number | undefined): Promise<RuntimeLogReadResult> {
+    if (this.#runtimeLogSource === null) {
+      return {
+        entries: [],
+        truncated: false
+      };
+    }
+
+    return this.#runtimeLogSource.listRecent({
+      limit,
+      ...(sinceHours === undefined ? {} : { sinceHours })
+    });
   }
 }
 

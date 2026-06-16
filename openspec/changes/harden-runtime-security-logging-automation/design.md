@@ -39,19 +39,25 @@ Implementation MUST NOT begin until all of these changes have landed in remote `
 
 ## Decisions
 
-- Implement CSRF as a management-session-bound or local token mechanism rather than relying only on bearer tokens and same-origin defaults.
-- Add CORS/origin checks as Fastify hooks or plugins with a small allowlist derived from configured host/port and local development origins.
+- Implement CSRF with a management-session-bound synchronizer token returned by the management session/bootstrap flow and sent by the browser client as an `X-Stream-Jams-CSRF` header.
+- Apply CSRF to every management-authenticated unsafe method (`POST`, `PUT`, `PATCH`, and `DELETE`) by default. Any exemption must be explicit, documented, and test-covered.
+- Add CORS/origin checks as Fastify hooks or plugins with production allowing only the configured app origin and dev/test allowing only explicit config/env origins.
+- Reject explicit unapproved `Origin` headers on management routes. Missing or `null` origins may proceed only when management auth and CSRF proof pass, and the server must not emit permissive CORS headers for them.
+- Keep overlay HTTP and WebSocket routes outside management CSRF requirements while preserving route-key authorization for browser-source access.
 - Wire the existing structured logger/log config/log retention services into runtime composition instead of adding a second logging framework.
-- Add `.github/dependabot.yml` for package ecosystem updates and GitHub Actions updates, grouping low-risk updates where maintainable.
+- Persist runtime logs as JSONL files under the app data log directory with hourly rollover, default `INFO` level, default 48-hour retention, and fixed structured fields.
+- Log provider/runtime data through allowlisted per-event schemas before running the global redactor. Runtime logs must not persist raw provider payloads or raw provider HTTP bodies.
+- Keep default diagnostics exports safe and small, with log settings/metadata only. Add a separate debug export path for bounded, redacted recent runtime log entries.
+- Add `.github/dependabot.yml` for weekly grouped package ecosystem updates and GitHub Actions updates while preserving least-privilege workflow permissions.
 
 ## Initial Implementation Plan
 
 1. Confirm all dependency changes are present in remote `main`.
-2. Define the local origin and CSRF threat model in the runbook/design notes.
+2. Document the finalized local origin, CSRF, diagnostics export, and logging threat models in the runbook/design notes.
 3. Add management CSRF middleware and client token handling.
 4. Add local origin/CORS restrictions with overlay route exceptions.
-5. Wire structured logging, retention, and diagnostics export behavior.
-6. Add Dependabot config and CI/runbook docs.
+5. Wire structured JSONL logging, retention, redaction, and diagnostics export behavior.
+6. Add weekly grouped Dependabot config and CI/runbook docs.
 7. Add tests and run the full validation gate.
 
 ## Risks / Trade-offs
@@ -59,10 +65,10 @@ Implementation MUST NOT begin until all of these changes have landed in remote `
 - CSRF controls can accidentally block legitimate local management actions. Mitigation: add route tests and browser tests for every management mutation category.
 - CORS/origin checks can break OBS overlays if applied too broadly. Mitigation: separate management and overlay route policies.
 - Log files can grow or leak sensitive data. Mitigation: enforce retention and test redaction against secrets, route keys, tokens, and provider payloads.
-- Dependabot can create update noise. Mitigation: group compatible updates and document review expectations.
+- Dependabot can create update noise. Mitigation: use weekly grouped updates and document review expectations.
 
-## Open Questions
+## Resolved Questions
 
-1. Should CSRF tokens be bound to management sessions, stored in a same-site cookie, or returned through a bootstrap endpoint?
-2. Which local development origins should be allowed while Vite hot reload remains supported, if any?
-3. Should Dependabot version updates be weekly by default, or grouped monthly until the dependency baseline is stable?
+1. CSRF tokens are management-session-bound synchronizer tokens returned by the management session/bootstrap flow and sent as `X-Stream-Jams-CSRF`.
+2. Production allows only the configured app origin. Development and test origins must be explicit config/env allowlist entries.
+3. Dependabot version updates run weekly and group low-risk pnpm/npm and GitHub Actions updates.

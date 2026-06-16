@@ -12,12 +12,14 @@ const now = new Date("2026-05-26T14:00:00.000Z");
 describe("LogRetentionService", () => {
   it("deletes Stream Jams log files older than the default 48 hour retention window", async () => {
     const oldLog = logFile("stream-jams-2026-05-24-13.log", "2026-05-24T13:59:59.000Z");
+    const oldRuntimeLog = logFile("runtime-2026052413.jsonl", "2026-05-24T13:59:59.000Z");
     const boundaryLog = logFile("stream-jams-2026-05-24-14.log", "2026-05-24T14:00:00.000Z");
     const recentLog = logFile("stream-jams-2026-05-25-14.log", "2026-05-25T14:00:00.000Z");
     const ignoredTextFile = file("notes.txt", "2026-05-20T14:00:00.000Z");
     const ignoredDirectory = directory("stream-jams-2026-05-20-14.log", "2026-05-20T14:00:00.000Z");
     const fileSystem = new RecordingRetentionFileSystem([
       oldLog,
+      oldRuntimeLog,
       boundaryLog,
       recentLog,
       ignoredTextFile,
@@ -27,9 +29,9 @@ describe("LogRetentionService", () => {
 
     const result = await service.cleanupExpiredLogs({ logDirectory, now });
 
-    expect(fileSystem.deletedFilePaths).toEqual([oldLog.filePath]);
+    expect(fileSystem.deletedFilePaths).toEqual([oldLog.filePath, oldRuntimeLog.filePath]);
     expect(result).toEqual({
-      deletedFilePaths: [oldLog.filePath],
+      deletedFilePaths: [oldLog.filePath, oldRuntimeLog.filePath],
       retainedFilePaths: [boundaryLog.filePath, recentLog.filePath]
     });
   });

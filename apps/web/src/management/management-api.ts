@@ -224,20 +224,46 @@ export interface DiagnosticsProviderErrorView {
   readonly processingId: string | null;
 }
 
+export interface RuntimeLogMetadataView {
+  readonly logDirectory: string;
+  readonly level: "DEBUG" | "INFO" | "WARN" | "ERROR";
+  readonly rollover: "hourly";
+  readonly retentionHours: number;
+  readonly fileCount: number;
+  readonly currentLogFile: string;
+  readonly oldestLogFile: string | null;
+  readonly newestLogFile: string | null;
+}
+
 export interface DiagnosticsView {
   readonly eventLogs: readonly DiagnosticsEventLogView[];
   readonly alertMatchLogs: readonly DiagnosticsAlertMatchLogView[];
   readonly playbackLogs: readonly DiagnosticsPlaybackLogView[];
   readonly providerErrors: readonly DiagnosticsProviderErrorView[];
+  readonly runtimeLogging: RuntimeLogMetadataView | null;
 }
 
 export interface DiagnosticsExportView extends DiagnosticsView {
   readonly generatedAt: string;
+  readonly debugExport: false;
   readonly rawEventLogs: readonly unknown[];
+}
+
+export interface DiagnosticsDebugExportView extends DiagnosticsView {
+  readonly generatedAt: string;
+  readonly debugExport: true;
+  readonly rawEventLogs: readonly unknown[];
+  readonly runtimeLogEntries: readonly unknown[];
+  readonly runtimeLogTruncated: boolean;
 }
 
 export interface DiagnosticsRequestView {
   readonly limit?: number | undefined;
+}
+
+export interface DiagnosticsDebugExportRequestView extends DiagnosticsRequestView {
+  readonly runtimeLogLimit?: number | undefined;
+  readonly sinceHours?: number | undefined;
 }
 
 export interface TwitchAuthStartRequestView {
@@ -278,6 +304,7 @@ export interface ManagementApi {
   getTwitchEventSubStatus(): Promise<TwitchEventSubStatusView>;
   getDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsView>;
   exportDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsExportView>;
+  exportDebugDiagnostics(input?: DiagnosticsDebugExportRequestView): Promise<DiagnosticsDebugExportView>;
   startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
   refreshTwitchAuth(): Promise<TwitchConnectionStatusView>;
   disconnectTwitch(): Promise<TwitchConnectionStatusView>;
@@ -289,6 +316,7 @@ export interface HttpManagementApiOptions {
 
 interface ManagementSessionResponse {
   readonly id: string;
+  readonly csrfToken: string;
 }
 
 interface PlaybackQueueSnapshotResponse {
@@ -327,10 +355,14 @@ interface OverlayModuleConfigResponse {
 export function createHttpManagementApi(options: HttpManagementApiOptions = {}): ManagementApi {
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   let sessionId: string | null = null;
+  let csrfToken: string | null = null;
 
-  async function getSessionId(): Promise<string> {
-    if (sessionId !== null) {
-      return sessionId;
+  async function getSession(): Promise<{ readonly id: string; readonly csrfToken: string }> {
+    if (sessionId !== null && csrfToken !== null) {
+      return {
+        id: sessionId,
+        csrfToken
+      };
     }
 
     const response = await fetcher("/auth/management/sessions", {
@@ -342,20 +374,23 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     const session = (await response.json()) as ManagementSessionResponse;
     sessionId = session.id;
-    return session.id;
+    csrfToken = session.csrfToken;
+    return session;
   }
 
-  async function managementHeaders(extraHeaders: HeadersInit = {}): Promise<HeadersInit> {
+  async function managementHeaders(extraHeaders: HeadersInit = {}, includeCsrf = false): Promise<HeadersInit> {
+    const session = await getSession();
     return {
       ...extraHeaders,
-      authorization: `Bearer ${await getSessionId()}`
+      authorization: `Bearer ${session.id}`,
+      ...(includeCsrf ? { "x-stream-jams-csrf": session.csrfToken } : {})
     };
   }
 
   async function jsonHeaders(): Promise<HeadersInit> {
     return managementHeaders({
       "content-type": "application/json"
-    });
+    }, true);
   }
 
   async function getPlayback(): Promise<PlaybackView> {
@@ -372,7 +407,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   async function postPlayback(path: string, body?: unknown): Promise<PlaybackView> {
     const requestInit: RequestInit = {
       method: "POST",
-      headers: body === undefined ? await managementHeaders() : await jsonHeaders()
+      headers: body === undefined ? await managementHeaders({}, true) : await jsonHeaders()
     };
     if (body !== undefined) {
       requestInit.body = JSON.stringify(body);
@@ -561,7 +596,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     async revokeOverlayOutputKey(keyId) {
       const response = await fetcher(`/management/overlay-outputs/keys/${encodeURIComponent(keyId)}`, {
         method: "DELETE",
-        headers: await managementHeaders()
+        headers: await managementHeaders({}, true)
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to revoke overlay output key."));
@@ -588,6 +623,19 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       }
 
       return (await response.json()) as DiagnosticsExportView;
+    },
+
+    async exportDebugDiagnostics(input: DiagnosticsDebugExportRequestView = {}) {
+      const response = await fetcher("/diagnostics/export/debug", {
+        method: "POST",
+        headers: await jsonHeaders(),
+        body: JSON.stringify(input)
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to export diagnostics with recent runtime logs."));
+      }
+
+      return (await response.json()) as DiagnosticsDebugExportView;
     },
 
     async getTwitchStatus() {
@@ -628,7 +676,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     async refreshTwitchAuth() {
       const response = await fetcher("/twitch/auth/refresh", {
         method: "POST",
-        headers: await managementHeaders()
+        headers: await managementHeaders({}, true)
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to refresh Twitch connection."));
@@ -640,7 +688,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     async disconnectTwitch() {
       const response = await fetcher("/twitch/auth/disconnect", {
         method: "POST",
-        headers: await managementHeaders()
+        headers: await managementHeaders({}, true)
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to disconnect Twitch."));

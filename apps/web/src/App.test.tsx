@@ -150,17 +150,34 @@ function createManagementApi(): ManagementApi {
         eventLogs: [],
         alertMatchLogs: [],
         playbackLogs: [],
-        providerErrors: []
+        providerErrors: [],
+        runtimeLogging: null
       };
     },
     async exportDiagnostics() {
       return {
         generatedAt: "2026-05-31T02:05:00.000Z",
+        debugExport: false as const,
         rawEventLogs: [],
         eventLogs: [],
         alertMatchLogs: [],
         playbackLogs: [],
-        providerErrors: []
+        providerErrors: [],
+        runtimeLogging: null
+      };
+    },
+    async exportDebugDiagnostics() {
+      return {
+        generatedAt: "2026-05-31T02:05:00.000Z",
+        debugExport: true as const,
+        rawEventLogs: [],
+        eventLogs: [],
+        alertMatchLogs: [],
+        playbackLogs: [],
+        providerErrors: [],
+        runtimeLogging: null,
+        runtimeLogEntries: [],
+        runtimeLogTruncated: false
       };
     },
     async getTwitchStatus() {

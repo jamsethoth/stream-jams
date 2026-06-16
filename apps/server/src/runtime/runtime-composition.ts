@@ -26,13 +26,20 @@ import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
 } from "../http/middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../http/middleware/management-auth.js";
+import {
+  createLocalManagementOriginPolicy,
+  createManagementOriginPreHandler,
+  createManagementSecurityPreHandler,
+  registerManagementCorsPreflightRoute
+} from "../http/middleware/management-security.js";
 import { SqliteAlertRepository } from "../modules/alerts/sqlite-alert-repository.js";
 import { LocalManagementSessionService } from "../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { openStreamJamsDatabase, type StreamJamsDatabase } from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
+import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
+import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.js";
 import { SqliteDiagnosticsLogRepository } from "../modules/diagnostics/sqlite-log-repository.js";
 import { EventIngestionService } from "../modules/events/event-ingestion-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
@@ -78,6 +85,7 @@ export interface RuntimeAppCompositionOptions {
   readonly twitchEventSubSocketFactory?: (url: string) => TwitchEventSubSocket;
   readonly now?: () => Date;
   readonly generateManagementSessionId?: () => string;
+  readonly generateManagementCsrfToken?: () => string;
   readonly generateOverlayAccessKeyId?: () => string;
   readonly generateRawOverlayRouteKey?: () => string;
   readonly generateOverlayClientId?: () => string;
@@ -105,6 +113,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       defaultConfig: createDefaultAppConfig(options.homeDirectory)
     });
   const initialConfig = await configStore.readConfig();
+  const logConfigService = new LogConfigService(configStore);
+  const logSettings = await logConfigService.getSettings();
   const database = openStreamJamsDatabase(join(initialConfig.storage.dataDirectory, "stream-jams.sqlite"));
   const diagnosticsLogRepository = new SqliteDiagnosticsLogRepository(database.connection);
   const alertRepository = new SqliteAlertRepository(database.connection);
@@ -129,12 +139,19 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const managementSessionService = new LocalManagementSessionService({
     clock: now,
-    ...(options.generateManagementSessionId === undefined ? {} : { generateId: options.generateManagementSessionId })
+    ...(options.generateManagementSessionId === undefined ? {} : { generateId: options.generateManagementSessionId }),
+    ...(options.generateManagementCsrfToken === undefined ? {} : { generateCsrfToken: options.generateManagementCsrfToken })
   });
   const managementRateLimiter = new LocalManagementRateLimiter({
     maxRequests: 120,
     windowMs: 60_000
   });
+  const managementOriginPolicy = createLocalManagementOriginPolicy({
+    host: initialConfig.server.host,
+    port: initialConfig.server.port,
+    environment
+  });
+  const managementOriginPreHandler = createManagementOriginPreHandler(managementOriginPolicy);
   const overlayModuleRegistry = createStaticOverlayModuleRegistry();
   const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
     registry: overlayModuleRegistry,
@@ -155,6 +172,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   const secretStore = runtimeSecretStore.secretStore;
+  const redactor = createRedactor();
+  const runtimeLogger = new RuntimeJsonlLogger({
+    logDirectory: join(initialConfig.storage.dataDirectory, "logs"),
+    settings: logSettings,
+    redactor,
+    now
+  });
   const overlayOutputManagementService = new OverlayOutputManagementService({
     overlayAccessService,
     overlayKeyRepository,
@@ -243,10 +267,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
   });
-  const redactor = createRedactor();
   const diagnosticsService = new DiagnosticsService({
     repository: diagnosticsLogRepository,
     redactor,
+    runtimeLogSource: runtimeLogger,
     providerStatusSources: [
       {
         getStatus() {
@@ -307,6 +331,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     webBuildDirectory: options.webBuildDirectory,
     managementSessionService,
+    managementOriginPreHandler,
     serverConfigService,
     overlayModuleRegistry,
     overlayModuleConfigService,
@@ -324,15 +349,31 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     mediaImportPipeline,
     assetStore,
     playbackCoordinator,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createManagementSecurityPreHandler({
+      sessionService: managementSessionService,
+      originPolicy: managementOriginPolicy,
+      runtimeLogger
+    }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
+    runtimeLogger,
     serverErrorLogger(entry) {
-      console.error(
-        `[${entry.errorId}] ${entry.code} ${entry.method} ${redactor.redactText(entry.url)} request=${entry.requestId} status=${entry.statusCode}`,
-        entry.error
-      );
+      void runtimeLogger.error("Server HTTP error", {
+        module: "server",
+        source: "server.error",
+        correlationId: entry.requestId,
+        processingId: null,
+        metadata: {
+          errorId: entry.errorId,
+          code: entry.code,
+          method: entry.method,
+          url: entry.url,
+          statusCode: entry.statusCode,
+          message: entry.error instanceof Error ? entry.error.message : String(entry.error)
+        }
+      });
     }
   });
+  registerManagementCorsPreflightRoute(app, managementOriginPolicy);
 
   return {
     app,

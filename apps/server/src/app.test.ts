@@ -62,6 +62,9 @@ describe("createServerApp", () => {
           },
           async createExport() {
             throw new Error("not called");
+          },
+          async createDebugExport() {
+            throw new Error("not called");
           }
         }
       })

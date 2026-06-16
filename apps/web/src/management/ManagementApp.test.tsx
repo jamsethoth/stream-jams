@@ -471,10 +471,12 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
           correlationId: null,
           processingId: null
         }
-      ]
+      ],
+      runtimeLogging: null
     })),
     exportDiagnostics: vi.fn(async () => ({
       generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: false as const,
       rawEventLogs: [],
       eventLogs: [
         {
@@ -524,7 +526,20 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
           correlationId: null,
           processingId: null
         }
-      ]
+      ],
+      runtimeLogging: null
+    })),
+    exportDebugDiagnostics: vi.fn(async () => ({
+      generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: true as const,
+      rawEventLogs: [],
+      eventLogs: [],
+      alertMatchLogs: [],
+      playbackLogs: [],
+      providerErrors: [],
+      runtimeLogging: null,
+      runtimeLogEntries: [],
+      runtimeLogTruncated: false
     })),
     getTwitchStatus: vi.fn(async () => initialTwitchStatus),
     getTwitchEventSubStatus: vi.fn(async () => ({
