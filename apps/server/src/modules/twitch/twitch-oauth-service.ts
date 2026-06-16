@@ -1,4 +1,5 @@
 import type { SecretRef, SecretStore } from "@stream-jams/core";
+import { runtimeSecretStoreUnavailableMessage } from "../security/runtime-secret-store.js";
 import type { TwitchApiClient, TwitchTokenGrant, TwitchValidatedToken } from "./twitch-api-client.js";
 import {
   toTwitchConnectionStatus,
@@ -35,6 +36,7 @@ export interface TwitchOAuthServiceOptions {
   readonly apiClient: TwitchApiClient;
   readonly clientId: string;
   readonly clientSecret: string;
+  readonly assertSecretStoreAvailable?: (() => void) | undefined;
   readonly generateState: () => string;
   readonly now?: (() => Date) | undefined;
   readonly onConnectionChanged?: ((status: TwitchConnectionStatus) => void | Promise<void>) | undefined;
@@ -67,6 +69,7 @@ export class TwitchOAuthProviderError extends Error {
 
 export class TwitchOAuthService {
   readonly #apiClient: TwitchApiClient;
+  readonly #assertSecretStoreAvailable: (() => void) | undefined;
   readonly #clientId: string;
   readonly #clientSecret: string;
   readonly #generateState: () => string;
@@ -79,6 +82,7 @@ export class TwitchOAuthService {
 
   constructor(options: TwitchOAuthServiceOptions) {
     this.#apiClient = options.apiClient;
+    this.#assertSecretStoreAvailable = options.assertSecretStoreAvailable;
     this.#clientId = options.clientId;
     this.#clientSecret = options.clientSecret;
     this.#generateState = options.generateState;
@@ -138,9 +142,7 @@ export class TwitchOAuthService {
       return toTwitchConnectionStatus(null);
     }
 
-    const refreshToken = await this.#secretStore.getSecret(
-      createTwitchTokenSecretRef(currentAccount.accountId, "refresh_token")
-    );
+    const refreshToken = await this.#readSecret(createTwitchTokenSecretRef(currentAccount.accountId, "refresh_token"));
     if (refreshToken === null) {
       throw new TwitchOAuthProviderError("Twitch refresh token is unavailable");
     }
@@ -159,8 +161,8 @@ export class TwitchOAuthService {
       return toTwitchConnectionStatus(null);
     }
 
-    await this.#secretStore.deleteSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
-    await this.#secretStore.deleteSecret(createTwitchTokenSecretRef(account.accountId, "refresh_token"));
+    await this.#deleteSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
+    await this.#deleteSecret(createTwitchTokenSecretRef(account.accountId, "refresh_token"));
     await this.#repository.deleteAccount(account.accountId);
     const status = toTwitchConnectionStatus(null);
     await this.#notifyConnectionChanged(status);
@@ -170,6 +172,12 @@ export class TwitchOAuthService {
   #assertConfigured(): void {
     if (this.#clientId.trim() === "" || this.#clientSecret.trim() === "") {
       throw new TwitchOAuthProviderError("Twitch OAuth client credentials are not configured");
+    }
+
+    try {
+      this.#assertSecretStoreAvailable?.();
+    } catch {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
     }
   }
 
@@ -193,15 +201,12 @@ export class TwitchOAuthService {
     };
 
     const previousAccount = await this.#repository.findConnectedAccount();
-    await this.#secretStore.setSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), tokenGrant.accessToken);
-    await this.#secretStore.setSecret(
-      createTwitchTokenSecretRef(account.accountId, "refresh_token"),
-      tokenGrant.refreshToken
-    );
+    await this.#writeSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), tokenGrant.accessToken);
+    await this.#writeSecret(createTwitchTokenSecretRef(account.accountId, "refresh_token"), tokenGrant.refreshToken);
     const savedAccount = await this.#repository.saveAccount(account);
     if (previousAccount !== null && previousAccount.accountId !== account.accountId) {
-      await this.#secretStore.deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "access_token"));
-      await this.#secretStore.deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "refresh_token"));
+      await this.#deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "access_token"));
+      await this.#deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "refresh_token"));
     }
 
     const status = toTwitchConnectionStatus(savedAccount);
@@ -211,6 +216,30 @@ export class TwitchOAuthService {
 
   async #notifyConnectionChanged(status: TwitchConnectionStatus): Promise<void> {
     await this.#onConnectionChanged?.(status);
+  }
+
+  async #writeSecret(ref: SecretRef, value: string): Promise<void> {
+    try {
+      await this.#secretStore.setSecret(ref, value);
+    } catch {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    }
+  }
+
+  async #readSecret(ref: SecretRef): Promise<string | null> {
+    try {
+      return await this.#secretStore.getSecret(ref);
+    } catch {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    }
+  }
+
+  async #deleteSecret(ref: SecretRef): Promise<void> {
+    try {
+      await this.#secretStore.deleteSecret(ref);
+    } catch {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    }
   }
 }
 

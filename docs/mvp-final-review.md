@@ -19,15 +19,15 @@ Validation after the hardening slice:
 
 ## Improvement Opportunities
 
-### P0: Replace the development secret store in runtime wiring
+### P0: Replace the development secret store in runtime wiring - resolved
 
-**Repo evidence:** `apps/server/src/index.ts` still wires `DevSecretStore({ mode: "development" })` into Twitch OAuth and EventSub token access. `apps/server/src/modules/security/os-secret-store.ts` exists and is tested behind an `OsCredentialAdapter`, but no production adapter is selected by runtime wiring.
+**Repo evidence:** The `replace-dev-secret-store` change moved normal development and production-style runtime startup to the OS-backed credential-store path through runtime composition. `DevSecretStore` is no longer selected by default runtime wiring and remains available only through explicit test seams.
 
-**Why it matters:** Twitch access and refresh tokens are real secrets. OWASP's secrets-management guidance recommends storing secrets in a dedicated secrets-management system and consulting the chosen system's official implementation docs. The product plan also calls for secure secret management. Keeping the development in-memory store as the only runtime path means tokens are lost on restart and leaves packaging without a hardened secret-store decision.
+**Why it matters:** Twitch access and refresh tokens are real secrets. OWASP's secrets-management guidance recommends storing secrets in a dedicated secrets-management system and consulting the chosen system's official implementation docs. The product plan also calls for secure secret management. The runtime now stores token material through Windows Credential Manager, macOS Keychain, or Linux Secret Service/libsecret when available, preserves token references across restart, and fails closed for Twitch operations when credential storage is unavailable.
 
 **Sources:** OWASP Secrets Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html
 
-**Suggested next step:** Add a platform credential adapter for the selected local runtime, keep `DevSecretStore` only for explicit development/test modes, and fail closed when real Twitch OAuth is enabled without a durable secret store.
+**Validation:** `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build` passed during the `replace-dev-secret-store` implementation. Coverage includes credential adapter selection, unavailable-store failure behavior, token redaction, and restart-style token retrieval.
 
 ### P1: Persist overlay module configuration in the default runtime
 
