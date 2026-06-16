@@ -28,4 +28,4 @@ None. No repo-local base specs exist yet for this behavior.
 
 - Affected code: server runtime composition, secret-store adapters, Twitch OAuth/EventSub services, diagnostics redaction, config/runbook docs, and integration tests.
 - Dependencies: implementation MUST wait until `serve-local-web-app-shell` is merged and present in remote `main` because both changes touch runtime composition and startup behavior.
-- New dependency: `@napi-rs/keyring@1.3.0` in `@stream-jams/server`, pinned exactly with pnpm lockfile updates for native platform packages.
+- New dependency: `@napi-rs/keyring@1.3.0` in `@stream-jams/server`, pinned exactly with pnpm lockfile updates for native platform packages. This dependency is a Node adapter to industry-standard OS credential stores, not the secret store itself.

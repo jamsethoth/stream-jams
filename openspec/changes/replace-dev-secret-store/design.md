@@ -35,7 +35,7 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` has landed in re
 
 ## Decisions
 
-- Select `@napi-rs/keyring@1.3.0` as the Node runtime credential adapter dependency. It is pinned exactly, supports Windows Credential Manager, macOS Keychain, and Linux Secret Service/libsecret through native bindings, and is smaller/currenter than the evaluated alternatives.
+- Select `@napi-rs/keyring@1.3.0` as the Node runtime credential adapter dependency. It is pinned exactly, supports Windows Credential Manager, macOS Keychain, and Linux Secret Service/libsecret through native bindings, and is smaller/currenter than the evaluated alternatives. This package is a Node adapter to industry-standard OS credential stores, not a separate secret store or persistence backend.
 - Add a runtime secret-store factory instead of constructing secret stores inline in `index.ts`. This keeps startup readable and gives tests a narrow seam.
 - Require normal development and production/local-app modes to choose OS credential storage through the same factory path.
 - Keep in-memory/fake stores outside default runtime selection; tests may inject them explicitly.
@@ -61,7 +61,7 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` has landed in re
 
 ## Resolved Questions
 
-1. `@napi-rs/keyring@1.3.0` is the selected adapter. `keytar` was rejected because its package maintenance is stale, and `keychain` was rejected because it does not cover all target platforms.
+1. `@napi-rs/keyring@1.3.0` is the selected Node adapter to the platform credential stores. `keytar` was rejected because its package maintenance is stale, and `keychain` was rejected because it does not cover all target platforms.
 2. Unsupported credential storage uses the cross-platform unavailable-store message above. The runtime stays available, diagnostics report non-secret degraded health, and Twitch OAuth/token operations fail closed without plaintext fallback.
 
 No open questions remain for this change.

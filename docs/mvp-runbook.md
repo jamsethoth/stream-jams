@@ -44,6 +44,8 @@ Overlay route keys are secrets. Do not paste them into chat, logs, screenshots, 
 
 Twitch access and refresh tokens are stored through the OS credential store in both normal development and production-style local startup. Stream Jams uses Windows Credential Manager on Windows, macOS Keychain on macOS, and Linux Secret Service/libsecret on Linux. Token values are not stored in SQLite, config files, diagnostics exports, browser bundles, overlay URLs, or logs.
 
+The `@napi-rs/keyring` dependency is the Node adapter Stream Jams uses to call those industry-standard OS credential stores. It is not a separate secret store or plaintext persistence backend.
+
 If the OS credential store is unavailable, the local app still starts and unrelated features remain usable. Diagnostics show a `runtime-secret-store` provider error, and Twitch connect, refresh, and token-storage operations fail closed with this message:
 
 ```text
