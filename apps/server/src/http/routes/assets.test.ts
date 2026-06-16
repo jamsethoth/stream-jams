@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../../modules/assets/local-asset-store.js";
+import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
 
@@ -223,9 +224,93 @@ describe("asset routes", () => {
       }
     });
   });
+
+  it("serves overlay media only through scoped overlay route keys", async () => {
+    const overlayAccessService = createOverlayAccessService([
+      "ovl_moduleLive",
+      "ovl_revoked",
+      "ovl_unifiedLive"
+    ]);
+    const moduleKey = await overlayAccessService.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module"
+    });
+    const revokedKey = await overlayAccessService.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module"
+    });
+    const unifiedKey = await overlayAccessService.createKey({
+      overlayId: "default",
+      moduleId: null,
+      purpose: "live",
+      scope: "unified"
+    });
+    await overlayAccessService.revokeKey(revokedKey.record.id);
+    const { app, authHeaders, repository } = await createAppWithAssets({ overlayAccessService });
+
+    await app.inject({
+      method: "POST",
+      url: "/assets/import",
+      headers: {
+        ...authHeaders,
+        "content-type": "application/octet-stream",
+        "x-stream-jams-file-name": "Alert.PNG",
+        "x-stream-jams-mime-type": "image/png"
+      },
+      payload: pngBytes
+    });
+    await repository.save(createAssetRecord("asset_bad_overlay_path", "../secret.txt"));
+
+    const valid = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_1`
+    });
+    const invalidKey = await app.inject({
+      method: "GET",
+      url: "/overlay/modules/alerts/live/ovl_wrong/assets/asset_1"
+    });
+    const revoked = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${revokedKey.rawKey}/assets/asset_1`
+    });
+    const wrongScope = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${unifiedKey.rawKey}/assets/asset_1`
+    });
+    const missing = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/missing`
+    });
+    const badStoragePath = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_bad_overlay_path`
+    });
+
+    expect(valid.statusCode).toBe(200);
+    expect(valid.headers["cache-control"]).toBe("no-store");
+    expect(valid.headers["content-type"]).toContain("image/png");
+    expect(valid.headers["x-content-type-options"]).toBe("nosniff");
+    expect(valid.rawPayload).toEqual(pngBytes);
+    expect(invalidKey.statusCode).toBe(401);
+    expect(revoked.statusCode).toBe(401);
+    expect(wrongScope.statusCode).toBe(401);
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({
+      error: {
+        code: "OVERLAY_ASSET_NOT_FOUND",
+        message: "Overlay asset not found"
+      }
+    });
+    expect(badStoragePath.statusCode).toBe(404);
+    expect(JSON.stringify(badStoragePath.json())).not.toContain("../secret.txt");
+  });
 });
 
-async function createAppWithAssets() {
+async function createAppWithAssets(options: { readonly overlayAccessService?: LocalOverlayAccessService } = {}) {
   const assetDirectory = await createTemporaryAssetDirectory();
   const repository = new InMemoryAssetRepository();
   const store = new LocalAssetStore({ assetDirectory });
@@ -257,7 +342,8 @@ async function createAppWithAssets() {
     mediaImportPipeline: pipeline,
     assetStore: store,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
-    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
+    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
+    ...(options.overlayAccessService === undefined ? {} : { overlayAccessService: options.overlayAccessService })
   });
 
   return {
@@ -267,6 +353,27 @@ async function createAppWithAssets() {
       authorization: `Bearer ${session.id}`
     }
   };
+}
+
+function createOverlayAccessService(rawKeys: readonly string[]): LocalOverlayAccessService {
+  let rawKeyIndex = 0;
+  let id = 0;
+  return new LocalOverlayAccessService({
+    clock: () => new Date("2026-05-30T12:00:00.000Z"),
+    generateId: () => {
+      id += 1;
+      return `key-${id}`;
+    },
+    generateRawKey: () => {
+      const rawKey = rawKeys[rawKeyIndex];
+      rawKeyIndex += 1;
+      if (rawKey === undefined) {
+        throw new Error("Missing raw key fixture");
+      }
+
+      return rawKey;
+    }
+  });
 }
 
 function createAssetRecord(id: string, storagePath: string): AssetRecord {

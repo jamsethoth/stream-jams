@@ -2,10 +2,14 @@ import {
   InvalidMediaImportError,
   defaultAssetValidationPolicy,
   type AssetRepository,
-  type MediaImportPipeline
+  type MediaImportPipeline,
+  type OverlayAccessService,
+  type OverlayPurpose,
+  type OverlayRouteAccessRequest
 } from "@stream-jams/core";
-import type { FastifyInstance, preHandlerHookHandler } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
 import { AssetFileNotFoundError, AssetPathTraversalError, type LocalAssetStore } from "../../modules/assets/local-asset-store.js";
+import { createOverlayAuthPreHandler } from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
 
 export interface AssetRouteDependencies {
@@ -14,6 +18,7 @@ export interface AssetRouteDependencies {
   readonly assetStore: Pick<LocalAssetStore, "read">;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
+  readonly overlayAccessService?: Pick<OverlayAccessService, "verifyRouteAccess">;
 }
 
 const importContentType = "application/octet-stream";
@@ -90,6 +95,67 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
       throw error;
     }
   });
+
+  if (dependencies.overlayAccessService !== undefined) {
+    registerOverlayAssetRoutes(app, {
+      assetRepository: dependencies.assetRepository,
+      assetStore: dependencies.assetStore,
+      overlayAccessService: dependencies.overlayAccessService
+    });
+  }
+}
+
+function registerOverlayAssetRoutes(
+  app: FastifyInstance,
+  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore"> & {
+    readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
+  }
+): void {
+  const modulePreHandler = createOverlayAuthPreHandler({
+    overlayAccessService: dependencies.overlayAccessService,
+    resolveAccessRequest: resolveModuleOverlayAccessRequest
+  });
+  const unifiedPreHandler = createOverlayAuthPreHandler({
+    overlayAccessService: dependencies.overlayAccessService,
+    resolveAccessRequest: resolveUnifiedOverlayAccessRequest
+  });
+
+  app.get("/overlay/modules/:moduleId/:purpose/:overlayKey/assets/:assetId", { preHandler: modulePreHandler }, async (request, reply) =>
+    sendOverlayAsset(request, reply, dependencies)
+  );
+  app.get("/overlay/unified/:purpose/:overlayKey/assets/:assetId", { preHandler: unifiedPreHandler }, async (request, reply) =>
+    sendOverlayAsset(request, reply, dependencies)
+  );
+}
+
+async function sendOverlayAsset(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  dependencies: Pick<AssetRouteDependencies, "assetRepository" | "assetStore">
+) {
+  const assetId = readAssetId(request.params);
+  const record = await dependencies.assetRepository.findById(assetId);
+  if (record === null) {
+    return sendOverlayAssetNotFound(reply);
+  }
+
+  try {
+    const bytes = await dependencies.assetStore.read(record.storagePath);
+    return reply.header("cache-control", "no-store").header("x-content-type-options", "nosniff").type(record.mimeType).send(bytes);
+  } catch (error) {
+    if (error instanceof AssetPathTraversalError || error instanceof AssetFileNotFoundError) {
+      return sendOverlayAssetNotFound(reply);
+    }
+
+    throw error;
+  }
+}
+
+function sendOverlayAssetNotFound(reply: FastifyReply): FastifyReply {
+  return sendHttpError(reply, 404, {
+    code: "OVERLAY_ASSET_NOT_FOUND",
+    message: "Overlay asset not found"
+  });
 }
 
 function parseImportRequest(
@@ -119,4 +185,71 @@ function readSingleHeader(value: string | string[] | undefined): string | null {
 
 function readAssetId(params: unknown): string {
   return String((params as { readonly assetId?: string }).assetId ?? "");
+}
+
+function resolveModuleOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
+  const params = readModuleOverlayParams(request.params);
+  if (params.moduleId === "" || params.overlayKey === "" || params.purpose === null) {
+    return null;
+  }
+
+  return {
+    overlayId: "default",
+    moduleId: params.moduleId,
+    purpose: params.purpose,
+    scope: "module",
+    rawKey: params.overlayKey
+  };
+}
+
+function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
+  const params = readUnifiedOverlayParams(request.params);
+  if (params.overlayKey === "" || params.purpose === null) {
+    return null;
+  }
+
+  return {
+    overlayId: "default",
+    moduleId: null,
+    purpose: params.purpose,
+    scope: "unified",
+    rawKey: params.overlayKey
+  };
+}
+
+function readModuleOverlayParams(params: unknown): {
+  readonly moduleId: string;
+  readonly purpose: OverlayPurpose | null;
+  readonly overlayKey: string;
+} {
+  const candidate = params as {
+    readonly moduleId?: unknown;
+    readonly purpose?: unknown;
+    readonly overlayKey?: unknown;
+  };
+
+  return {
+    moduleId: typeof candidate.moduleId === "string" ? candidate.moduleId : "",
+    purpose: parseOverlayPurpose(candidate.purpose),
+    overlayKey: typeof candidate.overlayKey === "string" ? candidate.overlayKey : ""
+  };
+}
+
+function readUnifiedOverlayParams(params: unknown): {
+  readonly purpose: OverlayPurpose | null;
+  readonly overlayKey: string;
+} {
+  const candidate = params as {
+    readonly purpose?: unknown;
+    readonly overlayKey?: unknown;
+  };
+
+  return {
+    purpose: parseOverlayPurpose(candidate.purpose),
+    overlayKey: typeof candidate.overlayKey === "string" ? candidate.overlayKey : ""
+  };
+}
+
+function parseOverlayPurpose(value: unknown): OverlayPurpose | null {
+  return value === "live" || value === "test" ? value : null;
 }

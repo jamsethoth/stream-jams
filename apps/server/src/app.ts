@@ -23,6 +23,7 @@ import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.
 import { registerTwitchAuthRoutes, type TwitchAuthRouteDependencies } from "./http/routes/twitch-auth.js";
 import { registerTwitchEventSubRoutes, type TwitchEventSubRouteDependencies } from "./http/routes/twitch-eventsub.js";
 import { registerWebShellRoutes, type WebShellRenderer } from "./http/routes/web-shell.js";
+import { createRedactor } from "./modules/security/redactor.js";
 
 export interface ServerErrorLogEntry {
   readonly errorId: string;
@@ -118,7 +119,7 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerAssetRoutes(app, dependencies);
   }
 
-  if (dependencies.overlayAccessService !== undefined || dependencies.overlayCompositionService !== undefined) {
+  if (dependencies.overlayCompositionService !== undefined) {
     if (!hasOverlayRouteDependencies(dependencies) || webShellRenderer === undefined) {
       throw new Error("Overlay routes require access service, composition service, module registry, and web shell renderer");
     }
@@ -244,8 +245,9 @@ function toServerErrorResponse(error: unknown): { readonly statusCode: number; r
 }
 
 function defaultServerErrorLogger(entry: ServerErrorLogEntry): void {
+  const redactor = createRedactor();
   console.error(
-    `[${entry.errorId}] ${entry.code} ${entry.method} ${entry.url} request=${entry.requestId} status=${entry.statusCode}`,
+    `[${entry.errorId}] ${entry.code} ${entry.method} ${redactor.redactText(entry.url)} request=${entry.requestId} status=${entry.statusCode}`,
     entry.error
   );
 }

@@ -22,7 +22,17 @@ interface OverlayInstruction {
   readonly moduleId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
-  readonly visual: null;
+  readonly visual: {
+    readonly assetId: string;
+    readonly mediaType: "image" | "gif" | "video";
+    readonly layout: {
+      readonly x: number;
+      readonly y: number;
+      readonly width: number;
+      readonly height: number;
+      readonly zIndex: number;
+    };
+  } | null;
   readonly audio: null;
   readonly text: {
     readonly text: string;
@@ -33,7 +43,7 @@ interface OverlayInstruction {
       readonly height: number;
       readonly zIndex: number;
     };
-  };
+  } | null;
   readonly tts: null;
   readonly durationMs: number;
 }
@@ -182,6 +192,38 @@ export function textInstruction(input: {
         zIndex: 10
       }
     },
+    tts: null,
+    durationMs: 4000
+  };
+}
+
+export function visualInstruction(input: {
+  readonly id: string;
+  readonly assetId: string;
+  readonly purpose: OverlayPurpose;
+  readonly scope: OverlayScope;
+  readonly moduleId?: string | undefined;
+  readonly overlayId?: string | undefined;
+}): OverlayInstruction {
+  return {
+    id: input.id,
+    overlayId: input.overlayId ?? "default",
+    moduleId: input.moduleId ?? "alerts",
+    purpose: input.purpose,
+    scope: input.scope,
+    visual: {
+      assetId: input.assetId,
+      mediaType: "image",
+      layout: {
+        x: 40,
+        y: 32,
+        width: 120,
+        height: 80,
+        zIndex: 10
+      }
+    },
+    audio: null,
+    text: null,
     tts: null,
     durationMs: 4000
   };

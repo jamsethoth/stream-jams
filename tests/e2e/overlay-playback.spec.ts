@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
-import { emptyComposition, installOverlayWebSocketMock, sendOverlayPlayback, textInstruction } from "./e2e-helpers.js";
+import {
+  emptyComposition,
+  installOverlayWebSocketMock,
+  sendOverlayPlayback,
+  textInstruction,
+  visualInstruction
+} from "./e2e-helpers.js";
 
 test("live module overlay renders a synthetic follow playback event", async ({ page }) => {
   await installOverlayWebSocketMock(page);
@@ -91,4 +97,47 @@ test("unified overlay renders enabled modules and excludes disabled modules", as
   }));
 
   await expect(page.getByText("Unified synthetic event")).toBeVisible();
+});
+
+test("module overlay renders image assets through overlay-safe media URLs", async ({ page }) => {
+  await installOverlayWebSocketMock(page);
+  let assetRequested = false;
+  await page.route("**/overlay/modules/alerts/live/ovl_live/assets/asset-image", async (route) => {
+    assetRequested = true;
+    await route.fulfill({
+      body: Buffer.from("iVBORw0KGgo=", "base64"),
+      contentType: "image/png"
+    });
+  });
+  await page.route("**/overlay/modules/alerts/live/ovl_live/composition", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: emptyComposition({
+        purpose: "live",
+        scope: "module",
+        modules: [
+          {
+            moduleId: "alerts",
+            enabled: true,
+            instructions: [
+              visualInstruction({
+                id: "image-asset",
+                assetId: "asset-image",
+                purpose: "live",
+                scope: "module"
+              })
+            ]
+          }
+        ]
+      })
+    });
+  });
+
+  await page.goto("/overlay/modules/alerts/live/ovl_live");
+
+  await expect(page.getByTestId("overlay-visual-image-asset")).toHaveAttribute(
+    "src",
+    "/overlay/modules/alerts/live/ovl_live/assets/asset-image"
+  );
+  await expect.poll(() => assetRequested).toBe(true);
 });

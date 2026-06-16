@@ -6,6 +6,7 @@ import type {
 } from "@stream-jams/core";
 import {
   connectOverlayClient,
+  createOverlayAssetUrl,
   parseOverlayRoute,
   type OverlayClientConnection,
   type OverlayClientMessage
@@ -62,6 +63,10 @@ export function OverlayApp() {
       reporter.reportFailed(event.instructionId, event.message ?? "Overlay playback failed");
     }
   }, []);
+  const resolveOverlayAssetUrl = useCallback(
+    (assetId: string) => (route === null ? "" : createOverlayAssetUrl(route, assetId)),
+    [route]
+  );
 
   if (composition === null) {
     return (
@@ -71,7 +76,7 @@ export function OverlayApp() {
     );
   }
 
-  return <OverlaySurface composition={composition} onPlaybackEvent={onPlaybackEvent} resolveAssetUrl={resolveAssetUrl} />;
+  return <OverlaySurface composition={composition} onPlaybackEvent={onPlaybackEvent} resolveAssetUrl={resolveOverlayAssetUrl} />;
 }
 
 function appendInstruction(
@@ -129,8 +134,4 @@ function instructionMatchesRoute(
   }
 
   return route.moduleId === null;
-}
-
-function resolveAssetUrl(assetId: string): string {
-  return `/assets/${encodeURIComponent(assetId)}`;
 }
