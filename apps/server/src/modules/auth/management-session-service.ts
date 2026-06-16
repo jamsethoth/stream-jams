@@ -10,6 +10,7 @@ export interface LocalManagementSessionServiceOptions {
   readonly repository?: ManagementSessionRepository;
   readonly clock?: () => Date;
   readonly generateId?: () => string;
+  readonly generateCsrfToken?: () => string;
   readonly sessionTtlMs?: number;
 }
 
@@ -42,12 +43,14 @@ export class LocalManagementSessionService implements ManagementSessionService {
   readonly #repository: ManagementSessionRepository;
   readonly #clock: () => Date;
   readonly #generateId: () => string;
+  readonly #generateCsrfToken: () => string;
   readonly #sessionTtlMs: number;
 
   constructor(options: LocalManagementSessionServiceOptions = {}) {
     this.#repository = options.repository ?? new InMemoryManagementSessionRepository();
     this.#clock = options.clock ?? (() => new Date());
     this.#generateId = options.generateId ?? generateManagementSessionId;
+    this.#generateCsrfToken = options.generateCsrfToken ?? generateManagementCsrfToken;
     this.#sessionTtlMs = options.sessionTtlMs ?? defaultSessionTtlMs;
   }
 
@@ -55,6 +58,7 @@ export class LocalManagementSessionService implements ManagementSessionService {
     const createdAt = this.#clock();
     const session: ManagementSession = {
       id: this.#generateId(),
+      csrfToken: this.#generateCsrfToken(),
       createdAt: createdAt.toISOString(),
       expiresAt: new Date(createdAt.getTime() + this.#sessionTtlMs).toISOString(),
       revokedAt: null
@@ -109,4 +113,8 @@ export class LocalManagementSessionService implements ManagementSessionService {
 
 export function generateManagementSessionId(): string {
   return `mgmt_${randomBytes(32).toString("base64url")}`;
+}
+
+export function generateManagementCsrfToken(): string {
+  return `csrf_${randomBytes(32).toString("base64url")}`;
 }

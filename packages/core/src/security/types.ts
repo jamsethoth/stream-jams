@@ -20,6 +20,7 @@ export interface OverlayAccessKey {
 
 export interface ManagementSession {
   readonly id: string;
+  readonly csrfToken: string;
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly revokedAt: string | null;

@@ -73,15 +73,20 @@ export interface HttpAlertConfigurationApiOptions {
 
 interface ManagementSessionResponse {
   readonly id: string;
+  readonly csrfToken: string;
 }
 
 export function createHttpAlertConfigurationApi(options: HttpAlertConfigurationApiOptions = {}): AlertConfigurationApi {
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   let sessionId: string | null = null;
+  let csrfToken: string | null = null;
 
-  async function getSessionId(): Promise<string> {
-    if (sessionId !== null) {
-      return sessionId;
+  async function getSession(): Promise<{ readonly id: string; readonly csrfToken: string }> {
+    if (sessionId !== null && csrfToken !== null) {
+      return {
+        id: sessionId,
+        csrfToken
+      };
     }
 
     const response = await fetcher("/auth/management/sessions", {
@@ -93,20 +98,23 @@ export function createHttpAlertConfigurationApi(options: HttpAlertConfigurationA
 
     const session = (await response.json()) as ManagementSessionResponse;
     sessionId = session.id;
-    return session.id;
+    csrfToken = session.csrfToken;
+    return session;
   }
 
-  async function managementHeaders(extraHeaders: HeadersInit = {}): Promise<HeadersInit> {
+  async function managementHeaders(extraHeaders: HeadersInit = {}, includeCsrf = false): Promise<HeadersInit> {
+    const session = await getSession();
     return {
       ...extraHeaders,
-      authorization: `Bearer ${await getSessionId()}`
+      authorization: `Bearer ${session.id}`,
+      ...(includeCsrf ? { "x-stream-jams-csrf": session.csrfToken } : {})
     };
   }
 
   async function jsonHeaders(): Promise<HeadersInit> {
     return managementHeaders({
       "content-type": "application/json"
-    });
+    }, true);
   }
 
   return {

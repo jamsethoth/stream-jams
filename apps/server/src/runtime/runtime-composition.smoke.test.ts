@@ -51,7 +51,7 @@ describe("runtime app composition smoke", () => {
       method: "POST",
       url: "/auth/management/sessions"
     });
-    const authorization = `Bearer ${(session.json() as { readonly id: string }).id}`;
+    const authHeaders = managementAuthHeaders(session);
     const moduleKey = await composition.overlayAccessService.createKey({
       overlayId: "default",
       moduleId: "alerts",
@@ -80,27 +80,27 @@ describe("runtime app composition smoke", () => {
     const diagnostics = await app.inject({
       method: "GET",
       url: "/diagnostics?limit=5",
-      headers: { authorization }
+      headers: authHeaders
     });
     const playback = await app.inject({
       method: "GET",
       url: "/playback",
-      headers: { authorization }
+      headers: authHeaders
     });
     const overlayModules = await app.inject({
       method: "GET",
       url: "/overlay-modules",
-      headers: { authorization }
+      headers: authHeaders
     });
     const overlayModuleConfig = await app.inject({
       method: "GET",
       url: "/overlay-modules/alerts/config",
-      headers: { authorization }
+      headers: authHeaders
     });
     const twitchStatus = await app.inject({
       method: "GET",
       url: "/twitch/eventsub/status",
-      headers: { authorization }
+      headers: authHeaders
     });
 
     expect(session.statusCode).toBe(201);
@@ -206,11 +206,11 @@ describe("runtime app composition smoke", () => {
       method: "POST",
       url: "/auth/management/sessions"
     });
-    const authorization = `Bearer ${(session.json() as { readonly id: string }).id}`;
+    const authHeaders = managementAuthHeaders(session);
     const saved = await firstComposition.app.inject({
       method: "PUT",
       url: "/overlay-modules/alerts/config",
-      headers: { authorization },
+      headers: authHeaders,
       payload: {
         enabled: false,
         config: {
@@ -247,11 +247,11 @@ describe("runtime app composition smoke", () => {
       method: "POST",
       url: "/auth/management/sessions"
     });
-    const restartedAuthorization = `Bearer ${(restartedSession.json() as { readonly id: string }).id}`;
+    const restartedAuthHeaders = managementAuthHeaders(restartedSession);
     const restored = await secondComposition.app.inject({
       method: "GET",
       url: "/overlay-modules/alerts/config",
-      headers: { authorization: restartedAuthorization }
+      headers: restartedAuthHeaders
     });
 
     expect(restored.statusCode).toBe(200);
@@ -317,16 +317,16 @@ describe("runtime app composition smoke", () => {
       method: "POST",
       url: "/auth/management/sessions"
     });
-    const authorization = `Bearer ${(session.json() as { readonly id: string }).id}`;
+    const authHeaders = managementAuthHeaders(session);
     const diagnostics = await app.inject({
       method: "GET",
       url: "/diagnostics?limit=5",
-      headers: { authorization }
+      headers: authHeaders
     });
     const start = await app.inject({
       method: "POST",
       url: "/twitch/auth/start",
-      headers: { authorization },
+      headers: authHeaders,
       payload: {
         redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
       }
@@ -381,11 +381,11 @@ describe("runtime app composition smoke", () => {
       method: "POST",
       url: "/auth/management/sessions"
     });
-    const authorization = `Bearer ${(session.json() as { readonly id: string }).id}`;
+    const authHeaders = managementAuthHeaders(session);
     const start = await firstApp.inject({
       method: "POST",
       url: "/twitch/auth/start",
-      headers: { authorization },
+      headers: authHeaders,
       payload: {
         redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
       }
@@ -397,7 +397,7 @@ describe("runtime app composition smoke", () => {
     const diagnosticsExport = await firstApp.inject({
       method: "GET",
       url: "/diagnostics/export?limit=5",
-      headers: { authorization }
+      headers: authHeaders
     });
 
     expect(callback.statusCode).toBe(200);
@@ -464,6 +464,17 @@ async function createTemporaryDirectory(): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "stream-jams-runtime-smoke-"));
   temporaryDirectories.push(directory);
   return directory;
+}
+
+function managementAuthHeaders(sessionResponse: { json(): unknown }): {
+  readonly authorization: string;
+  readonly "x-stream-jams-csrf": string;
+} {
+  const session = sessionResponse.json() as { readonly id: string; readonly csrfToken: string };
+  return {
+    authorization: `Bearer ${session.id}`,
+    "x-stream-jams-csrf": session.csrfToken
+  };
 }
 
 function createConfig(testRoot: string): AppConfig {

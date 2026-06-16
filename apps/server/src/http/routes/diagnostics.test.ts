@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
-import { DiagnosticsLimitError, type DiagnosticsExport, type DiagnosticsView } from "../../modules/diagnostics/diagnostics-service.js";
+import {
+  DiagnosticsLimitError,
+  type DiagnosticsDebugExport,
+  type DiagnosticsExport,
+  type DiagnosticsView
+} from "../../modules/diagnostics/diagnostics-service.js";
 import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
@@ -22,13 +27,26 @@ describe("diagnostics routes", () => {
       url: "/diagnostics/export?limit=2",
       headers: authHeaders
     });
+    const debugExportResponse = await app.inject({
+      method: "POST",
+      url: "/diagnostics/export/debug",
+      headers: authHeaders,
+      payload: {
+        limit: 2,
+        runtimeLogLimit: 1,
+        sinceHours: 2
+      }
+    });
 
     expect(listResponse.statusCode).toBe(200);
     expect(listResponse.json()).toEqual(createDiagnosticsView());
     expect(exportResponse.statusCode).toBe(200);
     expect(exportResponse.json()).toEqual(createDiagnosticsExport());
+    expect(debugExportResponse.statusCode).toBe(200);
+    expect(debugExportResponse.json()).toEqual(createDiagnosticsDebugExport());
     expect(service.diagnosticsLimits).toEqual([2]);
     expect(service.exportLimits).toEqual([2]);
+    expect(service.debugExportRequests).toEqual([{ limit: 2, runtimeLogLimit: 1, sinceHours: 2 }]);
   });
 
   it("rejects missing management sessions before diagnostics work", async () => {
@@ -42,6 +60,7 @@ describe("diagnostics routes", () => {
     expect(response.statusCode).toBe(401);
     expect(service.diagnosticsLimits).toEqual([]);
     expect(service.exportLimits).toEqual([]);
+    expect(service.debugExportRequests).toEqual([]);
   });
 
   it("returns controlled 400 responses for malformed and out-of-range limits", async () => {
@@ -56,6 +75,14 @@ describe("diagnostics routes", () => {
       method: "GET",
       url: "/diagnostics/export?limit=999",
       headers: authHeaders
+    });
+    const malformedDebugResponse = await app.inject({
+      method: "POST",
+      url: "/diagnostics/export/debug",
+      headers: authHeaders,
+      payload: {
+        limit: 0
+      }
     });
 
     expect(malformedResponse.statusCode).toBe(400);
@@ -72,8 +99,16 @@ describe("diagnostics routes", () => {
         message: "Diagnostics limit must be a positive integer no greater than 200"
       }
     });
+    expect(malformedDebugResponse.statusCode).toBe(400);
+    expect(malformedDebugResponse.json()).toEqual({
+      error: {
+        code: "INVALID_DIAGNOSTICS_EXPORT_REQUEST",
+        message: "Invalid diagnostics debug export request"
+      }
+    });
     expect(service.diagnosticsLimits).toEqual([]);
     expect(service.exportLimits).toEqual([999]);
+    expect(service.debugExportRequests).toEqual([]);
   });
 });
 
@@ -112,6 +147,11 @@ async function createAppWithDiagnostics(options: { readonly throwLimitError?: bo
 class RecordingDiagnosticsService {
   readonly diagnosticsLimits: Array<number | undefined> = [];
   readonly exportLimits: Array<number | undefined> = [];
+  readonly debugExportRequests: Array<{
+    readonly limit?: number | undefined;
+    readonly runtimeLogLimit?: number | undefined;
+    readonly sinceHours?: number | undefined;
+  }> = [];
   readonly #throwLimitError: boolean;
 
   constructor(options: { readonly throwLimitError?: boolean | undefined }) {
@@ -130,6 +170,21 @@ class RecordingDiagnosticsService {
     }
 
     return createDiagnosticsExport();
+  }
+
+  async createDebugExport(
+    options: {
+      readonly limit?: number | undefined;
+      readonly runtimeLogLimit?: number | undefined;
+      readonly sinceHours?: number | undefined;
+    } = {}
+  ): Promise<DiagnosticsDebugExport> {
+    this.debugExportRequests.push(options);
+    if (this.#throwLimitError) {
+      throw new DiagnosticsLimitError(200);
+    }
+
+    return createDiagnosticsDebugExport();
   }
 }
 
@@ -173,14 +228,27 @@ function createDiagnosticsView(): DiagnosticsView {
         message: null
       }
     ],
-    providerErrors: []
+    providerErrors: [],
+    runtimeLogging: null
   };
 }
 
 function createDiagnosticsExport(): DiagnosticsExport {
   return {
     generatedAt: "2026-05-31T02:05:00.000Z",
+    debugExport: false,
     ...createDiagnosticsView(),
     rawEventLogs: []
+  };
+}
+
+function createDiagnosticsDebugExport(): DiagnosticsDebugExport {
+  return {
+    generatedAt: "2026-05-31T02:05:00.000Z",
+    debugExport: true,
+    ...createDiagnosticsView(),
+    rawEventLogs: [],
+    runtimeLogEntries: [],
+    runtimeLogTruncated: false
   };
 }

@@ -12,6 +12,7 @@ describe("LocalManagementSessionService", () => {
       repository,
       clock: () => now,
       generateId: () => "mgmt_generated-session-id",
+      generateCsrfToken: () => "csrf_generated-token",
       sessionTtlMs
     });
 
@@ -20,6 +21,7 @@ describe("LocalManagementSessionService", () => {
 
     expect(session).toEqual({
       id: "mgmt_generated-session-id",
+      csrfToken: "csrf_generated-token",
       createdAt: "2026-05-29T12:00:00.000Z",
       expiresAt: "2026-05-29T12:15:00.000Z",
       revokedAt: null
