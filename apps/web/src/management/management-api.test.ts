@@ -201,6 +201,86 @@ describe("createHttpManagementApi", () => {
     await expect(api.exportDiagnostics({ limit: 2 })).resolves.toEqual(exported);
   });
 
+  it("manages overlay output keys with management headers", async () => {
+    const keyRequest = {
+      overlayId: "default",
+      scope: "module" as const,
+      moduleId: "alerts",
+      purpose: "live" as const
+    };
+    const output = {
+      id: "module:alerts:live",
+      overlayId: "default",
+      label: "Alerts Live",
+      scope: "module",
+      moduleId: "alerts",
+      purpose: "live",
+      enabled: true,
+      keyId: "key-1",
+      url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first",
+      copyableUrlStatus: "available"
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse({ id: "mgmt_session" });
+      }
+
+      if (url === "/management/overlay-outputs/keys") {
+        expect(init).toMatchObject({
+          method: "POST",
+          body: JSON.stringify(keyRequest)
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json"
+        });
+        return jsonResponse({
+          keyId: "key-1",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first",
+          output
+        });
+      }
+
+      if (url === "/management/overlay-outputs/keys/regenerate") {
+        expect(init).toMatchObject({
+          method: "POST",
+          body: JSON.stringify(keyRequest)
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json"
+        });
+        return jsonResponse({
+          keyId: "key-2",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second",
+          output: {
+            ...output,
+            keyId: "key-2",
+            url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second"
+          }
+        });
+      }
+
+      if (url === "/management/overlay-outputs/keys/key-2") {
+        expect(init).toMatchObject({
+          method: "DELETE"
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session"
+        });
+        return new Response(null, { status: 204 });
+      }
+
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.createOverlayOutputKey(keyRequest)).resolves.toMatchObject({ keyId: "key-1" });
+    await expect(api.regenerateOverlayOutputKey(keyRequest)).resolves.toMatchObject({ keyId: "key-2" });
+    await expect(api.revokeOverlayOutputKey("key-2")).resolves.toBeUndefined();
+  });
+
   it("loads Twitch EventSub status with management headers", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

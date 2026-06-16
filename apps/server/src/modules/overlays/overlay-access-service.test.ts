@@ -157,14 +157,26 @@ function createService(repository: InMemoryOverlayAccessKeyRepository, rawKeys: 
         throw new Error("Missing raw key fixture");
       }
       return rawKey;
-    }
+    },
+    createRouteKeySecretRef: (keyId) => ({
+      namespace: "overlay",
+      accountId: keyId,
+      name: "route-key"
+    })
   });
 }
 
 class UnusedOverlayRepositoryContractCheck implements OverlayAccessKeyRepository {
   readonly records = [];
 
-  async create(input: CreateOverlayKeyInput & { readonly id: string; readonly keyHash: string; readonly createdAt: string }) {
+  async create(
+    input: CreateOverlayKeyInput & {
+      readonly id: string;
+      readonly keyHash: string;
+      readonly routeKeySecretRef: null;
+      readonly createdAt: string;
+    }
+  ) {
     return {
       ...input,
       revokedAt: null
@@ -176,6 +188,10 @@ class UnusedOverlayRepositoryContractCheck implements OverlayAccessKeyRepository
   }
 
   async findCandidates() {
+    return [];
+  }
+
+  async findByOutput() {
     return [];
   }
 

@@ -344,6 +344,7 @@ class StubOverlayAccessService implements Pick<OverlayAccessService, "verifyRout
         purpose: request.purpose,
         scope: request.scope,
         keyHash: "sha256:hash",
+        routeKeySecretRef: null,
         createdAt: "2026-05-30T12:00:00.000Z",
         revokedAt: null
       }

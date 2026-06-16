@@ -12,6 +12,10 @@ import {
   type ManagementSessionRouteDependencies
 } from "./http/routes/management-session.js";
 import { registerModerationRoutes, type ModerationRouteDependencies } from "./http/routes/moderation.js";
+import {
+  registerOverlayOutputManagementRoutes,
+  type OverlayOutputManagementRouteDependencies
+} from "./http/routes/overlay-output-management.js";
 import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
 import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/routes/overlays.js";
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
@@ -36,6 +40,7 @@ export interface ServerAppDependencies
     Partial<ModerationRouteDependencies>,
     Partial<DiagnosticsRouteDependencies>,
     Partial<OverlayModuleRouteDependencies>,
+    Partial<OverlayOutputManagementRouteDependencies>,
     Partial<OverlayRouteDependencies>,
     Partial<AssetRouteDependencies>,
     Partial<AlertRuleRouteDependencies>,
@@ -113,11 +118,7 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerAssetRoutes(app, dependencies);
   }
 
-  if (
-    dependencies.overlayAccessService !== undefined ||
-    dependencies.overlayCompositionService !== undefined ||
-    dependencies.overlayGateway !== undefined
-  ) {
+  if (dependencies.overlayAccessService !== undefined || dependencies.overlayCompositionService !== undefined) {
     if (!hasOverlayRouteDependencies(dependencies) || webShellRenderer === undefined) {
       throw new Error("Overlay routes require access service, composition service, module registry, and web shell renderer");
     }
@@ -134,6 +135,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     }
 
     registerOverlayModuleRoutes(app, dependencies);
+  }
+
+  if (dependencies.overlayOutputManagementService !== undefined) {
+    if (!hasOverlayOutputManagementRouteDependencies(dependencies)) {
+      throw new Error("Overlay output management routes require service, gateway, management auth, and rate-limit hooks");
+    }
+
+    registerOverlayOutputManagementRoutes(app, dependencies);
   }
 
   if (dependencies.playbackCoordinator !== undefined) {
@@ -277,6 +286,17 @@ function hasOverlayRouteDependencies(
     dependencies.overlayAccessService !== undefined &&
     dependencies.overlayCompositionService !== undefined &&
     dependencies.overlayModuleRegistry !== undefined
+  );
+}
+
+function hasOverlayOutputManagementRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & OverlayOutputManagementRouteDependencies {
+  return (
+    dependencies.overlayOutputManagementService !== undefined &&
+    dependencies.overlayGateway !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
   );
 }
 

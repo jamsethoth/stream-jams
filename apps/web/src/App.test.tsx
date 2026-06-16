@@ -96,6 +96,15 @@ function createManagementApi(): ManagementApi {
     async listOverlayClients() {
       return [];
     },
+    async createOverlayOutputKey() {
+      throw new Error("Not implemented in test mock");
+    },
+    async regenerateOverlayOutputKey() {
+      throw new Error("Not implemented in test mock");
+    },
+    async revokeOverlayOutputKey() {
+      return undefined;
+    },
     async getPlayback() {
       return playback;
     },

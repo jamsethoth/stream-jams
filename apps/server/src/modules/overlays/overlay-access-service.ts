@@ -7,7 +7,8 @@ import type {
   OverlayAccessKeyRepository,
   OverlayAccessService,
   OverlayAccessVerification,
-  OverlayRouteAccessRequest
+  OverlayRouteAccessRequest,
+  SecretRef
 } from "@stream-jams/core";
 
 export interface LocalOverlayAccessServiceOptions {
@@ -15,6 +16,7 @@ export interface LocalOverlayAccessServiceOptions {
   readonly clock?: () => Date;
   readonly generateId?: () => string;
   readonly generateRawKey?: () => string;
+  readonly createRouteKeySecretRef?: (keyId: string) => SecretRef;
 }
 
 /** Stores MVP overlay access records in process memory while preserving hash-only key storage. */
@@ -42,6 +44,16 @@ export class InMemoryOverlayAccessKeyRepository implements OverlayAccessKeyRepos
     return this.records.filter((record) => record.overlayId === overlayId);
   }
 
+  async findByOutput(input: CreateOverlayKeyInput): Promise<readonly OverlayAccessKey[]> {
+    return this.records.filter(
+      (record) =>
+        record.overlayId === input.overlayId &&
+        record.scope === input.scope &&
+        record.moduleId === input.moduleId &&
+        record.purpose === input.purpose
+    );
+  }
+
   async update(record: OverlayAccessKey): Promise<OverlayAccessKey | null> {
     if (!this.#records.has(record.id)) {
       return null;
@@ -58,22 +70,26 @@ export class LocalOverlayAccessService implements OverlayAccessService {
   readonly #clock: () => Date;
   readonly #generateId: () => string;
   readonly #generateRawKey: () => string;
+  readonly #createRouteKeySecretRef: (keyId: string) => SecretRef | null;
 
   constructor(options: LocalOverlayAccessServiceOptions = {}) {
     this.#repository = options.repository ?? new InMemoryOverlayAccessKeyRepository();
     this.#clock = options.clock ?? (() => new Date());
     this.#generateId = options.generateId ?? generateOverlayAccessKeyId;
     this.#generateRawKey = options.generateRawKey ?? generateRawOverlayRouteKey;
+    this.#createRouteKeySecretRef = options.createRouteKeySecretRef ?? (() => null);
   }
 
   async createKey(input: CreateOverlayKeyInput): Promise<CreatedOverlayAccessKey> {
     assertValidScopeInput(input);
 
     const rawKey = this.#generateRawKey();
+    const keyId = this.#generateId();
     const record = await this.#repository.create({
       ...input,
-      id: this.#generateId(),
+      id: keyId,
       keyHash: hashOverlayRouteKey(rawKey),
+      routeKeySecretRef: this.#createRouteKeySecretRef(keyId),
       createdAt: this.#clock().toISOString()
     });
 

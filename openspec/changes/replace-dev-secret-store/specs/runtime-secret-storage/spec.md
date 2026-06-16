@@ -11,6 +11,10 @@ The system SHALL use a durable OS-backed secret store for real local runtime sec
 - **WHEN** the app is started through the normal development runtime path
 - **THEN** Twitch OAuth and EventSub token access use the same durable OS-backed secret-store selection as production/local-app startup
 
+#### Scenario: Later runtime features can store local secrets
+- **WHEN** a server-side feature needs to persist local secret material for later recovery
+- **THEN** the runtime secret-store path supports storing and retrieving that material without requiring plaintext secret values in SQLite or browser-accessible files
+
 ### Requirement: In-Memory Secret Stores Are Test-Only
 The system SHALL keep in-memory or fake secret stores out of normal development and production/local-app runtime selection.
 
