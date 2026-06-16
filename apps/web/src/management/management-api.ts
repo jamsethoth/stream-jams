@@ -61,14 +61,35 @@ export interface OverlayOutputUrl {
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
-  readonly url: string;
+  readonly overlayId: string;
+  readonly enabled: boolean;
+  readonly keyId: string | null;
+  readonly url: string | null;
+  readonly copyableUrlStatus: "available" | "create-required" | "regenerate-required";
 }
 
 export interface OverlayClientView {
   readonly id: string;
+  readonly overlayId: string;
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
+  readonly connectedAt: string;
+  readonly lastSeenAt: string;
+  readonly userAgent: string | null;
+}
+
+export interface OverlayOutputKeyRequestView {
+  readonly overlayId?: string | undefined;
+  readonly purpose: "live" | "test";
+  readonly scope: "module" | "unified";
+  readonly moduleId: string | null;
+}
+
+export interface OverlayOutputKeyResultView {
+  readonly output: OverlayOutputUrl;
+  readonly keyId: string;
+  readonly url: string;
 }
 
 export interface PlaybackItemView {
@@ -240,6 +261,9 @@ export interface ManagementApi {
   saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }): Promise<unknown>;
   listOverlayOutputs(): Promise<readonly OverlayOutputUrl[]>;
   listOverlayClients(): Promise<readonly OverlayClientView[]>;
+  createOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
+  regenerateOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
+  revokeOverlayOutputKey(keyId: string): Promise<void>;
   getPlayback(): Promise<PlaybackView>;
   pausePlayback(): Promise<PlaybackView>;
   resumePlayback(): Promise<PlaybackView>;
@@ -362,17 +386,30 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     return mapPlaybackSnapshot((await response.json()) as PlaybackQueueSnapshotResponse);
   }
 
+  async function postOverlayOutputKey(
+    path: string,
+    input: OverlayOutputKeyRequestView
+  ): Promise<OverlayOutputKeyResultView> {
+    const response = await fetcher(path, {
+      method: "POST",
+      headers: await jsonHeaders(),
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) {
+      throw new Error(await readHttpError(response, "Unable to update overlay output key."));
+    }
+
+    return (await response.json()) as OverlayOutputKeyResultView;
+  }
+
   function withLimit(path: string, input: DiagnosticsRequestView = {}): string {
     return input.limit === undefined ? path : `${path}?limit=${encodeURIComponent(String(input.limit))}`;
   }
 
-  async function optionalJsonList<T>(path: string): Promise<readonly T[]> {
+  async function jsonList<T>(path: string): Promise<readonly T[]> {
     const response = await fetcher(path, {
       headers: await managementHeaders()
     });
-    if (response.status === 404) {
-      return [];
-    }
 
     if (!response.ok) {
       throw new Error(await readHttpError(response, "Unable to load management data."));
@@ -383,7 +420,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
   return {
     async getDashboard() {
-      const [playback, overlayClients] = await Promise.all([getPlayback(), optionalJsonList<OverlayClientView>("/management/overlay-clients")]);
+      const [playback, overlayClients] = await Promise.all([getPlayback(), jsonList<OverlayClientView>("/management/overlay-clients")]);
       return {
         twitch: {
           connected: false,
@@ -506,11 +543,29 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     },
 
     listOverlayOutputs() {
-      return optionalJsonList<OverlayOutputUrl>("/management/overlay-outputs");
+      return jsonList<OverlayOutputUrl>("/management/overlay-outputs");
     },
 
     listOverlayClients() {
-      return optionalJsonList<OverlayClientView>("/management/overlay-clients");
+      return jsonList<OverlayClientView>("/management/overlay-clients");
+    },
+
+    async createOverlayOutputKey(input) {
+      return postOverlayOutputKey("/management/overlay-outputs/keys", input);
+    },
+
+    async regenerateOverlayOutputKey(input) {
+      return postOverlayOutputKey("/management/overlay-outputs/keys/regenerate", input);
+    },
+
+    async revokeOverlayOutputKey(keyId) {
+      const response = await fetcher(`/management/overlay-outputs/keys/${encodeURIComponent(keyId)}`, {
+        method: "DELETE",
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to revoke overlay output key."));
+      }
     },
 
     async getDiagnostics(input: DiagnosticsRequestView = {}) {

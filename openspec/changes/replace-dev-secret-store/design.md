@@ -10,7 +10,7 @@ The core `SecretStore` contract and an `OsSecretStore` wrapper already exist, bu
 
 - Select a durable secret store during runtime startup for real local app usage.
 - Preserve dev/prod parity by using the same durable OS-backed secret-store path for normal `pnpm dev` and production/local-app startup.
-- Keep token secret material out of SQLite, config files, browser bundles, overlay URLs, logs, and diagnostics exports.
+- Keep token secret material and other server-side secret values out of SQLite, config files, browser bundles, overlay URLs, logs, and diagnostics exports.
 - Preserve testability with fake credential adapters.
 - Fail with actionable diagnostics when no supported credential store is available.
 - Document Windows, macOS, and Linux behavior.
@@ -28,7 +28,7 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` has landed in re
 
 ## Assumptions
 
-- `SecretStore` remains the only interface Twitch OAuth/EventSub code uses for secret material.
+- `SecretStore` remains the only interface Twitch OAuth/EventSub code uses for secret material, and should remain reusable for later server-side local secrets such as recoverable overlay route keys.
 - Normal development runtime should exercise the same durable secret-store path as production/local-app runtime.
 - In-memory or fake stores remain available only through explicit test injection and must not be selected by the default developer runtime.
 - A maintained platform credential dependency is the preferred implementation path, behind `OsCredentialAdapter`; if added, it must be justified in the PR and pinned exactly.
@@ -41,6 +41,7 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` has landed in re
 - Keep in-memory/fake stores outside default runtime selection; tests may inject them explicitly.
 - When the OS credential adapter is unavailable, startup should expose a non-secret credential-store health warning while Twitch OAuth and token storage fail closed.
 - Store only stable secret references in SQLite account metadata, not token values.
+- Keep the factory and contract generic enough for later local-app secrets; do not bake Twitch-specific names or lifecycle assumptions into the shared secret-store path.
 - Add restart-style tests that connect a fake account, recreate the runtime over the same metadata store and credential adapter, and verify EventSub can retrieve the access token.
 - Use this user-facing unavailable-store message: `Credential store is unavailable. Configure Windows Credential Manager, macOS Keychain, or Linux Secret Service/libsecret before connecting Twitch.`
 

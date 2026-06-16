@@ -14,6 +14,11 @@ describe("SqliteOverlayAccessKeyRepository", () => {
       purpose: "test",
       scope: "module",
       keyHash: "sha256:abc123",
+      routeKeySecretRef: {
+        namespace: "overlay",
+        accountId: "overlay-key-1",
+        name: "route-key"
+      },
       createdAt: "2026-05-30T10:00:00.000Z"
     };
 
@@ -34,6 +39,7 @@ describe("SqliteOverlayAccessKeyRepository", () => {
       purpose: "test",
       scope: "module",
       keyHash: "sha256:first",
+      routeKeySecretRef: null,
       createdAt: "2026-05-30T10:00:00.000Z"
     });
     await repository.create({
@@ -43,10 +49,19 @@ describe("SqliteOverlayAccessKeyRepository", () => {
       purpose: "live",
       scope: "unified",
       keyHash: "sha256:second",
+      routeKeySecretRef: null,
       createdAt: "2026-05-30T10:01:00.000Z"
     });
 
     await expect(repository.findCandidates("default")).resolves.toEqual([first]);
+    await expect(
+      repository.findByOutput({
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "test",
+        scope: "module"
+      })
+    ).resolves.toEqual([first]);
 
     const revoked = await repository.update({
       ...first,

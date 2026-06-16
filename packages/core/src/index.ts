@@ -106,6 +106,12 @@ export {
 } from "./overlay-modules/schemas.js";
 
 export type * from "./overlays/types.js";
+export {
+  moduleOverlayPath,
+  moduleOverlayWebSocketPath,
+  unifiedOverlayPath,
+  unifiedOverlayWebSocketPath
+} from "./overlays/types.js";
 export type * from "./overlays/overlay-access-service.js";
 export {
   moduleOutputRequestSchema,

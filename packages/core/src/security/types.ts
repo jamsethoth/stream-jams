@@ -13,6 +13,7 @@ export interface OverlayAccessKey {
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
   readonly keyHash: string;
+  readonly routeKeySecretRef: SecretRef | null;
   readonly createdAt: string;
   readonly revokedAt: string | null;
 }

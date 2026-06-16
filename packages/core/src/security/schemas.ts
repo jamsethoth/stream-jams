@@ -14,6 +14,7 @@ export const overlayAccessKeySchema = z.object({
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
   keyHash: nonEmptyStringSchema,
+  routeKeySecretRef: secretRefSchema.nullable(),
   createdAt: isoDateTimeSchema,
   revokedAt: isoDateTimeSchema.nullable()
 });

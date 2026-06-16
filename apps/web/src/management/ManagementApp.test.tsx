@@ -325,7 +325,11 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
         purpose: "test" as const,
         scope: "module" as const,
         moduleId: "alerts",
-        url: "http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test"
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-alerts-test",
+        url: "http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test",
+        copyableUrlStatus: "available" as const
       },
       {
         id: "unified-live",
@@ -333,17 +337,58 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
         purpose: "live" as const,
         scope: "unified" as const,
         moduleId: null,
-        url: "http://127.0.0.1:39187/overlay/unified/live/ovl_unified_live"
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-unified-live",
+        url: "http://127.0.0.1:39187/overlay/unified/live/ovl_unified_live",
+        copyableUrlStatus: "available" as const
       }
     ]),
     listOverlayClients: vi.fn(async () => [
       {
         id: "client-live",
+        overlayId: "default",
         purpose: "live" as const,
         scope: "module" as const,
-        moduleId: "alerts"
+        moduleId: "alerts",
+        connectedAt: "2026-05-30T12:00:00.000Z",
+        lastSeenAt: "2026-05-30T12:00:05.000Z",
+        userAgent: "OBS"
       }
     ]),
+    createOverlayOutputKey: vi.fn(async () => ({
+      keyId: "overlay-key-created",
+      url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",
+      output: {
+        id: "unified-test",
+        label: "Unified test",
+        purpose: "test" as const,
+        scope: "unified" as const,
+        moduleId: null,
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-created",
+        url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",
+        copyableUrlStatus: "available" as const
+      }
+    })),
+    regenerateOverlayOutputKey: vi.fn(async () => ({
+      keyId: "overlay-key-regenerated",
+      url: "http://127.0.0.1:39187/overlay/unified/test/ovl_regenerated",
+      output: {
+        id: "unified-test",
+        label: "Unified test",
+        purpose: "test" as const,
+        scope: "unified" as const,
+        moduleId: null,
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-regenerated",
+        url: "http://127.0.0.1:39187/overlay/unified/test/ovl_regenerated",
+        copyableUrlStatus: "available" as const
+      }
+    })),
+    revokeOverlayOutputKey: vi.fn(async () => undefined),
     getPlayback: vi.fn(async () => playback),
     pausePlayback: vi.fn(async () => playback),
     resumePlayback: vi.fn(async () => playback),

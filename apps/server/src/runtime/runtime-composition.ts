@@ -39,6 +39,10 @@ import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { InMemoryServerOverlayModuleConfigRepository } from "../modules/overlay-modules/in-memory-module-config-repository.js";
 import { createStaticOverlayModuleRegistry } from "../modules/overlay-modules/static-module-registry.js";
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
+import {
+  createOverlayRouteKeySecretRef,
+  OverlayOutputManagementService
+} from "../modules/overlays/overlay-output-management-service.js";
 import { SqliteOverlayAccessKeyRepository } from "../modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "../modules/playback/playback-coordinator.js";
 import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
@@ -137,11 +141,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     repository: new InMemoryServerOverlayModuleConfigRepository(),
     clock: now
   });
+  const overlayKeyRepository = new SqliteOverlayAccessKeyRepository(database.connection);
   const overlayAccessService = new LocalOverlayAccessService({
-    repository: new SqliteOverlayAccessKeyRepository(database.connection),
+    repository: overlayKeyRepository,
     clock: now,
     ...(options.generateOverlayAccessKeyId === undefined ? {} : { generateId: options.generateOverlayAccessKeyId }),
-    ...(options.generateRawOverlayRouteKey === undefined ? {} : { generateRawKey: options.generateRawOverlayRouteKey })
+    ...(options.generateRawOverlayRouteKey === undefined ? {} : { generateRawKey: options.generateRawOverlayRouteKey }),
+    createRouteKeySecretRef: createOverlayRouteKeySecretRef
   });
   const runtimeSecretStore = await createRuntimeSecretStore({
     ...(options.secretStore === undefined ? {} : { secretStore: options.secretStore }),
@@ -149,6 +155,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   const secretStore = runtimeSecretStore.secretStore;
+  const overlayOutputManagementService = new OverlayOutputManagementService({
+    overlayAccessService,
+    overlayKeyRepository,
+    overlayModuleRegistry,
+    overlayModuleConfigService,
+    secretStore
+  });
   const moderationService = new DefaultModerationService();
   const ttsProviderRegistry = createDefaultTtsProviderRegistry();
   const ttsService = new DefaultTtsService({
@@ -159,6 +172,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const overlayGateway = new OverlayGateway({
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
+    clock: now,
     onPlaybackReport(report) {
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.completeCurrent();
@@ -302,6 +316,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     diagnosticsService,
     overlayAccessService,
     overlayCompositionService,
+    overlayOutputManagementService,
     overlayGateway,
     alertService,
     assetRepository,

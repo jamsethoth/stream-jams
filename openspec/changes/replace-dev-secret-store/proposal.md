@@ -11,6 +11,7 @@ Runtime startup currently wires `DevSecretStore({ mode: "development" })` for Tw
 - Preserve dev/prod parity for secret storage: normal `pnpm dev` and production/local-app startup use the same durable secret-store path.
 - Keep the app available when credential storage is unavailable, but fail closed for Twitch OAuth/token operations that would require durable secret storage.
 - Add restart-style tests proving OAuth token references persist while secret material remains outside SQLite.
+- Provide a reusable server-side secret-store path that later changes can use for local encrypted-at-rest secrets such as recoverable overlay route keys.
 - Redact secret references and route-sensitive values from diagnostics/logs.
 - Document platform behavior for Windows, macOS, and Linux local execution.
 
@@ -26,6 +27,6 @@ None. No repo-local base specs exist yet for this behavior.
 
 ## Impact
 
-- Affected code: server runtime composition, secret-store adapters, Twitch OAuth/EventSub services, diagnostics redaction, config/runbook docs, and integration tests.
+- Affected code: server runtime composition, secret-store adapters, Twitch OAuth/EventSub services, reusable secret-store wiring for later local secrets, diagnostics redaction, config/runbook docs, and integration tests.
 - Dependencies: implementation MUST wait until `serve-local-web-app-shell` is merged and present in remote `main` because both changes touch runtime composition and startup behavior.
 - New dependency: `@napi-rs/keyring@1.3.0` in `@stream-jams/server`, pinned exactly with pnpm lockfile updates for native platform packages.
