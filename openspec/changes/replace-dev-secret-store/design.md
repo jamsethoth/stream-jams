@@ -61,7 +61,7 @@ Implementation MUST NOT begin until `serve-local-web-app-shell` has landed in re
 
 ## Resolved Questions
 
-1. `@napi-rs/keyring@1.3.0` is the selected Node adapter to the platform credential stores. `keytar` was rejected because its package maintenance is stale, and `keychain` was rejected because it does not cover all target platforms.
+1. `@napi-rs/keyring@1.3.0` is the selected adapter. `keytar` was rejected because its package maintenance is stale, and `keychain` was rejected because it does not cover all target platforms.
 2. Unsupported credential storage uses the cross-platform unavailable-store message above. The runtime stays available, diagnostics report non-secret degraded health, and Twitch OAuth/token operations fail closed without plaintext fallback.
 
 No open questions remain for this change.
