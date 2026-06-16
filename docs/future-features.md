@@ -4,6 +4,30 @@ This document captures intentionally deferred product and architecture ideas tha
 
 Each item should become its own design/spec before implementation.
 
+## Startup Module Setup Wizard
+
+**Status:** Deferred.
+
+**Captured:** 2026-06-16.
+
+**Why deferred:** The MVP currently has one Alerts module, so the module definition can stay enabled by default without adding first-run setup flow complexity.
+
+**Future capability:** When multiple overlay modules exist, guide users through choosing which modules to enable and configure during initial startup.
+
+**Design questions to answer before implementation:**
+
+- Which modules should be preselected, if any?
+- Can users skip setup and return to it later?
+- How should the wizard distinguish module enablement, canvas config, provider setup, and alert rule setup?
+- Should incomplete setup disable a module, keep defaults, or mark it needs attention?
+- How should the wizard behave for existing users after new modules are added?
+
+**Likely prerequisites:**
+
+- Multiple shipped overlay modules.
+- Durable module config persistence.
+- Stable per-module setup metadata beyond the MVP Alerts canvas fields.
+
 ## Streamer.bot Non-Local Connections
 
 **Status:** Deferred.

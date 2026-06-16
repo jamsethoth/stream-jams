@@ -25,6 +25,12 @@ Run `corepack pnpm test` before PRs. This includes unit coverage and the product
 
 Run `corepack pnpm test:e2e` for browser-visible management and overlay workflows when the local Playwright browser setup is available. Run `corepack pnpm lint`, `corepack pnpm typecheck`, and `corepack pnpm build` before opening a PR.
 
+## Overlay Module Config
+
+The Alerts module is enabled by default on a fresh database. Changes to module enablement and canvas size are persisted in SQLite and survive local runtime restarts over the same data directory.
+
+The module config UI only saves schema-backed canvas fields. Alert collections, rules, variants, and media setup live in the alert configuration UI instead of the module config save path.
+
 ## Runtime Logs
 
 The runtime writes structured JSONL log files under the app data `logs` directory. Log files roll over hourly with names like `runtime-YYYYMMDDHH.jsonl`, use `INFO` level and 48-hour retention by default, and are redacted before persistence.

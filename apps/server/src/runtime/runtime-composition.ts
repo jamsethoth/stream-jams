@@ -43,7 +43,7 @@ import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.
 import { SqliteDiagnosticsLogRepository } from "../modules/diagnostics/sqlite-log-repository.js";
 import { EventIngestionService } from "../modules/events/event-ingestion-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
-import { InMemoryServerOverlayModuleConfigRepository } from "../modules/overlay-modules/in-memory-module-config-repository.js";
+import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
 import { createStaticOverlayModuleRegistry } from "../modules/overlay-modules/static-module-registry.js";
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
 import {
@@ -155,7 +155,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const overlayModuleRegistry = createStaticOverlayModuleRegistry();
   const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
     registry: overlayModuleRegistry,
-    repository: new InMemoryServerOverlayModuleConfigRepository(),
+    repository: new SqliteOverlayModuleConfigRepository(database.connection),
     clock: now
   });
   const overlayKeyRepository = new SqliteOverlayAccessKeyRepository(database.connection);

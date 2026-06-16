@@ -52,6 +52,9 @@ describe("ManagementApp", () => {
     expect(within(modulesPanel).getByLabelText("Alerts enabled")).toBeChecked();
     expect(within(modulesPanel).getByText("Canvas width")).toBeInTheDocument();
     expect(within(modulesPanel).getByText("Canvas height")).toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Collections")).not.toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Alert rules")).not.toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Variants")).not.toBeInTheDocument();
 
     await user.clear(within(modulesPanel).getByLabelText("Canvas width"));
     await user.type(within(modulesPanel).getByLabelText("Canvas width"), "1280");
