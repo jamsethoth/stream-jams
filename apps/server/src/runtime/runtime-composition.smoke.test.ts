@@ -497,13 +497,7 @@ class RecordingTwitchApiClient implements TwitchApiClient {
   }
 
   async refreshUserToken(): Promise<TwitchTokenGrant> {
-    return {
-      accessToken: "access-token-2",
-      refreshToken: "refresh-token-2",
-      expiresIn: 14_000,
-      scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
-      tokenType: "bearer"
-    };
+    throw new Error("Twitch token refresh must not run in runtime composition smoke tests");
   }
 
   async validateToken(): Promise<TwitchValidatedToken> {
@@ -542,17 +536,9 @@ class ControlledTwitchSocket implements TwitchEventSubSocket {
   readonly #messageListeners: ((event: { readonly data: unknown }) => void)[] = [];
   readonly #closeListeners: ((event: { readonly code?: number; readonly reason?: string }) => void)[] = [];
 
-  addEventListener(event: "open", _listener: () => void): void;
-  addEventListener(event: "message", listener: (event: { readonly data: unknown }) => void): void;
-  addEventListener(event: "close", listener: (event: { readonly code?: number; readonly reason?: string }) => void): void;
-  addEventListener(event: "error", _listener: (event: unknown) => void): void;
   addEventListener(
     event: "open" | "message" | "close" | "error",
-    listener:
-      | (() => void)
-      | ((event: { readonly data: unknown }) => void)
-      | ((event: { readonly code?: number; readonly reason?: string }) => void)
-      | ((event: unknown) => void)
+    listener: (event: never) => void
   ): void {
     if (event === "message") {
       this.#messageListeners.push(listener as (event: { readonly data: unknown }) => void);

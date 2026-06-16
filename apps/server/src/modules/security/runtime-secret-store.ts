@@ -55,12 +55,24 @@ export async function createRuntimeSecretStore(
   });
 
   if (status.state === "degraded") {
-    const unavailableStore = new UnavailableSecretStore(status.message ?? runtimeSecretStoreUnavailableMessage);
+    const fail = (): never => {
+      throw new SecretStoreUnavailableError(status.message ?? runtimeSecretStoreUnavailableMessage);
+    };
     return {
-      secretStore: unavailableStore,
+      secretStore: {
+        async setSecret(): Promise<void> {
+          return fail();
+        },
+        async getSecret(): Promise<string | null> {
+          return fail();
+        },
+        async deleteSecret(): Promise<void> {
+          return fail();
+        }
+      },
       status,
       assertAvailable() {
-        throw new SecretStoreUnavailableError(status.message ?? runtimeSecretStoreUnavailableMessage);
+        return fail();
       }
     };
   }
@@ -80,26 +92,6 @@ export class SecretStoreUnavailableError extends Error {
   constructor(message = runtimeSecretStoreUnavailableMessage) {
     super(message);
     this.name = "SecretStoreUnavailableError";
-  }
-}
-
-export function isSecretStoreUnavailableError(error: unknown): error is SecretStoreUnavailableError {
-  return error instanceof Error && "code" in error && error.code === "SECRET_STORE_UNAVAILABLE";
-}
-
-class UnavailableSecretStore implements SecretStore {
-  constructor(private readonly message: string) {}
-
-  async setSecret(): Promise<void> {
-    throw new SecretStoreUnavailableError(this.message);
-  }
-
-  async getSecret(): Promise<string | null> {
-    throw new SecretStoreUnavailableError(this.message);
-  }
-
-  async deleteSecret(): Promise<void> {
-    throw new SecretStoreUnavailableError(this.message);
   }
 }
 
