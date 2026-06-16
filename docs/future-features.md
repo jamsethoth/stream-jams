@@ -54,15 +54,15 @@ Each item should become its own design/spec before implementation.
 
 - Should Twitch client ID and client secret move from environment variables into management configuration?
 - Which Twitch credential values are secrets and which are non-secret configuration?
-- Which secret-store backend is required before real Twitch credentials can be managed in-app?
+- Should in-app Twitch credential management require the current runtime OS credential adapter, the future Electron `safeStorage` adapter, or either backend through the shared `SecretStore` contract?
 - How should the UI distinguish app credentials, connected broadcaster account, OAuth token status, and EventSub runtime status?
-- What warning or blocked state should appear when the runtime falls back to development-only secret storage?
+- What warning or blocked state should appear when credential storage is unavailable or temporarily locked?
 - Should Twitch credential changes force token revocation, account disconnect, or EventSub reconnect?
 - What diagnostics prove Twitch OAuth and EventSub communication are using expected secure upstream endpoints?
 
 **Likely prerequisites:**
 
-- Production-ready encrypted secret-store selection.
+- Production-ready OS-backed secret-store selection.
 - Provider configuration model that separates non-secret settings from secret refs.
 - Streamer.bot secure configuration implementation or equivalent shared provider-settings pattern.
 - Server-composition smoke tests that prove runtime uses the selected secret store.
@@ -70,7 +70,40 @@ Each item should become its own design/spec before implementation.
 **Known UI gaps from the current Twitch panel:**
 
 - No UI for Twitch app client ID or client secret configuration.
-- No UI warning when Twitch runtime uses a development-only secret store.
 - No UI for credential storage health.
 - No explicit secure-communication status beyond relying on Twitch HTTPS endpoints.
 - No EventSub subscription selection or scope explanation beyond listing granted scopes.
+
+## Electron `safeStorage` Secret Store Adapter
+
+**Status:** Deferred until Electron is introduced.
+
+**Captured:** 2026-06-16.
+
+**Why deferred:** The current local runtime is a plain Node/Fastify process and now uses the shared `SecretStore` contract with an OS-backed Node adapter. Electron is intentionally not part of the MVP runtime. Refactoring to Electron APIs before the shell exists would add an unused packaging dependency and blur the current service boundary.
+
+**Future capability:** When the Electron desktop shell is added, introduce an Electron-owned secret-store adapter that uses `safeStorage` for encryption/decryption through Electron's supported platform key providers, while keeping callers behind the existing `SecretStore` interface.
+
+**Design questions to answer before implementation:**
+
+- Should Electron `safeStorage` replace the Node keyring adapter for packaged desktop builds, or should both adapters remain selectable by runtime composition?
+- Where should encrypted payloads live after `safeStorage.encryptString()` runs: SQLite, a dedicated local secrets file, or another Electron-managed user-data store?
+- How should the app detect and block weak Linux fallback backends such as unprotected/basic text storage?
+- How should the Electron main process expose secret operations without giving renderer or preload code raw secret access?
+- What migration path should move existing OS-keyring token entries into the Electron `safeStorage` backend without exposing token material in logs, diagnostics, or exports?
+- What startup, unlock, and temporary-unavailable states should be surfaced in management diagnostics?
+- How should automated tests fake Electron `safeStorage` while still proving packaged-runtime composition uses the Electron adapter?
+
+**Likely prerequisites:**
+
+- Electron shell package and service supervision boundary.
+- Electron security acceptance tests for context isolation, sandboxing where practical, restrictive navigation/window creation, CSP, and narrow preload APIs.
+- Main-process-owned secret-store bridge that keeps raw secrets out of renderer code.
+- Migration design for existing `SecretRef` records and OS-keyring-backed token material.
+- Platform validation for Windows, macOS, and Linux, including Linux environments without a usable secret service.
+
+**Non-goals before Electron exists:**
+
+- Adding Electron as a dependency only for secret storage.
+- Replacing the current Node runtime credential adapter.
+- Storing plaintext fallback secrets in SQLite, config files, diagnostics, or browser-accessible files.

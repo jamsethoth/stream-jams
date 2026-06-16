@@ -471,6 +471,7 @@ The MVP should include:
 - Alert scheduling.
 - Shared/community alert packs.
 - Cloud sync, if ever desired.
+- Electron `safeStorage` secret-store adapter and migration once the Electron shell exists.
 
 ## Reference Research
 
@@ -512,6 +513,7 @@ The MVP should include:
 ## Open Implementation Questions
 
 - Which Electron packaging, signing, installer, and auto-update toolchain should be used after the MVP stabilizes?
+- When Electron packaging is introduced, should packaged builds migrate from the Node keyring adapter to Electron `safeStorage`, and where should `safeStorage` ciphertext be persisted?
 - What exact file formats and size limits should be supported for media assets in the initial validation-only importer?
 - How much of the moderation/filtering system belongs in MVP versus post-MVP?
 - Should future modules be loaded only from code shipped with the app, or should a plugin-style external module system be supported later?
