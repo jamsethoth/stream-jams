@@ -7,11 +7,12 @@ The alert domain and server APIs support collections, rule conditions, variants,
 ## What Changes
 
 - Expand the management alert UI to create, edit, enable/disable, and delete collections, rules, and variants.
-- Add condition builder support for Twitch MVP event fields such as amount, tier, actor, and reward identifiers.
+- Add condition builder support for a minimal normalized Twitch MVP field set: amount, subscription tier, and channel point reward ID.
 - Add asset picker integration for visual and audio asset IDs.
 - Add layout, duration, cooldown, priority, weight, and rule/variant enabled controls.
 - Add realistic sample/test alert workflows for configured alert rules.
 - Keep TTS provider-specific alert controls out of this change; those are handled by `add-speakerbot-tts-provider`.
+- Keep broader condition fields, an interactive layout canvas, and configuration backup/history/rollback out of this change and track them as future features.
 
 ## Capabilities
 

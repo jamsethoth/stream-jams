@@ -4,16 +4,24 @@ import {
   AlertVariantIdConflictError,
   AlertVariantNotFoundError,
   LastAlertVariantError,
+  normalizedStreamEventSchema,
+  type NormalizedStreamEvent,
   type AlertService,
   alertVariantSchema,
   createAlertRuleInputSchema,
   updateAlertRuleInputSchema
 } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
+import type { PlaybackEnqueueResult } from "../../modules/playback/playback-coordinator.js";
 import { sendHttpError } from "../errors.js";
+
+export interface AlertTestPlaybackCoordinator {
+  enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult>;
+}
 
 export interface AlertRuleRouteDependencies {
   readonly alertService: AlertService;
+  readonly alertTestPlaybackCoordinator?: AlertTestPlaybackCoordinator | undefined;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
 }
@@ -90,6 +98,23 @@ export function registerAlertRoutes(app: FastifyInstance, dependencies: AlertRul
       return sendAlertError(reply, error);
     }
   });
+
+  const alertTestPlaybackCoordinator = dependencies.alertTestPlaybackCoordinator;
+  if (alertTestPlaybackCoordinator !== undefined) {
+    app.post("/alerts/test", { preHandler }, async (request, reply) => {
+      try {
+        const event = normalizedStreamEventSchema.parse(request.body);
+        const result = await alertTestPlaybackCoordinator.enqueueEvent(event);
+        return reply.send({
+          status: result.status,
+          matchedRuleIds: result.matchedRuleIds,
+          enqueuedAlertIds: result.enqueuedAlertIds
+        });
+      } catch (error) {
+        return sendAlertError(reply, error);
+      }
+    });
+  }
 }
 
 function readObjectBody(body: unknown): Record<string, unknown> {

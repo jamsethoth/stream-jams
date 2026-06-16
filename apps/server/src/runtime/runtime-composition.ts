@@ -320,6 +320,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayOutputManagementService,
     overlayGateway,
     alertService,
+    alertTestPlaybackCoordinator: playbackCoordinator,
     assetRepository,
     mediaImportPipeline,
     assetStore,

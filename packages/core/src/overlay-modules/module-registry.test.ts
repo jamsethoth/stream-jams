@@ -38,12 +38,7 @@ describe("overlay module registry", () => {
 
     expect(registry.listModules()).toEqual([alertsOverlayModuleDefinition]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
-    expect(alertsOverlayModuleDefinition.wizard.steps.map((step) => step.id)).toEqual([
-      "alerts-canvas",
-      "alerts-collections",
-      "alerts-rules",
-      "alerts-variants"
-    ]);
+    expect(alertsOverlayModuleDefinition.wizard.steps.map((step) => step.id)).toEqual(["alerts-canvas"]);
   });
 
   it("returns null for unknown module ids", () => {

@@ -229,13 +229,31 @@ function createAlertApi() {
     async createCollection(): Promise<AlertCollection> {
       throw new Error("not called");
     },
+    async updateCollection(): Promise<AlertCollection> {
+      throw new Error("not called");
+    },
+    async deleteCollection(): Promise<void> {
+      throw new Error("not called");
+    },
     async createRule(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async updateRule(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async deleteRule(): Promise<void> {
+      throw new Error("not called");
+    },
+    async deleteVariant(): Promise<AlertRule> {
       throw new Error("not called");
     },
     async setCollectionEnabled(): Promise<AlertCollection> {
       throw new Error("not called");
     },
     async setRuleEnabled(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async testAlert() {
       throw new Error("not called");
     }
   };
