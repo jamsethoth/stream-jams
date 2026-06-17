@@ -1,4 +1,4 @@
-import { readHttpError } from "./http-errors.js";
+import { createManagementHttpClient, type HttpManagementClientOptions } from "./management-http-client.js";
 
 export interface DashboardSummary {
   readonly twitch: {
@@ -35,7 +35,7 @@ export interface ModerationSettingsView {
 export interface ManagementModuleField {
   readonly id: string;
   readonly label: string;
-  readonly type: "text" | "number" | "boolean" | "select" | "asset" | "color";
+  readonly type: "text" | "number" | "boolean";
   readonly required: boolean;
 }
 
@@ -310,14 +310,7 @@ export interface ManagementApi {
   disconnectTwitch(): Promise<TwitchConnectionStatusView>;
 }
 
-export interface HttpManagementApiOptions {
-  readonly fetch?: typeof fetch;
-}
-
-interface ManagementSessionResponse {
-  readonly id: string;
-  readonly csrfToken: string;
-}
+export type HttpManagementApiOptions = HttpManagementClientOptions;
 
 interface PlaybackQueueSnapshotResponse {
   readonly current: PlaybackQueueItemResponse | null;
@@ -353,88 +346,21 @@ interface OverlayModuleConfigResponse {
 }
 
 export function createHttpManagementApi(options: HttpManagementApiOptions = {}): ManagementApi {
-  const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
-  let sessionId: string | null = null;
-  let csrfToken: string | null = null;
-
-  async function getSession(): Promise<{ readonly id: string; readonly csrfToken: string }> {
-    if (sessionId !== null && csrfToken !== null) {
-      return {
-        id: sessionId,
-        csrfToken
-      };
-    }
-
-    const response = await fetcher("/auth/management/sessions", {
-      method: "POST"
-    });
-    if (!response.ok) {
-      throw new Error(await readHttpError(response, "Unable to create management session."));
-    }
-
-    const session = (await response.json()) as ManagementSessionResponse;
-    sessionId = session.id;
-    csrfToken = session.csrfToken;
-    return session;
-  }
-
-  async function managementHeaders(extraHeaders: HeadersInit = {}, includeCsrf = false): Promise<HeadersInit> {
-    const session = await getSession();
-    return {
-      ...extraHeaders,
-      authorization: `Bearer ${session.id}`,
-      ...(includeCsrf ? { "x-stream-jams-csrf": session.csrfToken } : {})
-    };
-  }
-
-  async function jsonHeaders(): Promise<HeadersInit> {
-    return managementHeaders({
-      "content-type": "application/json"
-    }, true);
-  }
+  const client = createManagementHttpClient(options);
 
   async function getPlayback(): Promise<PlaybackView> {
-    const response = await fetcher("/playback", {
-      headers: await managementHeaders()
-    });
-    if (!response.ok) {
-      throw new Error(await readHttpError(response, "Unable to load playback."));
-    }
-
-    return mapPlaybackSnapshot((await response.json()) as PlaybackQueueSnapshotResponse);
+    return mapPlaybackSnapshot(await client.getJson<PlaybackQueueSnapshotResponse>("/playback", "Unable to load playback."));
   }
 
   async function postPlayback(path: string, body?: unknown): Promise<PlaybackView> {
-    const requestInit: RequestInit = {
-      method: "POST",
-      headers: body === undefined ? await managementHeaders({}, true) : await jsonHeaders()
-    };
-    if (body !== undefined) {
-      requestInit.body = JSON.stringify(body);
-    }
-
-    const response = await fetcher(path, requestInit);
-    if (!response.ok) {
-      throw new Error(await readHttpError(response, "Unable to update playback."));
-    }
-
-    return mapPlaybackSnapshot((await response.json()) as PlaybackQueueSnapshotResponse);
+    return mapPlaybackSnapshot(await client.postJson<PlaybackQueueSnapshotResponse>(path, body, "Unable to update playback."));
   }
 
   async function postOverlayOutputKey(
     path: string,
     input: OverlayOutputKeyRequestView
   ): Promise<OverlayOutputKeyResultView> {
-    const response = await fetcher(path, {
-      method: "POST",
-      headers: await jsonHeaders(),
-      body: JSON.stringify(input)
-    });
-    if (!response.ok) {
-      throw new Error(await readHttpError(response, "Unable to update overlay output key."));
-    }
-
-    return (await response.json()) as OverlayOutputKeyResultView;
+    return client.postJson<OverlayOutputKeyResultView>(path, input, "Unable to update overlay output key.");
   }
 
   function withLimit(path: string, input: DiagnosticsRequestView = {}): string {
@@ -442,15 +368,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   }
 
   async function jsonList<T>(path: string): Promise<readonly T[]> {
-    const response = await fetcher(path, {
-      headers: await managementHeaders()
-    });
-
-    if (!response.ok) {
-      throw new Error(await readHttpError(response, "Unable to load management data."));
-    }
-
-    return (await response.json()) as readonly T[];
+    return client.getJson<readonly T[]>(path, "Unable to load management data.");
   }
 
   return {
@@ -474,72 +392,32 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     },
 
     async getServerConfig() {
-      const response = await fetcher("/config/server", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load server settings."));
-      }
-
-      return (await response.json()) as ServerConfigView;
+      return client.getJson<ServerConfigView>("/config/server", "Unable to load server settings.");
     },
 
     async updateServerConfig(input: ServerConfigView) {
-      const response = await fetcher("/config/server", {
-        method: "PATCH",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to update server settings."));
-      }
-
-      return (await response.json()) as ServerConfigView;
+      return client.patchJson<ServerConfigView>("/config/server", input, "Unable to update server settings.");
     },
 
     async getModerationSettings() {
-      const response = await fetcher("/moderation/settings", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load moderation settings."));
-      }
-
-      return (await response.json()) as ModerationSettingsView;
+      return client.getJson<ModerationSettingsView>("/moderation/settings", "Unable to load moderation settings.");
     },
 
     async updateModerationSettings(input: ModerationSettingsView) {
-      const response = await fetcher("/moderation/settings", {
-        method: "PATCH",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to update moderation settings."));
-      }
-
-      return (await response.json()) as ModerationSettingsView;
+      return client.patchJson<ModerationSettingsView>("/moderation/settings", input, "Unable to update moderation settings.");
     },
 
     async listModules() {
-      const response = await fetcher("/overlay-modules", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load overlay modules."));
-      }
-
-      const modules = (await response.json()) as readonly OverlayModuleDefinitionResponse[];
+      const modules = await client.getJson<readonly OverlayModuleDefinitionResponse[]>(
+        "/overlay-modules",
+        "Unable to load overlay modules."
+      );
       return Promise.all(
         modules.map(async (moduleDefinition): Promise<ManagementModuleView> => {
-          const configResponse = await fetcher(`/overlay-modules/${encodeURIComponent(moduleDefinition.id)}/config`, {
-            headers: await managementHeaders()
-          });
-          if (!configResponse.ok) {
-            throw new Error(await readHttpError(configResponse, "Unable to load overlay module config."));
-          }
-
-          const config = (await configResponse.json()) as OverlayModuleConfigResponse;
+          const config = await client.getJson<OverlayModuleConfigResponse>(
+            `/overlay-modules/${encodeURIComponent(moduleDefinition.id)}/config`,
+            "Unable to load overlay module config."
+          );
           return {
             id: moduleDefinition.id,
             displayName: moduleDefinition.displayName,
@@ -552,29 +430,19 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     },
 
     async setModuleEnabled(moduleId: string, enabled: boolean) {
-      const response = await fetcher(`/overlay-modules/${encodeURIComponent(moduleId)}/enabled`, {
-        method: "PATCH",
-        headers: await jsonHeaders(),
-        body: JSON.stringify({ enabled })
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to update overlay module."));
-      }
-
-      return response.json();
+      return client.patchJson<unknown>(
+        `/overlay-modules/${encodeURIComponent(moduleId)}/enabled`,
+        { enabled },
+        "Unable to update overlay module."
+      );
     },
 
     async saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }) {
-      const response = await fetcher(`/overlay-modules/${encodeURIComponent(moduleId)}/config`, {
-        method: "PUT",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to save overlay module config."));
-      }
-
-      return response.json();
+      return client.putJson<unknown>(
+        `/overlay-modules/${encodeURIComponent(moduleId)}/config`,
+        input,
+        "Unable to save overlay module config."
+      );
     },
 
     listOverlayOutputs() {
@@ -594,131 +462,72 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     },
 
     async revokeOverlayOutputKey(keyId) {
-      const response = await fetcher(`/management/overlay-outputs/keys/${encodeURIComponent(keyId)}`, {
-        method: "DELETE",
-        headers: await managementHeaders({}, true)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to revoke overlay output key."));
-      }
+      await client.deleteRequest(
+        `/management/overlay-outputs/keys/${encodeURIComponent(keyId)}`,
+        "Unable to revoke overlay output key."
+      );
     },
 
     async getDiagnostics(input: DiagnosticsRequestView = {}) {
-      const response = await fetcher(withLimit("/diagnostics", input), {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load diagnostics."));
-      }
-
-      return (await response.json()) as DiagnosticsView;
+      return client.getJson<DiagnosticsView>(withLimit("/diagnostics", input), "Unable to load diagnostics.");
     },
 
     async exportDiagnostics(input: DiagnosticsRequestView = {}) {
-      const response = await fetcher(withLimit("/diagnostics/export", input), {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to export diagnostics."));
-      }
-
-      return (await response.json()) as DiagnosticsExportView;
+      return client.getJson<DiagnosticsExportView>(
+        withLimit("/diagnostics/export", input),
+        "Unable to export diagnostics."
+      );
     },
 
     async exportDebugDiagnostics(input: DiagnosticsDebugExportRequestView = {}) {
-      const response = await fetcher("/diagnostics/export/debug", {
-        method: "POST",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to export diagnostics with recent runtime logs."));
-      }
-
-      return (await response.json()) as DiagnosticsDebugExportView;
+      return client.postJson<DiagnosticsDebugExportView>(
+        "/diagnostics/export/debug",
+        input,
+        "Unable to export diagnostics with recent runtime logs."
+      );
     },
 
     async getTwitchStatus() {
-      const response = await fetcher("/twitch/auth/status", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load Twitch status."));
-      }
-
-      return (await response.json()) as TwitchConnectionStatusView;
+      return client.getJson<TwitchConnectionStatusView>("/twitch/auth/status", "Unable to load Twitch status.");
     },
 
     async getTwitchEventSubStatus() {
-      const response = await fetcher("/twitch/eventsub/status", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load Twitch EventSub status."));
-      }
-
-      return (await response.json()) as TwitchEventSubStatusView;
+      return client.getJson<TwitchEventSubStatusView>(
+        "/twitch/eventsub/status",
+        "Unable to load Twitch EventSub status."
+      );
     },
 
     async startTwitchAuth(input: TwitchAuthStartRequestView) {
-      const response = await fetcher("/twitch/auth/start", {
-        method: "POST",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to start Twitch authorization."));
-      }
-
-      return (await response.json()) as TwitchAuthStartResultView;
+      return client.postJson<TwitchAuthStartResultView>(
+        "/twitch/auth/start",
+        input,
+        "Unable to start Twitch authorization."
+      );
     },
 
     async refreshTwitchAuth() {
-      const response = await fetcher("/twitch/auth/refresh", {
-        method: "POST",
-        headers: await managementHeaders({}, true)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to refresh Twitch connection."));
-      }
-
-      return (await response.json()) as TwitchConnectionStatusView;
+      return client.postJson<TwitchConnectionStatusView>(
+        "/twitch/auth/refresh",
+        undefined,
+        "Unable to refresh Twitch connection."
+      );
     },
 
     async disconnectTwitch() {
-      const response = await fetcher("/twitch/auth/disconnect", {
-        method: "POST",
-        headers: await managementHeaders({}, true)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to disconnect Twitch."));
-      }
-
-      return (await response.json()) as TwitchConnectionStatusView;
+      return client.postJson<TwitchConnectionStatusView>(
+        "/twitch/auth/disconnect",
+        undefined,
+        "Unable to disconnect Twitch."
+      );
     },
 
     async listTtsProviders() {
-      const response = await fetcher("/tts/providers", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load TTS providers."));
-      }
-
-      return (await response.json()) as readonly TtsProviderView[];
+      return client.getJson<readonly TtsProviderView[]>("/tts/providers", "Unable to load TTS providers.");
     },
 
     async testTts(input: TtsTestRequestView) {
-      const response = await fetcher("/tts/test", {
-        method: "POST",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to run TTS test."));
-      }
-
-      return (await response.json()) as TtsTestResultView;
+      return client.postJson<TtsTestResultView>("/tts/test", input, "Unable to run TTS test.");
     },
 
     getPlayback,

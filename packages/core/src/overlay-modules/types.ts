@@ -4,7 +4,7 @@ import type { OverlayInstruction } from "../overlays/types.js";
 export interface OverlayModuleWizardField {
   readonly id: string;
   readonly label: string;
-  readonly type: "text" | "number" | "boolean" | "select" | "asset" | "color";
+  readonly type: "text" | "number" | "boolean";
   readonly required: boolean;
 }
 

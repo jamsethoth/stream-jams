@@ -4,7 +4,7 @@ import { isoDateTimeSchema, nonEmptyStringSchema, nonNegativeIntegerSchema } fro
 export const overlayModuleWizardFieldSchema = z.object({
   id: nonEmptyStringSchema,
   label: nonEmptyStringSchema,
-  type: z.enum(["text", "number", "boolean", "select", "asset", "color"]),
+  type: z.enum(["text", "number", "boolean"]),
   required: z.boolean()
 });
 

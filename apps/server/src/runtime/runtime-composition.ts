@@ -14,6 +14,7 @@ import {
   DefaultPlaybackQueue,
   DefaultTtsService,
   NoopMediaTranscodingStage,
+  createDefaultOverlayModuleRegistry,
   type ConfigStore,
   type SecretStore
 } from "@stream-jams/core";
@@ -44,7 +45,6 @@ import { SqliteDiagnosticsLogRepository } from "../modules/diagnostics/sqlite-lo
 import { EventIngestionService } from "../modules/events/event-ingestion-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
-import { createStaticOverlayModuleRegistry } from "../modules/overlay-modules/static-module-registry.js";
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
 import {
   createOverlayRouteKeySecretRef,
@@ -152,7 +152,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     environment
   });
   const managementOriginPreHandler = createManagementOriginPreHandler(managementOriginPolicy);
-  const overlayModuleRegistry = createStaticOverlayModuleRegistry();
+  const overlayModuleRegistry = createDefaultOverlayModuleRegistry();
   const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
     registry: overlayModuleRegistry,
     repository: new SqliteOverlayModuleConfigRepository(database.connection),

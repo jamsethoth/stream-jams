@@ -1,87 +1,30 @@
-import { readHttpError } from "../../http-errors.js";
+import type {
+  AlertCollection,
+  AlertRule,
+  CreateAlertCollectionInput,
+  CreateAlertRuleInput,
+  NormalizedStreamEvent,
+  StreamEventType,
+  UpdateAlertCollectionInput,
+  UpdateAlertRuleInput
+} from "@stream-jams/core";
+import { createManagementHttpClient, type HttpManagementClientOptions } from "../../management-http-client.js";
 
-export interface AlertCollection {
-  readonly id: string;
-  readonly name: string;
-  readonly enabled: boolean;
-}
+export type {
+  AlertCollection,
+  AlertCondition,
+  AlertRule,
+  AlertVariant,
+  CreateAlertCollectionInput,
+  CreateAlertRuleInput,
+  CreateAlertVariantInput,
+  UpdateAlertCollectionInput,
+  UpdateAlertRuleInput,
+  UpdateAlertVariantInput
+} from "@stream-jams/core";
 
-export interface AlertCondition {
-  readonly field: "amount" | "tier" | "rewardId";
-  readonly operator: "equals" | "min" | "max" | "range" | "includes";
-  readonly value: string | number | boolean | readonly [number, number];
-}
-
-export interface AlertLayout {
-  readonly x: number;
-  readonly y: number;
-  readonly width: number;
-  readonly height: number;
-  readonly zIndex: number;
-}
-
-export interface AlertVariant {
-  readonly id: string;
-  readonly name: string;
-  readonly enabled: boolean;
-  readonly weight: number;
-  readonly conditions?: readonly AlertCondition[] | undefined;
-  readonly priority?: number | undefined;
-  readonly visualAssetId: string | null;
-  readonly audioAssetId: string | null;
-  readonly textTemplate: string;
-  readonly ttsConfig: null;
-  readonly durationMs: number;
-  readonly layout: AlertLayout;
-}
-
-export interface AlertRule {
-  readonly id: string;
-  readonly name: string;
-  readonly eventType: AlertEventType;
-  readonly enabled: boolean;
-  readonly collectionIds: readonly string[];
-  readonly conditions: readonly AlertCondition[];
-  readonly variants: readonly AlertVariant[];
-  readonly cooldownSeconds: number;
-  readonly priority: number;
-}
-
-export type AlertEventType = "follow" | "subscription" | "resubscription" | "cheer" | "raid" | "channel_point_redemption";
-
-export interface CreateAlertCollectionInput {
-  readonly name: string;
-  readonly enabled?: boolean | undefined;
-}
-
-export type UpdateAlertCollectionInput = Omit<AlertCollection, "id">;
-
-export interface CreateAlertRuleInput {
-  readonly name: string;
-  readonly eventType: AlertEventType;
-  readonly enabled: boolean;
-  readonly collectionIds: readonly string[];
-  readonly conditions: readonly AlertCondition[];
-  readonly variants: readonly CreateAlertVariantInput[];
-  readonly cooldownSeconds: number;
-  readonly priority: number;
-}
-
-export type UpdateAlertRuleInput = Omit<AlertRule, "id">;
-
-export interface CreateAlertVariantInput {
-  readonly name: string;
-  readonly enabled: boolean;
-  readonly weight: number;
-  readonly conditions?: readonly AlertCondition[] | undefined;
-  readonly priority?: number | undefined;
-  readonly visualAssetId: string | null;
-  readonly audioAssetId: string | null;
-  readonly textTemplate: string;
-  readonly ttsConfig: null;
-  readonly durationMs: number;
-  readonly layout: AlertLayout;
-}
+export type AlertEventType = StreamEventType;
+export type AlertTestEventInput = NormalizedStreamEvent;
 
 export type AlertTestStatus = "queued" | "duplicate" | "no-matches" | "cooldown";
 
@@ -89,34 +32,6 @@ export interface AlertTestResult {
   readonly status: AlertTestStatus;
   readonly matchedRuleIds: readonly string[];
   readonly enqueuedAlertIds: readonly string[];
-}
-
-export type AlertTestEventInput =
-  | BaseAlertTestEventInput & { readonly type: "follow"; readonly amount: null }
-  | BaseAlertTestEventInput & { readonly type: "subscription"; readonly amount: number; readonly tier: "1000" | "2000" | "3000" | "prime" }
-  | BaseAlertTestEventInput & { readonly type: "resubscription"; readonly amount: number; readonly tier: "1000" | "2000" | "3000" | "prime"; readonly streakMonths: number | null }
-  | BaseAlertTestEventInput & { readonly type: "cheer"; readonly amount: number }
-  | BaseAlertTestEventInput & { readonly type: "raid"; readonly amount: number }
-  | BaseAlertTestEventInput & {
-      readonly type: "channel_point_redemption";
-      readonly amount: null;
-      readonly rewardId: string;
-      readonly rewardTitle: string;
-      readonly userInput: string | null;
-    };
-
-interface BaseAlertTestEventInput {
-  readonly id: string;
-  readonly providerId: "twitch";
-  readonly sourcePlatform: "twitch";
-  readonly ingestProvider: "twitch";
-  readonly occurredAt: string;
-  readonly actor: {
-    readonly id: string | null;
-    readonly displayName: string;
-  };
-  readonly message: string | null;
-  readonly metadata: Record<string, unknown>;
 }
 
 export interface AlertConfigurationApi {
@@ -134,203 +49,80 @@ export interface AlertConfigurationApi {
   testAlert(input: AlertTestEventInput): Promise<AlertTestResult>;
 }
 
-export interface HttpAlertConfigurationApiOptions {
-  readonly fetch?: typeof fetch;
-}
-
-interface ManagementSessionResponse {
-  readonly id: string;
-  readonly csrfToken: string;
-}
+export type HttpAlertConfigurationApiOptions = HttpManagementClientOptions;
 
 export function createHttpAlertConfigurationApi(options: HttpAlertConfigurationApiOptions = {}): AlertConfigurationApi {
-  const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
-  let sessionId: string | null = null;
-  let csrfToken: string | null = null;
-
-  async function getSession(): Promise<{ readonly id: string; readonly csrfToken: string }> {
-    if (sessionId !== null && csrfToken !== null) {
-      return {
-        id: sessionId,
-        csrfToken
-      };
-    }
-
-    const response = await fetcher("/auth/management/sessions", {
-      method: "POST"
-    });
-    if (!response.ok) {
-      throw new Error(await readHttpError(response, "Unable to create management session."));
-    }
-
-    const session = (await response.json()) as ManagementSessionResponse;
-    sessionId = session.id;
-    csrfToken = session.csrfToken;
-    return session;
-  }
-
-  async function managementHeaders(extraHeaders: HeadersInit = {}, includeCsrf = false): Promise<HeadersInit> {
-    const session = await getSession();
-    return {
-      ...extraHeaders,
-      authorization: `Bearer ${session.id}`,
-      ...(includeCsrf ? { "x-stream-jams-csrf": session.csrfToken } : {})
-    };
-  }
-
-  async function jsonHeaders(): Promise<HeadersInit> {
-    return managementHeaders({
-      "content-type": "application/json"
-    }, true);
-  }
+  const client = createManagementHttpClient(options);
 
   return {
     async listCollections() {
-      const response = await fetcher("/alert-collections", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load alert collections."));
-      }
-
-      return (await response.json()) as readonly AlertCollection[];
+      return client.getJson<readonly AlertCollection[]>("/alert-collections", "Unable to load alert collections.");
     },
 
     async listRules() {
-      const response = await fetcher("/alerts/rules", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load alert rules."));
-      }
-
-      return (await response.json()) as readonly AlertRule[];
+      return client.getJson<readonly AlertRule[]>("/alerts/rules", "Unable to load alert rules.");
     },
 
     async createCollection(input: CreateAlertCollectionInput) {
-      const response = await fetcher("/alert-collections", {
-        method: "POST",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to create alert collection."));
-      }
-
-      return (await response.json()) as AlertCollection;
+      return client.postJson<AlertCollection>("/alert-collections", input, "Unable to create alert collection.");
     },
 
     async updateCollection(collectionId: string, input: UpdateAlertCollectionInput) {
-      const response = await fetcher(`/alert-collections/${encodeURIComponent(collectionId)}`, {
-        method: "PUT",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to update alert collection."));
-      }
-
-      return (await response.json()) as AlertCollection;
+      return client.putJson<AlertCollection>(
+        `/alert-collections/${encodeURIComponent(collectionId)}`,
+        input,
+        "Unable to update alert collection."
+      );
     },
 
     async deleteCollection(collectionId: string) {
-      const response = await fetcher(`/alert-collections/${encodeURIComponent(collectionId)}`, {
-        method: "DELETE",
-        headers: await managementHeaders({}, true)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to delete alert collection."));
-      }
+      await client.deleteRequest(
+        `/alert-collections/${encodeURIComponent(collectionId)}`,
+        "Unable to delete alert collection."
+      );
     },
 
     async createRule(input: CreateAlertRuleInput) {
-      const response = await fetcher("/alerts/rules", {
-        method: "POST",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to create alert rule."));
-      }
-
-      return (await response.json()) as AlertRule;
+      return client.postJson<AlertRule>("/alerts/rules", input, "Unable to create alert rule.");
     },
 
     async updateRule(ruleId: string, input: UpdateAlertRuleInput) {
-      const response = await fetcher(`/alerts/rules/${encodeURIComponent(ruleId)}`, {
-        method: "PUT",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to update alert rule."));
-      }
-
-      return (await response.json()) as AlertRule;
+      return client.putJson<AlertRule>(
+        `/alerts/rules/${encodeURIComponent(ruleId)}`,
+        input,
+        "Unable to update alert rule."
+      );
     },
 
     async deleteRule(ruleId: string) {
-      const response = await fetcher(`/alerts/rules/${encodeURIComponent(ruleId)}`, {
-        method: "DELETE",
-        headers: await managementHeaders({}, true)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to delete alert rule."));
-      }
+      await client.deleteRequest(`/alerts/rules/${encodeURIComponent(ruleId)}`, "Unable to delete alert rule.");
     },
 
     async deleteVariant(ruleId: string, variantId: string) {
-      const response = await fetcher(
+      return client.deleteJson<AlertRule>(
         `/alerts/rules/${encodeURIComponent(ruleId)}/variants/${encodeURIComponent(variantId)}`,
-        {
-          method: "DELETE",
-          headers: await managementHeaders({}, true)
-        }
+        "Unable to delete alert variant."
       );
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to delete alert variant."));
-      }
-
-      return (await response.json()) as AlertRule;
     },
 
     async setCollectionEnabled(collectionId: string, enabled: boolean) {
-      const response = await fetcher(`/alert-collections/${encodeURIComponent(collectionId)}/enabled`, {
-        method: "PATCH",
-        headers: await jsonHeaders(),
-        body: JSON.stringify({ enabled })
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to update alert collection."));
-      }
-
-      return (await response.json()) as AlertCollection;
+      return client.patchJson<AlertCollection>(
+        `/alert-collections/${encodeURIComponent(collectionId)}/enabled`,
+        { enabled },
+        "Unable to update alert collection."
+      );
     },
 
     async setRuleEnabled(ruleId: string, enabled: boolean) {
-      const response = await fetcher(`/alerts/rules/${encodeURIComponent(ruleId)}/enabled`, {
-        method: "PATCH",
-        headers: await jsonHeaders(),
-        body: JSON.stringify({ enabled })
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to update alert rule."));
-      }
-
-      return (await response.json()) as AlertRule;
+      return client.patchJson<AlertRule>(
+        `/alerts/rules/${encodeURIComponent(ruleId)}/enabled`,
+        { enabled },
+        "Unable to update alert rule."
+      );
     },
 
     async testAlert(input: AlertTestEventInput) {
-      const response = await fetcher("/alerts/test", {
-        method: "POST",
-        headers: await jsonHeaders(),
-        body: JSON.stringify(input)
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to run test alert."));
-      }
-
-      return (await response.json()) as AlertTestResult;
+      return client.postJson<AlertTestResult>("/alerts/test", input, "Unable to run test alert.");
     }
   };
 }

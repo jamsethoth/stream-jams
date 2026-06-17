@@ -1,4 +1,5 @@
-import type { SecretRef, SecretStore } from "@stream-jams/core";
+import type { SecretRef } from "@stream-jams/core";
+import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
 import type { OsCredentialAdapter } from "./os-secret-store.js";
 import {
@@ -95,22 +96,6 @@ class FailingCredentialAdapter implements OsCredentialAdapter {
 
   async deletePassword(): Promise<boolean> {
     throw new Error("secret service unavailable");
-  }
-}
-
-class InMemorySecretStore implements SecretStore {
-  readonly #secrets = new Map<string, string>();
-
-  async setSecret(ref: SecretRef, value: string): Promise<void> {
-    this.#secrets.set(`${ref.namespace}:${ref.accountId}:${ref.name}`, value);
-  }
-
-  async getSecret(ref: SecretRef): Promise<string | null> {
-    return this.#secrets.get(`${ref.namespace}:${ref.accountId}:${ref.name}`) ?? null;
-  }
-
-  async deleteSecret(ref: SecretRef): Promise<void> {
-    this.#secrets.delete(`${ref.namespace}:${ref.accountId}:${ref.name}`);
   }
 }
 

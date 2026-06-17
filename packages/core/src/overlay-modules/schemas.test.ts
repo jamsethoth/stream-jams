@@ -27,6 +27,27 @@ describe("overlay module schemas", () => {
     ).toBe(false);
   });
 
+  it("rejects wizard field kinds the UI does not render yet", () => {
+    expect(
+      overlayModuleDefinitionSchema.safeParse({
+        ...alertsOverlayModuleDefinition,
+        wizard: {
+          steps: [
+            {
+              ...alertsOverlayModuleDefinition.wizard.steps[0],
+              fields: [
+                {
+                  ...alertsOverlayModuleDefinition.wizard.steps[0]?.fields[0],
+                  type: "select"
+                }
+              ]
+            }
+          ]
+        }
+      }).success
+    ).toBe(false);
+  });
+
   it("requires the Alerts renderer to support module-specific and unified outputs", () => {
     expect(alertsOverlayModuleDefinition.renderer.supportedOutputs).toEqual(["module", "unified"]);
   });

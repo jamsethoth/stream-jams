@@ -1,7 +1,8 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AppConfig, AppConfigUpdate, ConfigStore, SecretRef, SecretStore } from "@stream-jams/core";
+import type { AppConfig, AppConfigUpdate, ConfigStore } from "@stream-jams/core";
+import { createSequence, InMemorySecretStore } from "@stream-jams/test-support";
 import { afterEach, describe, expect, it } from "vitest";
 import type { TwitchApiClient, TwitchCurrentUser, TwitchTokenGrant, TwitchValidatedToken } from "../modules/twitch/twitch-api-client.js";
 import type {
@@ -34,7 +35,7 @@ describe("runtime app composition smoke", () => {
         TWITCH_CLIENT_ID: "test-client",
         TWITCH_CLIENT_SECRET: "test-secret"
       },
-      secretStore: new LocalSecretStore(),
+      secretStore: new InMemorySecretStore(),
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
       twitchEventSubSocketFactory: createForbiddenTwitchSocket,
@@ -193,7 +194,7 @@ describe("runtime app composition smoke", () => {
         TWITCH_CLIENT_ID: "test-client",
         TWITCH_CLIENT_SECRET: "test-secret"
       },
-      secretStore: new LocalSecretStore(),
+      secretStore: new InMemorySecretStore(),
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
       twitchEventSubSocketFactory: createForbiddenTwitchSocket,
@@ -234,7 +235,7 @@ describe("runtime app composition smoke", () => {
         TWITCH_CLIENT_ID: "test-client",
         TWITCH_CLIENT_SECRET: "test-secret"
       },
-      secretStore: new LocalSecretStore(),
+      secretStore: new InMemorySecretStore(),
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
       twitchEventSubSocketFactory: createForbiddenTwitchSocket,
@@ -495,14 +496,6 @@ function createConfig(testRoot: string): AppConfig {
   };
 }
 
-function createSequence(prefix: string): () => string {
-  let value = 0;
-  return () => {
-    value += 1;
-    return `${prefix}-${value}`;
-  };
-}
-
 class StaticConfigStore implements ConfigStore {
   constructor(private config: AppConfig) {}
 
@@ -527,22 +520,6 @@ class StaticConfigStore implements ConfigStore {
       }
     };
     return this.config;
-  }
-}
-
-class LocalSecretStore implements SecretStore {
-  readonly #secrets = new Map<string, string>();
-
-  async setSecret(ref: SecretRef, value: string): Promise<void> {
-    this.#secrets.set(secretKey(ref), value);
-  }
-
-  async getSecret(ref: SecretRef): Promise<string | null> {
-    return this.#secrets.get(secretKey(ref)) ?? null;
-  }
-
-  async deleteSecret(ref: SecretRef): Promise<void> {
-    this.#secrets.delete(secretKey(ref));
   }
 }
 
@@ -699,10 +676,6 @@ class ThrowingTwitchEventSubApiClient implements TwitchEventSubApiClient {
 
 function createForbiddenTwitchSocket(): TwitchEventSubSocket {
   throw new Error("Twitch EventSub sockets must not open in runtime composition smoke tests");
-}
-
-function secretKey(ref: SecretRef): string {
-  return `${ref.namespace}:${ref.accountId}:${ref.name}`;
 }
 
 function secretKeyFromCredential(service: string, account: string): string {

@@ -21,7 +21,7 @@ export interface AlertConfigurationPanelProps {
 }
 
 type LoadState = "loading" | "ready" | "saving" | "testing";
-type ConditionField = AlertCondition["field"];
+type ConditionField = "amount" | "tier" | "rewardId";
 type ConditionOperator = AlertCondition["operator"];
 
 interface ConditionFieldOption {
@@ -1104,11 +1104,15 @@ function toVariantDraft(variant: AlertVariant): VariantDraft {
 
 function toConditionDraft(condition: AlertCondition): ConditionDraft {
   return {
-    field: condition.field,
+    field: toConditionField(condition.field),
     operator: condition.operator,
     value: Array.isArray(condition.value) ? String(condition.value[0]) : String(condition.value),
     rangeMax: Array.isArray(condition.value) ? String(condition.value[1]) : ""
   };
+}
+
+function toConditionField(field: string): ConditionField {
+  return conditionFieldOptions.find((option) => option.field === field)?.field ?? conditionFieldOptions[0]!.field;
 }
 
 function createDefaultConditionDraft(eventType: AlertEventType): ConditionDraft {

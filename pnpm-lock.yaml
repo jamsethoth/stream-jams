@@ -57,6 +57,9 @@ importers:
         specifier: 5.8.5
         version: 5.8.5
     devDependencies:
+      '@stream-jams/test-support':
+        specifier: workspace:0.0.0
+        version: link:../../packages/test-support
       tsx:
         specifier: 4.22.4
         version: 4.22.4
@@ -115,6 +118,10 @@ importers:
         version: 6.0.3
 
   packages/test-support:
+    dependencies:
+      '@stream-jams/core':
+        specifier: workspace:0.0.0
+        version: link:../core
     devDependencies:
       typescript:
         specifier: 6.0.3

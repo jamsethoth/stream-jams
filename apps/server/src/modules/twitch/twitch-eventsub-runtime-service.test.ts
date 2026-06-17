@@ -1,4 +1,4 @@
-import type { SecretRef, SecretStore } from "@stream-jams/core";
+import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
 import type { EventIngestionStatus } from "../events/event-ingestion-service.js";
 import type { TwitchAccount, TwitchAccountRepository } from "./twitch-account-repository.js";
@@ -167,22 +167,6 @@ class InMemoryTwitchAccountRepository implements Pick<TwitchAccountRepository, "
   }
 }
 
-class InMemorySecretStore implements SecretStore {
-  readonly #secrets = new Map<string, string>();
-
-  async setSecret(ref: SecretRef, value: string): Promise<void> {
-    this.#secrets.set(secretKey(ref), value);
-  }
-
-  async getSecret(ref: SecretRef): Promise<string | null> {
-    return this.#secrets.get(secretKey(ref)) ?? null;
-  }
-
-  async deleteSecret(ref: SecretRef): Promise<void> {
-    this.#secrets.delete(secretKey(ref));
-  }
-}
-
 const idleIngestionStatus: EventIngestionStatus = {
   state: "idle",
   acceptedCount: 0,
@@ -192,7 +176,3 @@ const idleIngestionStatus: EventIngestionStatus = {
   lastErrorAt: null,
   message: null
 };
-
-function secretKey(ref: SecretRef): string {
-  return `${ref.namespace}:${ref.accountId}:${ref.name}`;
-}
