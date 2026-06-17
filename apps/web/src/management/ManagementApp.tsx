@@ -47,7 +47,7 @@ export function ManagementApp({ assetApi, alertApi, managementApi }: ManagementA
           {activeTab === "playback" ? <PlaybackPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "tts" ? <TtsPanel managementApi={resolvedManagementApi} /> : null}
           {activeTab === "settings" ? <SettingsPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "alerts" ? <AlertConfigurationPanel alertApi={alertApi} /> : null}
+          {activeTab === "alerts" ? <AlertConfigurationPanel alertApi={alertApi} assetApi={assetApi} /> : null}
           {activeTab === "assets" ? <AssetManager assetApi={assetApi} /> : null}
         </div>
       </div>

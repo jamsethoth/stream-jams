@@ -22,7 +22,7 @@ export default defineConfig({
         extends: "./apps/web/vite.config.ts",
         test: {
           name: "web",
-          include: ["apps/web/**/*.test.tsx"],
+          include: ["apps/web/src/**/*.test.ts", "apps/web/src/**/*.test.tsx"],
           environment: "jsdom",
           setupFiles: ["apps/web/src/test-setup.ts"]
         }

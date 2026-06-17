@@ -4,15 +4,17 @@ import {
   type CreateAlertRuleInput,
   type AlertRule,
   type AlertService,
-  type AlertVariant
+  type AlertVariant,
+  type NormalizedStreamEvent
 } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../../app.js";
 import { SqliteAlertRepository } from "../../modules/alerts/sqlite-alert-repository.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../../modules/db/database.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import type { AlertTestPlaybackCoordinator } from "./alerts.js";
 
 describe("alert rule routes", () => {
   it("creates, lists, updates, toggles, and deletes alert rules", async () => {
@@ -275,6 +277,49 @@ describe("alert rule routes", () => {
     });
   });
 
+  it("runs local sample test alerts through the playback coordinator", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const enqueueEvent = vi.fn(async () => ({
+      status: "queued" as const,
+      snapshot: {
+        current: null,
+        queued: [],
+        recent: [],
+        paused: false,
+        muted: false,
+        doNotDisturb: false
+      },
+      matchedRuleIds: ["rule_1"],
+      enqueuedAlertIds: ["resolved_alert_1"]
+    }));
+    const { app, authHeaders } = await createAppWithAlerts(database, {
+      alertTestPlaybackCoordinator: {
+        enqueueEvent
+      }
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/alerts/test",
+      headers: authHeaders,
+      payload: createSampleCheerEvent()
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      status: "queued",
+      matchedRuleIds: ["rule_1"],
+      enqueuedAlertIds: ["resolved_alert_1"]
+    });
+    expect(enqueueEvent).toHaveBeenCalledWith(expect.objectContaining({
+      id: "test_cheer_1",
+      type: "cheer",
+      metadata: {
+        sample: true
+      }
+    }));
+  });
+
   it("rejects missing management sessions before listing alert rules", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const { app } = await createAppWithAlerts(database);
@@ -293,7 +338,12 @@ describe("alert rule routes", () => {
   });
 });
 
-async function createAppWithAlerts(database: StreamJamsDatabase) {
+async function createAppWithAlerts(
+  database: StreamJamsDatabase,
+  options: {
+    readonly alertTestPlaybackCoordinator?: AlertTestPlaybackCoordinator;
+  } = {}
+) {
   const alertService = createAlertService(database);
   const managementSessionService = new LocalManagementSessionService({
     clock: () => new Date("2026-05-30T08:30:00.000Z"),
@@ -312,6 +362,9 @@ async function createAppWithAlerts(database: StreamJamsDatabase) {
       version: "1.2.3"
     },
     alertService,
+    ...(options.alertTestPlaybackCoordinator === undefined
+      ? {}
+      : { alertTestPlaybackCoordinator: options.alertTestPlaybackCoordinator }),
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
@@ -361,6 +414,26 @@ function createRulePayload(collectionIds: readonly string[]): CreateAlertRuleInp
     ],
     cooldownSeconds: 30,
     priority: 10
+  };
+}
+
+function createSampleCheerEvent(): NormalizedStreamEvent {
+  return {
+    id: "test_cheer_1",
+    providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider: "twitch",
+    occurredAt: "2026-06-16T12:00:00.000Z",
+    actor: {
+      id: "sample-viewer",
+      displayName: "Sample Viewer"
+    },
+    message: "Local test alert",
+    metadata: {
+      sample: true
+    },
+    type: "cheer",
+    amount: 500
   };
 }
 

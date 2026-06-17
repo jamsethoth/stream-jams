@@ -209,6 +209,106 @@ textarea {
   padding-bottom: 18px;
 }
 
+.alert-editor {
+  border-top: 1px solid #e4e8ef;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.alert-rule-editor {
+  display: grid;
+  gap: 16px;
+}
+
+.alert-fieldset {
+  border: 1px solid #e4e8ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 14px;
+}
+
+.alert-fieldset legend {
+  color: #3d4654;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0 6px;
+}
+
+.alert-condition-row {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(120px, 1fr)) auto;
+}
+
+.alert-condition-row label,
+.alert-layout-editor label {
+  display: grid;
+  gap: 6px;
+}
+
+.alert-condition-row span,
+.alert-layout-editor span {
+  color: #3d4654;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.alert-condition-row input,
+.alert-condition-row select,
+.alert-layout-editor input {
+  border: 1px solid #c8ced8;
+  border-radius: 6px;
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.alert-condition-row button,
+.alert-variant-editor button {
+  background: #ffffff;
+  border: 1px solid #a7b2bd;
+  border-radius: 6px;
+  color: #20242c;
+  cursor: pointer;
+  min-height: 38px;
+  padding: 0 12px;
+}
+
+.alert-variant-editor {
+  border: 1px solid #e4e8ef;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+}
+
+.alert-layout-editor {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(5, minmax(80px, 1fr)) minmax(220px, 1.2fr);
+}
+
+.alert-layout-preview {
+  aspect-ratio: 16 / 9;
+  background: #f2f4f7;
+  border: 1px solid #c8ced8;
+  border-radius: 6px;
+  min-height: 128px;
+  overflow: hidden;
+  position: relative;
+}
+
+.alert-layout-preview__box {
+  background: rgba(22, 108, 95, 0.18);
+  border: 2px solid #166c5f;
+  border-radius: 4px;
+  min-height: 8px;
+  min-width: 8px;
+  position: absolute;
+}
+
 .management-toggle {
   align-items: center;
   color: #20242c;
@@ -225,6 +325,11 @@ textarea {
 
 @media (max-width: 720px) {
   .alert-panel__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .alert-condition-row,
+  .alert-layout-editor {
     grid-template-columns: 1fr;
   }
 }
