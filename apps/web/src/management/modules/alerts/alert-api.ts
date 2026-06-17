@@ -236,7 +236,7 @@ export function createHttpAlertConfigurationApi(options: HttpAlertConfigurationA
     async deleteCollection(collectionId: string) {
       const response = await fetcher(`/alert-collections/${encodeURIComponent(collectionId)}`, {
         method: "DELETE",
-        headers: await managementHeaders()
+        headers: await managementHeaders({}, true)
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to delete alert collection."));
@@ -272,7 +272,7 @@ export function createHttpAlertConfigurationApi(options: HttpAlertConfigurationA
     async deleteRule(ruleId: string) {
       const response = await fetcher(`/alerts/rules/${encodeURIComponent(ruleId)}`, {
         method: "DELETE",
-        headers: await managementHeaders()
+        headers: await managementHeaders({}, true)
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to delete alert rule."));
@@ -284,7 +284,7 @@ export function createHttpAlertConfigurationApi(options: HttpAlertConfigurationA
         `/alerts/rules/${encodeURIComponent(ruleId)}/variants/${encodeURIComponent(variantId)}`,
         {
           method: "DELETE",
-          headers: await managementHeaders()
+          headers: await managementHeaders({}, true)
         }
       );
       if (!response.ok) {

@@ -92,11 +92,12 @@ describe("createHttpAlertConfigurationApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       expect(init?.headers).toMatchObject({
-        authorization: "Bearer mgmt_session"
+        authorization: "Bearer mgmt_session",
+        "x-stream-jams-csrf": "csrf_session"
       });
 
       if (url === "/alert-collections/collection_1") {
