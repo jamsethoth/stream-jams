@@ -6,7 +6,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/config/server") {
@@ -44,7 +44,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/overlay-modules") {
@@ -88,7 +88,8 @@ describe("createHttpManagementApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse({
           moduleId: "alerts",
@@ -132,7 +133,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/moderation/settings" && init?.method === undefined) {
@@ -149,7 +150,8 @@ describe("createHttpManagementApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse(settings);
       }
@@ -166,17 +168,25 @@ describe("createHttpManagementApi", () => {
       eventLogs: [],
       alertMatchLogs: [],
       playbackLogs: [],
-      providerErrors: []
+      providerErrors: [],
+      runtimeLogging: null
     };
     const exported = {
       generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: false,
       rawEventLogs: [],
       ...diagnostics
+    };
+    const debugExported = {
+      ...exported,
+      debugExport: true,
+      runtimeLogEntries: [],
+      runtimeLogTruncated: false
     };
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/diagnostics?limit=2") {
@@ -193,19 +203,116 @@ describe("createHttpManagementApi", () => {
         return jsonResponse(exported);
       }
 
+      if (url === "/diagnostics/export/debug") {
+        expect(init).toMatchObject({
+          method: "POST",
+          body: JSON.stringify({ limit: 2, runtimeLogLimit: 10, sinceHours: 1 })
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
+        });
+        return jsonResponse(debugExported);
+      }
+
       throw new Error("Unexpected request " + url);
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.getDiagnostics({ limit: 2 })).resolves.toEqual(diagnostics);
     await expect(api.exportDiagnostics({ limit: 2 })).resolves.toEqual(exported);
+    await expect(api.exportDebugDiagnostics({ limit: 2, runtimeLogLimit: 10, sinceHours: 1 })).resolves.toEqual(debugExported);
+  });
+
+  it("manages overlay output keys with management headers", async () => {
+    const keyRequest = {
+      overlayId: "default",
+      scope: "module" as const,
+      moduleId: "alerts",
+      purpose: "live" as const
+    };
+    const output = {
+      id: "module:alerts:live",
+      overlayId: "default",
+      label: "Alerts Live",
+      scope: "module",
+      moduleId: "alerts",
+      purpose: "live",
+      enabled: true,
+      keyId: "key-1",
+      url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first",
+      copyableUrlStatus: "available"
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse(managementSession());
+      }
+
+      if (url === "/management/overlay-outputs/keys") {
+        expect(init).toMatchObject({
+          method: "POST",
+          body: JSON.stringify(keyRequest)
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
+        });
+        return jsonResponse({
+          keyId: "key-1",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_first",
+          output
+        });
+      }
+
+      if (url === "/management/overlay-outputs/keys/regenerate") {
+        expect(init).toMatchObject({
+          method: "POST",
+          body: JSON.stringify(keyRequest)
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
+        });
+        return jsonResponse({
+          keyId: "key-2",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second",
+          output: {
+            ...output,
+            keyId: "key-2",
+            url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_second"
+          }
+        });
+      }
+
+      if (url === "/management/overlay-outputs/keys/key-2") {
+        expect(init).toMatchObject({
+          method: "DELETE"
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "x-stream-jams-csrf": "csrf_session"
+        });
+        return new Response(null, { status: 204 });
+      }
+
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.createOverlayOutputKey(keyRequest)).resolves.toMatchObject({ keyId: "key-1" });
+    await expect(api.regenerateOverlayOutputKey(keyRequest)).resolves.toMatchObject({ keyId: "key-2" });
+    await expect(api.revokeOverlayOutputKey("key-2")).resolves.toBeUndefined();
   });
 
   it("loads Twitch EventSub status with management headers", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/twitch/eventsub/status") {
@@ -242,7 +349,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/config/server") {
@@ -276,4 +383,11 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     },
     ...init
   });
+}
+
+function managementSession(): { readonly id: string; readonly csrfToken: string } {
+  return {
+    id: "mgmt_session",
+    csrfToken: "csrf_session"
+  };
 }

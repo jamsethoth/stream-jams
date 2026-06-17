@@ -1,5 +1,5 @@
 import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { OverlaySurface } from "./OverlayApp.js";
 
@@ -32,7 +32,7 @@ describe("OverlaySurface", () => {
           })
         ])}
         onPlaybackEvent={onPlaybackEvent}
-        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+        resolveAssetUrl={(assetId) => `/overlay/modules/alerts/test/ovl_moduleKey/assets/${assetId}`}
       />
     );
 
@@ -42,10 +42,10 @@ describe("OverlaySurface", () => {
     const text = screen.getByText("Thanks for following");
     const audio = screen.getByTestId("overlay-audio-image-instruction");
 
-    expect(image).toHaveAttribute("src", "/assets/asset-image");
-    expect(gif).toHaveAttribute("src", "/assets/asset-gif");
-    expect(video).toHaveAttribute("src", "/assets/asset-video");
-    expect(audio).toHaveAttribute("src", "/assets/asset-audio");
+    expect(image).toHaveAttribute("src", "/overlay/modules/alerts/test/ovl_moduleKey/assets/asset-image");
+    expect(gif).toHaveAttribute("src", "/overlay/modules/alerts/test/ovl_moduleKey/assets/asset-gif");
+    expect(video).toHaveAttribute("src", "/overlay/modules/alerts/test/ovl_moduleKey/assets/asset-video");
+    expect(audio).toHaveAttribute("src", "/overlay/modules/alerts/test/ovl_moduleKey/assets/asset-audio");
     expect(image).toHaveStyle({
       height: "120px",
       left: "10px",
@@ -97,6 +97,32 @@ describe("OverlaySurface", () => {
     );
 
     expect(screen.queryByText("This should not appear")).not.toBeInTheDocument();
+  });
+
+  it("reports missing visual media as playback failure", () => {
+    const onPlaybackEvent = vi.fn();
+    render(
+      <OverlaySurface
+        composition={createComposition([
+          createInstruction("missing-image", {
+            visual: {
+              assetId: "missing",
+              mediaType: "image"
+            }
+          })
+        ])}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/overlay/modules/alerts/test/ovl_moduleKey/assets/${assetId}`}
+      />
+    );
+
+    fireEvent.error(screen.getByTestId("overlay-visual-missing-image"));
+
+    expect(onPlaybackEvent).toHaveBeenCalledWith({
+      instructionId: "missing-image",
+      status: "failed",
+      message: "Image playback failed"
+    });
   });
 });
 

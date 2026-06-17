@@ -22,11 +22,21 @@ describe("Stream Jams SQLite database", () => {
     using database = createInMemoryStreamJamsDatabase();
 
     expect(listTables(database.connection)).toEqual(expectedTables);
-    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection", "003-twitch-accounts"]);
+    expect(listAppliedMigrations(database.connection)).toEqual([
+      "001-initial-schema",
+      "002-alert-variant-selection",
+      "003-twitch-accounts",
+      "004-overlay-key-secret-ref"
+    ]);
 
     database.runMigrations();
 
-    expect(listAppliedMigrations(database.connection)).toEqual(["001-initial-schema", "002-alert-variant-selection", "003-twitch-accounts"]);
+    expect(listAppliedMigrations(database.connection)).toEqual([
+      "001-initial-schema",
+      "002-alert-variant-selection",
+      "003-twitch-accounts",
+      "004-overlay-key-secret-ref"
+    ]);
   });
 
   it("enforces foreign keys for child records", () => {

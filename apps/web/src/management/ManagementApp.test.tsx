@@ -52,6 +52,9 @@ describe("ManagementApp", () => {
     expect(within(modulesPanel).getByLabelText("Alerts enabled")).toBeChecked();
     expect(within(modulesPanel).getByText("Canvas width")).toBeInTheDocument();
     expect(within(modulesPanel).getByText("Canvas height")).toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Collections")).not.toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Alert rules")).not.toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Variants")).not.toBeInTheDocument();
 
     await user.clear(within(modulesPanel).getByLabelText("Canvas width"));
     await user.type(within(modulesPanel).getByLabelText("Canvas width"), "1280");
@@ -325,7 +328,11 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
         purpose: "test" as const,
         scope: "module" as const,
         moduleId: "alerts",
-        url: "http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test"
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-alerts-test",
+        url: "http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test",
+        copyableUrlStatus: "available" as const
       },
       {
         id: "unified-live",
@@ -333,17 +340,58 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
         purpose: "live" as const,
         scope: "unified" as const,
         moduleId: null,
-        url: "http://127.0.0.1:39187/overlay/unified/live/ovl_unified_live"
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-unified-live",
+        url: "http://127.0.0.1:39187/overlay/unified/live/ovl_unified_live",
+        copyableUrlStatus: "available" as const
       }
     ]),
     listOverlayClients: vi.fn(async () => [
       {
         id: "client-live",
+        overlayId: "default",
         purpose: "live" as const,
         scope: "module" as const,
-        moduleId: "alerts"
+        moduleId: "alerts",
+        connectedAt: "2026-05-30T12:00:00.000Z",
+        lastSeenAt: "2026-05-30T12:00:05.000Z",
+        userAgent: "OBS"
       }
     ]),
+    createOverlayOutputKey: vi.fn(async () => ({
+      keyId: "overlay-key-created",
+      url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",
+      output: {
+        id: "unified-test",
+        label: "Unified test",
+        purpose: "test" as const,
+        scope: "unified" as const,
+        moduleId: null,
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-created",
+        url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",
+        copyableUrlStatus: "available" as const
+      }
+    })),
+    regenerateOverlayOutputKey: vi.fn(async () => ({
+      keyId: "overlay-key-regenerated",
+      url: "http://127.0.0.1:39187/overlay/unified/test/ovl_regenerated",
+      output: {
+        id: "unified-test",
+        label: "Unified test",
+        purpose: "test" as const,
+        scope: "unified" as const,
+        moduleId: null,
+        overlayId: "default",
+        enabled: true,
+        keyId: "overlay-key-regenerated",
+        url: "http://127.0.0.1:39187/overlay/unified/test/ovl_regenerated",
+        copyableUrlStatus: "available" as const
+      }
+    })),
+    revokeOverlayOutputKey: vi.fn(async () => undefined),
     getPlayback: vi.fn(async () => playback),
     pausePlayback: vi.fn(async () => playback),
     resumePlayback: vi.fn(async () => playback),
@@ -426,10 +474,12 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
           correlationId: null,
           processingId: null
         }
-      ]
+      ],
+      runtimeLogging: null
     })),
     exportDiagnostics: vi.fn(async () => ({
       generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: false as const,
       rawEventLogs: [],
       eventLogs: [
         {
@@ -479,7 +529,20 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
           correlationId: null,
           processingId: null
         }
-      ]
+      ],
+      runtimeLogging: null
+    })),
+    exportDebugDiagnostics: vi.fn(async () => ({
+      generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: true as const,
+      rawEventLogs: [],
+      eventLogs: [],
+      alertMatchLogs: [],
+      playbackLogs: [],
+      providerErrors: [],
+      runtimeLogging: null,
+      runtimeLogEntries: [],
+      runtimeLogTruncated: false
     })),
     getTwitchStatus: vi.fn(async () => initialTwitchStatus),
     getTwitchEventSubStatus: vi.fn(async () => ({
@@ -528,13 +591,31 @@ function createAlertApi() {
     async createCollection(): Promise<AlertCollection> {
       throw new Error("not called");
     },
+    async updateCollection(): Promise<AlertCollection> {
+      throw new Error("not called");
+    },
+    async deleteCollection(): Promise<void> {
+      throw new Error("not called");
+    },
     async createRule(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async updateRule(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async deleteRule(): Promise<void> {
+      throw new Error("not called");
+    },
+    async deleteVariant(): Promise<AlertRule> {
       throw new Error("not called");
     },
     async setCollectionEnabled(): Promise<AlertCollection> {
       throw new Error("not called");
     },
     async setRuleEnabled(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async testAlert() {
       throw new Error("not called");
     }
   };

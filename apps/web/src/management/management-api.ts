@@ -61,14 +61,35 @@ export interface OverlayOutputUrl {
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
-  readonly url: string;
+  readonly overlayId: string;
+  readonly enabled: boolean;
+  readonly keyId: string | null;
+  readonly url: string | null;
+  readonly copyableUrlStatus: "available" | "create-required" | "regenerate-required";
 }
 
 export interface OverlayClientView {
   readonly id: string;
+  readonly overlayId: string;
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
+  readonly connectedAt: string;
+  readonly lastSeenAt: string;
+  readonly userAgent: string | null;
+}
+
+export interface OverlayOutputKeyRequestView {
+  readonly overlayId?: string | undefined;
+  readonly purpose: "live" | "test";
+  readonly scope: "module" | "unified";
+  readonly moduleId: string | null;
+}
+
+export interface OverlayOutputKeyResultView {
+  readonly output: OverlayOutputUrl;
+  readonly keyId: string;
+  readonly url: string;
 }
 
 export interface PlaybackItemView {
@@ -203,20 +224,46 @@ export interface DiagnosticsProviderErrorView {
   readonly processingId: string | null;
 }
 
+export interface RuntimeLogMetadataView {
+  readonly logDirectory: string;
+  readonly level: "DEBUG" | "INFO" | "WARN" | "ERROR";
+  readonly rollover: "hourly";
+  readonly retentionHours: number;
+  readonly fileCount: number;
+  readonly currentLogFile: string;
+  readonly oldestLogFile: string | null;
+  readonly newestLogFile: string | null;
+}
+
 export interface DiagnosticsView {
   readonly eventLogs: readonly DiagnosticsEventLogView[];
   readonly alertMatchLogs: readonly DiagnosticsAlertMatchLogView[];
   readonly playbackLogs: readonly DiagnosticsPlaybackLogView[];
   readonly providerErrors: readonly DiagnosticsProviderErrorView[];
+  readonly runtimeLogging: RuntimeLogMetadataView | null;
 }
 
 export interface DiagnosticsExportView extends DiagnosticsView {
   readonly generatedAt: string;
+  readonly debugExport: false;
   readonly rawEventLogs: readonly unknown[];
+}
+
+export interface DiagnosticsDebugExportView extends DiagnosticsView {
+  readonly generatedAt: string;
+  readonly debugExport: true;
+  readonly rawEventLogs: readonly unknown[];
+  readonly runtimeLogEntries: readonly unknown[];
+  readonly runtimeLogTruncated: boolean;
 }
 
 export interface DiagnosticsRequestView {
   readonly limit?: number | undefined;
+}
+
+export interface DiagnosticsDebugExportRequestView extends DiagnosticsRequestView {
+  readonly runtimeLogLimit?: number | undefined;
+  readonly sinceHours?: number | undefined;
 }
 
 export interface TwitchAuthStartRequestView {
@@ -240,6 +287,9 @@ export interface ManagementApi {
   saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }): Promise<unknown>;
   listOverlayOutputs(): Promise<readonly OverlayOutputUrl[]>;
   listOverlayClients(): Promise<readonly OverlayClientView[]>;
+  createOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
+  regenerateOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
+  revokeOverlayOutputKey(keyId: string): Promise<void>;
   getPlayback(): Promise<PlaybackView>;
   pausePlayback(): Promise<PlaybackView>;
   resumePlayback(): Promise<PlaybackView>;
@@ -254,6 +304,7 @@ export interface ManagementApi {
   getTwitchEventSubStatus(): Promise<TwitchEventSubStatusView>;
   getDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsView>;
   exportDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsExportView>;
+  exportDebugDiagnostics(input?: DiagnosticsDebugExportRequestView): Promise<DiagnosticsDebugExportView>;
   startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
   refreshTwitchAuth(): Promise<TwitchConnectionStatusView>;
   disconnectTwitch(): Promise<TwitchConnectionStatusView>;
@@ -265,6 +316,7 @@ export interface HttpManagementApiOptions {
 
 interface ManagementSessionResponse {
   readonly id: string;
+  readonly csrfToken: string;
 }
 
 interface PlaybackQueueSnapshotResponse {
@@ -303,10 +355,14 @@ interface OverlayModuleConfigResponse {
 export function createHttpManagementApi(options: HttpManagementApiOptions = {}): ManagementApi {
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   let sessionId: string | null = null;
+  let csrfToken: string | null = null;
 
-  async function getSessionId(): Promise<string> {
-    if (sessionId !== null) {
-      return sessionId;
+  async function getSession(): Promise<{ readonly id: string; readonly csrfToken: string }> {
+    if (sessionId !== null && csrfToken !== null) {
+      return {
+        id: sessionId,
+        csrfToken
+      };
     }
 
     const response = await fetcher("/auth/management/sessions", {
@@ -318,20 +374,23 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     const session = (await response.json()) as ManagementSessionResponse;
     sessionId = session.id;
-    return session.id;
+    csrfToken = session.csrfToken;
+    return session;
   }
 
-  async function managementHeaders(extraHeaders: HeadersInit = {}): Promise<HeadersInit> {
+  async function managementHeaders(extraHeaders: HeadersInit = {}, includeCsrf = false): Promise<HeadersInit> {
+    const session = await getSession();
     return {
       ...extraHeaders,
-      authorization: `Bearer ${await getSessionId()}`
+      authorization: `Bearer ${session.id}`,
+      ...(includeCsrf ? { "x-stream-jams-csrf": session.csrfToken } : {})
     };
   }
 
   async function jsonHeaders(): Promise<HeadersInit> {
     return managementHeaders({
       "content-type": "application/json"
-    });
+    }, true);
   }
 
   async function getPlayback(): Promise<PlaybackView> {
@@ -348,7 +407,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   async function postPlayback(path: string, body?: unknown): Promise<PlaybackView> {
     const requestInit: RequestInit = {
       method: "POST",
-      headers: body === undefined ? await managementHeaders() : await jsonHeaders()
+      headers: body === undefined ? await managementHeaders({}, true) : await jsonHeaders()
     };
     if (body !== undefined) {
       requestInit.body = JSON.stringify(body);
@@ -362,17 +421,30 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     return mapPlaybackSnapshot((await response.json()) as PlaybackQueueSnapshotResponse);
   }
 
+  async function postOverlayOutputKey(
+    path: string,
+    input: OverlayOutputKeyRequestView
+  ): Promise<OverlayOutputKeyResultView> {
+    const response = await fetcher(path, {
+      method: "POST",
+      headers: await jsonHeaders(),
+      body: JSON.stringify(input)
+    });
+    if (!response.ok) {
+      throw new Error(await readHttpError(response, "Unable to update overlay output key."));
+    }
+
+    return (await response.json()) as OverlayOutputKeyResultView;
+  }
+
   function withLimit(path: string, input: DiagnosticsRequestView = {}): string {
     return input.limit === undefined ? path : `${path}?limit=${encodeURIComponent(String(input.limit))}`;
   }
 
-  async function optionalJsonList<T>(path: string): Promise<readonly T[]> {
+  async function jsonList<T>(path: string): Promise<readonly T[]> {
     const response = await fetcher(path, {
       headers: await managementHeaders()
     });
-    if (response.status === 404) {
-      return [];
-    }
 
     if (!response.ok) {
       throw new Error(await readHttpError(response, "Unable to load management data."));
@@ -383,7 +455,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
   return {
     async getDashboard() {
-      const [playback, overlayClients] = await Promise.all([getPlayback(), optionalJsonList<OverlayClientView>("/management/overlay-clients")]);
+      const [playback, overlayClients] = await Promise.all([getPlayback(), jsonList<OverlayClientView>("/management/overlay-clients")]);
       return {
         twitch: {
           connected: false,
@@ -506,11 +578,29 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     },
 
     listOverlayOutputs() {
-      return optionalJsonList<OverlayOutputUrl>("/management/overlay-outputs");
+      return jsonList<OverlayOutputUrl>("/management/overlay-outputs");
     },
 
     listOverlayClients() {
-      return optionalJsonList<OverlayClientView>("/management/overlay-clients");
+      return jsonList<OverlayClientView>("/management/overlay-clients");
+    },
+
+    async createOverlayOutputKey(input) {
+      return postOverlayOutputKey("/management/overlay-outputs/keys", input);
+    },
+
+    async regenerateOverlayOutputKey(input) {
+      return postOverlayOutputKey("/management/overlay-outputs/keys/regenerate", input);
+    },
+
+    async revokeOverlayOutputKey(keyId) {
+      const response = await fetcher(`/management/overlay-outputs/keys/${encodeURIComponent(keyId)}`, {
+        method: "DELETE",
+        headers: await managementHeaders({}, true)
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to revoke overlay output key."));
+      }
     },
 
     async getDiagnostics(input: DiagnosticsRequestView = {}) {
@@ -533,6 +623,19 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       }
 
       return (await response.json()) as DiagnosticsExportView;
+    },
+
+    async exportDebugDiagnostics(input: DiagnosticsDebugExportRequestView = {}) {
+      const response = await fetcher("/diagnostics/export/debug", {
+        method: "POST",
+        headers: await jsonHeaders(),
+        body: JSON.stringify(input)
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to export diagnostics with recent runtime logs."));
+      }
+
+      return (await response.json()) as DiagnosticsDebugExportView;
     },
 
     async getTwitchStatus() {
@@ -573,7 +676,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     async refreshTwitchAuth() {
       const response = await fetcher("/twitch/auth/refresh", {
         method: "POST",
-        headers: await managementHeaders()
+        headers: await managementHeaders({}, true)
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to refresh Twitch connection."));
@@ -585,7 +688,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     async disconnectTwitch() {
       const response = await fetcher("/twitch/auth/disconnect", {
         method: "POST",
-        headers: await managementHeaders()
+        headers: await managementHeaders({}, true)
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to disconnect Twitch."));

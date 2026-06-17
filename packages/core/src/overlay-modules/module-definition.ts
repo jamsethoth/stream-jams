@@ -8,8 +8,8 @@ export interface AlertsOverlayModuleConfig {
   };
 }
 
-export const alertsOverlayModuleConfigSchema = z.object({
-  canvas: z.object({
+export const alertsOverlayModuleConfigSchema = z.strictObject({
+  canvas: z.strictObject({
     width: z.number().int().positive(),
     height: z.number().int().positive()
   })
@@ -43,84 +43,6 @@ export const alertsOverlayModuleDefinition = {
           {
             id: "canvas.height",
             label: "Canvas height",
-            type: "number",
-            required: true
-          }
-        ]
-      },
-      {
-        id: "alerts-collections",
-        title: "Collections",
-        fields: [
-          {
-            id: "collection.name",
-            label: "Collection name",
-            type: "text",
-            required: true
-          },
-          {
-            id: "collection.enabled",
-            label: "Active",
-            type: "boolean",
-            required: true
-          }
-        ]
-      },
-      {
-        id: "alerts-rules",
-        title: "Alert rules",
-        fields: [
-          {
-            id: "rule.name",
-            label: "Rule name",
-            type: "text",
-            required: true
-          },
-          {
-            id: "rule.eventType",
-            label: "Event type",
-            type: "select",
-            required: true
-          },
-          {
-            id: "rule.enabled",
-            label: "Enabled",
-            type: "boolean",
-            required: true
-          },
-          {
-            id: "rule.collectionIds",
-            label: "Collections",
-            type: "select",
-            required: true
-          }
-        ]
-      },
-      {
-        id: "alerts-variants",
-        title: "Variants",
-        fields: [
-          {
-            id: "variant.textTemplate",
-            label: "Text template",
-            type: "text",
-            required: true
-          },
-          {
-            id: "variant.visualAssetId",
-            label: "Visual asset",
-            type: "asset",
-            required: false
-          },
-          {
-            id: "variant.audioAssetId",
-            label: "Audio asset",
-            type: "asset",
-            required: false
-          },
-          {
-            id: "variant.durationMs",
-            label: "Duration",
             type: "number",
             required: true
           }

@@ -27,7 +27,7 @@ export function createManagementAuthPreHandler(options: ManagementAuthPreHandler
   };
 }
 
-function extractBearerToken(value: string | string[] | undefined): string | null {
+export function extractBearerToken(value: string | string[] | undefined): string | null {
   if (typeof value !== "string") {
     return null;
   }

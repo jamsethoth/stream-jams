@@ -96,6 +96,15 @@ function createManagementApi(): ManagementApi {
     async listOverlayClients() {
       return [];
     },
+    async createOverlayOutputKey() {
+      throw new Error("Not implemented in test mock");
+    },
+    async regenerateOverlayOutputKey() {
+      throw new Error("Not implemented in test mock");
+    },
+    async revokeOverlayOutputKey() {
+      return undefined;
+    },
     async getPlayback() {
       return playback;
     },
@@ -141,17 +150,34 @@ function createManagementApi(): ManagementApi {
         eventLogs: [],
         alertMatchLogs: [],
         playbackLogs: [],
-        providerErrors: []
+        providerErrors: [],
+        runtimeLogging: null
       };
     },
     async exportDiagnostics() {
       return {
         generatedAt: "2026-05-31T02:05:00.000Z",
+        debugExport: false as const,
         rawEventLogs: [],
         eventLogs: [],
         alertMatchLogs: [],
         playbackLogs: [],
-        providerErrors: []
+        providerErrors: [],
+        runtimeLogging: null
+      };
+    },
+    async exportDebugDiagnostics() {
+      return {
+        generatedAt: "2026-05-31T02:05:00.000Z",
+        debugExport: true as const,
+        rawEventLogs: [],
+        eventLogs: [],
+        alertMatchLogs: [],
+        playbackLogs: [],
+        providerErrors: [],
+        runtimeLogging: null,
+        runtimeLogEntries: [],
+        runtimeLogTruncated: false
       };
     },
     async getTwitchStatus() {
@@ -220,13 +246,31 @@ function createAlertApi() {
     async createCollection(): Promise<AlertCollection> {
       throw new Error("not called");
     },
+    async updateCollection(): Promise<AlertCollection> {
+      throw new Error("not called");
+    },
+    async deleteCollection(): Promise<void> {
+      throw new Error("not called");
+    },
     async createRule(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async updateRule(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async deleteRule(): Promise<void> {
+      throw new Error("not called");
+    },
+    async deleteVariant(): Promise<AlertRule> {
       throw new Error("not called");
     },
     async setCollectionEnabled(): Promise<AlertCollection> {
       throw new Error("not called");
     },
     async setRuleEnabled(): Promise<AlertRule> {
+      throw new Error("not called");
+    },
+    async testAlert() {
       throw new Error("not called");
     }
   };

@@ -13,12 +13,14 @@ export interface OverlayAccessKey {
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
   readonly keyHash: string;
+  readonly routeKeySecretRef: SecretRef | null;
   readonly createdAt: string;
   readonly revokedAt: string | null;
 }
 
 export interface ManagementSession {
   readonly id: string;
+  readonly csrfToken: string;
   readonly createdAt: string;
   readonly expiresAt: string;
   readonly revokedAt: string | null;

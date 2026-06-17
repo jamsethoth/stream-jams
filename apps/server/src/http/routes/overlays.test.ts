@@ -133,7 +133,8 @@ describe("overlay routes", () => {
     });
     const overlayGateway = new OverlayGateway({
       overlayAccessService,
-      generateClientId: () => "client-1"
+      generateClientId: () => "client-1",
+      clock: () => new Date("2026-06-16T12:00:00.000Z")
     });
     const app = createServerApp({
       metadata: {
@@ -177,7 +178,10 @@ describe("overlay routes", () => {
         overlayId: "default",
         moduleId: "alerts",
         purpose: "live",
-        scope: "module"
+        scope: "module",
+        connectedAt: "2026-06-16T12:00:00.000Z",
+        lastSeenAt: "2026-06-16T12:00:00.000Z",
+        userAgent: null
       }
     ]);
 

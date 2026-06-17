@@ -20,6 +20,13 @@ export interface OverlayGatewayClient {
   readonly moduleId: string | null;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly connectedAt: string;
+  readonly lastSeenAt: string;
+  readonly userAgent: string | null;
+}
+
+export interface OverlayGatewayClientMetadata {
+  readonly userAgent?: string | null;
 }
 
 export type OverlayGatewayRegistrationResult =
@@ -47,6 +54,7 @@ export interface OverlayGatewayPlaybackReport {
 export interface OverlayGatewayDependencies {
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly generateClientId: () => string;
+  readonly clock?: () => Date;
   readonly onPlaybackReport?: (report: OverlayGatewayPlaybackReport) => void;
 }
 
@@ -76,12 +84,14 @@ type OverlayGatewayMessage =
 export class OverlayGateway {
   readonly #overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly #generateClientId: () => string;
+  readonly #clock: () => Date;
   readonly #onPlaybackReport: (report: OverlayGatewayPlaybackReport) => void;
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
 
   constructor(dependencies: OverlayGatewayDependencies) {
     this.#overlayAccessService = dependencies.overlayAccessService;
     this.#generateClientId = dependencies.generateClientId;
+    this.#clock = dependencies.clock ?? (() => new Date());
     this.#onPlaybackReport = dependencies.onPlaybackReport ?? (() => undefined);
   }
 
@@ -91,13 +101,17 @@ export class OverlayGateway {
       overlayId: client.overlayId,
       moduleId: client.moduleId,
       purpose: client.purpose,
-      scope: client.scope
+      scope: client.scope,
+      connectedAt: client.connectedAt,
+      lastSeenAt: client.lastSeenAt,
+      userAgent: client.userAgent
     }));
   }
 
   async registerClient(
     socket: OverlayGatewaySocket,
-    registration: OverlayGatewayClientRegistration
+    registration: OverlayGatewayClientRegistration,
+    metadata: OverlayGatewayClientMetadata = {}
   ): Promise<OverlayGatewayRegistrationResult> {
     const verification = await this.#overlayAccessService.verifyRouteAccess(registration);
     if (!verification.authorized) {
@@ -114,13 +128,17 @@ export class OverlayGateway {
     }
 
     const clientId = this.#generateClientId();
+    const connectedAt = this.#clock().toISOString();
     this.#clients.set(clientId, {
       id: clientId,
       socket,
       overlayId: registration.overlayId,
       moduleId: registration.moduleId,
       purpose: registration.purpose,
-      scope: registration.scope
+      scope: registration.scope,
+      connectedAt,
+      lastSeenAt: connectedAt,
+      userAgent: metadata.userAgent ?? null
     });
     sendGatewayMessage(socket, {
       type: "overlay.connected",
@@ -164,9 +182,15 @@ export class OverlayGateway {
   }
 
   handleClientMessage(clientId: string, rawMessage: string): void {
-    if (!this.#clients.has(clientId)) {
+    const client = this.#clients.get(clientId);
+    if (client === undefined) {
       return;
     }
+
+    this.#clients.set(clientId, {
+      ...client,
+      lastSeenAt: this.#clock().toISOString()
+    });
 
     const report = parsePlaybackReport(clientId, rawMessage);
     if (report !== null) {

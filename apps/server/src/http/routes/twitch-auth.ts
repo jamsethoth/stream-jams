@@ -1,3 +1,4 @@
+import type { Logger } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import type {
   TwitchConnectionStartInput,
@@ -13,6 +14,7 @@ export interface TwitchAuthRouteDependencies {
   >;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
+  readonly runtimeLogger?: Logger | undefined;
 }
 
 export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: TwitchAuthRouteDependencies): void {
@@ -29,8 +31,11 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
     }
 
     try {
-      return dependencies.twitchAuthService.createConnectionStart(input);
+      const result = dependencies.twitchAuthService.createConnectionStart(input);
+      await logProviderCall(dependencies, request.id, "twitch.auth.start", "accepted");
+      return result;
     } catch (error) {
+      await logProviderCall(dependencies, request.id, "twitch.auth.start", "failed", error);
       if (isTwitchProviderError(error)) {
         return sendHttpError(reply, 502, {
           code: error.code,
@@ -51,8 +56,11 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
     }
 
     try {
-      return await dependencies.twitchAuthService.completeCallback(input);
+      const result = await dependencies.twitchAuthService.completeCallback(input);
+      await logProviderCall(dependencies, request.id, "twitch.auth.callback", "accepted");
+      return result;
     } catch (error) {
+      await logProviderCall(dependencies, request.id, "twitch.auth.callback", "failed", error);
       if (isTwitchClientError(error)) {
         return sendHttpError(reply, 400, {
           code: error.code,
@@ -70,10 +78,13 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
       throw error;
     }
   });
-  app.post("/twitch/auth/refresh", { preHandler }, async (_request, reply) => {
+  app.post("/twitch/auth/refresh", { preHandler }, async (request, reply) => {
     try {
-      return await dependencies.twitchAuthService.refreshConnectedAccount();
+      const result = await dependencies.twitchAuthService.refreshConnectedAccount();
+      await logProviderCall(dependencies, request.id, "twitch.auth.refresh", "accepted");
+      return result;
     } catch (error) {
+      await logProviderCall(dependencies, request.id, "twitch.auth.refresh", "failed", error);
       if (isTwitchProviderError(error)) {
         return sendHttpError(reply, 502, {
           code: error.code,
@@ -84,7 +95,32 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
       throw error;
     }
   });
-  app.post("/twitch/auth/disconnect", { preHandler }, async () => dependencies.twitchAuthService.disconnect());
+  app.post("/twitch/auth/disconnect", { preHandler }, async (request) => {
+    const result = await dependencies.twitchAuthService.disconnect();
+    await logProviderCall(dependencies, request.id, "twitch.auth.disconnect", "accepted");
+    return result;
+  });
+}
+
+async function logProviderCall(
+  dependencies: TwitchAuthRouteDependencies,
+  requestId: unknown,
+  source: string,
+  outcome: "accepted" | "failed",
+  error?: unknown
+): Promise<void> {
+  const logger = outcome === "failed" ? dependencies.runtimeLogger?.warn : dependencies.runtimeLogger?.info;
+  await logger?.call(dependencies.runtimeLogger, "Twitch provider operation completed", {
+    module: "twitch",
+    source,
+    correlationId: String(requestId),
+    processingId: null,
+    metadata: {
+      provider: "twitch",
+      outcome,
+      ...(error instanceof Error ? { errorName: error.name, errorMessage: error.message } : {})
+    }
+  });
 }
 
 function parseConnectionStartInput(body: unknown): TwitchConnectionStartInput | null {

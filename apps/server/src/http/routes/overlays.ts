@@ -88,17 +88,18 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
 
 function registerOverlayWebSocketRoutes(app: FastifyInstance, overlayGateway: OverlayGateway): void {
   app.get("/overlay/ws/modules/:moduleId/:purpose/:overlayKey", { websocket: true }, (socket, request) => {
-    registerWebSocketClient(overlayGateway, socket, resolveModuleOverlayAccessRequest(request));
+    registerWebSocketClient(overlayGateway, socket, resolveModuleOverlayAccessRequest(request), readUserAgent(request));
   });
   app.get("/overlay/ws/unified/:purpose/:overlayKey", { websocket: true }, (socket, request) => {
-    registerWebSocketClient(overlayGateway, socket, resolveUnifiedOverlayAccessRequest(request));
+    registerWebSocketClient(overlayGateway, socket, resolveUnifiedOverlayAccessRequest(request), readUserAgent(request));
   });
 }
 
 function registerWebSocketClient(
   overlayGateway: OverlayGateway,
   socket: WebSocket,
-  accessRequest: OverlayRouteAccessRequest | null
+  accessRequest: OverlayRouteAccessRequest | null,
+  userAgent: string | null
 ): void {
   let clientId: string | null = null;
   socket.on("message", (data) => {
@@ -117,11 +118,18 @@ function registerWebSocketClient(
     return;
   }
 
-  void overlayGateway.registerClient(toGatewaySocket(socket), accessRequest).then((result) => {
+  void overlayGateway.registerClient(toGatewaySocket(socket), accessRequest, {
+    userAgent
+  }).then((result) => {
     if (result.authorized) {
       clientId = result.clientId;
     }
   });
+}
+
+function readUserAgent(request: FastifyRequest): string | null {
+  const value = request.headers["user-agent"];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
 function toGatewaySocket(socket: WebSocket): OverlayGatewaySocket {

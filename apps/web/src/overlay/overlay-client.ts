@@ -100,6 +100,15 @@ export function createOverlayWebSocketUrl(origin: string, route: Pick<ParsedOver
   return url.toString();
 }
 
+export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string): string {
+  const encodedAssetId = encodeURIComponent(assetId);
+  if (route.scope === "module") {
+    return `/overlay/modules/${encodeURIComponent(route.moduleId ?? "")}/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}`;
+  }
+
+  return `/overlay/unified/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}`;
+}
+
 export function createOverlayPlaybackReporter(socket: OverlaySocketLike): OverlayPlaybackReporter {
   return {
     reportStarted(instructionId: string) {

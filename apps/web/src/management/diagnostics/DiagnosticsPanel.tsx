@@ -1,14 +1,14 @@
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import type { DiagnosticsExportView, DiagnosticsView, ManagementApi } from "../management-api.js";
+import type { DiagnosticsDebugExportView, DiagnosticsExportView, DiagnosticsView, ManagementApi } from "../management-api.js";
 
 export interface DiagnosticsPanelProps {
-  readonly managementApi: Pick<ManagementApi, "getDiagnostics" | "exportDiagnostics">;
+  readonly managementApi: Pick<ManagementApi, "getDiagnostics" | "exportDiagnostics" | "exportDebugDiagnostics">;
 }
 
 export function DiagnosticsPanel({ managementApi }: DiagnosticsPanelProps) {
   const [limit, setLimit] = useState("50");
   const [diagnostics, setDiagnostics] = useState<DiagnosticsView | null>(null);
-  const [exported, setExported] = useState<DiagnosticsExportView | null>(null);
+  const [exported, setExported] = useState<DiagnosticsExportView | DiagnosticsDebugExportView | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -67,6 +67,30 @@ export function DiagnosticsPanel({ managementApi }: DiagnosticsPanelProps) {
     }
   }
 
+  async function handleDebugExport(): Promise<void> {
+    setExporting(true);
+    setMessage(null);
+    try {
+      const result = await managementApi.exportDebugDiagnostics({
+        limit: parseLimit(limit),
+        runtimeLogLimit: 200,
+        sinceHours: 2
+      });
+      if (mounted.current) {
+        setExported(result);
+        setMessage(`Diagnostics debug export generated at ${result.generatedAt}.`);
+      }
+    } catch (error) {
+      if (mounted.current) {
+        setMessage(error instanceof Error ? error.message : "Unable to export diagnostics with recent runtime logs.");
+      }
+    } finally {
+      if (mounted.current) {
+        setExporting(false);
+      }
+    }
+  }
+
   return (
     <section className="management-panel" aria-labelledby="diagnostics-title">
       <div className="management-panel__header">
@@ -94,12 +118,15 @@ export function DiagnosticsPanel({ managementApi }: DiagnosticsPanelProps) {
         <button disabled={exporting} onClick={() => void handleExport()} type="button">
           Export diagnostics
         </button>
+        <button disabled={exporting} onClick={() => void handleDebugExport()} type="button">
+          Export with recent logs
+        </button>
       </form>
 
       {message === null ? null : <p className="management-diagnostic">{message}</p>}
       {exported === null ? null : (
         <p className="management-diagnostic">
-          {`${exported.eventLogs.length} events, ${exported.alertMatchLogs.length} matches, ${exported.playbackLogs.length} playback rows, ${exported.providerErrors.length} provider errors exported.`}
+          {`${exported.eventLogs.length} events, ${exported.alertMatchLogs.length} matches, ${exported.playbackLogs.length} playback rows, ${exported.providerErrors.length} provider errors exported${exported.debugExport ? ` with ${exported.runtimeLogEntries.length} recent runtime log entries` : ""}.`}
         </p>
       )}
 

@@ -14,12 +14,14 @@ export const overlayAccessKeySchema = z.object({
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
   keyHash: nonEmptyStringSchema,
+  routeKeySecretRef: secretRefSchema.nullable(),
   createdAt: isoDateTimeSchema,
   revokedAt: isoDateTimeSchema.nullable()
 });
 
 export const managementSessionSchema = z.object({
   id: nonEmptyStringSchema,
+  csrfToken: nonEmptyStringSchema,
   createdAt: isoDateTimeSchema,
   expiresAt: isoDateTimeSchema,
   revokedAt: isoDateTimeSchema.nullable()

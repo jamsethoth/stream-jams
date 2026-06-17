@@ -21,15 +21,20 @@ export interface HttpAssetApiOptions {
 
 interface ManagementSessionResponse {
   readonly id: string;
+  readonly csrfToken: string;
 }
 
 export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi {
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   let sessionId: string | null = null;
+  let csrfToken: string | null = null;
 
-  async function getSessionId(): Promise<string> {
-    if (sessionId !== null) {
-      return sessionId;
+  async function getSession(): Promise<{ readonly id: string; readonly csrfToken: string }> {
+    if (sessionId !== null && csrfToken !== null) {
+      return {
+        id: sessionId,
+        csrfToken
+      };
     }
 
     const response = await fetcher("/auth/management/sessions", {
@@ -41,13 +46,16 @@ export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi 
 
     const session = (await response.json()) as ManagementSessionResponse;
     sessionId = session.id;
-    return session.id;
+    csrfToken = session.csrfToken;
+    return session;
   }
 
-  async function managementHeaders(extraHeaders: HeadersInit = {}): Promise<HeadersInit> {
+  async function managementHeaders(extraHeaders: HeadersInit = {}, includeCsrf = false): Promise<HeadersInit> {
+    const session = await getSession();
     return {
       ...extraHeaders,
-      authorization: `Bearer ${await getSessionId()}`
+      authorization: `Bearer ${session.id}`,
+      ...(includeCsrf ? { "x-stream-jams-csrf": session.csrfToken } : {})
     };
   }
 
@@ -70,7 +78,7 @@ export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi 
           "content-type": "application/octet-stream",
           "x-stream-jams-file-name": file.name,
           "x-stream-jams-mime-type": file.type || "application/octet-stream"
-        }),
+        }, true),
         body: await file.arrayBuffer()
       });
       if (!response.ok) {

@@ -1,4 +1,4 @@
-import type { OverlayAccessKey } from "../security/types.js";
+import type { OverlayAccessKey, SecretRef } from "../security/types.js";
 import type { CreateOverlayKeyInput } from "../security/types.js";
 
 export type OverlayAccessDenialReason =
@@ -16,6 +16,7 @@ export interface OverlayRouteAccessRequest extends CreateOverlayKeyInput {
 export interface OverlayAccessKeyCreateRecordInput extends CreateOverlayKeyInput {
   readonly id: string;
   readonly keyHash: string;
+  readonly routeKeySecretRef: SecretRef | null;
   readonly createdAt: string;
 }
 
@@ -38,6 +39,7 @@ export interface OverlayAccessKeyRepository {
   create(input: OverlayAccessKeyCreateRecordInput): Promise<OverlayAccessKey>;
   findById(keyId: string): Promise<OverlayAccessKey | null>;
   findCandidates(overlayId: string): Promise<readonly OverlayAccessKey[]>;
+  findByOutput(input: CreateOverlayKeyInput): Promise<readonly OverlayAccessKey[]>;
   update(record: OverlayAccessKey): Promise<OverlayAccessKey | null>;
 }
 
