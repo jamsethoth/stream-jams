@@ -1,10 +1,9 @@
 import {
   DefaultOverlayModuleConfigService,
   InMemoryOverlayModuleConfigRepository,
-  createDefaultOverlayModuleRegistry,
-  type SecretRef,
-  type SecretStore
+  createDefaultOverlayModuleRegistry
 } from "@stream-jams/core";
+import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
@@ -122,7 +121,7 @@ async function createApp(rawKeys: string[]) {
     },
     createRouteKeySecretRef: createOverlayRouteKeySecretRef
   });
-  const secretStore = new MemorySecretStore();
+  const secretStore = new InMemorySecretStore();
   const managementSessionService = new LocalManagementSessionService({
     clock: () => new Date("2026-06-16T12:00:00.000Z"),
     generateId: () => "mgmt_overlay-output-route-session",
@@ -162,24 +161,4 @@ async function createApp(rawKeys: string[]) {
       host: "localhost:80"
     }
   };
-}
-
-class MemorySecretStore implements SecretStore {
-  readonly values = new Map<string, string>();
-
-  async setSecret(ref: SecretRef, value: string): Promise<void> {
-    this.values.set(key(ref), value);
-  }
-
-  async getSecret(ref: SecretRef): Promise<string | null> {
-    return this.values.get(key(ref)) ?? null;
-  }
-
-  async deleteSecret(ref: SecretRef): Promise<void> {
-    this.values.delete(key(ref));
-  }
-}
-
-function key(ref: SecretRef): string {
-  return `${ref.namespace}:${ref.name}:${ref.accountId}`;
 }

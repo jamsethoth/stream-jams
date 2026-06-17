@@ -1,4 +1,4 @@
-import type { SecretRef, SecretStore } from "@stream-jams/core";
+import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
 import type {
   TwitchApiClient,
@@ -268,24 +268,4 @@ class InMemoryTwitchAccountRepository implements TwitchAccountRepository {
       this.account = null;
     }
   }
-}
-
-class InMemorySecretStore implements SecretStore {
-  readonly #secrets = new Map<string, string>();
-
-  async setSecret(ref: SecretRef, value: string): Promise<void> {
-    this.#secrets.set(secretKey(ref), value);
-  }
-
-  async getSecret(ref: SecretRef): Promise<string | null> {
-    return this.#secrets.get(secretKey(ref)) ?? null;
-  }
-
-  async deleteSecret(ref: SecretRef): Promise<void> {
-    this.#secrets.delete(secretKey(ref));
-  }
-}
-
-function secretKey(ref: SecretRef): string {
-  return `${ref.namespace}:${ref.accountId}:${ref.name}`;
 }
