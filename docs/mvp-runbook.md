@@ -11,9 +11,37 @@
 
 For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for hot reload and is not the production-style local runtime that streamers should use for browser-source overlays.
 
+## Management Security
+
+Management API access uses a local management session plus browser-origin protections. The management session bootstrap response includes a bearer session id and a session-bound CSRF token. The management UI sends the bearer token on management API requests and sends `X-Stream-Jams-CSRF` on state-changing `POST`, `PUT`, `PATCH`, and `DELETE` requests.
+
+Production-style runtime startup allows browser management requests only from the configured local app origin. Development and test origins must be listed explicitly with the comma-separated `STREAM_JAMS_DEV_ORIGINS` environment variable. Requests without an `Origin` header, or with a `null` origin, do not receive permissive CORS headers and still need valid management authorization plus CSRF proof for mutations. Unknown explicit origins are rejected.
+
+Overlay HTTP routes and overlay WebSocket routes are not management APIs. OBS/browser-source overlays continue to use scoped overlay route keys and do not need management bearer or CSRF credentials.
+
 ## Validation
 
 Run `corepack pnpm test` before PRs. This includes unit coverage and the production-entrypoint smoke coverage that composes the local runtime through the same factory as the CLI entrypoint, then validates the Fastify-served management shell, overlay shells, static assets, overlay WebSocket registration, and representative management APIs without starting Vite or Playwright.
+
+Run `corepack pnpm test:e2e` for browser-visible management and overlay workflows when the local Playwright browser setup is available. Run `corepack pnpm lint`, `corepack pnpm typecheck`, and `corepack pnpm build` before opening a PR.
+
+## Overlay Module Config
+
+The Alerts module is enabled by default on a fresh database. Changes to module enablement and canvas size are persisted in SQLite and survive local runtime restarts over the same data directory.
+
+The module config UI only saves schema-backed canvas fields. Alert collections, rules, variants, and media setup live in the alert configuration UI instead of the module config save path.
+
+## Runtime Logs
+
+The runtime writes structured JSONL log files under the app data `logs` directory. Log files roll over hourly with names like `runtime-YYYYMMDDHH.jsonl`, use `INFO` level and 48-hour retention by default, and are redacted before persistence.
+
+Runtime logs are intended for local troubleshooting of provider activity, management security decisions, playback transitions, diagnostics exports, and operational errors. Log metadata is allowlisted per event; raw provider payloads and raw provider HTTP error bodies are not persisted. OAuth tokens, overlay route keys, authorization headers, credential references, and sensitive URLs are redacted.
+
+## Dependency Updates
+
+Dependabot version updates are configured in `.github/dependabot.yml` for weekly grouped npm workspace dependency updates and weekly grouped GitHub Actions updates. Review Dependabot PRs like normal dependency changes: read the changelog or release notes for behavior changes, let CI run, and keep lockfile changes scoped to the update PR.
+
+CI workflow defaults remain least-privilege. Normal validation workflows use read-only repository contents permissions, and jobs that need additional permissions declare them at the job level.
 
 ## Port Changes
 
@@ -60,9 +88,10 @@ On Linux, install and unlock a Secret Service-compatible keyring such as GNOME K
 2. Adjust `Diagnostics limit` when a smaller export is enough.
 3. Select `Reload diagnostics` to confirm the current event, match, playback, and provider-error view.
 4. Select `Export diagnostics`.
-5. Share only the exported redacted payload when troubleshooting.
+5. Use `Export with recent logs` only when troubleshooting needs bounded recent runtime log entries.
+6. Share only the exported redacted payload when troubleshooting.
 
-The diagnostics export redacts sensitive values such as OAuth tokens, overlay keys, auth headers, and signed URLs. Review the exported payload before sending it outside the local machine.
+The default diagnostics export includes safe log settings, log location metadata, retention metadata, and file window metadata. It does not include runtime log entries. The debug export is a separate CSRF-protected management action and includes only bounded, recent, redacted runtime log entries. Review the exported payload before sending it outside the local machine.
 
 ## Local UI Test Note
 

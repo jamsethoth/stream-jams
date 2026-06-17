@@ -9,6 +9,10 @@ describe("overlay module schemas", () => {
     expect(result.success).toBe(true);
     expect(alertsOverlayModuleDefinition.wizard.steps).toHaveLength(1);
     expect(alertsOverlayModuleDefinition.wizard.steps[0]?.fields.some((field) => field.required)).toBe(true);
+    expect(alertsOverlayModuleDefinition.wizard.steps[0]?.fields.map((field) => field.id)).toEqual([
+      "canvas.width",
+      "canvas.height"
+    ]);
     expect(JSON.stringify(alertsOverlayModuleDefinition.wizard)).not.toContain("configSchema");
   });
 

@@ -21,6 +21,7 @@ export const overlayAccessKeySchema = z.object({
 
 export const managementSessionSchema = z.object({
   id: nonEmptyStringSchema,
+  csrfToken: nonEmptyStringSchema,
   createdAt: isoDateTimeSchema,
   expiresAt: isoDateTimeSchema,
   revokedAt: isoDateTimeSchema.nullable()

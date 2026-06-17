@@ -2,7 +2,7 @@ import { readdir, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { defaultLogSettings, logSettingsSchema, type LogSettings } from "@stream-jams/core";
 
-const streamJamsLogFilePattern = /^stream-jams-\d{4}-\d{2}-\d{2}-\d{2}\.log$/;
+const streamJamsLogFilePattern = /^(?:stream-jams-\d{4}-\d{2}-\d{2}-\d{2}\.log|runtime-\d{10}\.jsonl)$/;
 const millisecondsPerHour = 60 * 60 * 1_000;
 
 export interface LogFileEntry {

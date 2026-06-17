@@ -78,7 +78,10 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
 
     registerManagementSessionRoutes(app, {
       managementSessionService: dependencies.managementSessionService,
-      managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
+      managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler,
+      ...(dependencies.managementOriginPreHandler === undefined
+        ? {}
+        : { managementOriginPreHandler: dependencies.managementOriginPreHandler })
     });
   }
 

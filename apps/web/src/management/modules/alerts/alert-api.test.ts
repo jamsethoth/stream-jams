@@ -34,7 +34,7 @@ describe("createHttpAlertConfigurationApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/alert-collections") {
@@ -44,7 +44,8 @@ describe("createHttpAlertConfigurationApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse({ id: "collection_1", name: "Raid Alerts", enabled: true }, { status: 201 });
       }
@@ -56,7 +57,8 @@ describe("createHttpAlertConfigurationApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse({
           id: "rule_1",
@@ -238,4 +240,11 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     },
     ...init
   });
+}
+
+function managementSession(): { readonly id: string; readonly csrfToken: string } {
+  return {
+    id: "mgmt_session",
+    csrfToken: "csrf_session"
+  };
 }

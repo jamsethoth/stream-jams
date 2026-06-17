@@ -6,7 +6,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/config/server") {
@@ -44,7 +44,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/overlay-modules") {
@@ -88,7 +88,8 @@ describe("createHttpManagementApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse({
           moduleId: "alerts",
@@ -132,7 +133,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/moderation/settings" && init?.method === undefined) {
@@ -149,7 +150,8 @@ describe("createHttpManagementApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse(settings);
       }
@@ -166,17 +168,25 @@ describe("createHttpManagementApi", () => {
       eventLogs: [],
       alertMatchLogs: [],
       playbackLogs: [],
-      providerErrors: []
+      providerErrors: [],
+      runtimeLogging: null
     };
     const exported = {
       generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: false,
       rawEventLogs: [],
       ...diagnostics
+    };
+    const debugExported = {
+      ...exported,
+      debugExport: true,
+      runtimeLogEntries: [],
+      runtimeLogTruncated: false
     };
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/diagnostics?limit=2") {
@@ -193,12 +203,26 @@ describe("createHttpManagementApi", () => {
         return jsonResponse(exported);
       }
 
+      if (url === "/diagnostics/export/debug") {
+        expect(init).toMatchObject({
+          method: "POST",
+          body: JSON.stringify({ limit: 2, runtimeLogLimit: 10, sinceHours: 1 })
+        });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
+        });
+        return jsonResponse(debugExported);
+      }
+
       throw new Error("Unexpected request " + url);
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.getDiagnostics({ limit: 2 })).resolves.toEqual(diagnostics);
     await expect(api.exportDiagnostics({ limit: 2 })).resolves.toEqual(exported);
+    await expect(api.exportDebugDiagnostics({ limit: 2, runtimeLogLimit: 10, sinceHours: 1 })).resolves.toEqual(debugExported);
   });
 
   it("manages overlay output keys with management headers", async () => {
@@ -223,7 +247,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/management/overlay-outputs/keys") {
@@ -233,7 +257,8 @@ describe("createHttpManagementApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse({
           keyId: "key-1",
@@ -249,7 +274,8 @@ describe("createHttpManagementApi", () => {
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
-          "content-type": "application/json"
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse({
           keyId: "key-2",
@@ -267,7 +293,8 @@ describe("createHttpManagementApi", () => {
           method: "DELETE"
         });
         expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
+          authorization: "Bearer mgmt_session",
+          "x-stream-jams-csrf": "csrf_session"
         });
         return new Response(null, { status: 204 });
       }
@@ -285,7 +312,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/twitch/eventsub/status") {
@@ -322,7 +349,7 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url === "/auth/management/sessions") {
-        return jsonResponse({ id: "mgmt_session" });
+        return jsonResponse(managementSession());
       }
 
       if (url === "/config/server") {
@@ -356,4 +383,11 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     },
     ...init
   });
+}
+
+function managementSession(): { readonly id: string; readonly csrfToken: string } {
+  return {
+    id: "mgmt_session",
+    csrfToken: "csrf_session"
+  };
 }

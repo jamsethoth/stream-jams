@@ -1,7 +1,7 @@
 import type { AlertMatchLogRecord, EventLogRecord, NormalizedStreamEvent, PlaybackLogRecord } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createRedactor } from "../security/redactor.js";
-import { DiagnosticsLimitError, DiagnosticsService } from "./diagnostics-service.js";
+import { DiagnosticsLimitError, DiagnosticsService, type DiagnosticsRuntimeLogSource } from "./diagnostics-service.js";
 
 const followEvent: NormalizedStreamEvent = {
   id: "event-follow-1",
@@ -79,6 +79,7 @@ describe("DiagnosticsService", () => {
     const exported = await service.createExport({ limit: 10 });
 
     expect(repository.limits).toEqual([10, 10, 10, 10, 10, 10]);
+    expect(diagnostics.runtimeLogging).toBeNull();
     expect(diagnostics.eventLogs).toEqual([
       {
         id: "event-log-1",
@@ -105,6 +106,9 @@ describe("DiagnosticsService", () => {
       })
     ]);
     expect(exported.generatedAt).toBe("2026-05-31T02:05:00.000Z");
+    expect(exported.debugExport).toBe(false);
+    expect(exported.runtimeLogging).toBeNull();
+    expect("runtimeLogEntries" in exported).toBe(false);
     expect(JSON.stringify(exported)).not.toContain("oauth-secret");
     expect(JSON.stringify(exported)).not.toContain("ovl_secretKey");
     expect(exported.rawEventLogs[0]?.event.metadata).toMatchObject({
@@ -113,6 +117,25 @@ describe("DiagnosticsService", () => {
         authorization: "[REDACTED]"
       }
     });
+  });
+
+  it("includes safe log metadata by default and bounded redacted runtime logs only in debug exports", async () => {
+    const repository = new RecordingDiagnosticsRepository();
+    const runtimeLogSource = new RecordingRuntimeLogSource();
+    const service = createService(repository, [], runtimeLogSource);
+
+    const exported = await service.createExport({ limit: 2 });
+    const debugExport = await service.createDebugExport({ limit: 2, runtimeLogLimit: 1, sinceHours: 2 });
+
+    expect(exported.runtimeLogging).toEqual(runtimeLogSource.metadata);
+    expect(exported.debugExport).toBe(false);
+    expect("runtimeLogEntries" in exported).toBe(false);
+    expect(debugExport.runtimeLogging).toEqual(runtimeLogSource.metadata);
+    expect(debugExport.debugExport).toBe(true);
+    expect(debugExport.runtimeLogEntries).toHaveLength(1);
+    expect(debugExport.runtimeLogTruncated).toBe(true);
+    expect(JSON.stringify(debugExport)).not.toContain("oauth-secret");
+    expect(runtimeLogSource.recentRequests).toEqual([{ limit: 1, sinceHours: 2 }]);
   });
 
   it("uses the default limit and rejects invalid limits", async () => {
@@ -129,12 +152,14 @@ describe("DiagnosticsService", () => {
 
 function createService(
   repository: RecordingDiagnosticsRepository,
-  providerStatusSources: ConstructorParameters<typeof DiagnosticsService>[0]["providerStatusSources"] = []
+  providerStatusSources: ConstructorParameters<typeof DiagnosticsService>[0]["providerStatusSources"] = [],
+  runtimeLogSource?: DiagnosticsRuntimeLogSource
 ): DiagnosticsService {
   return new DiagnosticsService({
     repository,
     redactor: createRedactor(),
     providerStatusSources,
+    runtimeLogSource,
     now: () => new Date("2026-05-31T02:05:00.000Z")
   });
 }
@@ -176,5 +201,44 @@ class RecordingDiagnosticsRepository {
     if (limit !== undefined) {
       this.limits.push(limit);
     }
+  }
+}
+
+class RecordingRuntimeLogSource implements DiagnosticsRuntimeLogSource {
+  readonly metadata = {
+    logDirectory: "C:/stream-jams/logs",
+    level: "INFO" as const,
+    rollover: "hourly" as const,
+    retentionHours: 48,
+    fileCount: 1,
+    currentLogFile: "runtime-2026053102.jsonl",
+    oldestLogFile: "runtime-2026053102.jsonl",
+    newestLogFile: "runtime-2026053102.jsonl"
+  };
+  readonly recentRequests: Array<{ readonly limit: number; readonly sinceHours?: number | undefined }> = [];
+
+  async getMetadata() {
+    return this.metadata;
+  }
+
+  async listRecent(options: { readonly limit: number; readonly sinceHours?: number | undefined }) {
+    this.recentRequests.push(options);
+    return {
+      entries: [
+        {
+          timestamp: "2026-05-31T02:04:00.000Z",
+          level: "ERROR" as const,
+          event: "provider.failure",
+          component: "twitch",
+          message: "Provider failed with Bearer oauth-secret",
+          correlationId: "correlation-1",
+          processingId: null,
+          details: {
+            authorization: "Bearer oauth-secret"
+          }
+        }
+      ].slice(0, options.limit),
+      truncated: true
+    };
   }
 }

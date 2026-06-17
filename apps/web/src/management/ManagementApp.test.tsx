@@ -52,6 +52,9 @@ describe("ManagementApp", () => {
     expect(within(modulesPanel).getByLabelText("Alerts enabled")).toBeChecked();
     expect(within(modulesPanel).getByText("Canvas width")).toBeInTheDocument();
     expect(within(modulesPanel).getByText("Canvas height")).toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Collections")).not.toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Alert rules")).not.toBeInTheDocument();
+    expect(within(modulesPanel).queryByText("Variants")).not.toBeInTheDocument();
 
     await user.clear(within(modulesPanel).getByLabelText("Canvas width"));
     await user.type(within(modulesPanel).getByLabelText("Canvas width"), "1280");
@@ -471,10 +474,12 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
           correlationId: null,
           processingId: null
         }
-      ]
+      ],
+      runtimeLogging: null
     })),
     exportDiagnostics: vi.fn(async () => ({
       generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: false as const,
       rawEventLogs: [],
       eventLogs: [
         {
@@ -524,7 +529,20 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
           correlationId: null,
           processingId: null
         }
-      ]
+      ],
+      runtimeLogging: null
+    })),
+    exportDebugDiagnostics: vi.fn(async () => ({
+      generatedAt: "2026-05-31T02:05:00.000Z",
+      debugExport: true as const,
+      rawEventLogs: [],
+      eventLogs: [],
+      alertMatchLogs: [],
+      playbackLogs: [],
+      providerErrors: [],
+      runtimeLogging: null,
+      runtimeLogEntries: [],
+      runtimeLogTruncated: false
     })),
     getTwitchStatus: vi.fn(async () => initialTwitchStatus),
     getTwitchEventSubStatus: vi.fn(async () => ({

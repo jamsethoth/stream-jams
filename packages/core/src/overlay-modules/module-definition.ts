@@ -8,8 +8,8 @@ export interface AlertsOverlayModuleConfig {
   };
 }
 
-export const alertsOverlayModuleConfigSchema = z.object({
-  canvas: z.object({
+export const alertsOverlayModuleConfigSchema = z.strictObject({
+  canvas: z.strictObject({
     width: z.number().int().positive(),
     height: z.number().int().positive()
   })
