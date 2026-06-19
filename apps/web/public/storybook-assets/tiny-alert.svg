@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="90" viewBox="0 0 160 90" role="img" aria-label="Storybook alert asset">
+  <rect width="160" height="90" rx="8" fill="#166c5f" />
+  <circle cx="42" cy="45" r="22" fill="#ffffff" opacity="0.92" />
+  <path d="M42 27l5 12 13 1-10 8 3 13-11-7-11 7 3-13-10-8 13-1z" fill="#24564d" />
+  <rect x="76" y="28" width="58" height="8" rx="4" fill="#ffffff" opacity="0.92" />
+  <rect x="76" y="44" width="44" height="8" rx="4" fill="#ffffff" opacity="0.72" />
+  <rect x="76" y="60" width="34" height="8" rx="4" fill="#ffffff" opacity="0.55" />
+</svg>

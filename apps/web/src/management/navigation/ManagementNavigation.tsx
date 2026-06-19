@@ -29,7 +29,7 @@ export function ManagementNavigation({ activeTab, onSelect }: ManagementNavigati
       <div role="tablist" aria-label="Management sections">
         {managementTabs.map((tab) => (
           <button
-            aria-controls={`management-panel-${tab.id}`}
+            aria-controls={activeTab === tab.id ? `management-panel-${tab.id}` : undefined}
             aria-selected={activeTab === tab.id}
             className="management-nav__tab"
             id={`management-tab-${tab.id}`}

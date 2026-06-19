@@ -98,6 +98,29 @@ Each item should become its own design/spec before implementation.
 - No explicit secure-communication status beyond relying on Twitch HTTPS endpoints.
 - No EventSub subscription selection or scope explanation beyond listing granted scopes.
 
+## Evaluate Storybook Vitest Addon
+
+**Status:** Deferred.
+
+**Captured:** 2026-06-19.
+
+**Why deferred:** The first frontend guardrails slice establishes Storybook build and `@storybook/test-runner` as the CI baseline. Adding the Vitest addon at the same time would change the test execution model before the story inventory is stable.
+
+**Future capability:** Evaluate Storybook's Vitest addon for running component, interaction, and accessibility checks closer to the existing Vitest workflow.
+
+**Design questions to answer before implementation:**
+
+- Does the addon reduce duplicate Storybook/test-runner configuration or add useful coverage?
+- Can it share the existing Vitest setup without weakening the current `pnpm typecheck` and Storybook CI gates?
+- How does it report failures in GitHub Actions compared with the test-runner?
+- Does it handle the overlay fullscreen stories and management async-state stories cleanly?
+
+**Likely prerequisites:**
+
+- Stable Storybook story inventory for the management shell and overlay renderer.
+- Passing Storybook build and test-runner gates in CI.
+- A small comparison branch or spike with timing, failure output, and maintenance notes.
+
 
 ## Expanded Alert Condition Builder Fields
 
