@@ -1017,7 +1017,7 @@ function LayoutPreview({ layout }: { readonly layout: VariantDraft["layout"] }) 
   const previewHeight = clamp((height / 1080) * 100, 2, 100 - top);
 
   return (
-    <div className="alert-layout-preview" aria-label="Static layout preview">
+    <div aria-label="Static layout preview" className="alert-layout-preview" role="img">
       <div
         className="alert-layout-preview__box"
         style={{

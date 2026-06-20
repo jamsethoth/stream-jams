@@ -52,4 +52,4 @@ PLAYWRIGHT_WEB_SERVER_HOST=0.0.0.0 PLAYWRIGHT_BASE_URL=http://hostmachine:4173 P
 
 `PLAYWRIGHT_WEB_SERVER_HOST=0.0.0.0` is only for Docker-backed local E2E execution. Normal local execution keeps the default `127.0.0.1` Vite bind address.
 
-The Docker helper derives the image tag from the installed `@playwright/test` version and currently uses `mcr.microsoft.com/playwright:v1.60.0-noble`. When upgrading Playwright, update `@playwright/test`, `pnpm-lock.yaml`, the GitHub Actions image tag, and related documentation together.
+The Docker helper derives the image tag from the installed `@playwright/test` version and currently uses `mcr.microsoft.com/playwright:v1.61.0-noble`. When upgrading Playwright, update `@playwright/test`, `pnpm-lock.yaml`, the GitHub Actions image tag, and related documentation together.

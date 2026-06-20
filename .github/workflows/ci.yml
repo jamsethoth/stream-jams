@@ -80,6 +80,40 @@ jobs:
       - name: Build
         run: pnpm build
 
+  storybook:
+    name: storybook
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.0-noble
+      options: --ipc=host
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.2.2 --activate
+          pnpm --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Storybook
+        run: pnpm --filter @stream-jams/web build-storybook
+
+      - name: Test Storybook
+        run: pnpm --filter @stream-jams/web test-storybook:ci
+        env:
+          CI: true
+
   e2e:
     name: e2e
     runs-on: ubuntu-24.04

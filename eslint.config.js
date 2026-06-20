@@ -5,7 +5,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", ".agents/**", ".codex/**"]
+    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "**/storybook-static/**", ".agents/**", ".codex/**"]
   },
   {
     files: ["scripts/**/*.mjs"],
@@ -20,7 +20,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["vitest.config.ts", "playwright.config.ts"]
+          allowDefaultProject: ["vitest.config.ts", "playwright.config.ts", "apps/web/.storybook/*.ts"]
         },
         tsconfigRootDir: import.meta.dirname
       }

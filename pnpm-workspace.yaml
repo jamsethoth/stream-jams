@@ -5,6 +5,10 @@ nodeVersion: 24.16.0
 engineStrict: true
 runtimeOnFail: download
 allowBuilds:
+  '@swc/core': true
   esbuild: true
+  unrs-resolver: true
 onlyBuiltDependencies:
+  - '@swc/core'
   - esbuild
+  - unrs-resolver

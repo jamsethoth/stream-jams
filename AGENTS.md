@@ -1,5 +1,24 @@
 # GitHub CLI in Codex
 
+## Agent Defaults
+
+Always operate with `ponytail full` and `caveman full` for every prompt unless I explicitly disable one of them.
+
+When the corresponding skills are available, load and use them before answering or executing work. Do not wait for an explicit per-prompt invocation.
+
+## Agent Workflow Defaults
+
+- Use relevant Superpowers skills for non-trivial development work, planning, debugging, reviews, and implementation. Do not force Superpowers for trivial commands or direct factual answers.
+- In repos with `openspec/`, check OpenSpec state before feature work:
+  - explore/clarify: `openspec.cmd list --json`
+  - proposed change: use OpenSpec propose artifacts
+  - implementation: use the matching OpenSpec apply flow
+  - completion: validate with `openspec.cmd validate <change> --strict`
+- For new projects or worktrees created by Codex, initialize OpenSpec when `openspec/` is missing: `openspec.cmd init`.
+- For new projects created by Codex, initialize CodeGraph when the project is expected to have ongoing code work: `codegraph.cmd init <path>`.
+- For existing repos or worktrees, do not initialize CodeGraph unless `.codegraph/` already exists or I explicitly ask. If `.codegraph/` exists, run `codegraph.cmd sync <path>` after checkout, branch switch, rebase, or large file changes before using CodeGraph.
+- When `.codegraph/` exists, use `codegraph.cmd explore` / `codegraph.cmd node` before broad grep-style code exploration.
+
 In this environment, GitHub CLI auth is stored in the OS keyring and is not reliably visible inside the Codex sandbox.
 
 For any `gh` command that needs GitHub auth or network access, use escalated execution first. This includes `gh auth status`, `gh auth token`, `gh repo ...`, `gh pr ...`, `gh issue ...`, and `gh api ...`.
@@ -116,6 +135,14 @@ Use these rules when implementing the Stream Jams stack. The links are primary o
 
 ## Frontend: React and Vite
 
+- For changes touching `apps/web`, management UI, browser-source overlays, or Storybook, use the repo-local frontend guidance first:
+  - `docs/ai/frontend-agent-guide.md`
+  - `docs/ui-guidelines.md`
+  - `docs/design-tokens.md`
+  - `docs/ai/overlay-error-presentation.md`
+- When available, load `.agents/skills/stream-jams-frontend-change` before implementing frontend UI work and `.agents/skills/stream-jams-frontend-review` before reviewing it.
+- UI changes should consider Storybook coverage. Add or update production-component stories for changed management panels, overlay render states, loading/empty/error/success states, and fixed-asset media states unless the change is purely non-visual.
+- Before completing frontend UI work, run or explicitly justify skipping the Storybook gates documented in `docs/ai/frontend-agent-guide.md`.
 - Keep React components pure during render. React expects components to return the same JSX for the same inputs and to avoid mutating preexisting objects during rendering: https://react.dev/learn/keeping-components-pure
 - Follow the Rules of Hooks. Do not call hooks conditionally, in loops, after early returns, in callbacks, in async functions, or at module scope: https://react.dev/reference/eslint-plugin-react-hooks/lints/rules-of-hooks
 - Keep domain logic out of React components. Components should orchestrate UI state and call typed client/service boundaries; matching, queueing, provider normalization, auth, persistence, and overlay composition logic belong in services/packages.
