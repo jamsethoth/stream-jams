@@ -1,0 +1,514 @@
+{
+  "artifact": "penpot-current-state",
+  "project": "stream-jams",
+  "schemaVersion": 1,
+  "screenshotManifestCreatedAt": "2026-06-21T22:31:29-04:00",
+  "penpotInventoryRefreshedAt": "2026-06-22T15:48:36.712Z",
+  "penpotVersion": "2.16.1",
+  "mcp": {
+    "mode": "local-plugin",
+    "pluginManifestUrl": "http://localhost:4400/manifest.json",
+    "serverUrl": "http://localhost:4401/mcp",
+    "status": "connected",
+    "selectionCount": 0
+  },
+  "sourceAnchors": [
+    "docs/product-plan.md",
+    "apps/web/src/App.css",
+    "apps/web/src/management/ManagementApp.tsx",
+    "apps/web/src/management/navigation/ManagementNavigation.tsx",
+    "apps/web/src/overlay/OverlayApp.tsx",
+    "apps/web/src/overlay/components/OverlaySurface.tsx"
+  ],
+  "security": {
+    "redactedSecrets": [
+      "overlay route keys",
+      "bearer tokens",
+      "Twitch tokens",
+      "copied secret values"
+    ],
+    "redactedStateBoards": [
+      "Management UI - Overlay URL Generated Redacted"
+    ]
+  },
+  "coverage": {
+    "management": {
+      "required": 30,
+      "captured": 30,
+      "missing": []
+    },
+    "overlay": {
+      "required": 4,
+      "captured": 4,
+      "missing": []
+    },
+    "orphanCleanup": {
+      "status": "clean",
+      "note": "Only intentional baseline/reference boards remain outside required captured-state lists."
+    }
+  },
+  "pages": [
+    {
+      "id": "511bd401-aa1d-80ff-8008-351e03897bb2",
+      "name": "00 Repo Baseline",
+      "purpose": "product scope, source anchors, and repo-state notes",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-35231cfb4bd2",
+          "name": "Repo Baseline - Current State",
+          "kind": "reference",
+          "width": 1440,
+          "height": 1080,
+          "childCount": 31,
+          "createdBy": ""
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-35231db228b2",
+      "name": "01 Management UI - Current",
+      "purpose": "current React/Vite management UI states",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-35240ee3b55d",
+          "name": "Management UI - Current Baseline",
+          "kind": "reference",
+          "width": 1440,
+          "height": 1180,
+          "childCount": 109,
+          "createdBy": "",
+          "uiState": "",
+          "screenshotFile": ""
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e522ad2",
+          "name": "Management UI - Dashboard selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "dashboard",
+          "screenshotFile": "management-dashboard.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e789670",
+          "name": "Management UI - Twitch selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "twitch",
+          "screenshotFile": "management-twitch.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e88cacc",
+          "name": "Management UI - Diagnostics selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "diagnostics",
+          "screenshotFile": "management-diagnostics.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e9eb7eb",
+          "name": "Management UI - Modules selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "modules",
+          "screenshotFile": "management-modules.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6eafc219",
+          "name": "Management UI - Overlays selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlays",
+          "screenshotFile": "management-overlays.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ec0e7fd",
+          "name": "Management UI - Playback selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "playback",
+          "screenshotFile": "management-playback.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ed49936",
+          "name": "Management UI - TTS selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "tts",
+          "screenshotFile": "management-tts.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ee595e4",
+          "name": "Management UI - Settings selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "settings",
+          "screenshotFile": "management-settings.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ef8afbf",
+          "name": "Management UI - Alerts selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1104,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "alerts",
+          "screenshotFile": "management-alerts.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6f1131bb",
+          "name": "Management UI - Assets selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "assets",
+          "screenshotFile": "management-assets.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247149f6ff",
+          "name": "Management UI - Mobile Dashboard selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-dashboard",
+          "screenshotFile": "management-mobile-dashboard.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247165827b",
+          "name": "Management UI - Mobile Twitch selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-twitch",
+          "screenshotFile": "management-mobile-twitch.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624718105d0",
+          "name": "Management UI - Mobile Diagnostics selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 1006,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-diagnostics",
+          "screenshotFile": "management-mobile-diagnostics.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624719f69d4",
+          "name": "Management UI - Mobile Modules selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-modules",
+          "screenshotFile": "management-mobile-modules.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362471b5a559",
+          "name": "Management UI - Mobile Overlays selected",
+          "kind": "captured-state",
+          "width": 467,
+          "height": 977,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-overlays",
+          "screenshotFile": "management-mobile-overlays.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362471d19dea",
+          "name": "Management UI - Mobile Playback selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-playback",
+          "screenshotFile": "management-mobile-playback.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362471ea31c8",
+          "name": "Management UI - Mobile TTS selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 1087,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-tts",
+          "screenshotFile": "management-mobile-tts.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472027c6a",
+          "name": "Management UI - Mobile Settings selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-settings",
+          "screenshotFile": "management-mobile-settings.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624721a1cd4",
+          "name": "Management UI - Mobile Alerts selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 1352,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-alerts",
+          "screenshotFile": "management-mobile-alerts.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247233ac4f",
+          "name": "Management UI - Mobile Assets selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-assets",
+          "screenshotFile": "management-mobile-assets.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624724eb3e1",
+          "name": "Management UI - Seeded Dashboard",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "seeded-dashboard",
+          "screenshotFile": "management-seeded-dashboard.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247274101b",
+          "name": "Management UI - Seeded Alerts",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 2517,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "alerts-seeded",
+          "screenshotFile": "management-seeded-alerts.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472a16f2c",
+          "name": "Management UI - Seeded Assets",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "assets-seeded",
+          "screenshotFile": "management-seeded-assets.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472cdf32c",
+          "name": "Management UI - Overlay URL Generated Redacted",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-url-generated",
+          "screenshotFile": "management-overlay-url-generated-redacted.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472f92571",
+          "name": "Management UI - TTS Test Result",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1075,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "tts-test-result",
+          "screenshotFile": "management-tts-test-result.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624731f6972",
+          "name": "Management UI - Playback After Test Alert",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "playback-after-test-alert",
+          "screenshotFile": "management-playback-after-test-alert.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624734372bf",
+          "name": "Management UI - Diagnostics After Test Alert",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1035,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "diagnostics-after-test-alert",
+          "screenshotFile": "management-diagnostics-after-test-alert.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-373ac65b99c6",
+          "name": "Management UI - Twitch Connected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "twitch-connected",
+          "screenshotFile": "management-twitch-connected-twitch-connected.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-373ac75ffb2d",
+          "name": "Management UI - Alerts Test Alert Queued",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 2576,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "alerts-test-alert-queued",
+          "screenshotFile": "management-alerts-test-alert-queued.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-373ac864e418",
+          "name": "Management UI - Assets Import Error",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "assets-import-error",
+          "screenshotFile": "management-assets-import-error.png"
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-35231f1a4256",
+      "name": "02 Overlay - Current",
+      "purpose": "current browser-source overlay states",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-352416b5008b",
+          "name": "Overlay Surface - Current Baseline",
+          "kind": "reference",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 152,
+          "createdBy": "",
+          "uiState": "",
+          "screenshotFile": ""
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624abe07305",
+          "name": "Overlay - Empty Test Route",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-empty-test",
+          "screenshotFile": "overlay-empty-test-route.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624abf1384a",
+          "name": "Overlay - Empty Live Route",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-empty-live",
+          "screenshotFile": "overlay-empty-live-route.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624ac019182",
+          "name": "Overlay - Live Alert",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-live-alert",
+          "screenshotFile": "overlay-live-alert.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-37434881db34",
+          "name": "Overlay - Invalid Route Error",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-invalid-route-error",
+          "screenshotFile": "overlay-invalid-route-error.png"
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-3523213300c7",
+      "name": "03 Tokens & Components",
+      "purpose": "extracted current visual primitives and reusable UI pieces",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-35241e9ea84d",
+          "name": "Tokens & Components - Current CSS",
+          "kind": "reference",
+          "width": 1440,
+          "height": 1240,
+          "childCount": 80,
+          "createdBy": ""
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-352322e6e926",
+      "name": "10 Redesign Concepts",
+      "purpose": "future approved redesign concepts only",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-352421b07a28",
+          "name": "Redesign Concepts - Reserved",
+          "kind": "reference",
+          "width": 1440,
+          "height": 900,
+          "childCount": 16,
+          "createdBy": ""
+        }
+      ]
+    }
+  ],
+  "knownGaps": [
+    "PNG/SVG board exports are not committed yet.",
+    "Penpot remains the review baseline only; repo code and docs remain the product source of truth."
+  ]
+}
