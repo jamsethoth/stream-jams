@@ -13,14 +13,14 @@ It is not the final implementation spec. Update it as decisions change, then pro
   - Alert domain model refactor.
   - Alert management API refactor.
   - Management shell information architecture refactor.
-  - Alert family management UI.
+  - Alert set management UI.
   - Alert canvas editor.
   - Alert output management UI.
   - Live operator UI design artifacts only.
 - Create Penpot concept boards before the formal implementation spec.
 - Initial concept boards should be low/mid fidelity, not polished final visuals:
   - App shell and Home.
-  - Alerts family overview.
+  - Alert set overview.
   - Focused alert editor for landscape.
   - Focused alert editor for vertical.
   - Event sources page.
@@ -98,6 +98,10 @@ It is not the final implementation spec. Update it as decisions change, then pro
 
 - `Home` replaces `Dashboard`.
 - Home should show service/app integration readiness and next setup actions.
+- Home next actions should be navigable, context-preserving links to the exact screen or setup flow needed to resolve the item.
+- Next-action links should use stable IDs where deep links are needed, such as alert editor routes or filtered asset usage views.
+- Integration readiness cards should not be whole-card links.
+- Provider name/status area links to provider detail; explicit buttons handle actions such as test, edit, connect, or set active.
 - Home can show compact diagnostics/errors only when user attention is needed.
 - Home must not become a live stream dashboard or moderation queue.
 
@@ -116,6 +120,8 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - `Save provider` stores settings; `Set active` changes runtime behavior.
 - `Test connection` validates a provider without activating it.
 - Active providers receive alerts automatically on app start for now.
+- Event-source UI should avoid hardcoding one-active-provider language so it can evolve to multiple active providers later.
+- Event-source tables should keep connection state separate from runtime intake state.
 - Backlog:
   - Manual live-intake toggle.
   - Auto-enable intake on stream start and auto-disable on stream end.
@@ -126,7 +132,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
 
 - Alert rules target provider kind plus event type, not a specific registered provider.
 - Example: `Twitch > Follow`, not `Twitch account: jamsethoth > Follow`.
-- When setting a provider active, check the active alert family:
+- When setting a provider active, check the active alert set:
   - If no rules match that provider kind, warn that live alerts may stop.
   - If some rules match and some do not, show counts.
   - If all relevant rules match, use normal activation confirmation.
@@ -136,6 +142,11 @@ It is not the final implementation spec. Update it as decisions change, then pro
 
 - `Assets` is a global asset library, not a required detour during alert creation.
 - The primary assets view should be a table/list with thumbnails.
+- Asset management UI must include asset preview.
+- Desktop asset preview/details should appear in a right-side panel beside the table.
+- Narrow widths can fall back to an expandable row or stacked detail section.
+- Asset management UI must include filters for common review jobs, such as type, usage, status, missing/broken, unused, and module/set/event linkage.
+- Asset management UI must show where each asset is linked, with links back to the relevant module/set/event/alert usage.
 - Module workflows, such as alert creation, should allow inline asset upload/select.
 - The `Assets` page should allow users to review all assets in use, update an asset, and have that update apply everywhere the asset is referenced.
 - Modules should reference assets by asset ID rather than copied file paths.
@@ -143,46 +154,70 @@ It is not the final implementation spec. Update it as decisions change, then pro
 
 ## Alerts Module
 
-- `Modules > Alerts` defaults to the active family overview.
-- A family list/switcher should be available near the overview.
+- `Modules > Alerts` defaults to the active alert set overview.
+- A set list/switcher should be available near the overview.
 - `Modules > Alerts` uses tabs for related views inside the module:
-  - `Families`
+  - `Sets`
   - `Editor`
-  - `Output`
   - `Settings`
-- `Families` contains active family overview, family switch/activation, alert inventory table, and validation.
+- `Sets` contains active alert set overview, set switch/activation, alert inventory table, and validation.
+- `Sets` should include a table/list of available alert sets under the active-set summary.
+- Alert set table rows show status such as active, inactive, has blockers, or has warnings.
+- Inactive valid set row action is `Activate`, not `Enable`.
+- Inactive set with blockers should show `Review blockers`.
+- Inactive set with warnings can show `Activate...` and open a confirmation showing warnings.
+- Active set row action should be `Open` or `Edit`, not a disabled activate action.
+- Activation confirmation should explain that the selected set replaces the current active set for live alerts.
+- Alert inventory on the Sets page shows only alerts for the selected set.
+- Cross-set global alert inventory is backlog unless a strong management need appears.
 - `Editor` is a full workspace with persistent alert tree/list, canvas, inspector, and preview/test/save controls.
-- Family overview and alert inventory rows should deep-link into `Editor` with the selected family/provider/event/variation.
+- Set overview and alert inventory rows should deep-link into `Editor` with the selected set/provider/event/variation.
 - `Editor` saves one selected alert/variation at a time in the MVP.
 - Show dirty state for the current selection and warn before navigation would discard unsaved changes.
 - `Editor` opens in focused editor mode that hides or collapses the main app sidebar while keeping breadcrumb/header context.
 - Focused editor mode keeps its own alert tree/list visible so users can switch between alerts quickly.
+- Editor alert tree shows only the selected alert set.
+- Editor provides a set switcher, but does not show all sets in one tree.
+- Switching sets with unsaved changes uses the same save/discard/cancel guard.
 - Switching alerts with unsaved changes prompts: save and switch, discard and switch, or cancel.
+- A selected alert uses one focused editor route with a target-profile segmented control, not separate editor routes per profile.
+- Target-profile options are `Landscape 16:9` and `Vertical 9:16`.
+- Switching target profile swaps the canvas layout for the same alert.
+- Shared content and settings remain shared across profiles; geometry and profile enablement are profile-specific.
+- Profile-specific warnings, such as missing or unreviewed vertical layout, appear near the target-profile control.
+- Switching target profiles with unsaved changes prompts: save and switch profile, discard and switch profile, or cancel.
 - Focused editor uses a distinct route, such as `/modules/alerts/editor/:alertId`.
-- Deep links from family tables and browser back/forward behavior should work predictably.
+- Deep links from set tables and browser back/forward behavior should work predictably.
 - Editor and management routes should use stable IDs internally, with human-readable names shown in breadcrumbs and page text.
-- Avoid routing by editable family/event/variation names.
+- Avoid routing by editable set/event/variation names.
 - Backlog:
   - Save-all or multi-alert draft editing.
-- `Modules > Alerts` should include an `Output` or `Browser sources` section for generated browser-source URLs and connected-client diagnostics.
+- `Modules > Alerts` should include an `Output` or `Browser sources` section on the Sets page, not a separate tab in the MVP.
 - The output section should show landscape and vertical URLs, copy actions, route-key regeneration, last connected client, and test send controls.
-- One active alert family is allowed in the MVP.
-- Alert family activation is separate from saving:
-  - `Save` persists family and alert edits.
-  - `Activate family` changes live behavior.
-- Editing the active family and saving affects live alerts, with clear warning.
-- Editing inactive families is safe preparation work.
+- Route-key regeneration is per module and target profile.
+- A separate Output tab is backlog if output management grows to include OBS integration, connected-client history, route-key audit, or advanced profiles.
+- `Settings` tab is limited to module-level defaults.
+- Alert module settings can include default duration, default target-profile enablement, default volume, safe area, and grid behavior.
+- Provider/event rules stay in Sets or Editor.
+- Browser-source output stays on the Sets page.
+- No global live controls belong in Alert module settings for the MVP.
+- One active alert set is allowed in the MVP.
+- Alert set activation is separate from saving:
+  - `Save` persists set and alert edits.
+  - `Activate set` changes live behavior.
+- Editing the active alert set and saving affects live alerts, with clear warning.
+- Editing inactive sets is safe preparation work.
 - UI implementation should be backed by the refactored backend model and APIs, not front-end-only mock state.
 - Implementation should be sliced backend model/API first, then management UI shell, then focused editor.
 - Backlog:
-  - Draft/publish model for active family edits.
-  - Multiple active families with warnings for conflicting or duplicate source events.
+  - Draft/publish model for active alert set edits.
+  - Multiple active sets with warnings for conflicting or duplicate source events.
 
-## Alert Families, Event Types, And Variations
+## Alert Sets, Event Types, And Variations
 
-- Alert family represents a seasonal/campaign/default set.
+- Alert set represents a seasonal, campaign, or default collection of alerts.
 - Canvas editor structure:
-  - `Family`
+  - `Set`
     - `Provider kind`
       - `Event type`
         - `Variations`
@@ -200,12 +235,12 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - MVP actions:
   - `Create variation from default`
   - `Duplicate variation`
-  - `Duplicate alert within the same event type and family`
+  - `Duplicate alert within the same event type and set`
   - `Reset to event default`
   - `Copy design from...`
 - Avoid a deep inheritance engine in the MVP.
 - Backlog, high priority:
-  - Bulk operations such as apply design to selected, enable/disable selected, move/copy to family, and copy settings across events.
+  - Bulk operations such as apply design to selected, enable/disable selected, move/copy to set, and copy settings across events.
 - Backlog:
   - Generic AND/OR condition builder.
   - Priority rules.
@@ -221,7 +256,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - MVP alert editor is canvas-first.
 - The canvas is not a blank design-tool clone; templates/presets should prevent blank-canvas burden.
 - Center: alert preview canvas.
-- Left: family/provider/event/variation navigation.
+- Left: set/provider/event/variation navigation.
 - Right: inspector for selected layer or alert settings.
 - Top or bottom: preview/test controls.
 - Support free positioning and resizing of text and media layers.
@@ -283,8 +318,10 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Each alert can be enabled or disabled per target profile.
 - Users can copy/duplicate an alert.
 - Templates should generate both target profiles.
+- Newly generated vertical layouts should default to disabled and `Needs review`.
+- Users must explicitly enable vertical output for an alert/profile after review.
 - Missing profile layout should be explicit in the UI.
-- `Activate family` requires at least one valid target profile, not all profiles.
+- `Activate set` requires at least one valid target profile, not all profiles.
 - Activation should warn clearly when any target profile is incomplete.
 - Target profile validation should prove the alert can run without broken output, not judge whether it looks like a typical alert.
 - Blocking validation:
