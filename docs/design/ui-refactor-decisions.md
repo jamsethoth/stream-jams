@@ -8,6 +8,8 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - The management UI is an offline setup and configuration console.
 - Live monitoring and moderation should be a separate operator UI.
 - The operator UI is design-artifact scope only for this refactor; it is not part of the first implementation.
+- Create a low/mid fidelity `Concept - Live Operator Console` Penpot board.
+- Live operator concept should show active intake health, playback queue, recent events, moderation controls, and a clear future/not-implemented label.
 - Implementation should be split into dependency-ordered changes rather than one large PR.
 - Likely change sequence:
   - Alert domain model refactor.
@@ -25,6 +27,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
   - Focused alert editor for vertical.
   - Event sources page.
   - Assets table.
+  - Live operator console as a future/design-only artifact.
 
 ## Navigation And Information Architecture
 
@@ -44,6 +47,11 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - `Overlays` should not be a primary nav item. Browser-source URLs and route-key actions belong inside the module that owns the output.
 - Browser-source URLs are separate per module and target profile, such as Alerts landscape and Alerts vertical.
 - Do not rely on one browser-source URL adapting by viewport for the MVP.
+- Sidebar shows stable product areas.
+- Breadcrumbs appear on nested pages and focused editor surfaces.
+- Breadcrumbs should be clickable back to parent surfaces.
+- Focused editor breadcrumb includes `Modules / Alerts / Set / Provider / Event / Alert`.
+- Avoid breadcrumbs on Home and top-level pages unless needed.
 
 ## Visual Foundation
 
@@ -93,6 +101,17 @@ It is not the final implementation spec. Update it as decisions change, then pro
   - Canvas editor is desktop-required for MVP.
   - Narrow mobile should show a clear state explaining that the editor requires a larger screen.
   - Live operator UI may consider mobile later, but is not implemented in this refactor.
+- Auto-save is limited to UI preferences and low-risk view state.
+- Good auto-save candidates include theme, density, sidebar collapsed state, table filters/sort/visible columns, editor zoom/pan/grid visibility, selected target profile, and dismissed noncritical tips.
+- Domain state requires explicit save or confirmation.
+- Do not auto-save provider connection settings, active provider selection, alert set activation, alert editor changes, asset replacement/delete, route-key regeneration, or anything that changes live runtime behavior.
+- Warn before navigation would discard dirty domain forms or editor changes.
+- Search and filtering:
+  - Assets require search and filters.
+  - Alert Sets page inventory supports filters by provider, event, status, and profile readiness.
+  - Event Sources and TTS Providers do not need heavy filters initially because the lists should stay small.
+  - Diagnostics requires filters by severity, source, time, and reference ID/search.
+  - Editor left alert tree requires search in the MVP.
 
 ## Home
 
@@ -112,6 +131,11 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - OBS/browser-source verification is not readiness in the MVP because current product scope uses manually copied browser-source URLs.
 - If OBS WebSocket support is added later, OBS can become an integration with readiness states.
 - Provider setup uses one wizard per setup flow, not one wizard per page.
+- Provider setup wizards must complete before registering a provider in the MVP.
+- Exiting an incomplete provider setup discards the setup state.
+- Draft or resumable provider setup is backlog.
+- Successful provider setup automatically sets the provider active when no active provider exists for that capability.
+- If an active provider already exists, new provider is registered inactive and the user can choose `Set active`.
 - Providers are grouped by capability:
   - `Event sources`: Twitch, Streamer.bot events, future event providers.
   - `TTS providers`: Speaker.bot and future TTS providers.
@@ -122,6 +146,8 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Active providers receive alerts automatically on app start for now.
 - Event-source UI should avoid hardcoding one-active-provider language so it can evolve to multiple active providers later.
 - Event-source tables should keep connection state separate from runtime intake state.
+- Empty Event Sources state should show `Add event source` and explain active intake.
+- Empty TTS Providers state should show `Add TTS provider` and explain TTS alerts can run without speech until configured.
 - Backlog:
   - Manual live-intake toggle.
   - Auto-enable intake on stream start and auto-disable on stream end.
@@ -148,6 +174,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Asset management UI must include filters for common review jobs, such as type, usage, status, missing/broken, unused, and module/set/event linkage.
 - Asset management UI must show where each asset is linked, with links back to the relevant module/set/event/alert usage.
 - Module workflows, such as alert creation, should allow inline asset upload/select.
+- Empty Assets state should show import action and explain assets can also be added inline from alert editor.
 - The `Assets` page should allow users to review all assets in use, update an asset, and have that update apply everywhere the asset is referenced.
 - Modules should reference assets by asset ID rather than copied file paths.
 - Deleting an in-use asset should be blocked or require explicit reassignment.
@@ -155,6 +182,16 @@ It is not the final implementation spec. Update it as decisions change, then pro
 ## Alerts Module
 
 - `Modules > Alerts` defaults to the active alert set overview.
+- A `Default` alert set should be created automatically so users do not see an empty Sets state.
+- First-run experience should not be a global wizard.
+- Home next actions guide setup instead.
+- Provider setup uses focused wizards.
+- Alert creation should offer built-in example templates.
+- Built-in templates should include starter examples for both landscape and vertical profiles.
+- Minimal starter examples include Follow, Raid, Subscriber/Cheer where supported, and Custom event.
+- A starter `Default` alert set should be auto-created from built-in example templates.
+- Auto-created examples should avoid live surprises; live enablement still depends on provider setup, active set validation, and explicit activation rules.
+- Starter example alerts are disabled by default until reviewed and enabled by the user.
 - A set list/switcher should be available near the overview.
 - `Modules > Alerts` uses tabs for related views inside the module:
   - `Sets`
@@ -173,7 +210,14 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - `Editor` is a full workspace with persistent alert tree/list, canvas, inspector, and preview/test/save controls.
 - Set overview and alert inventory rows should deep-link into `Editor` with the selected set/provider/event/variation.
 - `Editor` saves one selected alert/variation at a time in the MVP.
+- `Save` persists all unsaved changes for the selected alert, including shared settings and any touched target-profile layouts.
+- Dirty indicators should show which target profiles have unsaved changes.
 - Show dirty state for the current selection and warn before navigation would discard unsaved changes.
+- Editor toolbar includes `Revert changes` for current unsaved alert edits.
+- `Revert changes` is disabled when there are no unsaved changes.
+- `Revert changes` applies immediately without a confirmation modal, provided undo can restore the reverted edits.
+- If undo cannot restore reverted edits, use a confirmation modal instead.
+- Version history and restoring older saved versions are backlog.
 - `Editor` opens in focused editor mode that hides or collapses the main app sidebar while keeping breadcrumb/header context.
 - Focused editor mode keeps its own alert tree/list visible so users can switch between alerts quickly.
 - Editor alert tree shows only the selected alert set.
@@ -257,7 +301,12 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - The canvas is not a blank design-tool clone; templates/presets should prevent blank-canvas burden.
 - Center: alert preview canvas.
 - Left: set/provider/event/variation navigation.
-- Right: inspector for selected layer or alert settings.
+- Right: inspector for selected alert, layer list, selected layer, and alert settings.
+- Layer list belongs in the right inspector, not the left alert tree.
+- Inspector uses internal tabs:
+  - `Layers`: layer list and selected layer controls.
+  - `Alert`: alert name, enabled target profiles, output actions, and duration defaults.
+  - `Event`: condition fields, sample data, and template variables.
 - Top or bottom: preview/test controls.
 - Support free positioning and resizing of text and media layers.
 - Include snap/grid and reset-to-template.
@@ -287,6 +336,9 @@ It is not the final implementation spec. Update it as decisions change, then pro
   - `Send test to overlay` sends through the actual playback/overlay path.
   - Sample data selector is scoped to event type, such as small raid, large raid, or long username.
   - Test UI must make the active target profile clear.
+  - Toolbar quick action is `Preview`.
+  - `Send test` is a secondary action that opens a target menu: landscape output, vertical output, or both enabled outputs.
+  - Avoid one-click sending to live browser-source outputs by accident.
 - MVP layer types:
   - Text.
   - Image.
@@ -349,6 +401,11 @@ It is not the final implementation spec. Update it as decisions change, then pro
   - `Playback`
   - `Logs`
 - Do not split diagnostics into multiple sidebar destinations unless it grows too large.
+- No failure should be silent in the UI.
+- User-visible failures should include a human-readable summary, known cause, next step, severity, timestamp when useful, and log/reference ID for debugging.
+- Failure messages should deep-link to the associated correction surface when applicable.
+- Diagnostics should provide context actions only when safe and deterministic.
+- Diagnostics repair actions are secondary to correction links into the relevant configuration UI.
 
 ## Design Source References
 
