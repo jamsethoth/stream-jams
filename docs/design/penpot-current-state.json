@@ -3,8 +3,8 @@
   "project": "stream-jams",
   "schemaVersion": 1,
   "screenshotManifestCreatedAt": "2026-06-21T22:31:29-04:00",
-  "penpotInventoryRefreshedAt": "2026-06-22T15:48:36.712Z",
-  "penpotVersion": "2.16.1",
+  "penpotInventoryRefreshedAt": "2026-07-07T22:21:47.9986210-04:00",
+  "penpotVersion": "2.16.2",
   "mcp": {
     "mode": "local-plugin",
     "pluginManifestUrl": "http://localhost:4400/manifest.json",
@@ -44,7 +44,7 @@
     },
     "orphanCleanup": {
       "status": "clean",
-      "note": "Only intentional baseline/reference boards remain outside required captured-state lists."
+      "note": "Only intentional baseline/reference/concept boards remain outside required captured-state lists."
     }
   },
   "pages": [
@@ -503,12 +503,88 @@
           "height": 900,
           "childCount": 16,
           "createdBy": ""
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea34025f2f",
+          "name": "Concept - App Shell and Home",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 61,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea35d3a554",
+          "name": "Concept - Event Sources",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 51,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea3755a2a7",
+          "name": "Concept - Assets Table",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 62,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea393e8f71",
+          "name": "Concept - Alert Sets Overview",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 74,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea3ba439b5",
+          "name": "Concept - Alert Editor Landscape",
+          "kind": "concept",
+          "width": 1600,
+          "height": 1000,
+          "childCount": 30,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea3c961a4f",
+          "name": "Concept - Alert Editor Vertical",
+          "kind": "concept",
+          "width": 1600,
+          "height": 1000,
+          "childCount": 34,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39f5b52aed65",
+          "name": "Concept - Live Operator Console",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 82,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "bdc14993-8bb3-8027-8008-4a8fa6cb976e",
+          "name": "Reference Patterns",
+          "kind": "reference",
+          "width": 1760,
+          "height": 2480,
+          "childCount": 230,
+          "createdBy": "codex-stream-jams-reference-patterns",
+          "sourceDoc": "docs/design/ui-reference-patterns.md",
+          "referenceArtifactType": "schematic-pattern-diagrams",
+          "generatedDiagramCount": 164,
+          "screenshotCount": 0
         }
       ]
     }
   ],
   "knownGaps": [
-    "PNG/SVG board exports are not committed yet.",
+    "PNG/SVG board exports are not committed yet. Reference Patterns is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.",
     "Penpot remains the review baseline only; repo code and docs remain the product source of truth."
   ]
 }

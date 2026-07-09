@@ -6,8 +6,8 @@ The repo remains the source of truth for product behavior; Penpot is the visual 
 ## Capture Status
 
 - Screenshot manifest created: 2026-06-21T22:31:29-04:00
-- Penpot inventory refreshed: 2026-06-22T15:48:36.712Z
-- Penpot version observed: 2.16.1
+- Penpot inventory refreshed: 2026-07-07T22:21:47.9986210-04:00
+- Penpot version observed: 2.16.2
 - MCP mode: local plugin and MCP server
 - Plugin manifest URL: `http://localhost:4400/manifest.json`
 - MCP server URL: `http://localhost:4401/mcp`
@@ -41,6 +41,20 @@ The repo remains the source of truth for product behavior; Penpot is the visual 
 - `Overlay Surface - Current Baseline`: 1920 x 1080, 152 children.
 - `Tokens & Components - Current CSS`: 1440 x 1240, 80 children.
 - `Redesign Concepts - Reserved`: 1440 x 900, 16 children.
+- `Reference Patterns`: 1760 x 2480, 230 children.
+
+## Redesign Concept Boards
+
+Boards on `10 Redesign Concepts`:
+
+- `Concept - App Shell and Home`: 1440 x 960.
+- `Concept - Event Sources`: 1440 x 960.
+- `Concept - Assets Table`: 1440 x 960.
+- `Concept - Alert Sets Overview`: 1440 x 960.
+- `Concept - Alert Editor Landscape`: 1600 x 1000.
+- `Concept - Alert Editor Vertical`: 1600 x 1000.
+- `Concept - Live Operator Console`: 1440 x 960.
+- `Reference Patterns`: 1760 x 2480, with schematic reference-pattern diagrams for alert setup, editor structure, integration setup, diagnostics, and data tables.
 
 ## Current Management UI Coverage
 
@@ -100,7 +114,7 @@ Boards on `02 Overlay - Current`:
 
 ## Known Gaps
 
-- PNG/SVG board exports are not committed yet.
+- PNG/SVG board exports are not committed yet. `Reference Patterns` is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.
 - Penpot remains the review baseline only; repo code and docs remain the product source of truth.
 
 ## Refresh Checklist
