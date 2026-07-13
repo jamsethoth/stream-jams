@@ -6,7 +6,7 @@ The repo remains the source of truth for product behavior; Penpot is the visual 
 ## Capture Status
 
 - Screenshot manifest created: 2026-06-21T22:31:29-04:00
-- Penpot inventory refreshed: 2026-07-07T22:21:47.9986210-04:00
+- Penpot inventory refreshed: 2026-07-12T10:16:39.0551067-04:00
 - Penpot version observed: 2.16.2
 - MCP mode: local plugin and MCP server
 - Plugin manifest URL: `http://localhost:4400/manifest.json`
@@ -54,6 +54,9 @@ Boards on `10 Redesign Concepts`:
 - `Concept - Alert Editor Landscape`: 1600 x 1000.
 - `Concept - Alert Editor Vertical`: 1600 x 1000.
 - `Concept - Live Operator Console`: 1440 x 960.
+- `Hi-Fi - Home`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-home.png`.
+- `Hi-Fi - Event Source Setup`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-event-source-setup.png`.
+- `Hi-Fi - Alert Sets Overview`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-alert-sets-overview.png`.
 - `Reference Patterns`: 1760 x 2480, with schematic reference-pattern diagrams for alert setup, editor structure, integration setup, diagnostics, and data tables.
 
 ## Current Management UI Coverage
@@ -114,7 +117,7 @@ Boards on `02 Overlay - Current`:
 
 ## Known Gaps
 
-- PNG/SVG board exports are not committed yet. `Reference Patterns` is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.
+- PNG/SVG board exports are not committed yet. High-fidelity concept board source PNGs are committed under `docs/design/hifi-concept-boards/`; `Reference Patterns` is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.
 - Penpot remains the review baseline only; repo code and docs remain the product source of truth.
 
 ## Refresh Checklist

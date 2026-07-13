@@ -1,0 +1,23 @@
+{
+  "createdBy": "codex-stream-jams-hifi-concepts",
+  "boards": [
+    {
+      "name": "Hi-Fi - Home",
+      "file": "hi-fi-home.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Event Source Setup",
+      "file": "hi-fi-event-source-setup.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Alert Sets Overview",
+      "file": "hi-fi-alert-sets-overview.png",
+      "width": 1440,
+      "height": 960
+    }
+  ]
+}

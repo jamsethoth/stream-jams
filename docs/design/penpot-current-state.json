@@ -3,7 +3,7 @@
   "project": "stream-jams",
   "schemaVersion": 1,
   "screenshotManifestCreatedAt": "2026-06-21T22:31:29-04:00",
-  "penpotInventoryRefreshedAt": "2026-07-07T22:21:47.9986210-04:00",
+  "penpotInventoryRefreshedAt": "2026-07-12T10:16:39.0551067-04:00",
   "penpotVersion": "2.16.2",
   "mcp": {
     "mode": "local-plugin",
@@ -568,6 +568,42 @@
           "createdBy": "codex-stream-jams-redesign-concepts"
         },
         {
+          "id": "49f4edae-6251-8037-8008-50ef8f08fcb3",
+          "name": "Hi-Fi - Home",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-home.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-50efbd1945dd",
+          "name": "Hi-Fi - Event Source Setup",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-event-source-setup.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-50efe29e0809",
+          "name": "Hi-Fi - Alert Sets Overview",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-sets-overview.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
           "id": "bdc14993-8bb3-8027-8008-4a8fa6cb976e",
           "name": "Reference Patterns",
           "kind": "reference",
@@ -584,7 +620,7 @@
     }
   ],
   "knownGaps": [
-    "PNG/SVG board exports are not committed yet. Reference Patterns is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.",
+    "PNG/SVG board exports are not committed yet. High-fidelity concept board source PNGs are committed under docs/design/hifi-concept-boards/; Reference Patterns is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.",
     "Penpot remains the review baseline only; repo code and docs remain the product source of truth."
   ]
 }
