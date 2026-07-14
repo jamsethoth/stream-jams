@@ -6,11 +6,13 @@ The repo remains the source of truth for product behavior; Penpot is the visual 
 ## Capture Status
 
 - Screenshot manifest created: 2026-06-21T22:31:29-04:00
-- Penpot inventory refreshed: 2026-07-12T10:16:39.0551067-04:00
+- Penpot inventory refreshed: 2026-07-13T09:17:16.5319045-04:00
 - Penpot version observed: 2.16.2
 - MCP mode: local plugin and MCP server
 - Plugin manifest URL: `http://localhost:4400/manifest.json`
 - MCP server URL: `http://localhost:4401/mcp`
+- Latest high-fidelity repo artifact render: 2026-07-13T10:33:57.9444267-04:00
+- Latest Penpot sync verification for high-fidelity Batches 1-7: 2026-07-14T13:51:24.1827263-04:00; 21 boards confirmed on `10 Redesign Concepts`, all 1440 x 960 with one child image.
 - Live inventory status: connected and read successfully
 - Selection count during inventory: 0
 - Management coverage: 30 of 30 required states captured
@@ -57,7 +59,28 @@ Boards on `10 Redesign Concepts`:
 - `Hi-Fi - Home`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-home.png`.
 - `Hi-Fi - Event Source Setup`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-event-source-setup.png`.
 - `Hi-Fi - Alert Sets Overview`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-alert-sets-overview.png`.
+- `Hi-Fi - Alert Editor Landscape`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-alert-editor-landscape.png`.
+- `Hi-Fi - Alert Editor Vertical`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-alert-editor-vertical.png`.
+- `Hi-Fi - Alert Editor Send Test Blocked`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-alert-editor-send-test-blocked.png`.
 - `Reference Patterns`: 1760 x 2480, with schematic reference-pattern diagrams for alert setup, editor structure, integration setup, diagnostics, and data tables.
+
+Additional high-fidelity boards synced to Penpot:
+
+- `Hi-Fi - Assets Library`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-assets-library.png`.
+- `Hi-Fi - Asset Detail Usage`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-asset-detail-usage.png`.
+- `Hi-Fi - Asset Picker Upload`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-asset-picker-upload.png`.
+- `Hi-Fi - Event Sources List Detail`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-event-sources-list-detail.png`.
+- `Hi-Fi - TTS Provider Setup`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-tts-provider-setup.png`.
+- `Hi-Fi - TTS Provider Detail Safety`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-tts-provider-detail-safety.png`.
+- `Hi-Fi - Diagnostics Problems`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-diagnostics-problems.png`.
+- `Hi-Fi - Diagnostics Events`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-diagnostics-events.png`.
+- `Hi-Fi - Diagnostics Raw Logs Failure Detail`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-diagnostics-raw-logs-failure-detail.png`.
+- `Hi-Fi - Settings Overview`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-settings-overview.png`.
+- `Hi-Fi - Backup Export`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-backup-export.png`.
+- `Hi-Fi - Restore Backup`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-restore-backup.png`.
+- `Hi-Fi - Dirty Navigation Guard`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-dirty-navigation-guard.png`.
+- `Hi-Fi - Active Set Save Warning`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-active-set-save-warning.png`.
+- `Hi-Fi - Destructive Confirmation`: 1440 x 960, imported from `docs/design/hifi-concept-boards/hi-fi-destructive-confirmation.png`.
 
 ## Current Management UI Coverage
 
@@ -117,7 +140,7 @@ Boards on `02 Overlay - Current`:
 
 ## Known Gaps
 
-- PNG/SVG board exports are not committed yet. High-fidelity concept board source PNGs are committed under `docs/design/hifi-concept-boards/`; `Reference Patterns` is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.
+- PNG/SVG board exports are not committed yet. High-fidelity concept board source PNGs are stored under `docs/design/hifi-concept-boards/`; `Reference Patterns` is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.
 - Penpot remains the review baseline only; repo code and docs remain the product source of truth.
 
 ## Refresh Checklist

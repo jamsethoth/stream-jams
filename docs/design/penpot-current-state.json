@@ -3,14 +3,20 @@
   "project": "stream-jams",
   "schemaVersion": 1,
   "screenshotManifestCreatedAt": "2026-06-21T22:31:29-04:00",
-  "penpotInventoryRefreshedAt": "2026-07-12T10:16:39.0551067-04:00",
+  "penpotInventoryRefreshedAt": "2026-07-13T09:17:16.5319045-04:00",
   "penpotVersion": "2.16.2",
   "mcp": {
     "mode": "local-plugin",
     "pluginManifestUrl": "http://localhost:4400/manifest.json",
     "serverUrl": "http://localhost:4401/mcp",
-    "status": "connected",
-    "selectionCount": 0
+    "status": "connected-readback-verified",
+    "selectionCount": null
+  },
+  "latestHighFidelityRepoArtifactRenderAt": "2026-07-13T10:33:57.9444267-04:00",
+  "latestHighFidelityPenpotSyncAttempt": {
+    "attemptedAt": "2026-07-14T13:51:24.1827263-04:00",
+    "status": "verified",
+    "reason": "Penpot readback confirmed 21 high-fidelity boards on 10 Redesign Concepts; no missing boards, no empty boards, and no wrong-sized boards."
   },
   "sourceAnchors": [
     "docs/product-plan.md",
@@ -604,6 +610,222 @@
           "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
         },
         {
+          "id": "49f4edae-6251-8037-8008-522b9f437c97",
+          "name": "Hi-Fi - Alert Editor Landscape",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-editor-landscape.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-522bc4afe12c",
+          "name": "Hi-Fi - Alert Editor Vertical",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-editor-vertical.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-522bea0d839d",
+          "name": "Hi-Fi - Alert Editor Send Test Blocked",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-editor-send-test-blocked.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed0a119a3",
+          "name": "Hi-Fi - Assets Library",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-assets-library.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed1470619",
+          "name": "Hi-Fi - Asset Detail Usage",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-asset-detail-usage.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed1bb1bcf",
+          "name": "Hi-Fi - Asset Picker Upload",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-asset-picker-upload.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed747ddbe",
+          "name": "Hi-Fi - Event Sources List Detail",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-event-sources-list-detail.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aeda6bb6fe",
+          "name": "Hi-Fi - TTS Provider Setup",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-tts-provider-setup.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aedd3e55ba",
+          "name": "Hi-Fi - TTS Provider Detail Safety",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-tts-provider-detail-safety.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aee16720c4",
+          "name": "Hi-Fi - Diagnostics Problems",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-diagnostics-problems.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aef6b0e4c9",
+          "name": "Hi-Fi - Diagnostics Events",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-diagnostics-events.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aeff4be5db",
+          "name": "Hi-Fi - Diagnostics Raw Logs Failure Detail",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-diagnostics-raw-logs-failure-detail.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af0d709a71",
+          "name": "Hi-Fi - Settings Overview",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-settings-overview.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2a1b40a3",
+          "name": "Hi-Fi - Backup Export",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-backup-export.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2aa49ae8",
+          "name": "Hi-Fi - Restore Backup",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-restore-backup.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2b169efc",
+          "name": "Hi-Fi - Dirty Navigation Guard",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-dirty-navigation-guard.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2b92ec99",
+          "name": "Hi-Fi - Active Set Save Warning",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-active-set-save-warning.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2c0ba2e0",
+          "name": "Hi-Fi - Destructive Confirmation",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-destructive-confirmation.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
           "id": "bdc14993-8bb3-8027-8008-4a8fa6cb976e",
           "name": "Reference Patterns",
           "kind": "reference",
@@ -620,7 +842,7 @@
     }
   ],
   "knownGaps": [
-    "PNG/SVG board exports are not committed yet. High-fidelity concept board source PNGs are committed under docs/design/hifi-concept-boards/; Reference Patterns is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.",
+    "PNG/SVG board exports are not committed yet. High-fidelity concept board source PNGs are stored under docs/design/hifi-concept-boards/; Reference Patterns is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.",
     "Penpot remains the review baseline only; repo code and docs remain the product source of truth."
   ]
 }
