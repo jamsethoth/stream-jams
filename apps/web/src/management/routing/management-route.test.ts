@@ -56,6 +56,13 @@ describe("management route model", () => {
       id: "alert-editor",
       alertId: "alert-follow"
     });
+    expect(parseManagementRoute("/modules/alerts/editor/alert-follow?diagnostic=ref-event-1")).toMatchObject({
+      id: "alert-editor",
+      alertId: "alert-follow"
+    });
+    expect(parseManagementRoute("/modules/alerts?diagnostic=ref-output-1#browser-sources")).toEqual({
+      id: "modules-alerts"
+    });
   });
 
   it("formats focused alert editor context in deterministic query order", () => {

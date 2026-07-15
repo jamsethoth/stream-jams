@@ -461,7 +461,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getAssetChangeImpact: (assetId, candidateMediaType) =>
       assetLibraryService.getChangeImpact(assetId, candidateMediaType),
     deleteAsset: (assetId) => assetLibraryService.deleteAsset(assetId),
-    getDiagnosticsWorkspace: async () => ({ problems: [], events: [], rawLogs: [] }),
+    getDiagnosticsWorkspace: () =>
+      diagnosticsService.getWorkspace({ limit: 200, runtimeLogLimit: 200, sinceHours: 2 }),
     getConfigurationBackupSummary: async () => {
       const [collections, rules, eventSources, ttsProviders] = await Promise.all([
         alertService.listCollections(),

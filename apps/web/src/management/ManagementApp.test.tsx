@@ -2,6 +2,7 @@ import type { AlertCollection, AlertRule } from "./modules/alerts/alert-api.js";
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagementApp } from "./ManagementApp.js";
 import type { AssetApi } from "./assets/AssetManager.js";
@@ -173,28 +174,30 @@ describe("ManagementApp", () => {
     expect(managementApi.testProviderVoice).toHaveBeenCalledWith("provider-browser-speech");
     expect(await within(ttsPanel).findByText("Voice test delivered.")).toBeInTheDocument();
   });
-  it("shows diagnostics logs and delegates filtered redacted exports", async () => {
+  it("shows the diagnostics workspace and delegates bounded redacted exports", async () => {
     const user = userEvent.setup();
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "Diagnostics" }));
     const diagnosticsPanel = screen.getByRole("region", { name: "Diagnostics content" });
-    expect(await within(diagnosticsPanel).findByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
-    expect(within(diagnosticsPanel).getByText("twitch follow event-1")).toBeInTheDocument();
-    expect(within(diagnosticsPanel).getByText("rule-1")).toBeInTheDocument();
-    expect(within(diagnosticsPanel).getByText("queue-item-1")).toBeInTheDocument();
-    expect(within(diagnosticsPanel).getByText("Twitch EventSub" )).toBeInTheDocument();
+    expect(await within(diagnosticsPanel).findByRole("heading", { name: "Diagnostics workspace" })).toBeInTheDocument();
+    expect(within(diagnosticsPanel).getByRole("button", { name: /Event source disconnected/ })).toBeInTheDocument();
+    await user.type(within(diagnosticsPanel).getByPlaceholderText("Reference ID or message"), "ref-provider-1");
+    expect(within(diagnosticsPanel).getByRole("link", { name: "Open event sources" })).toHaveAttribute(
+      "href",
+      "/event-sources?diagnostic=ref-provider-1"
+    );
 
-    await user.clear(within(diagnosticsPanel).getByLabelText("Diagnostics limit"));
-    await user.type(within(diagnosticsPanel).getByLabelText("Diagnostics limit"), "2");
-    await user.click(within(diagnosticsPanel).getByRole("button", { name: "Reload diagnostics" }));
-    await user.click(within(diagnosticsPanel).getByRole("button", { name: "Export diagnostics" }));
+    await user.clear(within(diagnosticsPanel).getByPlaceholderText("Reference ID or message"));
+    await user.click(within(diagnosticsPanel).getByRole("tab", { name: /Events/ }));
+    expect(within(diagnosticsPanel).getByRole("button", { name: "follow" })).toBeInTheDocument();
+    await user.click(within(diagnosticsPanel).getByRole("button", { name: "Export support bundle" }));
 
-    expect(managementApi.getDiagnostics).toHaveBeenLastCalledWith({ limit: 2 });
-    expect(managementApi.exportDiagnostics).toHaveBeenCalledWith({ limit: 2 });
-    expect(await within(diagnosticsPanel).findByText("Diagnostics export generated at 2026-05-31T02:05:00.000Z.")).toBeInTheDocument();
-    expect(within(diagnosticsPanel).getByText("1 events, 1 matches, 1 playback rows, 1 provider errors exported.")).toBeInTheDocument();
+    expect(managementApi.getDiagnosticsWorkspace).toHaveBeenCalledOnce();
+    expect(managementApi.exportDiagnostics).toHaveBeenCalledWith({ limit: 200 });
+    expect(await within(diagnosticsPanel).findByText("Sanitized support bundle ready")).toBeInTheDocument();
   });
 
   it("shows connection and intake separately and registers only after validation", async () => {
@@ -448,7 +451,7 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
       throw new Error("not called");
     }),
     deleteAsset: vi.fn(async () => undefined),
-    getDiagnosticsWorkspace: vi.fn(async () => ({ problems: [], events: [], rawLogs: [] })),
+    getDiagnosticsWorkspace: vi.fn(async () => diagnosticsWorkspace()),
     getConfigurationBackupSummary: vi.fn(async () => ({
       state: "ready" as const,
       appVersion: "0.0.0",
@@ -801,6 +804,45 @@ function createAssetApi(): AssetApi {
     async replaceAsset(): Promise<AssetRecord> {
       throw new Error("not called");
     }
+  };
+}
+
+function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
+  return {
+    problems: [
+      {
+        id: "problem-provider",
+        area: "providers",
+        summary: "Event source disconnected",
+        cause: "Twitch EventSub disconnected.",
+        nextStep: "Reconnect the active event source.",
+        severity: "error",
+        occurredAt: "2026-05-31T02:00:00.000Z",
+        referenceId: "ref-provider-1",
+        correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-provider-1" }
+      }
+    ],
+    events: [
+      {
+        id: "event-1",
+        providerId: "twitch",
+        providerKind: "twitch",
+        eventType: "follow",
+        occurredAt: "2026-05-31T01:59:59.000Z",
+        outcome: "processed",
+        test: false,
+        referenceId: "ref-event-1",
+        processingId: "processing-1",
+        actorDisplayName: "Viewer",
+        alertIds: ["alert-follow"],
+        matchedRuleIds: ["rule-1"],
+        playbackStatus: "completed",
+        errorMessage: null,
+        sanitizedPayload: { userName: "Viewer" },
+        correction: { label: "Open alert", route: "/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
+      }
+    ],
+    rawLogs: []
   };
 }
 

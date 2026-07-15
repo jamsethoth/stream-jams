@@ -421,7 +421,14 @@ export const diagnosticsEventViewSchema = z.object({
   outcome: z.enum(["received", "processed", "ignored", "failed"]),
   test: z.boolean(),
   referenceId: nonEmptyStringSchema,
-  alertIds: z.array(nonEmptyStringSchema)
+  processingId: nonEmptyStringSchema.nullable(),
+  actorDisplayName: nonEmptyStringSchema,
+  alertIds: z.array(nonEmptyStringSchema),
+  matchedRuleIds: z.array(nonEmptyStringSchema),
+  playbackStatus: z.enum(["queued", "playing", "completed", "skipped", "failed"]).nullable(),
+  errorMessage: z.string().nullable(),
+  sanitizedPayload: z.record(z.string(), z.unknown()),
+  correction: managementCorrectionTargetSchema.nullable()
 });
 
 export const diagnosticsRawLogViewSchema = z.object({
@@ -431,11 +438,21 @@ export const diagnosticsRawLogViewSchema = z.object({
   component: nonEmptyStringSchema,
   event: nonEmptyStringSchema,
   referenceId: nonEmptyStringSchema.nullable(),
-  data: metadataSchema
+  processingId: nonEmptyStringSchema.nullable(),
+  message: nonEmptyStringSchema,
+  data: z.record(z.string(), z.unknown()),
+  correction: managementCorrectionTargetSchema.nullable()
+});
+
+export const diagnosticsProblemAreaSchema = z.enum(["providers", "alerts", "assets", "outputs", "settings", "runtime"]);
+
+export const diagnosticsProblemViewSchema = actionableManagementErrorSchema.extend({
+  id: nonEmptyStringSchema,
+  area: diagnosticsProblemAreaSchema
 });
 
 export const diagnosticsWorkspaceViewSchema = z.object({
-  problems: z.array(actionableManagementErrorSchema),
+  problems: z.array(diagnosticsProblemViewSchema),
   events: z.array(diagnosticsEventViewSchema),
   rawLogs: z.array(diagnosticsRawLogViewSchema)
 });
@@ -549,6 +566,10 @@ export type AssetUsageSummary = z.infer<typeof assetUsageSummarySchema>;
 export type AssetLibraryItem = z.infer<typeof assetLibraryItemSchema>;
 export type AssetMetadataUpdateInput = z.infer<typeof assetMetadataUpdateInputSchema>;
 export type AssetChangeImpact = z.infer<typeof assetChangeImpactSchema>;
+export type DiagnosticsProblemArea = z.infer<typeof diagnosticsProblemAreaSchema>;
+export type DiagnosticsProblemView = z.infer<typeof diagnosticsProblemViewSchema>;
+export type DiagnosticsEventView = z.infer<typeof diagnosticsEventViewSchema>;
+export type DiagnosticsRawLogView = z.infer<typeof diagnosticsRawLogViewSchema>;
 export type DiagnosticsWorkspaceView = z.infer<typeof diagnosticsWorkspaceViewSchema>;
 export type HomeSetupSummary = z.infer<typeof homeSetupSummarySchema>;
 export type ConfigurationBackupSummary = z.infer<typeof configurationBackupSummarySchema>;

@@ -314,7 +314,13 @@ describe("management asset diagnostics home and backup contracts", () => {
 
     expect(
       diagnostics.safeParse({
-        problems: [actionableError],
+        problems: [
+          {
+            id: "problem-provider-1",
+            area: "providers",
+            ...actionableError
+          }
+        ],
         events: [
           {
             id: "event-1",
@@ -325,7 +331,14 @@ describe("management asset diagnostics home and backup contracts", () => {
             outcome: "processed",
             test: false,
             referenceId: "ref-event-1",
-            alertIds: ["alert-follow"]
+            processingId: "processing-event-1",
+            actorDisplayName: "Viewer",
+            alertIds: ["alert-follow"],
+            matchedRuleIds: ["rule-follow"],
+            playbackStatus: "completed",
+            errorMessage: null,
+            sanitizedPayload: { actor: "Viewer", token: "[REDACTED]" },
+            correction: { label: "Open alert", route: "/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
           }
         ],
         rawLogs: [
@@ -336,7 +349,10 @@ describe("management asset diagnostics home and backup contracts", () => {
             component: "twitch",
             event: "provider.validation.failed",
             referenceId: "ref-provider-1",
-            data: { token: "[REDACTED]" }
+            processingId: null,
+            message: "Provider validation failed.",
+            data: { token: "[REDACTED]" },
+            correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-provider-1" }
           }
         ]
       }).success

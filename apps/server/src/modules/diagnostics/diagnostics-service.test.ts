@@ -138,6 +138,141 @@ describe("DiagnosticsService", () => {
     expect(runtimeLogSource.recentRequests).toEqual([{ limit: 1, sinceHours: 2 }]);
   });
 
+  it("builds a redacted diagnostics workspace with correction routes and joined event evidence", async () => {
+    const repository = new RecordingDiagnosticsRepository({
+      eventLogs: [
+        {
+          id: "event-log-1",
+          event: followEvent,
+          receivedAt: "2026-05-31T02:00:00.000Z",
+          status: "failed",
+          correlationId: "correlation-1",
+          processingId: "processing-1",
+          errorMessage: "Authorization: Bearer oauth-secret"
+        }
+      ],
+      alertMatchLogs: [
+        {
+          id: "match-log-1",
+          sourceEventId: followEvent.id,
+          ruleId: "rule-1",
+          variantId: "variant-1",
+          matchedAt: "2026-05-31T02:00:01.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1"
+        }
+      ],
+      playbackLogs: [
+        {
+          id: "playback-log-1",
+          queueItemId: "queue-1",
+          sourceEventId: followEvent.id,
+          alertIds: ["alert-follow"],
+          status: "failed",
+          occurredAt: "2026-05-31T02:00:02.000Z",
+          correlationId: "correlation-1",
+          processingId: "processing-1",
+          message: "Overlay route key ovl_secretKey failed"
+        },
+        {
+          id: "playback-log-asset",
+          queueItemId: "queue-asset",
+          sourceEventId: "event-missing-asset",
+          alertIds: ["alert-missing-asset"],
+          status: "failed",
+          occurredAt: "2026-05-31T02:00:03.000Z",
+          correlationId: "correlation-asset",
+          processingId: "processing-asset",
+          message: "Asset file is missing from local storage"
+        }
+      ]
+    });
+    const runtimeLogSource = new RecordingRuntimeLogSource();
+    const service = createService(repository, [
+      {
+        getStatus: () => ({
+          providerId: "runtime-secret-store",
+          label: "Secret store",
+          state: "degraded",
+          lastErrorAt: "2026-05-31T02:00:04.000Z",
+          message: "Configuration secret store could not be opened"
+        })
+      }
+    ], runtimeLogSource);
+
+    const workspace = await service.getWorkspace({ limit: 10, runtimeLogLimit: 20, sinceHours: 2 });
+
+    expect(workspace.events).toEqual([
+      expect.objectContaining({
+        id: "event-log-1",
+        outcome: "failed",
+        referenceId: "correlation-1",
+        matchedRuleIds: ["rule-1"],
+        alertIds: ["alert-follow"],
+        playbackStatus: "failed",
+        errorMessage: "Authorization: Bearer [REDACTED]",
+        correction: {
+          label: "Open alert",
+          route: "/modules/alerts/editor/alert-follow?diagnostic=correlation-1"
+        }
+      })
+    ]);
+    expect(workspace.events[0]?.sanitizedPayload).not.toHaveProperty("metadata");
+    expect(workspace.events[0]?.sanitizedPayload).not.toHaveProperty("rawProviderPayload");
+    expect(workspace.problems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "event-log:event-log-1",
+          area: "providers",
+          referenceId: "correlation-1",
+          correction: {
+            label: "Open event sources",
+            route: "/event-sources?diagnostic=correlation-1"
+          }
+        }),
+        expect.objectContaining({
+          id: "playback-log:playback-log-1",
+          area: "outputs",
+          correction: {
+            label: "Open browser sources",
+            route: "/modules/alerts?diagnostic=correlation-1#browser-sources"
+          }
+        }),
+        expect.objectContaining({
+          id: "playback-log:playback-log-asset",
+          area: "assets",
+          correction: {
+            label: "Open assets",
+            route: "/assets?diagnostic=correlation-asset"
+          }
+        }),
+        expect.objectContaining({
+          id: "provider-status:runtime-secret-store",
+          area: "settings",
+          referenceId: null,
+          correction: {
+            label: "Open settings",
+            route: "/settings"
+          }
+        })
+      ])
+    );
+    expect(workspace.rawLogs[0]).toEqual(
+      expect.objectContaining({
+        referenceId: "correlation-1",
+        message: "Provider failed with Bearer [REDACTED]",
+        data: { authorization: "[REDACTED]" },
+        correction: {
+          label: "Open event sources",
+          route: "/event-sources?diagnostic=correlation-1"
+        }
+      })
+    );
+    expect(JSON.stringify(workspace)).not.toContain("oauth-secret");
+    expect(JSON.stringify(workspace)).not.toContain("ovl_secretKey");
+    expect(runtimeLogSource.recentRequests).toEqual([{ limit: 20, sinceHours: 2 }]);
+  });
+
   it("uses the default limit and rejects invalid limits", async () => {
     const repository = new RecordingDiagnosticsRepository();
     const service = createService(repository);

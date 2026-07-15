@@ -90,6 +90,13 @@ export function AlertSetsPage({ managementApi, onEditAlert }: AlertSetsPageProps
     };
   }, [managementApi]);
 
+  useEffect(() => {
+    if (detail === null || window.location.hash !== "#browser-sources") return;
+    const browserSources = document.getElementById("browser-sources");
+    if (browserSources === null || typeof browserSources.scrollIntoView !== "function") return;
+    browserSources.scrollIntoView({ block: "start" });
+  }, [detail]);
+
   const filteredInventory = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
     return (detail?.inventory ?? []).filter((alert) =>

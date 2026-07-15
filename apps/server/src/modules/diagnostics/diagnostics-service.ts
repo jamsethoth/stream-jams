@@ -1,9 +1,15 @@
-import type {
-  AlertMatchLogRecord,
-  DiagnosticsLogRepository,
-  EventLogRecord,
-  PlaybackLogRecord,
-  Redactor
+import {
+  diagnosticsWorkspaceViewSchema,
+  type DiagnosticsEventView,
+  type DiagnosticsProblemArea,
+  type DiagnosticsProblemView,
+  type DiagnosticsRawLogView,
+  type DiagnosticsWorkspaceView,
+  type AlertMatchLogRecord,
+  type DiagnosticsLogRepository,
+  type EventLogRecord,
+  type PlaybackLogRecord,
+  type Redactor
 } from "@stream-jams/core";
 import type { RuntimeLogEntry, RuntimeLogMetadata, RuntimeLogReadResult } from "./runtime-jsonl-logger.js";
 
@@ -36,6 +42,11 @@ export interface DiagnosticsServiceOptions {
 
 export interface DiagnosticsListOptions {
   readonly limit?: number | undefined;
+}
+
+export interface DiagnosticsWorkspaceOptions extends DiagnosticsListOptions {
+  readonly runtimeLogLimit?: number | undefined;
+  readonly sinceHours?: number | undefined;
 }
 
 export interface DiagnosticsEventLogView {
@@ -144,6 +155,21 @@ export class DiagnosticsService {
     });
   }
 
+  async getWorkspace(options: DiagnosticsWorkspaceOptions = {}): Promise<DiagnosticsWorkspaceView> {
+    const limit = this.#resolveLimit(options.limit);
+    const runtimeLogLimit = this.#resolveLimit(options.runtimeLogLimit);
+    const [eventLogs, alertMatchLogs, playbackLogs] = await this.#readLogs(limit);
+    const runtimeLogs = await this.#readRuntimeLogs(runtimeLogLimit, options.sinceHours);
+    const diagnostics = this.#buildDiagnostics(eventLogs, alertMatchLogs, playbackLogs, null);
+    const redactedRuntimeLogs = runtimeLogs.entries.map((entry) => this.#redactor.redact(entry));
+
+    return diagnosticsWorkspaceViewSchema.parse({
+      problems: this.#buildWorkspaceProblems(diagnostics.providerErrors, playbackLogs, redactedRuntimeLogs),
+      events: eventLogs.map((log) => this.#mapWorkspaceEvent(log, alertMatchLogs, playbackLogs)),
+      rawLogs: redactedRuntimeLogs.map((entry, index) => this.#mapWorkspaceRawLog(entry, index))
+    });
+  }
+
   async #readLogs(
     limit: number
   ): Promise<[readonly EventLogRecord[], readonly AlertMatchLogRecord[], readonly PlaybackLogRecord[]]> {
@@ -233,6 +259,127 @@ export class DiagnosticsService {
     );
   }
 
+  #mapWorkspaceEvent(
+    log: EventLogRecord,
+    alertMatchLogs: readonly AlertMatchLogRecord[],
+    playbackLogs: readonly PlaybackLogRecord[]
+  ): DiagnosticsEventView {
+    const matches = alertMatchLogs.filter((match) => match.sourceEventId === log.event.id);
+    const playback = playbackLogs.find((entry) => entry.sourceEventId === log.event.id) ?? null;
+    const alertIds = playback?.alertIds ?? [];
+    const referenceId = log.correlationId;
+    const sanitizedPayload = this.#redactor.redact<Record<string, unknown>>({
+      id: log.event.id,
+      type: log.event.type,
+      providerId: log.event.providerId,
+      sourcePlatform: log.event.sourcePlatform,
+      ingestProvider: log.event.ingestProvider,
+      occurredAt: log.event.occurredAt,
+      actor: log.event.actor,
+      amount: log.event.amount,
+      message: log.event.message,
+      test: log.event.metadata.test === true
+    });
+
+    return {
+      id: log.id,
+      providerId: log.event.providerId,
+      providerKind: log.event.ingestProvider,
+      eventType: log.event.type,
+      occurredAt: log.event.occurredAt,
+      outcome: playback?.status === "failed" ? "failed" : log.status,
+      test: log.event.metadata.test === true,
+      referenceId,
+      processingId: log.processingId,
+      actorDisplayName: log.event.actor.displayName,
+      alertIds: [...alertIds],
+      matchedRuleIds: matches.map((match) => match.ruleId),
+      playbackStatus: playback?.status ?? null,
+      errorMessage: log.errorMessage === null ? null : this.#redactor.redactText(log.errorMessage),
+      sanitizedPayload,
+      correction: alertIds[0] === undefined
+        ? providerCorrection(log.event.ingestProvider, referenceId)
+        : alertCorrection(alertIds[0], referenceId)
+    };
+  }
+
+  #buildWorkspaceProblems(
+    providerErrors: readonly DiagnosticsProviderErrorView[],
+    playbackLogs: readonly PlaybackLogRecord[],
+    runtimeLogs: readonly RuntimeLogEntry[]
+  ): readonly DiagnosticsProblemView[] {
+    const providerProblems = providerErrors.map((error) => {
+      const referenceId = error.correlationId;
+      const correction = providerCorrection(error.providerId, referenceId);
+      return {
+        id: error.id,
+        area: correctionArea(correction, "providers"),
+        summary: error.label,
+        cause: error.message,
+        nextStep: nextStepForArea(correctionArea(correction, "providers")),
+        severity: "error" as const,
+        occurredAt: error.occurredAt,
+        referenceId,
+        correction
+      };
+    });
+    const playbackProblems = playbackLogs
+      .filter((log) => log.status === "failed")
+      .map((log) => {
+        const correction = correctionForEvidence(log.message ?? "", log.correlationId, log.alertIds[0]);
+        const area = correctionArea(correction, log.alertIds.length > 0 ? "alerts" : "runtime");
+        return {
+          id: `playback-log:${log.id}`,
+          area,
+          summary: "Alert playback failed",
+          cause: log.message === null ? null : this.#redactor.redactText(log.message),
+          nextStep: nextStepForArea(area),
+          severity: "error" as const,
+          occurredAt: log.occurredAt,
+          referenceId: log.correlationId,
+          correction
+        };
+      });
+    const runtimeProblems = runtimeLogs
+      .filter((entry) => entry.level === "ERROR")
+      .map((entry, index) => {
+        const referenceId = entry.correlationId === "" ? null : entry.correlationId;
+        const correction = correctionForEvidence(`${entry.component} ${entry.event} ${entry.message}`, referenceId);
+        const area = correctionArea(correction, "runtime");
+        return {
+          id: `runtime-log:${entry.timestamp}:${entry.component}:${entry.event}:${index}`,
+          area,
+          summary: entry.message,
+          cause: `${entry.component} reported ${entry.event}.`,
+          nextStep: nextStepForArea(area),
+          severity: "error" as const,
+          occurredAt: entry.timestamp,
+          referenceId,
+          correction
+        };
+      });
+
+    return [...providerProblems, ...playbackProblems, ...runtimeProblems].sort((left, right) =>
+      (right.occurredAt ?? "").localeCompare(left.occurredAt ?? "")
+    );
+  }
+
+  #mapWorkspaceRawLog(entry: RuntimeLogEntry, index: number): DiagnosticsRawLogView {
+    const referenceId = entry.correlationId === "" ? null : entry.correlationId;
+    return {
+      id: `runtime-log:${entry.timestamp}:${entry.component}:${entry.event}:${index}`,
+      timestamp: entry.timestamp,
+      level: entry.level,
+      component: entry.component,
+      event: entry.event,
+      referenceId,
+      processingId: entry.processingId,
+      message: entry.message,
+      data: entry.details ?? {},
+      correction: correctionForEvidence(`${entry.component} ${entry.event} ${entry.message}`, referenceId)
+    };
+  }
+
   async #readRuntimeLogMetadata(): Promise<RuntimeLogMetadata | null> {
     return this.#runtimeLogSource === null ? null : this.#runtimeLogSource.getMetadata();
   }
@@ -249,6 +396,87 @@ export class DiagnosticsService {
       limit,
       ...(sinceHours === undefined ? {} : { sinceHours })
     });
+  }
+}
+
+function providerCorrection(providerId: string, referenceId: string | null) {
+  const normalized = providerId.toLowerCase();
+  if (normalized.includes("secret") || normalized.includes("config") || normalized.includes("database")) {
+    return correction("Open settings", "/settings", referenceId);
+  }
+  if (normalized.includes("speaker") || normalized.includes("tts")) {
+    return correction("Open TTS providers", "/tts-providers", referenceId);
+  }
+  return correction("Open event sources", "/event-sources", referenceId);
+}
+
+function alertCorrection(alertId: string, referenceId: string | null) {
+  return correction("Open alert", `/modules/alerts/editor/${encodeURIComponent(alertId)}`, referenceId);
+}
+
+function correctionForEvidence(message: string, referenceId: string | null, alertId?: string) {
+  const normalized = message.toLowerCase();
+  if (normalized.includes("asset") || normalized.includes("media file")) {
+    return correction("Open assets", "/assets", referenceId);
+  }
+  if (
+    normalized.includes("overlay") ||
+    normalized.includes("route key") ||
+    normalized.includes("browser source") ||
+    normalized.includes("no client")
+  ) {
+    return correction("Open browser sources", "/modules/alerts#browser-sources", referenceId);
+  }
+  if (normalized.includes("speaker") || normalized.includes("tts")) {
+    return correction("Open TTS providers", "/tts-providers", referenceId);
+  }
+  if (normalized.includes("twitch") || normalized.includes("eventsub") || normalized.includes("streamerbot") || normalized.includes("provider")) {
+    return correction("Open event sources", "/event-sources", referenceId);
+  }
+  if (normalized.includes("setting") || normalized.includes("config") || normalized.includes("database") || normalized.includes("secret")) {
+    return correction("Open settings", "/settings", referenceId);
+  }
+  return alertId === undefined ? null : alertCorrection(alertId, referenceId);
+}
+
+function correction(label: string, route: string, referenceId: string | null) {
+  if (referenceId === null) {
+    return { label, route };
+  }
+  const hashIndex = route.indexOf("#");
+  const path = hashIndex === -1 ? route : route.slice(0, hashIndex);
+  const hash = hashIndex === -1 ? "" : route.slice(hashIndex);
+  const separator = path.includes("?") ? "&" : "?";
+  return { label, route: `${path}${separator}diagnostic=${encodeURIComponent(referenceId)}${hash}` };
+}
+
+function correctionArea(
+  target: { readonly route: string } | null,
+  fallback: DiagnosticsProblemArea
+): DiagnosticsProblemArea {
+  if (target === null) return fallback;
+  if (target.route.startsWith("/event-sources") || target.route.startsWith("/tts-providers")) return "providers";
+  if (target.route.startsWith("/modules/alerts/editor")) return "alerts";
+  if (target.route.startsWith("/assets")) return "assets";
+  if (target.route.includes("browser-sources")) return "outputs";
+  if (target.route.startsWith("/settings")) return "settings";
+  return fallback;
+}
+
+function nextStepForArea(area: DiagnosticsProblemArea): string {
+  switch (area) {
+    case "providers":
+      return "Review the provider connection and reconnect it before retrying.";
+    case "alerts":
+      return "Review the alert configuration and test it again.";
+    case "assets":
+      return "Review the linked asset and replace or repair it.";
+    case "outputs":
+      return "Review the browser-source output and reconnect the client.";
+    case "settings":
+      return "Review the related local setting and retry the operation.";
+    case "runtime":
+      return "Review the raw log entry and retry the operation after correcting the reported cause.";
   }
 }
 

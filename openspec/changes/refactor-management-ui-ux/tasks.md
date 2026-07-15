@@ -56,11 +56,11 @@
 
 ## 7. Diagnostics
 
-- [ ] 7.1 Add typed Problems, normalized Events, and redacted Raw logs API/view contracts with reference IDs and correction targets.
-- [ ] 7.2 Build Problems grouping, Events table/detail, and Raw logs detail with session filters, sorting, and reference-ID search.
-- [ ] 7.3 Add provider, alert, asset, output, and settings correction deep links that preserve diagnostic context.
-- [ ] 7.4 Preserve sanitized diagnostics/debug exports and add sanitized copy plus visible export-failure handling.
-- [ ] 7.5 Add redaction, search, deep-link, export, UI, Storybook, and Playwright coverage for approved diagnostics states.
+- [x] 7.1 Add typed Problems, normalized Events, and redacted Raw logs API/view contracts with reference IDs and correction targets.
+- [x] 7.2 Build Problems grouping, Events table/detail, and Raw logs detail with session filters, sorting, and reference-ID search.
+- [x] 7.3 Add provider, alert, asset, output, and settings correction deep links that preserve diagnostic context.
+- [x] 7.4 Preserve sanitized diagnostics/debug exports and add sanitized copy plus visible export-failure handling.
+- [x] 7.5 Add redaction, search, deep-link, export, UI, Storybook, and Playwright coverage for approved diagnostics states.
 
 ## 8. Settings Backup And Restore
 
