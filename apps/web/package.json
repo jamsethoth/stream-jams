@@ -9,8 +9,8 @@
     "typecheck": "tsc -b tsconfig.json",
     "storybook": "storybook dev --host 127.0.0.1 --port 6006",
     "build-storybook": "storybook build",
-    "test-storybook": "test-storybook --url http://127.0.0.1:6006 --ci --failOnConsole",
-    "test-storybook:ci": "start-server-and-test \"storybook dev --host 127.0.0.1 --port 6006 --ci\" http://127.0.0.1:6006 \"test-storybook --url http://127.0.0.1:6006 --ci --failOnConsole\""
+    "test-storybook": "node ../../scripts/test-storybook.mjs --url http://127.0.0.1:6006 --ci --failOnConsole",
+    "test-storybook:ci": "start-server-and-test \"storybook dev --host 127.0.0.1 --port 6006 --ci\" http://127.0.0.1:6006 \"node ../../scripts/test-storybook.mjs --url http://127.0.0.1:6006 --ci --failOnConsole\""
   },
   "dependencies": {
     "@stream-jams/core": "workspace:*",
@@ -31,6 +31,7 @@
     "jsdom": "29.1.1",
     "start-server-and-test": "3.0.11",
     "storybook": "10.4.6",
+    "tslib": "2.8.1",
     "typescript": "6.0.3",
     "vite": "8.0.16"
   }

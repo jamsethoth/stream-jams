@@ -15,11 +15,11 @@
 
 ## 2. App Shell Routing And Design Foundation
 
-- [ ] 2.1 Replace component-local management tabs with a tested local route parser/formatter for the approved information architecture.
-- [ ] 2.2 Build the sidebar shell, nested Modules navigation, breadcrumbs, page headers, status badges, and temporary legacy route adapters.
-- [ ] 2.3 Add tokenized System/Dark/Light themes, comfortable density, reduced-motion behavior, and responsive canvas limits.
-- [ ] 2.4 Add shared error, destructive-confirmation, masked-secret, and dirty-navigation patterns with keyboard and accessibility coverage.
-- [ ] 2.5 Add Storybook and management-app tests for shell, routes, nested navigation, errors, confirmations, and dirty navigation.
+- [x] 2.1 Replace component-local management tabs with a tested local route parser/formatter for the approved information architecture.
+- [x] 2.2 Build the sidebar shell, nested Modules navigation, breadcrumbs, page headers, status badges, and temporary legacy route adapters.
+- [x] 2.3 Add tokenized System/Dark/Light themes, comfortable density, reduced-motion behavior, and responsive canvas limits.
+- [x] 2.4 Add shared error, destructive-confirmation, masked-secret, and dirty-navigation patterns with keyboard and accessibility coverage.
+- [x] 2.5 Add Storybook and management-app tests for shell, routes, nested navigation, errors, confirmations, and dirty navigation.
 
 ## 3. Home And Provider Setup
 

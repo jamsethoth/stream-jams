@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ManagementNavigation, type ManagementTabId } from "./ManagementNavigation.js";
+import type { ManagementRoute } from "../routing/management-route.js";
+import { ManagementNavigation } from "./ManagementNavigation.js";
 
 const meta = {
   title: "Management/Navigation",
@@ -11,31 +12,24 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const InteractiveTabs: Story = {
+export const Sidebar: Story = {
   args: {
-    activeTab: "dashboard",
-    onSelect: () => undefined
+    activeRoute: { id: "home" },
+    onNavigate: () => undefined
   },
   render(args) {
-    const [activeTab, setActiveTab] = useState<ManagementTabId>(args.activeTab);
-    const handleSelect = (tabId: ManagementTabId) => {
-      setActiveTab(tabId);
-      args.onSelect(tabId);
+    const [activeRoute, setActiveRoute] = useState<ManagementRoute>(args.activeRoute);
+    const handleNavigate = (route: ManagementRoute) => {
+      setActiveRoute(route);
+      args.onNavigate(route);
     };
 
-    return (
-      <>
-        <ManagementNavigation activeTab={activeTab} onSelect={handleSelect} />
-        <div aria-labelledby={`management-tab-${activeTab}`} id={`management-panel-${activeTab}`} role="tabpanel">
-          {activeTab} panel
-        </div>
-      </>
-    );
+    return <ManagementNavigation activeRoute={activeRoute} onNavigate={handleNavigate} />;
   },
   parameters: {
     docs: {
       description: {
-        story: "Use this to verify tab labels, selected state, and horizontal overflow behavior."
+        story: "Primary sidebar navigation with nested Alerts, temporary legacy adapters, and theme preference."
       }
     }
   }

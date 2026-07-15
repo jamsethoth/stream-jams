@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import type { ManagementApi, ModerationSettingsView, ServerConfigView } from "../management-api.js";
+import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 
 export interface SettingsPanelProps {
   readonly managementApi: Pick<
@@ -13,6 +14,7 @@ const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 }
 export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   const [savedConfig, setSavedConfig] = useState<ServerConfigView>(defaultServerConfig);
   const [configDraft, setConfigDraft] = useState<ServerConfigView>(defaultServerConfig);
+  const [savedModeration, setSavedModeration] = useState<ModerationSettingsView>(defaultModerationSettings);
   const [moderation, setModeration] = useState<ModerationSettingsView>(defaultModerationSettings);
   const [blockedTermsText, setBlockedTermsText] = useState("");
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
@@ -24,6 +26,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
         if (!cancelled) {
           setSavedConfig(loadedConfig);
           setConfigDraft(loadedConfig);
+          setSavedModeration(loadedModeration);
           setModeration(loadedModeration);
           setBlockedTermsText(loadedModeration.renderedText.blockedTerms.join("\n"));
           setDiagnostic(null);
@@ -40,22 +43,9 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     };
   }, [managementApi]);
 
-  async function handleServerSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    try {
-      const savedServerConfig = await managementApi.updateServerConfig(configDraft);
-      setSavedConfig(savedServerConfig);
-      setConfigDraft(savedServerConfig);
-      setDiagnostic("Server settings saved.");
-    } catch (error) {
-      setDiagnostic(readErrorMessage(error, "Unable to update server settings."));
-    }
-  }
-
-  async function handleModerationSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const moderationDraft = useMemo(() => {
     const blockedTerms = parseBlockedTerms(blockedTermsText);
-    const nextModeration = {
+    return {
       renderedText: {
         ...moderation.renderedText,
         blockedTerms
@@ -65,11 +55,64 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
         blockedTerms
       }
     };
+  }, [blockedTermsText, moderation]);
+
+  const serverDirty = savedConfig.host !== configDraft.host || savedConfig.port !== configDraft.port;
+  const moderationDirty = JSON.stringify(savedModeration) !== JSON.stringify(moderationDraft);
+
+  const saveServer = useCallback(async () => {
+    const savedServerConfig = await managementApi.updateServerConfig(configDraft);
+    setSavedConfig(savedServerConfig);
+    setConfigDraft(savedServerConfig);
+  }, [configDraft, managementApi]);
+
+  const saveModeration = useCallback(async () => {
+    const nextModeration = await managementApi.updateModerationSettings(moderationDraft);
+    setSavedModeration(nextModeration);
+    setModeration(nextModeration);
+    setBlockedTermsText(nextModeration.renderedText.blockedTerms.join("\n"));
+  }, [managementApi, moderationDraft]);
+
+  const saveAll = useCallback(async () => {
+    if (serverDirty) {
+      await saveServer();
+    }
+    if (moderationDirty) {
+      await saveModeration();
+    }
+    setDiagnostic("Settings saved.");
+  }, [moderationDirty, saveModeration, saveServer, serverDirty]);
+
+  const discardAll = useCallback(() => {
+    setConfigDraft(savedConfig);
+    setModeration(savedModeration);
+    setBlockedTermsText(savedModeration.renderedText.blockedTerms.join("\n"));
+    setDiagnostic("Unsaved settings discarded.");
+  }, [savedConfig, savedModeration]);
+
+  useDirtyNavigationSource({
+    id: "settings",
+    dirty: serverDirty || moderationDirty,
+    summary: "Server or moderation settings have unsaved changes.",
+    save: saveAll,
+    discard: discardAll
+  });
+
+  async function handleServerSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await saveServer();
+      setDiagnostic("Server settings saved.");
+    } catch (error) {
+      setDiagnostic(readErrorMessage(error, "Unable to update server settings."));
+    }
+  }
+
+  async function handleModerationSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
 
     try {
-      const savedModeration = await managementApi.updateModerationSettings(nextModeration);
-      setModeration(savedModeration);
-      setBlockedTermsText(savedModeration.renderedText.blockedTerms.join("\n"));
+      await saveModeration();
       setDiagnostic("Moderation settings saved.");
     } catch (error) {
       setDiagnostic(readErrorMessage(error, "Unable to update moderation settings."));

@@ -1,14 +1,18 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { DashboardPanel } from "./dashboard/DashboardPanel.js";
 import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
+import { PageHeader } from "./foundation/PageHeader.js";
+import { StatusBadge } from "./foundation/StatusBadge.js";
 import { createHttpManagementApi, type ManagementApi } from "./management-api.js";
 import { AlertConfigurationPanel, type AlertConfigurationApi } from "./modules/alerts/AlertConfigurationPanel.js";
 import { ModuleManagementPanel } from "./modules/ModuleManagementPanel.js";
-import { ManagementNavigation, type ManagementTabId } from "./navigation/ManagementNavigation.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "./navigation/dirty-navigation.js";
+import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
 import { OverlayOutputsPanel } from "./overlays/OverlayOutputsPanel.js";
 import { PlaybackPanel } from "./playback/PlaybackPanel.js";
+import { getManagementRouteDefinition, type ManagementRoute } from "./routing/management-route.js";
 import { SettingsPanel } from "./settings/SettingsPanel.js";
 import { TtsPanel } from "./tts/TtsPanel.js";
 import { TwitchPanel } from "./twitch/TwitchPanel.js";
@@ -19,38 +23,70 @@ export interface ManagementAppProps {
   readonly managementApi?: ManagementApi | undefined;
 }
 
-export function ManagementApp({ assetApi, alertApi, managementApi }: ManagementAppProps) {
-  const resolvedManagementApi = useMemo(() => managementApi ?? createHttpManagementApi(), [managementApi]);
-  const [activeTab, setActiveTab] = useState<ManagementTabId>("dashboard");
+interface ResolvedManagementAppProps {
+  readonly assetApi: AssetApi;
+  readonly alertApi: AlertConfigurationApi;
+  readonly managementApi: ManagementApi;
+}
+
+export function ManagementApp(props: ManagementAppProps) {
+  const resolvedManagementApi = useMemo(() => props.managementApi ?? createHttpManagementApi(), [props.managementApi]);
+  return (
+    <DirtyNavigationProvider>
+      <ManagementAppContent {...props} managementApi={resolvedManagementApi} />
+    </DirtyNavigationProvider>
+  );
+}
+
+function ManagementAppContent({ assetApi, alertApi, managementApi }: ResolvedManagementAppProps) {
+  const navigation = useManagementNavigation();
+  const definition = getManagementRouteDefinition(navigation.route);
 
   return (
-    <main className="app-shell">
-      <header className="app-header">
-        <div>
-          <h1>Stream Jams</h1>
-          <p>Local-first stream management shell.</p>
-        </div>
-      </header>
-      <div className="management-workspace">
-        <ManagementNavigation activeTab={activeTab} onSelect={setActiveTab} />
-        <div
-          aria-labelledby={`management-tab-${activeTab}`}
-          className="management-tab-panel"
-          id={`management-panel-${activeTab}`}
-          role="tabpanel"
-        >
-          {activeTab === "dashboard" ? <DashboardPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "twitch" ? <TwitchPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "diagnostics" ? <DiagnosticsPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "modules" ? <ModuleManagementPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "overlays" ? <OverlayOutputsPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "playback" ? <PlaybackPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "tts" ? <TtsPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "settings" ? <SettingsPanel managementApi={resolvedManagementApi} /> : null}
-          {activeTab === "alerts" ? <AlertConfigurationPanel alertApi={alertApi} assetApi={assetApi} /> : null}
-          {activeTab === "assets" ? <AssetManager assetApi={assetApi} /> : null}
-        </div>
-      </div>
-    </main>
+    <div className="app-shell">
+      <ManagementNavigation activeRoute={navigation.route} onNavigate={navigation.requestNavigation} />
+      <main className="management-main">
+        <PageHeader
+          breadcrumbs={definition.breadcrumbs}
+          description={definition.description}
+          status={<StatusBadge label="Local" tone="positive" />}
+          title={definition.title}
+        />
+        <section aria-label={`${definition.title} content`} className="management-route-content">
+          <RouteContent alertApi={alertApi} assetApi={assetApi} managementApi={managementApi} route={navigation.route} />
+        </section>
+      </main>
+      {navigation.guard}
+    </div>
   );
+}
+
+function RouteContent({
+  alertApi,
+  assetApi,
+  managementApi,
+  route
+}: ResolvedManagementAppProps & { readonly route: ManagementRoute }) {
+  switch (route.id) {
+    case "home":
+      return <DashboardPanel managementApi={managementApi} />;
+    case "event-sources":
+      return <TwitchPanel managementApi={managementApi} />;
+    case "tts-providers":
+      return <TtsPanel managementApi={managementApi} />;
+    case "modules-alerts":
+      return <AlertConfigurationPanel alertApi={alertApi} assetApi={assetApi} />;
+    case "assets":
+      return <AssetManager assetApi={assetApi} />;
+    case "diagnostics":
+      return <DiagnosticsPanel managementApi={managementApi} />;
+    case "settings":
+      return <SettingsPanel managementApi={managementApi} />;
+    case "legacy-modules":
+      return <ModuleManagementPanel managementApi={managementApi} />;
+    case "legacy-overlays":
+      return <OverlayOutputsPanel managementApi={managementApi} />;
+    case "legacy-playback":
+      return <PlaybackPanel managementApi={managementApi} />;
+  }
 }

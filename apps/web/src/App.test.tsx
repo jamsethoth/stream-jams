@@ -19,10 +19,10 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "Alerts" }));
+    await user.click(screen.getByRole("link", { name: "Alerts" }));
     expect(await screen.findByText("No alert collections configured.")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "Assets" }));
+    await user.click(screen.getByRole("link", { name: "Assets" }));
     expect(await screen.findByText("No assets imported yet.")).toBeInTheDocument();
   });
 });

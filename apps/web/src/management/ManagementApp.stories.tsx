@@ -1,5 +1,6 @@
+import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ManagementApp } from "./ManagementApp.js";
+import { ManagementApp, type ManagementAppProps } from "./ManagementApp.js";
 import { createStoryAlertApi, createStoryAssetApi, createStoryManagementApi } from "../stories/mock-apis.js";
 
 const meta = {
@@ -24,6 +25,7 @@ export const FullShell: Story = {
     assetApi: createStoryAssetApi(),
     managementApi: createStoryManagementApi()
   },
+  render: (args) => <ManagementAppAtRoute args={args} path="/" />,
   parameters: {
     docs: {
       description: {
@@ -32,3 +34,28 @@ export const FullShell: Story = {
     }
   }
 };
+
+export const NestedAlerts: Story = {
+  args: {
+    alertApi: createStoryAlertApi(),
+    assetApi: createStoryAssetApi(),
+    managementApi: createStoryManagementApi()
+  },
+  render: (args) => <ManagementAppAtRoute args={args} path="/modules/alerts" />,
+  parameters: {
+    docs: {
+      description: {
+        story: "Nested Modules and Alerts selection with breadcrumb and the temporary alert configuration adapter."
+      }
+    }
+  }
+};
+
+function ManagementAppAtRoute({ args, path }: { readonly args: ManagementAppProps; readonly path: string }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    window.history.replaceState(null, "", path);
+    setReady(true);
+  }, [path]);
+  return ready ? <ManagementApp {...args} /> : null;
+}

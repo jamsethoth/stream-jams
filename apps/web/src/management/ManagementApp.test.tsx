@@ -2,7 +2,7 @@ import type { AlertCollection, AlertRule } from "./modules/alerts/alert-api.js";
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagementApp } from "./ManagementApp.js";
 import type { AssetApi } from "./assets/AssetManager.js";
 import type { ManagementApi } from "./management-api.js";
@@ -11,7 +11,40 @@ afterEach(() => {
   cleanup();
 });
 
+beforeEach(() => {
+  window.history.replaceState(null, "", "/");
+});
+
 describe("ManagementApp", () => {
+  it("uses stable sidebar links and nested Modules navigation", async () => {
+    const user = userEvent.setup();
+    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+    await user.click(screen.getByRole("link", { name: "Modules" }));
+
+    expect(window.location.pathname).toBe("/modules/alerts");
+    expect(screen.getByRole("link", { name: "Modules" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
+  });
+
+  it("guards dirty settings when navigating and allows discard", async () => {
+    const user = userEvent.setup();
+    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    const host = await screen.findByLabelText("Host");
+    await user.clear(host);
+    await user.type(host, "localhost");
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+
+    expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/settings");
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(window.location.pathname).toBe("/assets");
+  });
+
   it("renders dashboard status and navigates to copyable overlay URLs", async () => {
     const user = userEvent.setup();
     const clipboardWrite = vi.fn();
@@ -29,8 +62,8 @@ describe("ManagementApp", () => {
     expect(screen.getByText("Queue paused")).toBeInTheDocument();
     expect(screen.getByText("Last provider request failed")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("tab", { name: "Overlays" }));
-    const overlayPanel = screen.getByRole("tabpanel", { name: "Overlays" });
+    await user.click(screen.getByRole("link", { name: "Overlay outputs" }));
+    const overlayPanel = screen.getByRole("region", { name: "Overlay outputs content" });
     expect(within(overlayPanel).getByText("Alerts test")).toBeInTheDocument();
     expect(within(overlayPanel).getByText("http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test")).toBeInTheDocument();
     await user.click(within(overlayPanel).getByRole("button", { name: "Copy Alerts test" }));
@@ -45,8 +78,8 @@ describe("ManagementApp", () => {
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
-    await user.click(screen.getByRole("tab", { name: "Modules" }));
-    const modulesPanel = screen.getByRole("tabpanel", { name: "Modules" });
+    await user.click(screen.getByRole("link", { name: "Module setup" }));
+    const modulesPanel = screen.getByRole("region", { name: "Module setup content" });
     expect(await within(modulesPanel).findByRole("heading", { name: "Overlay Modules" })).toBeInTheDocument();
     expect(within(modulesPanel).getByText("Alerts")).toBeInTheDocument();
     expect(within(modulesPanel).getByLabelText("Alerts enabled")).toBeChecked();
@@ -80,8 +113,8 @@ describe("ManagementApp", () => {
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
-    await user.click(screen.getByRole("tab", { name: "Settings" }));
-    const settingsPanel = screen.getByRole("tabpanel", { name: "Settings" });
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    const settingsPanel = screen.getByRole("region", { name: "Settings content" });
     await user.clear(within(settingsPanel).getByLabelText("Port"));
     await user.type(within(settingsPanel).getByLabelText("Port"), "40123");
     await user.click(within(settingsPanel).getByRole("button", { name: "Save server settings" }));
@@ -91,8 +124,8 @@ describe("ManagementApp", () => {
       port: 40123
     });
 
-    await user.click(screen.getByRole("tab", { name: "Playback" }));
-    const playbackPanel = screen.getByRole("tabpanel", { name: "Playback" });
+    await user.click(screen.getByRole("link", { name: "Playback controls" }));
+    const playbackPanel = screen.getByRole("region", { name: "Playback controls content" });
     await user.click(within(playbackPanel).getByRole("button", { name: "Pause" }));
     await user.click(within(playbackPanel).getByRole("button", { name: "Resume" }));
     await user.click(within(playbackPanel).getByRole("button", { name: "Skip" }));
@@ -115,8 +148,8 @@ describe("ManagementApp", () => {
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
-    await user.click(screen.getByRole("tab", { name: "TTS" }));
-    const ttsPanel = screen.getByRole("tabpanel", { name: "TTS" });
+    await user.click(screen.getByRole("link", { name: "TTS providers" }));
+    const ttsPanel = screen.getByRole("region", { name: "TTS providers content" });
     expect(await within(ttsPanel).findByRole("heading", { name: "TTS" })).toBeInTheDocument();
     expect(within(ttsPanel).getAllByText("Browser Speech").length).toBeGreaterThan(0);
     expect(within(ttsPanel).getAllByText("browser-speech").length).toBeGreaterThan(0);
@@ -145,8 +178,8 @@ describe("ManagementApp", () => {
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
-    await user.click(screen.getByRole("tab", { name: "Diagnostics" }));
-    const diagnosticsPanel = screen.getByRole("tabpanel", { name: "Diagnostics" });
+    await user.click(screen.getByRole("link", { name: "Diagnostics" }));
+    const diagnosticsPanel = screen.getByRole("region", { name: "Diagnostics content" });
     expect(await within(diagnosticsPanel).findByRole("heading", { name: "Diagnostics" })).toBeInTheDocument();
     expect(within(diagnosticsPanel).getByText("twitch follow event-1")).toBeInTheDocument();
     expect(within(diagnosticsPanel).getByText("rule-1")).toBeInTheDocument();
@@ -169,8 +202,8 @@ describe("ManagementApp", () => {
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
-    await user.click(screen.getByRole("tab", { name: "Twitch" }));
-    const twitchPanel = screen.getByRole("tabpanel", { name: "Twitch" });
+    await user.click(screen.getByRole("link", { name: "Event sources" }));
+    const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
     expect(await within(twitchPanel).findByRole("heading", { name: "Twitch" })).toBeInTheDocument();
     expect(within(twitchPanel).getByText("Twitch disconnected")).toBeInTheDocument();
     expect(await within(twitchPanel).findByText("EventSub connected")).toBeInTheDocument();
@@ -191,8 +224,8 @@ describe("ManagementApp", () => {
     const managementApi = createManagementApi({ twitchConnected: true });
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
-    await user.click(screen.getByRole("tab", { name: "Twitch" }));
-    const twitchPanel = screen.getByRole("tabpanel", { name: "Twitch" });
+    await user.click(screen.getByRole("link", { name: "Event sources" }));
+    const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
     expect((await within(twitchPanel).findAllByText("Streamer")).length).toBeGreaterThan(0);
 
     await user.click(within(twitchPanel).getByRole("button", { name: "Refresh Twitch" }));

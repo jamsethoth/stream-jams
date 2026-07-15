@@ -161,7 +161,7 @@ test("management alerts creates a collection, default variant, and test alert te
   });
 
   await page.goto("/manage");
-  await page.getByRole("tab", { name: "Alerts" }).click();
+  await page.getByRole("link", { name: "Alerts" }).click();
 
   await expect(page.getByText("No alert collections configured.")).toBeVisible();
   await page.getByLabel("Collection name").fill("Raid Alerts");

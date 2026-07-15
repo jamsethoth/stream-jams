@@ -49,7 +49,7 @@ test("management navigation shows copyable overlay URLs", async ({ page }) => {
   await page.goto("/manage");
 
   await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
-  await page.getByRole("tab", { name: "Overlays" }).click();
+  await page.getByRole("link", { name: "Overlay outputs" }).click();
 
   await expect(page.getByRole("heading", { name: "Alerts test" })).toBeVisible();
   await expect(page.getByText("http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test")).toBeVisible();
@@ -128,12 +128,12 @@ test("management copies a recovered overlay URL after output state reloads", asy
   });
 
   await page.goto("/manage");
-  await page.getByRole("tab", { name: "Overlays" }).click();
+  await page.getByRole("link", { name: "Overlay outputs" }).click();
   await page.getByRole("button", { name: "Create URL" }).click();
   await expect(page.getByText("http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_recovered")).toBeVisible();
 
   await page.reload();
-  await page.getByRole("tab", { name: "Overlays" }).click();
+  await page.getByRole("link", { name: "Overlay outputs" }).click();
   await page.getByRole("button", { name: "Copy Alerts Live" }).click();
 
   await expect(page.getByText("Alerts Live copied.")).toBeVisible();
