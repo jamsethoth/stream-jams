@@ -5,6 +5,7 @@ import {
   alertSetDetailSchema,
   alertSetOverviewSchema,
   assetLibraryItemSchema,
+  assetChangeImpactSchema,
   configurationBackupSummarySchema,
   diagnosticsWorkspaceViewSchema,
   homeSetupSummarySchema,
@@ -23,6 +24,9 @@ import {
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
+  type AssetChangeImpact,
+  type AssetMediaType,
+  type AssetMetadataUpdateInput,
   type ConfigurationBackupSummary,
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
@@ -341,6 +345,9 @@ export interface ManagementApi {
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
+  updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
+  getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
+  deleteAsset(assetId: string): Promise<void>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
   getDashboard(): Promise<DashboardSummary>;
@@ -637,6 +644,31 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         assetLibraryItemSchema,
         "Unable to load asset library."
       );
+    },
+
+    async updateAssetMetadata(assetId, input) {
+      return assetLibraryItemSchema.parse(
+        await client.patchJson<unknown>(
+          `/management/assets/${encodeURIComponent(assetId)}`,
+          input,
+          "Unable to update asset metadata."
+        )
+      );
+    },
+
+    getAssetChangeImpact(assetId, candidateMediaType) {
+      const query = candidateMediaType === undefined
+        ? ""
+        : `?candidateMediaType=${encodeURIComponent(candidateMediaType)}`;
+      return getContract(
+        `/management/assets/${encodeURIComponent(assetId)}/change-impact${query}`,
+        assetChangeImpactSchema,
+        "Unable to load asset change impact."
+      );
+    },
+
+    async deleteAsset(assetId) {
+      await client.deleteRequest(`/management/assets/${encodeURIComponent(assetId)}`, "Unable to delete asset.");
     },
 
     getDiagnosticsWorkspace() {

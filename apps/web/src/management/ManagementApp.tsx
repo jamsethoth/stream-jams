@@ -77,7 +77,7 @@ function RouteContent({
     case "modules-alerts":
       return <AlertSetsPage managementApi={managementApi} />;
     case "assets":
-      return <AssetManager assetApi={assetApi} />;
+      return <AssetManager assetApi={assetApi} managementApi={managementApi} />;
     case "diagnostics":
       return <DiagnosticsPanel managementApi={managementApi} />;
     case "settings":

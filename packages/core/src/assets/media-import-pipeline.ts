@@ -3,6 +3,7 @@ import type { AssetMediaType, AssetRecord } from "./types.js";
 import type { AssetValidator } from "./asset-validator.js";
 
 export interface MediaImportInput {
+  readonly assetId?: string;
   readonly originalFileName: string;
   readonly mimeType: string;
   readonly bytes: Uint8Array;
@@ -24,6 +25,7 @@ export interface AssetStorageWrite {
   readonly originalFileName: string;
   readonly mediaType: AssetMediaType;
   readonly normalizedExtension: string;
+  readonly storageVersion?: string | undefined;
   readonly bytes: Uint8Array;
 }
 
@@ -93,13 +95,14 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
       mediaType: validation.mediaType,
       normalizedExtension: validation.normalizedExtension
     });
-    const assetId = this.#generateId();
+    const assetId = input.assetId ?? this.#generateId();
     const checksum = this.#calculateChecksum(transcoded.bytes);
     const { storagePath } = await this.#store.write({
       assetId,
       originalFileName: transcoded.originalFileName,
       mediaType: transcoded.mediaType,
       normalizedExtension: transcoded.normalizedExtension,
+      ...(input.assetId === undefined ? {} : { storageVersion: checksum }),
       bytes: transcoded.bytes
     });
 

@@ -39,11 +39,11 @@
 
 ## 5. Assets Library And Picker
 
-- [ ] 5.1 Extend asset persistence and APIs with normalized tags, health, searchable metadata, and usage summaries.
-- [ ] 5.2 Rebuild Assets as a searchable/filterable table with preview/detail, usage deep links, tags, health, and unused filtering.
-- [ ] 5.3 Add guarded global replacement and deletion flows that report affected alert/profile usages.
-- [ ] 5.4 Add an editor asset picker with compatible filtering, search, existing selection, and validated inline registration.
-- [ ] 5.5 Add asset schema/API, table/detail, picker, upload-failure, replacement, and deletion tests and Storybook states.
+- [x] 5.1 Extend asset persistence and APIs with normalized tags, health, searchable metadata, and usage summaries.
+- [x] 5.2 Rebuild Assets as a searchable/filterable table with preview/detail, usage deep links, tags, health, and unused filtering.
+- [x] 5.3 Add guarded global replacement and deletion flows that report affected alert/profile usages.
+- [x] 5.4 Add an editor asset picker with compatible filtering, search, existing selection, and validated inline registration.
+- [x] 5.5 Add asset schema/API, table/detail, picker, upload-failure, replacement, and deletion tests and Storybook states.
 
 ## 6. Focused Alert Editor MVP
 

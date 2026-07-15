@@ -260,6 +260,25 @@ describe("management asset diagnostics home and backup contracts", () => {
     ).toBe(true);
   });
 
+  it("normalizes asset metadata updates and validates destructive change impact", () => {
+    const metadata = schema("assetMetadataUpdateInputSchema");
+    const impact = schema("assetChangeImpactSchema");
+
+    expect(metadata.parse({ displayName: "Seasonal follow", tags: [" Seasonal ", "FOLLOW", "seasonal"] })).toEqual({
+      displayName: "Seasonal follow",
+      tags: ["seasonal", "follow"]
+    });
+    expect(
+      impact.safeParse({
+        assetId: "asset-1",
+        usage: { assetId: "asset-1", totalUsageCount: 0, usages: [] },
+        canDelete: true,
+        requiresConfirmation: false,
+        warnings: []
+      }).success
+    ).toBe(true);
+  });
+
   it("validates diagnostics evidence and secret-free backup summaries", () => {
     const diagnostics = schema("diagnosticsWorkspaceViewSchema");
     const backup = schema("configurationBackupSummarySchema");

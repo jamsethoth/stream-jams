@@ -10,6 +10,7 @@ const expectedTables = [
   "alert_rules",
   "alert_set_metadata",
   "alert_variants",
+  "asset_library_metadata",
   "asset_metadata",
   "event_logs",
   "overlay_keys",
@@ -32,7 +33,8 @@ describe("Stream Jams SQLite database", () => {
       "004-overlay-key-secret-ref",
       "005-provider-registrations",
       "006-overlay-key-target-profile",
-      "007-alert-set-management"
+      "007-alert-set-management",
+      "008-asset-library-metadata"
     ]);
 
     database.runMigrations();
@@ -44,7 +46,8 @@ describe("Stream Jams SQLite database", () => {
       "004-overlay-key-secret-ref",
       "005-provider-registrations",
       "006-overlay-key-target-profile",
-      "007-alert-set-management"
+      "007-alert-set-management",
+      "008-asset-library-metadata"
     ]);
 
     expect(

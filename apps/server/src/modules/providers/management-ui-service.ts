@@ -7,6 +7,9 @@ import {
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
+  type AssetChangeImpact,
+  type AssetMediaType,
+  type AssetMetadataUpdateInput,
   type ConfigurationBackupSummary,
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
@@ -59,6 +62,9 @@ export interface ManagementUiServiceOptions {
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
   readonly listAssetLibraryItems: () => Promise<readonly AssetLibraryItem[]>;
+  readonly updateAssetMetadata: (assetId: string, input: AssetMetadataUpdateInput) => Promise<AssetLibraryItem>;
+  readonly getAssetChangeImpact: (assetId: string, candidateMediaType?: AssetMediaType) => Promise<AssetChangeImpact>;
+  readonly deleteAsset: (assetId: string) => Promise<void>;
   readonly getDiagnosticsWorkspace: () => Promise<DiagnosticsWorkspaceView>;
   readonly getConfigurationBackupSummary: () => Promise<ConfigurationBackupSummary>;
 }
@@ -186,6 +192,18 @@ export class ManagementUiService {
 
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]> {
     return this.#options.listAssetLibraryItems();
+  }
+
+  updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem> {
+    return this.#options.updateAssetMetadata(assetId, input);
+  }
+
+  getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact> {
+    return this.#options.getAssetChangeImpact(assetId, candidateMediaType);
+  }
+
+  deleteAsset(assetId: string): Promise<void> {
+    return this.#options.deleteAsset(assetId);
   }
 
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView> {

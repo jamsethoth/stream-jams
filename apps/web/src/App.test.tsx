@@ -119,6 +119,15 @@ function createManagementApi(): ManagementApi {
     async listAssetLibraryItems() {
       return [];
     },
+    async updateAssetMetadata() {
+      throw new Error("not called");
+    },
+    async getAssetChangeImpact() {
+      throw new Error("not called");
+    },
+    async deleteAsset() {
+      throw new Error("not called");
+    },
     async getDiagnosticsWorkspace() {
       return { problems: [], events: [], rawLogs: [] };
     },
@@ -326,6 +335,12 @@ function createAssetApi(): AssetApi {
       return [];
     },
     async importAsset(): Promise<AssetRecord> {
+      throw new Error("not called");
+    },
+    async getAssetFile(): Promise<Blob> {
+      throw new Error("not called");
+    },
+    async replaceAsset(): Promise<AssetRecord> {
       throw new Error("not called");
     }
   };

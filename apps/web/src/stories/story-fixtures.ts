@@ -1,4 +1,4 @@
-import type { AlertCollection, AlertRule, OverlayComposition } from "@stream-jams/core";
+import type { AlertCollection, AlertRule, AssetLibraryItem, OverlayComposition } from "@stream-jams/core";
 import type {
   DashboardSummary,
   DiagnosticsView,
@@ -279,6 +279,52 @@ export const storyAudioAsset = {
 } satisfies AssetRecord;
 
 export const storyAssets = [storyImageAsset, storyAudioAsset] satisfies readonly AssetRecord[];
+
+export const storyAssetLibraryItems = [
+  {
+    id: storyImageAsset.id,
+    displayName: "Follower burst",
+    originalFileName: storyImageAsset.originalFileName,
+    mediaType: storyImageAsset.mediaType,
+    mimeType: storyImageAsset.mimeType,
+    sizeBytes: storyImageAsset.sizeBytes,
+    width: 320,
+    height: 180,
+    durationMs: null,
+    health: "available",
+    tags: ["follow", "bright"],
+    createdAt: storyNow,
+    updatedAt: storyNow,
+    usage: {
+      assetId: storyImageAsset.id,
+      totalUsageCount: 1,
+      usages: [{
+        setId: "collection-default",
+        setName: "Default",
+        eventType: "follow",
+        alertId: "rule-follow",
+        alertName: "New follower",
+        targetProfileIds: ["landscape", "vertical"]
+      }]
+    }
+  },
+  {
+    id: storyAudioAsset.id,
+    displayName: "Short chime",
+    originalFileName: storyAudioAsset.originalFileName,
+    mediaType: storyAudioAsset.mediaType,
+    mimeType: storyAudioAsset.mimeType,
+    sizeBytes: storyAudioAsset.sizeBytes,
+    width: null,
+    height: null,
+    durationMs: 850,
+    health: "available",
+    tags: ["audio", "short"],
+    createdAt: storyNow,
+    updatedAt: storyNow,
+    usage: { assetId: storyAudioAsset.id, totalUsageCount: 0, usages: [] }
+  }
+] satisfies readonly AssetLibraryItem[];
 
 export const storyAlertCollections = [
   {

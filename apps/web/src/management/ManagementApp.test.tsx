@@ -420,6 +420,13 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
       throw new Error("not called");
     }),
     listAssetLibraryItems: vi.fn(async () => []),
+    updateAssetMetadata: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    getAssetChangeImpact: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    deleteAsset: vi.fn(async () => undefined),
     getDiagnosticsWorkspace: vi.fn(async () => ({ problems: [], events: [], rawLogs: [] })),
     getConfigurationBackupSummary: vi.fn(async () => ({
       state: "ready" as const,
@@ -765,6 +772,12 @@ function createAssetApi(): AssetApi {
       return [];
     },
     async importAsset(): Promise<AssetRecord> {
+      throw new Error("not called");
+    },
+    async getAssetFile(): Promise<Blob> {
+      throw new Error("not called");
+    },
+    async replaceAsset(): Promise<AssetRecord> {
       throw new Error("not called");
     }
   };

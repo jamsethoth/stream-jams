@@ -55,6 +55,38 @@ describe("management UI contract routes", () => {
     });
   });
 
+  it("updates asset metadata, reports candidate replacement impact, and deletes unused assets", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const updated = await app.inject({
+      method: "PATCH",
+      url: "/management/assets/asset-image",
+      headers: authHeaders,
+      payload: { displayName: "Winter follower", tags: ["Winter", "follow"] }
+    });
+    const impact = await app.inject({
+      method: "GET",
+      url: "/management/assets/asset-image/change-impact?candidateMediaType=audio",
+      headers: authHeaders
+    });
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/management/assets/asset-image",
+      headers: authHeaders
+    });
+
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toMatchObject({ displayName: "Winter follower", tags: ["winter", "follow"] });
+    expect(impact.statusCode).toBe(200);
+    expect(impact.json()).toMatchObject({ assetId: "asset-image" });
+    expect(deleted.statusCode).toBe(204);
+    expect(service.assetCommands).toEqual([
+      ["metadata", "asset-image", { displayName: "Winter follower", tags: ["winter", "follow"] }],
+      ["impact", "asset-image", "audio"],
+      ["delete", "asset-image"]
+    ]);
+  });
+
   it("validates and registers providers without combining the two operations", async () => {
     const { app, authHeaders, service } = await createApp();
     const setup = {
@@ -249,6 +281,7 @@ class StubManagementUiQueryService {
   readonly registeredSetups: unknown[] = [];
   readonly activationRequests: Array<{ readonly providerId: string; readonly confirmWarnings: boolean }> = [];
   readonly alertSetCommands: unknown[][] = [];
+  readonly assetCommands: unknown[][] = [];
 
   async getHomeSetupSummary() {
     return { readiness: [], activeAlertSet: null, actionableProblems: [] };
@@ -410,6 +443,38 @@ class StubManagementUiQueryService {
   async listAssetLibraryItems() {
     return [];
   }
+
+  async updateAssetMetadata(assetId: string, input: { readonly displayName: string; readonly tags: readonly string[] }) {
+    this.assetCommands.push(["metadata", assetId, input]);
+    return {
+      id: assetId,
+      originalFileName: "asset.png",
+      mediaType: "image" as const,
+      mimeType: "image/png",
+      sizeBytes: 1,
+      width: null,
+      height: null,
+      durationMs: null,
+      health: "available" as const,
+      createdAt: "2026-07-15T05:00:00.000Z",
+      updatedAt: "2026-07-15T05:00:00.000Z",
+      usage: { assetId, totalUsageCount: 0, usages: [] },
+      ...input
+    };
+  }
+
+  async getAssetChangeImpact(assetId: string, candidateMediaType?: "image" | "gif" | "video" | "audio") {
+    this.assetCommands.push(["impact", assetId, candidateMediaType]);
+    return {
+      assetId,
+      usage: { assetId, totalUsageCount: 0, usages: [] },
+      canDelete: true,
+      requiresConfirmation: false,
+      warnings: []
+    };
+  }
+
+  async deleteAsset(assetId: string) { this.assetCommands.push(["delete", assetId]); }
 
   async getDiagnosticsWorkspace() {
     return { problems: [], events: [], rawLogs: [] };

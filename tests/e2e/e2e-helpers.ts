@@ -52,7 +52,7 @@ export async function mockManagementShell(page: Page): Promise<void> {
   await page.route("**/auth/management/sessions", async (route) => {
     await route.fulfill({
       contentType: "application/json",
-      json: { id: "mgmt_e2e" }
+      json: { id: "mgmt_e2e", csrfToken: "csrf_e2e" }
     });
   });
   await page.route("**/playback", async (route) => {

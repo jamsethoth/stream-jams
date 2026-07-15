@@ -343,12 +343,12 @@ export const alertEditorDocumentSchema = z.object({
 });
 
 export const assetUsageLinkSchema = z.object({
-  setId: nonEmptyStringSchema,
-  setName: nonEmptyStringSchema,
+  setId: nonEmptyStringSchema.nullable(),
+  setName: nonEmptyStringSchema.nullable(),
   eventType: streamEventTypeSchema,
   alertId: nonEmptyStringSchema,
   alertName: nonEmptyStringSchema,
-  targetProfileIds: z.array(targetProfileIdSchema).min(1)
+  targetProfileIds: z.array(targetProfileIdSchema)
 });
 
 export const assetUsageSummarySchema = z
@@ -378,6 +378,19 @@ export const assetLibraryItemSchema = z.object({
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
   usage: assetUsageSummarySchema
+});
+
+export const assetMetadataUpdateInputSchema = z.object({
+  displayName: nonEmptyStringSchema,
+  tags: z.array(nonEmptyStringSchema).transform(normalizeAssetTags)
+});
+
+export const assetChangeImpactSchema = z.object({
+  assetId: nonEmptyStringSchema,
+  usage: assetUsageSummarySchema,
+  canDelete: z.boolean(),
+  requiresConfirmation: z.boolean(),
+  warnings: z.array(nonEmptyStringSchema)
 });
 
 export const diagnosticsEventViewSchema = z.object({
@@ -512,6 +525,8 @@ export type AlertSamplePayload = z.infer<typeof alertSamplePayloadSchema>;
 export type AlertEditorDocument = z.infer<typeof alertEditorDocumentSchema>;
 export type AssetUsageSummary = z.infer<typeof assetUsageSummarySchema>;
 export type AssetLibraryItem = z.infer<typeof assetLibraryItemSchema>;
+export type AssetMetadataUpdateInput = z.infer<typeof assetMetadataUpdateInputSchema>;
+export type AssetChangeImpact = z.infer<typeof assetChangeImpactSchema>;
 export type DiagnosticsWorkspaceView = z.infer<typeof diagnosticsWorkspaceViewSchema>;
 export type HomeSetupSummary = z.infer<typeof homeSetupSummarySchema>;
 export type ConfigurationBackupSummary = z.infer<typeof configurationBackupSummarySchema>;

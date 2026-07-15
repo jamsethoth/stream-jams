@@ -98,6 +98,29 @@ function createService(providers: readonly RegisteredProviderView[], activeSet: 
       throw new Error("not configured");
     },
     listAssetLibraryItems: async (): Promise<readonly AssetLibraryItem[]> => [],
+    updateAssetMetadata: async (_assetId, input) => ({
+      id: "asset-1",
+      originalFileName: "asset.png",
+      mediaType: "image",
+      mimeType: "image/png",
+      sizeBytes: 1,
+      width: null,
+      height: null,
+      durationMs: null,
+      health: "available",
+      createdAt: "2026-07-15T05:00:00.000Z",
+      updatedAt: "2026-07-15T05:00:00.000Z",
+      usage: { assetId: "asset-1", totalUsageCount: 0, usages: [] },
+      ...input
+    }),
+    getAssetChangeImpact: async (assetId) => ({
+      assetId,
+      usage: { assetId, totalUsageCount: 0, usages: [] },
+      canDelete: true,
+      requiresConfirmation: false,
+      warnings: []
+    }),
+    deleteAsset: async () => undefined,
     getDiagnosticsWorkspace: async (): Promise<DiagnosticsWorkspaceView> => ({ problems: [], events: [], rawLogs: [] }),
     getConfigurationBackupSummary: async (): Promise<ConfigurationBackupSummary> => ({
       state: "ready",

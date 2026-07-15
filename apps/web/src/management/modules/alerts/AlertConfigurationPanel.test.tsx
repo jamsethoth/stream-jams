@@ -419,6 +419,12 @@ function createAssetApi(assets: readonly AssetRecord[] = []): AssetApi {
     },
     async importAsset() {
       throw new Error("not called");
+    },
+    async getAssetFile() {
+      throw new Error("not called");
+    },
+    async replaceAsset() {
+      throw new Error("not called");
     }
   };
 }

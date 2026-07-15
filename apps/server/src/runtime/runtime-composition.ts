@@ -41,6 +41,8 @@ import { SqliteAlertSetMetadataRepository } from "../modules/alerts/sqlite-alert
 import { LocalManagementSessionService } from "../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
+import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
+import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
 import { openStreamJamsDatabase, type StreamJamsDatabase } from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
 import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
@@ -365,9 +367,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
     now
   });
+  const alertSetMetadataRepository = new SqliteAlertSetMetadataRepository(database.connection);
   const alertSetManagementService = new AlertSetManagementService({
     alertService,
-    metadataRepository: new SqliteAlertSetMetadataRepository(database.connection),
+    metadataRepository: alertSetMetadataRepository,
     async getActiveEventProviderKind() {
       const providers = await providerManagementService.listProviders("event-source");
       return providers.find((provider) => provider.active)?.kind ?? null;
@@ -408,6 +411,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         });
     }
   });
+  const assetLibraryService = new AssetLibraryService({
+    assetRepository,
+    metadataRepository: new SqliteAssetLibraryMetadataRepository(database.connection),
+    assetStore,
+    alertRepository,
+    ruleMetadataRepository: alertSetMetadataRepository,
+    clock: now
+  });
   const managementUiService = new ManagementUiService({
     providerService: providerManagementService,
     alertSetService: alertSetManagementService,
@@ -421,7 +432,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getAlertEditorDocument: async (alertId) => {
       throw new Error(`Alert editor document "${alertId}" is not available yet`);
     },
-    listAssetLibraryItems: async () => [],
+    listAssetLibraryItems: () => assetLibraryService.listItems(),
+    updateAssetMetadata: (assetId, input) => assetLibraryService.updateMetadata(assetId, input),
+    getAssetChangeImpact: (assetId, candidateMediaType) =>
+      assetLibraryService.getChangeImpact(assetId, candidateMediaType),
+    deleteAsset: (assetId) => assetLibraryService.deleteAsset(assetId),
     getDiagnosticsWorkspace: async () => ({ problems: [], events: [], rawLogs: [] }),
     getConfigurationBackupSummary: async () => {
       const [collections, rules, eventSources, ttsProviders] = await Promise.all([
@@ -493,6 +508,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetRepository,
     mediaImportPipeline,
     assetStore,
+    assetLibraryService,
     playbackCoordinator,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,

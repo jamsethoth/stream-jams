@@ -6,6 +6,9 @@ import {
   alertSetMutationInputSchema,
   alertSetOverviewSchema,
   assetLibraryItemSchema,
+  assetChangeImpactSchema,
+  assetMediaTypeSchema,
+  assetMetadataUpdateInputSchema,
   configurationBackupSummarySchema,
   diagnosticsWorkspaceViewSchema,
   homeSetupSummarySchema,
@@ -26,6 +29,9 @@ import {
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
+  type AssetChangeImpact,
+  type AssetMediaType,
+  type AssetMetadataUpdateInput,
   type ConfigurationBackupSummary,
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
@@ -55,6 +61,10 @@ import {
   AlertSetNameConflictError,
   AlertSetNotFoundError
 } from "../../modules/alerts/alert-set-management-service.js";
+import {
+  AssetLibraryInUseError,
+  AssetLibraryNotFoundError
+} from "../../modules/assets/asset-library-service.js";
 
 export interface ManagementUiQueryService {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
@@ -82,6 +92,9 @@ export interface ManagementUiQueryService {
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
+  updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
+  getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
+  deleteAsset(assetId: string): Promise<void>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
 }
@@ -304,6 +317,53 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     parseList(await service.listAssetLibraryItems(), assetLibraryItemSchema)
   );
 
+  app.patch("/management/assets/:assetId", { preHandler }, async (request, reply) => {
+    const input = assetMetadataUpdateInputSchema.safeParse(request.body);
+    if (!input.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ASSET_METADATA",
+        message: "Enter a display name and valid asset tags."
+      });
+    }
+    try {
+      return assetLibraryItemSchema.parse(
+        await service.updateAssetMetadata(readParam(request.params, "assetId"), input.data)
+      );
+    } catch (error) {
+      return sendAssetCommandError(reply, error);
+    }
+  });
+
+  app.get("/management/assets/:assetId/change-impact", { preHandler }, async (request, reply) => {
+    const candidateValue = readValue(request.query, "candidateMediaType");
+    const candidate = candidateValue === undefined ? undefined : assetMediaTypeSchema.safeParse(candidateValue);
+    if (candidate !== undefined && !candidate.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ASSET_MEDIA_TYPE",
+        message: "candidateMediaType must be image, gif, video, or audio."
+      });
+    }
+    try {
+      return assetChangeImpactSchema.parse(
+        await service.getAssetChangeImpact(
+          readParam(request.params, "assetId"),
+          candidate?.data
+        )
+      );
+    } catch (error) {
+      return sendAssetCommandError(reply, error);
+    }
+  });
+
+  app.delete("/management/assets/:assetId", { preHandler }, async (request, reply) => {
+    try {
+      await service.deleteAsset(readParam(request.params, "assetId"));
+      return reply.status(204).send();
+    } catch (error) {
+      return sendAssetCommandError(reply, error);
+    }
+  });
+
   app.get("/management/diagnostics/workspace", { preHandler }, async () =>
     diagnosticsWorkspaceViewSchema.parse(await service.getDiagnosticsWorkspace())
   );
@@ -311,6 +371,25 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
   app.get("/management/settings/backup-summary", { preHandler }, async () =>
     configurationBackupSummarySchema.parse(await service.getConfigurationBackupSummary())
   );
+}
+
+function sendAssetCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+  if (error instanceof AssetLibraryNotFoundError) {
+    return sendHttpError(reply, 404, {
+      code: "ASSET_NOT_FOUND",
+      message: "The selected asset no longer exists. Refresh the asset library and try again."
+    });
+  }
+  if (error instanceof AssetLibraryInUseError) {
+    return reply.status(409).send({
+      error: {
+        code: "ASSET_IN_USE",
+        message: "This asset is still used by alerts. Reassign those usages before deleting it."
+      },
+      impact: error.impact
+    });
+  }
+  throw error;
 }
 
 function sendProviderCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {

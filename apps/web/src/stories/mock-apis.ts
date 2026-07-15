@@ -9,6 +9,7 @@ import {
   liveAlertsOutput,
   storyAlertCollections,
   storyAlertRules,
+  storyAssetLibraryItems,
   storyAssets,
   storyDashboardSummary,
   storyDiagnostics,
@@ -105,7 +106,20 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
       throw new Error("No alert editor document configured for this story.");
     },
     async listAssetLibraryItems() {
-      return [];
+      return storyAssetLibraryItems;
+    },
+    async updateAssetMetadata(assetId, input) {
+      const item = storyAssetLibraryItems.find((candidate) => candidate.id === assetId) ?? storyAssetLibraryItems[0]!;
+      return { ...item, displayName: input.displayName, tags: input.tags, updatedAt: "2026-06-19T16:02:00.000Z" };
+    },
+    async getAssetChangeImpact(assetId, candidateMediaType) {
+      const item = storyAssetLibraryItems.find((candidate) => candidate.id === assetId) ?? storyAssetLibraryItems[0]!;
+      const warnings = item.usage.totalUsageCount > 0 ? [`${item.usage.totalUsageCount} alert usage will update everywhere.`] : [];
+      if (candidateMediaType !== undefined && candidateMediaType !== item.mediaType) warnings.push(`Media type changes from ${item.mediaType} to ${candidateMediaType}.`);
+      return { assetId, usage: item.usage, canDelete: item.usage.totalUsageCount === 0, requiresConfirmation: warnings.length > 0, warnings };
+    },
+    async deleteAsset() {
+      return undefined;
     },
     async getDiagnosticsWorkspace() {
       return { problems: [], events: [], rawLogs: [] };
@@ -266,11 +280,38 @@ export function createStoryAssetApi(overrides: Partial<AssetApi> = {}): AssetApi
         storagePath: `storybook-assets/${file.name}`
       } satisfies AssetRecord;
     },
+    async getAssetFile(assetId) {
+      const asset = storyAssets.find((candidate) => candidate.id === assetId) ?? storyAssets[0]!;
+      if (asset.mediaType === "audio") {
+        return new Blob([silentWavBytes], { type: "audio/wav" });
+      }
+      const response = await fetch(`/${asset.storagePath}`);
+      if (!response.ok) throw new Error(`Story asset ${asset.storagePath} could not be loaded.`);
+      return response.blob();
+    },
+    async replaceAsset(assetId, file) {
+      return {
+        id: assetId,
+        originalFileName: file.name,
+        mediaType: file.type.startsWith("audio/") ? "audio" : "image",
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        checksum: "sha256:replacement-story",
+        storagePath: `storybook-assets/${file.name}`
+      } satisfies AssetRecord;
+    },
     ...overrides
   } satisfies AssetApi;
 
   return api;
 }
+
+const silentWavBytes = new Uint8Array([
+  0x52, 0x49, 0x46, 0x46, 0x26, 0x00, 0x00, 0x00, 0x57, 0x41, 0x56, 0x45,
+  0x66, 0x6d, 0x74, 0x20, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00,
+  0x40, 0x1f, 0x00, 0x00, 0x40, 0x1f, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00,
+  0x64, 0x61, 0x74, 0x61, 0x02, 0x00, 0x00, 0x00, 0x80, 0x80
+]);
 
 function emptyAlertSet(id: string, name: string) {
   return {

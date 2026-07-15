@@ -498,6 +498,48 @@ describe("createHttpManagementApi", () => {
     await expect(api.exportDebugDiagnostics({ limit: 2, runtimeLogLimit: 10, sinceHours: 1 })).resolves.toEqual(debugExported);
   });
 
+  it("updates asset metadata, previews replacement impact, and deletes through management headers", async () => {
+    const item = {
+      id: "asset-1",
+      displayName: "Follower burst",
+      originalFileName: "follow.png",
+      mediaType: "image",
+      mimeType: "image/png",
+      sizeBytes: 1024,
+      width: null,
+      height: null,
+      durationMs: null,
+      health: "available",
+      tags: ["follow"],
+      createdAt: "2026-07-15T08:00:00.000Z",
+      updatedAt: "2026-07-15T08:00:00.000Z",
+      usage: { assetId: "asset-1", totalUsageCount: 0, usages: [] }
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      expect(init?.headers).toMatchObject({ authorization: "Bearer mgmt_session" });
+      if (url === "/management/assets/asset-1") {
+        expect(init?.headers).toMatchObject({ "x-stream-jams-csrf": "csrf_session" });
+        if (init?.method === "PATCH") {
+          expect(init.body).toBe(JSON.stringify({ displayName: "Updated", tags: ["follow", "seasonal"] }));
+          return jsonResponse({ ...item, displayName: "Updated", tags: ["follow", "seasonal"] });
+        }
+        expect(init?.method).toBe("DELETE");
+        return new Response(null, { status: 204 });
+      }
+      if (url === "/management/assets/asset-1/change-impact?candidateMediaType=audio") {
+        return jsonResponse({ assetId: "asset-1", usage: item.usage, canDelete: true, requiresConfirmation: true, warnings: ["Media type changes from image to audio."] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.updateAssetMetadata("asset-1", { displayName: "Updated", tags: ["follow", "seasonal"] })).resolves.toMatchObject({ displayName: "Updated" });
+    await expect(api.getAssetChangeImpact("asset-1", "audio")).resolves.toMatchObject({ requiresConfirmation: true });
+    await expect(api.deleteAsset("asset-1")).resolves.toBeUndefined();
+  });
+
   it("manages overlay output keys with management headers", async () => {
     const keyRequest = {
       overlayId: "default",
