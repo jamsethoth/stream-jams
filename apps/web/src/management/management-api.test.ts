@@ -63,9 +63,16 @@ describe("createHttpManagementApi", () => {
           configurationRecordCount: 12,
           assetCount: 3,
           totalAssetBytes: 2048,
+          dataDirectory: "C:/Users/James/.stream-jams/data",
+          assetDirectory: "C:/Users/James/.stream-jams/assets",
+          logLevel: "INFO",
+          logRetentionHours: 48,
           secretExclusions: ["Provider credentials", "Overlay route keys"],
           blockers: []
-        }
+        },
+        "/management/settings/backup": backupArchive(),
+        "/management/settings/backup/preflight": backupPreflight(),
+        "/management/settings/backup/restore": backupRestoreResult()
       };
 
       if (url in responses) {
@@ -87,6 +94,9 @@ describe("createHttpManagementApi", () => {
     expect(api.listAssetLibraryItems).toBeTypeOf("function");
     expect(api.getDiagnosticsWorkspace).toBeTypeOf("function");
     expect(api.getConfigurationBackupSummary).toBeTypeOf("function");
+    expect(api.exportConfigurationBackup).toBeTypeOf("function");
+    expect(api.preflightConfigurationRestore).toBeTypeOf("function");
+    expect(api.restoreConfiguration).toBeTypeOf("function");
 
     await expect(api.getHomeSetupSummary()).resolves.toMatchObject({ activeAlertSet: null });
     await expect(api.listRegisteredProviders("event-source")).resolves.toHaveLength(1);
@@ -107,6 +117,10 @@ describe("createHttpManagementApi", () => {
     await expect(api.listAssetLibraryItems()).resolves.toEqual([]);
     await expect(api.getDiagnosticsWorkspace()).resolves.toEqual({ problems: [], events: [], rawLogs: [] });
     await expect(api.getConfigurationBackupSummary()).resolves.toMatchObject({ state: "ready" });
+    const archive = backupArchive();
+    await expect(api.exportConfigurationBackup()).resolves.toMatchObject({ manifest: { archiveVersion: 1 } });
+    await expect(api.preflightConfigurationRestore(archive)).resolves.toMatchObject({ state: "valid" });
+    await expect(api.restoreConfiguration({ archive, archiveId: backupPreflight().archiveId, confirmation: "RESTORE", regenerateRouteKeys: true })).resolves.toMatchObject({ state: "completed" });
   });
 
   it("rejects invalid UI refactor responses at the existing client boundary", async () => {
@@ -743,6 +757,35 @@ interface UiContractManagementApi {
   listAssetLibraryItems(): Promise<readonly unknown[]>;
   getDiagnosticsWorkspace(): Promise<unknown>;
   getConfigurationBackupSummary(): Promise<unknown>;
+  exportConfigurationBackup(): Promise<unknown>;
+  preflightConfigurationRestore(archive: ReturnType<typeof backupArchive>): Promise<unknown>;
+  restoreConfiguration(input: unknown): Promise<unknown>;
+}
+
+function backupArchive() {
+  return {
+    manifest: { format: "stream-jams-backup", archiveVersion: 1, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
+    configuration: { appConfig: {}, tables: {}, providerReconnectMetadata: [], overlayOutputs: [] },
+    assets: []
+  } as const;
+}
+
+function backupPreflight() {
+  return {
+    state: "valid" as const,
+    archiveId: `sha256:${"b".repeat(64)}`,
+    appVersion: "0.0.0",
+    schemaVersion: 9,
+    createdAt: "2026-07-15T05:00:00.000Z",
+    impact: { configurationRecords: 0, providers: 0, alertSets: 0, assets: 0, preferences: 1, browserOutputs: 0 },
+    runtime: { intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 },
+    blockers: [],
+    warnings: []
+  };
+}
+
+function backupRestoreResult() {
+  return { state: "completed" as const, safetyBackupPath: "C:/safe/pre-restore.streamjams-backup", restored: backupPreflight().impact, regeneratedOutputs: [], reconnectProviders: [], warnings: [] };
 }
 
 function editorDocument() {

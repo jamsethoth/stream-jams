@@ -5,6 +5,10 @@ import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/rou
 import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
 import { registerConfigRoutes, type ServerConfigRouteDependencies } from "./http/routes/config.js";
+import {
+  registerConfigurationBackupRoutes,
+  type ConfigurationBackupRouteDependencies
+} from "./http/routes/configuration-backup.js";
 import { registerDiagnosticsRoutes, type DiagnosticsRouteDependencies } from "./http/routes/diagnostics.js";
 import { registerHealthRoutes, type ServerAppMetadata } from "./http/routes/health.js";
 import {
@@ -38,6 +42,7 @@ export interface ServerErrorLogEntry {
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
+    Partial<ConfigurationBackupRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
     Partial<ManagementUiRouteDependencies>,
     Partial<ModerationRouteDependencies>,
@@ -93,6 +98,13 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     }
 
     registerManagementUiRoutes(app, dependencies);
+  }
+
+  if (dependencies.configurationBackupService !== undefined) {
+    if (!hasConfigurationBackupRouteDependencies(dependencies)) {
+      throw new Error("Configuration backup routes require service, management auth, and rate-limit hooks");
+    }
+    registerConfigurationBackupRoutes(app, dependencies);
   }
 
   if (dependencies.moderationService !== undefined) {
@@ -217,6 +229,16 @@ function hasManagementUiRouteDependencies(
 ): dependencies is ServerAppDependencies & ManagementUiRouteDependencies {
   return (
     dependencies.managementUiQueryService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasConfigurationBackupRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & ConfigurationBackupRouteDependencies {
+  return (
+    dependencies.configurationBackupService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

@@ -8,6 +8,9 @@ import {
   assetLibraryItemSchema,
   assetChangeImpactSchema,
   configurationBackupSummarySchema,
+  configurationBackupArchiveSchema,
+  configurationRestorePreflightSchema,
+  configurationRestoreResultSchema,
   diagnosticsWorkspaceViewSchema,
   homeSetupSummarySchema,
   providerActivationImpactSchema,
@@ -31,6 +34,10 @@ import {
   type AssetMediaType,
   type AssetMetadataUpdateInput,
   type ConfigurationBackupSummary,
+  type ConfigurationBackupArchive,
+  type ConfigurationRestorePreflight,
+  type ConfigurationRestoreRequest,
+  type ConfigurationRestoreResult,
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
   type ProviderActivationImpact,
@@ -355,6 +362,9 @@ export interface ManagementApi {
   deleteAsset(assetId: string): Promise<void>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
+  exportConfigurationBackup(): Promise<ConfigurationBackupArchive>;
+  preflightConfigurationRestore(archive: ConfigurationBackupArchive): Promise<ConfigurationRestorePreflight>;
+  restoreConfiguration(input: ConfigurationRestoreRequest): Promise<ConfigurationRestoreResult>;
   getDashboard(): Promise<DashboardSummary>;
   getServerConfig(): Promise<ServerConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
@@ -708,6 +718,32 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         "/management/settings/backup-summary",
         configurationBackupSummarySchema,
         "Unable to load backup summary."
+      );
+    },
+
+    exportConfigurationBackup() {
+      return getContract(
+        "/management/settings/backup",
+        configurationBackupArchiveSchema,
+        "Unable to export configuration backup."
+      );
+    },
+
+    preflightConfigurationRestore(archive) {
+      return postContract(
+        "/management/settings/backup/preflight",
+        archive,
+        configurationRestorePreflightSchema,
+        "Unable to validate configuration backup."
+      );
+    },
+
+    restoreConfiguration(input) {
+      return postContract(
+        "/management/settings/backup/restore",
+        input,
+        configurationRestoreResultSchema,
+        "Unable to restore configuration backup."
       );
     },
 

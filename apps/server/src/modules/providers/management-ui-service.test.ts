@@ -136,6 +136,10 @@ function createService(providers: readonly RegisteredProviderView[], activeSet: 
       configurationRecordCount: 0,
       assetCount: 0,
       totalAssetBytes: 0,
+      dataDirectory: "C:/Users/James/.stream-jams/data",
+      assetDirectory: "C:/Users/James/.stream-jams/assets",
+      logLevel: "INFO",
+      logRetentionHours: 48,
       secretExclusions: ["Provider credentials", "Overlay route keys"],
       blockers: []
     })

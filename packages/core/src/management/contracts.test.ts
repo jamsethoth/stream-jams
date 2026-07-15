@@ -366,8 +366,102 @@ describe("management asset diagnostics home and backup contracts", () => {
         configurationRecordCount: 12,
         assetCount: 3,
         totalAssetBytes: 2048,
+        dataDirectory: "C:/Users/James/.stream-jams/data",
+        assetDirectory: "C:/Users/James/.stream-jams/assets",
+        logLevel: "INFO",
+        logRetentionHours: 48,
         secretExclusions: ["Provider credentials", "Overlay route keys"],
         blockers: []
+      }).success
+    ).toBe(true);
+  });
+
+  it("validates complete backup archives and rejects secret-bearing fields", () => {
+    const archiveSchema = schema("configurationBackupArchiveSchema");
+    const archive = {
+      manifest: {
+        format: "stream-jams-backup",
+        archiveVersion: 1,
+        appVersion: "0.0.0",
+        schemaVersion: 9,
+        createdAt: "2026-07-15T05:00:00.000Z",
+        configurationChecksum: `sha256:${"a".repeat(64)}`,
+        configurationRecordCount: 2,
+        assetCount: 1,
+        totalAssetBytes: 4
+      },
+      configuration: {
+        appConfig: { server: { host: "127.0.0.1", port: 39187 } },
+        tables: { alert_collections: [{ id: "set-default", name: "Everyday", enabled: 1 }] },
+        providerReconnectMetadata: [{ id: "provider-twitch", name: "Twitch", kind: "twitch" }],
+        overlayOutputs: [{ overlayId: "alerts", scope: "module:alerts:landscape:live", moduleId: "alerts", purpose: "live", targetProfileId: "landscape" }]
+      },
+      assets: [
+        {
+          id: "asset-1",
+          filename: "follow.png",
+          mediaType: "image",
+          mimeType: "image/png",
+          sizeBytes: 4,
+          checksum: `sha256:${"b".repeat(64)}`,
+          dataBase64: "iVBORw=="
+        }
+      ]
+    };
+
+    expect(archiveSchema.safeParse(archive).success).toBe(true);
+    expect(
+      archiveSchema.safeParse({
+        ...archive,
+        assets: [{ ...archive.assets[0], id: "asset/a" }]
+      }).success
+    ).toBe(false);
+    expect(
+      archiveSchema.safeParse({
+        ...archive,
+        manifest: {
+          ...archive.manifest,
+          totalAssetBytes: (core.configurationBackupLimits.maxTotalAssetBytes as number) + 1
+        }
+      }).success
+    ).toBe(false);
+    expect(
+      archiveSchema.safeParse({
+        ...archive,
+        configuration: {
+          ...archive.configuration,
+          tables: { provider_registrations: [{ id: "provider-twitch", accessToken: "do-not-export" }] }
+        }
+      }).success
+    ).toBe(false);
+  });
+
+  it("validates restore preflight and completion results", () => {
+    const preflight = schema("configurationRestorePreflightSchema");
+    const result = schema("configurationRestoreResultSchema");
+
+    expect(
+      preflight.safeParse({
+        state: "valid",
+        archiveId: `sha256:${"c".repeat(64)}`,
+        appVersion: "0.0.0",
+        schemaVersion: 9,
+        createdAt: "2026-07-15T05:00:00.000Z",
+        impact: { configurationRecords: 12, providers: 2, alertSets: 1, assets: 4, preferences: 1, browserOutputs: 2 },
+        runtime: { intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 },
+        blockers: [],
+        warnings: [{ summary: "Providers must reconnect", cause: "Credentials are excluded", nextStep: "Reconnect providers after restore", severity: "warning", occurredAt: null, referenceId: null, correction: null }]
+      }).success
+    ).toBe(true);
+
+    expect(
+      result.safeParse({
+        state: "completed",
+        safetyBackupPath: "C:/Users/James/.stream-jams/backups/pre-restore.streamjams-backup",
+        restored: { configurationRecords: 12, providers: 2, alertSets: 1, assets: 4, preferences: 1, browserOutputs: 2 },
+        regeneratedOutputs: [{ label: "Landscape live", url: "http://127.0.0.1:39187/overlay/alerts/live/new-key" }],
+        reconnectProviders: ["Twitch"],
+        warnings: []
       }).success
     ).toBe(true);
   });

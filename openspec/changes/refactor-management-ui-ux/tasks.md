@@ -64,11 +64,11 @@
 
 ## 8. Settings Backup And Restore
 
-- [ ] 8.1 Reframe Settings around preferences, local data/log maintenance, versions, route-key maintenance, diagnostics, and backup/restore.
-- [ ] 8.2 Implement versioned `.streamjams-backup` export with configuration, all user assets, checksums, and non-secret provider metadata.
-- [ ] 8.3 Implement preflight archive/schema/checksum/asset validation and a detailed restore impact summary.
-- [ ] 8.4 Block restore during live activity, create a safety backup, apply transactionally, regenerate route keys by default, and report reconnect steps.
-- [ ] 8.5 Add export secret-exclusion, validation, safety-backup, live-block, transaction, UI, Storybook, and Playwright coverage.
+- [x] 8.1 Reframe Settings around preferences, local data/log maintenance, versions, route-key maintenance, diagnostics, and backup/restore.
+- [x] 8.2 Implement versioned `.streamjams-backup` export with configuration, all user assets, checksums, and non-secret provider metadata.
+- [x] 8.3 Implement preflight archive/schema/checksum/asset validation and a detailed restore impact summary.
+- [x] 8.4 Block restore during live activity, create a safety backup, apply transactionally, regenerate route keys by default, and report reconnect steps.
+- [x] 8.5 Add export secret-exclusion, validation, safety-backup, live-block, transaction, UI, Storybook, and Playwright coverage.
 
 ## 9. Cleanup And Regression Pass
 

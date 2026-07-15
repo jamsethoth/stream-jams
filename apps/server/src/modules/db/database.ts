@@ -34,6 +34,8 @@ const migrations = [
   alertEditorDocumentsMigration
 ] satisfies readonly StreamJamsMigration[];
 
+export const currentSchemaVersion = migrations.length;
+
 export function openStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
   mkdirSync(dirname(databasePath), { recursive: true });
   return createStreamJamsDatabase(databasePath);

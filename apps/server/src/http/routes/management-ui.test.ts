@@ -536,6 +536,10 @@ class StubManagementUiQueryService {
       configurationRecordCount: 12,
       assetCount: 3,
       totalAssetBytes: 2048,
+      dataDirectory: "C:/Users/James/.stream-jams/data",
+      assetDirectory: "C:/Users/James/.stream-jams/assets",
+      logLevel: "INFO",
+      logRetentionHours: 48,
       secretExclusions: ["Provider credentials", "Overlay route keys"],
       blockers: []
     };

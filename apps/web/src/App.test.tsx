@@ -145,9 +145,22 @@ function createManagementApi(): ManagementApi {
         configurationRecordCount: 0,
         assetCount: 0,
         totalAssetBytes: 0,
+        dataDirectory: "C:/Users/James/.stream-jams/data",
+        assetDirectory: "C:/Users/James/.stream-jams/assets",
+        logLevel: "INFO" as const,
+        logRetentionHours: 48,
         secretExclusions: ["Provider credentials", "Overlay route keys"],
         blockers: []
       };
+    },
+    async exportConfigurationBackup() {
+      throw new Error("not called");
+    },
+    async preflightConfigurationRestore() {
+      throw new Error("not called");
+    },
+    async restoreConfiguration() {
+      throw new Error("not called");
     },
     async getDashboard() {
       return {

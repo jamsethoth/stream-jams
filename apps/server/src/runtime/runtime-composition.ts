@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { mkdir, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import {
   DefaultAlertMatcher,
@@ -14,7 +15,9 @@ import {
   DefaultPlaybackQueue,
   DefaultTtsService,
   NoopMediaTranscodingStage,
+  createAppVersion,
   createDefaultOverlayModuleRegistry,
+  overlayScopeSchema,
   type ConfigStore,
   type AlertBrowserSourceView,
   type ProviderKind,
@@ -45,7 +48,11 @@ import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
-import { openStreamJamsDatabase, type StreamJamsDatabase } from "../modules/db/database.js";
+import { ConfigurationBackupService } from "../modules/backup/configuration-backup-service.js";
+import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
+import { RuntimeMaintenanceGate } from "../modules/backup/runtime-maintenance-gate.js";
+import { SqliteConfigurationSnapshotRepository } from "../modules/backup/sqlite-configuration-snapshot-repository.js";
+import { currentSchemaVersion, openStreamJamsDatabase, type StreamJamsDatabase } from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
 import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
 import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.js";
@@ -140,8 +147,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const assetRepository = new SqliteAssetRepository(database.connection);
   const twitchAccountRepository = new SqliteTwitchAccountRepository(database.connection);
   const assetStore = new LocalAssetStore({ assetDirectory: initialConfig.storage.assetDirectory });
+  const assetValidator = new DefaultAssetValidator();
   const mediaImportPipeline = new DefaultMediaImportPipeline({
-    validator: new DefaultAssetValidator(),
+    validator: assetValidator,
     repository: assetRepository,
     store: assetStore,
     transcoder: new NoopMediaTranscodingStage(),
@@ -254,11 +262,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const eventIngestionService = new EventIngestionService({
     sink: eventPipeline
   });
+  const maintenanceGate = new RuntimeMaintenanceGate();
   const twitchEventSubClient = new TwitchEventSubClient({
     apiClient: options.twitchEventSubApiClient ?? new DefaultTwitchEventSubApiClient(),
     socketFactory: options.twitchEventSubSocketFactory ?? createNodeWebSocket,
     onNotification: async (message) => {
-      await eventIngestionService.ingestTwitchEventSubNotification(message);
+      await maintenanceGate.runIntake(() => eventIngestionService.ingestTwitchEventSubNotification(message));
     },
     now
   });
@@ -443,6 +452,53 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ruleMetadataRepository: alertSetMetadataRepository,
     clock: now
   });
+  const configurationBackupService = new ConfigurationBackupService({
+    appVersion: createAppVersion().version,
+    schemaVersion: currentSchemaVersion,
+    now,
+    generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
+    configStore,
+    snapshotRepository: new SqliteConfigurationSnapshotRepository(database.connection),
+    assetRepository,
+    assetStore,
+    assetValidator,
+    async getRuntime() {
+      const eventSubState = twitchEventSubRuntimeService.getStatus().state;
+      const playback = playbackCoordinator.getSnapshot();
+      return {
+        intakeActive:
+          maintenanceGate.activeIntakeCount > 0 ||
+          eventSubState === "connecting" ||
+          eventSubState === "connected" ||
+          eventSubState === "reconnecting",
+        playbackActive: playback.current !== null,
+        queuedPlaybackCount: playback.queued.length
+      };
+    },
+    async getAvailableBytes() {
+      await mkdir(initialConfig.storage.assetDirectory, { recursive: true });
+      const storage = await statfs(initialConfig.storage.assetDirectory);
+      return Number(storage.bavail) * Number(storage.bsize);
+    },
+    safetyBackupStore: new LocalConfigurationBackupStore({
+      directory: join(options.homeDirectory, ".stream-jams", "backups"),
+      now
+    }),
+    async regenerateOutput(output, restoredOrigin) {
+      const regenerated = await overlayOutputManagementService.regenerateKey(
+        {
+          overlayId: output.overlayId,
+          scope: overlayScopeSchema.parse(output.scope),
+          moduleId: output.moduleId,
+          purpose: output.purpose,
+          targetProfileId: output.targetProfileId
+        },
+        restoredOrigin
+      );
+      return { label: regenerated.output.label, url: regenerated.url };
+    },
+    runExclusive: (work) => maintenanceGate.runMaintenance(work)
+  });
   const managementUiService = new ManagementUiService({
     providerService: providerManagementService,
     alertSetService: alertSetManagementService,
@@ -463,24 +519,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     deleteAsset: (assetId) => assetLibraryService.deleteAsset(assetId),
     getDiagnosticsWorkspace: () =>
       diagnosticsService.getWorkspace({ limit: 200, runtimeLogLimit: 200, sinceHours: 2 }),
-    getConfigurationBackupSummary: async () => {
-      const [collections, rules, eventSources, ttsProviders] = await Promise.all([
-        alertService.listCollections(),
-        alertService.listRules(),
-        providerManagementService.listProviders("event-source"),
-        providerManagementService.listProviders("tts")
-      ]);
-      return {
-        state: "ready",
-        appVersion: "0.0.0",
-        schemaVersion: 6,
-        configurationRecordCount: collections.length + rules.length + eventSources.length + ttsProviders.length,
-        assetCount: 0,
-        totalAssetBytes: 0,
-        secretExclusions: ["Provider credentials", "Overlay route keys"],
-        blockers: []
-      };
-    }
+    getConfigurationBackupSummary: () => configurationBackupService.summary()
   });
   const overlayCompositionService = new DefaultOverlayCompositionService({
     configService: overlayModuleConfigService,
@@ -523,6 +562,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     twitchAuthService,
     twitchEventSubStatusService: twitchEventSubRuntimeService,
     diagnosticsService,
+    configurationBackupService,
     managementUiQueryService: managementUiService,
     overlayAccessService,
     overlayCompositionService,

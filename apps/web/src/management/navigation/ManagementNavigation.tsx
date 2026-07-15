@@ -1,5 +1,4 @@
 import type { MouseEvent } from "react";
-import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
 import {
   managementLegacyRoutes,
   managementPrimaryRoutes,
@@ -48,7 +47,6 @@ export function ManagementNavigation({ activeRoute, onNavigate }: ManagementNavi
         </ul>
       </nav>
       <div className="management-sidebar__footer">
-        <ThemeSwitcher />
         <span className="management-local-status"><span aria-hidden="true" /> Local only</span>
       </div>
     </aside>

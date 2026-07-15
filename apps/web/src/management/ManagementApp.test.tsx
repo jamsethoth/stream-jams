@@ -49,9 +49,9 @@ describe("ManagementApp", () => {
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
 
     await user.click(screen.getByRole("link", { name: "Settings" }));
-    const host = await screen.findByLabelText("Host");
-    await user.clear(host);
-    await user.type(host, "localhost");
+    const port = await screen.findByLabelText("Port");
+    await user.clear(port);
+    await user.type(port, "7161");
     await user.click(screen.getByRole("link", { name: "Assets" }));
 
     expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toBeInTheDocument();
@@ -459,9 +459,16 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
       configurationRecordCount: 0,
       assetCount: 0,
       totalAssetBytes: 0,
+      dataDirectory: "C:/Users/James/.stream-jams/data",
+      assetDirectory: "C:/Users/James/.stream-jams/assets",
+      logLevel: "INFO" as const,
+      logRetentionHours: 48,
       secretExclusions: ["Provider credentials", "Overlay route keys"],
       blockers: []
     })),
+    exportConfigurationBackup: vi.fn(async () => { throw new Error("not called"); }),
+    preflightConfigurationRestore: vi.fn(async () => { throw new Error("not called"); }),
+    restoreConfiguration: vi.fn(async () => { throw new Error("not called"); }),
     getDashboard: vi.fn(async () => ({
       twitch: {
         connected: false,

@@ -478,9 +478,147 @@ export const configurationBackupSummarySchema = z.object({
   configurationRecordCount: nonNegativeIntegerSchema,
   assetCount: nonNegativeIntegerSchema,
   totalAssetBytes: nonNegativeIntegerSchema,
+  dataDirectory: nonEmptyStringSchema,
+  assetDirectory: nonEmptyStringSchema,
+  logLevel: z.enum(["DEBUG", "INFO", "WARN", "ERROR"]),
+  logRetentionHours: positiveIntegerSchema,
   secretExclusions: z.array(nonEmptyStringSchema),
   blockers: z.array(actionableManagementErrorSchema)
 });
+
+const backupChecksumSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
+const backupJsonRecordSchema = z.record(z.string(), z.unknown());
+
+export const configurationBackupLimits = {
+  maxArchiveBytes: 512 * 1024 * 1024,
+  maxAssetCount: 10_000,
+  maxTotalAssetBytes: 384 * 1024 * 1024
+} as const;
+
+const backupStorageSafeIdSchema = nonEmptyStringSchema.regex(
+  /^[A-Za-z0-9_-]+$/u,
+  "Backup asset IDs may contain only letters, numbers, underscores, and hyphens"
+);
+
+export const configurationBackupProviderMetadataSchema = z.object({
+  id: nonEmptyStringSchema,
+  name: nonEmptyStringSchema,
+  kind: providerKindSchema
+});
+
+export const configurationBackupOutputSchema = z.object({
+  overlayId: nonEmptyStringSchema,
+  scope: nonEmptyStringSchema,
+  moduleId: nonEmptyStringSchema.nullable(),
+  purpose: overlayPurposeSchema,
+  targetProfileId: targetProfileIdSchema.nullable()
+});
+
+export const configurationBackupAssetSchema = z.object({
+  id: backupStorageSafeIdSchema,
+  filename: nonEmptyStringSchema,
+  mediaType: assetMediaTypeSchema,
+  mimeType: nonEmptyStringSchema,
+  sizeBytes: nonNegativeIntegerSchema,
+  checksum: backupChecksumSchema,
+  dataBase64: z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/u)
+});
+
+export const configurationBackupArchiveSchema = z.object({
+  manifest: z.object({
+    format: z.literal("stream-jams-backup"),
+    archiveVersion: z.literal(1),
+    appVersion: nonEmptyStringSchema,
+    schemaVersion: nonNegativeIntegerSchema,
+    createdAt: isoDateTimeSchema,
+    configurationChecksum: backupChecksumSchema,
+    configurationRecordCount: nonNegativeIntegerSchema,
+    assetCount: nonNegativeIntegerSchema.max(configurationBackupLimits.maxAssetCount),
+    totalAssetBytes: nonNegativeIntegerSchema.max(configurationBackupLimits.maxTotalAssetBytes)
+  }),
+  configuration: z.object({
+    appConfig: backupJsonRecordSchema,
+    tables: z.record(z.string(), z.array(backupJsonRecordSchema)),
+    providerReconnectMetadata: z.array(configurationBackupProviderMetadataSchema),
+    overlayOutputs: z.array(configurationBackupOutputSchema)
+  }),
+  assets: z.array(configurationBackupAssetSchema).max(configurationBackupLimits.maxAssetCount)
+}).superRefine((archive, context) => {
+  visitBackupValue(archive.configuration, [], (path) => {
+    context.addIssue({
+      code: "custom",
+      message: `Backup configuration contains a forbidden secret field at ${path.join(".")}`,
+      path: ["configuration", ...path]
+    });
+  });
+});
+
+export const configurationRestoreImpactSchema = z.object({
+  configurationRecords: nonNegativeIntegerSchema,
+  providers: nonNegativeIntegerSchema,
+  alertSets: nonNegativeIntegerSchema,
+  assets: nonNegativeIntegerSchema,
+  preferences: nonNegativeIntegerSchema,
+  browserOutputs: nonNegativeIntegerSchema
+});
+
+export const configurationRestoreRuntimeSchema = z.object({
+  intakeActive: z.boolean(),
+  playbackActive: z.boolean(),
+  queuedPlaybackCount: nonNegativeIntegerSchema
+});
+
+export const configurationRestorePreflightSchema = z.object({
+  state: z.enum(["valid", "invalid", "blocked-live"]),
+  archiveId: backupChecksumSchema.nullable(),
+  appVersion: nonEmptyStringSchema.nullable(),
+  schemaVersion: nonNegativeIntegerSchema.nullable(),
+  createdAt: isoDateTimeSchema.nullable(),
+  impact: configurationRestoreImpactSchema.nullable(),
+  runtime: configurationRestoreRuntimeSchema,
+  blockers: z.array(actionableManagementErrorSchema),
+  warnings: z.array(actionableManagementErrorSchema)
+});
+
+export const configurationRestoreRequestSchema = z.object({
+  archive: configurationBackupArchiveSchema,
+  archiveId: backupChecksumSchema,
+  confirmation: z.literal("RESTORE"),
+  regenerateRouteKeys: z.literal(true)
+});
+
+export const configurationRestoreResultSchema = z.object({
+  state: z.literal("completed"),
+  safetyBackupPath: nonEmptyStringSchema,
+  restored: configurationRestoreImpactSchema,
+  regeneratedOutputs: z.array(z.object({
+    label: nonEmptyStringSchema,
+    url: nonEmptyStringSchema
+  })),
+  reconnectProviders: z.array(nonEmptyStringSchema),
+  warnings: z.array(actionableManagementErrorSchema)
+});
+
+function visitBackupValue(
+  value: unknown,
+  path: readonly (string | number)[],
+  onForbiddenField: (path: readonly (string | number)[]) => void
+): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => visitBackupValue(item, [...path, index], onForbiddenField));
+    return;
+  }
+  if (value === null || typeof value !== "object") return;
+
+  for (const [key, nested] of Object.entries(value)) {
+    const canonicalKey = key.replace(/[^a-z0-9]/giu, "").toLocaleLowerCase();
+    if (canonicalKey !== "nonsecretconfigjson" && /(?:password|credential|token|authorization|secret|routekey|keyhash|rawkey|accesskey)/u.test(canonicalKey)) {
+      onForbiddenField([...path, key]);
+      continue;
+    }
+    visitBackupValue(nested, [...path, key], onForbiddenField);
+  }
+}
 
 export function normalizeAssetTags(tags: readonly string[]): readonly string[] {
   return [...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
@@ -573,6 +711,15 @@ export type DiagnosticsRawLogView = z.infer<typeof diagnosticsRawLogViewSchema>;
 export type DiagnosticsWorkspaceView = z.infer<typeof diagnosticsWorkspaceViewSchema>;
 export type HomeSetupSummary = z.infer<typeof homeSetupSummarySchema>;
 export type ConfigurationBackupSummary = z.infer<typeof configurationBackupSummarySchema>;
+export type ConfigurationBackupProviderMetadata = z.infer<typeof configurationBackupProviderMetadataSchema>;
+export type ConfigurationBackupOutput = z.infer<typeof configurationBackupOutputSchema>;
+export type ConfigurationBackupAsset = z.infer<typeof configurationBackupAssetSchema>;
+export type ConfigurationBackupArchive = z.infer<typeof configurationBackupArchiveSchema>;
+export type ConfigurationRestoreImpact = z.infer<typeof configurationRestoreImpactSchema>;
+export type ConfigurationRestoreRuntime = z.infer<typeof configurationRestoreRuntimeSchema>;
+export type ConfigurationRestorePreflight = z.infer<typeof configurationRestorePreflightSchema>;
+export type ConfigurationRestoreRequest = z.infer<typeof configurationRestoreRequestSchema>;
+export type ConfigurationRestoreResult = z.infer<typeof configurationRestoreResultSchema>;
 
 export interface AlertSetActivationDecision {
   readonly allowed: boolean;

@@ -138,8 +138,28 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
         configurationRecordCount: 0,
         assetCount: 0,
         totalAssetBytes: 0,
+        dataDirectory: "C:/Users/James/.stream-jams/data",
+        assetDirectory: "C:/Users/James/.stream-jams/assets",
+        logLevel: "INFO" as const,
+        logRetentionHours: 48,
         secretExclusions: ["Provider credentials", "Overlay route keys"],
         blockers: []
+      };
+    },
+    async exportConfigurationBackup() {
+      return storyBackupArchive();
+    },
+    async preflightConfigurationRestore() {
+      return storyBackupPreflight();
+    },
+    async restoreConfiguration() {
+      return {
+        state: "completed" as const,
+        safetyBackupPath: "C:/Users/James/.stream-jams/backups/pre-restore.streamjams-backup",
+        restored: storyBackupPreflight().impact!,
+        regeneratedOutputs: [],
+        reconnectProviders: [],
+        warnings: []
       };
     },
     async getDashboard() {
@@ -268,6 +288,28 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
   } satisfies ManagementApi;
 
   return api;
+}
+
+export function storyBackupArchive() {
+  return {
+    manifest: { format: "stream-jams-backup" as const, archiveVersion: 1 as const, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
+    configuration: { appConfig: {}, tables: {}, providerReconnectMetadata: [], overlayOutputs: [] },
+    assets: []
+  };
+}
+
+export function storyBackupPreflight() {
+  return {
+    state: "valid" as const,
+    archiveId: `sha256:${"b".repeat(64)}`,
+    appVersion: "0.0.0",
+    schemaVersion: 9,
+    createdAt: "2026-07-15T05:00:00.000Z",
+    impact: { configurationRecords: 0, providers: 0, alertSets: 0, assets: 0, preferences: 1, browserOutputs: 0 },
+    runtime: { intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 },
+    blockers: [],
+    warnings: []
+  };
 }
 
 export function createStoryAssetApi(overrides: Partial<AssetApi> = {}): AssetApi {
