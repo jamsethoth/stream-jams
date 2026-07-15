@@ -7,11 +7,11 @@
 
 ## 1. Domain And API Contracts
 
-- [ ] 1.1 Audit current alert, provider, output, asset, diagnostics, and settings models and define required persistence migrations.
-- [ ] 1.2 Add core schemas and domain rules for alert sets, provider/event identity, variations, target profiles, validation, output state, sample payloads, editor documents, and asset usage.
-- [ ] 1.3 Add server view models and mappings for Home, provider setup/detail, alert sets/editor, assets, diagnostics, and backup/restore summaries.
-- [ ] 1.4 Extend existing management and alert API clients with the new typed contracts instead of adding a parallel client.
-- [ ] 1.5 Add schema, mapping, repository, and route regression tests and run typecheck for touched packages.
+- [x] 1.1 Audit current alert, provider, output, asset, diagnostics, and settings models and define required persistence migrations.
+- [x] 1.2 Add core schemas and domain rules for alert sets, provider/event identity, variations, target profiles, validation, output state, sample payloads, editor documents, and asset usage.
+- [x] 1.3 Add server view models and mappings for Home, provider setup/detail, alert sets/editor, assets, diagnostics, and backup/restore summaries.
+- [x] 1.4 Extend existing management and alert API clients with the new typed contracts instead of adding a parallel client.
+- [x] 1.5 Add schema, mapping, repository, and route regression tests and run typecheck for touched packages.
 
 ## 2. App Shell Routing And Design Foundation
 

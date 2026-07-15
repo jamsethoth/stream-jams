@@ -159,6 +159,8 @@ export type * from "./moderation/moderation-service.js";
 export { DefaultModerationService, InvalidModerationSettingsError } from "./moderation/moderation-service.js";
 export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplacement } from "./moderation/default-rules.js";
 
+export * from "./management/contracts.js";
+
 export type * from "./templates/template-renderer.js";
 export { DefaultTemplateRenderer } from "./templates/template-renderer.js";
 export type * from "./templates/safe-template-renderer.js";

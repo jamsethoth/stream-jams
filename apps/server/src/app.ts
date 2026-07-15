@@ -11,6 +11,7 @@ import {
   registerManagementSessionRoutes,
   type ManagementSessionRouteDependencies
 } from "./http/routes/management-session.js";
+import { registerManagementUiRoutes, type ManagementUiRouteDependencies } from "./http/routes/management-ui.js";
 import { registerModerationRoutes, type ModerationRouteDependencies } from "./http/routes/moderation.js";
 import {
   registerOverlayOutputManagementRoutes,
@@ -38,6 +39,7 @@ export interface ServerErrorLogEntry {
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
+    Partial<ManagementUiRouteDependencies>,
     Partial<ModerationRouteDependencies>,
     Partial<DiagnosticsRouteDependencies>,
     Partial<OverlayModuleRouteDependencies>,
@@ -83,6 +85,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
         ? {}
         : { managementOriginPreHandler: dependencies.managementOriginPreHandler })
     });
+  }
+
+  if (dependencies.managementUiQueryService !== undefined) {
+    if (!hasManagementUiRouteDependencies(dependencies)) {
+      throw new Error("Management UI routes require query service, management auth, and rate-limit hooks");
+    }
+
+    registerManagementUiRoutes(app, dependencies);
   }
 
   if (dependencies.moderationService !== undefined) {
@@ -197,6 +207,16 @@ function hasModerationRouteDependencies(
 ): dependencies is ServerAppDependencies & ModerationRouteDependencies {
   return (
     dependencies.moderationService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasManagementUiRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & ManagementUiRouteDependencies {
+  return (
+    dependencies.managementUiQueryService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

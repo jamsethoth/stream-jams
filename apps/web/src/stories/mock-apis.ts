@@ -26,6 +26,42 @@ import {
 
 export function createStoryManagementApi(overrides: Partial<ManagementApi> = {}): ManagementApi {
   const api = {
+    async getHomeSetupSummary() {
+      return { readiness: [], activeAlertSet: null, actionableProblems: [] };
+    },
+    async listRegisteredProviders() {
+      return [];
+    },
+    async getProviderActivationImpact() {
+      return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
+    },
+    async getTtsProviderSafetySettings() {
+      return { defaultVoiceId: null, volume: 1, minimumRate: 0.5, maximumRate: 2, maximumTextLength: 240 };
+    },
+    async listAlertSets() {
+      return [];
+    },
+    async getAlertEditorDocument() {
+      throw new Error("No alert editor document configured for this story.");
+    },
+    async listAssetLibraryItems() {
+      return [];
+    },
+    async getDiagnosticsWorkspace() {
+      return { problems: [], events: [], rawLogs: [] };
+    },
+    async getConfigurationBackupSummary() {
+      return {
+        state: "ready" as const,
+        appVersion: "0.0.0",
+        schemaVersion: 4,
+        configurationRecordCount: 0,
+        assetCount: 0,
+        totalAssetBytes: 0,
+        secretExclusions: ["Provider credentials", "Overlay route keys"],
+        blockers: []
+      };
+    },
     async getDashboard() {
       return storyDashboardSummary;
     },

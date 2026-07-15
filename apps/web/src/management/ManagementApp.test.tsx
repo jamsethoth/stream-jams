@@ -241,6 +241,37 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
   const initialTwitchStatus = options.twitchConnected === true ? twitchConnectedStatus : twitchDisconnectedStatus;
 
   return {
+    getHomeSetupSummary: vi.fn(async () => ({ readiness: [], activeAlertSet: null, actionableProblems: [] })),
+    listRegisteredProviders: vi.fn(async () => []),
+    getProviderActivationImpact: vi.fn(async () => ({
+      matchedAlertCount: 0,
+      unmatchedAlertCount: 0,
+      blockers: [],
+      warnings: []
+    })),
+    getTtsProviderSafetySettings: vi.fn(async () => ({
+      defaultVoiceId: null,
+      volume: 1,
+      minimumRate: 0.5,
+      maximumRate: 2,
+      maximumTextLength: 240
+    })),
+    listAlertSets: vi.fn(async () => []),
+    getAlertEditorDocument: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    listAssetLibraryItems: vi.fn(async () => []),
+    getDiagnosticsWorkspace: vi.fn(async () => ({ problems: [], events: [], rawLogs: [] })),
+    getConfigurationBackupSummary: vi.fn(async () => ({
+      state: "ready" as const,
+      appVersion: "0.0.0",
+      schemaVersion: 4,
+      configurationRecordCount: 0,
+      assetCount: 0,
+      totalAssetBytes: 0,
+      secretExclusions: ["Provider credentials", "Overlay route keys"],
+      blockers: []
+    })),
     getDashboard: vi.fn(async () => ({
       twitch: {
         connected: false,

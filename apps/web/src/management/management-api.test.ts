@@ -2,6 +2,118 @@ import { describe, expect, it, vi } from "vitest";
 import { createHttpManagementApi } from "./management-api.js";
 
 describe("createHttpManagementApi", () => {
+  it("loads runtime-validated UI refactor contracts through the existing client", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse(managementSession());
+      }
+
+      const responses: Record<string, unknown> = {
+        "/management/home": {
+          readiness: [],
+          activeAlertSet: null,
+          actionableProblems: []
+        },
+        "/management/providers?capability=event-source": [
+          {
+            id: "provider-twitch-main",
+            name: "Main Twitch",
+            kind: "twitch",
+            capability: "event-source",
+            active: true,
+            connectionState: "connected",
+            intakeState: "active",
+            validatedAt: "2026-07-15T05:00:00.000Z",
+            error: null,
+            usedByAlertCount: 4
+          }
+        ],
+        "/management/providers/provider-twitch-main/activation-impact": {
+          matchedAlertCount: 4,
+          unmatchedAlertCount: 0,
+          blockers: [],
+          warnings: []
+        },
+        "/management/providers/provider-speakerbot/tts-safety": {
+          defaultVoiceId: "voice-1",
+          volume: 0.8,
+          minimumRate: 0.5,
+          maximumRate: 2,
+          maximumTextLength: 240
+        },
+        "/management/alert-sets": [],
+        "/management/alerts/alert-follow/editor": editorDocument(),
+        "/management/assets/library": [],
+        "/management/diagnostics/workspace": {
+          problems: [],
+          events: [],
+          rawLogs: []
+        },
+        "/management/settings/backup-summary": {
+          state: "ready",
+          appVersion: "0.0.0",
+          schemaVersion: 4,
+          configurationRecordCount: 12,
+          assetCount: 3,
+          totalAssetBytes: 2048,
+          secretExclusions: ["Provider credentials", "Overlay route keys"],
+          blockers: []
+        }
+      };
+
+      if (url in responses) {
+        return jsonResponse(responses[url]);
+      }
+
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher }) as unknown as UiContractManagementApi;
+
+    expect(api.getHomeSetupSummary).toBeTypeOf("function");
+    expect(api.listRegisteredProviders).toBeTypeOf("function");
+    expect(api.getProviderActivationImpact).toBeTypeOf("function");
+    expect(api.getTtsProviderSafetySettings).toBeTypeOf("function");
+    expect(api.listAlertSets).toBeTypeOf("function");
+    expect(api.getAlertEditorDocument).toBeTypeOf("function");
+    expect(api.listAssetLibraryItems).toBeTypeOf("function");
+    expect(api.getDiagnosticsWorkspace).toBeTypeOf("function");
+    expect(api.getConfigurationBackupSummary).toBeTypeOf("function");
+
+    await expect(api.getHomeSetupSummary()).resolves.toMatchObject({ activeAlertSet: null });
+    await expect(api.listRegisteredProviders("event-source")).resolves.toHaveLength(1);
+    await expect(api.getProviderActivationImpact("provider-twitch-main")).resolves.toMatchObject({ matchedAlertCount: 4 });
+    await expect(api.getTtsProviderSafetySettings("provider-speakerbot")).resolves.toMatchObject({ maximumTextLength: 240 });
+    await expect(api.listAlertSets()).resolves.toEqual([]);
+    await expect(api.getAlertEditorDocument("alert-follow")).resolves.toMatchObject({ id: "alert-follow" });
+    await expect(api.listAssetLibraryItems()).resolves.toEqual([]);
+    await expect(api.getDiagnosticsWorkspace()).resolves.toEqual({ problems: [], events: [], rawLogs: [] });
+    await expect(api.getConfigurationBackupSummary()).resolves.toMatchObject({ state: "ready" });
+  });
+
+  it("rejects invalid UI refactor responses at the existing client boundary", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse(managementSession());
+      }
+
+      if (url === "/management/settings/backup-summary") {
+        return jsonResponse({ state: "ready", secretExclusions: [] });
+      }
+
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher }) as unknown as UiContractManagementApi;
+
+    expect(api.getConfigurationBackupSummary).toBeTypeOf("function");
+    if (typeof api.getConfigurationBackupSummary !== "function") {
+      return;
+    }
+
+    await expect(api.getConfigurationBackupSummary()).rejects.toThrow();
+  });
+
   it("creates one management session and sends bearer headers to protected routes", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -389,5 +501,38 @@ function managementSession(): { readonly id: string; readonly csrfToken: string 
   return {
     id: "mgmt_session",
     csrfToken: "csrf_session"
+  };
+}
+
+interface UiContractManagementApi {
+  getHomeSetupSummary(): Promise<unknown>;
+  listRegisteredProviders(capability: "event-source" | "tts"): Promise<readonly unknown[]>;
+  getProviderActivationImpact(providerId: string): Promise<unknown>;
+  getTtsProviderSafetySettings(providerId: string): Promise<unknown>;
+  listAlertSets(): Promise<readonly unknown[]>;
+  getAlertEditorDocument(alertId: string): Promise<unknown>;
+  listAssetLibraryItems(): Promise<readonly unknown[]>;
+  getDiagnosticsWorkspace(): Promise<unknown>;
+  getConfigurationBackupSummary(): Promise<unknown>;
+}
+
+function editorDocument() {
+  return {
+    id: "alert-follow",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "follow",
+    kind: "default",
+    parentAlertId: null,
+    name: "New follower",
+    enabled: true,
+    conditions: [],
+    durationMs: 5000,
+    layers: [],
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [] },
+      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
+    ],
+    samplePayloads: [{ id: "sample-normal", label: "Normal follower", kind: "built-in", payload: { userName: "viewer" } }]
   };
 }

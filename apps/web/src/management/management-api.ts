@@ -1,3 +1,24 @@
+import {
+  alertEditorDocumentSchema,
+  alertSetOverviewSchema,
+  assetLibraryItemSchema,
+  configurationBackupSummarySchema,
+  diagnosticsWorkspaceViewSchema,
+  homeSetupSummarySchema,
+  providerActivationImpactSchema,
+  registeredProviderViewSchema,
+  ttsProviderSafetySettingsSchema,
+  type AlertEditorDocument,
+  type AlertSetOverview,
+  type AssetLibraryItem,
+  type ConfigurationBackupSummary,
+  type DiagnosticsWorkspaceView,
+  type HomeSetupSummary,
+  type ProviderActivationImpact,
+  type ProviderCapability,
+  type RegisteredProviderView,
+  type TtsProviderSafetySettings
+} from "@stream-jams/core";
 import { createManagementHttpClient, type HttpManagementClientOptions } from "./management-http-client.js";
 
 export interface DashboardSummary {
@@ -277,6 +298,15 @@ export interface TwitchAuthStartResultView {
 }
 
 export interface ManagementApi {
+  getHomeSetupSummary(): Promise<HomeSetupSummary>;
+  listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
+  getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
+  getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings>;
+  listAlertSets(): Promise<readonly AlertSetOverview[]>;
+  getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
+  listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
+  getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
+  getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
   getDashboard(): Promise<DashboardSummary>;
   getServerConfig(): Promise<ServerConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
@@ -348,6 +378,23 @@ interface OverlayModuleConfigResponse {
 export function createHttpManagementApi(options: HttpManagementApiOptions = {}): ManagementApi {
   const client = createManagementHttpClient(options);
 
+  async function getContract<T>(path: string, contract: RuntimeContract<T>, errorMessage: string): Promise<T> {
+    return contract.parse(await client.getJson<unknown>(path, errorMessage));
+  }
+
+  async function getContractList<T>(
+    path: string,
+    contract: RuntimeContract<T>,
+    errorMessage: string
+  ): Promise<readonly T[]> {
+    const response = await client.getJson<unknown>(path, errorMessage);
+    if (!Array.isArray(response)) {
+      throw new TypeError("Expected a management response array");
+    }
+
+    return response.map((item) => contract.parse(item));
+  }
+
   async function getPlayback(): Promise<PlaybackView> {
     return mapPlaybackSnapshot(await client.getJson<PlaybackQueueSnapshotResponse>("/playback", "Unable to load playback."));
   }
@@ -372,6 +419,70 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   }
 
   return {
+    getHomeSetupSummary() {
+      return getContract("/management/home", homeSetupSummarySchema, "Unable to load Home setup summary.");
+    },
+
+    listRegisteredProviders(capability) {
+      return getContractList(
+        `/management/providers?capability=${encodeURIComponent(capability)}`,
+        registeredProviderViewSchema,
+        "Unable to load registered providers."
+      );
+    },
+
+    getProviderActivationImpact(providerId) {
+      return getContract(
+        `/management/providers/${encodeURIComponent(providerId)}/activation-impact`,
+        providerActivationImpactSchema,
+        "Unable to load provider activation impact."
+      );
+    },
+
+    getTtsProviderSafetySettings(providerId) {
+      return getContract(
+        `/management/providers/${encodeURIComponent(providerId)}/tts-safety`,
+        ttsProviderSafetySettingsSchema,
+        "Unable to load TTS provider safety settings."
+      );
+    },
+
+    listAlertSets() {
+      return getContractList("/management/alert-sets", alertSetOverviewSchema, "Unable to load alert sets.");
+    },
+
+    getAlertEditorDocument(alertId) {
+      return getContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/editor`,
+        alertEditorDocumentSchema,
+        "Unable to load alert editor document."
+      );
+    },
+
+    listAssetLibraryItems() {
+      return getContractList(
+        "/management/assets/library",
+        assetLibraryItemSchema,
+        "Unable to load asset library."
+      );
+    },
+
+    getDiagnosticsWorkspace() {
+      return getContract(
+        "/management/diagnostics/workspace",
+        diagnosticsWorkspaceViewSchema,
+        "Unable to load diagnostics workspace."
+      );
+    },
+
+    getConfigurationBackupSummary() {
+      return getContract(
+        "/management/settings/backup-summary",
+        configurationBackupSummarySchema,
+        "Unable to load backup summary."
+      );
+    },
+
     async getDashboard() {
       const [playback, overlayClients] = await Promise.all([getPlayback(), jsonList<OverlayClientView>("/management/overlay-clients")]);
       return {
@@ -560,6 +671,10 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       return postPlayback("/playback/do-not-disturb", { enabled });
     }
   };
+}
+
+interface RuntimeContract<T> {
+  parse(input: unknown): T;
 }
 
 function mapPlaybackSnapshot(snapshot: PlaybackQueueSnapshotResponse): PlaybackView {
