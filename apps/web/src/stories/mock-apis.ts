@@ -32,11 +32,36 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async listRegisteredProviders() {
       return [];
     },
+    async validateProvider(input) {
+      return {
+        valid: true,
+        connectionState: "connected" as const,
+        intakeState: input.kind === "twitch" || input.kind === "streamerbot" ? "inactive" as const : null,
+        validatedAt: "2026-07-15T05:00:00.000Z",
+        availableVoices: [],
+        error: null
+      };
+    },
+    async registerProvider() {
+      throw new Error("No provider registration configured for this story.");
+    },
+    async getProvider() {
+      throw new Error("No provider detail configured for this story.");
+    },
+    async activateProvider() {
+      throw new Error("No provider activation configured for this story.");
+    },
     async getProviderActivationImpact() {
       return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
     },
     async getTtsProviderSafetySettings() {
       return { defaultVoiceId: null, volume: 1, minimumRate: 0.5, maximumRate: 2, maximumTextLength: 240 };
+    },
+    async updateTtsSafety(_providerId, input) {
+      return input;
+    },
+    async testProviderVoice() {
+      return { delivered: true, error: null };
     },
     async listAlertSets() {
       return [];

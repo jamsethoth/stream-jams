@@ -17,7 +17,7 @@ describe("App", () => {
         name: "Stream Jams"
       })
     ).toBeInTheDocument();
-    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Setup readiness" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Alerts" }));
     expect(await screen.findByText("No alert collections configured.")).toBeInTheDocument();
@@ -44,11 +44,36 @@ function createManagementApi(): ManagementApi {
     async listRegisteredProviders() {
       return [];
     },
+    async validateProvider(input) {
+      return {
+        valid: true,
+        connectionState: "connected" as const,
+        intakeState: input.kind === "twitch" || input.kind === "streamerbot" ? "inactive" as const : null,
+        validatedAt: "2026-07-15T05:00:00.000Z",
+        availableVoices: [],
+        error: null
+      };
+    },
+    async registerProvider() {
+      throw new Error("not called");
+    },
+    async getProvider() {
+      throw new Error("not called");
+    },
+    async activateProvider() {
+      throw new Error("not called");
+    },
     async getProviderActivationImpact() {
       return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
     },
     async getTtsProviderSafetySettings() {
       return { defaultVoiceId: null, volume: 1, minimumRate: 0.5, maximumRate: 2, maximumTextLength: 240 };
+    },
+    async updateTtsSafety(_providerId, input) {
+      return input;
+    },
+    async testProviderVoice() {
+      return { delivered: true, error: null };
     },
     async listAlertSets() {
       return [];

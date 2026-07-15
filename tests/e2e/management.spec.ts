@@ -48,7 +48,7 @@ test("management navigation shows copyable overlay URLs", async ({ page }) => {
 
   await page.goto("/manage");
 
-  await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await page.getByRole("link", { name: "Overlay outputs" }).click();
 
   await expect(page.getByRole("heading", { name: "Alerts test" })).toBeVisible();
@@ -149,7 +149,7 @@ test("management diagnostics include backend error code and id", async ({ page }
       json: { id: "mgmt_e2e" }
     });
   });
-  await page.route("**/playback", async (route) => {
+  await page.route("**/management/home", async (route) => {
     await route.fulfill({
       contentType: "application/json",
       json: {

@@ -114,6 +114,122 @@ describe("createHttpManagementApi", () => {
     await expect(api.getConfigurationBackupSummary()).rejects.toThrow();
   });
 
+  it("manages provider registration and TTS safety through typed contracts", async () => {
+    const setup = {
+      name: "Studio Speaker.bot",
+      kind: "speakerbot" as const,
+      configuration: {
+        protocol: "ws" as const,
+        host: "127.0.0.1",
+        port: 7680,
+        endpoint: "/"
+      }
+    };
+    const validation = {
+      valid: true,
+      connectionState: "connected",
+      intakeState: null,
+      validatedAt: "2026-07-15T05:00:00.000Z",
+      availableVoices: [],
+      error: null
+    };
+    const safety = {
+      defaultVoiceId: null,
+      volume: 0.8,
+      minimumRate: 0.5,
+      maximumRate: 2,
+      maximumTextLength: 240
+    };
+    const provider = {
+      provider: {
+        id: "provider-speakerbot",
+        name: setup.name,
+        kind: setup.kind,
+        capability: "tts",
+        active: true,
+        connectionState: "connected",
+        intakeState: null,
+        validatedAt: validation.validatedAt,
+        error: null,
+        usedByAlertCount: 2
+      },
+      configuration: setup.configuration,
+      availableVoices: [],
+      ttsSafety: safety
+    };
+    const impact = {
+      matchedAlertCount: 2,
+      unmatchedAlertCount: 0,
+      blockers: [],
+      warnings: []
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse(managementSession());
+      }
+
+      expect(init?.headers).toMatchObject({
+        authorization: "Bearer mgmt_session"
+      });
+
+      if (url === "/management/providers/validate") {
+        expect(init).toMatchObject({ method: "POST", body: JSON.stringify(setup) });
+        return jsonResponse(validation);
+      }
+      if (url === "/management/providers") {
+        expect(init).toMatchObject({ method: "POST", body: JSON.stringify(setup) });
+        return jsonResponse({ status: "registered", provider, validation });
+      }
+      if (url === "/management/providers/provider-speakerbot" && init?.method === undefined) {
+        return jsonResponse(provider);
+      }
+      if (url === "/management/providers/provider-speakerbot/activate") {
+        expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ confirmWarnings: true }) });
+        return jsonResponse({ provider: provider.provider, replacedProviderId: null, impact });
+      }
+      if (url === "/management/providers/provider-speakerbot/tts-safety") {
+        expect(init).toMatchObject({ method: "PUT", body: JSON.stringify(safety) });
+        return jsonResponse(safety);
+      }
+      if (url === "/management/providers/provider-speakerbot/test-voice") {
+        expect(init).toMatchObject({ method: "POST" });
+        expect(init?.body).toBeUndefined();
+        return jsonResponse({ delivered: true, error: null });
+      }
+
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.validateProvider(setup)).resolves.toEqual(validation);
+    await expect(api.registerProvider(setup)).resolves.toEqual({ status: "registered", provider, validation });
+    await expect(api.getProvider("provider-speakerbot")).resolves.toEqual(provider);
+    await expect(api.activateProvider("provider-speakerbot", true)).resolves.toEqual({
+      provider: provider.provider,
+      replacedProviderId: null,
+      impact
+    });
+    await expect(api.updateTtsSafety("provider-speakerbot", safety)).resolves.toEqual(safety);
+    await expect(api.testProviderVoice("provider-speakerbot")).resolves.toEqual({ delivered: true, error: null });
+  });
+
+  it("rejects invalid provider command responses", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        return jsonResponse(managementSession());
+      }
+      if (url === "/management/providers/provider-speakerbot/test-voice") {
+        return jsonResponse({ delivered: "yes", error: null });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.testProviderVoice("provider-speakerbot")).rejects.toThrow();
+  });
+
   it("creates one management session and sends bearer headers to protected routes", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

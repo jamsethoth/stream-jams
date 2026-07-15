@@ -1,21 +1,21 @@
 import { useMemo } from "react";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
-import { DashboardPanel } from "./dashboard/DashboardPanel.js";
 import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
 import { PageHeader } from "./foundation/PageHeader.js";
 import { StatusBadge } from "./foundation/StatusBadge.js";
 import { createHttpManagementApi, type ManagementApi } from "./management-api.js";
+import { HomePanel } from "./home/HomePanel.js";
 import { AlertConfigurationPanel, type AlertConfigurationApi } from "./modules/alerts/AlertConfigurationPanel.js";
 import { ModuleManagementPanel } from "./modules/ModuleManagementPanel.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "./navigation/dirty-navigation.js";
 import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
 import { OverlayOutputsPanel } from "./overlays/OverlayOutputsPanel.js";
 import { PlaybackPanel } from "./playback/PlaybackPanel.js";
+import { EventSourcesPage } from "./providers/EventSourcesPage.js";
+import { TtsProvidersPage } from "./providers/TtsProvidersPage.js";
 import { getManagementRouteDefinition, type ManagementRoute } from "./routing/management-route.js";
 import { SettingsPanel } from "./settings/SettingsPanel.js";
-import { TtsPanel } from "./tts/TtsPanel.js";
-import { TwitchPanel } from "./twitch/TwitchPanel.js";
 
 export interface ManagementAppProps {
   readonly assetApi: AssetApi;
@@ -69,11 +69,11 @@ function RouteContent({
 }: ResolvedManagementAppProps & { readonly route: ManagementRoute }) {
   switch (route.id) {
     case "home":
-      return <DashboardPanel managementApi={managementApi} />;
+      return <HomePanel managementApi={managementApi} />;
     case "event-sources":
-      return <TwitchPanel managementApi={managementApi} />;
+      return <EventSourcesPage managementApi={managementApi} />;
     case "tts-providers":
-      return <TtsPanel managementApi={managementApi} />;
+      return <TtsProvidersPage managementApi={managementApi} />;
     case "modules-alerts":
       return <AlertConfigurationPanel alertApi={alertApi} assetApi={assetApi} />;
     case "assets":

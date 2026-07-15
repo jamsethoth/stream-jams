@@ -16,6 +16,7 @@ import {
   NoopMediaTranscodingStage,
   createDefaultOverlayModuleRegistry,
   type ConfigStore,
+  type ProviderKind,
   type SecretStore
 } from "@stream-jams/core";
 import type { FastifyInstance } from "fastify";
@@ -52,6 +53,13 @@ import {
 } from "../modules/overlays/overlay-output-management-service.js";
 import { SqliteOverlayAccessKeyRepository } from "../modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "../modules/playback/playback-coordinator.js";
+import { ManagementUiService } from "../modules/providers/management-ui-service.js";
+import {
+  createProviderManagementAdapters,
+  type SpeakerBotSocket
+} from "../modules/providers/provider-management-adapters.js";
+import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
+import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
 import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
 import { createRedactor } from "../modules/security/redactor.js";
 import {
@@ -299,6 +307,93 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ],
     now
   });
+  const providerRegistrationRepository = new SqliteProviderRegistrationRepository(database.connection);
+  const providerManagementService = new ProviderManagementService({
+    repository: providerRegistrationRepository,
+    adapters: createProviderManagementAdapters({
+      twitchOAuthService: twitchAuthService,
+      twitchEventSubRuntimeService,
+      streamerBotSocketFactory: createNodeProviderWebSocket,
+      speakerBotSocketFactory: createNodeProviderWebSocket,
+      ttsService,
+      now
+    }),
+    secretStore,
+    async getActivationImpact(providerId) {
+      const target = await providerRegistrationRepository.findById(providerId);
+      if (target === null) {
+        return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
+      }
+      const activeRules = await alertService.listActiveRules();
+      const affectedAlertCount =
+        target.provider.capability === "event-source"
+          ? activeRules.length
+          : activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length;
+      const current = await providerRegistrationRepository.findActive(target.provider.capability);
+      const changesProviderKind =
+        current !== null && current.provider.id !== target.provider.id && current.provider.kind !== target.provider.kind;
+      if (!changesProviderKind || affectedAlertCount === 0) {
+        return { matchedAlertCount: affectedAlertCount, unmatchedAlertCount: 0, blockers: [], warnings: [] };
+      }
+      return {
+        matchedAlertCount: 0,
+        unmatchedAlertCount: affectedAlertCount,
+        blockers: [],
+        warnings: [
+          {
+            summary: "Active alerts use a different provider kind",
+            cause: `${affectedAlertCount} active alert${affectedAlertCount === 1 ? "" : "s"} currently use ${current.provider.name}.`,
+            nextStep: `Confirm the switch to ${target.provider.name}, then review affected alerts before going live.`,
+            severity: "warning",
+            occurredAt: now().toISOString(),
+            referenceId: null,
+            correction: { label: "Review active alerts", route: "/modules/alerts" }
+          }
+        ]
+      };
+    },
+    async getUsedByAlertCount(kind: ProviderKind) {
+      const activeRules = await alertService.listActiveRules();
+      return kind === "speakerbot" || kind === "browser-speech"
+        ? activeRules.filter((rule) => rule.variants.some((variant) => variant.enabled && variant.ttsConfig !== null)).length
+        : activeRules.length;
+    },
+    generateId: () => `provider_${randomBytes(16).toString("base64url")}`,
+    generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
+    now
+  });
+  const managementUiService = new ManagementUiService({
+    providerService: providerManagementService,
+    getActiveAlertSet: async () => null,
+    hasBrowserOutput: async () =>
+      (await overlayOutputManagementService.listOutputs(`http://${initialConfig.server.host}:${initialConfig.server.port}`)).some(
+        (output) => output.copyableUrlStatus === "available"
+      ),
+    listAlertSets: async () => [],
+    getAlertEditorDocument: async (alertId) => {
+      throw new Error(`Alert editor document "${alertId}" is not available yet`);
+    },
+    listAssetLibraryItems: async () => [],
+    getDiagnosticsWorkspace: async () => ({ problems: [], events: [], rawLogs: [] }),
+    getConfigurationBackupSummary: async () => {
+      const [collections, rules, eventSources, ttsProviders] = await Promise.all([
+        alertService.listCollections(),
+        alertService.listRules(),
+        providerManagementService.listProviders("event-source"),
+        providerManagementService.listProviders("tts")
+      ]);
+      return {
+        state: "ready",
+        appVersion: "0.0.0",
+        schemaVersion: 5,
+        configurationRecordCount: collections.length + rules.length + eventSources.length + ttsProviders.length,
+        assetCount: 0,
+        totalAssetBytes: 0,
+        secretExclusions: ["Provider credentials", "Overlay route keys"],
+        blockers: []
+      };
+    }
+  });
   const overlayCompositionService = new DefaultOverlayCompositionService({
     configService: overlayModuleConfigService,
     runtime: {
@@ -340,6 +435,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     twitchAuthService,
     twitchEventSubStatusService: twitchEventSubRuntimeService,
     diagnosticsService,
+    managementUiQueryService: managementUiService,
     overlayAccessService,
     overlayCompositionService,
     overlayOutputManagementService,
@@ -410,12 +506,25 @@ interface NodeWebSocketConstructor {
   new (url: string): TwitchEventSubSocket;
 }
 
+interface NodeProviderWebSocketConstructor {
+  new (url: string): SpeakerBotSocket;
+}
+
 function createNodeWebSocket(url: string): TwitchEventSubSocket {
   const WebSocketConstructor = (globalThis as typeof globalThis & { readonly WebSocket?: NodeWebSocketConstructor }).WebSocket;
   if (WebSocketConstructor === undefined) {
     throw new Error("Global WebSocket runtime is unavailable");
   }
 
+  return new WebSocketConstructor(url);
+}
+
+function createNodeProviderWebSocket(url: string): SpeakerBotSocket {
+  const WebSocketConstructor = (globalThis as typeof globalThis & { readonly WebSocket?: NodeProviderWebSocketConstructor })
+    .WebSocket;
+  if (WebSocketConstructor === undefined) {
+    throw new Error("Global WebSocket runtime is unavailable");
+  }
   return new WebSocketConstructor(url);
 }
 

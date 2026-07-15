@@ -45,7 +45,7 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/assets");
   });
 
-  it("renders dashboard status and navigates to copyable overlay URLs", async () => {
+  it("renders setup-focused Home and keeps legacy copyable overlay URLs reachable", async () => {
     const user = userEvent.setup();
     const clipboardWrite = vi.fn();
     Object.defineProperty(navigator, "clipboard", {
@@ -56,11 +56,10 @@ describe("ManagementApp", () => {
     });
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
 
-    expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.getByText("Twitch disconnected")).toBeInTheDocument();
-    expect(screen.getByText("2 overlay clients")).toBeInTheDocument();
-    expect(screen.getByText("Queue paused")).toBeInTheDocument();
-    expect(screen.getByText("Last provider request failed")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Setup readiness" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Add event source" })).toHaveAttribute("href", "/event-sources?setup=add");
+    expect(screen.queryByText("Queue paused")).not.toBeInTheDocument();
+    expect(screen.queryByText("Last provider request failed")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Overlay outputs" }));
     const overlayPanel = screen.getByRole("region", { name: "Overlay outputs content" });
@@ -143,35 +142,22 @@ describe("ManagementApp", () => {
     expect(managementApi.setDoNotDisturb).toHaveBeenCalledWith(true);
   });
 
-  it("shows TTS provider capabilities and runs a sample test without unsupported voice controls", async () => {
+  it("shows registered TTS safety controls and runs the fixed safe voice test", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "TTS providers" }));
     const ttsPanel = screen.getByRole("region", { name: "TTS providers content" });
-    expect(await within(ttsPanel).findByRole("heading", { name: "TTS" })).toBeInTheDocument();
-    expect(within(ttsPanel).getAllByText("Browser Speech").length).toBeGreaterThan(0);
-    expect(within(ttsPanel).getAllByText("browser-speech").length).toBeGreaterThan(0);
-    expect(within(ttsPanel).queryByLabelText("Voice")).not.toBeInTheDocument();
+    expect(await within(ttsPanel).findByRole("heading", { name: "TTS providers" })).toBeInTheDocument();
+    expect((await within(ttsPanel).findAllByText("Browser Speech")).length).toBeGreaterThan(0);
+    expect(within(ttsPanel).getByRole("heading", { name: "Safety defaults" })).toBeInTheDocument();
+    expect(within(ttsPanel).getByLabelText("Default voice")).toBeInTheDocument();
 
-    await user.click(within(ttsPanel).getByRole("button", { name: "Run TTS test" }));
+    await user.click(within(ttsPanel).getByRole("button", { name: "Test voice" }));
 
-    expect(managementApi.testTts).toHaveBeenCalledWith(
-      expect.objectContaining({
-        providerId: "browser-speech",
-        text: "Sample cheer from Viewer for 500 bits",
-        rate: 1,
-        pitch: 1,
-        volume: 1,
-        metadata: {
-          sampleEventType: "cheer",
-          sampleAmount: 500,
-          sampleActor: "Viewer"
-        }
-      })
-    );
-    expect(await within(ttsPanel).findByText("TTS test ready: browser-speech.")).toBeInTheDocument();
+    expect(managementApi.testProviderVoice).toHaveBeenCalledWith("provider-browser-speech");
+    expect(await within(ttsPanel).findByText("Voice test delivered.")).toBeInTheDocument();
   });
   it("shows diagnostics logs and delegates filtered redacted exports", async () => {
     const user = userEvent.setup();
@@ -197,42 +183,41 @@ describe("ManagementApp", () => {
     expect(within(diagnosticsPanel).getByText("1 events, 1 matches, 1 playback rows, 1 provider errors exported.")).toBeInTheDocument();
   });
 
-  it("shows Twitch connection status and delegates connect, refresh, and disconnect", async () => {
+  it("shows connection and intake separately and registers only after validation", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
-    expect(await within(twitchPanel).findByRole("heading", { name: "Twitch" })).toBeInTheDocument();
-    expect(within(twitchPanel).getByText("Twitch disconnected")).toBeInTheDocument();
-    expect(await within(twitchPanel).findByText("EventSub connected")).toBeInTheDocument();
+    expect(await within(twitchPanel).findByRole("heading", { name: "Event sources" })).toBeInTheDocument();
+    expect((await within(twitchPanel).findAllByText("Main Twitch")).length).toBeGreaterThan(0);
+    expect(within(twitchPanel).getByRole("columnheader", { name: "Connection" })).toBeInTheDocument();
+    expect(within(twitchPanel).getByRole("columnheader", { name: "Intake" })).toBeInTheDocument();
 
-    await user.click(within(twitchPanel).getByRole("button", { name: "Connect Twitch" }));
+    await user.click(within(twitchPanel).getByRole("button", { name: "Add event source" }));
+    const dialog = screen.getByRole("dialog", { name: "Add event source" });
+    expect(within(dialog).getByRole("button", { name: "Register provider" })).toBeDisabled();
+    await user.click(within(dialog).getByRole("button", { name: "Test connection" }));
+    expect(await within(dialog).findByText("Connection test passed.")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Register provider" }));
 
-    expect(managementApi.startTwitchAuth).toHaveBeenCalledWith({
-      redirectUri: "http://localhost:3000/twitch/auth/callback"
-    });
-    expect(await within(twitchPanel).findByRole("link", { name: "Open Twitch authorization" })).toHaveAttribute(
-      "href",
-      "https://id.twitch.tv/oauth2/authorize?state=state-1"
-    );
+    expect(managementApi.validateProvider).toHaveBeenCalledOnce();
+    expect(managementApi.registerProvider).toHaveBeenCalledOnce();
   });
 
-  it("refreshes and disconnects connected Twitch accounts", async () => {
+  it("activates an inactive event source after showing its impact", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi({ twitchConnected: true });
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
-    expect((await within(twitchPanel).findAllByText("Streamer")).length).toBeGreaterThan(0);
+    await user.click(await within(twitchPanel).findByRole("button", { name: "View Studio Streamer.bot" }));
+    expect(await within(twitchPanel).findByRole("heading", { name: "Activation impact" })).toBeInTheDocument();
+    await user.click(within(twitchPanel).getByRole("button", { name: "Set active" }));
 
-    await user.click(within(twitchPanel).getByRole("button", { name: "Refresh Twitch" }));
-    await user.click(within(twitchPanel).getByRole("button", { name: "Disconnect Twitch" }));
-
-    expect(managementApi.refreshTwitchAuth).toHaveBeenCalledOnce();
-    expect(managementApi.disconnectTwitch).toHaveBeenCalledOnce();
+    expect(managementApi.activateProvider).toHaveBeenCalledWith("provider-streamerbot", false);
   });
 
 });
@@ -272,10 +257,122 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
     account: null
   };
   const initialTwitchStatus = options.twitchConnected === true ? twitchConnectedStatus : twitchDisconnectedStatus;
+  const eventProviders = [
+    {
+      id: "provider-twitch",
+      name: "Main Twitch",
+      kind: "twitch" as const,
+      capability: "event-source" as const,
+      active: true,
+      connectionState: "connected" as const,
+      intakeState: "active" as const,
+      validatedAt: "2026-07-15T05:00:00.000Z",
+      error: null,
+      usedByAlertCount: 6
+    },
+    {
+      id: "provider-streamerbot",
+      name: "Studio Streamer.bot",
+      kind: "streamerbot" as const,
+      capability: "event-source" as const,
+      active: false,
+      connectionState: "connected" as const,
+      intakeState: "inactive" as const,
+      validatedAt: "2026-07-15T05:00:00.000Z",
+      error: null,
+      usedByAlertCount: 0
+    }
+  ];
+  const ttsProvider = {
+    id: "provider-browser-speech",
+    name: "Browser Speech",
+    kind: "browser-speech" as const,
+    capability: "tts" as const,
+    active: true,
+    connectionState: "connected" as const,
+    intakeState: null,
+    validatedAt: "2026-07-15T05:00:00.000Z",
+    error: null,
+    usedByAlertCount: 2
+  };
+  const ttsSafety = {
+    defaultVoiceId: null,
+    volume: 1,
+    minimumRate: 0.5,
+    maximumRate: 2,
+    maximumTextLength: 240
+  };
 
   return {
-    getHomeSetupSummary: vi.fn(async () => ({ readiness: [], activeAlertSet: null, actionableProblems: [] })),
-    listRegisteredProviders: vi.fn(async () => []),
+    getHomeSetupSummary: vi.fn(async () => ({
+      readiness: [
+        {
+          id: "event-source",
+          label: "Event source",
+          state: "action-required" as const,
+          actionLabel: "Add event source",
+          actionRoute: "/event-sources?setup=add"
+        }
+      ],
+      activeAlertSet: null,
+      actionableProblems: []
+    })),
+    listRegisteredProviders: vi.fn(async (capability) => capability === "event-source" ? eventProviders : [ttsProvider]),
+    validateProvider: vi.fn(async (input) => ({
+      valid: true,
+      connectionState: "connected" as const,
+      intakeState: input.kind === "twitch" || input.kind === "streamerbot" ? "inactive" as const : null,
+      validatedAt: "2026-07-15T05:00:00.000Z",
+      availableVoices: [],
+      error: null
+    })),
+    registerProvider: vi.fn(async (input) => ({
+      status: "registered" as const,
+      provider: {
+        provider: {
+          id: "provider-registered",
+          name: input.name,
+          kind: input.kind,
+          capability: input.kind === "twitch" || input.kind === "streamerbot" ? "event-source" as const : "tts" as const,
+          active: false,
+          connectionState: "connected" as const,
+          intakeState: input.kind === "twitch" || input.kind === "streamerbot" ? "inactive" as const : null,
+          validatedAt: "2026-07-15T05:00:00.000Z",
+          error: null,
+          usedByAlertCount: 0
+        },
+        configuration: input.configuration,
+        availableVoices: [],
+        ttsSafety: input.kind === "speakerbot" || input.kind === "browser-speech" ? ttsSafety : null
+      },
+      validation: {
+        valid: true,
+        connectionState: "connected" as const,
+        intakeState: input.kind === "twitch" || input.kind === "streamerbot" ? "inactive" as const : null,
+        validatedAt: "2026-07-15T05:00:00.000Z",
+        availableVoices: [],
+        error: null
+      }
+    })),
+    getProvider: vi.fn(async (providerId) => {
+      if (providerId === ttsProvider.id) {
+        return { provider: ttsProvider, configuration: {}, availableVoices: [], ttsSafety };
+      }
+      const provider = eventProviders.find((candidate) => candidate.id === providerId) ?? eventProviders[0]!;
+      return {
+        provider,
+        configuration: provider.kind === "streamerbot"
+          ? { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+          : {},
+        availableVoices: [],
+        ttsSafety: null
+      };
+    }),
+    activateProvider: vi.fn(async (providerId) => ({
+      provider: { ...(eventProviders.find((provider) => provider.id === providerId) ?? eventProviders[0]!), active: true },
+      replacedProviderId: "provider-twitch",
+      impact: { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] }
+    })),
     getProviderActivationImpact: vi.fn(async () => ({
       matchedAlertCount: 0,
       unmatchedAlertCount: 0,
@@ -283,12 +380,10 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
       warnings: []
     })),
     getTtsProviderSafetySettings: vi.fn(async () => ({
-      defaultVoiceId: null,
-      volume: 1,
-      minimumRate: 0.5,
-      maximumRate: 2,
-      maximumTextLength: 240
+      ...ttsSafety
     })),
+    updateTtsSafety: vi.fn(async (_providerId, input) => input),
+    testProviderVoice: vi.fn(async () => ({ delivered: true, error: null })),
     listAlertSets: vi.fn(async () => []),
     getAlertEditorDocument: vi.fn(async () => {
       throw new Error("not called");

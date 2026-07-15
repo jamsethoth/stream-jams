@@ -23,11 +23,11 @@
 
 ## 3. Home And Provider Setup
 
-- [ ] 3.1 Replace Dashboard with setup-focused Home derived from provider, starter-set, output, and actionable-problem state.
-- [ ] 3.2 Build Event sources list/detail and validated add-source wizard with separate connection and intake state.
-- [ ] 3.3 Build TTS providers list/detail and setup wizard with voice test, usage links, and provider-owned safety controls.
-- [ ] 3.4 Enforce one active provider per capability and show alert-impact blockers or warnings before activation.
-- [ ] 3.5 Add first-run, partial, configured, validation-failure, and activation-impact tests and Storybook states.
+- [x] 3.1 Replace Dashboard with setup-focused Home derived from provider, starter-set, output, and actionable-problem state.
+- [x] 3.2 Build Event sources list/detail and validated add-source wizard with separate connection and intake state.
+- [x] 3.3 Build TTS providers list/detail and setup wizard with voice test, usage links, and provider-owned safety controls.
+- [x] 3.4 Enforce one active provider per capability and show alert-impact blockers or warnings before activation.
+- [x] 3.5 Add first-run, partial, configured, validation-failure, and activation-impact tests and Storybook states.
 
 ## 4. Alert Sets And Browser Sources
 

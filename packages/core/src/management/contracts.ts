@@ -10,6 +10,7 @@ import {
   overlayPurposeSchema,
   positiveIntegerSchema
 } from "../shared/schemas.js";
+import { ttsVoiceSchema } from "../tts/schemas.js";
 
 export const managementErrorSeveritySchema = z.enum(["info", "warning", "error", "critical"]);
 
@@ -55,6 +56,48 @@ export const providerKindSchema = z.enum(["twitch", "streamerbot", "speakerbot",
 export const providerConnectionStateSchema = z.enum(["unconfigured", "validating", "connected", "disconnected", "error"]);
 export const providerIntakeStateSchema = z.enum(["active", "inactive", "error"]);
 
+const providerSetupBaseSchema = z.object({
+  name: nonEmptyStringSchema
+});
+
+const websocketProviderConfigurationSchema = z
+  .object({
+    protocol: z.enum(["ws", "wss"]),
+    host: nonEmptyStringSchema,
+    port: positiveIntegerSchema.max(65_535),
+    endpoint: nonEmptyStringSchema
+  })
+  .strict();
+
+export const providerSetupInputSchema = z.discriminatedUnion("kind", [
+  providerSetupBaseSchema.extend({
+    kind: z.literal("twitch"),
+    configuration: z.object({}).strict()
+  }).strict(),
+  providerSetupBaseSchema.extend({
+    kind: z.literal("streamerbot"),
+    configuration: websocketProviderConfigurationSchema,
+    credential: z.string().max(4_096).nullable().optional()
+  }).strict(),
+  providerSetupBaseSchema.extend({
+    kind: z.literal("speakerbot"),
+    configuration: websocketProviderConfigurationSchema
+  }).strict(),
+  providerSetupBaseSchema.extend({
+    kind: z.literal("browser-speech"),
+    configuration: z.object({}).strict()
+  }).strict()
+]);
+
+export const providerValidationResultSchema = z.object({
+  valid: z.boolean(),
+  connectionState: providerConnectionStateSchema,
+  intakeState: providerIntakeStateSchema.nullable(),
+  validatedAt: isoDateTimeSchema,
+  availableVoices: z.array(ttsVoiceSchema),
+  error: actionableManagementErrorSchema.nullable()
+});
+
 export const registeredProviderViewSchema = z.object({
   id: nonEmptyStringSchema,
   name: nonEmptyStringSchema,
@@ -67,6 +110,26 @@ export const registeredProviderViewSchema = z.object({
   error: actionableManagementErrorSchema.nullable(),
   usedByAlertCount: nonNegativeIntegerSchema
 });
+
+export const registeredProviderDetailSchema = z.object({
+  provider: registeredProviderViewSchema,
+  configuration: metadataSchema,
+  availableVoices: z.array(ttsVoiceSchema),
+  ttsSafety: z.lazy(() => ttsProviderSafetySettingsSchema).nullable()
+});
+
+export const providerRegistrationAttemptSchema = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("registered"),
+    provider: registeredProviderDetailSchema,
+    validation: providerValidationResultSchema
+  }),
+  z.object({
+    status: z.literal("validation-failed"),
+    provider: z.null(),
+    validation: providerValidationResultSchema
+  })
+]);
 
 export const providerActivationImpactSchema = z.object({
   matchedAlertCount: nonNegativeIntegerSchema,
@@ -81,6 +144,17 @@ export const ttsProviderSafetySettingsSchema = z.object({
   minimumRate: z.number().finite().positive(),
   maximumRate: z.number().finite().positive(),
   maximumTextLength: positiveIntegerSchema
+});
+
+export const providerActivationResultSchema = z.object({
+  provider: registeredProviderViewSchema,
+  replacedProviderId: nonEmptyStringSchema.nullable(),
+  impact: providerActivationImpactSchema
+});
+
+export const providerVoiceTestResultSchema = z.object({
+  delivered: z.boolean(),
+  error: actionableManagementErrorSchema.nullable()
 });
 
 export const alertValidationSeveritySchema = z.enum(["blocker", "warning"]);
@@ -325,6 +399,21 @@ export function normalizeAssetTags(tags: readonly string[]): readonly string[] {
   return [...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean))];
 }
 
+export function providerCapabilityForKind(kind: ProviderKind): ProviderCapability {
+  return kind === "twitch" || kind === "streamerbot" ? "event-source" : "tts";
+}
+
+export function evaluateProviderActivation(impact: ProviderActivationImpact): {
+  readonly allowed: boolean;
+  readonly requiresConfirmation: boolean;
+} {
+  const allowed = impact.blockers.length === 0;
+  return {
+    allowed,
+    requiresConfirmation: allowed && impact.warnings.length > 0
+  };
+}
+
 export function evaluateAlertSetActivation(alertSet: AlertSetOverview): AlertSetActivationDecision {
   const enabledProfileIds = new Set(
     alertSet.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id)
@@ -361,8 +450,14 @@ export type TargetProfileId = z.infer<typeof targetProfileIdSchema>;
 export type TargetProfileDefinition = z.infer<typeof targetProfileDefinitionSchema>;
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 export type ProviderKind = z.infer<typeof providerKindSchema>;
+export type ProviderSetupInput = z.infer<typeof providerSetupInputSchema>;
+export type ProviderValidationResult = z.infer<typeof providerValidationResultSchema>;
 export type RegisteredProviderView = z.infer<typeof registeredProviderViewSchema>;
+export type RegisteredProviderDetail = z.infer<typeof registeredProviderDetailSchema>;
+export type ProviderRegistrationAttempt = z.infer<typeof providerRegistrationAttemptSchema>;
 export type ProviderActivationImpact = z.infer<typeof providerActivationImpactSchema>;
+export type ProviderActivationResult = z.infer<typeof providerActivationResultSchema>;
+export type ProviderVoiceTestResult = z.infer<typeof providerVoiceTestResultSchema>;
 export type TtsProviderSafetySettings = z.infer<typeof ttsProviderSafetySettingsSchema>;
 export type AlertValidationIssue = z.infer<typeof alertValidationIssueSchema>;
 export type AlertOutputState = z.infer<typeof alertOutputStateSchema>;

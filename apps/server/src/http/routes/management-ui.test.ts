@@ -54,6 +54,70 @@ describe("management UI contract routes", () => {
       }
     });
   });
+
+  it("validates and registers providers without combining the two operations", async () => {
+    const { app, authHeaders, service } = await createApp();
+    const setup = {
+      name: "Primary Streamer.bot",
+      kind: "streamerbot",
+      configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" },
+      credential: "secret"
+    };
+
+    const validation = await app.inject({
+      method: "POST",
+      url: "/management/providers/validate",
+      headers: authHeaders,
+      payload: setup
+    });
+    expect(validation.statusCode).toBe(200);
+    expect(validation.json()).toEqual(expect.objectContaining({ valid: true }));
+    expect(service.registeredSetups).toEqual([]);
+
+    const registration = await app.inject({
+      method: "POST",
+      url: "/management/providers",
+      headers: authHeaders,
+      payload: setup
+    });
+    expect(registration.statusCode).toBe(201);
+    expect(registration.json()).toEqual(expect.objectContaining({ status: "registered" }));
+    expect(service.registeredSetups).toEqual([setup]);
+  });
+
+  it("returns provider details and applies activation, safety, and voice-test commands", async () => {
+    const { app, authHeaders, service } = await createApp();
+    const detail = await app.inject({
+      method: "GET",
+      url: "/management/providers/provider-speakerbot",
+      headers: authHeaders
+    });
+    const activation = await app.inject({
+      method: "POST",
+      url: "/management/providers/provider-twitch-main/activate",
+      headers: authHeaders,
+      payload: { confirmWarnings: true }
+    });
+    const safety = await app.inject({
+      method: "PUT",
+      url: "/management/providers/provider-speakerbot/tts-safety",
+      headers: authHeaders,
+      payload: { defaultVoiceId: "voice-2", volume: 0.7, minimumRate: 0.75, maximumRate: 1.5, maximumTextLength: 180 }
+    });
+    const voice = await app.inject({
+      method: "POST",
+      url: "/management/providers/provider-speakerbot/test-voice",
+      headers: authHeaders
+    });
+
+    expect(detail.statusCode).toBe(200);
+    expect(detail.json()).toEqual(expect.objectContaining({ provider: expect.objectContaining({ id: "provider-speakerbot" }) }));
+    expect(activation.statusCode).toBe(200);
+    expect(service.activationRequests).toEqual([{ providerId: "provider-twitch-main", confirmWarnings: true }]);
+    expect(safety.statusCode).toBe(200);
+    expect(voice.statusCode).toBe(200);
+    expect(voice.json()).toEqual({ delivered: true, error: null });
+  });
 });
 
 async function createApp() {
@@ -77,11 +141,15 @@ async function createApp() {
 
   return {
     app: createServerApp(dependencies),
-    authHeaders: { authorization: `Bearer ${session.id}` }
+    authHeaders: { authorization: `Bearer ${session.id}`, "x-stream-jams-csrf": session.csrfToken },
+    service: dependencies.managementUiQueryService
   };
 }
 
 class StubManagementUiQueryService {
+  readonly registeredSetups: unknown[] = [];
+  readonly activationRequests: Array<{ readonly providerId: string; readonly confirmWarnings: boolean }> = [];
+
   async getHomeSetupSummary() {
     return { readiness: [], activeAlertSet: null, actionableProblems: [] };
   }
@@ -107,6 +175,63 @@ class StubManagementUiQueryService {
 
   async getProviderActivationImpact() {
     return { matchedAlertCount: 4, unmatchedAlertCount: 0, blockers: [], warnings: [] };
+  }
+
+  async getRegisteredProvider(providerId: string) {
+    return {
+      provider: {
+        id: providerId,
+        name: "Speaker.bot",
+        kind: "speakerbot" as const,
+        capability: "tts" as const,
+        active: true,
+        connectionState: "connected" as const,
+        intakeState: null,
+        validatedAt: "2026-07-15T05:00:00.000Z",
+        error: null,
+        usedByAlertCount: 2
+      },
+      configuration: { protocol: "ws", host: "127.0.0.1", port: 7680, endpoint: "/" },
+      availableVoices: [{ id: "voice-1", label: "Default" }],
+      ttsSafety: { defaultVoiceId: "voice-1", volume: 0.8, minimumRate: 0.5, maximumRate: 2, maximumTextLength: 240 }
+    };
+  }
+
+  async validateProviderSetup() {
+    return {
+      valid: true,
+      connectionState: "connected" as const,
+      intakeState: "inactive" as const,
+      validatedAt: "2026-07-15T05:00:00.000Z",
+      availableVoices: [],
+      error: null
+    };
+  }
+
+  async registerProvider(input: unknown) {
+    this.registeredSetups.push(input);
+    return {
+      status: "registered" as const,
+      provider: await this.getRegisteredProvider("provider-streamerbot"),
+      validation: await this.validateProviderSetup()
+    };
+  }
+
+  async activateProvider(providerId: string, confirmWarnings: boolean) {
+    this.activationRequests.push({ providerId, confirmWarnings });
+    return {
+      provider: (await this.getRegisteredProvider(providerId)).provider,
+      replacedProviderId: null,
+      impact: await this.getProviderActivationImpact()
+    };
+  }
+
+  async updateTtsProviderSafetySettings(_providerId: string, settings: unknown) {
+    return settings;
+  }
+
+  async testProviderVoice() {
+    return { delivered: true, error: null };
   }
 
   async getTtsProviderSafetySettings() {

@@ -5,6 +5,7 @@ import { initialSchemaMigration } from "./migrations/001-initial-schema.js";
 import { alertVariantSelectionMigration } from "./migrations/002-alert-variant-selection.js";
 import { twitchAccountsMigration } from "./migrations/003-twitch-accounts.js";
 import { overlayKeySecretRefMigration } from "./migrations/004-overlay-key-secret-ref.js";
+import { providerRegistrationsMigration } from "./migrations/005-provider-registrations.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -21,7 +22,8 @@ const migrations = [
   initialSchemaMigration,
   alertVariantSelectionMigration,
   twitchAccountsMigration,
-  overlayKeySecretRefMigration
+  overlayKeySecretRefMigration,
+  providerRegistrationsMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export function openStreamJamsDatabase(databasePath: string): StreamJamsDatabase {

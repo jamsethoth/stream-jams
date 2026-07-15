@@ -6,6 +6,11 @@ import {
   diagnosticsWorkspaceViewSchema,
   homeSetupSummarySchema,
   providerActivationImpactSchema,
+  providerActivationResultSchema,
+  providerRegistrationAttemptSchema,
+  providerValidationResultSchema,
+  providerVoiceTestResultSchema,
+  registeredProviderDetailSchema,
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
@@ -15,7 +20,13 @@ import {
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
   type ProviderActivationImpact,
+  type ProviderActivationResult,
   type ProviderCapability,
+  type ProviderRegistrationAttempt,
+  type ProviderSetupInput,
+  type ProviderValidationResult,
+  type ProviderVoiceTestResult,
+  type RegisteredProviderDetail,
   type RegisteredProviderView,
   type TtsProviderSafetySettings
 } from "@stream-jams/core";
@@ -300,8 +311,14 @@ export interface TwitchAuthStartResultView {
 export interface ManagementApi {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
   listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
+  validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult>;
+  registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
+  getProvider(providerId: string): Promise<RegisteredProviderDetail>;
+  activateProvider(providerId: string, confirmWarnings?: boolean): Promise<ProviderActivationResult>;
   getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
   getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings>;
+  updateTtsSafety(providerId: string, input: TtsProviderSafetySettings): Promise<TtsProviderSafetySettings>;
+  testProviderVoice(providerId: string): Promise<ProviderVoiceTestResult>;
   listAlertSets(): Promise<readonly AlertSetOverview[]>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
@@ -382,6 +399,15 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     return contract.parse(await client.getJson<unknown>(path, errorMessage));
   }
 
+  async function postContract<T>(
+    path: string,
+    body: unknown | undefined,
+    contract: RuntimeContract<T>,
+    errorMessage: string
+  ): Promise<T> {
+    return contract.parse(await client.postJson<unknown>(path, body, errorMessage));
+  }
+
   async function getContractList<T>(
     path: string,
     contract: RuntimeContract<T>,
@@ -431,6 +457,41 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       );
     },
 
+    validateProvider(input) {
+      return postContract(
+        "/management/providers/validate",
+        input,
+        providerValidationResultSchema,
+        "Unable to validate provider setup."
+      );
+    },
+
+    registerProvider(input) {
+      return postContract(
+        "/management/providers",
+        input,
+        providerRegistrationAttemptSchema,
+        "Unable to register provider."
+      );
+    },
+
+    getProvider(providerId) {
+      return getContract(
+        `/management/providers/${encodeURIComponent(providerId)}`,
+        registeredProviderDetailSchema,
+        "Unable to load provider."
+      );
+    },
+
+    activateProvider(providerId, confirmWarnings = false) {
+      return postContract(
+        `/management/providers/${encodeURIComponent(providerId)}/activate`,
+        { confirmWarnings },
+        providerActivationResultSchema,
+        "Unable to activate provider."
+      );
+    },
+
     getProviderActivationImpact(providerId) {
       return getContract(
         `/management/providers/${encodeURIComponent(providerId)}/activation-impact`,
@@ -444,6 +505,25 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         `/management/providers/${encodeURIComponent(providerId)}/tts-safety`,
         ttsProviderSafetySettingsSchema,
         "Unable to load TTS provider safety settings."
+      );
+    },
+
+    async updateTtsSafety(providerId, input) {
+      return ttsProviderSafetySettingsSchema.parse(
+        await client.putJson<unknown>(
+          `/management/providers/${encodeURIComponent(providerId)}/tts-safety`,
+          input,
+          "Unable to update TTS provider safety settings."
+        )
+      );
+    },
+
+    testProviderVoice(providerId) {
+      return postContract(
+        `/management/providers/${encodeURIComponent(providerId)}/test-voice`,
+        undefined,
+        providerVoiceTestResultSchema,
+        "Unable to test provider voice."
       );
     },
 

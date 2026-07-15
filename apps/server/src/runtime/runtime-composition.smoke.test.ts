@@ -103,6 +103,38 @@ describe("runtime app composition smoke", () => {
       url: "/twitch/eventsub/status",
       headers: authHeaders
     });
+    const managementHome = await app.inject({
+      method: "GET",
+      url: "/management/home",
+      headers: authHeaders
+    });
+    const eventSources = await app.inject({
+      method: "GET",
+      url: "/management/providers?capability=event-source",
+      headers: authHeaders
+    });
+    const browserSpeechSetup = {
+      name: "Built-in browser speech",
+      kind: "browser-speech",
+      configuration: {}
+    };
+    const browserSpeechValidation = await app.inject({
+      method: "POST",
+      url: "/management/providers/validate",
+      headers: authHeaders,
+      payload: browserSpeechSetup
+    });
+    const browserSpeechRegistration = await app.inject({
+      method: "POST",
+      url: "/management/providers",
+      headers: authHeaders,
+      payload: browserSpeechSetup
+    });
+    const ttsProviders = await app.inject({
+      method: "GET",
+      url: "/management/providers?capability=tts",
+      headers: authHeaders
+    });
 
     expect(session.statusCode).toBe(201);
     expect(health.statusCode).toBe(200);
@@ -161,6 +193,28 @@ describe("runtime app composition smoke", () => {
       sessionId: null,
       subscriptionTypes: []
     });
+    expect(managementHome.statusCode).toBe(200);
+    expect(managementHome.json()).toMatchObject({
+      activeAlertSet: null,
+      actionableProblems: [],
+      readiness: expect.arrayContaining([
+        expect.objectContaining({ id: "event-source", state: "action-required" }),
+        expect.objectContaining({ id: "tts-provider", state: "action-required" })
+      ])
+    });
+    expect(eventSources.statusCode).toBe(200);
+    expect(eventSources.json()).toEqual([]);
+    expect(browserSpeechValidation.statusCode).toBe(200);
+    expect(browserSpeechValidation.json()).toMatchObject({ valid: true, connectionState: "connected" });
+    expect(browserSpeechRegistration.statusCode).toBe(201);
+    expect(browserSpeechRegistration.json()).toMatchObject({
+      status: "registered",
+      provider: { provider: { kind: "browser-speech", active: true } }
+    });
+    expect(ttsProviders.statusCode).toBe(200);
+    expect(ttsProviders.json()).toEqual([
+      expect.objectContaining({ kind: "browser-speech", active: true, connectionState: "connected" })
+    ]);
 
     await app.ready();
     let resolveConnectedMessage: (value: unknown) => void = () => undefined;

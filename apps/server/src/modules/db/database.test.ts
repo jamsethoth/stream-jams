@@ -13,12 +13,13 @@ const expectedTables = [
   "overlay_keys",
   "overlay_module_config",
   "playback_logs",
+  "provider_registrations",
   "schema_migrations",
   "twitch_accounts"
 ];
 
 describe("Stream Jams SQLite database", () => {
-  it("initializes deterministic Slice 8 tables and records the migration once", () => {
+  it("initializes deterministic tables and records each migration once", () => {
     using database = createInMemoryStreamJamsDatabase();
 
     expect(listTables(database.connection)).toEqual(expectedTables);
@@ -26,7 +27,8 @@ describe("Stream Jams SQLite database", () => {
       "001-initial-schema",
       "002-alert-variant-selection",
       "003-twitch-accounts",
-      "004-overlay-key-secret-ref"
+      "004-overlay-key-secret-ref",
+      "005-provider-registrations"
     ]);
 
     database.runMigrations();
@@ -35,7 +37,8 @@ describe("Stream Jams SQLite database", () => {
       "001-initial-schema",
       "002-alert-variant-selection",
       "003-twitch-accounts",
-      "004-overlay-key-secret-ref"
+      "004-overlay-key-secret-ref",
+      "005-provider-registrations"
     ]);
   });
 

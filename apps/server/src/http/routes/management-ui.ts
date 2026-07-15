@@ -5,8 +5,14 @@ import {
   configurationBackupSummarySchema,
   diagnosticsWorkspaceViewSchema,
   homeSetupSummarySchema,
+  providerActivationResultSchema,
   providerActivationImpactSchema,
   providerCapabilitySchema,
+  providerRegistrationAttemptSchema,
+  providerSetupInputSchema,
+  providerValidationResultSchema,
+  providerVoiceTestResultSchema,
+  registeredProviderDetailSchema,
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
@@ -16,18 +22,38 @@ import {
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
   type ProviderActivationImpact,
+  type ProviderActivationResult,
   type ProviderCapability,
+  type ProviderRegistrationAttempt,
+  type ProviderSetupInput,
+  type ProviderValidationResult,
+  type ProviderVoiceTestResult,
+  type RegisteredProviderDetail,
   type RegisteredProviderView,
   type TtsProviderSafetySettings
 } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { sendHttpError } from "../errors.js";
+import {
+  ProviderActivationBlockedError,
+  ProviderActivationConfirmationRequiredError,
+  ProviderRegistrationNotFoundError
+} from "../../modules/providers/provider-management-service.js";
 
 export interface ManagementUiQueryService {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
   listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
+  getRegisteredProvider(providerId: string): Promise<RegisteredProviderDetail>;
+  validateProviderSetup(input: ProviderSetupInput): Promise<ProviderValidationResult>;
+  registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
+  activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult>;
   getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
   getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings>;
+  updateTtsProviderSafetySettings(
+    providerId: string,
+    settings: TtsProviderSafetySettings
+  ): Promise<TtsProviderSafetySettings>;
+  testProviderVoice(providerId: string): Promise<ProviderVoiceTestResult>;
   listAlertSets(): Promise<readonly AlertSetOverview[]>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
@@ -61,6 +87,46 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     return parseList(await service.listRegisteredProviders(capability.data), registeredProviderViewSchema);
   });
 
+  app.post("/management/providers/validate", { preHandler }, async (request) =>
+    providerValidationResultSchema.parse(
+      await service.validateProviderSetup(providerSetupInputSchema.parse(request.body))
+    )
+  );
+
+  app.post("/management/providers", { preHandler }, async (request, reply) => {
+    const result = providerRegistrationAttemptSchema.parse(
+      await service.registerProvider(providerSetupInputSchema.parse(request.body))
+    );
+    return reply.status(result.status === "registered" ? 201 : 422).send(result);
+  });
+
+  app.get("/management/providers/:providerId", { preHandler }, async (request, reply) => {
+    try {
+      return registeredProviderDetailSchema.parse(
+        await service.getRegisteredProvider(readParam(request.params, "providerId"))
+      );
+    } catch (error) {
+      return sendProviderCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/providers/:providerId/activate", { preHandler }, async (request, reply) => {
+    const confirmation = readValue(request.body, "confirmWarnings");
+    if (confirmation !== undefined && typeof confirmation !== "boolean") {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_PROVIDER_ACTIVATION_CONFIRMATION",
+        message: "confirmWarnings must be true or false"
+      });
+    }
+    try {
+      return providerActivationResultSchema.parse(
+        await service.activateProvider(readParam(request.params, "providerId"), confirmation ?? false)
+      );
+    } catch (error) {
+      return sendProviderCommandError(reply, error);
+    }
+  });
+
   app.get("/management/providers/:providerId/activation-impact", { preHandler }, async (request) =>
     providerActivationImpactSchema.parse(
       await service.getProviderActivationImpact(readParam(request.params, "providerId"))
@@ -72,6 +138,29 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
       await service.getTtsProviderSafetySettings(readParam(request.params, "providerId"))
     )
   );
+
+  app.put("/management/providers/:providerId/tts-safety", { preHandler }, async (request, reply) => {
+    try {
+      return ttsProviderSafetySettingsSchema.parse(
+        await service.updateTtsProviderSafetySettings(
+          readParam(request.params, "providerId"),
+          ttsProviderSafetySettingsSchema.parse(request.body)
+        )
+      );
+    } catch (error) {
+      return sendProviderCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/providers/:providerId/test-voice", { preHandler }, async (request, reply) => {
+    try {
+      return providerVoiceTestResultSchema.parse(
+        await service.testProviderVoice(readParam(request.params, "providerId"))
+      );
+    } catch (error) {
+      return sendProviderCommandError(reply, error);
+    }
+  });
 
   app.get("/management/alert-sets", { preHandler }, async () =>
     parseList(await service.listAlertSets(), alertSetOverviewSchema)
@@ -92,6 +181,22 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
   app.get("/management/settings/backup-summary", { preHandler }, async () =>
     configurationBackupSummarySchema.parse(await service.getConfigurationBackupSummary())
   );
+}
+
+function sendProviderCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+  if (error instanceof ProviderRegistrationNotFoundError) {
+    return sendHttpError(reply, 404, {
+      code: error.code,
+      message: "The selected provider registration no longer exists. Refresh the provider list and try again."
+    });
+  }
+  if (error instanceof ProviderActivationBlockedError) {
+    return reply.status(409).send({ error: { code: error.code, message: error.message }, impact: error.impact });
+  }
+  if (error instanceof ProviderActivationConfirmationRequiredError) {
+    return reply.status(409).send({ error: { code: error.code, message: error.message }, impact: error.impact });
+  }
+  throw error;
 }
 
 interface RuntimeContract<T> {
