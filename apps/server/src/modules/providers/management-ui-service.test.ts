@@ -48,10 +48,25 @@ describe("ManagementUiService", () => {
     expect(summary.readiness[1]).toEqual(expect.objectContaining({ state: "complete" }));
     expect(summary.actionableProblems).toEqual([providerError]);
   });
+
+  it("keeps starter setup actionable until review is complete or a valid alert is enabled", async () => {
+    const pending = createService([], alertSet("pending", 0));
+    const enabled = createService([], alertSet("pending", 1));
+    const reviewed = createService([], alertSet("complete", 0));
+
+    await expect(pending.getHomeSetupSummary()).resolves.toMatchObject({
+      readiness: expect.arrayContaining([expect.objectContaining({ id: "starter-alert-set", state: "action-required" })])
+    });
+    await expect(enabled.getHomeSetupSummary()).resolves.toMatchObject({
+      readiness: expect.arrayContaining([expect.objectContaining({ id: "starter-alert-set", state: "complete" })])
+    });
+    await expect(reviewed.getHomeSetupSummary()).resolves.toMatchObject({
+      readiness: expect.arrayContaining([expect.objectContaining({ id: "starter-alert-set", state: "complete" })])
+    });
+  });
 });
 
-function createService(providers: readonly RegisteredProviderView[]) {
-  const activeSet = null as AlertSetOverview | null;
+function createService(providers: readonly RegisteredProviderView[], activeSet: AlertSetOverview | null = null) {
   return new ManagementUiService({
     providerService: {
       listProviders: vi.fn(async (capability: ProviderCapability) =>
@@ -66,9 +81,19 @@ function createService(providers: readonly RegisteredProviderView[]) {
       updateTtsSafety: vi.fn(),
       testVoice: vi.fn()
     },
-    getActiveAlertSet: async () => activeSet,
+    alertSetService: {
+      listSets: async () => (activeSet === null ? [] : [activeSet]),
+      getSet: vi.fn(),
+      createSet: vi.fn(),
+      renameSet: vi.fn(),
+      duplicateSet: vi.fn(),
+      getActivationImpact: vi.fn(),
+      activateSet: vi.fn(),
+      markStarterReviewComplete: vi.fn(),
+      setAlertEnabled: vi.fn(),
+      deleteSet: vi.fn()
+    },
     hasBrowserOutput: async () => false,
-    listAlertSets: async (): Promise<readonly AlertSetOverview[]> => [],
     getAlertEditorDocument: async (): Promise<AlertEditorDocument> => {
       throw new Error("not configured");
     },
@@ -85,6 +110,23 @@ function createService(providers: readonly RegisteredProviderView[]) {
       blockers: []
     })
   });
+}
+
+function alertSet(starterReviewState: "pending" | "complete", enabledAlertCount: number): AlertSetOverview {
+  return {
+    id: "set-default",
+    name: "Default",
+    active: true,
+    starter: true,
+    starterReviewState,
+    enabledAlertCount,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
 }
 
 function provider(

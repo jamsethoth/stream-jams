@@ -1,12 +1,13 @@
 import { useMemo } from "react";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
+import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
 import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
 import { PageHeader } from "./foundation/PageHeader.js";
 import { StatusBadge } from "./foundation/StatusBadge.js";
 import { createHttpManagementApi, type ManagementApi } from "./management-api.js";
 import { HomePanel } from "./home/HomePanel.js";
-import { AlertConfigurationPanel, type AlertConfigurationApi } from "./modules/alerts/AlertConfigurationPanel.js";
+import type { AlertConfigurationApi } from "./modules/alerts/alert-api.js";
 import { ModuleManagementPanel } from "./modules/ModuleManagementPanel.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "./navigation/dirty-navigation.js";
 import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
@@ -62,7 +63,6 @@ function ManagementAppContent({ assetApi, alertApi, managementApi }: ResolvedMan
 }
 
 function RouteContent({
-  alertApi,
   assetApi,
   managementApi,
   route
@@ -75,7 +75,7 @@ function RouteContent({
     case "tts-providers":
       return <TtsProvidersPage managementApi={managementApi} />;
     case "modules-alerts":
-      return <AlertConfigurationPanel alertApi={alertApi} assetApi={assetApi} />;
+      return <AlertSetsPage managementApi={managementApi} />;
     case "assets":
       return <AssetManager assetApi={assetApi} />;
     case "diagnostics":

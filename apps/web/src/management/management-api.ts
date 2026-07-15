@@ -1,5 +1,8 @@
 import {
   alertEditorDocumentSchema,
+  alertSetActivationImpactSchema,
+  alertSetActivationResultSchema,
+  alertSetDetailSchema,
   alertSetOverviewSchema,
   assetLibraryItemSchema,
   configurationBackupSummarySchema,
@@ -14,6 +17,10 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertSetActivationImpact,
+  type AlertSetActivationResult,
+  type AlertSetDetail,
+  type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
   type ConfigurationBackupSummary,
@@ -93,6 +100,7 @@ export interface OverlayOutputUrl {
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
+  readonly targetProfileId?: "landscape" | "vertical" | null | undefined;
   readonly overlayId: string;
   readonly enabled: boolean;
   readonly keyId: string | null;
@@ -106,6 +114,7 @@ export interface OverlayClientView {
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
+  readonly targetProfileId?: "landscape" | "vertical" | null | undefined;
   readonly connectedAt: string;
   readonly lastSeenAt: string;
   readonly userAgent: string | null;
@@ -116,6 +125,7 @@ export interface OverlayOutputKeyRequestView {
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
+  readonly targetProfileId?: "landscape" | "vertical" | null | undefined;
 }
 
 export interface OverlayOutputKeyResultView {
@@ -320,6 +330,15 @@ export interface ManagementApi {
   updateTtsSafety(providerId: string, input: TtsProviderSafetySettings): Promise<TtsProviderSafetySettings>;
   testProviderVoice(providerId: string): Promise<ProviderVoiceTestResult>;
   listAlertSets(): Promise<readonly AlertSetOverview[]>;
+  getAlertSet(setId: string): Promise<AlertSetDetail>;
+  createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
+  activateAlertSet(setId: string, confirmWarnings?: boolean): Promise<AlertSetActivationResult>;
+  markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview>;
+  setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
+  deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
@@ -529,6 +548,79 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     listAlertSets() {
       return getContractList("/management/alert-sets", alertSetOverviewSchema, "Unable to load alert sets.");
+    },
+
+    getAlertSet(setId) {
+      return getContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}`,
+        alertSetDetailSchema,
+        "Unable to load alert set."
+      );
+    },
+
+    async createAlertSet(input) {
+      return alertSetOverviewSchema.parse(
+        await client.postJson<unknown>("/management/alert-sets", input, "Unable to create alert set.")
+      );
+    },
+
+    async renameAlertSet(setId, input) {
+      return alertSetOverviewSchema.parse(
+        await client.patchJson<unknown>(
+          `/management/alert-sets/${encodeURIComponent(setId)}`,
+          input,
+          "Unable to rename alert set."
+        )
+      );
+    },
+
+    duplicateAlertSet(setId, input) {
+      return postContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/duplicate`,
+        input,
+        alertSetOverviewSchema,
+        "Unable to duplicate alert set."
+      );
+    },
+
+    getAlertSetActivationImpact(setId) {
+      return getContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/activation-impact`,
+        alertSetActivationImpactSchema,
+        "Unable to load alert set activation impact."
+      );
+    },
+
+    activateAlertSet(setId, confirmWarnings = false) {
+      return postContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/activate`,
+        { confirmWarnings },
+        alertSetActivationResultSchema,
+        "Unable to activate alert set."
+      );
+    },
+
+    markStarterAlertSetReviewComplete(setId) {
+      return postContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/starter-review`,
+        undefined,
+        alertSetOverviewSchema,
+        "Unable to complete starter alert review."
+      );
+    },
+
+    async setManagedAlertEnabled(alertId, enabled) {
+      return alertSetDetailSchema.parse(
+        await client.patchJson<unknown>(
+          `/management/alerts/${encodeURIComponent(alertId)}/enabled`,
+          { enabled },
+          "Unable to update alert."
+        )
+      );
+    },
+
+    async deleteAlertSet(setId) {
+      await client.deleteRequest(`/management/alert-sets/${encodeURIComponent(setId)}`, "Unable to delete alert set.");
     },
 
     getAlertEditorDocument(alertId) {

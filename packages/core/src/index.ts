@@ -151,6 +151,7 @@ export {
   overlayElementLayoutSchema,
   overlayPurposeSchema,
   overlayScopeSchema,
+  overlayTargetProfileIdSchema,
   positiveIntegerSchema,
   uuidLikeIdSchema
 } from "./shared/schemas.js";

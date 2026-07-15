@@ -66,6 +66,41 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async listAlertSets() {
       return [];
     },
+    async getAlertSet() {
+      throw new Error("No alert set detail configured for this story.");
+    },
+    async createAlertSet(input) {
+      return emptyAlertSet("set-story", input.name);
+    },
+    async renameAlertSet(setId, input) {
+      return emptyAlertSet(setId, input.name);
+    },
+    async duplicateAlertSet(_setId, input) {
+      return emptyAlertSet("set-story-copy", input.name);
+    },
+    async getAlertSetActivationImpact() {
+      return {
+        currentActiveSetId: null,
+        replacingActiveSetName: null,
+        enabledAlertCount: 0,
+        affectedTargetProfileIds: [],
+        affectedEventTypes: [],
+        blockers: [],
+        warnings: []
+      };
+    },
+    async activateAlertSet() {
+      throw new Error("No alert set activation configured for this story.");
+    },
+    async markStarterAlertSetReviewComplete() {
+      throw new Error("No starter alert set configured for this story.");
+    },
+    async setManagedAlertEnabled() {
+      throw new Error("No managed alert configured for this story.");
+    },
+    async deleteAlertSet() {
+      return undefined;
+    },
     async getAlertEditorDocument() {
       throw new Error("No alert editor document configured for this story.");
     },
@@ -235,6 +270,23 @@ export function createStoryAssetApi(overrides: Partial<AssetApi> = {}): AssetApi
   } satisfies AssetApi;
 
   return api;
+}
+
+function emptyAlertSet(id: string, name: string) {
+  return {
+    id,
+    name,
+    active: false,
+    starter: false,
+    starterReviewState: "complete" as const,
+    enabledAlertCount: 0,
+    targetProfiles: [
+      { id: "landscape" as const, enabled: true, reviewState: "ready" as const, blockerCount: 0, warningCount: 0 },
+      { id: "vertical" as const, enabled: false, reviewState: "needs-review" as const, blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
 }
 
 export function createStoryAlertApi(overrides: Partial<AlertConfigurationApi> = {}): AlertConfigurationApi {

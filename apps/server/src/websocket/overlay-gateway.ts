@@ -4,7 +4,8 @@ import type {
   OverlayInstruction,
   OverlayPurpose,
   OverlayRouteAccessRequest,
-  OverlayScope
+  OverlayScope,
+  OverlayTargetProfileId
 } from "@stream-jams/core";
 
 export interface OverlayGatewaySocket {
@@ -20,6 +21,7 @@ export interface OverlayGatewayClient {
   readonly moduleId: string | null;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
   readonly connectedAt: string;
   readonly lastSeenAt: string;
   readonly userAgent: string | null;
@@ -27,6 +29,11 @@ export interface OverlayGatewayClient {
 
 export interface OverlayGatewayClientMetadata {
   readonly userAgent?: string | null;
+}
+
+export interface OverlayGatewayClientState extends OverlayGatewayClient {
+  readonly connectionState: "connected" | "disconnected";
+  readonly disconnectedAt: string | null;
 }
 
 export type OverlayGatewayRegistrationResult =
@@ -70,6 +77,7 @@ type OverlayGatewayMessage =
       readonly moduleId: string | null;
       readonly purpose: OverlayPurpose;
       readonly scope: OverlayScope;
+      readonly targetProfileId?: OverlayTargetProfileId | null;
     }
   | {
       readonly type: "overlay.playback";
@@ -87,6 +95,7 @@ export class OverlayGateway {
   readonly #clock: () => Date;
   readonly #onPlaybackReport: (report: OverlayGatewayPlaybackReport) => void;
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
+  readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
 
   constructor(dependencies: OverlayGatewayDependencies) {
     this.#overlayAccessService = dependencies.overlayAccessService;
@@ -96,16 +105,18 @@ export class OverlayGateway {
   }
 
   get clients(): readonly OverlayGatewayClient[] {
-    return Array.from(this.#clients.values()).map((client) => ({
-      id: client.id,
-      overlayId: client.overlayId,
-      moduleId: client.moduleId,
-      purpose: client.purpose,
-      scope: client.scope,
-      connectedAt: client.connectedAt,
-      lastSeenAt: client.lastSeenAt,
-      userAgent: client.userAgent
-    }));
+    return Array.from(this.#clients.values()).map(toPublicClient);
+  }
+
+  get clientStates(): readonly OverlayGatewayClientState[] {
+    return [
+      ...Array.from(this.#clients.values()).map((client) => ({
+        ...toPublicClient(client),
+        connectionState: "connected" as const,
+        disconnectedAt: null
+      })),
+      ...this.#recentClientsByOutput.values()
+    ];
   }
 
   async registerClient(
@@ -129,24 +140,30 @@ export class OverlayGateway {
 
     const clientId = this.#generateClientId();
     const connectedAt = this.#clock().toISOString();
-    this.#clients.set(clientId, {
+    const client: RegisteredOverlayGatewayClient = {
       id: clientId,
       socket,
       overlayId: registration.overlayId,
       moduleId: registration.moduleId,
       purpose: registration.purpose,
       scope: registration.scope,
+      targetProfileId: registration.targetProfileId ?? null,
       connectedAt,
       lastSeenAt: connectedAt,
       userAgent: metadata.userAgent ?? null
-    });
+    };
+    this.#clients.set(clientId, client);
+    this.#recentClientsByOutput.delete(outputStateKey(client));
     sendGatewayMessage(socket, {
       type: "overlay.connected",
       clientId,
       overlayId: registration.overlayId,
       moduleId: registration.moduleId,
       purpose: registration.purpose,
-      scope: registration.scope
+      scope: registration.scope,
+      ...(registration.targetProfileId === null || registration.targetProfileId === undefined
+        ? {}
+        : { targetProfileId: registration.targetProfileId })
     });
 
     return {
@@ -156,7 +173,17 @@ export class OverlayGateway {
   }
 
   unregisterClient(clientId: string): void {
+    const client = this.#clients.get(clientId);
+    if (client === undefined) {
+      return;
+    }
+
     this.#clients.delete(clientId);
+    this.#recentClientsByOutput.set(outputStateKey(client), {
+      ...toPublicClient(client),
+      connectionState: "disconnected",
+      disconnectedAt: this.#clock().toISOString()
+    });
   }
 
   deliverPlaybackInstruction(instruction: OverlayInstruction): OverlayGatewayDeliveryResult {
@@ -203,7 +230,8 @@ function clientMatchesInstruction(client: OverlayGatewayClient, instruction: Ove
   if (
     client.overlayId !== instruction.overlayId ||
     client.purpose !== instruction.purpose ||
-    client.scope !== instruction.scope
+    client.scope !== instruction.scope ||
+    (client.targetProfileId ?? null) !== (instruction.targetProfileId ?? null)
   ) {
     return false;
   }
@@ -213,6 +241,32 @@ function clientMatchesInstruction(client: OverlayGatewayClient, instruction: Ove
   }
 
   return client.moduleId === null;
+}
+
+function toPublicClient(client: RegisteredOverlayGatewayClient): OverlayGatewayClient {
+  return {
+    id: client.id,
+    overlayId: client.overlayId,
+    moduleId: client.moduleId,
+    purpose: client.purpose,
+    scope: client.scope,
+    ...(client.targetProfileId === null || client.targetProfileId === undefined
+      ? {}
+      : { targetProfileId: client.targetProfileId }),
+    connectedAt: client.connectedAt,
+    lastSeenAt: client.lastSeenAt,
+    userAgent: client.userAgent
+  };
+}
+
+function outputStateKey(client: OverlayGatewayClient): string {
+  return [
+    client.overlayId,
+    client.scope,
+    client.moduleId ?? "unified",
+    client.targetProfileId ?? "legacy",
+    client.purpose
+  ].join(":");
 }
 
 function parsePlaybackReport(clientId: string, rawMessage: string): OverlayGatewayPlaybackReport | null {

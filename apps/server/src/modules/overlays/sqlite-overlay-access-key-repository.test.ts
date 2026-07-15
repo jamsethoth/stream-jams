@@ -24,7 +24,7 @@ describe("SqliteOverlayAccessKeyRepository", () => {
 
     const created = await repository.create(input);
 
-    expect(created).toEqual({ ...input, revokedAt: null });
+    expect(created).toEqual({ ...input, targetProfileId: null, revokedAt: null });
     await expect(repository.findById("overlay-key-1")).resolves.toEqual(created);
     expect(JSON.stringify(database.connection.prepare("SELECT * FROM overlay_keys").all())).not.toContain("ovl_");
   });
@@ -71,5 +71,43 @@ describe("SqliteOverlayAccessKeyRepository", () => {
     expect(revoked?.revokedAt).toBe("2026-05-30T10:05:00.000Z");
     await expect(repository.findById("overlay-key-1")).resolves.toEqual(revoked);
     await expect(repository.update({ ...first, id: "missing" })).resolves.toBeNull();
+  });
+
+  it("persists and queries target-profile keys independently from legacy keys", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteOverlayAccessKeyRepository(database.connection);
+    const landscape = await repository.create({
+      id: "overlay-key-landscape",
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "landscape",
+      keyHash: "sha256:landscape",
+      routeKeySecretRef: null,
+      createdAt: "2026-07-15T10:00:00.000Z"
+    });
+    await repository.create({
+      id: "overlay-key-vertical",
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "vertical",
+      keyHash: "sha256:vertical",
+      routeKeySecretRef: null,
+      createdAt: "2026-07-15T10:01:00.000Z"
+    });
+
+    await expect(
+      repository.findByOutput({
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape"
+      })
+    ).resolves.toEqual([landscape]);
+    await expect(repository.findById(landscape.id)).resolves.toMatchObject({ targetProfileId: "landscape" });
   });
 });

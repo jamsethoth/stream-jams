@@ -209,7 +209,45 @@ export const alertInventoryRowSchema = z.object({
   kind: z.enum(["default", "variation"]),
   enabled: z.boolean(),
   reviewState: z.enum(["ready", "needs-review"]),
-  targetProfileIds: z.array(targetProfileIdSchema)
+  targetProfileIds: z.array(targetProfileIdSchema),
+  previewText: z.string()
+});
+
+export const alertBrowserSourceViewSchema = z.object({
+  id: nonEmptyStringSchema,
+  targetProfileId: targetProfileIdSchema,
+  purpose: overlayPurposeSchema,
+  connectionState: z.enum(["connected", "disconnected", "never-connected"]),
+  lastConnectedAt: isoDateTimeSchema.nullable(),
+  keyId: nonEmptyStringSchema.nullable(),
+  url: nonEmptyStringSchema.nullable(),
+  copyableUrlStatus: z.enum(["available", "create-required", "regenerate-required"])
+});
+
+export const alertSetDetailSchema = z.object({
+  overview: alertSetOverviewSchema,
+  inventory: z.array(alertInventoryRowSchema),
+  browserSources: z.array(alertBrowserSourceViewSchema)
+});
+
+export const alertSetMutationInputSchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+
+export const alertSetActivationImpactSchema = z.object({
+  currentActiveSetId: nonEmptyStringSchema.nullable(),
+  replacingActiveSetName: nonEmptyStringSchema.nullable(),
+  enabledAlertCount: nonNegativeIntegerSchema,
+  affectedTargetProfileIds: z.array(targetProfileIdSchema),
+  affectedEventTypes: z.array(streamEventTypeSchema),
+  blockers: z.array(alertValidationIssueSchema),
+  warnings: z.array(alertValidationIssueSchema)
+});
+
+export const alertSetActivationResultSchema = z.object({
+  activeSet: alertSetOverviewSchema,
+  replacedSetId: nonEmptyStringSchema.nullable(),
+  impact: alertSetActivationImpactSchema
 });
 
 const presetAnimationSchema = z.object({
@@ -463,6 +501,11 @@ export type AlertValidationIssue = z.infer<typeof alertValidationIssueSchema>;
 export type AlertOutputState = z.infer<typeof alertOutputStateSchema>;
 export type AlertSetOverview = z.infer<typeof alertSetOverviewSchema>;
 export type AlertInventoryRow = z.infer<typeof alertInventoryRowSchema>;
+export type AlertBrowserSourceView = z.infer<typeof alertBrowserSourceViewSchema>;
+export type AlertSetDetail = z.infer<typeof alertSetDetailSchema>;
+export type AlertSetMutationInput = z.infer<typeof alertSetMutationInputSchema>;
+export type AlertSetActivationImpact = z.infer<typeof alertSetActivationImpactSchema>;
+export type AlertSetActivationResult = z.infer<typeof alertSetActivationResultSchema>;
 export type AlertLayer = z.infer<typeof alertLayerSchema>;
 export type AlertTargetProfileDocument = z.infer<typeof alertTargetProfileDocumentSchema>;
 export type AlertSamplePayload = z.infer<typeof alertSamplePayloadSchema>;

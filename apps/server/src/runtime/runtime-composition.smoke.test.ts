@@ -195,11 +195,12 @@ describe("runtime app composition smoke", () => {
     });
     expect(managementHome.statusCode).toBe(200);
     expect(managementHome.json()).toMatchObject({
-      activeAlertSet: null,
+      activeAlertSet: expect.objectContaining({ name: "Default", active: true, starter: true }),
       actionableProblems: [],
       readiness: expect.arrayContaining([
         expect.objectContaining({ id: "event-source", state: "action-required" }),
-        expect.objectContaining({ id: "tts-provider", state: "action-required" })
+        expect.objectContaining({ id: "tts-provider", state: "action-required" }),
+        expect.objectContaining({ id: "starter-alert-set", state: "action-required" })
       ])
     });
     expect(eventSources.statusCode).toBe(200);

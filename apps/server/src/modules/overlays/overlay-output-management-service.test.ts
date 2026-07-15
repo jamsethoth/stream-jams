@@ -12,6 +12,53 @@ import {
 } from "./overlay-output-management-service.js";
 
 describe("OverlayOutputManagementService", () => {
+  it("lists independent Alerts outputs for both target profiles and purposes", async () => {
+    const { service } = createService([]);
+
+    const outputs = await service.listOutputs("http://127.0.0.1:39187");
+
+    expect(
+      outputs
+        .filter(
+          (output) =>
+            output.scope === "module" && output.moduleId === "alerts" && output.targetProfileId !== null
+        )
+        .map((output) => ({ id: output.id, targetProfileId: output.targetProfileId, purpose: output.purpose }))
+    ).toEqual([
+      { id: "module:alerts:landscape:live", targetProfileId: "landscape", purpose: "live" },
+      { id: "module:alerts:landscape:test", targetProfileId: "landscape", purpose: "test" },
+      { id: "module:alerts:vertical:live", targetProfileId: "vertical", purpose: "live" },
+      { id: "module:alerts:vertical:test", targetProfileId: "vertical", purpose: "test" }
+    ]);
+  });
+
+  it("creates profile-scoped URLs while preserving profile-less legacy URLs", async () => {
+    const { service } = createService(["ovl_profile", "ovl_legacy"]);
+
+    const profile = await service.createKey(
+      {
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "vertical"
+      },
+      "http://127.0.0.1:39187"
+    );
+    const legacy = await service.createKey(
+      {
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "test",
+        scope: "module"
+      },
+      "http://127.0.0.1:39187"
+    );
+
+    expect(profile.url).toBe("http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_profile?profile=vertical");
+    expect(legacy.url).toBe("http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_legacy");
+  });
+
   it("creates, recovers, and regenerates active output URLs without storing raw keys in records", async () => {
     const { service, repository, secrets } = createService(["ovl_first", "ovl_second", "ovl_unified", "ovl_third"]);
     const input = {

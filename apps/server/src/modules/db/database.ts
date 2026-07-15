@@ -6,6 +6,8 @@ import { alertVariantSelectionMigration } from "./migrations/002-alert-variant-s
 import { twitchAccountsMigration } from "./migrations/003-twitch-accounts.js";
 import { overlayKeySecretRefMigration } from "./migrations/004-overlay-key-secret-ref.js";
 import { providerRegistrationsMigration } from "./migrations/005-provider-registrations.js";
+import { overlayKeyTargetProfileMigration } from "./migrations/006-overlay-key-target-profile.js";
+import { alertSetManagementMigration } from "./migrations/007-alert-set-management.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -23,7 +25,9 @@ const migrations = [
   alertVariantSelectionMigration,
   twitchAccountsMigration,
   overlayKeySecretRefMigration,
-  providerRegistrationsMigration
+  providerRegistrationsMigration,
+  overlayKeyTargetProfileMigration,
+  alertSetManagementMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export function openStreamJamsDatabase(databasePath: string): StreamJamsDatabase {

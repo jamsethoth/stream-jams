@@ -58,15 +58,22 @@ export class SqliteAlertRepository implements AlertRepository {
 
   async saveCollection(collection: AlertCollection): Promise<AlertCollection> {
     const parsed = alertCollectionSchema.parse(collection);
-    this.#connection
-      .prepare(
-        `INSERT INTO alert_collections (id, name, enabled)
-         VALUES (?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           name = excluded.name,
-           enabled = excluded.enabled`
-      )
-      .run(parsed.id, parsed.name, booleanToInteger(parsed.enabled));
+    runInTransaction(this.#connection, () => {
+      if (parsed.enabled) {
+        this.#connection
+          .prepare("UPDATE alert_collections SET enabled = 0 WHERE enabled = 1 AND id != ?")
+          .run(parsed.id);
+      }
+      this.#connection
+        .prepare(
+          `INSERT INTO alert_collections (id, name, enabled)
+           VALUES (?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             name = excluded.name,
+             enabled = excluded.enabled`
+        )
+        .run(parsed.id, parsed.name, booleanToInteger(parsed.enabled));
+    });
     return parsed;
   }
 

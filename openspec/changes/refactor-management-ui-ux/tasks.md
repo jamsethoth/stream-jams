@@ -31,11 +31,11 @@
 
 ## 4. Alert Sets And Browser Sources
 
-- [ ] 4.1 Replace the default Alerts surface with selected/active alert-set overview, set switching, validation, inventory, and starter-review actions.
-- [ ] 4.2 Implement distinct save and activation flows with one active set, blockers, warnings, and live-impact summaries.
-- [ ] 4.3 Move browser-source output management into Alerts and show landscape/vertical state, last connection, and test targets.
-- [ ] 4.4 Reuse existing route-key APIs with masked display, reveal/copy feedback, and connection-aware regeneration confirmation.
-- [ ] 4.5 Add alert-set, starter, validation, copy-failure, output, and route-key tests and Storybook states.
+- [x] 4.1 Replace the default Alerts surface with selected/active alert-set overview, set switching, validation, inventory, and starter-review actions.
+- [x] 4.2 Implement distinct save and activation flows with one active set, blockers, warnings, and live-impact summaries.
+- [x] 4.3 Move browser-source output management into Alerts and show landscape/vertical state, last connection, and test targets.
+- [x] 4.4 Reuse existing route-key APIs with masked display, reveal/copy feedback, and connection-aware regeneration confirmation.
+- [x] 4.5 Add alert-set, starter, validation, copy-failure, output, and route-key tests and Storybook states.
 
 ## 5. Assets Library And Picker
 

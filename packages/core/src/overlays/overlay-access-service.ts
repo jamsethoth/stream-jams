@@ -6,6 +6,7 @@ export type OverlayAccessDenialReason =
   | "scope-mismatch"
   | "purpose-mismatch"
   | "module-mismatch"
+  | "profile-mismatch"
   | "key-mismatch"
   | "revoked";
 

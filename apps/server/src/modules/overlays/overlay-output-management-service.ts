@@ -10,12 +10,14 @@ import {
   type OverlayOutputKeyResult,
   type OverlayOutputView,
   type OverlayPurpose,
+  type OverlayTargetProfileId,
   type SecretRef,
   type SecretStore
 } from "@stream-jams/core";
 
 const defaultOverlayId = "default";
 const purposes = ["live", "test"] as const satisfies readonly OverlayPurpose[];
+const alertTargetProfileIds = ["landscape", "vertical"] as const satisfies readonly OverlayTargetProfileId[];
 
 export interface OverlayOutputManagementServiceOptions {
   readonly overlayAccessService: Pick<OverlayAccessService, "createKey" | "revokeKey">;
@@ -48,20 +50,21 @@ export class OverlayOutputManagementService {
       }
 
       const config = await this.#overlayModuleConfigService.getModuleConfig(moduleDefinition.id);
-      for (const purpose of purposes) {
-        outputs.push(
-          await this.#toOutputView(
-            {
-              overlayId: defaultOverlayId,
-              scope: "module",
-              moduleId: moduleDefinition.id,
-              purpose
-            },
-            `${moduleDefinition.displayName} ${capitalize(purpose)}`,
-            config.enabled,
-            origin
-          )
-        );
+      const targetProfileIds: readonly (OverlayTargetProfileId | null)[] =
+        moduleDefinition.id === "alerts" ? [null, ...alertTargetProfileIds] : [null];
+      for (const targetProfileId of targetProfileIds) {
+        for (const purpose of purposes) {
+          const input = {
+            overlayId: defaultOverlayId,
+            scope: "module" as const,
+            moduleId: moduleDefinition.id,
+            purpose,
+            targetProfileId
+          };
+          outputs.push(
+            await this.#toOutputView(input, this.#labelFor(input), config.enabled, origin)
+          );
+        }
       }
     }
 
@@ -72,7 +75,8 @@ export class OverlayOutputManagementService {
             overlayId: defaultOverlayId,
             scope: "unified",
             moduleId: null,
-            purpose
+            purpose,
+            targetProfileId: null
           },
           `Unified ${capitalize(purpose)}`,
           true,
@@ -158,7 +162,7 @@ export class OverlayOutputManagementService {
       return;
     }
 
-    if (input.moduleId !== null) {
+    if (input.moduleId !== null || (input.targetProfileId ?? null) !== null) {
       throw new UnknownOverlayOutputError(input);
     }
   }
@@ -178,7 +182,12 @@ export class OverlayOutputManagementService {
   #urlFor(input: CreateOverlayKeyInput, rawKey: string, origin: string): string {
     const path =
       input.scope === "module"
-        ? moduleOverlayPath({ moduleId: input.moduleId ?? "", purpose: input.purpose, overlayKey: rawKey })
+        ? moduleOverlayPath({
+            moduleId: input.moduleId ?? "",
+            purpose: input.purpose,
+            overlayKey: rawKey,
+            ...(input.targetProfileId === undefined ? {} : { targetProfileId: input.targetProfileId })
+          })
         : unifiedOverlayPath({ purpose: input.purpose, overlayKey: rawKey });
     return `${origin}${path}`;
   }
@@ -189,7 +198,10 @@ export class OverlayOutputManagementService {
     }
 
     const moduleDefinition = input.moduleId === null ? null : this.#overlayModuleRegistry.getModule(input.moduleId);
-    return `${moduleDefinition?.displayName ?? input.moduleId ?? "Module"} ${capitalize(input.purpose)}`;
+    const profileLabel = input.targetProfileId === null || input.targetProfileId === undefined
+      ? ""
+      : ` ${capitalize(input.targetProfileId)}`;
+    return `${moduleDefinition?.displayName ?? input.moduleId ?? "Module"}${profileLabel} ${capitalize(input.purpose)}`;
   }
 }
 
@@ -218,7 +230,13 @@ export function createOverlayRouteKeySecretRef(keyId: string): SecretRef {
 }
 
 function outputId(input: CreateOverlayKeyInput): string {
-  return input.scope === "module" ? `module:${input.moduleId}:${input.purpose}` : `unified:${input.purpose}`;
+  if (input.scope === "unified") {
+    return `unified:${input.purpose}`;
+  }
+
+  return input.targetProfileId === null || input.targetProfileId === undefined
+    ? `module:${input.moduleId}:${input.purpose}`
+    : `module:${input.moduleId}:${input.targetProfileId}:${input.purpose}`;
 }
 
 function capitalize(value: string): string {

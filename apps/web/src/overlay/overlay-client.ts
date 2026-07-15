@@ -1,10 +1,17 @@
-import type { OverlayComposition, OverlayInstruction, OverlayPurpose, OverlayScope } from "@stream-jams/core";
+import type {
+  OverlayComposition,
+  OverlayInstruction,
+  OverlayPurpose,
+  OverlayScope,
+  OverlayTargetProfileId
+} from "@stream-jams/core";
 
 export interface ParsedOverlayRoute {
   readonly overlayId: string;
   readonly moduleId: string | null;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId: OverlayTargetProfileId | null;
   readonly rawKey: string;
   readonly compositionPath: string;
   readonly webSocketPath: string;
@@ -50,7 +57,8 @@ export interface OverlayClientConnection {
 const websocketOpenState = 1;
 
 export function parseOverlayRoute(pathWithOptionalQuery: string): ParsedOverlayRoute | null {
-  const pathname = new URL(pathWithOptionalQuery, "http://stream-jams.local").pathname;
+  const url = new URL(pathWithOptionalQuery, "http://stream-jams.local");
+  const pathname = url.pathname;
   const segments = pathname.split("/").filter(Boolean);
 
   if (segments[0] !== "overlay") {
@@ -63,20 +71,27 @@ export function parseOverlayRoute(pathWithOptionalQuery: string): ParsedOverlayR
       return null;
     }
 
+    const targetProfileId = parseTargetProfile(url.searchParams);
+    if (targetProfileId === undefined) {
+      return null;
+    }
+    const profileQuery = targetProfileQuery(targetProfileId);
+
     return {
       overlayId: "default",
       moduleId,
       purpose,
       scope: "module",
+      targetProfileId,
       rawKey,
-      compositionPath: `/overlay/modules/${moduleId}/${purpose}/${rawKey}/composition`,
-      webSocketPath: `/overlay/ws/modules/${moduleId}/${purpose}/${rawKey}`
+      compositionPath: `/overlay/modules/${moduleId}/${purpose}/${rawKey}/composition${profileQuery}`,
+      webSocketPath: `/overlay/ws/modules/${moduleId}/${purpose}/${rawKey}${profileQuery}`
     };
   }
 
   if (segments[1] === "unified" && segments.length === 4) {
     const [, , purpose, rawKey] = segments;
-    if (rawKey === undefined || !isOverlayPurpose(purpose)) {
+    if (rawKey === undefined || !isOverlayPurpose(purpose) || url.searchParams.has("profile")) {
       return null;
     }
 
@@ -85,6 +100,7 @@ export function parseOverlayRoute(pathWithOptionalQuery: string): ParsedOverlayR
       moduleId: null,
       purpose,
       scope: "unified",
+      targetProfileId: null,
       rawKey,
       compositionPath: `/overlay/unified/${purpose}/${rawKey}/composition`,
       webSocketPath: `/overlay/ws/unified/${purpose}/${rawKey}`
@@ -103,7 +119,7 @@ export function createOverlayWebSocketUrl(origin: string, route: Pick<ParsedOver
 export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string): string {
   const encodedAssetId = encodeURIComponent(assetId);
   if (route.scope === "module") {
-    return `/overlay/modules/${encodeURIComponent(route.moduleId ?? "")}/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}`;
+    return `/overlay/modules/${encodeURIComponent(route.moduleId ?? "")}/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}${targetProfileQuery(route.targetProfileId)}`;
   }
 
   return `/overlay/unified/${route.purpose}/${encodeURIComponent(route.rawKey)}/assets/${encodedAssetId}`;
@@ -217,4 +233,19 @@ function sendIfOpen(socket: OverlaySocketLike, message: unknown): void {
 
 function isOverlayPurpose(value: unknown): value is OverlayPurpose {
   return value === "live" || value === "test";
+}
+
+function parseTargetProfile(searchParams: URLSearchParams): OverlayTargetProfileId | null | undefined {
+  const values = searchParams.getAll("profile");
+  if (values.length === 0) {
+    return null;
+  }
+
+  return values.length === 1 && (values[0] === "landscape" || values[0] === "vertical")
+    ? values[0]
+    : undefined;
+}
+
+function targetProfileQuery(targetProfileId: OverlayTargetProfileId | null): string {
+  return targetProfileId === null ? "" : `?profile=${encodeURIComponent(targetProfileId)}`;
 }

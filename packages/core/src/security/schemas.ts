@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { isoDateTimeSchema, nonEmptyStringSchema, overlayPurposeSchema, overlayScopeSchema } from "../shared/schemas.js";
+import {
+  isoDateTimeSchema,
+  nonEmptyStringSchema,
+  overlayPurposeSchema,
+  overlayScopeSchema,
+  overlayTargetProfileIdSchema
+} from "../shared/schemas.js";
 
 export const secretRefSchema = z.object({
   namespace: z.enum(["twitch", "streamerbot", "tts", "management", "overlay"]),
@@ -13,6 +19,7 @@ export const overlayAccessKeySchema = z.object({
   moduleId: nonEmptyStringSchema.nullable(),
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional(),
   keyHash: nonEmptyStringSchema,
   routeKeySecretRef: secretRefSchema.nullable(),
   createdAt: isoDateTimeSchema,
@@ -31,5 +38,6 @@ export const createOverlayKeyInputSchema = z.object({
   overlayId: nonEmptyStringSchema,
   moduleId: nonEmptyStringSchema.nullable(),
   purpose: overlayPurposeSchema,
-  scope: overlayScopeSchema
+  scope: overlayScopeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional()
 });

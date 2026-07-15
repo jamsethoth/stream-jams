@@ -9,7 +9,10 @@ import {
 } from "@stream-jams/core";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { WebSocket } from "ws";
-import { createOverlayAuthPreHandler } from "../middleware/overlay-auth.js";
+import {
+  createOverlayAuthPreHandler,
+  parseOverlayTargetProfileQuery
+} from "../middleware/overlay-auth.js";
 import type { OverlayGateway, OverlayGatewaySocket } from "../../websocket/overlay-gateway.js";
 import { sendHtml, type WebShellRenderer } from "./web-shell.js";
 
@@ -44,14 +47,16 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
     { preHandler: modulePreHandler },
     async (request) => {
       const params = readModuleParams(request.params);
-      if (params.purpose === null) {
+      const profile = parseOverlayTargetProfileQuery(request.query, true);
+      if (params.purpose === null || !profile.valid) {
         throw new Error("Overlay purpose must be live or test");
       }
 
       const composition = await dependencies.overlayCompositionService.resolveModuleOutput({
         moduleId: params.moduleId,
         overlayId: defaultOverlayId,
-        purpose: params.purpose
+        purpose: params.purpose,
+        ...(profile.targetProfileId === null ? {} : { targetProfileId: profile.targetProfileId })
       });
 
       return overlayCompositionSchema.parse(composition);
@@ -145,7 +150,8 @@ function toGatewaySocket(socket: WebSocket): OverlayGatewaySocket {
 
 function resolveModuleOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
   const params = readModuleParams(request.params);
-  if (params.moduleId === "" || params.overlayKey === "" || params.purpose === null) {
+  const profile = parseOverlayTargetProfileQuery(request.query, true);
+  if (params.moduleId === "" || params.overlayKey === "" || params.purpose === null || !profile.valid) {
     return null;
   }
 
@@ -154,13 +160,15 @@ function resolveModuleOverlayAccessRequest(request: FastifyRequest): OverlayRout
     moduleId: params.moduleId,
     purpose: params.purpose,
     scope: "module",
+    targetProfileId: profile.targetProfileId,
     rawKey: params.overlayKey
   };
 }
 
 function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
   const params = readUnifiedParams(request.params);
-  if (params.overlayKey === "" || params.purpose === null) {
+  const profile = parseOverlayTargetProfileQuery(request.query, false);
+  if (params.overlayKey === "" || params.purpose === null || !profile.valid) {
     return null;
   }
 
@@ -169,6 +177,7 @@ function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRou
     moduleId: null,
     purpose: params.purpose,
     scope: "unified",
+    targetProfileId: null,
     rawKey: params.overlayKey
   };
 }

@@ -18,6 +18,8 @@ export const overlayPurposeSchema = z.enum(["live", "test"]);
 
 export const overlayScopeSchema = z.enum(["module", "unified"]);
 
+export const overlayTargetProfileIdSchema = z.enum(["landscape", "vertical"]);
+
 export const overlayElementLayoutSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -28,4 +30,5 @@ export const overlayElementLayoutSchema = z.object({
 
 export type OverlayPurpose = z.infer<typeof overlayPurposeSchema>;
 export type OverlayScope = z.infer<typeof overlayScopeSchema>;
+export type OverlayTargetProfileId = z.infer<typeof overlayTargetProfileIdSchema>;
 export type OverlayElementLayout = z.infer<typeof overlayElementLayoutSchema>;

@@ -65,6 +65,19 @@ describe("SqliteAlertRepository", () => {
     );
   });
 
+  it("atomically replaces the active collection when another is enabled", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteAlertRepository(database.connection);
+
+    await repository.saveCollection(createCollection("collection-1", "Main Alerts"));
+    await repository.saveCollection(createCollection("collection-2", "Bonus Alerts"));
+
+    await expect(repository.listCollections()).resolves.toEqual([
+      { id: "collection-1", name: "Main Alerts", enabled: false },
+      { id: "collection-2", name: "Bonus Alerts", enabled: true }
+    ]);
+  });
+
   it("rolls back rule child writes when variant persistence fails", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);

@@ -114,6 +114,51 @@ describe("createHttpManagementApi", () => {
     await expect(api.getConfigurationBackupSummary()).rejects.toThrow();
   });
 
+  it("manages alert sets through runtime-validated commands", async () => {
+    const overview = alertSetOverview();
+    const detail = { overview, inventory: [alertInventoryRow()], browserSources: [] };
+    const impact = alertSetActivationImpact();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/management/alert-sets/set-default" && init?.method === undefined) return jsonResponse(detail);
+      if (url === "/management/alert-sets" && init?.method === "POST") {
+        expect(init.body).toBe(JSON.stringify({ name: "Seasonal" }));
+        return jsonResponse({ ...overview, id: "set-seasonal", name: "Seasonal", active: false, starter: false });
+      }
+      if (url === "/management/alert-sets/set-default" && init?.method === "PATCH") {
+        return jsonResponse({ ...overview, name: "Everyday" });
+      }
+      if (url === "/management/alert-sets/set-default/duplicate") {
+        return jsonResponse({ ...overview, id: "set-copy", name: "Everyday copy", active: false, starter: false });
+      }
+      if (url === "/management/alert-sets/set-default/activation-impact") return jsonResponse(impact);
+      if (url === "/management/alert-sets/set-default/activate") {
+        expect(init?.body).toBe(JSON.stringify({ confirmWarnings: true }));
+        return jsonResponse({ activeSet: overview, replacedSetId: null, impact });
+      }
+      if (url === "/management/alert-sets/set-default/starter-review") {
+        return jsonResponse({ ...overview, starterReviewState: "complete" });
+      }
+      if (url === "/management/alerts/alert-follow/enabled") return jsonResponse(detail);
+      if (url === "/management/alert-sets/set-seasonal" && init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getAlertSet("set-default")).resolves.toEqual(detail);
+    await expect(api.createAlertSet({ name: "Seasonal" })).resolves.toMatchObject({ id: "set-seasonal" });
+    await expect(api.renameAlertSet("set-default", { name: "Everyday" })).resolves.toMatchObject({ name: "Everyday" });
+    await expect(api.duplicateAlertSet("set-default", { name: "Everyday copy" })).resolves.toMatchObject({ id: "set-copy" });
+    await expect(api.getAlertSetActivationImpact("set-default")).resolves.toEqual(impact);
+    await expect(api.activateAlertSet("set-default", true)).resolves.toMatchObject({ activeSet: { id: "set-default" } });
+    await expect(api.markStarterAlertSetReviewComplete("set-default")).resolves.toMatchObject({ starterReviewState: "complete" });
+    await expect(api.setManagedAlertEnabled("alert-follow", true)).resolves.toEqual(detail);
+    await expect(api.deleteAlertSet("set-seasonal")).resolves.toBeUndefined();
+  });
+
   it("manages provider registration and TTS safety through typed contracts", async () => {
     const setup = {
       name: "Studio Speaker.bot",
@@ -650,5 +695,49 @@ function editorDocument() {
       { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
     ],
     samplePayloads: [{ id: "sample-normal", label: "Normal follower", kind: "built-in", payload: { userName: "viewer" } }]
+  };
+}
+
+function alertSetOverview() {
+  return {
+    id: "set-default",
+    name: "Default",
+    active: true,
+    starter: true,
+    starterReviewState: "pending",
+    enabledAlertCount: 0,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+}
+
+function alertInventoryRow() {
+  return {
+    id: "alert-follow",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "follow",
+    name: "New follower",
+    kind: "default",
+    enabled: false,
+    reviewState: "needs-review",
+    targetProfileIds: ["landscape"],
+    previewText: "Thanks for following, {actor.displayName}!"
+  };
+}
+
+function alertSetActivationImpact() {
+  return {
+    currentActiveSetId: "set-default",
+    replacingActiveSetName: null,
+    enabledAlertCount: 0,
+    affectedTargetProfileIds: ["landscape"],
+    affectedEventTypes: [],
+    blockers: [],
+    warnings: []
   };
 }

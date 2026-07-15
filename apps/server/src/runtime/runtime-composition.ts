@@ -16,6 +16,7 @@ import {
   NoopMediaTranscodingStage,
   createDefaultOverlayModuleRegistry,
   type ConfigStore,
+  type AlertBrowserSourceView,
   type ProviderKind,
   type SecretStore
 } from "@stream-jams/core";
@@ -35,6 +36,8 @@ import {
   registerManagementCorsPreflightRoute
 } from "../http/middleware/management-security.js";
 import { SqliteAlertRepository } from "../modules/alerts/sqlite-alert-repository.js";
+import { AlertSetManagementService } from "../modules/alerts/alert-set-management-service.js";
+import { SqliteAlertSetMetadataRepository } from "../modules/alerts/sqlite-alert-set-metadata-repository.js";
 import { LocalManagementSessionService } from "../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
@@ -362,14 +365,59 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
     now
   });
+  const alertSetManagementService = new AlertSetManagementService({
+    alertService,
+    metadataRepository: new SqliteAlertSetMetadataRepository(database.connection),
+    async getActiveEventProviderKind() {
+      const providers = await providerManagementService.listProviders("event-source");
+      return providers.find((provider) => provider.active)?.kind ?? null;
+    },
+    async listBrowserSources(): Promise<readonly AlertBrowserSourceView[]> {
+      const origin = `http://${initialConfig.server.host}:${initialConfig.server.port}`;
+      const outputs = await overlayOutputManagementService.listOutputs(origin);
+      return outputs
+        .filter(
+          (output) =>
+            output.scope === "module" &&
+            output.moduleId === "alerts" &&
+            (output.targetProfileId === "landscape" || output.targetProfileId === "vertical")
+        )
+        .map((output) => {
+          const states = overlayGateway.clientStates
+            .filter(
+              (client) =>
+                client.scope === output.scope &&
+                client.moduleId === output.moduleId &&
+                client.overlayId === output.overlayId &&
+                client.purpose === output.purpose &&
+                client.targetProfileId === output.targetProfileId
+            )
+            .sort((left, right) => right.connectedAt.localeCompare(left.connectedAt));
+          const connected = states.some((client) => client.connectionState === "connected");
+          const latest = states[0] ?? null;
+          return {
+            id: output.id,
+            targetProfileId: output.targetProfileId as "landscape" | "vertical",
+            purpose: output.purpose,
+            connectionState: connected ? "connected" : latest === null ? "never-connected" : "disconnected",
+            lastConnectedAt: latest?.connectedAt ?? null,
+            keyId: output.keyId,
+            url: output.url,
+            copyableUrlStatus: output.copyableUrlStatus
+          };
+        });
+    }
+  });
   const managementUiService = new ManagementUiService({
     providerService: providerManagementService,
-    getActiveAlertSet: async () => null,
+    alertSetService: alertSetManagementService,
     hasBrowserOutput: async () =>
       (await overlayOutputManagementService.listOutputs(`http://${initialConfig.server.host}:${initialConfig.server.port}`)).some(
-        (output) => output.copyableUrlStatus === "available"
+        (output) =>
+          output.moduleId === "alerts" &&
+          (output.targetProfileId === "landscape" || output.targetProfileId === "vertical") &&
+          output.copyableUrlStatus === "available"
       ),
-    listAlertSets: async () => [],
     getAlertEditorDocument: async (alertId) => {
       throw new Error(`Alert editor document "${alertId}" is not available yet`);
     },

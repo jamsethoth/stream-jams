@@ -4,13 +4,15 @@ import {
   overlayElementLayoutSchema,
   overlayPurposeSchema,
   overlayScopeSchema,
+  overlayTargetProfileIdSchema,
   positiveIntegerSchema
 } from "../shared/schemas.js";
 
 export const moduleOutputRequestSchema = z.object({
   moduleId: nonEmptyStringSchema,
   overlayId: nonEmptyStringSchema,
-  purpose: overlayPurposeSchema
+  purpose: overlayPurposeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional()
 });
 
 export const unifiedOutputRequestSchema = z.object({
@@ -41,6 +43,7 @@ export const overlayInstructionSchema = z.object({
   moduleId: nonEmptyStringSchema,
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional(),
   visual: overlayVisualInstructionSchema.nullable(),
   audio: overlayAudioInstructionSchema.nullable(),
   text: overlayTextInstructionSchema.nullable(),
@@ -58,5 +61,6 @@ export const overlayCompositionSchema = z.object({
   overlayId: nonEmptyStringSchema,
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional(),
   modules: z.array(overlayModuleSnapshotSchema)
 });

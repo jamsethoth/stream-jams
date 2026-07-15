@@ -1,6 +1,10 @@
 import {
   homeSetupSummarySchema,
   type AlertEditorDocument,
+  type AlertSetActivationImpact,
+  type AlertSetActivationResult,
+  type AlertSetDetail,
+  type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
   type ConfigurationBackupSummary,
@@ -18,6 +22,7 @@ import {
   type TtsProviderSafetySettings
 } from "@stream-jams/core";
 import type { ProviderManagementService } from "./provider-management-service.js";
+import type { AlertSetManagementService } from "../alerts/alert-set-management-service.js";
 
 type HomeReadinessItem = HomeSetupSummary["readiness"][number];
 
@@ -34,11 +39,24 @@ type ProviderService = Pick<
   | "testVoice"
 >;
 
+type AlertSetService = Pick<
+  AlertSetManagementService,
+  | "listSets"
+  | "getSet"
+  | "createSet"
+  | "renameSet"
+  | "duplicateSet"
+  | "getActivationImpact"
+  | "activateSet"
+  | "markStarterReviewComplete"
+  | "setAlertEnabled"
+  | "deleteSet"
+>;
+
 export interface ManagementUiServiceOptions {
   readonly providerService: ProviderService;
-  readonly getActiveAlertSet: () => Promise<AlertSetOverview | null>;
+  readonly alertSetService: AlertSetService;
   readonly hasBrowserOutput: () => Promise<boolean>;
-  readonly listAlertSets: () => Promise<readonly AlertSetOverview[]>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
   readonly listAssetLibraryItems: () => Promise<readonly AssetLibraryItem[]>;
   readonly getDiagnosticsWorkspace: () => Promise<DiagnosticsWorkspaceView>;
@@ -53,12 +71,13 @@ export class ManagementUiService {
   }
 
   async getHomeSetupSummary(): Promise<HomeSetupSummary> {
-    const [eventSources, ttsProviders, activeAlertSet, hasBrowserOutput] = await Promise.all([
+    const [eventSources, ttsProviders, alertSets, hasBrowserOutput] = await Promise.all([
       this.#options.providerService.listProviders("event-source"),
       this.#options.providerService.listProviders("tts"),
-      this.#options.getActiveAlertSet(),
+      this.#options.alertSetService.listSets(),
       this.#options.hasBrowserOutput()
     ]);
+    const activeAlertSet = alertSets.find((set) => set.active) ?? null;
     const activeEventSource = eventSources.find((provider) => provider.active) ?? null;
     const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
 
@@ -66,13 +85,7 @@ export class ManagementUiService {
       readiness: [
         eventSourceReadiness(activeEventSource),
         ttsReadiness(activeTtsProvider),
-        setupItem(
-          "starter-alert-set",
-          "Starter alert set",
-          activeAlertSet === null ? "action-required" : "complete",
-          activeAlertSet === null ? "Create alert set" : "Review active set",
-          "/modules/alerts"
-        ),
+        alertSetReadiness(activeAlertSet),
         setupItem(
           "browser-output",
           "Browser-source output",
@@ -128,7 +141,43 @@ export class ManagementUiService {
   }
 
   listAlertSets(): Promise<readonly AlertSetOverview[]> {
-    return this.#options.listAlertSets();
+    return this.#options.alertSetService.listSets();
+  }
+
+  getAlertSet(setId: string): Promise<AlertSetDetail> {
+    return this.#options.alertSetService.getSet(setId);
+  }
+
+  createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview> {
+    return this.#options.alertSetService.createSet(input);
+  }
+
+  renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview> {
+    return this.#options.alertSetService.renameSet(setId, input);
+  }
+
+  duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview> {
+    return this.#options.alertSetService.duplicateSet(setId, input);
+  }
+
+  getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact> {
+    return this.#options.alertSetService.getActivationImpact(setId);
+  }
+
+  activateAlertSet(setId: string, confirmWarnings: boolean): Promise<AlertSetActivationResult> {
+    return this.#options.alertSetService.activateSet(setId, confirmWarnings);
+  }
+
+  markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview> {
+    return this.#options.alertSetService.markStarterReviewComplete(setId);
+  }
+
+  setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail> {
+    return this.#options.alertSetService.setAlertEnabled(alertId, enabled);
+  }
+
+  deleteAlertSet(setId: string): Promise<void> {
+    return this.#options.alertSetService.deleteSet(setId);
   }
 
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument> {
@@ -175,6 +224,22 @@ function ttsReadiness(provider: RegisteredProviderView | null): HomeReadinessIte
     provider.connectionState === "connected" ? "complete" : provider.connectionState === "error" ? "blocked" : "action-required",
     provider.connectionState === "connected" ? "Review TTS provider" : "Resolve TTS provider",
     `/tts-providers?provider=${encodeURIComponent(provider.id)}`
+  );
+}
+
+function alertSetReadiness(alertSet: AlertSetOverview | null): HomeReadinessItem {
+  if (alertSet === null) {
+    return setupItem("starter-alert-set", "Starter alert set", "action-required", "Create alert set", "/modules/alerts");
+  }
+  const hasValidEnabledAlert =
+    alertSet.enabledAlertCount > 0 && !alertSet.validationIssues.some((issue) => issue.severity === "blocker");
+  const ready = !alertSet.starter || alertSet.starterReviewState === "complete" || hasValidEnabledAlert;
+  return setupItem(
+    "starter-alert-set",
+    "Starter alert set",
+    ready ? "complete" : "action-required",
+    ready ? "Review active set" : "Review starter alerts",
+    "/modules/alerts"
   );
 }
 

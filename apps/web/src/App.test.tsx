@@ -20,7 +20,7 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "Setup readiness" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Alerts" }));
-    expect(await screen.findByText("No alert collections configured.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "No alert sets" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Assets" }));
     expect(await screen.findByText("No assets imported yet.")).toBeInTheDocument();
@@ -77,6 +77,41 @@ function createManagementApi(): ManagementApi {
     },
     async listAlertSets() {
       return [];
+    },
+    async getAlertSet() {
+      throw new Error("not called");
+    },
+    async createAlertSet() {
+      throw new Error("not called");
+    },
+    async renameAlertSet() {
+      throw new Error("not called");
+    },
+    async duplicateAlertSet() {
+      throw new Error("not called");
+    },
+    async getAlertSetActivationImpact() {
+      return {
+        currentActiveSetId: null,
+        replacingActiveSetName: null,
+        enabledAlertCount: 0,
+        affectedTargetProfileIds: [],
+        affectedEventTypes: [],
+        blockers: [],
+        warnings: []
+      };
+    },
+    async activateAlertSet() {
+      throw new Error("not called");
+    },
+    async markStarterAlertSetReviewComplete() {
+      throw new Error("not called");
+    },
+    async setManagedAlertEnabled() {
+      throw new Error("not called");
+    },
+    async deleteAlertSet() {
+      return undefined;
     },
     async getAlertEditorDocument() {
       throw new Error("not called");

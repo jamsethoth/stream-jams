@@ -385,6 +385,37 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
     updateTtsSafety: vi.fn(async (_providerId, input) => input),
     testProviderVoice: vi.fn(async () => ({ delivered: true, error: null })),
     listAlertSets: vi.fn(async () => []),
+    getAlertSet: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    createAlertSet: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    renameAlertSet: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    duplicateAlertSet: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    getAlertSetActivationImpact: vi.fn(async () => ({
+      currentActiveSetId: null,
+      replacingActiveSetName: null,
+      enabledAlertCount: 0,
+      affectedTargetProfileIds: [],
+      affectedEventTypes: [],
+      blockers: [],
+      warnings: []
+    })),
+    activateAlertSet: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    markStarterAlertSetReviewComplete: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    setManagedAlertEnabled: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    deleteAlertSet: vi.fn(async () => undefined),
     getAlertEditorDocument: vi.fn(async () => {
       throw new Error("not called");
     }),

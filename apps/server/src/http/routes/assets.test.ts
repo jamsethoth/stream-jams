@@ -235,7 +235,8 @@ describe("asset routes", () => {
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
-      scope: "module"
+      scope: "module",
+      targetProfileId: "landscape"
     });
     const revokedKey = await overlayAccessService.createKey({
       overlayId: "default",
@@ -267,7 +268,11 @@ describe("asset routes", () => {
 
     const valid = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_1`
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_1?profile=landscape`
+    });
+    const wrongProfile = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_1?profile=vertical`
     });
     const invalidKey = await app.inject({
       method: "GET",
@@ -283,11 +288,11 @@ describe("asset routes", () => {
     });
     const missing = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/missing`
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/missing?profile=landscape`
     });
     const badStoragePath = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_bad_overlay_path`
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_bad_overlay_path?profile=landscape`
     });
 
     expect(valid.statusCode).toBe(200);
@@ -296,6 +301,7 @@ describe("asset routes", () => {
     expect(valid.headers["x-content-type-options"]).toBe("nosniff");
     expect(valid.rawPayload).toEqual(pngBytes);
     expect(invalidKey.statusCode).toBe(401);
+    expect(wrongProfile.statusCode).toBe(401);
     expect(revoked.statusCode).toBe(401);
     expect(wrongScope.statusCode).toBe(401);
     expect(missing.statusCode).toBe(404);

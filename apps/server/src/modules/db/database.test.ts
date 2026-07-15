@@ -6,7 +6,9 @@ const expectedTables = [
   "alert_match_logs",
   "alert_rule_collections",
   "alert_rule_conditions",
+  "alert_rule_management_metadata",
   "alert_rules",
+  "alert_set_metadata",
   "alert_variants",
   "asset_metadata",
   "event_logs",
@@ -28,7 +30,9 @@ describe("Stream Jams SQLite database", () => {
       "002-alert-variant-selection",
       "003-twitch-accounts",
       "004-overlay-key-secret-ref",
-      "005-provider-registrations"
+      "005-provider-registrations",
+      "006-overlay-key-target-profile",
+      "007-alert-set-management"
     ]);
 
     database.runMigrations();
@@ -38,8 +42,14 @@ describe("Stream Jams SQLite database", () => {
       "002-alert-variant-selection",
       "003-twitch-accounts",
       "004-overlay-key-secret-ref",
-      "005-provider-registrations"
+      "005-provider-registrations",
+      "006-overlay-key-target-profile",
+      "007-alert-set-management"
     ]);
+
+    expect(
+      database.connection.prepare("PRAGMA table_info(overlay_keys)").all().map((column) => String(column.name))
+    ).toContain("target_profile_id");
   });
 
   it("enforces foreign keys for child records", () => {

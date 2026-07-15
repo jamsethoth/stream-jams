@@ -9,7 +9,10 @@ import {
 } from "@stream-jams/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
 import { AssetFileNotFoundError, AssetPathTraversalError, type LocalAssetStore } from "../../modules/assets/local-asset-store.js";
-import { createOverlayAuthPreHandler } from "../middleware/overlay-auth.js";
+import {
+  createOverlayAuthPreHandler,
+  parseOverlayTargetProfileQuery
+} from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
 
 export interface AssetRouteDependencies {
@@ -189,7 +192,8 @@ function readAssetId(params: unknown): string {
 
 function resolveModuleOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
   const params = readModuleOverlayParams(request.params);
-  if (params.moduleId === "" || params.overlayKey === "" || params.purpose === null) {
+  const profile = parseOverlayTargetProfileQuery(request.query, true);
+  if (params.moduleId === "" || params.overlayKey === "" || params.purpose === null || !profile.valid) {
     return null;
   }
 
@@ -198,13 +202,15 @@ function resolveModuleOverlayAccessRequest(request: FastifyRequest): OverlayRout
     moduleId: params.moduleId,
     purpose: params.purpose,
     scope: "module",
+    targetProfileId: profile.targetProfileId,
     rawKey: params.overlayKey
   };
 }
 
 function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
   const params = readUnifiedOverlayParams(request.params);
-  if (params.overlayKey === "" || params.purpose === null) {
+  const profile = parseOverlayTargetProfileQuery(request.query, false);
+  if (params.overlayKey === "" || params.purpose === null || !profile.valid) {
     return null;
   }
 
@@ -213,6 +219,7 @@ function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRou
     moduleId: null,
     purpose: params.purpose,
     scope: "unified",
+    targetProfileId: null,
     rawKey: params.overlayKey
   };
 }

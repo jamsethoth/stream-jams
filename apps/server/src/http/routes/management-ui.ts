@@ -1,5 +1,9 @@
 import {
   alertEditorDocumentSchema,
+  alertSetActivationImpactSchema,
+  alertSetActivationResultSchema,
+  alertSetDetailSchema,
+  alertSetMutationInputSchema,
   alertSetOverviewSchema,
   assetLibraryItemSchema,
   configurationBackupSummarySchema,
@@ -16,6 +20,10 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertSetActivationImpact,
+  type AlertSetActivationResult,
+  type AlertSetDetail,
+  type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
   type ConfigurationBackupSummary,
@@ -39,6 +47,14 @@ import {
   ProviderActivationConfirmationRequiredError,
   ProviderRegistrationNotFoundError
 } from "../../modules/providers/provider-management-service.js";
+import {
+  AlertRuleForSetNotFoundError,
+  AlertSetActivationBlockedError,
+  AlertSetActivationConfirmationRequiredError,
+  AlertSetDeleteBlockedError,
+  AlertSetNameConflictError,
+  AlertSetNotFoundError
+} from "../../modules/alerts/alert-set-management-service.js";
 
 export interface ManagementUiQueryService {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
@@ -55,6 +71,15 @@ export interface ManagementUiQueryService {
   ): Promise<TtsProviderSafetySettings>;
   testProviderVoice(providerId: string): Promise<ProviderVoiceTestResult>;
   listAlertSets(): Promise<readonly AlertSetOverview[]>;
+  getAlertSet(setId: string): Promise<AlertSetDetail>;
+  createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
+  activateAlertSet(setId: string, confirmWarnings: boolean): Promise<AlertSetActivationResult>;
+  markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview>;
+  setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
+  deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
@@ -166,6 +191,111 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     parseList(await service.listAlertSets(), alertSetOverviewSchema)
   );
 
+  app.get("/management/alert-sets/:setId", { preHandler }, async (request, reply) => {
+    try {
+      return alertSetDetailSchema.parse(await service.getAlertSet(readParam(request.params, "setId")));
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alert-sets", { preHandler }, async (request, reply) => {
+    const input = readAlertSetMutationInput(request.body, reply);
+    if (input === null) return;
+    try {
+      return reply.status(201).send(alertSetOverviewSchema.parse(await service.createAlertSet(input)));
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.patch("/management/alert-sets/:setId", { preHandler }, async (request, reply) => {
+    const input = readAlertSetMutationInput(request.body, reply);
+    if (input === null) return;
+    try {
+      return alertSetOverviewSchema.parse(
+        await service.renameAlertSet(readParam(request.params, "setId"), input)
+      );
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alert-sets/:setId/duplicate", { preHandler }, async (request, reply) => {
+    const input = readAlertSetMutationInput(request.body, reply);
+    if (input === null) return;
+    try {
+      return reply.status(201).send(
+        alertSetOverviewSchema.parse(await service.duplicateAlertSet(readParam(request.params, "setId"), input))
+      );
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.get("/management/alert-sets/:setId/activation-impact", { preHandler }, async (request, reply) => {
+    try {
+      return alertSetActivationImpactSchema.parse(
+        await service.getAlertSetActivationImpact(readParam(request.params, "setId"))
+      );
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alert-sets/:setId/activate", { preHandler }, async (request, reply) => {
+    const confirmation = readValue(request.body, "confirmWarnings");
+    if (confirmation !== undefined && typeof confirmation !== "boolean") {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_SET_ACTIVATION_CONFIRMATION",
+        message: "confirmWarnings must be true or false"
+      });
+    }
+    try {
+      return alertSetActivationResultSchema.parse(
+        await service.activateAlertSet(readParam(request.params, "setId"), confirmation ?? false)
+      );
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alert-sets/:setId/starter-review", { preHandler }, async (request, reply) => {
+    try {
+      return alertSetOverviewSchema.parse(
+        await service.markStarterAlertSetReviewComplete(readParam(request.params, "setId"))
+      );
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.patch("/management/alerts/:alertId/enabled", { preHandler }, async (request, reply) => {
+    const enabled = readValue(request.body, "enabled");
+    if (typeof enabled !== "boolean") {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_ENABLED_STATE",
+        message: "enabled must be true or false"
+      });
+    }
+    try {
+      return alertSetDetailSchema.parse(
+        await service.setManagedAlertEnabled(readParam(request.params, "alertId"), enabled)
+      );
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.delete("/management/alert-sets/:setId", { preHandler }, async (request, reply) => {
+    try {
+      await service.deleteAlertSet(readParam(request.params, "setId"));
+      return reply.status(204).send();
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
   app.get("/management/alerts/:alertId/editor", { preHandler }, async (request) =>
     alertEditorDocumentSchema.parse(await service.getAlertEditorDocument(readParam(request.params, "alertId")))
   );
@@ -195,6 +325,53 @@ function sendProviderCommandError(reply: Parameters<typeof sendHttpError>[0], er
   }
   if (error instanceof ProviderActivationConfirmationRequiredError) {
     return reply.status(409).send({ error: { code: error.code, message: error.message }, impact: error.impact });
+  }
+  throw error;
+}
+
+function readAlertSetMutationInput(
+  body: unknown,
+  reply: Parameters<typeof sendHttpError>[0]
+): AlertSetMutationInput | null {
+  const input = alertSetMutationInputSchema.safeParse(body);
+  if (input.success) return input.data;
+  sendHttpError(reply, 400, {
+    code: "INVALID_ALERT_SET_NAME",
+    message: "Enter an alert set name between 1 and 120 characters."
+  });
+  return null;
+}
+
+function sendAlertSetCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+  if (error instanceof AlertSetNotFoundError || error instanceof AlertRuleForSetNotFoundError) {
+    return sendHttpError(reply, 404, {
+      code: "ALERT_SET_NOT_FOUND",
+      message: "The selected alert set or alert no longer exists. Refresh the alert set and try again."
+    });
+  }
+  if (error instanceof AlertSetNameConflictError) {
+    return sendHttpError(reply, 409, {
+      code: "ALERT_SET_NAME_CONFLICT",
+      message: "Choose a different name; alert set names must be unique."
+    });
+  }
+  if (error instanceof AlertSetActivationBlockedError) {
+    return reply.status(409).send({
+      error: { code: "ALERT_SET_ACTIVATION_BLOCKED", message: error.message },
+      impact: error.impact
+    });
+  }
+  if (error instanceof AlertSetActivationConfirmationRequiredError) {
+    return reply.status(409).send({
+      error: { code: "ALERT_SET_ACTIVATION_CONFIRMATION_REQUIRED", message: error.message },
+      impact: error.impact
+    });
+  }
+  if (error instanceof AlertSetDeleteBlockedError) {
+    return sendHttpError(reply, 409, {
+      code: error.reason === "active" ? "ACTIVE_ALERT_SET_DELETE_BLOCKED" : "ONLY_ALERT_SET_DELETE_BLOCKED",
+      message: error.message
+    });
   }
   throw error;
 }

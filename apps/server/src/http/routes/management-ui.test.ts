@@ -30,7 +30,7 @@ describe("management UI contract routes", () => {
     expect(responses.map((response) => response.statusCode)).toEqual(requests.map(() => 200));
     expect(responses[0]?.json()).toEqual({ readiness: [], activeAlertSet: null, actionableProblems: [] });
     expect(responses[1]?.json()).toEqual([expect.objectContaining({ id: "provider-twitch-main" })]);
-    expect(responses[4]?.json()).toEqual([]);
+    expect(responses[4]?.json()).toEqual([expect.objectContaining({ id: "set-default" })]);
     expect(responses[5]?.json()).toEqual(expect.objectContaining({ id: "alert-follow" }));
     expect(responses[8]?.json()).toEqual(expect.objectContaining({ state: "ready" }));
   });
@@ -118,6 +118,105 @@ describe("management UI contract routes", () => {
     expect(voice.statusCode).toBe(200);
     expect(voice.json()).toEqual({ delivered: true, error: null });
   });
+
+  it("manages alert sets without routing commands through the legacy collection API", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const detail = await app.inject({ method: "GET", url: "/management/alert-sets/set-default", headers: authHeaders });
+    const created = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets",
+      headers: authHeaders,
+      payload: { name: "Spooky season" }
+    });
+    const renamed = await app.inject({
+      method: "PATCH",
+      url: "/management/alert-sets/set-default",
+      headers: authHeaders,
+      payload: { name: "Everyday" }
+    });
+    const duplicated = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/duplicate",
+      headers: authHeaders,
+      payload: { name: "Everyday copy" }
+    });
+    const impact = await app.inject({
+      method: "GET",
+      url: "/management/alert-sets/set-default/activation-impact",
+      headers: authHeaders
+    });
+    const activated = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/activate",
+      headers: authHeaders,
+      payload: { confirmWarnings: true }
+    });
+    const reviewed = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/starter-review",
+      headers: authHeaders
+    });
+    const enabled = await app.inject({
+      method: "PATCH",
+      url: "/management/alerts/alert-follow/enabled",
+      headers: authHeaders,
+      payload: { enabled: true }
+    });
+    const deleted = await app.inject({ method: "DELETE", url: "/management/alert-sets/set-seasonal", headers: authHeaders });
+
+    expect([detail, created, renamed, duplicated, impact, activated, reviewed, enabled].map((response) => response.statusCode)).toEqual([
+      200,
+      201,
+      200,
+      201,
+      200,
+      200,
+      200,
+      200
+    ]);
+    expect(deleted.statusCode).toBe(204);
+    expect(service.alertSetCommands).toEqual([
+      ["create", "Spooky season"],
+      ["rename", "set-default", "Everyday"],
+      ["duplicate", "set-default", "Everyday copy"],
+      ["activate", "set-default", true],
+      ["review", "set-default"],
+      ["enable-alert", "alert-follow", true],
+      ["delete", "set-seasonal"]
+    ]);
+  });
+
+  it("rejects malformed alert-set command input with actionable client errors", async () => {
+    const { app, authHeaders } = await createApp();
+    const invalidName = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets",
+      headers: authHeaders,
+      payload: { name: " " }
+    });
+    const invalidEnabled = await app.inject({
+      method: "PATCH",
+      url: "/management/alerts/alert-follow/enabled",
+      headers: authHeaders,
+      payload: { enabled: "yes" }
+    });
+
+    expect(invalidName.statusCode).toBe(400);
+    expect(invalidName.json()).toEqual({
+      error: {
+        code: "INVALID_ALERT_SET_NAME",
+        message: "Enter an alert set name between 1 and 120 characters."
+      }
+    });
+    expect(invalidEnabled.statusCode).toBe(400);
+    expect(invalidEnabled.json()).toEqual({
+      error: {
+        code: "INVALID_ALERT_ENABLED_STATE",
+        message: "enabled must be true or false"
+      }
+    });
+  });
 });
 
 async function createApp() {
@@ -149,6 +248,7 @@ async function createApp() {
 class StubManagementUiQueryService {
   readonly registeredSetups: unknown[] = [];
   readonly activationRequests: Array<{ readonly providerId: string; readonly confirmWarnings: boolean }> = [];
+  readonly alertSetCommands: unknown[][] = [];
 
   async getHomeSetupSummary() {
     return { readiness: [], activeAlertSet: null, actionableProblems: [] };
@@ -239,7 +339,49 @@ class StubManagementUiQueryService {
   }
 
   async listAlertSets() {
-    return [];
+    return [alertSetOverview()];
+  }
+
+  async getAlertSet() {
+    return { overview: alertSetOverview(), inventory: [alertInventoryRow()], browserSources: [] };
+  }
+
+  async createAlertSet(input: { readonly name: string }) {
+    this.alertSetCommands.push(["create", input.name]);
+    return { ...alertSetOverview(), id: "set-seasonal", name: input.name, active: false, starter: false };
+  }
+
+  async renameAlertSet(setId: string, input: { readonly name: string }) {
+    this.alertSetCommands.push(["rename", setId, input.name]);
+    return { ...alertSetOverview(), id: setId, name: input.name };
+  }
+
+  async duplicateAlertSet(setId: string, input: { readonly name: string }) {
+    this.alertSetCommands.push(["duplicate", setId, input.name]);
+    return { ...alertSetOverview(), id: "set-copy", name: input.name, active: false, starter: false };
+  }
+
+  async getAlertSetActivationImpact() {
+    return alertSetActivationImpact();
+  }
+
+  async activateAlertSet(setId: string, confirmWarnings: boolean) {
+    this.alertSetCommands.push(["activate", setId, confirmWarnings]);
+    return { activeSet: alertSetOverview(), replacedSetId: null, impact: alertSetActivationImpact() };
+  }
+
+  async markStarterAlertSetReviewComplete(setId: string) {
+    this.alertSetCommands.push(["review", setId]);
+    return { ...alertSetOverview(), starterReviewState: "complete" as const };
+  }
+
+  async setManagedAlertEnabled(alertId: string, enabled: boolean) {
+    this.alertSetCommands.push(["enable-alert", alertId, enabled]);
+    return { overview: alertSetOverview(), inventory: [{ ...alertInventoryRow(), enabled }], browserSources: [] };
+  }
+
+  async deleteAlertSet(setId: string) {
+    this.alertSetCommands.push(["delete", setId]);
   }
 
   async getAlertEditorDocument() {
@@ -285,4 +427,48 @@ class StubManagementUiQueryService {
       blockers: []
     };
   }
+}
+
+function alertSetOverview() {
+  return {
+    id: "set-default",
+    name: "Default",
+    active: true,
+    starter: true,
+    starterReviewState: "pending" as const,
+    enabledAlertCount: 0,
+    targetProfiles: [
+      { id: "landscape" as const, enabled: true, reviewState: "ready" as const, blockerCount: 0, warningCount: 0 },
+      { id: "vertical" as const, enabled: false, reviewState: "needs-review" as const, blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+}
+
+function alertInventoryRow() {
+  return {
+    id: "alert-follow",
+    setId: "set-default",
+    providerKind: "twitch" as const,
+    eventType: "follow" as const,
+    name: "New follower",
+    kind: "default" as const,
+    enabled: false,
+    reviewState: "needs-review" as const,
+    targetProfileIds: ["landscape" as const],
+    previewText: "Thanks for following, {actor.displayName}!"
+  };
+}
+
+function alertSetActivationImpact() {
+  return {
+    currentActiveSetId: "set-default",
+    replacingActiveSetName: null,
+    enabledAlertCount: 0,
+    affectedTargetProfileIds: ["landscape" as const],
+    affectedEventTypes: [],
+    blockers: [],
+    warnings: []
+  };
 }
