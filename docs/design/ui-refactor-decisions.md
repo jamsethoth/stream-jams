@@ -332,7 +332,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Switching target profiles with unsaved changes prompts: save and switch profile, discard and switch profile, or cancel.
 - Editor shows lightweight live validation for the current alert.
 - Authoritative set validation runs after save and before activation.
-- Focused editor uses a distinct route, such as `/modules/alerts/editor/:alertId`.
+- Focused editor uses a distinct route, such as `/manage/modules/alerts/editor/:alertId`.
 - Deep links from set tables and browser back/forward behavior should work predictably.
 - Editor and management routes should use stable IDs internally, with human-readable names shown in breadcrumbs and page text.
 - Avoid routing by editable set/event/variation names.

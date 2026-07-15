@@ -153,7 +153,7 @@ Goal: build the distinct focused editor route.
 
 Work:
 
-- Add `/modules/alerts/editor/:alertId` route in the local route model.
+- Add `/manage/modules/alerts/editor/:alertId` route in the local route model.
 - Implement focused shell with breadcrumb/header, alert tree/search, target profile switch, canvas, toolbar, and right inspector.
 - Implement MVP layer types: text, image, video/GIF, audio, TTS, and shape only if needed.
 - Implement per-profile geometry, safe-area guides, zoom controls, grid/center/edge snapping, exact inspector fields, layer visibility, ordering, undo/redo, and dirty guard.

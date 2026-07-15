@@ -60,6 +60,11 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     };
   }, [managementApi]);
 
+  useEffect(() => {
+    if (loading || window.location.hash !== "#backup-restore") return;
+    document.getElementById("backup-restore")?.scrollIntoView({ block: "start" });
+  }, [loading]);
+
   const serverDirty = savedConfig.host !== configDraft.host || savedConfig.port !== configDraft.port;
 
   const saveServer = useCallback(async () => {

@@ -188,7 +188,24 @@ describe("management alert contracts and rules", () => {
     ).toBe(false);
 
     const saveInput = schema("alertEditorSaveInputSchema");
-    expect(saveInput.parse({ document })).toEqual({ document });
+    expect(saveInput.parse({ document })).toEqual({ document, confirmLiveImpact: false });
+    expect(saveInput.parse({ document, confirmLiveImpact: true })).toEqual({ document, confirmLiveImpact: true });
+
+    const affectedProfiles = exportedFunction("getAlertEditorAffectedProfileIds");
+    const liveEdit = {
+      ...document,
+      layers: document.layers.map((layer) => ({ ...layer, template: "Welcome, {userName}!" }))
+    };
+    expect(affectedProfiles(document as never, liveEdit as never)).toEqual(["landscape"]);
+    const disabledProfileEdit = {
+      ...document,
+      targetProfiles: document.targetProfiles.map((profile) =>
+        profile.id === "vertical"
+          ? { ...profile, layerLayouts: profile.layerLayouts.map((layout) => ({ ...layout, x: layout.x + 20 })) }
+          : profile
+      )
+    };
+    expect(affectedProfiles(document as never, disabledProfileEdit as never)).toEqual([]);
 
     const testRequest = schema("alertEditorTestRequestSchema");
     const request = {

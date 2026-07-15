@@ -35,6 +35,8 @@ export interface DiagnosticsServiceOptions {
   readonly redactor: Redactor;
   readonly providerStatusSources?: readonly DiagnosticsProviderStatusSource[];
   readonly runtimeLogSource?: DiagnosticsRuntimeLogSource | undefined;
+  readonly resolveProviderRegistrationId?: ((providerKindOrId: string) => Promise<string | null>) | undefined;
+  readonly resolveAlertSetId?: ((alertId: string) => Promise<string | null>) | undefined;
   readonly now?: (() => Date) | undefined;
   readonly defaultLimit?: number | undefined;
   readonly maxLimit?: number | undefined;
@@ -103,6 +105,8 @@ export class DiagnosticsService {
   readonly #redactor: Redactor;
   readonly #providerStatusSources: readonly DiagnosticsProviderStatusSource[];
   readonly #runtimeLogSource: DiagnosticsRuntimeLogSource | null;
+  readonly #resolveProviderRegistrationId: (providerKindOrId: string) => Promise<string | null>;
+  readonly #resolveAlertSetId: (alertId: string) => Promise<string | null>;
   readonly #now: () => Date;
   readonly #defaultLimit: number;
   readonly #maxLimit: number;
@@ -112,6 +116,8 @@ export class DiagnosticsService {
     this.#redactor = options.redactor;
     this.#providerStatusSources = options.providerStatusSources ?? [];
     this.#runtimeLogSource = options.runtimeLogSource ?? null;
+    this.#resolveProviderRegistrationId = options.resolveProviderRegistrationId ?? (async () => null);
+    this.#resolveAlertSetId = options.resolveAlertSetId ?? (async () => null);
     this.#now = options.now ?? (() => new Date());
     this.#defaultLimit = options.defaultLimit ?? 50;
     this.#maxLimit = options.maxLimit ?? 200;
@@ -162,10 +168,38 @@ export class DiagnosticsService {
     const runtimeLogs = await this.#readRuntimeLogs(runtimeLogLimit, options.sinceHours);
     const diagnostics = this.#buildDiagnostics(eventLogs, alertMatchLogs, playbackLogs, null);
     const redactedRuntimeLogs = runtimeLogs.entries.map((entry) => this.#redactor.redact(entry));
+    const providerIds = new Map(await Promise.all(
+      [...new Set([
+        ...eventLogs.map((log) => log.event.ingestProvider),
+        ...diagnostics.providerErrors.map((error) => error.providerId)
+      ])].map(async (providerKindOrId) => [
+        providerKindOrId,
+        await this.#resolveProviderRegistrationId(providerKindOrId)
+      ] as const)
+    ));
+    const alertSetIds = new Map(await Promise.all(
+      [...new Set(alertMatchLogs.map((match) => match.ruleId))].map(async (alertId) => [
+        alertId,
+        await this.#resolveAlertSetIdSafely(alertId)
+      ] as const)
+    ));
 
     return diagnosticsWorkspaceViewSchema.parse({
-      problems: this.#buildWorkspaceProblems(diagnostics.providerErrors, playbackLogs, redactedRuntimeLogs),
-      events: eventLogs.map((log) => this.#mapWorkspaceEvent(log, alertMatchLogs, playbackLogs)),
+      problems: this.#buildWorkspaceProblems(
+        diagnostics.providerErrors,
+        alertMatchLogs,
+        playbackLogs,
+        redactedRuntimeLogs,
+        providerIds,
+        alertSetIds
+      ),
+      events: eventLogs.map((log) => this.#mapWorkspaceEvent(
+        log,
+        alertMatchLogs,
+        playbackLogs,
+        providerIds,
+        alertSetIds
+      )),
       rawLogs: redactedRuntimeLogs.map((entry, index) => this.#mapWorkspaceRawLog(entry, index))
     });
   }
@@ -234,8 +268,8 @@ export class DiagnosticsService {
       .filter((log) => log.status === "failed")
       .map((log) => ({
         id: `event-log:${log.id}`,
-        providerId: log.event.providerId,
-        label: `${log.event.providerId} event pipeline`,
+        providerId: log.event.ingestProvider,
+        label: `${log.event.ingestProvider} event pipeline`,
         occurredAt: log.receivedAt,
         message: this.#redactor.redactText(log.errorMessage ?? "Provider event processing failed"),
         correlationId: log.correlationId,
@@ -262,16 +296,20 @@ export class DiagnosticsService {
   #mapWorkspaceEvent(
     log: EventLogRecord,
     alertMatchLogs: readonly AlertMatchLogRecord[],
-    playbackLogs: readonly PlaybackLogRecord[]
+    playbackLogs: readonly PlaybackLogRecord[],
+    providerIds: ReadonlyMap<string, string | null>,
+    alertSetIds: ReadonlyMap<string, string | null>
   ): DiagnosticsEventView {
     const matches = alertMatchLogs.filter((match) => match.sourceEventId === log.event.id);
     const playback = playbackLogs.find((entry) => entry.sourceEventId === log.event.id) ?? null;
     const alertIds = playback?.alertIds ?? [];
+    const alertId = matches[0]?.ruleId;
+    const providerId = providerIds.get(log.event.ingestProvider) ?? log.event.providerId;
     const referenceId = log.correlationId;
     const sanitizedPayload = this.#redactor.redact<Record<string, unknown>>({
       id: log.event.id,
       type: log.event.type,
-      providerId: log.event.providerId,
+      providerId,
       sourcePlatform: log.event.sourcePlatform,
       ingestProvider: log.event.ingestProvider,
       occurredAt: log.event.occurredAt,
@@ -283,7 +321,7 @@ export class DiagnosticsService {
 
     return {
       id: log.id,
-      providerId: log.event.providerId,
+      providerId,
       providerKind: log.event.ingestProvider,
       eventType: log.event.type,
       occurredAt: log.event.occurredAt,
@@ -297,20 +335,32 @@ export class DiagnosticsService {
       playbackStatus: playback?.status ?? null,
       errorMessage: log.errorMessage === null ? null : this.#redactor.redactText(log.errorMessage),
       sanitizedPayload,
-      correction: alertIds[0] === undefined
-        ? providerCorrection(log.event.ingestProvider, referenceId)
-        : alertCorrection(alertIds[0], referenceId)
+      correction: alertId === undefined
+        ? providerCorrection(providerId, referenceId, log.event.ingestProvider)
+        : alertCorrection(alertId, referenceId, alertSetIds.get(alertId) ?? null)
     };
+  }
+
+  async #resolveAlertSetIdSafely(alertId: string): Promise<string | null> {
+    try {
+      return await this.#resolveAlertSetId(alertId);
+    } catch {
+      return null;
+    }
   }
 
   #buildWorkspaceProblems(
     providerErrors: readonly DiagnosticsProviderErrorView[],
+    alertMatchLogs: readonly AlertMatchLogRecord[],
     playbackLogs: readonly PlaybackLogRecord[],
-    runtimeLogs: readonly RuntimeLogEntry[]
+    runtimeLogs: readonly RuntimeLogEntry[],
+    providerIds: ReadonlyMap<string, string | null>,
+    alertSetIds: ReadonlyMap<string, string | null>
   ): readonly DiagnosticsProblemView[] {
     const providerProblems = providerErrors.map((error) => {
       const referenceId = error.correlationId;
-      const correction = providerCorrection(error.providerId, referenceId);
+      const providerId = providerIds.get(error.providerId) ?? error.providerId;
+      const correction = providerCorrection(providerId, referenceId, error.providerId);
       return {
         id: error.id,
         area: correctionArea(correction, "providers"),
@@ -326,8 +376,14 @@ export class DiagnosticsService {
     const playbackProblems = playbackLogs
       .filter((log) => log.status === "failed")
       .map((log) => {
-        const correction = correctionForEvidence(log.message ?? "", log.correlationId, log.alertIds[0]);
-        const area = correctionArea(correction, log.alertIds.length > 0 ? "alerts" : "runtime");
+        const alertId = alertMatchLogs.find((match) => match.sourceEventId === log.sourceEventId)?.ruleId;
+        const correction = correctionForEvidence(
+          log.message ?? "",
+          log.correlationId,
+          alertId,
+          alertId === undefined ? null : alertSetIds.get(alertId) ?? null
+        );
+        const area = correctionArea(correction, alertId === undefined ? "runtime" : "alerts");
         return {
           id: `playback-log:${log.id}`,
           area,
@@ -399,25 +455,36 @@ export class DiagnosticsService {
   }
 }
 
-function providerCorrection(providerId: string, referenceId: string | null) {
-  const normalized = providerId.toLowerCase();
+function providerCorrection(providerId: string, referenceId: string | null, providerKindOrId = providerId) {
+  const normalized = providerKindOrId.toLowerCase();
   if (normalized.includes("secret") || normalized.includes("config") || normalized.includes("database")) {
-    return correction("Open settings", "/settings", referenceId);
+    return correction("Open settings", "/manage/settings", referenceId);
   }
   if (normalized.includes("speaker") || normalized.includes("tts")) {
-    return correction("Open TTS providers", "/tts-providers", referenceId);
+    return correction("Open TTS providers", providerRoute("/manage/tts-providers", providerId), referenceId);
   }
-  return correction("Open event sources", "/event-sources", referenceId);
+  return correction("Open event sources", providerRoute("/manage/event-sources", providerId), referenceId);
 }
 
-function alertCorrection(alertId: string, referenceId: string | null) {
-  return correction("Open alert", `/modules/alerts/editor/${encodeURIComponent(alertId)}`, referenceId);
+function providerRoute(path: string, providerId: string): string {
+  return `${path}?provider=${encodeURIComponent(providerId)}`;
 }
 
-function correctionForEvidence(message: string, referenceId: string | null, alertId?: string) {
+function alertCorrection(alertId: string, referenceId: string | null, setId: string | null = null) {
+  const route = `/manage/modules/alerts/editor/${encodeURIComponent(alertId)}`
+    + (setId === null ? "" : `?set=${encodeURIComponent(setId)}`);
+  return correction("Open alert", route, referenceId);
+}
+
+function correctionForEvidence(
+  message: string,
+  referenceId: string | null,
+  alertId?: string,
+  alertSetId: string | null = null
+) {
   const normalized = message.toLowerCase();
   if (normalized.includes("asset") || normalized.includes("media file")) {
-    return correction("Open assets", "/assets", referenceId);
+    return correction("Open assets", "/manage/assets", referenceId);
   }
   if (
     normalized.includes("overlay") ||
@@ -425,18 +492,18 @@ function correctionForEvidence(message: string, referenceId: string | null, aler
     normalized.includes("browser source") ||
     normalized.includes("no client")
   ) {
-    return correction("Open browser sources", "/modules/alerts#browser-sources", referenceId);
+    return correction("Open browser sources", "/manage/modules/alerts#browser-sources", referenceId);
   }
   if (normalized.includes("speaker") || normalized.includes("tts")) {
-    return correction("Open TTS providers", "/tts-providers", referenceId);
+    return correction("Open TTS providers", "/manage/tts-providers", referenceId);
   }
   if (normalized.includes("twitch") || normalized.includes("eventsub") || normalized.includes("streamerbot") || normalized.includes("provider")) {
-    return correction("Open event sources", "/event-sources", referenceId);
+    return correction("Open event sources", "/manage/event-sources", referenceId);
   }
   if (normalized.includes("setting") || normalized.includes("config") || normalized.includes("database") || normalized.includes("secret")) {
-    return correction("Open settings", "/settings", referenceId);
+    return correction("Open settings", "/manage/settings", referenceId);
   }
-  return alertId === undefined ? null : alertCorrection(alertId, referenceId);
+  return alertId === undefined ? null : alertCorrection(alertId, referenceId, alertSetId);
 }
 
 function correction(label: string, route: string, referenceId: string | null) {
@@ -455,11 +522,11 @@ function correctionArea(
   fallback: DiagnosticsProblemArea
 ): DiagnosticsProblemArea {
   if (target === null) return fallback;
-  if (target.route.startsWith("/event-sources") || target.route.startsWith("/tts-providers")) return "providers";
-  if (target.route.startsWith("/modules/alerts/editor")) return "alerts";
-  if (target.route.startsWith("/assets")) return "assets";
+  if (target.route.startsWith("/manage/event-sources") || target.route.startsWith("/manage/tts-providers")) return "providers";
+  if (target.route.startsWith("/manage/modules/alerts/editor")) return "alerts";
+  if (target.route.startsWith("/manage/assets")) return "assets";
   if (target.route.includes("browser-sources")) return "outputs";
-  if (target.route.startsWith("/settings")) return "settings";
+  if (target.route.startsWith("/manage/settings")) return "settings";
   return fallback;
 }
 

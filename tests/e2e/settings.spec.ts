@@ -52,11 +52,11 @@ test("settings warns before discarding dirty changes during local navigation", a
   await page.getByRole("link", { name: "Assets" }).click();
 
   await expect(page.getByRole("dialog", { name: "Leave with unsaved changes?" })).toBeVisible();
-  await expect(page).toHaveURL(/\/settings$/u);
+  await expect(page).toHaveURL(/\/manage\/settings$/u);
   await page.getByRole("button", { name: "Cancel" }).click();
   await page.getByRole("link", { name: "Assets" }).click();
   await page.getByRole("button", { name: "Discard" }).click();
-  await expect(page).toHaveURL(/\/assets$/u);
+  await expect(page).toHaveURL(/\/manage\/assets$/u);
   await expect(page.getByText("No assets imported yet.")).toBeVisible();
 });
 
@@ -84,7 +84,7 @@ test("settings exports and restores only after validated typed confirmation", as
     });
   });
 
-  await page.goto("/settings");
+  await page.goto("/manage/settings");
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export backup" }).click();
   const download = await downloadPromise;

@@ -6,6 +6,7 @@ import type {
 } from "@stream-jams/core";
 import {
   AlertEditorDeliveryBlockedError,
+  AlertEditorLiveImpactConfirmationRequiredError,
   AlertEditorService,
   AlertEditorValidationError,
   type AlertEditorDocumentRepository
@@ -96,6 +97,24 @@ describe("AlertEditorService", () => {
     expect(harness.documents.save).not.toHaveBeenCalled();
   });
 
+  it("requires explicit confirmation before changing live output in an active set", async () => {
+    const harness = createHarness(true);
+    const document = await harness.service.getDocument(rule.id);
+    const edited: AlertEditorDocument = {
+      ...document,
+      layers: document.layers.map((layer) =>
+        layer.type === "text" ? { ...layer, template: "Live change, {userName}!" } : layer
+      )
+    };
+
+    await expect(harness.service.saveDocument(rule.id, edited)).rejects.toBeInstanceOf(
+      AlertEditorLiveImpactConfirmationRequiredError
+    );
+    expect(harness.documents.save).not.toHaveBeenCalled();
+
+    await expect(harness.service.saveDocument(rule.id, edited, true)).resolves.toEqual(edited);
+  });
+
   it("queues visible layers through playback and blocks disconnected outputs", async () => {
     const harness = createHarness();
     const document = await harness.service.getDocument(rule.id);
@@ -133,13 +152,14 @@ describe("AlertEditorService", () => {
   });
 });
 
-function createHarness() {
+function createHarness(activeSet = false) {
   const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
     find: vi.fn(async () => null),
     save: vi.fn(async (document: AlertEditorDocument) => document)
   };
   const rules = {
     findRuleById: vi.fn(async () => rule),
+    listCollections: vi.fn(async () => [{ id: "set-default", name: "Default", enabled: activeSet }]),
     saveRule: vi.fn(async (savedRule: AlertRule) => savedRule)
   };
   const metadata = {

@@ -509,211 +509,11 @@ textarea {
   margin: 0;
 }
 
-.management-metric-grid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  margin-top: 16px;
-}
-
-.management-metric {
-  border: 1px solid #e4e8ef;
-  border-radius: 6px;
-  display: grid;
-  gap: 6px;
-  min-height: 88px;
-  padding: 14px;
-}
-
-.management-metric span {
-  color: #5f6673;
-  font-size: 13px;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.management-metric strong {
-  color: #20242c;
-  font-size: 18px;
-  line-height: 1.25;
-}
-
-.management-subsection {
-  margin-top: 20px;
-}
-
-.management-list {
-  display: grid;
-  gap: 8px;
-  list-style: none;
-  margin: 12px 0 0;
-  padding: 0;
-}
-
-.management-list li {
-  align-items: center;
-  border: 1px solid #e4e8ef;
-  border-radius: 6px;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  min-height: 42px;
-  padding: 10px 12px;
-}
-
-.management-module-list,
-.management-output-list {
-  display: grid;
-  gap: 14px;
-  margin-top: 16px;
-}
-
-.management-module,
-.management-output {
-  border: 1px solid #e4e8ef;
-  border-radius: 8px;
-  padding: 14px;
-}
-
-.management-row {
-  align-items: center;
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-}
-
-.management-wizard {
-  border-top: 1px solid #e4e8ef;
-  display: grid;
-  gap: 14px;
-  margin-top: 14px;
-  padding-top: 14px;
-}
-
-.management-field-grid,
-.management-form {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.management-field-grid label,
-.management-form label {
-  display: grid;
-  gap: 6px;
-}
-
-.management-field-grid span,
-.management-form span {
-  color: #3d4654;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.management-field-grid input,
-.management-form input,
-.management-form select {
-  border: 1px solid #c8ced8;
-  border-radius: 6px;
-  min-height: 38px;
-  padding: 0 10px;
-}
-
-.management-form button,
-.management-output button,
-.management-actions button {
-  background: #166c5f;
-  border: 1px solid #166c5f;
-  border-radius: 6px;
-  color: #ffffff;
-  cursor: pointer;
-  min-height: 38px;
-  padding: 0 14px;
-}
-
-.management-form button {
-  align-self: end;
-  justify-self: start;
-}
-
-.management-output {
-  align-items: center;
-  display: grid;
-  gap: 12px;
-  grid-template-columns: minmax(160px, 0.7fr) minmax(280px, 1.3fr) auto;
-}
-
-.management-output code {
-  background: #f2f4f7;
-  border: 1px solid #e4e8ef;
-  border-radius: 6px;
-  color: #2e3744;
-  display: block;
-  overflow-wrap: anywhere;
-  padding: 10px;
-}
-
-.management-playback-status {
-  align-items: center;
-  border: 1px solid #e4e8ef;
-  border-radius: 6px;
-  display: flex;
-  gap: 12px;
-  justify-content: space-between;
-  margin-top: 16px;
-  min-height: 48px;
-  padding: 10px 12px;
-}
-
-.management-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
-}
-
-.management-actions button:disabled {
-  background: #a7b2bd;
-  border-color: #a7b2bd;
-  cursor: not-allowed;
-}
-
-@media (max-width: 760px) {
-  .management-metric-grid,
-  .management-field-grid,
-  .management-form,
-  .management-output {
-    grid-template-columns: 1fr;
-  }
-
-  .management-row,
-  .management-playback-status {
-    align-items: stretch;
-    flex-direction: column;
-  }
-}
-
 .management-panel {
   background: transparent;
   border: 0;
   border-radius: 0;
   padding: 0;
-}
-
-.management-form--wide {
-  margin-top: 12px;
-}
-
-.management-form__wide-field {
-  grid-column: 1 / -1;
-}
-
-.management-form textarea {
-  border: 1px solid #c8ced8;
-  border-radius: 6px;
-  min-height: 96px;
-  padding: 10px;
-  resize: vertical;
 }
 
 /* Slice 2 management shell and reusable interaction foundation. */
@@ -749,8 +549,7 @@ textarea {
   margin: 0 0 3px;
 }
 
-.management-brand span,
-.management-nav--legacy > p {
+.management-brand span {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 700;
@@ -814,16 +613,6 @@ a:focus-visible {
   padding-block: 7px;
 }
 
-.management-nav--legacy {
-  border-top: 1px solid var(--color-border) !important;
-  margin-top: 18px;
-  padding-top: 16px;
-}
-
-.management-nav--legacy > p {
-  margin: 0 10px 8px;
-}
-
 .management-sidebar__footer {
   border-top: 1px solid var(--color-border);
   display: grid;
@@ -850,6 +639,19 @@ a:focus-visible {
 .management-main {
   min-width: 0;
   padding: var(--space-page);
+}
+
+.management-main--focused {
+  grid-column: 1 / -1;
+}
+
+.management-diagnostic-context {
+  background: var(--color-positive-soft);
+  border-left: 3px solid var(--color-positive);
+  color: var(--color-text);
+  margin: 0 auto 16px;
+  max-width: 1280px;
+  padding: 12px 14px;
 }
 
 .management-page-header,
@@ -957,26 +759,19 @@ a:focus-visible {
 .management-panel p,
 .asset-panel p,
 .alert-panel p,
-.management-form span,
 .alert-condition-row span,
 .alert-layout-editor span {
   color: var(--color-text-muted);
 }
 
-.management-metric,
-.management-list li,
-.management-module,
-.management-output,
 .management-fieldset,
 .alert-fieldset,
-.alert-variant-editor,
-.management-playback-status {
+.alert-variant-editor {
   background: var(--color-surface);
   border-color: var(--color-border);
   color: var(--color-text);
 }
 
-.management-metric span,
 .management-table th,
 .asset-table th,
 .alert-fieldset legend,
@@ -985,7 +780,6 @@ a:focus-visible {
   color: var(--color-text-muted);
 }
 
-.management-metric strong,
 .management-table td,
 .asset-table td,
 .management-toggle {
@@ -997,14 +791,12 @@ a:focus-visible {
 .asset-table th,
 .asset-table td,
 .alert-panel__forms,
-.alert-editor,
-.management-wizard {
+.alert-editor {
   border-color: var(--color-border);
 }
 
 .alert-condition-row button,
-.alert-variant-editor button,
-.management-output code {
+.alert-variant-editor button {
   background: var(--color-surface-subtle);
   border-color: var(--color-border-strong);
   color: var(--color-text);
@@ -1022,9 +814,6 @@ a:focus-visible {
   color: var(--color-text);
 }
 
-.management-form input,
-.management-form select,
-.management-form textarea,
 .alert-condition-row input,
 .alert-condition-row select,
 .alert-layout-editor input {

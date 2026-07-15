@@ -58,6 +58,25 @@ describe("AlertSetsPage", () => {
     expect(api.activateAlertSet).toHaveBeenCalledWith("set-seasonal", true);
   });
 
+  it("opens the alert set named by route context", async () => {
+    const seasonal = { ...overview(), id: "set-seasonal", name: "Seasonal", active: false, starter: false };
+    const getAlertSet = vi.fn(async (setId: string) => ({
+      ...detail(),
+      overview: setId === seasonal.id ? seasonal : overview()
+    }));
+
+    render(
+      <AlertSetsPage
+        initialSetId={seasonal.id}
+        managementApi={alertSetsApi({ listAlertSets: vi.fn(async () => [overview(), seasonal]), getAlertSet })}
+        onEditAlert={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByRole("heading", { name: "Seasonal" })).toBeInTheDocument();
+    expect(getAlertSet).toHaveBeenCalledWith(seasonal.id);
+  });
+
   it("requires typed confirmation before regenerating a connected browser source", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();

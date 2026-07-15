@@ -1,5 +1,7 @@
 {
   "createdBy": "codex-stream-jams-hifi-concepts",
+  "implementationStatus": "implemented-with-documented-backlog",
+  "implementationAudit": "../ui-refactor-implementation-audit.md",
   "boards": [
     {
       "name": "Hi-Fi - Home",

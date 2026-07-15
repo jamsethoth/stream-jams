@@ -78,7 +78,7 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         severity: "error",
         occurredAt: "2026-07-15T22:42:18.000Z",
         referenceId: "ref-provider-1",
-        correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-provider-1" }
+        correction: { label: "Open event sources", route: "/manage/event-sources?diagnostic=ref-provider-1" }
       },
       {
         id: "problem-output",
@@ -89,7 +89,7 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         severity: "warning",
         occurredAt: "2026-07-15T22:41:18.000Z",
         referenceId: "ref-output-1",
-        correction: { label: "Open browser sources", route: "/modules/alerts?diagnostic=ref-output-1#browser-sources" }
+        correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-output-1#browser-sources" }
       }
     ],
     events: [
@@ -109,7 +109,7 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         playbackStatus: "completed",
         errorMessage: null,
         sanitizedPayload: { userName: "Follower" },
-        correction: { label: "Open alert", route: "/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
+        correction: { label: "Open alert", route: "/manage/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
       },
       {
         id: "event-2",
@@ -127,7 +127,7 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         playbackStatus: "failed",
         errorMessage: "Alert rendering failed.",
         sanitizedPayload: { userName: "viewer42", authorization: "[REDACTED]" },
-        correction: { label: "Open alert", route: "/modules/alerts/editor/alert-sub?diagnostic=ref-event-2" }
+        correction: { label: "Open alert", route: "/manage/modules/alerts/editor/alert-sub?diagnostic=ref-event-2" }
       }
     ],
     rawLogs: [
@@ -141,7 +141,7 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         processingId: null,
         message: "Twitch EventSub socket closed.",
         data: { authorization: "[REDACTED]" },
-        correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-runtime-1" }
+        correction: { label: "Open event sources", route: "/manage/event-sources?diagnostic=ref-runtime-1" }
       },
       {
         id: "log-2",
@@ -153,7 +153,7 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         processingId: "processing-2",
         message: "Send test blocked because no client is connected.",
         data: { routeKey: "[REDACTED]" },
-        correction: { label: "Open browser sources", route: "/modules/alerts?diagnostic=ref-runtime-2#browser-sources" }
+        correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-runtime-2#browser-sources" }
       }
     ]
   };

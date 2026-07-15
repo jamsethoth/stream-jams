@@ -331,7 +331,7 @@ export class ProviderManagementService {
       referenceId,
       correction: {
         label: "Open Diagnostics",
-        route: `/diagnostics?reference=${encodeURIComponent(referenceId)}`
+        route: `/manage/diagnostics?reference=${encodeURIComponent(referenceId)}`
       }
     };
   }

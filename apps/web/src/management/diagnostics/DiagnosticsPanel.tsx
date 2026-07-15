@@ -14,16 +14,17 @@ type DiagnosticsTab = "problems" | "events" | "raw-logs";
 type SortOrder = "newest" | "oldest";
 
 export interface DiagnosticsPanelProps {
+  readonly initialReferenceId?: string | undefined;
   readonly managementApi: Pick<
     ManagementApi,
     "getDiagnosticsWorkspace" | "exportDiagnostics" | "exportDebugDiagnostics"
   >;
 }
 
-export function DiagnosticsPanel({ managementApi }: DiagnosticsPanelProps) {
+export function DiagnosticsPanel({ initialReferenceId, managementApi }: DiagnosticsPanelProps) {
   const [workspace, setWorkspace] = useState<DiagnosticsWorkspaceView | null>(null);
   const [activeTab, setActiveTab] = useState<DiagnosticsTab>("problems");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialReferenceId ?? "");
   const [filter, setFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
   const [selectedProblemId, setSelectedProblemId] = useState<string | null>(null);
@@ -41,6 +42,10 @@ export function DiagnosticsPanel({ managementApi }: DiagnosticsPanelProps) {
       mounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    setQuery(initialReferenceId ?? "");
+  }, [initialReferenceId]);
 
   const problems = useMemo(
     () => filterProblems(workspace?.problems ?? [], query, filter, sortOrder),

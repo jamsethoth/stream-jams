@@ -123,7 +123,7 @@ export class ConfigurationBackupService {
           severity: "error" as const,
           occurredAt: this.#now().toISOString(),
           referenceId: this.#options.generateReferenceId(),
-          correction: { label: "Open Diagnostics", route: "/diagnostics" }
+          correction: { label: "Open Diagnostics", route: "/manage/diagnostics" }
         }]
       };
     }
@@ -445,7 +445,7 @@ export class ConfigurationBackupService {
           "Open Diagnostics with the reference ID, close any app using the files, then remove the reported orphaned files."
         ),
         referenceId: this.#options.generateReferenceId(),
-        correction: { label: "Open Diagnostics", route: "/diagnostics" }
+        correction: { label: "Open Diagnostics", route: "/manage/diagnostics" }
       });
     }
     const restoredOrigin = `http://${restoredConfig.server.host}:${restoredConfig.server.port}`;
@@ -456,7 +456,7 @@ export class ConfigurationBackupService {
         warnings.push({
           ...warning("A browser-source URL was not regenerated", cause instanceof Error ? cause.message : "Route-key creation failed.", "Open Alert sets, regenerate the affected browser-source URL, and update OBS."),
           referenceId: this.#options.generateReferenceId(),
-          correction: { label: "Open browser sources", route: "/modules/alerts#browser-sources" }
+          correction: { label: "Open browser sources", route: "/manage/modules/alerts#browser-sources" }
         });
       }
     }
@@ -485,7 +485,7 @@ export class ConfigurationBackupService {
       severity: "error",
       occurredAt: this.#now().toISOString(),
       referenceId: this.#options.generateReferenceId(),
-      correction: { label: "Open Settings", route: "/settings#backup-restore" }
+      correction: { label: "Open Settings", route: "/manage/settings#backup-restore" }
     }, errorCause === undefined ? {} : { cause: errorCause });
   }
 }

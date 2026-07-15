@@ -455,7 +455,7 @@ Layout:
 
 Focused editor:
 
-- Distinct route such as `/modules/alerts/editor/:alertId`.
+- Distinct route such as `/manage/modules/alerts/editor/:alertId`.
 - Hides or collapses main sidebar.
 - Keeps breadcrumb/header context.
 - Keeps alert tree visible for fast switching.

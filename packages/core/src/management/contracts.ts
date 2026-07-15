@@ -343,7 +343,8 @@ export const alertEditorDocumentSchema = z.object({
 });
 
 export const alertEditorSaveInputSchema = z.object({
-  document: alertEditorDocumentSchema
+  document: alertEditorDocumentSchema,
+  confirmLiveImpact: z.boolean().default(false)
 });
 
 export const alertEditorTestRequestSchema = z.object({
@@ -666,6 +667,40 @@ export function evaluateAlertSetActivation(alertSet: AlertSetOverview): AlertSet
     blockerIds,
     warningIds
   };
+}
+
+export function getAlertEditorAffectedProfileIds(
+  savedDocument: AlertEditorDocument,
+  candidateDocument: AlertEditorDocument
+): readonly TargetProfileId[] {
+  const profileIds = new Set<TargetProfileId>();
+  for (const document of [savedDocument, candidateDocument]) {
+    for (const profile of document.targetProfiles) profileIds.add(profile.id);
+  }
+
+  return [...profileIds].filter((profileId) =>
+    JSON.stringify(alertEditorLiveOutputState(savedDocument, profileId))
+      !== JSON.stringify(alertEditorLiveOutputState(candidateDocument, profileId))
+  );
+}
+
+function alertEditorLiveOutputState(document: AlertEditorDocument, profileId: TargetProfileId) {
+  const profile = document.targetProfiles.find((candidate) => candidate.id === profileId);
+  if (!document.enabled || profile?.enabled !== true) return null;
+  return {
+    providerKind: document.providerKind,
+    eventType: document.eventType,
+    conditions: document.conditions,
+    durationMs: document.durationMs,
+    layers: document.layers.map(alertLayerLiveOutputState),
+    layerLayouts: profile.layerLayouts
+  };
+}
+
+function alertLayerLiveOutputState(layer: AlertLayer) {
+  const { name, ...state } = layer;
+  void name;
+  return state;
 }
 
 export type ManagementErrorSeverity = z.infer<typeof managementErrorSeveritySchema>;

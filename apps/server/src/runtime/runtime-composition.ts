@@ -291,38 +291,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
   });
-  const diagnosticsService = new DiagnosticsService({
-    repository: diagnosticsLogRepository,
-    redactor,
-    runtimeLogSource: runtimeLogger,
-    providerStatusSources: [
-      {
-        getStatus() {
-          const status = runtimeSecretStore.status;
-          return {
-            providerId: "runtime-secret-store",
-            label: "Runtime secret store",
-            state: status.state,
-            lastErrorAt: status.lastErrorAt,
-            message: status.message
-          };
-        }
-      },
-      {
-        getStatus() {
-          const status = twitchEventSubRuntimeService.getStatus();
-          return {
-            providerId: "twitch",
-            label: "Twitch EventSub",
-            state: toDiagnosticsProviderState(status.state),
-            lastErrorAt: status.lastErrorAt,
-            message: status.message
-          };
-        }
-      }
-    ],
-    now
-  });
   const providerRegistrationRepository = new SqliteProviderRegistrationRepository(database.connection);
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
@@ -363,7 +331,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
             severity: "warning",
             occurredAt: now().toISOString(),
             referenceId: null,
-            correction: { label: "Review active alerts", route: "/modules/alerts" }
+            correction: { label: "Review active alerts", route: "/manage/modules/alerts" }
           }
         ]
       };
@@ -444,6 +412,51 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
     now
   });
+  const diagnosticsService = new DiagnosticsService({
+    repository: diagnosticsLogRepository,
+    redactor,
+    runtimeLogSource: runtimeLogger,
+    providerStatusSources: [
+      {
+        getStatus() {
+          const status = runtimeSecretStore.status;
+          return {
+            providerId: "runtime-secret-store",
+            label: "Runtime secret store",
+            state: status.state,
+            lastErrorAt: status.lastErrorAt,
+            message: status.message
+          };
+        }
+      },
+      {
+        getStatus() {
+          const status = twitchEventSubRuntimeService.getStatus();
+          return {
+            providerId: "twitch",
+            label: "Twitch EventSub",
+            state: toDiagnosticsProviderState(status.state),
+            lastErrorAt: status.lastErrorAt,
+            message: status.message
+          };
+        }
+      }
+    ],
+    async resolveProviderRegistrationId(providerKindOrId) {
+      const providers = [
+        ...await providerManagementService.listProviders("event-source"),
+        ...await providerManagementService.listProviders("tts")
+      ];
+      return providers.find((provider) => provider.id === providerKindOrId)?.id
+        ?? providers.find((provider) => provider.kind === providerKindOrId && provider.active)?.id
+        ?? providers.find((provider) => provider.kind === providerKindOrId)?.id
+        ?? null;
+    },
+    async resolveAlertSetId(alertId) {
+      return (await alertEditorService.getDocument(alertId)).setId;
+    },
+    now
+  });
   const assetLibraryService = new AssetLibraryService({
     assetRepository,
     metadataRepository: new SqliteAssetLibraryMetadataRepository(database.connection),
@@ -510,7 +523,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           output.copyableUrlStatus === "available"
       ),
     getAlertEditorDocument: (alertId) => alertEditorService.getDocument(alertId),
-    saveAlertEditorDocument: (alertId, document) => alertEditorService.saveDocument(alertId, document),
+    saveAlertEditorDocument: (alertId, document, confirmLiveImpact) =>
+      alertEditorService.saveDocument(alertId, document, confirmLiveImpact),
     sendAlertEditorTest: (alertId, request) => alertEditorService.sendTest(alertId, request),
     listAssetLibraryItems: () => assetLibraryService.listItems(),
     updateAssetMetadata: (assetId, input) => assetLibraryService.updateMetadata(assetId, input),

@@ -8,27 +8,26 @@ import {
 
 describe("management route model", () => {
   it.each([
-    ["/", "home"],
-    ["/home", "home"],
-    ["/event-sources", "event-sources"],
-    ["/tts-providers", "tts-providers"],
-    ["/modules/alerts", "modules-alerts"],
-    ["/assets", "assets"],
-    ["/diagnostics", "diagnostics"],
-    ["/settings", "settings"],
-    ["/legacy/modules", "legacy-modules"],
-    ["/legacy/overlays", "legacy-overlays"],
-    ["/legacy/playback", "legacy-playback"]
+    ["/manage", "home"],
+    ["/manage/event-sources", "event-sources"],
+    ["/manage/tts-providers", "tts-providers"],
+    ["/manage/modules/alerts", "modules-alerts"],
+    ["/manage/assets", "assets"],
+    ["/manage/diagnostics", "diagnostics"],
+    ["/manage/settings", "settings"]
   ] as const)("parses %s as %s", (path, expectedId) => {
     expect(parseManagementRoute(path).id).toBe(expectedId);
   });
 
   it("falls back to Home for unknown paths", () => {
-    expect(parseManagementRoute("/not-a-real-page")).toEqual(parseManagementRoute("/"));
+    expect(parseManagementRoute("/not-a-real-page")).toEqual(parseManagementRoute("/manage"));
+    expect(parseManagementRoute("/legacy/modules")).toEqual({ id: "home" });
+    expect(parseManagementRoute("/legacy/overlays")).toEqual({ id: "home" });
+    expect(parseManagementRoute("/legacy/playback")).toEqual({ id: "home" });
   });
 
   it("formats stable route IDs without using editable labels", () => {
-    expect(formatManagementRoute({ id: "modules-alerts" })).toBe("/modules/alerts");
+    expect(formatManagementRoute({ id: "modules-alerts" })).toBe("/manage/modules/alerts");
     expect(managementPrimaryRoutes.map((route) => route.label)).toEqual([
       "Home",
       "Event sources",
@@ -38,12 +37,21 @@ describe("management route model", () => {
       "Diagnostics",
       "Settings"
     ]);
+    expect(managementPrimaryRoutes.map((route) => route.id)).toEqual([
+      "home",
+      "event-sources",
+      "tts-providers",
+      "modules-alerts",
+      "assets",
+      "diagnostics",
+      "settings"
+    ]);
   });
 
   it("parses a focused alert editor route with decoded query context", () => {
     expect(
       parseManagementRoute(
-        "/modules/alerts/editor/alert%2Ffollow?profile=vertical&event=channel_point_redemption&set=set%20main"
+        "/manage/modules/alerts/editor/alert%2Ffollow?profile=vertical&event=channel_point_redemption&set=set%20main"
       )
     ).toEqual({
       id: "alert-editor",
@@ -52,16 +60,34 @@ describe("management route model", () => {
       eventType: "channel_point_redemption",
       targetProfileId: "vertical"
     });
-    expect(parseManagementRoute("/modules/alerts/editor/alert-follow")).toEqual({
+    expect(parseManagementRoute("/manage/modules/alerts/editor/alert-follow")).toEqual({
       id: "alert-editor",
       alertId: "alert-follow"
     });
-    expect(parseManagementRoute("/modules/alerts/editor/alert-follow?diagnostic=ref-event-1")).toMatchObject({
+    expect(parseManagementRoute("/manage/modules/alerts/editor/alert-follow?diagnostic=ref-event-1")).toMatchObject({
       id: "alert-editor",
-      alertId: "alert-follow"
+      alertId: "alert-follow",
+      diagnosticReferenceId: "ref-event-1"
     });
-    expect(parseManagementRoute("/modules/alerts?diagnostic=ref-output-1#browser-sources")).toEqual({
-      id: "modules-alerts"
+    expect(parseManagementRoute("/manage/modules/alerts?diagnostic=ref-output-1#browser-sources")).toEqual({
+      id: "modules-alerts",
+      diagnosticReferenceId: "ref-output-1"
+    });
+  });
+
+  it("preserves non-editor deep-link context", () => {
+    expect(parseManagementRoute("/manage/event-sources?setup=add&provider=provider%20main")).toEqual({
+      id: "event-sources",
+      providerId: "provider main",
+      setup: "add"
+    });
+    expect(parseManagementRoute("/manage/modules/alerts?set=set%20seasonal")).toEqual({
+      id: "modules-alerts",
+      setId: "set seasonal"
+    });
+    expect(parseManagementRoute("/manage/diagnostics?reference=ref%2041")).toEqual({
+      id: "diagnostics",
+      referenceId: "ref 41"
     });
   });
 
@@ -75,7 +101,7 @@ describe("management route model", () => {
     } as const;
 
     expect(formatManagementRoute(route)).toBe(
-      "/modules/alerts/editor/alert%2Ffollow?set=set+main&event=channel_point_redemption&profile=vertical"
+      "/manage/modules/alerts/editor/alert%2Ffollow?set=set+main&event=channel_point_redemption&profile=vertical"
     );
     expect(parseManagementRoute(formatManagementRoute(route))).toEqual(route);
   });
@@ -83,7 +109,7 @@ describe("management route model", () => {
   it("returns focused editor breadcrumbs without adding an editor navigation item", () => {
     expect(getManagementRouteDefinition({ id: "alert-editor", alertId: "alert-follow" })).toMatchObject({
       id: "alert-editor",
-      path: "/modules/alerts/editor/:alertId",
+      path: "/manage/modules/alerts/editor/:alertId",
       breadcrumbs: ["Modules", "Alerts", "Alert editor"]
     });
     expect(managementPrimaryRoutes.map((route) => route.id)).not.toContain("alert-editor");

@@ -51,6 +51,21 @@ export const UnsavedEdit: Story = {
   }
 };
 
+export const ActiveSetSaveWarning: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const template = await canvas.findByRole("textbox", { name: "Message template" });
+    await userEvent.clear(template);
+    await userEvent.type(template, "Live output update");
+    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    const dialog = within(
+      await within(globalThis.document.body).findByRole("dialog", { name: "Save changes to active alert?" })
+    );
+    await expect(dialog.getByText("Follow events")).toBeVisible();
+    await expect(dialog.getByText("Landscape")).toBeVisible();
+  }
+};
+
 export const NoLayerSelection: Story = {
   args: {
     managementApi: createStoryManagementApi({

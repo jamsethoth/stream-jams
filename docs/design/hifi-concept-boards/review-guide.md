@@ -2,6 +2,8 @@
 
 Generated from `render_hifi_concepts.py`.
 
+Implementation status and automated evidence are tracked in [`../ui-refactor-implementation-audit.md`](../ui-refactor-implementation-audit.md).
+
 Use this guide to review the MVP UX in workflow order. Review each batch as a set before deciding whether individual screens need revision.
 
 ## Batch 1: Setup Home And Core Alert Management

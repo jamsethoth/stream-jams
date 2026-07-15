@@ -72,9 +72,9 @@
 
 ## 9. Cleanup And Regression Pass
 
-- [ ] 9.1 Remove obsolete Dashboard, Twitch, Overlays, and Playback top-level navigation, panels, and temporary adapters.
-- [ ] 9.2 Keep runtime operator controls out of management except correction links and future operator-route entry points.
-- [ ] 9.3 Update repo UX docs, screenshots/manifests, Storybook navigation, and affected tests to match implemented behavior.
-- [ ] 9.4 Add deep-link regressions for Home actions, asset usages, alert editor context, diagnostics corrections, and browser-source outputs.
-- [ ] 9.5 Audit every approved high-fidelity workflow against implementation or an explicit backlog item.
-- [ ] 9.6 Run lint, typecheck, unit tests, build, applicable Storybook tests, and applicable Playwright tests.
+- [x] 9.1 Remove obsolete Dashboard, Twitch, Overlays, and Playback top-level navigation, panels, and temporary adapters.
+- [x] 9.2 Keep runtime operator controls out of management except correction links and future operator-route entry points.
+- [x] 9.3 Update repo UX docs, screenshots/manifests, Storybook navigation, and affected tests to match implemented behavior.
+- [x] 9.4 Add deep-link regressions for Home actions, asset usages, alert editor context, diagnostics corrections, and browser-source outputs.
+- [x] 9.5 Audit every approved high-fidelity workflow against implementation or an explicit backlog item.
+- [x] 9.6 Run lint, typecheck, unit tests, build, applicable Storybook tests, and applicable Playwright tests.

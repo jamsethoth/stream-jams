@@ -5,10 +5,10 @@ import { HomePanel } from "./HomePanel.js";
 
 const configuredSummary: HomeSetupSummary = {
   readiness: [
-    { id: "event-source", label: "Event source", state: "complete", actionLabel: "Review event source", actionRoute: "/event-sources" },
-    { id: "tts-provider", label: "TTS provider", state: "complete", actionLabel: "Review TTS provider", actionRoute: "/tts-providers" },
-    { id: "starter-alert-set", label: "Starter alert set", state: "complete", actionLabel: "Review active set", actionRoute: "/modules/alerts" },
-    { id: "browser-output", label: "Browser-source output", state: "complete", actionLabel: "Review output", actionRoute: "/modules/alerts#browser-sources" }
+    { id: "event-source", label: "Event source", state: "complete", actionLabel: "Review event source", actionRoute: "/manage/event-sources" },
+    { id: "tts-provider", label: "TTS provider", state: "complete", actionLabel: "Review TTS provider", actionRoute: "/manage/tts-providers" },
+    { id: "starter-alert-set", label: "Starter alert set", state: "complete", actionLabel: "Review active set", actionRoute: "/manage/modules/alerts" },
+    { id: "browser-output", label: "Browser-source output", state: "complete", actionLabel: "Review output", actionRoute: "/manage/modules/alerts#browser-sources" }
   ],
   activeAlertSet: {
     id: "set-default",

@@ -31,6 +31,7 @@ export type AlertSetsPageApi = Pick<
 >;
 
 export interface AlertSetsPageProps {
+  readonly initialSetId?: string | undefined;
   readonly managementApi: AlertSetsPageApi;
   readonly onEditAlert: (alert: AlertInventoryRow) => void;
 }
@@ -47,7 +48,7 @@ interface RegenerateDialogState {
   readonly requiresTypedConfirmation: boolean;
 }
 
-export function AlertSetsPage({ managementApi, onEditAlert }: AlertSetsPageProps) {
+export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AlertSetDetail | null>(null);
@@ -76,7 +77,10 @@ export function AlertSetsPage({ managementApi, onEditAlert }: AlertSetsPageProps
         const loadedSets = await managementApi.listAlertSets();
         if (!active) return;
         setSets(loadedSets);
-        const selected = loadedSets.find((candidate) => candidate.active) ?? loadedSets[0] ?? null;
+        const selected = loadedSets.find((candidate) => candidate.id === initialSetId)
+          ?? loadedSets.find((candidate) => candidate.active)
+          ?? loadedSets[0]
+          ?? null;
         setSelectedSetId(selected?.id ?? null);
         setDetail(selected === null ? null : await managementApi.getAlertSet(selected.id));
       } catch (cause) {
@@ -88,7 +92,7 @@ export function AlertSetsPage({ managementApi, onEditAlert }: AlertSetsPageProps
     return () => {
       active = false;
     };
-  }, [managementApi]);
+  }, [initialSetId, managementApi]);
 
   useEffect(() => {
     if (detail === null || window.location.hash !== "#browser-sources") return;
@@ -620,6 +624,6 @@ function toActionableError(summary: string, cause: unknown, nextStep: string): A
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId,
-    correction: { label: "Open Diagnostics", route: `/diagnostics?reference=${encodeURIComponent(referenceId)}` }
+    correction: { label: "Open Diagnostics", route: `/manage/diagnostics?reference=${encodeURIComponent(referenceId)}` }
   };
 }

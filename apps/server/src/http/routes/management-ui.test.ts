@@ -6,6 +6,7 @@ import {
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
 import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { AlertEditorLiveImpactConfirmationRequiredError } from "../../modules/alerts/alert-editor-service.js";
 
 describe("management UI contract routes", () => {
   it("returns every validated Slice 1 view through protected routes", async () => {
@@ -99,7 +100,7 @@ describe("management UI contract routes", () => {
       method: "PUT",
       url: "/management/alerts/alert-follow/editor",
       headers: authHeaders,
-      payload: { document: { ...document, name: "Follower welcome" } }
+      payload: { document: { ...document, name: "Follower welcome" }, confirmLiveImpact: true }
     });
     const sent = await app.inject({
       method: "POST",
@@ -119,9 +120,33 @@ describe("management UI contract routes", () => {
     expect(sent.statusCode).toBe(200);
     expect(sent.json()).toEqual({ status: "queued", targetProfileId: "landscape", referenceId: "ref-editor-test", test: true });
     expect(service.editorCommands).toEqual([
-      ["save", "alert-follow", "Follower welcome"],
+      ["save", "alert-follow", "Follower welcome", true],
       ["test", "alert-follow", "landscape"]
     ]);
+  });
+
+  it("requires explicit confirmation when an editor save can change live output", async () => {
+    const { app, authHeaders } = await createApp();
+    const document = (await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor",
+      headers: authHeaders
+    })).json();
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/management/alerts/alert-follow/editor",
+      headers: authHeaders,
+      payload: { document: { ...document, name: "Unconfirmed change" } }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({
+      error: {
+        code: "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED",
+        message: expect.stringContaining("confirm")
+      }
+    });
   });
 
   it("validates and registers providers without combining the two operations", async () => {
@@ -478,8 +503,13 @@ class StubManagementUiQueryService {
     };
   }
 
-  async saveAlertEditorDocument(alertId: string, document: Awaited<ReturnType<StubManagementUiQueryService["getAlertEditorDocument"]>>) {
-    this.editorCommands.push(["save", alertId, document.name]);
+  async saveAlertEditorDocument(
+    alertId: string,
+    document: Awaited<ReturnType<StubManagementUiQueryService["getAlertEditorDocument"]>>,
+    confirmLiveImpact: boolean
+  ) {
+    if (!confirmLiveImpact) throw new AlertEditorLiveImpactConfirmationRequiredError(["landscape"]);
+    this.editorCommands.push(["save", alertId, document.name, confirmLiveImpact]);
     return document;
   }
 

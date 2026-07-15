@@ -53,22 +53,6 @@ import {
 } from "@stream-jams/core";
 import { createManagementHttpClient, type HttpManagementClientOptions } from "./management-http-client.js";
 
-export interface DashboardSummary {
-  readonly twitch: {
-    readonly connected: boolean;
-    readonly label: string;
-  };
-  readonly overlay: {
-    readonly connectedClientCount: number;
-    readonly label: string;
-  };
-  readonly queue: {
-    readonly label: string;
-    readonly queuedCount: number;
-  };
-  readonly recentErrors: readonly string[];
-}
-
 export interface ServerConfigView {
   readonly host: string;
   readonly port: number;
@@ -85,29 +69,6 @@ export interface ModerationSettingsView {
   readonly ttsText: ModerationTargetSettingsView;
 }
 
-export interface ManagementModuleField {
-  readonly id: string;
-  readonly label: string;
-  readonly type: "text" | "number" | "boolean";
-  readonly required: boolean;
-}
-
-export interface ManagementModuleStep {
-  readonly id: string;
-  readonly title: string;
-  readonly fields: readonly ManagementModuleField[];
-}
-
-export interface ManagementModuleView {
-  readonly id: string;
-  readonly displayName: string;
-  readonly enabled: boolean;
-  readonly config: unknown;
-  readonly wizard: {
-    readonly steps: readonly ManagementModuleStep[];
-  };
-}
-
 export interface OverlayOutputUrl {
   readonly id: string;
   readonly label: string;
@@ -122,18 +83,6 @@ export interface OverlayOutputUrl {
   readonly copyableUrlStatus: "available" | "create-required" | "regenerate-required";
 }
 
-export interface OverlayClientView {
-  readonly id: string;
-  readonly overlayId: string;
-  readonly purpose: "live" | "test";
-  readonly scope: "module" | "unified";
-  readonly moduleId: string | null;
-  readonly targetProfileId?: "landscape" | "vertical" | null | undefined;
-  readonly connectedAt: string;
-  readonly lastSeenAt: string;
-  readonly userAgent: string | null;
-}
-
 export interface OverlayOutputKeyRequestView {
   readonly overlayId?: string | undefined;
   readonly purpose: "live" | "test";
@@ -146,93 +95,6 @@ export interface OverlayOutputKeyResultView {
   readonly output: OverlayOutputUrl;
   readonly keyId: string;
   readonly url: string;
-}
-
-export interface PlaybackItemView {
-  readonly id: string;
-  readonly label: string;
-  readonly status: "queued" | "playing" | "completed" | "skipped";
-}
-
-export interface PlaybackView {
-  readonly current: PlaybackItemView | null;
-  readonly queuedCount: number;
-  readonly paused: boolean;
-  readonly muted: boolean;
-  readonly doNotDisturb: boolean;
-  readonly recent: readonly PlaybackItemView[];
-}
-
-export type TtsPlaybackModeView = "audio-file" | "remote-trigger" | "browser-speech";
-
-export interface TtsProviderCapabilitiesView {
-  readonly supportsVoices: boolean;
-  readonly supportsRate: boolean;
-  readonly supportsPitch: boolean;
-  readonly supportsVolume: boolean;
-  readonly playbackMode: TtsPlaybackModeView;
-}
-
-export interface TtsVoiceView {
-  readonly id: string;
-  readonly label: string;
-}
-
-export interface TtsProviderView {
-  readonly id: string;
-  readonly label: string;
-  readonly capabilities: TtsProviderCapabilitiesView;
-  readonly voices: readonly TtsVoiceView[];
-}
-
-export interface TtsTestRequestView {
-  readonly providerId: string;
-  readonly text: string;
-  readonly voiceId?: string | null | undefined;
-  readonly rate?: number | null | undefined;
-  readonly pitch?: number | null | undefined;
-  readonly volume?: number | null | undefined;
-  readonly metadata?: Record<string, unknown> | undefined;
-}
-
-export interface TtsPlaybackInstructionView {
-  readonly mode: TtsPlaybackModeView;
-  readonly text: string;
-  readonly audioAssetId: string | null;
-  readonly providerPayload: Record<string, unknown> | null;
-}
-
-export interface TtsTestResultView {
-  readonly instruction: TtsPlaybackInstructionView;
-  readonly moderationActions: readonly { readonly type: string }[];
-}
-
-export interface TwitchConnectedAccountView {
-  readonly accountId: string;
-  readonly login: string;
-  readonly displayName: string;
-  readonly scopes: readonly string[];
-  readonly connectedAt: string;
-  readonly updatedAt: string;
-}
-
-export type TwitchConnectionStatusView =
-  | { readonly connected: false; readonly account: null }
-  | { readonly connected: true; readonly account: TwitchConnectedAccountView };
-
-export interface TwitchEventSubStatusView {
-  readonly state: "idle" | "connecting" | "connected" | "reconnecting" | "degraded" | "error";
-  readonly connectionState: "idle" | "connecting" | "connected" | "reconnecting" | "error";
-  readonly sessionId: string | null;
-  readonly connectedAt: string | null;
-  readonly lastMessageAt: string | null;
-  readonly subscriptionTypes: readonly string[];
-  readonly acceptedCount: number;
-  readonly duplicateCount: number;
-  readonly rejectedCount: number;
-  readonly lastEventAt: string | null;
-  readonly lastErrorAt: string | null;
-  readonly message: string | null;
 }
 
 export interface DiagnosticsEventLogView {
@@ -322,16 +184,6 @@ export interface DiagnosticsDebugExportRequestView extends DiagnosticsRequestVie
   readonly sinceHours?: number | undefined;
 }
 
-export interface TwitchAuthStartRequestView {
-  readonly redirectUri: string;
-}
-
-export interface TwitchAuthStartResultView {
-  readonly authorizationUrl: string;
-  readonly state: string;
-  readonly scopes: readonly string[];
-}
-
 export interface ManagementApi {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
   listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
@@ -354,7 +206,11 @@ export interface ManagementApi {
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
-  saveAlertEditorDocument(alertId: string, document: AlertEditorDocument): Promise<AlertEditorDocument>;
+  saveAlertEditorDocument(
+    alertId: string,
+    document: AlertEditorDocument,
+    confirmLiveImpact?: boolean
+  ): Promise<AlertEditorDocument>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
@@ -365,73 +221,17 @@ export interface ManagementApi {
   exportConfigurationBackup(): Promise<ConfigurationBackupArchive>;
   preflightConfigurationRestore(archive: ConfigurationBackupArchive): Promise<ConfigurationRestorePreflight>;
   restoreConfiguration(input: ConfigurationRestoreRequest): Promise<ConfigurationRestoreResult>;
-  getDashboard(): Promise<DashboardSummary>;
   getServerConfig(): Promise<ServerConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
   getModerationSettings(): Promise<ModerationSettingsView>;
   updateModerationSettings(input: ModerationSettingsView): Promise<ModerationSettingsView>;
-  listModules(): Promise<readonly ManagementModuleView[]>;
-  setModuleEnabled(moduleId: string, enabled: boolean): Promise<unknown>;
-  saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }): Promise<unknown>;
-  listOverlayOutputs(): Promise<readonly OverlayOutputUrl[]>;
-  listOverlayClients(): Promise<readonly OverlayClientView[]>;
   createOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
   regenerateOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
-  revokeOverlayOutputKey(keyId: string): Promise<void>;
-  getPlayback(): Promise<PlaybackView>;
-  pausePlayback(): Promise<PlaybackView>;
-  resumePlayback(): Promise<PlaybackView>;
-  skipPlayback(): Promise<PlaybackView>;
-  replayRecent(itemId: string): Promise<PlaybackView>;
-  mutePlayback(): Promise<PlaybackView>;
-  unmutePlayback(): Promise<PlaybackView>;
-  setDoNotDisturb(enabled: boolean): Promise<PlaybackView>;
-  listTtsProviders(): Promise<readonly TtsProviderView[]>;
-  testTts(input: TtsTestRequestView): Promise<TtsTestResultView>;
-  getTwitchStatus(): Promise<TwitchConnectionStatusView>;
-  getTwitchEventSubStatus(): Promise<TwitchEventSubStatusView>;
-  getDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsView>;
   exportDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsExportView>;
   exportDebugDiagnostics(input?: DiagnosticsDebugExportRequestView): Promise<DiagnosticsDebugExportView>;
-  startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
-  refreshTwitchAuth(): Promise<TwitchConnectionStatusView>;
-  disconnectTwitch(): Promise<TwitchConnectionStatusView>;
 }
 
 export type HttpManagementApiOptions = HttpManagementClientOptions;
-
-interface PlaybackQueueSnapshotResponse {
-  readonly current: PlaybackQueueItemResponse | null;
-  readonly queued: readonly PlaybackQueueItemResponse[];
-  readonly recent: readonly PlaybackQueueItemResponse[];
-  readonly paused: boolean;
-  readonly muted: boolean;
-  readonly doNotDisturb: boolean;
-}
-
-interface PlaybackQueueItemResponse {
-  readonly id: string;
-  readonly status: "queued" | "playing" | "completed" | "skipped";
-  readonly alerts: readonly {
-    readonly ruleId: string;
-    readonly variantId: string;
-    readonly overlayInstruction: {
-      readonly text: { readonly text: string } | null;
-    };
-  }[];
-}
-
-interface OverlayModuleDefinitionResponse {
-  readonly id: string;
-  readonly displayName: string;
-  readonly wizard: ManagementModuleView["wizard"];
-}
-
-interface OverlayModuleConfigResponse {
-  readonly moduleId: string;
-  readonly enabled: boolean;
-  readonly config: unknown;
-}
 
 export function createHttpManagementApi(options: HttpManagementApiOptions = {}): ManagementApi {
   const client = createManagementHttpClient(options);
@@ -462,14 +262,6 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     return response.map((item) => contract.parse(item));
   }
 
-  async function getPlayback(): Promise<PlaybackView> {
-    return mapPlaybackSnapshot(await client.getJson<PlaybackQueueSnapshotResponse>("/playback", "Unable to load playback."));
-  }
-
-  async function postPlayback(path: string, body?: unknown): Promise<PlaybackView> {
-    return mapPlaybackSnapshot(await client.postJson<PlaybackQueueSnapshotResponse>(path, body, "Unable to update playback."));
-  }
-
   async function postOverlayOutputKey(
     path: string,
     input: OverlayOutputKeyRequestView
@@ -479,10 +271,6 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
   function withLimit(path: string, input: DiagnosticsRequestView = {}): string {
     return input.limit === undefined ? path : `${path}?limit=${encodeURIComponent(String(input.limit))}`;
-  }
-
-  async function jsonList<T>(path: string): Promise<readonly T[]> {
-    return client.getJson<readonly T[]>(path, "Unable to load management data.");
   }
 
   return {
@@ -653,11 +441,11 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       );
     },
 
-    async saveAlertEditorDocument(alertId, document) {
+    async saveAlertEditorDocument(alertId, document, confirmLiveImpact = false) {
       return alertEditorDocumentSchema.parse(
         await client.putJson<unknown>(
           `/management/alerts/${encodeURIComponent(alertId)}/editor`,
-          { document },
+          { document, confirmLiveImpact },
           "Unable to save alert editor changes."
         )
       );
@@ -747,25 +535,6 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       );
     },
 
-    async getDashboard() {
-      const [playback, overlayClients] = await Promise.all([getPlayback(), jsonList<OverlayClientView>("/management/overlay-clients")]);
-      return {
-        twitch: {
-          connected: false,
-          label: "Twitch disconnected"
-        },
-        overlay: {
-          connectedClientCount: overlayClients.length,
-          label: `${overlayClients.length} overlay clients`
-        },
-        queue: {
-          label: playback.paused ? "Queue paused" : playback.current === null ? "Queue idle" : "Queue playing",
-          queuedCount: playback.queuedCount
-        },
-        recentErrors: []
-      };
-    },
-
     async getServerConfig() {
       return client.getJson<ServerConfigView>("/config/server", "Unable to load server settings.");
     },
@@ -782,69 +551,12 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       return client.patchJson<ModerationSettingsView>("/moderation/settings", input, "Unable to update moderation settings.");
     },
 
-    async listModules() {
-      const modules = await client.getJson<readonly OverlayModuleDefinitionResponse[]>(
-        "/overlay-modules",
-        "Unable to load overlay modules."
-      );
-      return Promise.all(
-        modules.map(async (moduleDefinition): Promise<ManagementModuleView> => {
-          const config = await client.getJson<OverlayModuleConfigResponse>(
-            `/overlay-modules/${encodeURIComponent(moduleDefinition.id)}/config`,
-            "Unable to load overlay module config."
-          );
-          return {
-            id: moduleDefinition.id,
-            displayName: moduleDefinition.displayName,
-            enabled: config.enabled,
-            config: config.config,
-            wizard: moduleDefinition.wizard
-          };
-        })
-      );
-    },
-
-    async setModuleEnabled(moduleId: string, enabled: boolean) {
-      return client.patchJson<unknown>(
-        `/overlay-modules/${encodeURIComponent(moduleId)}/enabled`,
-        { enabled },
-        "Unable to update overlay module."
-      );
-    },
-
-    async saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }) {
-      return client.putJson<unknown>(
-        `/overlay-modules/${encodeURIComponent(moduleId)}/config`,
-        input,
-        "Unable to save overlay module config."
-      );
-    },
-
-    listOverlayOutputs() {
-      return jsonList<OverlayOutputUrl>("/management/overlay-outputs");
-    },
-
-    listOverlayClients() {
-      return jsonList<OverlayClientView>("/management/overlay-clients");
-    },
-
     async createOverlayOutputKey(input) {
       return postOverlayOutputKey("/management/overlay-outputs/keys", input);
     },
 
     async regenerateOverlayOutputKey(input) {
       return postOverlayOutputKey("/management/overlay-outputs/keys/regenerate", input);
-    },
-
-    async revokeOverlayOutputKey(keyId) {
-      await client.deleteRequest(
-        `/management/overlay-outputs/keys/${encodeURIComponent(keyId)}`,
-        "Unable to revoke overlay output key."
-      );
-    },
-
-    async getDiagnostics(input: DiagnosticsRequestView = {}) {
-      return client.getJson<DiagnosticsView>(withLimit("/diagnostics", input), "Unable to load diagnostics.");
     },
 
     async exportDiagnostics(input: DiagnosticsRequestView = {}) {
@@ -860,103 +572,10 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         input,
         "Unable to export diagnostics with recent runtime logs."
       );
-    },
-
-    async getTwitchStatus() {
-      return client.getJson<TwitchConnectionStatusView>("/twitch/auth/status", "Unable to load Twitch status.");
-    },
-
-    async getTwitchEventSubStatus() {
-      return client.getJson<TwitchEventSubStatusView>(
-        "/twitch/eventsub/status",
-        "Unable to load Twitch EventSub status."
-      );
-    },
-
-    async startTwitchAuth(input: TwitchAuthStartRequestView) {
-      return client.postJson<TwitchAuthStartResultView>(
-        "/twitch/auth/start",
-        input,
-        "Unable to start Twitch authorization."
-      );
-    },
-
-    async refreshTwitchAuth() {
-      return client.postJson<TwitchConnectionStatusView>(
-        "/twitch/auth/refresh",
-        undefined,
-        "Unable to refresh Twitch connection."
-      );
-    },
-
-    async disconnectTwitch() {
-      return client.postJson<TwitchConnectionStatusView>(
-        "/twitch/auth/disconnect",
-        undefined,
-        "Unable to disconnect Twitch."
-      );
-    },
-
-    async listTtsProviders() {
-      return client.getJson<readonly TtsProviderView[]>("/tts/providers", "Unable to load TTS providers.");
-    },
-
-    async testTts(input: TtsTestRequestView) {
-      return client.postJson<TtsTestResultView>("/tts/test", input, "Unable to run TTS test.");
-    },
-
-    getPlayback,
-
-    pausePlayback() {
-      return postPlayback("/playback/pause");
-    },
-
-    resumePlayback() {
-      return postPlayback("/playback/resume");
-    },
-
-    skipPlayback() {
-      return postPlayback("/playback/skip");
-    },
-
-    replayRecent(itemId: string) {
-      return postPlayback("/playback/replay", { itemId });
-    },
-
-    mutePlayback() {
-      return postPlayback("/playback/mute");
-    },
-
-    unmutePlayback() {
-      return postPlayback("/playback/unmute");
-    },
-
-    setDoNotDisturb(enabled: boolean) {
-      return postPlayback("/playback/do-not-disturb", { enabled });
     }
   };
 }
 
 interface RuntimeContract<T> {
   parse(input: unknown): T;
-}
-
-function mapPlaybackSnapshot(snapshot: PlaybackQueueSnapshotResponse): PlaybackView {
-  return {
-    current: snapshot.current === null ? null : mapPlaybackItem(snapshot.current),
-    queuedCount: snapshot.queued.length,
-    paused: snapshot.paused,
-    muted: snapshot.muted,
-    doNotDisturb: snapshot.doNotDisturb,
-    recent: snapshot.recent.map(mapPlaybackItem)
-  };
-}
-
-function mapPlaybackItem(item: PlaybackQueueItemResponse): PlaybackItemView {
-  const firstText = item.alerts[0]?.overlayInstruction.text?.text;
-  return {
-    id: item.id,
-    label: firstText ?? item.alerts[0]?.ruleId ?? item.id,
-    status: item.status
-  };
 }

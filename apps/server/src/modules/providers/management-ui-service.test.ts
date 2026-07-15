@@ -17,8 +17,8 @@ describe("ManagementUiService", () => {
 
     await expect(service.getHomeSetupSummary()).resolves.toEqual({
       readiness: [
-        expect.objectContaining({ id: "event-source", state: "action-required", actionRoute: "/event-sources?setup=add" }),
-        expect.objectContaining({ id: "tts-provider", state: "action-required", actionRoute: "/tts-providers?setup=add" }),
+        expect.objectContaining({ id: "event-source", state: "action-required", actionRoute: "/manage/event-sources?setup=add" }),
+        expect.objectContaining({ id: "tts-provider", state: "action-required", actionRoute: "/manage/tts-providers?setup=add" }),
         expect.objectContaining({ id: "starter-alert-set", state: "action-required" }),
         expect.objectContaining({ id: "browser-output", state: "action-required" })
       ],
@@ -35,7 +35,7 @@ describe("ManagementUiService", () => {
       severity: "error" as const,
       occurredAt: "2026-07-15T05:00:00.000Z",
       referenceId: "ref-provider",
-      correction: { label: "Open event sources", route: "/event-sources" }
+      correction: { label: "Open event sources", route: "/manage/event-sources" }
     };
     const service = createService([
       provider("event", "streamerbot", "event-source", true, "connected", "error", providerError),

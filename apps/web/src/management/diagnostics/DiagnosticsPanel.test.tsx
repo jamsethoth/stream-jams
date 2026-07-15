@@ -23,7 +23,7 @@ describe("DiagnosticsPanel", () => {
     expect(screen.queryByRole("button", { name: /Event source disconnected/ })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open browser sources" })).toHaveAttribute(
       "href",
-      "/modules/alerts?diagnostic=ref-output-1#browser-sources"
+      "/manage/modules/alerts?diagnostic=ref-output-1#browser-sources"
     );
   });
 
@@ -54,7 +54,7 @@ describe("DiagnosticsPanel", () => {
     expect(within(detail).getAllByText(/viewer42/)).toHaveLength(2);
     expect(within(detail).getByRole("link", { name: "Open alert" })).toHaveAttribute(
       "href",
-      "/modules/alerts/editor/alert-sub?diagnostic=ref-event-2"
+      "/manage/modules/alerts/editor/alert-sub?diagnostic=ref-event-2"
     );
   });
 
@@ -130,7 +130,7 @@ function workspace(): DiagnosticsWorkspaceView {
         severity: "error",
         occurredAt: "2026-07-15T22:42:18.000Z",
         referenceId: "ref-provider-1",
-        correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-provider-1" }
+        correction: { label: "Open event sources", route: "/manage/event-sources?diagnostic=ref-provider-1" }
       },
       {
         id: "problem-output",
@@ -141,7 +141,7 @@ function workspace(): DiagnosticsWorkspaceView {
         severity: "error",
         occurredAt: "2026-07-15T22:41:18.000Z",
         referenceId: "ref-output-1",
-        correction: { label: "Open browser sources", route: "/modules/alerts?diagnostic=ref-output-1#browser-sources" }
+        correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-output-1#browser-sources" }
       }
     ],
     events: [
@@ -161,7 +161,7 @@ function workspace(): DiagnosticsWorkspaceView {
         playbackStatus: "completed",
         errorMessage: null,
         sanitizedPayload: { userName: "Follower" },
-        correction: { label: "Open alert", route: "/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
+        correction: { label: "Open alert", route: "/manage/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
       },
       {
         id: "event-2",
@@ -179,7 +179,7 @@ function workspace(): DiagnosticsWorkspaceView {
         playbackStatus: "failed",
         errorMessage: "Alert rendering failed.",
         sanitizedPayload: { userName: "viewer42", authorization: "[REDACTED]" },
-        correction: { label: "Open alert", route: "/modules/alerts/editor/alert-sub?diagnostic=ref-event-2" }
+        correction: { label: "Open alert", route: "/manage/modules/alerts/editor/alert-sub?diagnostic=ref-event-2" }
       }
     ],
     rawLogs: [
@@ -193,7 +193,7 @@ function workspace(): DiagnosticsWorkspaceView {
         processingId: null,
         message: "Twitch EventSub socket closed.",
         data: { authorization: "[REDACTED]" },
-        correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-runtime-1" }
+        correction: { label: "Open event sources", route: "/manage/event-sources?diagnostic=ref-runtime-1" }
       },
       {
         id: "log-2",
@@ -205,7 +205,7 @@ function workspace(): DiagnosticsWorkspaceView {
         processingId: "processing-2",
         message: "Send test blocked because no client is connected.",
         data: { routeKey: "[REDACTED]" },
-        correction: { label: "Open browser sources", route: "/modules/alerts?diagnostic=ref-runtime-2#browser-sources" }
+        correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-runtime-2#browser-sources" }
       }
     ]
   };

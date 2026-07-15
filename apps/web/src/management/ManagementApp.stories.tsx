@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { ManagementApp, type ManagementAppProps } from "./ManagementApp.js";
-import { createStoryAlertApi, createStoryAssetApi, createStoryManagementApi } from "../stories/mock-apis.js";
+import { createStoryAssetApi, createStoryManagementApi } from "../stories/mock-apis.js";
 
 const meta = {
   title: "Management/ManagementApp",
@@ -21,7 +21,6 @@ type Story = StoryObj<typeof meta>;
 
 export const FullShell: Story = {
   args: {
-    alertApi: createStoryAlertApi(),
     assetApi: createStoryAssetApi(),
     managementApi: createStoryManagementApi()
   },
@@ -29,7 +28,7 @@ export const FullShell: Story = {
   parameters: {
     docs: {
       description: {
-        story: "Use this to inspect the default operator shell before drilling into individual panel states."
+        story: "Use this to inspect the setup and configuration shell before drilling into individual pages."
       }
     }
   }
@@ -37,15 +36,14 @@ export const FullShell: Story = {
 
 export const NestedAlerts: Story = {
   args: {
-    alertApi: createStoryAlertApi(),
     assetApi: createStoryAssetApi(),
     managementApi: createStoryManagementApi()
   },
-  render: (args) => <ManagementAppAtRoute args={args} path="/modules/alerts" />,
+  render: (args) => <ManagementAppAtRoute args={args} path="/manage/modules/alerts" />,
   parameters: {
     docs: {
       description: {
-        story: "Nested Modules and Alerts selection with breadcrumb and the temporary alert configuration adapter."
+        story: "Nested Modules and Alerts selection with the alert-set workspace and breadcrumb context."
       }
     }
   }

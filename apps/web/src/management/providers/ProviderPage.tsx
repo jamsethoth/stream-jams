@@ -31,7 +31,9 @@ export type ProviderPageApi = Pick<
 
 interface ProviderPageProps {
   readonly capability: ProviderCapability;
+  readonly initialProviderId?: string | undefined;
   readonly managementApi: ProviderPageApi;
+  readonly openSetupOnLoad?: boolean | undefined;
 }
 
 interface SetupDraft {
@@ -46,7 +48,12 @@ interface SetupDraft {
 
 const safeVoiceTestText = "Stream Jams voice test. Your text to speech provider is ready.";
 
-export function ProviderPage({ capability, managementApi }: ProviderPageProps) {
+export function ProviderPage({
+  capability,
+  initialProviderId,
+  managementApi,
+  openSetupOnLoad = false
+}: ProviderPageProps) {
   const copy = capability === "event-source"
     ? { title: "Event sources", add: "Add event source", empty: "No event sources registered." }
     : { title: "TTS providers", add: "Add TTS provider", empty: "No TTS providers registered." };
@@ -59,7 +66,7 @@ export function ProviderPage({ capability, managementApi }: ProviderPageProps) {
   const [pageError, setPageError] = useState<ActionableManagementError | null>(null);
   const [operationError, setOperationError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(openSetupOnLoad);
   const [activationOpen, setActivationOpen] = useState(false);
 
   const loadProviders = useCallback(async (preferredProviderId?: string) => {
@@ -80,7 +87,12 @@ export function ProviderPage({ capability, managementApi }: ProviderPageProps) {
       .then((loaded) => {
         if (!cancelled) {
           setProviders(loaded);
-          setSelectedProviderId(loaded.find((provider) => provider.active)?.id ?? loaded[0]?.id ?? null);
+          setSelectedProviderId(
+            loaded.find((provider) => provider.id === initialProviderId)?.id
+              ?? loaded.find((provider) => provider.active)?.id
+              ?? loaded[0]?.id
+              ?? null
+          );
           setPageError(null);
           setLoading(false);
         }
@@ -94,7 +106,11 @@ export function ProviderPage({ capability, managementApi }: ProviderPageProps) {
     return () => {
       cancelled = true;
     };
-  }, [capability, copy.title, managementApi]);
+  }, [capability, copy.title, initialProviderId, managementApi]);
+
+  useEffect(() => {
+    if (openSetupOnLoad) setSetupOpen(true);
+  }, [openSetupOnLoad]);
 
   const selectedProvider = useMemo(
     () => providers.find((provider) => provider.id === selectedProviderId) ?? null,
@@ -313,9 +329,6 @@ function ProviderDetail({
   readonly safety: TtsProviderSafetySettings | null;
 }) {
   const provider = detail.provider;
-  const usageRoute = capability === "tts"
-    ? `/modules/alerts?ttsProvider=${encodeURIComponent(provider.id)}`
-    : `/modules/alerts?eventSource=${encodeURIComponent(provider.id)}`;
   return (
     <section aria-labelledby="provider-detail-title" className="provider-page__detail">
       <div className="provider-page__section-heading">
@@ -332,7 +345,7 @@ function ProviderDetail({
         <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : new Date(provider.validatedAt).toLocaleString()}</dd></div>
         <div>
           <dt>Used by alerts</dt>
-          <dd><a href={usageRoute}>View {provider.usedByAlertCount} alert {provider.usedByAlertCount === 1 ? "use" : "uses"}</a></dd>
+          <dd>{provider.usedByAlertCount} alert {provider.usedByAlertCount === 1 ? "use" : "uses"}</dd>
         </div>
       </dl>
 

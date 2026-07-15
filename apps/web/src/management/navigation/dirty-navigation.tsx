@@ -17,7 +17,7 @@ import {
 export interface DirtyNavigationSource {
   readonly id: string;
   readonly summary: string;
-  readonly save: (() => Promise<void> | void) | null;
+  readonly save: (() => Promise<boolean | void> | boolean | void) | null;
   readonly discard: () => Promise<void> | void;
 }
 
@@ -147,7 +147,10 @@ export function useManagementNavigation() {
 
   const saveAndLeave = useCallback(async () => {
     try {
-      await context.source?.save?.();
+      const saved = await context.source?.save?.();
+      if (saved === false) {
+        return;
+      }
       finishPending();
     } catch (error) {
       setGuardError(error instanceof Error ? error.message : "Unable to save changes before leaving.");

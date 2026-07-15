@@ -31,6 +31,20 @@ describe("SettingsPanel", () => {
     expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
   });
 
+  it("restores the backup and restore hash target after async settings load", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView
+    });
+    window.history.replaceState(null, "", "/manage/settings#backup-restore");
+
+    render(<SettingsPanel managementApi={createManagementApi()} />);
+
+    expect(await screen.findByRole("heading", { name: "Backup and restore" })).toBeVisible();
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+  });
+
   it("downloads a versioned backup and reports completion", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();

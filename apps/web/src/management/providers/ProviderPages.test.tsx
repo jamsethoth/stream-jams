@@ -21,7 +21,7 @@ const validationError: ActionableManagementError = {
   severity: "error",
   occurredAt: "2026-07-15T12:00:00.000Z",
   referenceId: "ref-validation-41",
-  correction: { label: "Open diagnostics", route: "/diagnostics?reference=ref-validation-41" }
+  correction: { label: "Open diagnostics", route: "/manage/diagnostics?reference=ref-validation-41" }
 };
 
 const warning: ActionableManagementError = {
@@ -31,7 +31,7 @@ const warning: ActionableManagementError = {
   severity: "warning",
   occurredAt: null,
   referenceId: "ref-impact-9",
-  correction: { label: "Review alerts", route: "/modules/alerts?filter=unmatched" }
+  correction: { label: "Review alerts", route: "/manage/modules/alerts?filter=unmatched" }
 };
 
 const validResult: ProviderValidationResult = {
@@ -92,6 +92,23 @@ describe("provider pages", () => {
     expect(screen.getByText("ref-validation-41")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Register provider" })).toBeDisabled();
     expect(api.registerProvider).not.toHaveBeenCalled();
+  });
+
+  it("opens the setup wizard from route context", async () => {
+    render(<EventSourcesPage managementApi={providerApi()} openSetupOnLoad />);
+
+    expect(await screen.findByRole("dialog", { name: "Add event source" })).toBeInTheDocument();
+  });
+
+  it("selects the provider named by route context", async () => {
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeTwitch, inactiveStreamerBot]),
+      getProvider: vi.fn(async (providerId) => detail(providerId === activeTwitch.id ? activeTwitch : inactiveStreamerBot))
+    });
+
+    render(<EventSourcesPage initialProviderId={inactiveStreamerBot.id} managementApi={api} />);
+
+    expect(await screen.findByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
   });
 
   it("registers only after successful validation", async () => {
@@ -187,10 +204,8 @@ describe("provider pages", () => {
 
     render(<TtsProvidersPage managementApi={api} />);
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "View 4 alert uses" })).toHaveAttribute(
-      "href",
-      "/modules/alerts?ttsProvider=speakerbot-main"
-    );
+    expect(screen.getByText("4 alert uses")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "View 4 alert uses" })).not.toBeInTheDocument();
     await user.clear(screen.getByLabelText("Volume"));
     await user.type(screen.getByLabelText("Volume"), "0.6");
     await user.click(screen.getByRole("button", { name: "Save safety settings" }));

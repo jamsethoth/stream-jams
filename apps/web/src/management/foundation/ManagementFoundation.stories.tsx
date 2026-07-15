@@ -12,7 +12,7 @@ const exampleError: ActionableManagementError = {
   severity: "error",
   occurredAt: "2026-07-15T02:00:00.000Z",
   referenceId: "ref-provider-17",
-  correction: { label: "Open event source", route: "/event-sources?provider=twitch-main" }
+  correction: { label: "Open event source", route: "/manage/event-sources?provider=twitch-main" }
 };
 
 const meta = {

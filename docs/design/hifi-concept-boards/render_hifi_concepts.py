@@ -942,6 +942,8 @@ def main() -> None:
     draw_destructive_confirmation()
     manifest = {
         "createdBy": "codex-stream-jams-hifi-concepts",
+        "implementationStatus": "implemented-with-documented-backlog",
+        "implementationAudit": "../ui-refactor-implementation-audit.md",
         "boards": [
             {"name": "Hi-Fi - Home", "file": "hi-fi-home.png", "width": W, "height": H},
             {"name": "Hi-Fi - Event Source Setup", "file": "hi-fi-event-source-setup.png", "width": W, "height": H},

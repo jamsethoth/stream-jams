@@ -1,5 +1,7 @@
 # Penpot Current State
 
+> Historical baseline: this capture records the management UI before the approved refactor. The implemented high-fidelity workflow status is tracked in [`ui-refactor-implementation-audit.md`](./ui-refactor-implementation-audit.md).
+
 This document records the repo-aligned Penpot baseline for Stream Jams.
 The repo remains the source of truth for product behavior; Penpot is the visual baseline for review and redesign work.
 

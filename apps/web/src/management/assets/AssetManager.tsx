@@ -254,7 +254,7 @@ function usageHref(usage: AssetLibraryItem["usage"]["usages"][number]): string {
   params.set("event", usage.eventType);
   const profile = usage.targetProfileIds[0];
   if (profile !== undefined) params.set("profile", profile);
-  return `/modules/alerts/editor/${encodeURIComponent(usage.alertId)}?${params.toString()}`;
+  return `/manage/modules/alerts/editor/${encodeURIComponent(usage.alertId)}?${params.toString()}`;
 }
 
 function healthTone(health: AssetLibraryItem["health"]): "positive" | "warning" | "negative" { return health === "available" ? "positive" : health === "missing" ? "warning" : "negative"; }

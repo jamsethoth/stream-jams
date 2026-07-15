@@ -321,104 +321,13 @@ describe("createHttpManagementApi", () => {
         return jsonResponse({ host: "127.0.0.1", port: 39187 });
       }
 
-      if (url === "/playback") {
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
-        });
-        return jsonResponse({
-          current: null,
-          queued: [],
-          recent: [],
-          paused: false,
-          muted: false,
-          doNotDisturb: false
-        });
-      }
-
       throw new Error(`Unexpected request ${url}`);
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await api.getServerConfig();
-    await api.getPlayback();
 
     expect(fetcher.mock.calls.filter(([url]) => String(url) === "/auth/management/sessions")).toHaveLength(1);
-  });
-
-  it("loads module definitions with config and updates module enabled state", async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/auth/management/sessions") {
-        return jsonResponse(managementSession());
-      }
-
-      if (url === "/overlay-modules") {
-        return jsonResponse([
-          {
-            id: "alerts",
-            displayName: "Alerts",
-            version: "0.0.0",
-            defaultEnabled: true,
-            configSchemaVersion: 1,
-            defaultConfig: {},
-            wizard: {
-              steps: []
-            },
-            renderer: {
-              entryPoint: "overlay/modules/alerts",
-              supportedOutputs: ["module", "unified"]
-            }
-          }
-        ]);
-      }
-
-      if (url === "/overlay-modules/alerts/config") {
-        return jsonResponse({
-          moduleId: "alerts",
-          enabled: true,
-          config: {
-            canvas: {
-              width: 1920,
-              height: 1080
-            }
-          },
-          updatedAt: "2026-05-30T12:00:00.000Z"
-        });
-      }
-
-      if (url === "/overlay-modules/alerts/enabled") {
-        expect(init).toMatchObject({
-          method: "PATCH",
-          body: JSON.stringify({ enabled: false })
-        });
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session",
-          "content-type": "application/json",
-          "x-stream-jams-csrf": "csrf_session"
-        });
-        return jsonResponse({
-          moduleId: "alerts",
-          enabled: false,
-          config: {},
-          updatedAt: "2026-05-30T12:00:00.000Z"
-        });
-      }
-
-      throw new Error(`Unexpected request ${url}`);
-    });
-    const api = createHttpManagementApi({ fetch: fetcher });
-
-    await expect(api.listModules()).resolves.toEqual([
-      expect.objectContaining({
-        id: "alerts",
-        displayName: "Alerts",
-        enabled: true
-      })
-    ]);
-    await expect(api.setModuleEnabled("alerts", false)).resolves.toMatchObject({
-      moduleId: "alerts",
-      enabled: false
-    });
   });
 
 
@@ -494,13 +403,6 @@ describe("createHttpManagementApi", () => {
         return jsonResponse(managementSession());
       }
 
-      if (url === "/diagnostics?limit=2") {
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
-        });
-        return jsonResponse(diagnostics);
-      }
-
       if (url === "/diagnostics/export?limit=2") {
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session"
@@ -525,7 +427,6 @@ describe("createHttpManagementApi", () => {
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
-    await expect(api.getDiagnostics({ limit: 2 })).resolves.toEqual(diagnostics);
     await expect(api.exportDiagnostics({ limit: 2 })).resolves.toEqual(exported);
     await expect(api.exportDebugDiagnostics({ limit: 2, runtimeLogLimit: 10, sinceHours: 1 })).resolves.toEqual(debugExported);
   });
@@ -572,7 +473,7 @@ describe("createHttpManagementApi", () => {
     await expect(api.deleteAsset("asset-1")).resolves.toBeUndefined();
   });
 
-  it("manages overlay output keys with management headers", async () => {
+  it("creates and regenerates overlay output keys with management headers", async () => {
     const keyRequest = {
       overlayId: "default",
       scope: "module" as const,
@@ -635,61 +536,12 @@ describe("createHttpManagementApi", () => {
         });
       }
 
-      if (url === "/management/overlay-outputs/keys/key-2") {
-        expect(init).toMatchObject({
-          method: "DELETE"
-        });
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session",
-          "x-stream-jams-csrf": "csrf_session"
-        });
-        return new Response(null, { status: 204 });
-      }
-
       throw new Error("Unexpected request " + url);
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.createOverlayOutputKey(keyRequest)).resolves.toMatchObject({ keyId: "key-1" });
     await expect(api.regenerateOverlayOutputKey(keyRequest)).resolves.toMatchObject({ keyId: "key-2" });
-    await expect(api.revokeOverlayOutputKey("key-2")).resolves.toBeUndefined();
-  });
-
-  it("loads Twitch EventSub status with management headers", async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/auth/management/sessions") {
-        return jsonResponse(managementSession());
-      }
-
-      if (url === "/twitch/eventsub/status") {
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
-        });
-        return jsonResponse({
-          state: "ready",
-          acceptedCount: 3,
-          duplicateCount: 1,
-          rejectedCount: 0,
-          lastEventAt: "2026-05-30T12:00:00.000Z",
-          lastErrorAt: null,
-          message: null
-        });
-      }
-
-      throw new Error("Unexpected request " + url);
-    });
-    const api = createHttpManagementApi({ fetch: fetcher });
-
-    await expect(api.getTwitchEventSubStatus()).resolves.toEqual({
-      state: "ready",
-      acceptedCount: 3,
-      duplicateCount: 1,
-      rejectedCount: 0,
-      lastEventAt: "2026-05-30T12:00:00.000Z",
-      lastErrorAt: null,
-      message: null
-    });
   });
 
   it("includes backend error code and id in thrown messages", async () => {

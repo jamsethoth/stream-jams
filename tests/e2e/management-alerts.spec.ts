@@ -285,6 +285,10 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
   await page.getByRole("textbox", { name: "Message template" }).fill("Welcome, {actor.displayName}!");
   await page.getByRole("button", { name: "Save" }).click();
+  const saveDialog = page.getByRole("dialog", { name: "Save changes to active alert?" });
+  await expect(saveDialog.getByText("Follow events")).toBeVisible();
+  await expect(saveDialog.getByText("Landscape")).toBeVisible();
+  await saveDialog.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
   expect(savedDocuments).toHaveLength(1);
   expect(savedDocuments[0]).toMatchObject({ layers: [{ template: "Welcome, {actor.displayName}!" }] });

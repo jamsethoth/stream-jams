@@ -63,7 +63,11 @@ export interface ManagementUiServiceOptions {
   readonly alertSetService: AlertSetService;
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
-  readonly saveAlertEditorDocument: (alertId: string, document: AlertEditorDocument) => Promise<AlertEditorDocument>;
+  readonly saveAlertEditorDocument: (
+    alertId: string,
+    document: AlertEditorDocument,
+    confirmLiveImpact: boolean
+  ) => Promise<AlertEditorDocument>;
   readonly sendAlertEditorTest: (alertId: string, request: AlertEditorTestRequest) => Promise<AlertEditorTestResult>;
   readonly listAssetLibraryItems: () => Promise<readonly AssetLibraryItem[]>;
   readonly updateAssetMetadata: (assetId: string, input: AssetMetadataUpdateInput) => Promise<AssetLibraryItem>;
@@ -101,7 +105,7 @@ export class ManagementUiService {
           "Browser-source output",
           hasBrowserOutput ? "complete" : "action-required",
           hasBrowserOutput ? "Review output" : "Create output",
-          "/modules/alerts#browser-sources"
+          "/manage/modules/alerts#browser-sources"
         )
       ],
       activeAlertSet,
@@ -194,8 +198,12 @@ export class ManagementUiService {
     return this.#options.getAlertEditorDocument(alertId);
   }
 
-  saveAlertEditorDocument(alertId: string, document: AlertEditorDocument): Promise<AlertEditorDocument> {
-    return this.#options.saveAlertEditorDocument(alertId, document);
+  saveAlertEditorDocument(
+    alertId: string,
+    document: AlertEditorDocument,
+    confirmLiveImpact: boolean
+  ): Promise<AlertEditorDocument> {
+    return this.#options.saveAlertEditorDocument(alertId, document, confirmLiveImpact);
   }
 
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
@@ -229,10 +237,10 @@ export class ManagementUiService {
 
 function eventSourceReadiness(provider: RegisteredProviderView | null): HomeReadinessItem {
   if (provider === null) {
-    return setupItem("event-source", "Event source", "action-required", "Add event source", "/event-sources?setup=add");
+    return setupItem("event-source", "Event source", "action-required", "Add event source", "/manage/event-sources?setup=add");
   }
   if (provider.connectionState === "connected" && provider.intakeState === "active") {
-    return setupItem("event-source", "Event source", "complete", "Review event source", "/event-sources");
+    return setupItem("event-source", "Event source", "complete", "Review event source", "/manage/event-sources");
   }
   const blocked = provider.connectionState === "error" || provider.intakeState === "error";
   return setupItem(
@@ -240,26 +248,26 @@ function eventSourceReadiness(provider: RegisteredProviderView | null): HomeRead
     "Event source",
     blocked ? "blocked" : "action-required",
     blocked ? "Resolve event source" : "Enable intake",
-    `/event-sources?provider=${encodeURIComponent(provider.id)}`
+    `/manage/event-sources?provider=${encodeURIComponent(provider.id)}`
   );
 }
 
 function ttsReadiness(provider: RegisteredProviderView | null): HomeReadinessItem {
   if (provider === null) {
-    return setupItem("tts-provider", "TTS provider", "action-required", "Add TTS provider", "/tts-providers?setup=add");
+    return setupItem("tts-provider", "TTS provider", "action-required", "Add TTS provider", "/manage/tts-providers?setup=add");
   }
   return setupItem(
     "tts-provider",
     "TTS provider",
     provider.connectionState === "connected" ? "complete" : provider.connectionState === "error" ? "blocked" : "action-required",
     provider.connectionState === "connected" ? "Review TTS provider" : "Resolve TTS provider",
-    `/tts-providers?provider=${encodeURIComponent(provider.id)}`
+    `/manage/tts-providers?provider=${encodeURIComponent(provider.id)}`
   );
 }
 
 function alertSetReadiness(alertSet: AlertSetOverview | null): HomeReadinessItem {
   if (alertSet === null) {
-    return setupItem("starter-alert-set", "Starter alert set", "action-required", "Create alert set", "/modules/alerts");
+    return setupItem("starter-alert-set", "Starter alert set", "action-required", "Create alert set", "/manage/modules/alerts");
   }
   const hasValidEnabledAlert =
     alertSet.enabledAlertCount > 0 && !alertSet.validationIssues.some((issue) => issue.severity === "blocker");
@@ -269,7 +277,7 @@ function alertSetReadiness(alertSet: AlertSetOverview | null): HomeReadinessItem
     "Starter alert set",
     ready ? "complete" : "action-required",
     ready ? "Review active set" : "Review starter alerts",
-    "/modules/alerts"
+    "/manage/modules/alerts"
   );
 }
 

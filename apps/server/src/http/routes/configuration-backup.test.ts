@@ -52,7 +52,7 @@ describe("configuration backup routes", () => {
   });
 
   it("returns actionable restore failures without exposing internal errors", async () => {
-    const actionableError = { summary: "Safety backup could not be created", cause: "Disk is read-only", nextStep: "Check storage permissions and try again.", severity: "error" as const, occurredAt: "2026-07-15T05:00:00.000Z", referenceId: "ref-backup-route", correction: { label: "Open Settings", route: "/settings#backup-restore" } };
+    const actionableError = { summary: "Safety backup could not be created", cause: "Disk is read-only", nextStep: "Check storage permissions and try again.", severity: "error" as const, occurredAt: "2026-07-15T05:00:00.000Z", referenceId: "ref-backup-route", correction: { label: "Open Settings", route: "/manage/settings#backup-restore" } };
     const app = createServerApp({
       metadata: { appName: "stream-jams", version: "0.0.0" },
       configurationBackupService: {

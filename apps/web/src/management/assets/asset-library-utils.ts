@@ -30,7 +30,7 @@ export function uploadError(reason: string | null): ActionableManagementError {
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId,
-    correction: { label: "Open Diagnostics", route: `/diagnostics?reference=${encodeURIComponent(referenceId)}` }
+    correction: { label: "Open Diagnostics", route: `/manage/diagnostics?reference=${encodeURIComponent(referenceId)}` }
   };
 }
 
@@ -44,7 +44,7 @@ export function actionableError(error: unknown, summary: string, nextStep: strin
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId,
-    correction: { label: "Open Diagnostics", route: `/diagnostics?reference=${encodeURIComponent(referenceId)}` }
+    correction: { label: "Open Diagnostics", route: `/manage/diagnostics?reference=${encodeURIComponent(referenceId)}` }
   };
 }
 

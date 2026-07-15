@@ -42,7 +42,7 @@ describe("DiagnosticsService", () => {
         {
           id: "match-log-1",
           sourceEventId: followEvent.id,
-          ruleId: "rule-1",
+          ruleId: "alert-follow",
           variantId: "variant-1",
           matchedAt: "2026-05-31T02:00:01.000Z",
           correlationId: "correlation-1",
@@ -155,7 +155,7 @@ describe("DiagnosticsService", () => {
         {
           id: "match-log-1",
           sourceEventId: followEvent.id,
-          ruleId: "rule-1",
+          ruleId: "alert-follow",
           variantId: "variant-1",
           matchedAt: "2026-05-31T02:00:01.000Z",
           correlationId: "correlation-1",
@@ -198,7 +198,10 @@ describe("DiagnosticsService", () => {
           message: "Configuration secret store could not be opened"
         })
       }
-    ], runtimeLogSource);
+    ], runtimeLogSource, {
+      resolveProviderRegistrationId: async (providerKind) => providerKind === "twitch" ? "provider-twitch-main" : null,
+      resolveAlertSetId: async (alertId) => alertId === "alert-follow" ? "set-default" : null
+    });
 
     const workspace = await service.getWorkspace({ limit: 10, runtimeLogLimit: 20, sinceHours: 2 });
 
@@ -207,13 +210,13 @@ describe("DiagnosticsService", () => {
         id: "event-log-1",
         outcome: "failed",
         referenceId: "correlation-1",
-        matchedRuleIds: ["rule-1"],
+        matchedRuleIds: ["alert-follow"],
         alertIds: ["alert-follow"],
         playbackStatus: "failed",
         errorMessage: "Authorization: Bearer [REDACTED]",
         correction: {
           label: "Open alert",
-          route: "/modules/alerts/editor/alert-follow?diagnostic=correlation-1"
+          route: "/manage/modules/alerts/editor/alert-follow?set=set-default&diagnostic=correlation-1"
         }
       })
     ]);
@@ -227,7 +230,7 @@ describe("DiagnosticsService", () => {
           referenceId: "correlation-1",
           correction: {
             label: "Open event sources",
-            route: "/event-sources?diagnostic=correlation-1"
+            route: "/manage/event-sources?provider=provider-twitch-main&diagnostic=correlation-1"
           }
         }),
         expect.objectContaining({
@@ -235,7 +238,7 @@ describe("DiagnosticsService", () => {
           area: "outputs",
           correction: {
             label: "Open browser sources",
-            route: "/modules/alerts?diagnostic=correlation-1#browser-sources"
+            route: "/manage/modules/alerts?diagnostic=correlation-1#browser-sources"
           }
         }),
         expect.objectContaining({
@@ -243,7 +246,7 @@ describe("DiagnosticsService", () => {
           area: "assets",
           correction: {
             label: "Open assets",
-            route: "/assets?diagnostic=correlation-asset"
+            route: "/manage/assets?diagnostic=correlation-asset"
           }
         }),
         expect.objectContaining({
@@ -252,7 +255,7 @@ describe("DiagnosticsService", () => {
           referenceId: null,
           correction: {
             label: "Open settings",
-            route: "/settings"
+            route: "/manage/settings"
           }
         })
       ])
@@ -264,13 +267,93 @@ describe("DiagnosticsService", () => {
         data: { authorization: "[REDACTED]" },
         correction: {
           label: "Open event sources",
-          route: "/event-sources?diagnostic=correlation-1"
+          route: "/manage/event-sources?diagnostic=correlation-1"
         }
       })
     );
     expect(JSON.stringify(workspace)).not.toContain("oauth-secret");
     expect(JSON.stringify(workspace)).not.toContain("ovl_secretKey");
     expect(runtimeLogSource.recentRequests).toEqual([{ limit: 20, sinceHours: 2 }]);
+  });
+
+  it("uses the ingest provider registration for Streamer.bot failures", async () => {
+    const streamerBotEvent: NormalizedStreamEvent = {
+      ...followEvent,
+      ingestProvider: "streamerbot"
+    };
+    const repository = new RecordingDiagnosticsRepository({
+      eventLogs: [
+        {
+          id: "event-log-streamerbot",
+          event: streamerBotEvent,
+          receivedAt: "2026-05-31T02:00:00.000Z",
+          status: "failed",
+          correlationId: "correlation-streamerbot",
+          processingId: "processing-streamerbot",
+          errorMessage: "Streamer.bot event processing failed"
+        }
+      ]
+    });
+    const service = createService(repository, [], undefined, {
+      resolveProviderRegistrationId: async (providerKind) => providerKind === "streamerbot" ? "provider-streamerbot-main" : null
+    });
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.events[0]).toEqual(expect.objectContaining({
+      providerId: "provider-streamerbot-main",
+      providerKind: "streamerbot",
+      correction: {
+        label: "Open event sources",
+        route: "/manage/event-sources?provider=provider-streamerbot-main&diagnostic=correlation-streamerbot"
+      }
+    }));
+    expect(workspace.problems).toContainEqual(expect.objectContaining({
+      id: "event-log:event-log-streamerbot",
+      correction: {
+        label: "Open event sources",
+        route: "/manage/event-sources?provider=provider-streamerbot-main&diagnostic=correlation-streamerbot"
+      }
+    }));
+  });
+
+  it("keeps diagnostics available when a historical alert no longer exists", async () => {
+    const repository = new RecordingDiagnosticsRepository({
+      eventLogs: [
+        {
+          id: "event-log-deleted-alert",
+          event: followEvent,
+          receivedAt: "2026-05-31T02:00:00.000Z",
+          status: "processed",
+          correlationId: "correlation-deleted-alert",
+          processingId: "processing-deleted-alert",
+          errorMessage: null
+        }
+      ],
+      alertMatchLogs: [
+        {
+          id: "match-log-deleted-alert",
+          sourceEventId: followEvent.id,
+          ruleId: "alert-deleted",
+          variantId: "variant-deleted",
+          matchedAt: "2026-05-31T02:00:01.000Z",
+          correlationId: "correlation-deleted-alert",
+          processingId: "processing-deleted-alert"
+        }
+      ]
+    });
+    const service = createService(repository, [], undefined, {
+      resolveAlertSetId: async () => {
+        throw new Error("Alert editor document was not found");
+      }
+    });
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.events[0]?.correction).toEqual({
+      label: "Open alert",
+      route: "/manage/modules/alerts/editor/alert-deleted?diagnostic=correlation-deleted-alert"
+    });
   });
 
   it("uses the default limit and rejects invalid limits", async () => {
@@ -288,13 +371,18 @@ describe("DiagnosticsService", () => {
 function createService(
   repository: RecordingDiagnosticsRepository,
   providerStatusSources: ConstructorParameters<typeof DiagnosticsService>[0]["providerStatusSources"] = [],
-  runtimeLogSource?: DiagnosticsRuntimeLogSource
+  runtimeLogSource?: DiagnosticsRuntimeLogSource,
+  resolvers: Pick<
+    ConstructorParameters<typeof DiagnosticsService>[0],
+    "resolveProviderRegistrationId" | "resolveAlertSetId"
+  > = {}
 ): DiagnosticsService {
   return new DiagnosticsService({
     repository,
     redactor: createRedactor(),
     providerStatusSources,
     runtimeLogSource,
+    ...resolvers,
     now: () => new Date("2026-05-31T02:05:00.000Z")
   });
 }

@@ -1,15 +1,17 @@
-import type {
-  ActionableManagementError,
-  AlertEditorDocument,
-  AlertLayer,
-  AlertSetDetail,
-  AssetMediaType,
-  TargetProfileId
+import {
+  getAlertEditorAffectedProfileIds,
+  type ActionableManagementError,
+  type AlertEditorDocument,
+  type AlertLayer,
+  type AlertSetDetail,
+  type AssetMediaType,
+  type TargetProfileId
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
+import { ModalSurface } from "../../foundation/ModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
@@ -56,6 +58,10 @@ export interface AlertEditorPageProps {
 
 type InspectorTab = "layers" | "alert" | "event";
 type PickerState = { readonly layerId: string | null; readonly type: "image" | "video" | "audio" };
+type SaveWarningState = {
+  readonly rejectNavigation?: (cause: unknown) => void;
+  readonly resolveNavigation?: (saved: boolean) => void;
+};
 
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editor, setEditor] = useState<AlertEditorState | null>(null);
@@ -75,32 +81,45 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerState | null>(null);
+  const [saveWarning, setSaveWarning] = useState<SaveWarningState | null>(null);
 
   useEffect(() => {
     let active = true;
     setEditor(null);
+    setSetDetail(null);
     setError(null);
     void props.managementApi.getAlertEditorDocument(props.alertId).then(async (document) => {
+      const loadedSetDetail = await props.managementApi.getAlertSet(document.setId);
       if (!active) return;
       setEditor(createEditorState(document));
       setSelectedLayerId(document.layers[0]?.id ?? null);
       const firstSample = document.samplePayloads[0] ?? null;
       setSampleId(firstSample?.id ?? null);
       setSampleDraft(JSON.stringify(firstSample?.payload ?? {}, null, 2));
-      setSetDetail(await props.managementApi.getAlertSet(document.setId));
+      setSetDetail(loadedSetDetail);
     }).catch((cause: unknown) => {
       if (active) setError(actionableError("The alert editor could not be opened", cause, "Return to Alerts and choose the alert again."));
     });
     return () => { active = false; };
   }, [props.alertId, props.managementApi]);
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
+    const submittedDocument = editor.document;
     setBusy(true);
     setError(null);
     try {
-      const saved = await props.managementApi.saveAlertEditorDocument(props.alertId, editor.document);
-      setEditor(markEditorSaved({ ...editor, document: saved }));
+      const saved = await props.managementApi.saveAlertEditorDocument(
+        props.alertId,
+        submittedDocument,
+        confirmLiveImpact
+      );
+      setEditor((current) => {
+        if (current === null) return null;
+        return current.document === submittedDocument
+          ? markEditorSaved({ ...current, document: saved })
+          : { ...current, savedDocument: saved };
+      });
       setNotice("Alert saved.");
     } catch (cause) {
       setError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
@@ -110,17 +129,46 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     }
   }, [editor, props.alertId, props.managementApi]);
 
+  const requiresLiveImpactConfirmation = useCallback(async () => {
+    if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor).length === 0) return false;
+    try {
+      const latestSetDetail = await props.managementApi.getAlertSet(editor.document.setId);
+      setSetDetail(latestSetDetail);
+      return latestSetDetail.overview.active;
+    } catch (cause) {
+      setError(actionableError(
+        "The alert set status could not be checked",
+        cause,
+        "Confirm the local service is running, then try saving again."
+      ));
+      throw cause;
+    }
+  }, [editor, props.managementApi]);
+
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
     setError(null);
     setNotice("Unsaved changes reverted.");
   }, []);
 
+  const saveForNavigation = useCallback(async () => {
+    if (await requiresLiveImpactConfirmation()) {
+      return new Promise<boolean>((resolve, reject) => setSaveWarning({
+        rejectNavigation: reject,
+        resolveNavigation: resolve
+      }));
+    }
+    await save(false);
+    return true;
+  }, [requiresLiveImpactConfirmation, save]);
+
   useDirtyNavigationSource({
     id: `alert-editor:${props.alertId}`,
     dirty: editor !== null && isEditorDirty(editor),
-    summary: "This alert has unsaved layer or profile changes.",
-    save,
+    summary: editor !== null && hasLiveSaveImpact(editor, setDetail)
+      ? `This active alert has unsaved changes that can affect ${affectedProfileLabels(editor).join(" and ")} live output.`
+      : "This alert has unsaved layer or profile changes.",
+    save: saveForNavigation,
     discard
   });
 
@@ -175,6 +223,35 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setError(actionableError("The alert test was not sent", cause, `Connect and review the ${profileLabel(profileId)} output, then try again.`));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function requestSave() {
+    try {
+      if (await requiresLiveImpactConfirmation()) {
+        setSaveWarning({});
+        return;
+      }
+      await save(false);
+    } catch {
+      // Save and status-check failures are rendered through the page error banner.
+    }
+  }
+
+  function cancelSaveWarning() {
+    saveWarning?.resolveNavigation?.(false);
+    setSaveWarning(null);
+  }
+
+  async function confirmSaveWarning() {
+    const pendingWarning = saveWarning;
+    try {
+      await save(true);
+      setSaveWarning(null);
+      pendingWarning?.resolveNavigation?.(true);
+    } catch (cause) {
+      setSaveWarning(null);
+      pendingWarning?.rejectNavigation?.(cause);
     }
   }
 
@@ -233,7 +310,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <button className="button button--secondary" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</button>
           <button className="button button--secondary" onClick={previewLocally} type="button">Preview</button>
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
-          <button className="button button--primary" disabled={!isEditorDirty(editor) || busy} onClick={() => void save()} type="button">Save</button>
+          <button className="button button--primary" disabled={!isEditorDirty(editor) || busy} onClick={() => void requestSave()} type="button">Save</button>
         </div>
       </header>
 
@@ -352,8 +429,37 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         open={picker !== null}
         selectedAssetId={picker?.layerId === null || picker?.layerId === undefined ? null : assetIdForLayer(document, picker.layerId)}
       />
+      <ModalSurface labelledBy="active-alert-save-warning-title" onCancel={cancelSaveWarning} open={saveWarning !== null}>
+        <div className="alert-editor-page__save-warning">
+          <div>
+            <h2 id="active-alert-save-warning-title">Save changes to active alert?</h2>
+            <p>This alert belongs to the active set. Saving can change live output immediately.</p>
+          </div>
+          <dl>
+            <div><dt>Event</dt><dd>{formatEventType(document.eventType)} events</dd></div>
+            <div><dt>Profiles</dt><dd>{affectedProfileLabels(editor).join(", ") || "None"}</dd></div>
+          </dl>
+          <div className="management-modal__actions">
+            <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
+            <button className="button button--primary" disabled={busy} onClick={() => void confirmSaveWarning()} type="button">Save changes</button>
+          </div>
+        </div>
+      </ModalSurface>
     </div>
   );
+}
+
+function hasLiveSaveImpact(editor: AlertEditorState, setDetail: AlertSetDetail | null): boolean {
+  if (setDetail?.overview.active !== true || !isEditorDirty(editor)) return false;
+  return affectedProfileIds(editor).length > 0;
+}
+
+function affectedProfileIds(editor: AlertEditorState): TargetProfileId[] {
+  return [...getAlertEditorAffectedProfileIds(editor.savedDocument, editor.document)];
+}
+
+function affectedProfileLabels(editor: AlertEditorState): string[] {
+  return affectedProfileIds(editor).map(profileLabel);
 }
 
 function LayerInspector({

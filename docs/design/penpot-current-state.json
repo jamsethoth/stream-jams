@@ -2,6 +2,8 @@
   "artifact": "penpot-current-state",
   "project": "stream-jams",
   "schemaVersion": 1,
+  "baselineStatus": "historical-pre-refactor-capture",
+  "implementationAudit": "docs/design/ui-refactor-implementation-audit.md",
   "screenshotManifestCreatedAt": "2026-06-21T22:31:29-04:00",
   "penpotInventoryRefreshedAt": "2026-07-13T09:17:16.5319045-04:00",
   "penpotVersion": "2.16.2",

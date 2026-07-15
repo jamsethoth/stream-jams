@@ -16,7 +16,7 @@ describe("AssetManager", () => {
     expect(screen.getByText("seasonal")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /New follower/ })).toHaveAttribute(
       "href",
-      "/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape"
+      "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape"
     );
 
     await userEvent.type(screen.getByRole("searchbox", { name: "Search assets" }), "chime");

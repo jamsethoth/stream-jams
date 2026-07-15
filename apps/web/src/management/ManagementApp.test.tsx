@@ -1,4 +1,3 @@
-import type { AlertCollection, AlertRule } from "./modules/alerts/alert-api.js";
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -13,40 +12,51 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  window.history.replaceState(null, "", "/");
+  window.history.replaceState(null, "", "/manage");
 });
 
 describe("ManagementApp", () => {
   it("uses stable sidebar links and nested Modules navigation", async () => {
     const user = userEvent.setup();
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
 
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("navigation", { name: "Legacy tools" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Module setup" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("link", { name: "Modules" }));
 
-    expect(window.location.pathname).toBe("/modules/alerts");
+    expect(window.location.pathname).toBe("/manage/modules/alerts");
     expect(screen.getByRole("link", { name: "Modules" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
   });
 
+  it("returns former legacy routes to Home", async () => {
+    window.history.replaceState(null, "", "/legacy/playback");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    expect(await screen.findByRole("heading", { name: "Setup readiness" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("uses the focused editor route and restores the management shell on recovery", async () => {
     const user = userEvent.setup();
-    window.history.replaceState(null, "", "/modules/alerts/editor/alert-follow?set=set-default&profile=vertical");
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+    window.history.replaceState(null, "", "/manage/modules/alerts/editor/alert-follow?set=set-default&profile=vertical");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
 
     expect(screen.queryByRole("link", { name: "Home" })).not.toBeInTheDocument();
     expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Back to alerts" }));
 
-    expect(window.location.pathname).toBe("/modules/alerts");
+    expect(`${window.location.pathname}${window.location.search}`).toBe("/manage/modules/alerts?set=set-default");
     expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Alerts" })).toBeInTheDocument();
   });
 
   it("guards dirty settings when navigating and allows discard", async () => {
     const user = userEvent.setup();
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
 
     await user.click(screen.getByRole("link", { name: "Settings" }));
     const port = await screen.findByLabelText("Port");
@@ -55,77 +65,37 @@ describe("ManagementApp", () => {
     await user.click(screen.getByRole("link", { name: "Assets" }));
 
     expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toBeInTheDocument();
-    expect(window.location.pathname).toBe("/settings");
+    expect(window.location.pathname).toBe("/manage/settings");
     await user.click(screen.getByRole("button", { name: "Discard" }));
-    expect(window.location.pathname).toBe("/assets");
+    expect(window.location.pathname).toBe("/manage/assets");
   });
 
-  it("renders setup-focused Home and keeps legacy copyable overlay URLs reachable", async () => {
-    const user = userEvent.setup();
-    const clipboardWrite = vi.fn();
-    Object.defineProperty(navigator, "clipboard", {
-      configurable: true,
-      value: {
-        writeText: clipboardWrite
-      }
-    });
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+  it("prefills diagnostics from route context", async () => {
+    window.history.replaceState(null, "", "/manage/diagnostics?reference=ref-provider-1");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
 
-    expect(await screen.findByRole("heading", { name: "Setup readiness" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Add event source" })).toHaveAttribute("href", "/event-sources?setup=add");
-    expect(screen.queryByText("Queue paused")).not.toBeInTheDocument();
-    expect(screen.queryByText("Last provider request failed")).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole("link", { name: "Overlay outputs" }));
-    const overlayPanel = screen.getByRole("region", { name: "Overlay outputs content" });
-    expect(within(overlayPanel).getByText("Alerts test")).toBeInTheDocument();
-    expect(within(overlayPanel).getByText("http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test")).toBeInTheDocument();
-    await user.click(within(overlayPanel).getByRole("button", { name: "Copy Alerts test" }));
-
-    expect(clipboardWrite).toHaveBeenCalledWith("http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test");
-    expect(within(overlayPanel).getByText("client-live")).toBeInTheDocument();
-    expect(within(overlayPanel).getByText("live module")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Reference ID or message")).toHaveValue("ref-provider-1");
   });
 
-  it("renders module definitions and module-provided wizard fields", async () => {
+  it.each([
+    "/manage/event-sources?diagnostic=ref-alerts",
+    "/manage/tts-providers?diagnostic=ref-alerts",
+    "/manage/modules/alerts?diagnostic=ref-alerts",
+    "/manage/modules/alerts/editor/alert-follow?diagnostic=ref-alerts",
+    "/manage/assets?diagnostic=ref-alerts",
+    "/manage/settings?diagnostic=ref-alerts"
+  ])("shows diagnostic reference context on correction route %s", (route) => {
+    window.history.replaceState(null, "", route);
+
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    expect(screen.getByRole("status", { name: "Diagnostics context" })).toHaveTextContent("ref-alerts");
+  });
+
+  it("updates server settings without exposing runtime playback controls", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
-
-    await user.click(screen.getByRole("link", { name: "Module setup" }));
-    const modulesPanel = screen.getByRole("region", { name: "Module setup content" });
-    expect(await within(modulesPanel).findByRole("heading", { name: "Overlay Modules" })).toBeInTheDocument();
-    expect(within(modulesPanel).getByText("Alerts")).toBeInTheDocument();
-    expect(within(modulesPanel).getByLabelText("Alerts enabled")).toBeChecked();
-    expect(within(modulesPanel).getByText("Canvas width")).toBeInTheDocument();
-    expect(within(modulesPanel).getByText("Canvas height")).toBeInTheDocument();
-    expect(within(modulesPanel).queryByText("Collections")).not.toBeInTheDocument();
-    expect(within(modulesPanel).queryByText("Alert rules")).not.toBeInTheDocument();
-    expect(within(modulesPanel).queryByText("Variants")).not.toBeInTheDocument();
-
-    await user.clear(within(modulesPanel).getByLabelText("Canvas width"));
-    await user.type(within(modulesPanel).getByLabelText("Canvas width"), "1280");
-    await user.click(within(modulesPanel).getByRole("button", { name: "Save Alerts configuration" }));
-
-    expect(managementApi.saveModuleConfig).toHaveBeenCalledWith("alerts", {
-      enabled: true,
-      config: {
-        canvas: {
-          width: 1280,
-          height: 1080
-        }
-      }
-    });
-
-    await user.click(within(modulesPanel).getByLabelText("Alerts enabled"));
-
-    expect(managementApi.setModuleEnabled).toHaveBeenCalledWith("alerts", false);
-  });
-
-  it("updates server settings and delegates playback controls", async () => {
-    const user = userEvent.setup();
-    const managementApi = createManagementApi();
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "Settings" }));
     const settingsPanel = screen.getByRole("region", { name: "Settings content" });
@@ -137,30 +107,13 @@ describe("ManagementApp", () => {
       host: "127.0.0.1",
       port: 40123
     });
-
-    await user.click(screen.getByRole("link", { name: "Playback controls" }));
-    const playbackPanel = screen.getByRole("region", { name: "Playback controls content" });
-    await user.click(within(playbackPanel).getByRole("button", { name: "Pause" }));
-    await user.click(within(playbackPanel).getByRole("button", { name: "Resume" }));
-    await user.click(within(playbackPanel).getByRole("button", { name: "Skip" }));
-    await user.click(within(playbackPanel).getByRole("button", { name: "Replay recent" }));
-    await user.click(within(playbackPanel).getByRole("button", { name: "Mute" }));
-    await user.click(within(playbackPanel).getByRole("button", { name: "Unmute" }));
-    await user.click(within(playbackPanel).getByLabelText("Do not disturb"));
-
-    expect(managementApi.pausePlayback).toHaveBeenCalledOnce();
-    expect(managementApi.resumePlayback).toHaveBeenCalledOnce();
-    expect(managementApi.skipPlayback).toHaveBeenCalledOnce();
-    expect(managementApi.replayRecent).toHaveBeenCalledWith("recent-1");
-    expect(managementApi.mutePlayback).toHaveBeenCalledOnce();
-    expect(managementApi.unmutePlayback).toHaveBeenCalledOnce();
-    expect(managementApi.setDoNotDisturb).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
   });
 
   it("shows registered TTS safety controls and runs the fixed safe voice test", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "TTS providers" }));
     const ttsPanel = screen.getByRole("region", { name: "TTS providers content" });
@@ -178,7 +131,7 @@ describe("ManagementApp", () => {
     const user = userEvent.setup();
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     const managementApi = createManagementApi();
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "Diagnostics" }));
     const diagnosticsPanel = screen.getByRole("region", { name: "Diagnostics content" });
@@ -187,7 +140,7 @@ describe("ManagementApp", () => {
     await user.type(within(diagnosticsPanel).getByPlaceholderText("Reference ID or message"), "ref-provider-1");
     expect(within(diagnosticsPanel).getByRole("link", { name: "Open event sources" })).toHaveAttribute(
       "href",
-      "/event-sources?diagnostic=ref-provider-1"
+      "/manage/event-sources?diagnostic=ref-provider-1"
     );
 
     await user.clear(within(diagnosticsPanel).getByPlaceholderText("Reference ID or message"));
@@ -203,7 +156,7 @@ describe("ManagementApp", () => {
   it("shows connection and intake separately and registers only after validation", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
@@ -225,8 +178,8 @@ describe("ManagementApp", () => {
 
   it("activates an inactive event source after showing its impact", async () => {
     const user = userEvent.setup();
-    const managementApi = createManagementApi({ twitchConnected: true });
-    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={managementApi} />);
+    const managementApi = createManagementApi();
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
 
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
@@ -239,41 +192,7 @@ describe("ManagementApp", () => {
 
 });
 
-function createManagementApi(options: { readonly twitchConnected?: boolean } = {}): ManagementApi {
-  const playback = {
-    current: {
-      id: "current-1",
-      label: "Cheer alert",
-      status: "playing" as const
-    },
-    queuedCount: 3,
-    paused: true,
-    muted: false,
-    doNotDisturb: false,
-    recent: [
-      {
-        id: "recent-1",
-        label: "Recent follow",
-        status: "completed" as const
-      }
-    ]
-  };
-  const twitchConnectedStatus = {
-    connected: true as const,
-    account: {
-      accountId: "141981764",
-      login: "streamer",
-      displayName: "Streamer",
-      scopes: ["bits:read"],
-      connectedAt: "2026-05-30T12:00:00.000Z",
-      updatedAt: "2026-05-30T12:00:00.000Z"
-    }
-  };
-  const twitchDisconnectedStatus = {
-    connected: false as const,
-    account: null
-  };
-  const initialTwitchStatus = options.twitchConnected === true ? twitchConnectedStatus : twitchDisconnectedStatus;
+function createManagementApi(): ManagementApi {
   const eventProviders = [
     {
       id: "provider-twitch",
@@ -328,7 +247,7 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
           label: "Event source",
           state: "action-required" as const,
           actionLabel: "Add event source",
-          actionRoute: "/event-sources?setup=add"
+          actionRoute: "/manage/event-sources?setup=add"
         }
       ],
       activeAlertSet: null,
@@ -469,21 +388,6 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
     exportConfigurationBackup: vi.fn(async () => { throw new Error("not called"); }),
     preflightConfigurationRestore: vi.fn(async () => { throw new Error("not called"); }),
     restoreConfiguration: vi.fn(async () => { throw new Error("not called"); }),
-    getDashboard: vi.fn(async () => ({
-      twitch: {
-        connected: false,
-        label: "Twitch disconnected"
-      },
-      overlay: {
-        connectedClientCount: 2,
-        label: "2 overlay clients"
-      },
-      queue: {
-        label: "Queue paused",
-        queuedCount: 3
-      },
-      recentErrors: ["Last provider request failed"]
-    })),
     getServerConfig: vi.fn(async () => ({
       host: "127.0.0.1",
       port: 39187
@@ -502,91 +406,6 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
       }
     })),
     updateModerationSettings: vi.fn(async (input) => input),
-    listModules: vi.fn(async () => [
-      {
-        id: "alerts",
-        displayName: "Alerts",
-        enabled: true,
-        config: {
-          canvas: {
-            width: 1920,
-            height: 1080
-          }
-        },
-        wizard: {
-          steps: [
-            {
-              id: "canvas",
-              title: "Canvas",
-              fields: [
-                {
-                  id: "canvas.width",
-                  label: "Canvas width",
-                  type: "number" as const,
-                  required: true
-                },
-                {
-                  id: "canvas.height",
-                  label: "Canvas height",
-                  type: "number" as const,
-                  required: true
-                }
-              ]
-            }
-          ]
-        }
-      }
-    ]),
-    setModuleEnabled: vi.fn(async (moduleId, enabled) => ({
-      moduleId,
-      enabled,
-      config: {},
-      updatedAt: "2026-05-30T12:00:00.000Z"
-    })),
-    saveModuleConfig: vi.fn(async (moduleId, input) => ({
-      moduleId,
-      enabled: input.enabled,
-      config: input.config,
-      updatedAt: "2026-05-30T12:00:00.000Z"
-    })),
-    listOverlayOutputs: vi.fn(async () => [
-      {
-        id: "alerts-test",
-        label: "Alerts test",
-        purpose: "test" as const,
-        scope: "module" as const,
-        moduleId: "alerts",
-        overlayId: "default",
-        enabled: true,
-        keyId: "overlay-key-alerts-test",
-        url: "http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_alerts_test",
-        copyableUrlStatus: "available" as const
-      },
-      {
-        id: "unified-live",
-        label: "Unified live",
-        purpose: "live" as const,
-        scope: "unified" as const,
-        moduleId: null,
-        overlayId: "default",
-        enabled: true,
-        keyId: "overlay-key-unified-live",
-        url: "http://127.0.0.1:39187/overlay/unified/live/ovl_unified_live",
-        copyableUrlStatus: "available" as const
-      }
-    ]),
-    listOverlayClients: vi.fn(async () => [
-      {
-        id: "client-live",
-        overlayId: "default",
-        purpose: "live" as const,
-        scope: "module" as const,
-        moduleId: "alerts",
-        connectedAt: "2026-05-30T12:00:00.000Z",
-        lastSeenAt: "2026-05-30T12:00:05.000Z",
-        userAgent: "OBS"
-      }
-    ]),
     createOverlayOutputKey: vi.fn(async () => ({
       keyId: "overlay-key-created",
       url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",
@@ -618,92 +437,6 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
         url: "http://127.0.0.1:39187/overlay/unified/test/ovl_regenerated",
         copyableUrlStatus: "available" as const
       }
-    })),
-    revokeOverlayOutputKey: vi.fn(async () => undefined),
-    getPlayback: vi.fn(async () => playback),
-    pausePlayback: vi.fn(async () => playback),
-    resumePlayback: vi.fn(async () => playback),
-    skipPlayback: vi.fn(async () => playback),
-    replayRecent: vi.fn(async () => playback),
-    mutePlayback: vi.fn(async () => playback),
-    unmutePlayback: vi.fn(async () => playback),
-    setDoNotDisturb: vi.fn(async () => ({ ...playback, doNotDisturb: true })),
-    listTtsProviders: vi.fn(async () => [
-      {
-        id: "browser-speech",
-        label: "Browser Speech",
-        capabilities: {
-          supportsVoices: false,
-          supportsRate: true,
-          supportsPitch: true,
-          supportsVolume: true,
-          playbackMode: "browser-speech" as const
-        },
-        voices: []
-      }
-    ]),
-    testTts: vi.fn(async (input) => ({
-      instruction: {
-        mode: "browser-speech" as const,
-        text: input.text,
-        audioAssetId: null,
-        providerPayload: {
-          providerId: input.providerId
-        }
-      },
-      moderationActions: []
-    })),
-    getDiagnostics: vi.fn(async () => ({
-      eventLogs: [
-        {
-          id: "event-log-1",
-          eventId: "event-1",
-          providerId: "twitch",
-          eventType: "follow",
-          actorDisplayName: "Viewer",
-          status: "processed" as const,
-          receivedAt: "2026-05-31T02:00:00.000Z",
-          correlationId: "correlation-1",
-          processingId: "processing-1",
-          errorMessage: null
-        }
-      ],
-      alertMatchLogs: [
-        {
-          id: "match-log-1",
-          sourceEventId: "event-1",
-          ruleId: "rule-1",
-          variantId: "variant-1",
-          matchedAt: "2026-05-31T02:00:01.000Z",
-          correlationId: "correlation-1",
-          processingId: "processing-1"
-        }
-      ],
-      playbackLogs: [
-        {
-          id: "playback-log-1",
-          queueItemId: "queue-item-1",
-          sourceEventId: "event-1",
-          alertIds: ["resolved-alert-1"],
-          status: "queued" as const,
-          occurredAt: "2026-05-31T02:00:02.000Z",
-          correlationId: "correlation-1",
-          processingId: "processing-1",
-          message: null
-        }
-      ],
-      providerErrors: [
-        {
-          id: "provider-status:twitch",
-          providerId: "twitch",
-          label: "Twitch EventSub",
-          occurredAt: "2026-05-31T02:00:03.000Z",
-          message: "Reconnect failed",
-          correlationId: null,
-          processingId: null
-        }
-      ],
-      runtimeLogging: null
     })),
     exportDiagnostics: vi.fn(async () => ({
       generatedAt: "2026-05-31T02:05:00.000Z",
@@ -771,29 +504,7 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
       runtimeLogging: null,
       runtimeLogEntries: [],
       runtimeLogTruncated: false
-    })),
-    getTwitchStatus: vi.fn(async () => initialTwitchStatus),
-    getTwitchEventSubStatus: vi.fn(async () => ({
-      state: "connected" as const,
-      connectionState: "connected" as const,
-      sessionId: "session-1",
-      connectedAt: "2026-05-30T11:59:59.000Z",
-      lastMessageAt: "2026-05-30T12:00:00.000Z",
-      subscriptionTypes: ["channel.follow"],
-      acceptedCount: 3,
-      duplicateCount: 1,
-      rejectedCount: 0,
-      lastEventAt: "2026-05-30T12:00:00.000Z",
-      lastErrorAt: null,
-      message: null
-    })),
-    startTwitchAuth: vi.fn(async () => ({
-      authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=state-1",
-      state: "state-1",
-      scopes: ["bits:read"]
-    })),
-    refreshTwitchAuth: vi.fn(async () => twitchConnectedStatus),
-    disconnectTwitch: vi.fn(async () => twitchDisconnectedStatus)
+    }))
   };
 }
 
@@ -826,7 +537,7 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         severity: "error",
         occurredAt: "2026-05-31T02:00:00.000Z",
         referenceId: "ref-provider-1",
-        correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-provider-1" }
+        correction: { label: "Open event sources", route: "/manage/event-sources?diagnostic=ref-provider-1" }
       }
     ],
     events: [
@@ -846,50 +557,9 @@ function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
         playbackStatus: "completed",
         errorMessage: null,
         sanitizedPayload: { userName: "Viewer" },
-        correction: { label: "Open alert", route: "/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
+        correction: { label: "Open alert", route: "/manage/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
       }
     ],
     rawLogs: []
-  };
-}
-
-function createAlertApi() {
-  return {
-    async listCollections(): Promise<readonly AlertCollection[]> {
-      return [];
-    },
-    async listRules(): Promise<readonly AlertRule[]> {
-      return [];
-    },
-    async createCollection(): Promise<AlertCollection> {
-      throw new Error("not called");
-    },
-    async updateCollection(): Promise<AlertCollection> {
-      throw new Error("not called");
-    },
-    async deleteCollection(): Promise<void> {
-      throw new Error("not called");
-    },
-    async createRule(): Promise<AlertRule> {
-      throw new Error("not called");
-    },
-    async updateRule(): Promise<AlertRule> {
-      throw new Error("not called");
-    },
-    async deleteRule(): Promise<void> {
-      throw new Error("not called");
-    },
-    async deleteVariant(): Promise<AlertRule> {
-      throw new Error("not called");
-    },
-    async setCollectionEnabled(): Promise<AlertCollection> {
-      throw new Error("not called");
-    },
-    async setRuleEnabled(): Promise<AlertRule> {
-      throw new Error("not called");
-    },
-    async testAlert() {
-      throw new Error("not called");
-    }
   };
 }

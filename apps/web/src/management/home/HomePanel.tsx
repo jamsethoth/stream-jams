@@ -97,7 +97,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
         {activeSet === null ? (
           <div className="provider-page__empty">
             <p>No active alert set is available.</p>
-            <a href="/modules/alerts">Open Alerts</a>
+            <a href="/manage/modules/alerts">Open Alerts</a>
           </div>
         ) : (
           <div className="home-panel__active-set">
@@ -113,7 +113,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
                 <dd>{activeProfiles.length === 0 ? "None" : activeProfiles.map((profile) => formatState(profile.id)).join(", ")}</dd>
               </div>
             </dl>
-            <a href={`/modules/alerts?set=${encodeURIComponent(activeSet.id)}`}>Review active set</a>
+            <a href={`/manage/modules/alerts?set=${encodeURIComponent(activeSet.id)}`}>Review active set</a>
           </div>
         )}
       </section>

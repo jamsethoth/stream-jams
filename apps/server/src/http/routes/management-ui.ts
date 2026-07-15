@@ -72,6 +72,7 @@ import {
 } from "../../modules/assets/asset-library-service.js";
 import {
   AlertEditorDeliveryBlockedError,
+  AlertEditorLiveImpactConfirmationRequiredError,
   AlertEditorNotFoundError,
   AlertEditorValidationError
 } from "../../modules/alerts/alert-editor-service.js";
@@ -101,7 +102,11 @@ export interface ManagementUiQueryService {
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
-  saveAlertEditorDocument(alertId: string, document: AlertEditorDocument): Promise<AlertEditorDocument>;
+  saveAlertEditorDocument(
+    alertId: string,
+    document: AlertEditorDocument,
+    confirmLiveImpact: boolean
+  ): Promise<AlertEditorDocument>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
@@ -339,7 +344,11 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     }
     try {
       return alertEditorDocumentSchema.parse(
-        await service.saveAlertEditorDocument(readParam(request.params, "alertId"), input.data.document)
+        await service.saveAlertEditorDocument(
+          readParam(request.params, "alertId"),
+          input.data.document,
+          input.data.confirmLiveImpact
+        )
       );
     } catch (error) {
       return sendAlertEditorCommandError(reply, error);
@@ -456,6 +465,12 @@ function sendAlertEditorCommandError(reply: Parameters<typeof sendHttpError>[0],
     });
   }
   if (error instanceof AlertEditorDeliveryBlockedError) {
+    return sendHttpError(reply, 409, {
+      code: error.code,
+      message: error.message
+    });
+  }
+  if (error instanceof AlertEditorLiveImpactConfirmationRequiredError) {
     return sendHttpError(reply, 409, {
       code: error.code,
       message: error.message

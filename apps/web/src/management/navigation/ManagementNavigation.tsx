@@ -1,6 +1,5 @@
 import type { MouseEvent } from "react";
 import {
-  managementLegacyRoutes,
   managementPrimaryRoutes,
   type ManagementRoute,
   type ManagementRouteDefinition
@@ -32,16 +31,6 @@ export function ManagementNavigation({ activeRoute, onNavigate }: ManagementNavi
                   ))}
                 </ul>
               )}
-            </li>
-          ))}
-        </ul>
-      </nav>
-      <nav aria-label="Legacy tools" className="management-nav management-nav--legacy">
-        <p>Legacy tools</p>
-        <ul>
-          {managementLegacyRoutes.map((route) => (
-            <li key={route.id}>
-              <NavigationLink active={activeRoute.id === route.id} onNavigate={onNavigate} route={route} />
             </li>
           ))}
         </ul>

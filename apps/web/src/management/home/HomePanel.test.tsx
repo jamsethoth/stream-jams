@@ -10,7 +10,7 @@ const providerError: ActionableManagementError = {
   severity: "error",
   occurredAt: "2026-07-15T12:00:00.000Z",
   referenceId: "ref-home-17",
-  correction: { label: "Open Twitch", route: "/event-sources?provider=twitch-main" }
+  correction: { label: "Open Twitch", route: "/manage/event-sources?provider=twitch-main" }
 };
 
 const configuredSummary: HomeSetupSummary = {
@@ -20,14 +20,14 @@ const configuredSummary: HomeSetupSummary = {
       label: "Event source",
       state: "blocked",
       actionLabel: "Resolve event source",
-      actionRoute: "/event-sources?provider=twitch-main"
+      actionRoute: "/manage/event-sources?provider=twitch-main"
     },
     {
       id: "tts-provider",
       label: "TTS provider",
       state: "complete",
       actionLabel: "Review TTS provider",
-      actionRoute: "/tts-providers"
+      actionRoute: "/manage/tts-providers"
     }
   ],
   activeAlertSet: {
@@ -69,7 +69,7 @@ describe("HomePanel", () => {
     expect(await screen.findByRole("heading", { name: "Setup readiness" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Resolve event source" })).toHaveAttribute(
       "href",
-      "/event-sources?provider=twitch-main"
+      "/manage/event-sources?provider=twitch-main"
     );
     expect(screen.getByText("Default")).toBeInTheDocument();
     expect(screen.getByText("3 enabled alerts")).toBeInTheDocument();

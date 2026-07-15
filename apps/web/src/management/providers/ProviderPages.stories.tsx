@@ -20,7 +20,7 @@ const activationWarning: ActionableManagementError = {
   severity: "warning",
   occurredAt: "2026-07-15T05:00:00.000Z",
   referenceId: null,
-  correction: { label: "Review active alerts", route: "/modules/alerts" }
+  correction: { label: "Review active alerts", route: "/manage/modules/alerts" }
 };
 const invalidValidation: ProviderValidationResult = {
   valid: false,
@@ -35,7 +35,7 @@ const invalidValidation: ProviderValidationResult = {
     severity: "error",
     occurredAt: "2026-07-15T05:00:00.000Z",
     referenceId: "ref-provider-story",
-    correction: { label: "Open Diagnostics", route: "/diagnostics?reference=ref-provider-story" }
+    correction: { label: "Open Diagnostics", route: "/manage/diagnostics?reference=ref-provider-story" }
   }
 };
 

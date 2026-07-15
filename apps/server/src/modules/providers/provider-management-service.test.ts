@@ -177,7 +177,7 @@ function managementError(summary: string): ActionableManagementError {
     severity: "error",
     occurredAt: "2026-07-15T12:00:00.000Z",
     referenceId: "provider-ref-1",
-    correction: { label: "Open Diagnostics", route: "/diagnostics?reference=provider-ref-1" }
+    correction: { label: "Open Diagnostics", route: "/manage/diagnostics?reference=provider-ref-1" }
   };
 }
 

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import type { ManagementRoute } from "../routing/management-route.js";
 import { ManagementNavigation } from "./ManagementNavigation.js";
 
@@ -26,10 +27,16 @@ export const Sidebar: Story = {
 
     return <ManagementNavigation activeRoute={activeRoute} onNavigate={handleNavigate} />;
   },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("navigation", { name: "Primary" })).toBeVisible();
+    await expect(canvas.queryByRole("navigation", { name: "Legacy tools" })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
+  },
   parameters: {
     docs: {
       description: {
-        story: "Primary sidebar navigation with nested Alerts, temporary legacy adapters, and theme preference."
+        story: "Primary setup and configuration navigation with nested Alerts."
       }
     }
   }

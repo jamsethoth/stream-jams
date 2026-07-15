@@ -2,6 +2,7 @@ import {
   DefaultTemplateRenderer,
   alertEditorDocumentSchema,
   alertEditorTestRequestSchema,
+  getAlertEditorAffectedProfileIds,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
@@ -31,7 +32,7 @@ export interface AlertEditorTestPlayback {
 
 export interface AlertEditorServiceOptions {
   readonly documents: AlertEditorDocumentRepository;
-  readonly rules: Pick<AlertRepository, "findRuleById" | "saveRule">;
+  readonly rules: Pick<AlertRepository, "findRuleById" | "listCollections" | "saveRule">;
   readonly metadata: Pick<AlertSetMetadataRepository, "findRule" | "saveRule">;
   readonly hasConnectedOutput: (targetProfileId: TargetProfileId) => Promise<boolean>;
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
@@ -67,6 +68,15 @@ export class AlertEditorDeliveryBlockedError extends Error {
   }
 }
 
+export class AlertEditorLiveImpactConfirmationRequiredError extends Error {
+  readonly code = "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED";
+
+  constructor(readonly affectedProfileIds: readonly TargetProfileId[]) {
+    super(`Saving can change active live output for ${affectedProfileIds.join(" and ")}. Review the changes and confirm the live impact before saving.`);
+    this.name = "AlertEditorLiveImpactConfirmationRequiredError";
+  }
+}
+
 export class AlertEditorService {
   readonly #options: AlertEditorServiceOptions;
   readonly #templateRenderer = new DefaultTemplateRenderer();
@@ -86,7 +96,11 @@ export class AlertEditorService {
     return createDocumentFromRule(rule, metadata);
   }
 
-  async saveDocument(alertId: string, candidate: AlertEditorDocument): Promise<AlertEditorDocument> {
+  async saveDocument(
+    alertId: string,
+    candidate: AlertEditorDocument,
+    confirmLiveImpact = false
+  ): Promise<AlertEditorDocument> {
     const document = alertEditorDocumentSchema.parse(candidate);
     if (document.id !== alertId) {
       throw new AlertEditorValidationError(["The editor document does not match the selected alert."]);
@@ -94,6 +108,16 @@ export class AlertEditorService {
     validateDocumentForSave(document);
 
     const rule = await this.#findRule(alertId);
+    const current = await this.#options.documents.find(alertId)
+      ?? createDocumentFromRule(rule, await this.#options.metadata.findRule(alertId));
+    const affectedProfileIds = getAlertEditorAffectedProfileIds(current, document);
+    if (!confirmLiveImpact && affectedProfileIds.length > 0) {
+      const collections = await this.#options.rules.listCollections();
+      const activeSetIds = new Set(collections.filter((collection) => collection.enabled).map((collection) => collection.id));
+      if (activeSetIds.has(current.setId) || activeSetIds.has(document.setId)) {
+        throw new AlertEditorLiveImpactConfirmationRequiredError(affectedProfileIds);
+      }
+    }
     const projectedRule = projectDocumentToRule(document, rule);
     await this.#options.rules.saveRule(projectedRule);
     await this.#options.metadata.saveRule(ruleMetadataFromDocument(document));

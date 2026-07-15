@@ -18,7 +18,7 @@ Build the distinct alert-editor route and the approved canvas-first workflow on 
 
 ## Editor UI Contract
 
-- Add `/modules/alerts/editor/:alertId` to the local route model with stable set/event/profile query context and a focused shell that collapses the primary sidebar.
+- Add `/manage/modules/alerts/editor/:alertId` to the local route model with stable set/event/profile query context and a focused shell that collapses the primary sidebar.
 - Provide selected-set alert search/switching, landscape/vertical profile switching, canvas, safe-area/grid/background controls, zoom controls, toolbar actions, and Layers/Alert/Event inspector tabs.
 - Support Text, Image, Video/GIF, Audio, and TTS layers. Shape remains omitted because no approved MVP screen requires it.
 - Keep one selected layer, exact geometry fields, visibility/order controls, asset picker integration, preset animation fields, drag/keyboard positioning, and resize handles synchronized with the same profile layout state.
