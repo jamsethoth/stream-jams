@@ -1,6 +1,6 @@
 # Stream Jams UI Refactor Implementation Plan
 
-Status: draft for review.
+Status: approved for implementation.
 
 This plan implements the approved MVP UX in `docs/design/ui-refactor-mvp-ux-spec.md` and the synced high-fidelity boards under `docs/design/hifi-concept-boards/`.
 
