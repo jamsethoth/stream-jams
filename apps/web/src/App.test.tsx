@@ -116,6 +116,12 @@ function createManagementApi(): ManagementApi {
     async getAlertEditorDocument() {
       throw new Error("not called");
     },
+    async saveAlertEditorDocument(_alertId, document) {
+      return document;
+    },
+    async sendAlertEditorTest(_alertId, request) {
+      return { status: "queued", targetProfileId: request.targetProfileId, referenceId: "ref-test", test: true };
+    },
     async listAssetLibraryItems() {
       return [];
     },

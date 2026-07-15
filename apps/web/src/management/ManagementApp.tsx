@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
+import { AlertEditorPage } from "./alerts/editor/AlertEditorPage.js";
 import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
 import { PageHeader } from "./foundation/PageHeader.js";
 import { StatusBadge } from "./foundation/StatusBadge.js";
@@ -45,16 +46,16 @@ function ManagementAppContent({ assetApi, alertApi, managementApi }: ResolvedMan
 
   return (
     <div className="app-shell">
-      <ManagementNavigation activeRoute={navigation.route} onNavigate={navigation.requestNavigation} />
-      <main className="management-main">
-        <PageHeader
+      {navigation.route.id === "alert-editor" ? null : <ManagementNavigation activeRoute={navigation.route} onNavigate={navigation.requestNavigation} />}
+      <main className={navigation.route.id === "alert-editor" ? "management-main management-main--focused" : "management-main"}>
+        {navigation.route.id === "alert-editor" ? null : <PageHeader
           breadcrumbs={definition.breadcrumbs}
           description={definition.description}
           status={<StatusBadge label="Local" tone="positive" />}
           title={definition.title}
-        />
+        />}
         <section aria-label={`${definition.title} content`} className="management-route-content">
-          <RouteContent alertApi={alertApi} assetApi={assetApi} managementApi={managementApi} route={navigation.route} />
+          <RouteContent alertApi={alertApi} assetApi={assetApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} />
         </section>
       </main>
       {navigation.guard}
@@ -65,8 +66,9 @@ function ManagementAppContent({ assetApi, alertApi, managementApi }: ResolvedMan
 function RouteContent({
   assetApi,
   managementApi,
+  onNavigate,
   route
-}: ResolvedManagementAppProps & { readonly route: ManagementRoute }) {
+}: ResolvedManagementAppProps & { readonly onNavigate: (route: ManagementRoute) => void; readonly route: ManagementRoute }) {
   switch (route.id) {
     case "home":
       return <HomePanel managementApi={managementApi} />;
@@ -75,7 +77,18 @@ function RouteContent({
     case "tts-providers":
       return <TtsProvidersPage managementApi={managementApi} />;
     case "modules-alerts":
-      return <AlertSetsPage managementApi={managementApi} />;
+      return <AlertSetsPage managementApi={managementApi} onEditAlert={(alert) => onNavigate({ id: "alert-editor", alertId: alert.id, setId: alert.setId, eventType: alert.eventType, targetProfileId: alert.targetProfileIds[0] ?? "landscape" })} />;
+    case "alert-editor":
+      return route.alertId === undefined ? null : (
+        <AlertEditorPage
+          alertId={route.alertId}
+          assetApi={assetApi}
+          managementApi={managementApi}
+          onBack={() => onNavigate({ id: "modules-alerts" })}
+          onOpenAlert={(alertId, targetProfileId) => onNavigate({ id: "alert-editor", alertId, ...(route.setId === undefined ? {} : { setId: route.setId }), targetProfileId })}
+          targetProfileId={route.targetProfileId}
+        />
+      );
     case "assets":
       return <AssetManager assetApi={assetApi} managementApi={managementApi} />;
     case "diagnostics":

@@ -97,6 +97,13 @@ function createService(providers: readonly RegisteredProviderView[], activeSet: 
     getAlertEditorDocument: async (): Promise<AlertEditorDocument> => {
       throw new Error("not configured");
     },
+    saveAlertEditorDocument: async (_alertId, document) => document,
+    sendAlertEditorTest: async (_alertId, request) => ({
+      status: "queued",
+      targetProfileId: request.targetProfileId,
+      referenceId: "ref-test",
+      test: true
+    }),
     listAssetLibraryItems: async (): Promise<readonly AssetLibraryItem[]> => [],
     updateAssetMetadata: async (_assetId, input) => ({
       id: "asset-1",

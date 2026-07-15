@@ -186,6 +186,35 @@ describe("management alert contracts and rules", () => {
     expect(
       editorDocument.safeParse({ ...document, targetProfiles: [document.targetProfiles[0], document.targetProfiles[0]] }).success
     ).toBe(false);
+
+    const saveInput = schema("alertEditorSaveInputSchema");
+    expect(saveInput.parse({ document })).toEqual({ document });
+
+    const testRequest = schema("alertEditorTestRequestSchema");
+    const request = {
+      document,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "jamsethoth" },
+      includeAudio: false,
+      includeTts: false
+    } as const;
+    expect(testRequest.parse(request)).toEqual(request);
+    expect(testRequest.safeParse({ ...request, targetProfileId: "square" }).success).toBe(false);
+
+    const testResult = schema("alertEditorTestResultSchema");
+    expect(
+      testResult.parse({
+        status: "queued",
+        targetProfileId: "landscape",
+        referenceId: "test-alert-follow-1",
+        test: true
+      })
+    ).toEqual({
+      status: "queued",
+      targetProfileId: "landscape",
+      referenceId: "test-alert-follow-1",
+      test: true
+    });
   });
 
   it("permits activation with warnings but blocks invalid enabled profiles", () => {

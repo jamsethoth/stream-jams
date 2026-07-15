@@ -11,7 +11,8 @@ import type {
   PlaybackQueue,
   PlaybackQueueSnapshot,
   ResolvedAlert,
-  OverlayInstruction
+  OverlayInstruction,
+  EnqueuePlaybackItemInput
 } from "@stream-jams/core";
 
 export type PlaybackEnqueueStatus = "queued" | "duplicate" | "no-matches" | "cooldown";
@@ -139,6 +140,12 @@ export class PlaybackCoordinator {
       matchedRuleIds: readyMatches.map((match) => match.rule.id),
       enqueuedAlertIds: resolvedAlerts.map((alert: ResolvedAlert) => alert.id)
     };
+  }
+
+  enqueueResolvedTest(input: EnqueuePlaybackItemInput): PlaybackQueueSnapshot {
+    const snapshot = this.#queue.enqueue(input);
+    this.#deliverCurrent(snapshot);
+    return snapshot;
   }
 
   completeCurrent(): PlaybackQueueSnapshot {

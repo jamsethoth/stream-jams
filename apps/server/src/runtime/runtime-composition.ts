@@ -38,6 +38,8 @@ import {
 import { SqliteAlertRepository } from "../modules/alerts/sqlite-alert-repository.js";
 import { AlertSetManagementService } from "../modules/alerts/alert-set-management-service.js";
 import { SqliteAlertSetMetadataRepository } from "../modules/alerts/sqlite-alert-set-metadata-repository.js";
+import { AlertEditorService } from "../modules/alerts/alert-editor-service.js";
+import { SqliteAlertEditorDocumentRepository } from "../modules/alerts/sqlite-alert-editor-document-repository.js";
 import { LocalManagementSessionService } from "../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
@@ -411,6 +413,28 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         });
     }
   });
+  const alertEditorService = new AlertEditorService({
+    documents: new SqliteAlertEditorDocumentRepository(database.connection, now),
+    rules: alertRepository,
+    metadata: alertSetMetadataRepository,
+    async hasConnectedOutput(targetProfileId) {
+      return overlayGateway.clientStates.some(
+        (client) =>
+          client.connectionState === "connected" &&
+          client.overlayId === "default" &&
+          client.scope === "module" &&
+          client.moduleId === "alerts" &&
+          client.purpose === "live" &&
+          client.targetProfileId === targetProfileId
+      );
+    },
+    async enqueueTest(playback) {
+      playbackCoordinator.enqueueResolvedTest(playback);
+    },
+    generateId: () => `editor_${randomBytes(12).toString("base64url")}`,
+    generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
+    now
+  });
   const assetLibraryService = new AssetLibraryService({
     assetRepository,
     metadataRepository: new SqliteAssetLibraryMetadataRepository(database.connection),
@@ -429,9 +453,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           (output.targetProfileId === "landscape" || output.targetProfileId === "vertical") &&
           output.copyableUrlStatus === "available"
       ),
-    getAlertEditorDocument: async (alertId) => {
-      throw new Error(`Alert editor document "${alertId}" is not available yet`);
-    },
+    getAlertEditorDocument: (alertId) => alertEditorService.getDocument(alertId),
+    saveAlertEditorDocument: (alertId, document) => alertEditorService.saveDocument(alertId, document),
+    sendAlertEditorTest: (alertId, request) => alertEditorService.sendTest(alertId, request),
     listAssetLibraryItems: () => assetLibraryService.listItems(),
     updateAssetMetadata: (assetId, input) => assetLibraryService.updateMetadata(assetId, input),
     getAssetChangeImpact: (assetId, candidateMediaType) =>
@@ -448,7 +472,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return {
         state: "ready",
         appVersion: "0.0.0",
-        schemaVersion: 5,
+        schemaVersion: 6,
         configurationRecordCount: collections.length + rules.length + eventSources.length + ttsProviders.length,
         assetCount: 0,
         totalAssetBytes: 0,

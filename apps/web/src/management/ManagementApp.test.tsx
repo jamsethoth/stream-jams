@@ -29,6 +29,20 @@ describe("ManagementApp", () => {
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
   });
 
+  it("uses the focused editor route and restores the management shell on recovery", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/modules/alerts/editor/alert-follow?set=set-default&profile=vertical");
+    render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    expect(screen.queryByRole("link", { name: "Home" })).not.toBeInTheDocument();
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to alerts" }));
+
+    expect(window.location.pathname).toBe("/modules/alerts");
+    expect(screen.getByRole("link", { name: "Home" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Alerts" })).toBeInTheDocument();
+  });
+
   it("guards dirty settings when navigating and allows discard", async () => {
     const user = userEvent.setup();
     render(<ManagementApp alertApi={createAlertApi()} assetApi={createAssetApi()} managementApi={createManagementApi()} />);
@@ -419,6 +433,13 @@ function createManagementApi(options: { readonly twitchConnected?: boolean } = {
     getAlertEditorDocument: vi.fn(async () => {
       throw new Error("not called");
     }),
+    saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+    sendAlertEditorTest: vi.fn(async (_alertId, request) => ({
+      status: "queued" as const,
+      targetProfileId: request.targetProfileId,
+      referenceId: "ref-test",
+      test: true as const
+    })),
     listAssetLibraryItems: vi.fn(async () => []),
     updateAssetMetadata: vi.fn(async () => {
       throw new Error("not called");

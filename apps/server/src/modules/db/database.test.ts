@@ -3,6 +3,7 @@ import { createInMemoryStreamJamsDatabase, runInTransaction } from "./database.j
 
 const expectedTables = [
   "alert_collections",
+  "alert_editor_documents",
   "alert_match_logs",
   "alert_rule_collections",
   "alert_rule_conditions",
@@ -34,7 +35,8 @@ describe("Stream Jams SQLite database", () => {
       "005-provider-registrations",
       "006-overlay-key-target-profile",
       "007-alert-set-management",
-      "008-asset-library-metadata"
+      "008-asset-library-metadata",
+      "009-alert-editor-documents"
     ]);
 
     database.runMigrations();
@@ -47,7 +49,8 @@ describe("Stream Jams SQLite database", () => {
       "005-provider-registrations",
       "006-overlay-key-target-profile",
       "007-alert-set-management",
-      "008-asset-library-metadata"
+      "008-asset-library-metadata",
+      "009-alert-editor-documents"
     ]);
 
     expect(

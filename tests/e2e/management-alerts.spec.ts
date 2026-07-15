@@ -195,3 +195,108 @@ test("management alerts reviews the starter set and safely manages its landscape
     }
   ]);
 });
+
+test("focused alert editor saves layouts and separates preview from test delivery", async ({ page }) => {
+  await mockManagementShell(page);
+  const savedDocuments: unknown[] = [];
+  const testRequests: unknown[] = [];
+  const document = {
+    id: "alert-follow",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "follow",
+    kind: "default",
+    parentAlertId: null,
+    name: "New follower",
+    enabled: true,
+    conditions: [],
+    durationMs: 5_000,
+    layers: [{
+      id: "layer-text",
+      name: "Message",
+      type: "text",
+      visible: true,
+      order: 0,
+      template: "Thanks, {actor.displayName}!",
+      animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
+    }],
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "layer-text", x: 610, y: 720, width: 700, height: 160, zIndex: 0 }] },
+      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [{ layerId: "layer-text", x: 190, y: 1180, width: 700, height: 160, zIndex: 0 }] }
+    ],
+    samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { actor: { displayName: "James" } } }]
+  };
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: true,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+  const detail = {
+    overview,
+    inventory: [{
+      id: "alert-follow",
+      setId: "set-default",
+      providerKind: "twitch",
+      eventType: "follow",
+      name: "New follower",
+      kind: "default",
+      enabled: true,
+      reviewState: "ready",
+      targetProfileIds: ["landscape"],
+      previewText: "Thanks for following!"
+    }],
+    browserSources: []
+  };
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({ contentType: "application/json", json: [overview] }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({ contentType: "application/json", json: detail }));
+  await page.route("**/management/alerts/alert-follow/editor", async (route) => {
+    expect(route.request().headers()["authorization"]).toBe("Bearer mgmt_e2e");
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { readonly document: unknown };
+      savedDocuments.push(body.document);
+      await route.fulfill({ contentType: "application/json", json: body.document });
+      return;
+    }
+    await route.fulfill({ contentType: "application/json", json: document });
+  });
+  await page.route("**/management/alerts/alert-follow/editor/test", async (route) => {
+    testRequests.push(route.request().postDataJSON());
+    await route.fulfill({
+      contentType: "application/json",
+      json: { status: "queued", targetProfileId: "landscape", referenceId: "ref-e2e-editor", test: true }
+    });
+  });
+
+  await page.goto("/manage");
+  await page.getByRole("link", { name: "Alerts" }).click();
+  await page.getByRole("button", { name: "Edit" }).click();
+
+  await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-follow\?.*profile=landscape/u);
+  await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+  await page.getByRole("textbox", { name: "Message template" }).fill("Welcome, {actor.displayName}!");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  expect(savedDocuments).toHaveLength(1);
+  expect(savedDocuments[0]).toMatchObject({ layers: [{ template: "Welcome, {actor.displayName}!" }] });
+
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByText("Local preview is running.")).toBeVisible();
+  expect(testRequests).toHaveLength(0);
+  await page.getByRole("button", { name: "Send test" }).click();
+  await expect(page.getByText(/Queued on Landscape.*ref-e2e-editor/u)).toBeVisible();
+  expect(testRequests).toHaveLength(1);
+
+  await page.getByRole("button", { name: /Vertical/u }).click();
+  await expect(page.getByRole("button", { name: "Send test" })).toBeDisabled();
+  await expect(page.getByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
+});

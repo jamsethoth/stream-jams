@@ -342,6 +342,25 @@ export const alertEditorDocumentSchema = z.object({
   samplePayloads: z.array(alertSamplePayloadSchema).min(1)
 });
 
+export const alertEditorSaveInputSchema = z.object({
+  document: alertEditorDocumentSchema
+});
+
+export const alertEditorTestRequestSchema = z.object({
+  document: alertEditorDocumentSchema,
+  targetProfileId: targetProfileIdSchema,
+  samplePayload: metadataSchema,
+  includeAudio: z.boolean(),
+  includeTts: z.boolean()
+});
+
+export const alertEditorTestResultSchema = z.object({
+  status: z.literal("queued"),
+  targetProfileId: targetProfileIdSchema,
+  referenceId: nonEmptyStringSchema,
+  test: z.literal(true)
+});
+
 export const assetUsageLinkSchema = z.object({
   setId: nonEmptyStringSchema.nullable(),
   setName: nonEmptyStringSchema.nullable(),
@@ -523,6 +542,9 @@ export type AlertLayer = z.infer<typeof alertLayerSchema>;
 export type AlertTargetProfileDocument = z.infer<typeof alertTargetProfileDocumentSchema>;
 export type AlertSamplePayload = z.infer<typeof alertSamplePayloadSchema>;
 export type AlertEditorDocument = z.infer<typeof alertEditorDocumentSchema>;
+export type AlertEditorSaveInput = z.infer<typeof alertEditorSaveInputSchema>;
+export type AlertEditorTestRequest = z.infer<typeof alertEditorTestRequestSchema>;
+export type AlertEditorTestResult = z.infer<typeof alertEditorTestResultSchema>;
 export type AssetUsageSummary = z.infer<typeof assetUsageSummarySchema>;
 export type AssetLibraryItem = z.infer<typeof assetLibraryItemSchema>;
 export type AssetMetadataUpdateInput = z.infer<typeof assetMetadataUpdateInputSchema>;

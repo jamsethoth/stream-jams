@@ -9,7 +9,8 @@ import {
   type AlertService,
   type AlertVariant,
   type AssetRepository,
-  type NormalizedStreamEvent
+  type NormalizedStreamEvent,
+  type ResolvedAlert
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { PlaybackCoordinator } from "./playback-coordinator.js";
@@ -106,6 +107,45 @@ describe("PlaybackCoordinator", () => {
     coordinator.resume();
 
     expect(deliveredInstructionIds).toEqual(["overlay-instruction-2"]);
+  });
+
+  it("queues a resolved editor test through the normal queue and overlay sink", () => {
+    const alertService = new RecordingAlertService([]);
+    const deliveredInstructionIds: string[] = [];
+    const coordinator = createCoordinator({
+      alertService,
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          deliveredInstructionIds.push(instruction.id);
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "editor-test", metadata: { test: true } });
+    const alert: ResolvedAlert = {
+      id: "resolved-editor-test",
+      sourceEventId: event.id,
+      ruleId: "rule-editor",
+      variantId: "layer-text",
+      overlayInstruction: {
+        id: "instruction-editor-test",
+        overlayId: "overlay-1",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape",
+        visual: null,
+        audio: null,
+        text: { text: "Test", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } },
+        tts: null,
+        durationMs: 3_000
+      }
+    };
+
+    const snapshot = coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [alert] });
+
+    expect(snapshot.current?.alerts).toEqual([alert]);
+    expect(deliveredInstructionIds).toEqual(["instruction-editor-test"]);
+    expect(alertService.listActiveRuleCalls).toBe(0);
   });
 
   it("resolves configured additional overlay targets into the same playback item", async () => {

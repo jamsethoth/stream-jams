@@ -1,5 +1,6 @@
 import {
   alertEditorDocumentSchema,
+  alertEditorTestResultSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
   alertSetDetailSchema,
@@ -18,6 +19,8 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertEditorTestRequest,
+  type AlertEditorTestResult,
   type AlertSetActivationImpact,
   type AlertSetActivationResult,
   type AlertSetDetail,
@@ -344,6 +347,8 @@ export interface ManagementApi {
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
+  saveAlertEditorDocument(alertId: string, document: AlertEditorDocument): Promise<AlertEditorDocument>;
+  sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
   getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
@@ -635,6 +640,25 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         `/management/alerts/${encodeURIComponent(alertId)}/editor`,
         alertEditorDocumentSchema,
         "Unable to load alert editor document."
+      );
+    },
+
+    async saveAlertEditorDocument(alertId, document) {
+      return alertEditorDocumentSchema.parse(
+        await client.putJson<unknown>(
+          `/management/alerts/${encodeURIComponent(alertId)}/editor`,
+          { document },
+          "Unable to save alert editor changes."
+        )
+      );
+    },
+
+    sendAlertEditorTest(alertId, request) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/editor/test`,
+        request,
+        alertEditorTestResultSchema,
+        "Unable to send the alert test."
       );
     },
 

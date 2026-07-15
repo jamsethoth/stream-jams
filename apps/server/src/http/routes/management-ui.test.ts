@@ -87,6 +87,43 @@ describe("management UI contract routes", () => {
     ]);
   });
 
+  it("loads, saves, and sends an alert editor document through distinct commands", async () => {
+    const { app, authHeaders, service } = await createApp();
+    const loaded = await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor",
+      headers: authHeaders
+    });
+    const document = loaded.json();
+    const saved = await app.inject({
+      method: "PUT",
+      url: "/management/alerts/alert-follow/editor",
+      headers: authHeaders,
+      payload: { document: { ...document, name: "Follower welcome" } }
+    });
+    const sent = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/editor/test",
+      headers: authHeaders,
+      payload: {
+        document,
+        targetProfileId: "landscape",
+        samplePayload: { userName: "James" },
+        includeAudio: false,
+        includeTts: false
+      }
+    });
+
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ name: "Follower welcome" });
+    expect(sent.statusCode).toBe(200);
+    expect(sent.json()).toEqual({ status: "queued", targetProfileId: "landscape", referenceId: "ref-editor-test", test: true });
+    expect(service.editorCommands).toEqual([
+      ["save", "alert-follow", "Follower welcome"],
+      ["test", "alert-follow", "landscape"]
+    ]);
+  });
+
   it("validates and registers providers without combining the two operations", async () => {
     const { app, authHeaders, service } = await createApp();
     const setup = {
@@ -282,6 +319,7 @@ class StubManagementUiQueryService {
   readonly activationRequests: Array<{ readonly providerId: string; readonly confirmWarnings: boolean }> = [];
   readonly alertSetCommands: unknown[][] = [];
   readonly assetCommands: unknown[][] = [];
+  readonly editorCommands: unknown[][] = [];
 
   async getHomeSetupSummary() {
     return { readiness: [], activeAlertSet: null, actionableProblems: [] };
@@ -438,6 +476,16 @@ class StubManagementUiQueryService {
         { id: "sample-normal", label: "Normal follower", kind: "built-in" as const, payload: { userName: "viewer" } }
       ]
     };
+  }
+
+  async saveAlertEditorDocument(alertId: string, document: Awaited<ReturnType<StubManagementUiQueryService["getAlertEditorDocument"]>>) {
+    this.editorCommands.push(["save", alertId, document.name]);
+    return document;
+  }
+
+  async sendAlertEditorTest(alertId: string, request: { readonly targetProfileId: "landscape" | "vertical" }) {
+    this.editorCommands.push(["test", alertId, request.targetProfileId]);
+    return { status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-editor-test", test: true as const };
   }
 
   async listAssetLibraryItems() {

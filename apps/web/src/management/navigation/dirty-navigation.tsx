@@ -76,7 +76,7 @@ export function useManagementNavigation() {
     throw new Error("useManagementNavigation must be used inside DirtyNavigationProvider");
   }
 
-  const [route, setRoute] = useState<ManagementRoute>(() => parseManagementRoute(window.location.pathname));
+  const [route, setRoute] = useState<ManagementRoute>(() => parseManagementRoute(`${window.location.pathname}${window.location.search}`));
   const [pending, setPending] = useState<PendingNavigation | null>(null);
   const [guardError, setGuardError] = useState<string | null>(null);
 
@@ -92,7 +92,7 @@ export function useManagementNavigation() {
 
   const requestNavigation = useCallback(
     (nextRoute: ManagementRoute) => {
-      if (nextRoute.id === route.id) {
+      if (formatManagementRoute(nextRoute) === formatManagementRoute(route)) {
         return;
       }
       if (context.source !== null) {
@@ -102,13 +102,13 @@ export function useManagementNavigation() {
       }
       commit(nextRoute, "push");
     },
-    [commit, context.source, route.id]
+    [commit, context.source, route]
   );
 
   useEffect(() => {
     const handlePopState = () => {
-      const nextRoute = parseManagementRoute(window.location.pathname);
-      if (nextRoute.id === route.id) {
+      const nextRoute = parseManagementRoute(`${window.location.pathname}${window.location.search}`);
+      if (formatManagementRoute(nextRoute) === formatManagementRoute(route)) {
         return;
       }
       if (context.source !== null) {

@@ -10,6 +10,7 @@ const inactiveSet = overview("set-seasonal", "Seasonal", false);
 const meta = {
   title: "Management/Alerts/Alert sets",
   component: AlertSetsPage,
+  args: { onEditAlert: fn() },
   parameters: { layout: "fullscreen" }
 } satisfies Meta<typeof AlertSetsPage>;
 

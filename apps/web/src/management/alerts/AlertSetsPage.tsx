@@ -32,6 +32,7 @@ export type AlertSetsPageApi = Pick<
 
 export interface AlertSetsPageProps {
   readonly managementApi: AlertSetsPageApi;
+  readonly onEditAlert: (alert: AlertInventoryRow) => void;
 }
 
 type NameAction = "create" | "rename" | "duplicate";
@@ -46,7 +47,7 @@ interface RegenerateDialogState {
   readonly requiresTypedConfirmation: boolean;
 }
 
-export function AlertSetsPage({ managementApi }: AlertSetsPageProps) {
+export function AlertSetsPage({ managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AlertSetDetail | null>(null);
@@ -344,6 +345,7 @@ export function AlertSetsPage({ managementApi }: AlertSetsPageProps) {
                 eventFilter={eventFilter}
                 eventTypes={[...new Set(detail.inventory.map((alert) => alert.eventType))]}
                 onEventFilter={setEventFilter}
+                onEdit={onEditAlert}
                 onPreview={setPreviewAlert}
                 onProfileFilter={setProfileFilter}
                 onQuery={setQuery}
@@ -448,6 +450,7 @@ function AlertInventory({
   eventFilter,
   eventTypes,
   onEventFilter,
+  onEdit,
   onPreview,
   onProfileFilter,
   onQuery,
@@ -463,6 +466,7 @@ function AlertInventory({
   readonly eventFilter: string;
   readonly eventTypes: readonly string[];
   readonly onEventFilter: (value: string) => void;
+  readonly onEdit: (alert: AlertInventoryRow) => void;
   readonly onPreview: (alert: AlertInventoryRow) => void;
   readonly onProfileFilter: (value: string) => void;
   readonly onQuery: (value: string) => void;
@@ -491,7 +495,7 @@ function AlertInventory({
                 <th scope="row"><span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"}</small></th>
                 <td>{formatEventType(alert.eventType)}</td><td>{formatProvider(alert.providerKind)}</td><td>{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
                 <td><StatusBadge label={alert.reviewState === "needs-review" ? "Needs review" : "Ready"} tone={alert.reviewState === "needs-review" ? "warning" : "positive"} /></td>
-                <td className="alert-sets-page__row-actions"><button className="button button--secondary" onClick={() => onPreview(alert)} type="button">Preview</button><button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button></td>
+                <td className="alert-sets-page__row-actions"><button onClick={() => onEdit(alert)} type="button">Edit</button><button className="button button--secondary" onClick={() => onPreview(alert)} type="button">Preview</button><button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button></td>
               </tr>
             ))}
           </tbody>

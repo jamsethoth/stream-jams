@@ -1,5 +1,8 @@
 import {
   alertEditorDocumentSchema,
+  alertEditorSaveInputSchema,
+  alertEditorTestRequestSchema,
+  alertEditorTestResultSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
   alertSetDetailSchema,
@@ -23,6 +26,8 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertEditorTestRequest,
+  type AlertEditorTestResult,
   type AlertSetActivationImpact,
   type AlertSetActivationResult,
   type AlertSetDetail,
@@ -65,6 +70,11 @@ import {
   AssetLibraryInUseError,
   AssetLibraryNotFoundError
 } from "../../modules/assets/asset-library-service.js";
+import {
+  AlertEditorDeliveryBlockedError,
+  AlertEditorNotFoundError,
+  AlertEditorValidationError
+} from "../../modules/alerts/alert-editor-service.js";
 
 export interface ManagementUiQueryService {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
@@ -91,6 +101,8 @@ export interface ManagementUiQueryService {
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
+  saveAlertEditorDocument(alertId: string, document: AlertEditorDocument): Promise<AlertEditorDocument>;
+  sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
   getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
@@ -309,9 +321,47 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     }
   });
 
-  app.get("/management/alerts/:alertId/editor", { preHandler }, async (request) =>
-    alertEditorDocumentSchema.parse(await service.getAlertEditorDocument(readParam(request.params, "alertId")))
-  );
+  app.get("/management/alerts/:alertId/editor", { preHandler }, async (request, reply) => {
+    try {
+      return alertEditorDocumentSchema.parse(await service.getAlertEditorDocument(readParam(request.params, "alertId")));
+    } catch (error) {
+      return sendAlertEditorCommandError(reply, error);
+    }
+  });
+
+  app.put("/management/alerts/:alertId/editor", { preHandler }, async (request, reply) => {
+    const input = alertEditorSaveInputSchema.safeParse(request.body);
+    if (!input.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_EDITOR_DOCUMENT",
+        message: "Review the alert layers and target profiles, then try saving again."
+      });
+    }
+    try {
+      return alertEditorDocumentSchema.parse(
+        await service.saveAlertEditorDocument(readParam(request.params, "alertId"), input.data.document)
+      );
+    } catch (error) {
+      return sendAlertEditorCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alerts/:alertId/editor/test", { preHandler }, async (request, reply) => {
+    const input = alertEditorTestRequestSchema.safeParse(request.body);
+    if (!input.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_EDITOR_TEST",
+        message: "Choose a target profile and valid sample payload, then try Send test again."
+      });
+    }
+    try {
+      return alertEditorTestResultSchema.parse(
+        await service.sendAlertEditorTest(readParam(request.params, "alertId"), input.data)
+      );
+    } catch (error) {
+      return sendAlertEditorCommandError(reply, error);
+    }
+  });
 
   app.get("/management/assets/library", { preHandler }, async () =>
     parseList(await service.listAssetLibraryItems(), assetLibraryItemSchema)
@@ -387,6 +437,28 @@ function sendAssetCommandError(reply: Parameters<typeof sendHttpError>[0], error
         message: "This asset is still used by alerts. Reassign those usages before deleting it."
       },
       impact: error.impact
+    });
+  }
+  throw error;
+}
+
+function sendAlertEditorCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+  if (error instanceof AlertEditorNotFoundError) {
+    return sendHttpError(reply, 404, {
+      code: error.code,
+      message: "The selected alert no longer exists. Return to the alert set and choose another alert."
+    });
+  }
+  if (error instanceof AlertEditorValidationError) {
+    return sendHttpError(reply, 422, {
+      code: error.code,
+      message: `${error.message} Review the highlighted editor settings and try again.`
+    });
+  }
+  if (error instanceof AlertEditorDeliveryBlockedError) {
+    return sendHttpError(reply, 409, {
+      code: error.code,
+      message: error.message
     });
   }
   throw error;

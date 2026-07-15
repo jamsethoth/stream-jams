@@ -1,6 +1,8 @@
 import {
   homeSetupSummarySchema,
   type AlertEditorDocument,
+  type AlertEditorTestRequest,
+  type AlertEditorTestResult,
   type AlertSetActivationImpact,
   type AlertSetActivationResult,
   type AlertSetDetail,
@@ -61,6 +63,8 @@ export interface ManagementUiServiceOptions {
   readonly alertSetService: AlertSetService;
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
+  readonly saveAlertEditorDocument: (alertId: string, document: AlertEditorDocument) => Promise<AlertEditorDocument>;
+  readonly sendAlertEditorTest: (alertId: string, request: AlertEditorTestRequest) => Promise<AlertEditorTestResult>;
   readonly listAssetLibraryItems: () => Promise<readonly AssetLibraryItem[]>;
   readonly updateAssetMetadata: (assetId: string, input: AssetMetadataUpdateInput) => Promise<AssetLibraryItem>;
   readonly getAssetChangeImpact: (assetId: string, candidateMediaType?: AssetMediaType) => Promise<AssetChangeImpact>;
@@ -188,6 +192,14 @@ export class ManagementUiService {
 
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument> {
     return this.#options.getAlertEditorDocument(alertId);
+  }
+
+  saveAlertEditorDocument(alertId: string, document: AlertEditorDocument): Promise<AlertEditorDocument> {
+    return this.#options.saveAlertEditorDocument(alertId, document);
+  }
+
+  sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
+    return this.#options.sendAlertEditorTest(alertId, request);
   }
 
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]> {

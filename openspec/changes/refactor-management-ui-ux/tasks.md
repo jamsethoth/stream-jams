@@ -47,12 +47,12 @@
 
 ## 6. Focused Alert Editor MVP
 
-- [ ] 6.1 Add the focused alert-editor route and shell with breadcrumb, selected-set tree search, alert switching, toolbar, canvas, and inspector.
-- [ ] 6.2 Implement Text, Image, Video/GIF, Audio, TTS, and only-needed Shape layers with ordering, visibility, selection, and exact inspector fields.
-- [ ] 6.3 Implement landscape/vertical layout, per-profile enablement/review, safe-area guides, zoom, grid/edge/center snapping, and reset behavior.
-- [ ] 6.4 Implement undo/redo, explicit save, revert, and the shared dirty guard across alert, set, profile, and route switches.
-- [ ] 6.5 Implement built-in/session sample payloads, always-available canvas Preview, connected-output Send test, target selection, and blocked state.
-- [ ] 6.6 Add editor domain, interaction, accessibility, Storybook, and Playwright coverage for all approved editor states.
+- [x] 6.1 Add the focused alert-editor route and shell with breadcrumb, selected-set tree search, alert switching, toolbar, canvas, and inspector.
+- [x] 6.2 Implement Text, Image, Video/GIF, Audio, TTS, and only-needed Shape layers with ordering, visibility, selection, and exact inspector fields.
+- [x] 6.3 Implement landscape/vertical layout, per-profile enablement/review, safe-area guides, zoom, grid/edge/center snapping, and reset behavior.
+- [x] 6.4 Implement undo/redo, explicit save, revert, and the shared dirty guard across alert, set, profile, and route switches.
+- [x] 6.5 Implement built-in/session sample payloads, always-available canvas Preview, connected-output Send test, target selection, and blocked state.
+- [x] 6.6 Add editor domain, interaction, accessibility, Storybook, and Playwright coverage for all approved editor states.
 
 ## 7. Diagnostics
 

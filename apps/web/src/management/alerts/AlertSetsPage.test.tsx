@@ -10,7 +10,7 @@ describe("AlertSetsPage", () => {
   it("loads the active set, masks browser-source keys, and supports starter review and quick enable", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();
-    render(<AlertSetsPage managementApi={api} />);
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
 
     expect(await screen.findByRole("heading", { name: "Default" })).toBeInTheDocument();
     expect(screen.getByText("Active set")).toBeInTheDocument();
@@ -46,7 +46,7 @@ describe("AlertSetsPage", () => {
       }))
     });
     const user = userEvent.setup();
-    render(<AlertSetsPage managementApi={api} />);
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "View Seasonal" }));
     await user.click(screen.getByRole("button", { name: "Make Seasonal active" }));
@@ -61,7 +61,7 @@ describe("AlertSetsPage", () => {
   it("requires typed confirmation before regenerating a connected browser source", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();
-    render(<AlertSetsPage managementApi={api} />);
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "Regenerate Landscape live URL" }));
     const dialog = screen.getByRole("dialog", { name: "Regenerate Landscape live URL?" });

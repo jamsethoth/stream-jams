@@ -9,6 +9,7 @@ import { providerRegistrationsMigration } from "./migrations/005-provider-regist
 import { overlayKeyTargetProfileMigration } from "./migrations/006-overlay-key-target-profile.js";
 import { alertSetManagementMigration } from "./migrations/007-alert-set-management.js";
 import { assetLibraryMetadataMigration } from "./migrations/008-asset-library-metadata.js";
+import { alertEditorDocumentsMigration } from "./migrations/009-alert-editor-documents.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -29,7 +30,8 @@ const migrations = [
   providerRegistrationsMigration,
   overlayKeyTargetProfileMigration,
   alertSetManagementMigration,
-  assetLibraryMetadataMigration
+  assetLibraryMetadataMigration,
+  alertEditorDocumentsMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export function openStreamJamsDatabase(databasePath: string): StreamJamsDatabase {

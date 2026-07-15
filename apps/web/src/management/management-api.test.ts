@@ -44,6 +44,12 @@ describe("createHttpManagementApi", () => {
         },
         "/management/alert-sets": [],
         "/management/alerts/alert-follow/editor": editorDocument(),
+        "/management/alerts/alert-follow/editor/test": {
+          status: "queued",
+          targetProfileId: "landscape",
+          referenceId: "ref-editor-test",
+          test: true
+        },
         "/management/assets/library": [],
         "/management/diagnostics/workspace": {
           problems: [],
@@ -76,6 +82,8 @@ describe("createHttpManagementApi", () => {
     expect(api.getTtsProviderSafetySettings).toBeTypeOf("function");
     expect(api.listAlertSets).toBeTypeOf("function");
     expect(api.getAlertEditorDocument).toBeTypeOf("function");
+    expect(api.saveAlertEditorDocument).toBeTypeOf("function");
+    expect(api.sendAlertEditorTest).toBeTypeOf("function");
     expect(api.listAssetLibraryItems).toBeTypeOf("function");
     expect(api.getDiagnosticsWorkspace).toBeTypeOf("function");
     expect(api.getConfigurationBackupSummary).toBeTypeOf("function");
@@ -86,6 +94,16 @@ describe("createHttpManagementApi", () => {
     await expect(api.getTtsProviderSafetySettings("provider-speakerbot")).resolves.toMatchObject({ maximumTextLength: 240 });
     await expect(api.listAlertSets()).resolves.toEqual([]);
     await expect(api.getAlertEditorDocument("alert-follow")).resolves.toMatchObject({ id: "alert-follow" });
+    await expect(api.saveAlertEditorDocument("alert-follow", editorDocument())).resolves.toMatchObject({ id: "alert-follow" });
+    await expect(
+      api.sendAlertEditorTest("alert-follow", {
+        document: editorDocument(),
+        targetProfileId: "landscape",
+        samplePayload: { userName: "James" },
+        includeAudio: false,
+        includeTts: false
+      })
+    ).resolves.toMatchObject({ status: "queued", referenceId: "ref-editor-test" });
     await expect(api.listAssetLibraryItems()).resolves.toEqual([]);
     await expect(api.getDiagnosticsWorkspace()).resolves.toEqual({ problems: [], events: [], rawLogs: [] });
     await expect(api.getConfigurationBackupSummary()).resolves.toMatchObject({ state: "ready" });
@@ -714,6 +732,14 @@ interface UiContractManagementApi {
   getTtsProviderSafetySettings(providerId: string): Promise<unknown>;
   listAlertSets(): Promise<readonly unknown[]>;
   getAlertEditorDocument(alertId: string): Promise<unknown>;
+  saveAlertEditorDocument(alertId: string, document: ReturnType<typeof editorDocument>): Promise<unknown>;
+  sendAlertEditorTest(alertId: string, request: {
+    readonly document: ReturnType<typeof editorDocument>;
+    readonly targetProfileId: "landscape" | "vertical";
+    readonly samplePayload: Record<string, unknown>;
+    readonly includeAudio: boolean;
+    readonly includeTts: boolean;
+  }): Promise<unknown>;
   listAssetLibraryItems(): Promise<readonly unknown[]>;
   getDiagnosticsWorkspace(): Promise<unknown>;
   getConfigurationBackupSummary(): Promise<unknown>;
