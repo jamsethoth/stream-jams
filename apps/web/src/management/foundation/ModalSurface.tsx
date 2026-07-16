@@ -14,7 +14,17 @@ export function ModalSurface({ children, labelledBy, onCancel, open }: ModalSurf
     if (!open) {
       return;
     }
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     surfaceRef.current?.querySelector<HTMLElement>("button, input, select, textarea, [href]")?.focus();
+    return () => {
+      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();

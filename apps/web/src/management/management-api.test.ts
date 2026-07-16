@@ -291,6 +291,60 @@ describe("createHttpManagementApi", () => {
     await expect(api.testProviderVoice("provider-speakerbot")).resolves.toEqual({ delivered: true, error: null });
   });
 
+  it("loads Twitch connection status and starts authorization", async () => {
+    const status = {
+      connected: true as const,
+      account: {
+        accountId: "account-1",
+        login: "jamsethoth",
+        displayName: "Jamsethoth",
+        scopes: ["user:read:chat"],
+        connectedAt: "2026-07-15T05:00:00.000Z",
+        updatedAt: "2026-07-15T05:00:00.000Z"
+      }
+    };
+    const started = {
+      authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=oauth-state",
+      state: "oauth-state",
+      scopes: ["user:read:chat"]
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/status") return jsonResponse(status);
+      if (url === "/twitch/auth/start") {
+        expect(init).toMatchObject({
+          method: "POST",
+          body: JSON.stringify({ redirectUri: "http://127.0.0.1:39187/twitch/auth/callback" })
+        });
+        return jsonResponse(started);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getTwitchStatus()).resolves.toEqual(status);
+    await expect(api.startTwitchAuth({ redirectUri: "http://127.0.0.1:39187/twitch/auth/callback" })).resolves.toEqual(started);
+  });
+
+  it("rejects malformed Twitch status and unsafe authorization URLs", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/status") return jsonResponse({ connected: true, account: null });
+      if (url === "/twitch/auth/start") {
+        return jsonResponse({ authorizationUrl: "javascript:alert(1)", state: "unsafe", scopes: [] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getTwitchStatus()).rejects.toThrow("Invalid Twitch connection status response");
+    await expect(api.startTwitchAuth({ redirectUri: "http://127.0.0.1:39187/twitch/auth/callback" })).rejects.toThrow(
+      "Invalid Twitch authorization response"
+    );
+  });
+
   it("rejects invalid provider command responses", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

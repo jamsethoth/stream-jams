@@ -36,6 +36,116 @@ test("management diagnostics include backend error code and id", async ({ page }
   ).toBeVisible();
 });
 
+test("event source onboarding connects validates and registers Twitch", async ({ page }) => {
+  let twitchStatusChecks = 0;
+  let registered = false;
+  const provider = {
+    id: "provider-twitch-e2e",
+    name: "Twitch",
+    kind: "twitch",
+    capability: "event-source",
+    active: true,
+    connectionState: "connected",
+    intakeState: "active",
+    validatedAt: "2026-07-16T12:00:00.000Z",
+    error: null,
+    usedByAlertCount: 0
+  };
+  const detail = {
+    provider,
+    configuration: {},
+    availableVoices: [],
+    ttsSafety: null
+  };
+  const validation = {
+    valid: true,
+    connectionState: "connected",
+    intakeState: "inactive",
+    validatedAt: "2026-07-16T12:00:00.000Z",
+    availableVoices: [],
+    error: null
+  };
+
+  await page.route("**/auth/management/sessions", async (route) => {
+    await route.fulfill({ contentType: "application/json", json: { id: "mgmt_provider_e2e", csrfToken: "csrf_provider_e2e" } });
+  });
+  await page.route("**/twitch/auth/status", async (route) => {
+    twitchStatusChecks += 1;
+    await route.fulfill({
+      contentType: "application/json",
+      json: twitchStatusChecks === 1
+        ? { connected: false, account: null }
+        : {
+            connected: true,
+            account: {
+              accountId: "account-e2e",
+              login: "jamsethoth",
+              displayName: "Jamsethoth",
+              scopes: ["user:read:chat"],
+              connectedAt: "2026-07-16T12:00:00.000Z",
+              updatedAt: "2026-07-16T12:00:00.000Z"
+            }
+          }
+    });
+  });
+  await page.route("**/twitch/auth/start", async (route) => {
+    expect(route.request().postDataJSON()).toEqual({
+      redirectUri: "http://127.0.0.1:4173/twitch/auth/callback"
+    });
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=e2e",
+        state: "e2e",
+        scopes: ["user:read:chat"]
+      }
+    });
+  });
+  await page.route(/^https?:\/\/[^/]+\/management\/providers(?:[/?].*)?$/u, async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname === "/management/providers" && request.method() === "GET") {
+      await route.fulfill({ contentType: "application/json", json: registered ? [provider] : [] });
+      return;
+    }
+    if (url.pathname === "/management/providers/validate") {
+      expect(request.postDataJSON()).toEqual({ name: "Twitch", kind: "twitch", configuration: {} });
+      await route.fulfill({ contentType: "application/json", json: validation });
+      return;
+    }
+    if (url.pathname === "/management/providers" && request.method() === "POST") {
+      registered = true;
+      await route.fulfill({ contentType: "application/json", json: { status: "registered", provider: detail, validation } });
+      return;
+    }
+    if (url.pathname === `/management/providers/${provider.id}`) {
+      await route.fulfill({ contentType: "application/json", json: detail });
+      return;
+    }
+    await route.abort("failed");
+  });
+
+  await page.goto("/manage/event-sources");
+  await page.getByRole("button", { name: "Add event source" }).click();
+  await expect(page.getByRole("dialog", { name: "Add event source" })).toContainText("Step 1 of 3");
+  await page.getByRole("button", { name: "Continue" }).click();
+  await expect(page.getByRole("heading", { name: "Configure Twitch" })).toBeVisible();
+  await expect(page.getByText("No Twitch account connected")).toBeVisible();
+
+  await page.getByRole("button", { name: "Connect Twitch" }).click();
+  await expect(page.getByRole("link", { name: "Continue in Twitch" })).toHaveAttribute(
+    "href",
+    "https://id.twitch.tv/oauth2/authorize?state=e2e"
+  );
+  await page.getByRole("button", { name: "Check connection" }).click();
+  await expect(page.getByRole("heading", { name: "Review event source" })).toBeVisible();
+  await expect(page.getByText("Jamsethoth (@jamsethoth)")).toBeVisible();
+
+  await page.getByRole("button", { name: "Register event source" }).click();
+  await expect(page.getByText("Twitch registered and active.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Twitch/ })).toContainText("Active");
+});
+
 test("diagnostics workspace preserves correction context and copies sanitized evidence", async ({ page, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.route("**/auth/management/sessions", async (route) => {

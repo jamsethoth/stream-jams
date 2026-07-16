@@ -168,6 +168,47 @@
   justify-self: start;
 }
 
+.provider-page__setup-description,
+.provider-page__connection-panel {
+  grid-column: 1 / -1;
+}
+
+.provider-page__setup-description {
+  color: var(--color-text-muted);
+  margin-bottom: 0;
+}
+
+.provider-page__connection-panel {
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.provider-page__connection-panel h3,
+.provider-page__connection-panel p {
+  margin-bottom: 0;
+}
+
+.provider-page__connection-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.provider-page__connection-actions a {
+  color: var(--color-accent);
+  font-weight: 700;
+}
+
+.provider-page__review {
+  display: grid;
+  gap: 14px;
+}
+
 .provider-page__actions {
   display: flex;
   flex-wrap: wrap;

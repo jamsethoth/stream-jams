@@ -31,6 +31,12 @@ function createManagementApi(): ManagementApi {
     async getHomeSetupSummary() {
       return { readiness: [], activeAlertSet: null, actionableProblems: [] };
     },
+    async getTwitchStatus() {
+      return { connected: false as const, account: null };
+    },
+    async startTwitchAuth() {
+      throw new Error("not called");
+    },
     async listRegisteredProviders() {
       return [];
     },

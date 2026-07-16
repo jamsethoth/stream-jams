@@ -84,13 +84,15 @@ describe("provider pages", () => {
     render(<EventSourcesPage managementApi={api} />);
     await user.click(await screen.findByRole("button", { name: "Add event source" }));
     await user.selectOptions(screen.getByLabelText("Provider type"), "streamerbot");
-    await user.clear(screen.getByLabelText("Provider name"));
-    await user.type(screen.getByLabelText("Provider name"), "Local Streamer.bot");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.clear(screen.getByLabelText("Connection name"));
+    await user.type(screen.getByLabelText("Connection name"), "Local Streamer.bot");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Start Streamer.bot's WebSocket server");
     expect(screen.getByText("ref-validation-41")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Register provider" })).toBeDisabled();
+    expect(screen.getByRole("heading", { name: "Configure Streamer.bot" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Register event source" })).not.toBeInTheDocument();
     expect(api.registerProvider).not.toHaveBeenCalled();
   });
 
@@ -129,18 +131,75 @@ describe("provider pages", () => {
     render(<EventSourcesPage managementApi={api} />);
     await user.click(await screen.findByRole("button", { name: "Add event source" }));
     await user.selectOptions(screen.getByLabelText("Provider type"), "streamerbot");
-    await user.clear(screen.getByLabelText("Provider name"));
-    await user.type(screen.getByLabelText("Provider name"), "Local Streamer.bot");
-
-    const register = screen.getByRole("button", { name: "Register provider" });
-    expect(register).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(screen.getByRole("heading", { name: "Configure Streamer.bot" })).toHaveFocus();
+    await user.clear(screen.getByLabelText("Connection name"));
+    await user.type(screen.getByLabelText("Connection name"), "Local Streamer.bot");
     await user.click(screen.getByRole("button", { name: "Test connection" }));
-    expect(await screen.findByText("Connection test passed.")).toBeInTheDocument();
-    expect(register).toBeEnabled();
-    await user.click(register);
+    expect(await screen.findByRole("heading", { name: "Review event source" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Review event source" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "Configure Streamer.bot" })).toHaveFocus();
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    await user.click(screen.getByRole("button", { name: "Register event source" }));
 
     expect(api.registerProvider).toHaveBeenCalledOnce();
     expect(await screen.findByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add event source" })).toHaveFocus();
+    expect(screen.getByRole("status")).toHaveTextContent("registered");
+    expect(screen.getByRole("status")).toHaveTextContent("inactive");
+  });
+
+  it("connects and validates Twitch before registration", async () => {
+    const user = userEvent.setup();
+    const connected = {
+      connected: true as const,
+      account: {
+        accountId: "twitch-account",
+        login: "jamsethoth",
+        displayName: "Jamsethoth",
+        scopes: ["user:read:chat"],
+        connectedAt: "2026-07-15T12:00:00.000Z",
+        updatedAt: "2026-07-15T12:00:00.000Z"
+      }
+    };
+    const registered = detail(activeTwitch);
+    const api = providerApi({
+      getTwitchStatus: vi
+        .fn<ProviderPageApi["getTwitchStatus"]>()
+        .mockResolvedValueOnce({ connected: false, account: null })
+        .mockResolvedValue(connected),
+      startTwitchAuth: vi.fn(async () => ({
+        authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=test",
+        state: "test",
+        scopes: ["user:read:chat"]
+      })),
+      validateProvider: vi.fn(async () => validResult),
+      registerProvider: vi.fn<ProviderPageApi["registerProvider"]>(async () => ({ status: "registered", provider: registered, validation: validResult })),
+      listRegisteredProviders: vi
+        .fn<ProviderPageApi["listRegisteredProviders"]>()
+        .mockResolvedValueOnce([])
+        .mockResolvedValue([activeTwitch]),
+      getProvider: vi.fn(async () => registered)
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    await user.click(await screen.findByRole("button", { name: "Add event source" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByText("No Twitch account connected")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
+    expect(await screen.findByRole("link", { name: "Continue in Twitch" })).toHaveAttribute(
+      "href",
+      "https://id.twitch.tv/oauth2/authorize?state=test"
+    );
+    await user.click(screen.getByRole("button", { name: "Check connection" }));
+
+    expect(await screen.findByRole("heading", { name: "Review event source" })).toBeInTheDocument();
+    expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Register event source" }));
+    expect(api.validateProvider).toHaveBeenCalledWith({ name: "Twitch", kind: "twitch", configuration: {} });
+    expect(await screen.findByText("Main Twitch registered and active.")).toBeInTheDocument();
   });
 
   it("shows connection and intake separately and confirms warned activation", async () => {
@@ -270,6 +329,8 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
     })),
     updateTtsSafety: vi.fn(async (_providerId, input) => input),
     testProviderVoice: vi.fn(async () => ({ delivered: true, error: null })),
+    getTwitchStatus: vi.fn(async () => ({ connected: false as const, account: null })),
+    startTwitchAuth: vi.fn(async () => ({ authorizationUrl: "https://id.twitch.tv/oauth2/authorize", state: "test", scopes: [] })),
     ...overrides
   };
 }

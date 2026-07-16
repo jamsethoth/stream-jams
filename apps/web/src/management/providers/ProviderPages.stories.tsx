@@ -7,12 +7,23 @@ import type {
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { userEvent, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
-import type { ManagementApi } from "../management-api.js";
+import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { EventSourcesPage } from "./EventSourcesPage.js";
 import { TtsProvidersPage } from "./TtsProvidersPage.js";
 
 const activeTwitch = provider("provider-twitch", "Main Twitch", "twitch", true, "connected", "active");
 const inactiveStreamerBot = provider("provider-streamerbot", "Studio Streamer.bot", "streamerbot", false, "connected", "inactive");
+const connectedTwitchStatus: TwitchConnectionStatusView = {
+  connected: true,
+  account: {
+    accountId: "provider-story",
+    login: "storyaccount",
+    displayName: "Story account",
+    scopes: ["user:read:chat"],
+    connectedAt: "2026-07-15T05:00:00.000Z",
+    updatedAt: "2026-07-15T05:00:00.000Z"
+  }
+};
 const activationWarning: ActionableManagementError = {
   summary: "Active alerts use a different provider kind",
   cause: "Six active alerts currently use Main Twitch.",
@@ -67,14 +78,92 @@ export const ConfiguredTtsProvider: Story = {
 export const ValidationFailure: Story = {
   args: {
     managementApi: providerApi([], {
+      getTwitchStatus: async () => connectedTwitchStatus,
       validateProvider: async () => invalidValidation
     })
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Test connection" }));
     await canvas.findByText("Twitch validation failed");
+  }
+};
+
+export const TwitchConnectionRequired: Story = {
+  args: { managementApi: providerApi([]) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await canvas.findByText("No Twitch account connected");
+  }
+};
+
+export const TwitchConnectionLoading: Story = {
+  args: {
+    managementApi: providerApi([], {
+      getTwitchStatus: () => new Promise<TwitchConnectionStatusView>(() => undefined)
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await canvas.findByText("Checking Twitch connection...");
+  }
+};
+
+export const TwitchAuthorizationLinkReady: Story = {
+  args: { managementApi: providerApi([]) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
+    await canvas.findByRole("link", { name: "Continue in Twitch" });
+  }
+};
+
+export const TwitchReview: Story = {
+  args: {
+    managementApi: providerApi([], { getTwitchStatus: async () => connectedTwitchStatus })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Test connection" }));
+    await canvas.findByRole("heading", { name: "Review event source" });
+  }
+};
+
+export const RegistrationSuccess: Story = {
+  args: {
+    managementApi: providerApi([activeTwitch], {
+      getTwitchStatus: async () => connectedTwitchStatus,
+      registerProvider: async () => ({
+        status: "registered",
+        provider: detail(activeTwitch),
+        validation: {
+          valid: true,
+          connectionState: "connected",
+          intakeState: "active",
+          validatedAt: "2026-07-15T05:00:00.000Z",
+          availableVoices: [],
+          error: null
+        }
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Test connection" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Register event source" }));
+    await canvas.findByText("Main Twitch registered and active.");
   }
 };
 

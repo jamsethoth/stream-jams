@@ -18,6 +18,16 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getHomeSetupSummary() {
       return { readiness: [], activeAlertSet: null, actionableProblems: [] };
     },
+    async getTwitchStatus() {
+      return { connected: false as const, account: null };
+    },
+    async startTwitchAuth() {
+      return {
+        authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=storybook",
+        state: "storybook",
+        scopes: ["user:read:chat"]
+      };
+    },
     async listRegisteredProviders() {
       return [];
     },

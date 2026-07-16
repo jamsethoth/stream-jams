@@ -9,11 +9,11 @@ import type {
   RegisteredProviderView,
   TtsProviderSafetySettings
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
-import type { ManagementApi } from "../management-api.js";
+import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import "./provider-pages.css";
 
 export type ProviderPageApi = Pick<
@@ -27,6 +27,8 @@ export type ProviderPageApi = Pick<
   | "getTtsProviderSafetySettings"
   | "updateTtsSafety"
   | "testProviderVoice"
+  | "getTwitchStatus"
+  | "startTwitchAuth"
 >;
 
 interface ProviderPageProps {
@@ -284,10 +286,12 @@ export function ProviderPage({
         capability={capability}
         managementApi={managementApi}
         onCancel={() => setSetupOpen(false)}
-        onRegistered={async (providerId, providerName) => {
+        onRegistered={async (providerId, providerName, active) => {
           await loadProviders(providerId);
           setSetupOpen(false);
-          setNotice(`${providerName} registered.`);
+          setNotice(active
+            ? `${providerName} registered and active.`
+            : `${providerName} registered but inactive. Set it active when you are ready to switch ${capability === "event-source" ? "event intake" : "text-to-speech output"}.`);
         }}
         open={setupOpen}
       />
@@ -420,23 +424,67 @@ function ProviderSetupWizard({
   readonly capability: ProviderCapability;
   readonly managementApi: ProviderPageApi;
   readonly onCancel: () => void;
-  readonly onRegistered: (providerId: string, providerName: string) => Promise<void>;
+  readonly onRegistered: (providerId: string, providerName: string, active: boolean) => Promise<void>;
   readonly open: boolean;
 }) {
   const defaultKind: ProviderKind = capability === "event-source" ? "twitch" : "speakerbot";
+  const [step, setStep] = useState<"select" | "configure" | "review">("select");
   const [draft, setDraft] = useState<SetupDraft>(() => createDraft(defaultKind));
   const [validation, setValidation] = useState<ProviderValidationResult | null>(null);
   const [requestError, setRequestError] = useState<ActionableManagementError | null>(null);
+  const [twitchStatus, setTwitchStatus] = useState<TwitchConnectionStatusView | null>(null);
+  const [twitchAuthorizationUrl, setTwitchAuthorizationUrl] = useState<string | null>(null);
+  const [twitchStatusLoading, setTwitchStatusLoading] = useState(false);
   const [busy, setBusy] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
     if (open) {
+      setStep("select");
       setDraft(createDraft(defaultKind));
       setValidation(null);
       setRequestError(null);
+      setTwitchStatus(null);
+      setTwitchAuthorizationUrl(null);
+      setTwitchStatusLoading(false);
       setBusy(false);
     }
   }, [defaultKind, open]);
+
+  useEffect(() => {
+    if (open) headingRef.current?.focus();
+  }, [open, step]);
+
+  useEffect(() => {
+    if (!open || step !== "configure" || draft.kind !== "twitch") {
+      return;
+    }
+
+    let cancelled = false;
+    setTwitchStatusLoading(true);
+    void managementApi.getTwitchStatus()
+      .then((status) => {
+        if (!cancelled) {
+          setTwitchStatus(status);
+          setRequestError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTwitchStatus(null);
+          setRequestError(actionableError(error, "Unable to check Twitch connection", "Confirm the local service is running, then retry."));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setTwitchStatusLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.kind, managementApi, open, step]);
 
   function updateDraft(next: SetupDraft) {
     setDraft(next);
@@ -446,16 +494,51 @@ function ProviderSetupWizard({
 
   function changeKind(kind: ProviderKind) {
     updateDraft(createDraft(kind));
+    setTwitchStatus(null);
+    setTwitchAuthorizationUrl(null);
   }
 
   async function validate() {
     setBusy(true);
     setRequestError(null);
     try {
-      setValidation(await managementApi.validateProvider(toSetupInput(draft)));
+      if (draft.kind === "twitch") {
+        const status = await managementApi.getTwitchStatus();
+        setTwitchStatus(status);
+        if (!status.connected) {
+          setValidation(null);
+          setRequestError(actionableError(
+            null,
+            "Twitch account is not connected",
+            "Choose Connect Twitch, complete authorization in Twitch, then check the connection again."
+          ));
+          return;
+        }
+      }
+
+      const result = await managementApi.validateProvider(toSetupInput(draft));
+      setValidation(result);
+      if (result.valid) {
+        setStep("review");
+      }
     } catch (error) {
       setValidation(null);
       setRequestError(actionableError(error, "Unable to test provider connection", "Check the connection settings and local provider service, then retry."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function startTwitchConnection() {
+    setBusy(true);
+    setRequestError(null);
+    try {
+      const result = await managementApi.startTwitchAuth({
+        redirectUri: `${window.location.origin}/twitch/auth/callback`
+      });
+      setTwitchAuthorizationUrl(result.authorizationUrl);
+    } catch (error) {
+      setRequestError(actionableError(error, "Unable to start Twitch authorization", "Confirm Twitch credentials are configured in the local service, then retry."));
     } finally {
       setBusy(false);
     }
@@ -472,9 +555,10 @@ function ProviderSetupWizard({
       const result = await managementApi.registerProvider(toSetupInput(draft));
       setValidation(result.validation);
       if (result.status === "validation-failed") {
+        setStep("configure");
         return;
       }
-      await onRegistered(result.provider.provider.id, result.provider.provider.name);
+      await onRegistered(result.provider.provider.id, result.provider.provider.name, result.provider.provider.active);
     } catch (error) {
       setRequestError(actionableError(error, "Unable to register provider", "Retest the connection, then retry registration."));
     } finally {
@@ -486,70 +570,150 @@ function ProviderSetupWizard({
     ? ["twitch", "streamerbot"]
     : ["speakerbot", "browser-speech"];
   const websocket = draft.kind === "streamerbot" || draft.kind === "speakerbot";
+  const stepNumber = step === "select" ? 1 : step === "configure" ? 2 : 3;
+  const subject = capability === "event-source" ? "event source" : "TTS provider";
+  const heading = step === "select"
+    ? `Add ${subject}`
+    : step === "configure"
+      ? `Configure ${formatProviderKind(draft.kind)}`
+      : `Review ${subject}`;
 
   return (
     <ModalSurface labelledBy="provider-setup-title" onCancel={onCancel} open={open}>
       <form className="provider-page__modal-content" onSubmit={(event) => void register(event)}>
         <div>
-          <span className="provider-page__eyebrow">Step {validation?.valid === true ? "2" : "1"} of 2</span>
-          <h2 id="provider-setup-title">Add {capability === "event-source" ? "event source" : "TTS provider"}</h2>
+          <span className="provider-page__eyebrow">Step {stepNumber} of 3</span>
+          <h2 id="provider-setup-title" ref={headingRef} tabIndex={-1}>{heading}</h2>
         </div>
-        <div className="provider-page__form">
-          <label>
-            <span>Provider type</span>
-            <select value={draft.kind} onChange={(event) => changeKind(event.currentTarget.value as ProviderKind)}>
-              {allowedKinds.map((kind) => <option key={kind} value={kind}>{formatProviderKind(kind)}</option>)}
-            </select>
-          </label>
-          <label>
-            <span>Provider name</span>
-            <input onChange={(event) => updateDraft({ ...draft, name: event.currentTarget.value })} required value={draft.name} />
-          </label>
-          {websocket ? (
-            <>
-              <label>
-                <span>Protocol</span>
-                <select value={draft.protocol} onChange={(event) => updateDraft({ ...draft, protocol: event.currentTarget.value as "ws" | "wss" })}>
-                  <option value="ws">ws</option>
-                  <option value="wss">wss</option>
-                </select>
-              </label>
-              <label>
-                <span>Host</span>
-                <input onChange={(event) => updateDraft({ ...draft, host: event.currentTarget.value })} required value={draft.host} />
-              </label>
-              <label>
-                <span>Port</span>
-                <input max={65535} min={1} onChange={(event) => updateDraft({ ...draft, port: Number(event.currentTarget.value) })} required type="number" value={draft.port} />
-              </label>
-              <label>
-                <span>Endpoint</span>
-                <input onChange={(event) => updateDraft({ ...draft, endpoint: event.currentTarget.value })} required value={draft.endpoint} />
-              </label>
-            </>
-          ) : null}
-          {draft.kind === "streamerbot" ? (
+
+        {step === "select" ? (
+          <div className="provider-page__form">
             <label>
-              <span>Password (optional)</span>
-              <input autoComplete="new-password" onChange={(event) => updateDraft({ ...draft, credential: event.currentTarget.value })} type="password" value={draft.credential} />
+              <span>Provider type</span>
+              <select value={draft.kind} onChange={(event) => changeKind(event.currentTarget.value as ProviderKind)}>
+                {allowedKinds.map((kind) => <option key={kind} value={kind}>{formatProviderKind(kind)}</option>)}
+              </select>
             </label>
-          ) : null}
-        </div>
+            <p className="provider-page__setup-description">{providerSetupDescription(draft.kind)}</p>
+          </div>
+        ) : null}
+
+        {step === "configure" ? (
+          <div className="provider-page__form">
+            <label>
+              <span>Connection name</span>
+              <input onChange={(event) => updateDraft({ ...draft, name: event.currentTarget.value })} required value={draft.name} />
+            </label>
+            {draft.kind === "twitch" ? (
+              <section aria-labelledby="twitch-account-title" className="provider-page__connection-panel">
+                <h3 id="twitch-account-title">Twitch account</h3>
+                {twitchStatusLoading ? <p role="status">Checking Twitch connection...</p> : null}
+                {!twitchStatusLoading && twitchStatus?.connected === true ? (
+                  <p><strong>Connected:</strong> {formatTwitchAccount(twitchStatus)}</p>
+                ) : null}
+                {!twitchStatusLoading && twitchStatus?.connected === false ? <p>No Twitch account connected</p> : null}
+                {twitchStatus?.connected === true ? null : (
+                  <div className="provider-page__connection-actions">
+                    <button disabled={busy} onClick={() => void startTwitchConnection()} type="button">Connect Twitch</button>
+                    {twitchAuthorizationUrl === null ? null : (
+                      <a href={twitchAuthorizationUrl} rel="noreferrer" target="_blank">Continue in Twitch</a>
+                    )}
+                  </div>
+                )}
+              </section>
+            ) : null}
+            {websocket ? (
+              <>
+                <p className="provider-page__setup-description">Enable the provider's WebSocket server before testing this connection.</p>
+                <label>
+                  <span>Protocol</span>
+                  <select value={draft.protocol} onChange={(event) => updateDraft({ ...draft, protocol: event.currentTarget.value as "ws" | "wss" })}>
+                    <option value="ws">ws</option>
+                    <option value="wss">wss</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Host</span>
+                  <input onChange={(event) => updateDraft({ ...draft, host: event.currentTarget.value })} required value={draft.host} />
+                </label>
+                <label>
+                  <span>Port</span>
+                  <input max={65535} min={1} onChange={(event) => updateDraft({ ...draft, port: Number(event.currentTarget.value) })} required type="number" value={draft.port} />
+                </label>
+                <label>
+                  <span>Endpoint</span>
+                  <input onChange={(event) => updateDraft({ ...draft, endpoint: event.currentTarget.value })} required value={draft.endpoint} />
+                </label>
+              </>
+            ) : null}
+            {draft.kind === "streamerbot" ? (
+              <label>
+                <span>Password (optional)</span>
+                <input autoComplete="new-password" onChange={(event) => updateDraft({ ...draft, credential: event.currentTarget.value })} type="password" value={draft.credential} />
+              </label>
+            ) : null}
+          </div>
+        ) : null}
+
+        {step === "review" ? (
+          <div className="provider-page__review">
+            <p className="provider-page__notice" role="status">Connection test passed.</p>
+            <dl className="provider-page__facts">
+              <div><dt>Provider</dt><dd>{formatProviderKind(draft.kind)}</dd></div>
+              <div><dt>Connection name</dt><dd>{draft.name}</dd></div>
+              {draft.kind === "twitch" && twitchStatus?.connected === true
+                ? <div><dt>Twitch account</dt><dd>{formatTwitchAccount(twitchStatus)}</dd></div>
+                : null}
+              {websocket
+                ? <div><dt>Endpoint</dt><dd>{draft.protocol}://{draft.host}:{draft.port}{draft.endpoint}</dd></div>
+                : null}
+            </dl>
+          </div>
+        ) : null}
 
         {requestError === null ? null : <ManagementErrorBanner error={requestError} />}
         {validation?.error === null || validation?.error === undefined ? null : <ManagementErrorBanner error={validation.error} />}
-        {validation?.valid === true ? <p className="provider-page__notice" role="status">Connection test passed.</p> : null}
 
         <div className="provider-page__actions">
           <button className="provider-page__secondary-action" disabled={busy} onClick={onCancel} type="button">Cancel</button>
-          <button className="provider-page__secondary-action" disabled={busy || draft.name.trim().length === 0} onClick={() => void validate()} type="button">
-            {busy ? "Testing..." : "Test connection"}
-          </button>
-          <button disabled={busy || validation?.valid !== true} type="submit">Register provider</button>
+          {step === "select" ? (
+            <button onClick={() => setStep("configure")} type="button">Continue</button>
+          ) : null}
+          {step === "configure" ? (
+            <>
+              <button className="provider-page__secondary-action" disabled={busy} onClick={() => setStep("select")} type="button">Back</button>
+              <button disabled={busy || twitchStatusLoading || draft.name.trim().length === 0} onClick={() => void validate()} type="button">
+                {busy ? "Testing..." : draft.kind === "twitch" && twitchStatus?.connected !== true ? "Check connection" : "Test connection"}
+              </button>
+            </>
+          ) : null}
+          {step === "review" ? (
+            <>
+              <button className="provider-page__secondary-action" disabled={busy} onClick={() => setStep("configure")} type="button">Back</button>
+              <button disabled={busy || validation?.valid !== true} type="submit">Register {subject}</button>
+            </>
+          ) : null}
         </div>
       </form>
     </ModalSurface>
   );
+}
+
+function formatTwitchAccount(status: Extract<TwitchConnectionStatusView, { readonly connected: true }>): string {
+  return `${status.account.displayName} (@${status.account.login})`;
+}
+
+function providerSetupDescription(kind: ProviderKind): string {
+  switch (kind) {
+    case "twitch":
+      return "Connect Twitch directly through EventSub authorization.";
+    case "streamerbot":
+      return "Receive events from Streamer.bot through its WebSocket server.";
+    case "speakerbot":
+      return "Send text-to-speech output to Speaker.bot through its WebSocket server.";
+    case "browser-speech":
+      return "Use speech synthesis provided by the browser running the overlay.";
+  }
 }
 
 function createDraft(kind: ProviderKind): SetupDraft {

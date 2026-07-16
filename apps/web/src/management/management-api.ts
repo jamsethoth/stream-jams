@@ -184,8 +184,33 @@ export interface DiagnosticsDebugExportRequestView extends DiagnosticsRequestVie
   readonly sinceHours?: number | undefined;
 }
 
+export interface TwitchConnectedAccountView {
+  readonly accountId: string;
+  readonly login: string;
+  readonly displayName: string;
+  readonly scopes: readonly string[];
+  readonly connectedAt: string;
+  readonly updatedAt: string;
+}
+
+export type TwitchConnectionStatusView =
+  | { readonly connected: false; readonly account: null }
+  | { readonly connected: true; readonly account: TwitchConnectedAccountView };
+
+export interface TwitchAuthStartRequestView {
+  readonly redirectUri: string;
+}
+
+export interface TwitchAuthStartResultView {
+  readonly authorizationUrl: string;
+  readonly state: string;
+  readonly scopes: readonly string[];
+}
+
 export interface ManagementApi {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
+  getTwitchStatus(): Promise<TwitchConnectionStatusView>;
+  startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
   listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
   validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult>;
   registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
@@ -276,6 +301,23 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   return {
     getHomeSetupSummary() {
       return getContract("/management/home", homeSetupSummarySchema, "Unable to load Home setup summary.");
+    },
+
+    getTwitchStatus() {
+      return getContract(
+        "/twitch/auth/status",
+        twitchConnectionStatusContract,
+        "Unable to load Twitch connection status."
+      );
+    },
+
+    startTwitchAuth(input) {
+      return postContract(
+        "/twitch/auth/start",
+        input,
+        twitchAuthStartResultContract,
+        "Unable to start Twitch authorization."
+      );
     },
 
     listRegisteredProviders(capability) {
@@ -578,4 +620,77 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
 interface RuntimeContract<T> {
   parse(input: unknown): T;
+}
+
+const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView> = {
+  parse(input) {
+    if (!isRecord(input) || typeof input.connected !== "boolean") {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
+    if (!input.connected) {
+      if (input.account !== null) throw new TypeError("Invalid Twitch connection status response");
+      return { connected: false, account: null };
+    }
+    if (!isRecord(input.account)) throw new TypeError("Invalid Twitch connection status response");
+    const account = input.account;
+    if (
+      !isNonEmptyString(account.accountId)
+      || !isNonEmptyString(account.login)
+      || !isNonEmptyString(account.displayName)
+      || !isStringArray(account.scopes)
+      || !isTimestamp(account.connectedAt)
+      || !isTimestamp(account.updatedAt)
+    ) {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
+    return {
+      connected: true,
+      account: {
+        accountId: account.accountId,
+        login: account.login,
+        displayName: account.displayName,
+        scopes: [...account.scopes],
+        connectedAt: account.connectedAt,
+        updatedAt: account.updatedAt
+      }
+    };
+  }
+};
+
+const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> = {
+  parse(input) {
+    if (!isRecord(input) || !isNonEmptyString(input.authorizationUrl) || !isNonEmptyString(input.state) || !isStringArray(input.scopes)) {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    let authorizationUrl: URL;
+    try {
+      authorizationUrl = new URL(input.authorizationUrl);
+    } catch {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    if (authorizationUrl.protocol !== "https:" || authorizationUrl.hostname !== "id.twitch.tv") {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    return {
+      authorizationUrl: authorizationUrl.toString(),
+      state: input.state,
+      scopes: [...input.scopes]
+    };
+  }
+};
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input);
+}
+
+function isNonEmptyString(input: unknown): input is string {
+  return typeof input === "string" && input.trim().length > 0;
+}
+
+function isStringArray(input: unknown): input is string[] {
+  return Array.isArray(input) && input.every((item) => typeof item === "string");
+}
+
+function isTimestamp(input: unknown): input is string {
+  return typeof input === "string" && !Number.isNaN(Date.parse(input));
 }

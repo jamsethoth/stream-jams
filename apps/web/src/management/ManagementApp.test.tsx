@@ -167,10 +167,12 @@ describe("ManagementApp", () => {
 
     await user.click(within(twitchPanel).getByRole("button", { name: "Add event source" }));
     const dialog = screen.getByRole("dialog", { name: "Add event source" });
-    expect(within(dialog).getByRole("button", { name: "Register provider" })).toBeDisabled();
+    await user.selectOptions(within(dialog).getByLabelText("Provider type"), "streamerbot");
+    await user.click(within(dialog).getByRole("button", { name: "Continue" }));
+    expect(within(dialog).queryByRole("button", { name: "Register event source" })).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Test connection" }));
     expect(await within(dialog).findByText("Connection test passed.")).toBeInTheDocument();
-    await user.click(within(dialog).getByRole("button", { name: "Register provider" }));
+    await user.click(within(dialog).getByRole("button", { name: "Register event source" }));
 
     expect(managementApi.validateProvider).toHaveBeenCalledOnce();
     expect(managementApi.registerProvider).toHaveBeenCalledOnce();
@@ -253,6 +255,10 @@ function createManagementApi(): ManagementApi {
       activeAlertSet: null,
       actionableProblems: []
     })),
+    getTwitchStatus: vi.fn(async () => ({ connected: false as const, account: null })),
+    startTwitchAuth: vi.fn(async () => {
+      throw new Error("not called");
+    }),
     listRegisteredProviders: vi.fn(async (capability) => capability === "event-source" ? eventProviders : [ttsProvider]),
     validateProvider: vi.fn(async (input) => ({
       valid: true,
