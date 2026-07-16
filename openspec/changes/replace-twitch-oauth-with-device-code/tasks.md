@@ -10,8 +10,8 @@
 
 ## 3. HTTP Routes And Runtime Wiring
 
-- [ ] 3.1 Add failing route and runtime smoke tests for management-protected start/poll, controlled errors, rate limits, default/override Client ID, and removed callback behavior
-- [ ] 3.2 Implement start/poll routes, remove the callback route and client-secret wiring, and map Device Code failures to actionable HTTP responses
+- [x] 3.1 Add failing route and runtime smoke tests for management-protected start/poll, controlled errors, rate limits, default/override Client ID, and removed callback behavior
+- [x] 3.2 Implement start/poll routes, remove the callback route and client-secret wiring, and map Device Code failures to actionable HTTP responses
 
 ## 4. Management API And Provider Wizard
 
