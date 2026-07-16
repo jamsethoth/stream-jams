@@ -15,10 +15,10 @@
 
 ## 4. Management API And Provider Wizard
 
-- [ ] 4.1 Add failing management API contract tests for Device Code start/poll response unions and untrusted-response rejection
-- [ ] 4.2 Add failing provider-page tests for automatic activation opening, waiting/code/expiry state, early pending polls, success, denial, expiry, retry, popup fallback, and polling cleanup on close
-- [ ] 4.3 Implement the Device Code management contracts and Event Source wizard flow without exposing OAuth secrets
-- [ ] 4.4 Update production-component Storybook stories for waiting, connected, denied, expired, retry, and popup-blocked fallback states
+- [x] 4.1 Add failing management API contract tests for Device Code start/poll response unions and untrusted-response rejection
+- [x] 4.2 Add failing provider-page tests for automatic activation opening, waiting/code/expiry state, early pending polls, success, denial, expiry, retry, popup fallback, and polling cleanup on close
+- [x] 4.3 Implement the Device Code management contracts and Event Source wizard flow without exposing OAuth secrets
+- [x] 4.4 Update production-component Storybook stories for waiting, connected, denied, expired, retry, and popup-blocked fallback states
 
 ## 5. Integration And Documentation
 
