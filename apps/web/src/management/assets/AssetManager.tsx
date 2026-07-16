@@ -6,9 +6,11 @@ import {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
+import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
+import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AssetPicker } from "./AssetPicker.js";
 import { AssetPreview } from "./AssetPreview.js";
 import {
@@ -54,6 +56,8 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pendingSelectedId, setPendingSelectedId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [deleteItem, setDeleteItem] = useState<AssetLibraryItem | null>(null);
 
@@ -79,6 +83,20 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
     setTags(selected?.tags.join(", ") ?? "");
   }, [selected]);
 
+  const normalizedTags = useMemo(() => parseTags(tags), [tags]);
+  const metadataDirty = selected !== null
+    && (displayName !== selected.displayName || JSON.stringify(normalizedTags) !== JSON.stringify(selected.tags));
+
+  const requestAssetSelection = useCallback((nextId: string) => {
+    if (nextId === selectedId) return;
+    if (metadataDirty) {
+      setSelectionError(null);
+      setPendingSelectedId(nextId);
+      return;
+    }
+    setSelectedId(nextId);
+  }, [metadataDirty, selectedId]);
+
   const allTags = useMemo(() => [...new Set(items.flatMap((item) => item.tags))].sort(), [items]);
   const setOptions = useMemo(() => uniqueUsageOptions(items, "set"), [items]);
   const eventOptions = useMemo(() => uniqueUsageOptions(items, "event"), [items]);
@@ -99,27 +117,65 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
 
   useEffect(() => {
     if (filtered.length > 0 && !filtered.some((item) => item.id === selectedId)) {
-      setSelectedId(filtered[0]?.id ?? null);
+      requestAssetSelection(filtered[0]!.id);
     }
-  }, [filtered, selectedId]);
+  }, [filtered, requestAssetSelection, selectedId]);
 
-  async function saveMetadata(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (selected === null) return;
+  const persistMetadata = useCallback(async (): Promise<boolean> => {
+    if (selected === null) return false;
     setBusy(true);
     try {
       const updated = await managementApi.updateAssetMetadata(selected.id, {
         displayName: displayName.trim(),
-        tags: parseTags(tags)
+        tags: normalizedTags
       });
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
       setSuccess("Asset details saved.");
       setError(null);
+      return true;
     } catch (saveError) {
       setError(actionableError(saveError, "Asset details were not saved", "Review the display name and tags, then retry."));
+      return false;
     } finally {
       setBusy(false);
     }
+  }, [displayName, managementApi, normalizedTags, selected]);
+
+  const discardMetadata = useCallback(() => {
+    setDisplayName(selected?.displayName ?? "");
+    setTags(selected?.tags.join(", ") ?? "");
+  }, [selected]);
+
+  useDirtyNavigationSource({
+    id: "asset-metadata",
+    dirty: metadataDirty,
+    summary: "Asset details have unsaved changes.",
+    save: persistMetadata,
+    discard: discardMetadata
+  });
+
+  function saveMetadata(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void persistMetadata();
+  }
+
+  async function saveAndContinueSelection() {
+    if (pendingSelectedId === null) return;
+    setSelectionError(null);
+    if (!await persistMetadata()) {
+      setSelectionError("Asset details were not saved. Review the display name and tags, then retry.");
+      return;
+    }
+    setSelectedId(pendingSelectedId);
+    setPendingSelectedId(null);
+  }
+
+  function discardAndContinueSelection() {
+    if (pendingSelectedId === null) return;
+    discardMetadata();
+    setSelectedId(pendingSelectedId);
+    setPendingSelectedId(null);
+    setSelectionError(null);
   }
 
   async function reviewReplacement() {
@@ -205,9 +261,9 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
         <div className="asset-library__table-wrap">
           <table className="asset-library__table">
             <thead><tr><th><span className="asset-library__sr-only">Preview</span></th><th>Name</th><th>Type</th><th>Usage</th><th>Health</th><th>Updated</th></tr></thead>
-            <tbody>{filtered.map((item) => <tr aria-selected={item.id === selectedId} key={item.id} onClick={() => setSelectedId(item.id)}>
+            <tbody>{filtered.map((item) => <tr aria-selected={item.id === selectedId} key={item.id} onClick={() => requestAssetSelection(item.id)}>
               <td><AssetPreview assetApi={assetApi} compact item={item} /></td>
-              <td><button className="asset-library__row-action" onClick={() => setSelectedId(item.id)} type="button">{item.displayName}</button><small>{item.originalFileName}</small></td>
+              <td><button className="asset-library__row-action" onClick={(event) => { event.stopPropagation(); requestAssetSelection(item.id); }} type="button">{item.displayName}</button><small>{item.originalFileName}</small></td>
               <td>{formatLabel(item.mediaType)}</td><td>{item.usage.totalUsageCount}</td><td><StatusBadge label={formatLabel(item.health)} tone={healthTone(item.health)} /></td><td>{formatDate(item.updatedAt)}</td>
             </tr>)}</tbody>
           </table>
@@ -222,6 +278,17 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
         </div>}
       </div> : null}
 
+      <DirtyNavigationDialog
+        error={selectionError}
+        onCancel={() => { setPendingSelectedId(null); setSelectionError(null); }}
+        onDiscard={discardAndContinueSelection}
+        onSave={() => void saveAndContinueSelection()}
+        open={pendingSelectedId !== null}
+        saveAvailable
+        saveLabel="Save and continue"
+        summary="Asset details have unsaved changes."
+        title="Switch assets with unsaved changes?"
+      />
       <AssetPicker assetApi={assetApi} compatibleMediaTypes={["image", "gif", "video", "audio"]} managementApi={managementApi} onCancel={() => setPickerOpen(false)} onSelect={() => { setPickerOpen(false); void loadItems(); }} open={pickerOpen} />
       <ReplacementDialog busy={busy} onCancel={() => setReplacement(null)} onConfirm={confirmReplacement} onFileChange={(file) => setReplacement((current) => current === null ? null : { ...current, file, impact: null })} onReview={reviewReplacement} state={replacement} />
       <DestructiveConfirmationDialog actionLabel="Delete asset" consequences="The file and its metadata will be removed permanently." onCancel={() => setDeleteItem(null)} onConfirm={() => void confirmDelete()} open={deleteItem !== null} recovery={null} scope={deleteItem?.displayName ?? "Selected asset"} title={`Delete ${deleteItem?.displayName ?? "asset"}?`} />

@@ -13,6 +13,12 @@ import { DefaultModerationService, type ModerationService } from "../moderation/
 import { SafeTemplateRenderer } from "../templates/safe-template-renderer.js";
 import { DefaultTemplateRenderer, type TemplateRenderer } from "../templates/template-renderer.js";
 import type { AlertTtsConfig, AlertVariant } from "./types.js";
+import type {
+  AlertEditorDocument,
+  AlertLayer,
+  TargetProfileId
+} from "../management/contracts.js";
+import type { OverlayElementLayout, OverlayTargetProfileId } from "../overlays/types.js";
 
 export type AlertResolverIdKind = "resolved-alert" | "overlay-instruction";
 
@@ -21,12 +27,14 @@ export interface AlertResolverTarget {
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
   readonly moduleId?: string;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
 }
 
 export interface ResolveAlertMatchesInput {
   readonly matches: readonly AlertMatch[];
   readonly target: AlertResolverTarget;
   readonly visualAssetMediaTypes?: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>;
+  readonly editorDocuments?: ReadonlyMap<string, AlertEditorDocument>;
 }
 
 export interface AlertResolver {
@@ -80,12 +88,120 @@ export class DefaultAlertResolver implements AlertResolver {
   }
 
   resolveMatches(input: ResolveAlertMatchesInput): readonly ResolvedAlert[] {
-    return [...input.matches]
-      .sort((left, right) => {
+    const matches = [...input.matches].sort((left, right) => {
         const priorityDifference = right.rule.priority - left.rule.priority;
         return priorityDifference === 0 ? left.rule.id.localeCompare(right.rule.id) : priorityDifference;
-      })
-      .map((match) => this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}));
+      });
+    const targetProfileId = toEditorTargetProfileId(input.target.targetProfileId);
+    if (targetProfileId !== null) {
+      return matches.flatMap((match) => {
+        const document = input.editorDocuments?.get(match.rule.id);
+        return document === undefined
+          ? [this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {})]
+          : this.#resolveEditorDocument(match, document, targetProfileId, input.target, input.visualAssetMediaTypes ?? {});
+      });
+    }
+    return matches.map((match) => this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}));
+  }
+
+  #resolveEditorDocument(
+    match: AlertMatch,
+    document: AlertEditorDocument,
+    targetProfileId: TargetProfileId,
+    target: AlertResolverTarget,
+    visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>
+  ): readonly ResolvedAlert[] {
+    const profile = document.targetProfiles.find((candidate) => candidate.id === targetProfileId);
+    if (!document.enabled || profile?.enabled !== true || profile.reviewState !== "ready") {
+      return [];
+    }
+
+    const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
+    return [...document.layers]
+      .filter((layer) => layer.visible)
+      .sort((left, right) => left.order - right.order)
+      .flatMap((layer) => {
+        const instruction = this.#createEditorLayerInstruction(
+          match,
+          layer,
+          layouts.get(layer.id),
+          document.durationMs,
+          targetProfileId,
+          target,
+          visualAssetMediaTypes
+        );
+        if (instruction === null) return [];
+        return [{
+          id: this.#generateId("resolved-alert"),
+          sourceEventId: match.event.id,
+          ruleId: match.rule.id,
+          variantId: layer.id,
+          overlayInstruction: instruction
+        }];
+      });
+  }
+
+  #createEditorLayerInstruction(
+    match: AlertMatch,
+    layer: AlertLayer,
+    layout: OverlayElementLayout | undefined,
+    durationMs: number,
+    targetProfileId: TargetProfileId,
+    target: AlertResolverTarget,
+    visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>
+  ): OverlayInstruction | null {
+    const base = {
+      id: this.#generateId("overlay-instruction"),
+      overlayId: target.overlayId,
+      moduleId: target.moduleId ?? "alerts",
+      purpose: target.purpose,
+      scope: target.scope,
+      targetProfileId,
+      visual: null,
+      audio: null,
+      text: null,
+      shape: null,
+      animation: layer.animation,
+      tts: null,
+      durationMs
+    };
+    if (layer.type === "text" && layout !== undefined) {
+      return {
+        ...base,
+        text: {
+          text: this.#renderedTextTemplateRenderer.render({ template: layer.template, values: createTemplateContext(match.event) }),
+          layout
+        }
+      };
+    }
+    if ((layer.type === "image" || layer.type === "video") && layout !== undefined) {
+      return {
+        ...base,
+        visual: {
+          assetId: layer.assetId,
+          mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type,
+          layout
+        }
+      };
+    }
+    if (layer.type === "audio") {
+      return { ...base, audio: { assetId: layer.assetId, volume: layer.volume } };
+    }
+    if (layer.type === "tts") {
+      return {
+        ...base,
+        tts: {
+          mode: "browser-speech",
+          text: this.#ttsTemplateRenderer.render({ template: layer.template, values: createTemplateContext(match.event) }),
+          audioAssetId: null,
+          providerPayload: null
+        }
+      };
+    }
+    if (layer.type === "shape" && layout !== undefined) {
+      return { ...base, shape: { fill: layer.fill, layout } };
+    }
+    return null;
   }
 
   #resolveMatch(
@@ -145,6 +261,7 @@ export class DefaultAlertResolver implements AlertResolver {
       moduleId: target.moduleId ?? "alerts",
       purpose: target.purpose,
       scope: target.scope,
+      ...(target.targetProfileId === undefined ? {} : { targetProfileId: target.targetProfileId }),
       visual:
         variant.visualAssetId === null
           ? null
@@ -190,6 +307,10 @@ export class DefaultAlertResolver implements AlertResolver {
       }
     };
   }
+}
+
+function toEditorTargetProfileId(value: OverlayTargetProfileId | null | undefined): TargetProfileId | null {
+  return value === "landscape" || value === "vertical" ? value : null;
 }
 
 function createTemplateContext(event: NormalizedStreamEvent): Record<string, unknown> {

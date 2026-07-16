@@ -86,6 +86,10 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
   }
 
   async saveRule(metadata: AlertRuleManagementMetadata): Promise<AlertRuleManagementMetadata> {
+    return this.saveRuleSync(metadata);
+  }
+
+  saveRuleSync(metadata: AlertRuleManagementMetadata): AlertRuleManagementMetadata {
     const providerKind = providerKindSchema.parse(metadata.providerKind);
     const targetProfileIds = metadata.targetProfileIds.map((profileId) => targetProfileIdSchema.parse(profileId));
     this.#connection

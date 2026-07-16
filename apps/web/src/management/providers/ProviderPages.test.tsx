@@ -7,7 +7,7 @@ import type {
   RegisteredProviderView,
   TtsProviderSafetySettings
 } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventSourcesPage } from "./EventSourcesPage.js";
@@ -70,6 +70,21 @@ const activeSpeakerBot = provider({
   intakeState: null,
   usedByAlertCount: 4
 });
+const inactiveSpeakerBot = provider({
+  id: "speakerbot-backup",
+  name: "Backup Speaker.bot",
+  kind: "speakerbot",
+  capability: "tts",
+  active: false,
+  intakeState: null
+});
+const ttsSafety: TtsProviderSafetySettings = {
+  defaultVoiceId: null,
+  volume: 0.8,
+  minimumRate: 0.8,
+  maximumRate: 1.2,
+  maximumTextLength: 240
+};
 
 describe("provider pages", () => {
   afterEach(() => {
@@ -468,6 +483,77 @@ describe("provider pages", () => {
     await user.click(screen.getByRole("button", { name: "Test voice" }));
     expect(testProviderVoice).toHaveBeenCalledWith(activeSpeakerBot.id);
     expect(await screen.findByText("Voice test delivered.")).toBeInTheDocument();
+  });
+
+  it("requires an explicit choice before discarding TTS safety to select another provider", async () => {
+    const user = userEvent.setup();
+    const updateTtsSafety = vi.fn(async (_providerId: string, input: TtsProviderSafetySettings) => input);
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeSpeakerBot, inactiveSpeakerBot]),
+      getProvider: vi.fn(async (providerId) => detail(providerId === activeSpeakerBot.id ? activeSpeakerBot : inactiveSpeakerBot)),
+      getTtsProviderSafetySettings: vi.fn(async () => ttsSafety),
+      updateTtsSafety
+    });
+
+    render(<TtsProvidersPage managementApi={api} />);
+    expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Volume"));
+    await user.type(screen.getByLabelText("Volume"), "0.5");
+    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" });
+    expect(within(dialog).getByRole("button", { name: "Save and continue" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Discard" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Volume")).toHaveValue(0.5);
+
+    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Discard" }));
+    expect(await screen.findByRole("heading", { name: "Backup Speaker.bot" })).toBeInTheDocument();
+    expect(updateTtsSafety).not.toHaveBeenCalled();
+  });
+
+  it("saves dirty TTS safety before selecting another provider", async () => {
+    const user = userEvent.setup();
+    const updateTtsSafety = vi.fn(async (_providerId: string, input: TtsProviderSafetySettings) => input);
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeSpeakerBot, inactiveSpeakerBot]),
+      getProvider: vi.fn(async (providerId) => detail(providerId === activeSpeakerBot.id ? activeSpeakerBot : inactiveSpeakerBot)),
+      getTtsProviderSafetySettings: vi.fn(async () => ttsSafety),
+      updateTtsSafety
+    });
+
+    render(<TtsProvidersPage managementApi={api} />);
+    expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Volume"));
+    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
+
+    await waitFor(() => expect(updateTtsSafety).toHaveBeenCalledWith(activeSpeakerBot.id, { ...ttsSafety, volume: 0.6 }));
+    expect(await screen.findByRole("heading", { name: "Backup Speaker.bot" })).toBeInTheDocument();
+  });
+
+  it("keeps provider selection blocked with an actionable error when save-and-continue fails", async () => {
+    const user = userEvent.setup();
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeSpeakerBot, inactiveSpeakerBot]),
+      getProvider: vi.fn(async (providerId) => detail(providerId === activeSpeakerBot.id ? activeSpeakerBot : inactiveSpeakerBot)),
+      getTtsProviderSafetySettings: vi.fn(async () => ttsSafety),
+      updateTtsSafety: vi.fn(async () => { throw new Error("Provider settings store unavailable"); })
+    });
+
+    render(<TtsProvidersPage managementApi={api} />);
+    expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
+    await user.clear(screen.getByLabelText("Volume"));
+    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Review each safety value, then retry the save.");
+    expect(screen.getByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
   });
 });
 

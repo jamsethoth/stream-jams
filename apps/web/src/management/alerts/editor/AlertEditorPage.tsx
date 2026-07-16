@@ -77,6 +77,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [includeAudio, setIncludeAudio] = useState(false);
   const [includeTts, setIncludeTts] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [previewRunId, setPreviewRunId] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -203,6 +204,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       return;
     }
     setPreview(true);
+    setPreviewRunId((current) => current + 1);
     setNotice("Local preview is running.");
   }
 
@@ -370,6 +372,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             onGeometryChange={(layerId, geometry) => updateDocument((current) => updateLayerGeometry(current, profileId, layerId, geometry))}
             onSelectLayer={(layerId) => { setSelectedLayerId(layerId); setTab("layers"); }}
             preview={preview}
+            previewRunId={previewRunId}
             profileId={profileId}
             samplePayload={samplePayload ?? {}}
             selectedLayerId={selectedLayerId}

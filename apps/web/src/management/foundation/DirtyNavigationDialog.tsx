@@ -8,7 +8,9 @@ export interface DirtyNavigationDialogProps {
   readonly onSave: () => void;
   readonly open: boolean;
   readonly saveAvailable: boolean;
+  readonly saveLabel?: string;
   readonly summary: string;
+  readonly title?: string;
 }
 
 export function DirtyNavigationDialog(props: DirtyNavigationDialogProps) {
@@ -17,7 +19,7 @@ export function DirtyNavigationDialog(props: DirtyNavigationDialogProps) {
     <ModalSurface labelledBy={titleId} onCancel={props.onCancel} open={props.open}>
       <header className="management-modal__header">
         <p className="management-eyebrow">Unsaved changes</p>
-        <h2 id={titleId}>Leave with unsaved changes?</h2>
+        <h2 id={titleId}>{props.title ?? "Leave with unsaved changes?"}</h2>
         <p>{props.summary}</p>
       </header>
       {props.error === null ? null : (
@@ -30,7 +32,7 @@ export function DirtyNavigationDialog(props: DirtyNavigationDialogProps) {
       <div className="management-modal__actions">
         <button className="button button--secondary" onClick={props.onCancel} type="button">Cancel</button>
         <button className="button button--danger-quiet" onClick={props.onDiscard} type="button">Discard</button>
-        {props.saveAvailable ? <button className="button button--primary" onClick={props.onSave} type="button">Save and leave</button> : null}
+        {props.saveAvailable ? <button className="button button--primary" onClick={props.onSave} type="button">{props.saveLabel ?? "Save and leave"}</button> : null}
       </div>
     </ModalSurface>
   );

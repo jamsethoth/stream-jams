@@ -62,6 +62,7 @@ export interface OverlayGatewayDependencies {
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly generateClientId: () => string;
   readonly clock?: () => Date;
+  readonly onClientDisconnected?: (clientId: string) => void;
   readonly onPlaybackReport?: (report: OverlayGatewayPlaybackReport) => void;
 }
 
@@ -93,6 +94,7 @@ export class OverlayGateway {
   readonly #overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly #generateClientId: () => string;
   readonly #clock: () => Date;
+  readonly #onClientDisconnected: (clientId: string) => void;
   readonly #onPlaybackReport: (report: OverlayGatewayPlaybackReport) => void;
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
   readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
@@ -101,6 +103,7 @@ export class OverlayGateway {
     this.#overlayAccessService = dependencies.overlayAccessService;
     this.#generateClientId = dependencies.generateClientId;
     this.#clock = dependencies.clock ?? (() => new Date());
+    this.#onClientDisconnected = dependencies.onClientDisconnected ?? (() => undefined);
     this.#onPlaybackReport = dependencies.onPlaybackReport ?? (() => undefined);
   }
 
@@ -184,6 +187,7 @@ export class OverlayGateway {
       connectionState: "disconnected",
       disconnectedAt: this.#clock().toISOString()
     });
+    this.#onClientDisconnected(clientId);
   }
 
   deliverPlaybackInstruction(instruction: OverlayInstruction): OverlayGatewayDeliveryResult {

@@ -24,6 +24,10 @@ export class SqliteAlertEditorDocumentRepository implements AlertEditorDocumentR
   }
 
   async save(candidate: AlertEditorDocument): Promise<AlertEditorDocument> {
+    return this.saveSync(candidate);
+  }
+
+  saveSync(candidate: AlertEditorDocument): AlertEditorDocument {
     const document = alertEditorDocumentSchema.parse(candidate);
     this.#connection
       .prepare(

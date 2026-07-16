@@ -110,6 +110,26 @@ describe("Stream Jams SQLite database", () => {
       database.connection.prepare("SELECT COUNT(*) AS total FROM alert_collections").get()
     ).toEqual({ total: 0 });
   });
+
+  it("rolls back nested synchronous work with the outer transaction", () => {
+    using database = createInMemoryStreamJamsDatabase();
+
+    expect(() =>
+      runInTransaction(database.connection, () => {
+        database.connection
+          .prepare("INSERT INTO alert_collections (id, name, enabled) VALUES (?, ?, ?)")
+          .run("collection-outer", "Outer", 1);
+        runInTransaction(database.connection, () => {
+          database.connection
+            .prepare("INSERT INTO alert_collections (id, name, enabled) VALUES (?, ?, ?)")
+            .run("collection-inner", "Inner", 0);
+        });
+        throw new Error("stop outer");
+      })
+    ).toThrow("stop outer");
+
+    expect(database.connection.prepare("SELECT COUNT(*) AS total FROM alert_collections").get()).toEqual({ total: 0 });
+  });
 });
 
 function listTables(connection: { prepare(sql: string): { all(): Record<string, unknown>[] } }): string[] {

@@ -1,6 +1,7 @@
 import type {
   AlertMatcher,
   AlertMatch,
+  AlertEditorDocument,
   AlertResolver,
   AlertResolverTarget,
   AlertService,
@@ -29,7 +30,7 @@ function dedupeTargets(targets: readonly AlertResolverTarget[]): readonly AlertR
   const seen = new Set<string>();
 
   for (const target of targets) {
-    const key = [target.overlayId, target.purpose, target.scope, target.moduleId ?? "alerts"].join(":");
+    const key = [target.overlayId, target.purpose, target.scope, target.moduleId ?? "alerts", target.targetProfileId ?? "legacy"].join(":");
     if (seen.has(key)) {
       continue;
     }
@@ -42,7 +43,7 @@ function dedupeTargets(targets: readonly AlertResolverTarget[]): readonly AlertR
 }
 
 export interface OverlayPlaybackInstructionSink {
-  deliverPlaybackInstruction(instruction: OverlayInstruction): void;
+  deliverPlaybackInstruction(instruction: OverlayInstruction): { readonly deliveredClientIds: readonly string[] } | void;
 }
 
 export interface PlaybackCoordinatorDependencies {
@@ -57,6 +58,7 @@ export interface PlaybackCoordinatorDependencies {
   readonly visualAssetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly assetRepository?: Pick<AssetRepository, "findById">;
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
+  readonly findEditorDocument?: (alertId: string) => Promise<AlertEditorDocument | null>;
 }
 
 export class PlaybackCoordinator {
@@ -70,7 +72,9 @@ export class PlaybackCoordinator {
   readonly #visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly #assetRepository: Pick<AssetRepository, "findById"> | null;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
+  readonly #findEditorDocument: ((alertId: string) => Promise<AlertEditorDocument | null>) | null;
   #lastDeliveredCurrentItemId: string | null = null;
+  #pendingClientsByInstructionId = new Map<string, Set<string> | null>();
 
   constructor(dependencies: PlaybackCoordinatorDependencies) {
     this.#alertService = dependencies.alertService;
@@ -83,6 +87,7 @@ export class PlaybackCoordinator {
     this.#visualAssetMediaTypes = dependencies.visualAssetMediaTypes ?? {};
     this.#assetRepository = dependencies.assetRepository ?? null;
     this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
+    this.#findEditorDocument = dependencies.findEditorDocument ?? null;
   }
 
   getSnapshot(): PlaybackQueueSnapshot {
@@ -115,20 +120,21 @@ export class PlaybackCoordinator {
       return this.#result("cooldown", matches.map((match) => match.rule.id), []);
     }
 
-    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(readyMatches);
+    const editorDocuments = await this.#loadEditorDocuments(readyMatches);
+    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(readyMatches, editorDocuments.values());
     const resolvedAlerts = this.#targets.flatMap((target) =>
       this.#resolver.resolveMatches({
         matches: readyMatches,
         target,
-        visualAssetMediaTypes
+        visualAssetMediaTypes,
+        editorDocuments
       })
     );
-    const snapshot = this.#queue.enqueue({
+    const snapshot = this.#deliverCurrent(this.#queue.enqueue({
       sourceEvent: event,
       alerts: resolvedAlerts,
       priority: Math.max(...readyMatches.map((match) => match.rule.priority))
-    });
-    this.#deliverCurrent(snapshot);
+    }));
 
     for (const subject of readySubjects) {
       this.#cooldownService.recordPlayback(subject);
@@ -143,27 +149,53 @@ export class PlaybackCoordinator {
   }
 
   enqueueResolvedTest(input: EnqueuePlaybackItemInput): PlaybackQueueSnapshot {
-    const snapshot = this.#queue.enqueue(input);
-    this.#deliverCurrent(snapshot);
-    return snapshot;
+    return this.#deliverCurrent(this.#queue.enqueue(input));
   }
 
   completeCurrent(): PlaybackQueueSnapshot {
-    const snapshot = this.#queue.completeCurrent();
-    this.#deliverCurrent(snapshot);
-    return snapshot;
+    return this.#deliverCurrent(this.#queue.completeCurrent());
+  }
+
+  reportInstructionFinished(clientId: string, instructionId: string): PlaybackQueueSnapshot {
+    const snapshot = this.#queue.getSnapshot();
+    const pendingClients = this.#pendingClientsByInstructionId.get(instructionId);
+    if (snapshot.current?.id !== this.#lastDeliveredCurrentItemId || pendingClients === undefined) {
+      return snapshot;
+    }
+
+    if (pendingClients !== null && !pendingClients.delete(clientId)) {
+      return snapshot;
+    }
+    if (pendingClients === null || pendingClients.size === 0) {
+      this.#pendingClientsByInstructionId.delete(instructionId);
+    }
+    return this.#pendingClientsByInstructionId.size === 0 ? this.completeCurrent() : snapshot;
+  }
+
+  reportClientDisconnected(clientId: string): PlaybackQueueSnapshot {
+    const snapshot = this.#queue.getSnapshot();
+    if (snapshot.current?.id !== this.#lastDeliveredCurrentItemId) {
+      return snapshot;
+    }
+
+    let removed = false;
+    for (const [instructionId, pendingClients] of this.#pendingClientsByInstructionId) {
+      if (pendingClients !== null && pendingClients.delete(clientId)) {
+        removed = true;
+        if (pendingClients.size === 0) {
+          this.#pendingClientsByInstructionId.delete(instructionId);
+        }
+      }
+    }
+    return removed && this.#pendingClientsByInstructionId.size === 0 ? this.completeCurrent() : snapshot;
   }
 
   skipCurrent(): PlaybackQueueSnapshot {
-    const snapshot = this.#queue.skipCurrent();
-    this.#deliverCurrent(snapshot);
-    return snapshot;
+    return this.#deliverCurrent(this.#queue.skipCurrent());
   }
 
   replayRecent(itemId: string): PlaybackQueueSnapshot {
-    const snapshot = this.#queue.replayRecent(itemId);
-    this.#deliverCurrent(snapshot);
-    return snapshot;
+    return this.#deliverCurrent(this.#queue.replayRecent(itemId));
   }
 
   pause(): PlaybackQueueSnapshot {
@@ -171,9 +203,7 @@ export class PlaybackCoordinator {
   }
 
   resume(): PlaybackQueueSnapshot {
-    const snapshot = this.#queue.resume();
-    this.#deliverCurrent(snapshot);
-    return snapshot;
+    return this.#deliverCurrent(this.#queue.resume());
   }
 
   mute(): PlaybackQueueSnapshot {
@@ -185,33 +215,48 @@ export class PlaybackCoordinator {
   }
 
   setDoNotDisturb(enabled: boolean): PlaybackQueueSnapshot {
-    const snapshot = this.#queue.setDoNotDisturb(enabled);
-    this.#deliverCurrent(snapshot);
-    return snapshot;
+    return this.#deliverCurrent(this.#queue.setDoNotDisturb(enabled));
   }
 
-  #deliverCurrent(snapshot: PlaybackQueueSnapshot): void {
+  #deliverCurrent(initialSnapshot: PlaybackQueueSnapshot): PlaybackQueueSnapshot {
     if (this.#overlayPlaybackSink === null) {
-      return;
+      return initialSnapshot;
     }
 
-    if (snapshot.current === null) {
-      this.#lastDeliveredCurrentItemId = null;
-      return;
-    }
+    let snapshot = initialSnapshot;
+    while (true) {
+      if (snapshot.current === null) {
+        this.#lastDeliveredCurrentItemId = null;
+        this.#pendingClientsByInstructionId.clear();
+        return snapshot;
+      }
 
-    if (snapshot.current.id === this.#lastDeliveredCurrentItemId) {
-      return;
-    }
+      if (snapshot.current.id === this.#lastDeliveredCurrentItemId) {
+        return snapshot;
+      }
 
-    this.#lastDeliveredCurrentItemId = snapshot.current.id;
-    for (const alert of snapshot.current.alerts) {
-      this.#overlayPlaybackSink.deliverPlaybackInstruction(alert.overlayInstruction);
+      this.#lastDeliveredCurrentItemId = snapshot.current.id;
+      this.#pendingClientsByInstructionId.clear();
+      for (const alert of snapshot.current.alerts) {
+        const instructionId = alert.overlayInstruction.id;
+        const delivery = this.#overlayPlaybackSink.deliverPlaybackInstruction(alert.overlayInstruction);
+        if (delivery === undefined) {
+          this.#pendingClientsByInstructionId.set(instructionId, null);
+        } else if (delivery.deliveredClientIds.length > 0) {
+          this.#pendingClientsByInstructionId.set(instructionId, new Set(delivery.deliveredClientIds));
+        }
+      }
+
+      if (this.#pendingClientsByInstructionId.size > 0) {
+        return snapshot;
+      }
+      snapshot = this.#queue.completeCurrent();
     }
   }
 
   async #resolveVisualAssetMediaTypes(
-    matches: readonly AlertMatch[]
+    matches: readonly AlertMatch[],
+    editorDocuments: Iterable<AlertEditorDocument>
   ): Promise<Readonly<Record<string, "image" | "gif" | "video">>> {
     const mediaTypes: Record<string, "image" | "gif" | "video"> = {
       ...this.#visualAssetMediaTypes
@@ -228,6 +273,13 @@ export class PlaybackCoordinator {
         }
       }
     }
+    for (const document of editorDocuments) {
+      for (const layer of document.layers) {
+        if ((layer.type === "image" || layer.type === "video") && mediaTypes[layer.assetId] === undefined) {
+          visualAssetIds.add(layer.assetId);
+        }
+      }
+    }
 
     for (const assetId of visualAssetIds) {
       const asset = await this.#assetRepository.findById(assetId);
@@ -237,6 +289,17 @@ export class PlaybackCoordinator {
     }
 
     return mediaTypes;
+  }
+
+  async #loadEditorDocuments(matches: readonly AlertMatch[]): Promise<ReadonlyMap<string, AlertEditorDocument>> {
+    const documents = new Map<string, AlertEditorDocument>();
+    if (this.#findEditorDocument === null) return documents;
+
+    await Promise.all([...new Set(matches.map((match) => match.rule.id))].map(async (ruleId) => {
+      const document = await this.#findEditorDocument!(ruleId);
+      if (document !== null) documents.set(ruleId, document);
+    }));
+    return documents;
   }
 
   #result(

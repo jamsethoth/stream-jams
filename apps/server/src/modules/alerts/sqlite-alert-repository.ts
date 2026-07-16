@@ -96,6 +96,10 @@ export class SqliteAlertRepository implements AlertRepository {
   }
 
   async saveRule(rule: AlertRule): Promise<AlertRule> {
+    return this.saveRuleSync(rule);
+  }
+
+  saveRuleSync(rule: AlertRule): AlertRule {
     const parsed = alertRuleSchema.parse(rule);
 
     runInTransaction(this.#connection, () => {

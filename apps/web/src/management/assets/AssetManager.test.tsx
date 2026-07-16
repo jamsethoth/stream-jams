@@ -55,6 +55,48 @@ describe("AssetManager", () => {
     await waitFor(() => expect(fixture.metadataUpdates).toEqual([{ displayName: "Winter follower", tags: ["winter", "follow"] }]));
   });
 
+  it("requires an explicit choice before discarding metadata to select another asset", async () => {
+    const fixture = createFixture();
+    const user = userEvent.setup();
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await screen.findByRole("button", { name: "Follower burst" });
+
+    const name = screen.getByLabelText("Display name");
+    await waitFor(() => expect(name).toHaveValue("Follower burst"));
+    await user.clear(name);
+    await user.type(name, "Unsaved follower");
+    await user.click(screen.getByRole("button", { name: "Raid chime" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" });
+    expect(within(dialog).getByRole("button", { name: "Save and continue" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Discard" })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("region", { name: "Follower burst details" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Display name")).toHaveValue("Unsaved follower");
+
+    await user.click(screen.getByRole("button", { name: "Raid chime" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" })).getByRole("button", { name: "Discard" }));
+    expect(await screen.findByRole("region", { name: "Raid chime details" })).toBeInTheDocument();
+    expect(fixture.metadataUpdates).toEqual([]);
+  });
+
+  it("saves dirty metadata before selecting another asset", async () => {
+    const fixture = createFixture();
+    const user = userEvent.setup();
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+    await screen.findByRole("button", { name: "Follower burst" });
+
+    const name = screen.getByLabelText("Display name");
+    await waitFor(() => expect(name).toHaveValue("Follower burst"));
+    await user.clear(name);
+    await user.type(name, "Saved follower");
+    await user.click(screen.getByRole("button", { name: "Raid chime" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
+
+    await waitFor(() => expect(fixture.metadataUpdates).toEqual([{ displayName: "Saved follower", tags: ["seasonal", "follow"] }]));
+    expect(await screen.findByRole("region", { name: "Raid chime details" })).toBeInTheDocument();
+  });
+
   it("requires impact review before stable-ID replacement", async () => {
     const fixture = createFixture();
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);

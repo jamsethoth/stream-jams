@@ -1,7 +1,8 @@
 import {
   DefaultOverlayModuleConfigService,
   InMemoryOverlayModuleConfigRepository,
-  createDefaultOverlayModuleRegistry
+  createDefaultOverlayModuleRegistry,
+  type SecretRef
 } from "@stream-jams/core";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
@@ -146,14 +147,57 @@ describe("OverlayOutputManagementService", () => {
       })
     );
   });
+
+  it("leaves the current key usable when replacement creation fails", async () => {
+    const { service, repository, secrets } = createService(["ovl_current"]);
+    const input = {
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live" as const,
+      scope: "module" as const
+    };
+    const current = await service.createKey(input, "http://127.0.0.1:39187");
+
+    await expect(service.regenerateKey(input, "http://127.0.0.1:39187")).rejects.toThrow("Missing raw key fixture");
+
+    expect(repository.records.filter((record) => record.revokedAt === null).map((record) => record.id)).toEqual(["key-1"]);
+    await expect(service.listOutputs("http://127.0.0.1:39187")).resolves.toContainEqual(
+      expect.objectContaining({ keyId: "key-1", url: current.url, copyableUrlStatus: "available" })
+    );
+    expect(secrets.values.get("overlay:route-key:key-1")).toBe("ovl_current");
+  });
+
+  it("revokes an unstored replacement and leaves the current key usable when secret storage fails", async () => {
+    const secrets = new FailAfterWriteSecretStore("key-2");
+    const { service, repository } = createService(["ovl_current", "ovl_replacement"], secrets);
+    const input = {
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live" as const,
+      scope: "module" as const
+    };
+    const current = await service.createKey(input, "http://127.0.0.1:39187");
+
+    await expect(service.regenerateKey(input, "http://127.0.0.1:39187")).rejects.toThrow("secret storage failed");
+
+    expect(repository.records.find((record) => record.id === "key-1")?.revokedAt).toBeNull();
+    expect(repository.records.find((record) => record.id === "key-2")?.revokedAt).not.toBeNull();
+    await expect(service.listOutputs("http://127.0.0.1:39187")).resolves.toContainEqual(
+      expect.objectContaining({ keyId: "key-1", url: current.url, copyableUrlStatus: "available" })
+    );
+    expect(secrets.values.get("overlay:route-key:key-1")).toBe("ovl_current");
+    expect(secrets.values.has("overlay:route-key:key-2")).toBe(false);
+  });
 });
 
-function createService(rawKeys: string[]) {
+function createService(
+  rawKeys: string[],
+  secrets = new InMemorySecretStore((ref) => `${ref.namespace}:${ref.name}:${ref.accountId}`)
+) {
   let id = 0;
   let rawKeyIndex = 0;
   const registry = createDefaultOverlayModuleRegistry();
   const repository = new InMemoryOverlayAccessKeyRepository();
-  const secrets = new InMemorySecretStore((ref) => `${ref.namespace}:${ref.name}:${ref.accountId}`);
   const accessService = new LocalOverlayAccessService({
     repository,
     clock: () => new Date("2026-06-16T12:00:00.000Z"),
@@ -187,4 +231,17 @@ function createService(rawKeys: string[]) {
       secretStore: secrets
     })
   };
+}
+
+class FailAfterWriteSecretStore extends InMemorySecretStore {
+  constructor(private readonly failingAccountId: string) {
+    super((ref) => `${ref.namespace}:${ref.name}:${ref.accountId}`);
+  }
+
+  override async setSecret(ref: SecretRef, value: string): Promise<void> {
+    await super.setSecret(ref, value);
+    if (ref.accountId === this.failingAccountId) {
+      throw new Error("secret storage failed");
+    }
+  }
 }

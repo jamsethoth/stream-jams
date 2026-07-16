@@ -1,4 +1,13 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+
+const focusableSelector = [
+  "button:not([disabled])",
+  "[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])'
+].join(", ");
 
 export interface ModalSurfaceProps {
   readonly children: ReactNode;
@@ -25,7 +34,7 @@ export function ModalSurface({ children, labelledBy, onCancel, open }: ModalSurf
     if (!open) {
       return;
     }
-    const handleKeyDown = (event: KeyboardEvent) => {
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
         onCancel();
@@ -39,14 +48,37 @@ export function ModalSurface({ children, labelledBy, onCancel, open }: ModalSurf
     return null;
   }
 
+  function containFocus(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab" || surfaceRef.current === null) {
+      return;
+    }
+    const focusable = [...surfaceRef.current.querySelectorAll<HTMLElement>(focusableSelector)];
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (first === undefined || last === undefined) {
+      event.preventDefault();
+      surfaceRef.current.focus();
+      return;
+    }
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
   return (
     <div className="management-modal-backdrop">
       <div
         aria-labelledby={labelledBy}
         aria-modal="true"
         className="management-modal"
+        onKeyDown={containFocus}
         ref={surfaceRef}
         role="dialog"
+        tabIndex={-1}
       >
         {children}
       </div>

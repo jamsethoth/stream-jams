@@ -455,7 +455,8 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
 
   const collectionNames = new Set<string>();
   let activeCollectionCount = 0;
-  for (const [index, row] of (tables.alert_collections ?? []).entries()) {
+  const alertCollections = tables.alert_collections ?? [];
+  for (const [index, row] of alertCollections.entries()) {
     const normalizedName = typeof row.name === "string" ? row.name.trim().toLocaleLowerCase() : String(row.name);
     if (collectionNames.has(normalizedName)) {
       errors.push(`alert_collections[${index}] duplicates another set name case-insensitively.`);
@@ -463,7 +464,12 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
     collectionNames.add(normalizedName);
     if (row.enabled === 1) activeCollectionCount += 1;
   }
-  if (activeCollectionCount > 1) {
+  if (alertCollections.length === 0) {
+    errors.push("alert_collections must contain at least one alert set.");
+  }
+  if (activeCollectionCount === 0) {
+    errors.push("alert_collections must contain exactly one active alert set.");
+  } else if (activeCollectionCount > 1) {
     errors.push("alert_collections contains more than one active alert set.");
   }
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   nonEmptyStringSchema,
+  nonNegativeIntegerSchema,
   overlayElementLayoutSchema,
   overlayPurposeSchema,
   overlayScopeSchema,
@@ -37,6 +38,20 @@ export const overlayTextInstructionSchema = z.object({
   layout: overlayElementLayoutSchema
 });
 
+export const overlayShapeInstructionSchema = z.object({
+  fill: nonEmptyStringSchema,
+  layout: overlayElementLayoutSchema
+});
+
+export const overlayPresetAnimationInstructionSchema = z.object({
+  mode: z.literal("preset"),
+  entrance: nonEmptyStringSchema,
+  exit: nonEmptyStringSchema,
+  durationMs: nonNegativeIntegerSchema,
+  delayMs: nonNegativeIntegerSchema,
+  easing: nonEmptyStringSchema
+});
+
 export const overlayInstructionSchema = z.object({
   id: nonEmptyStringSchema,
   overlayId: nonEmptyStringSchema,
@@ -47,6 +62,8 @@ export const overlayInstructionSchema = z.object({
   visual: overlayVisualInstructionSchema.nullable(),
   audio: overlayAudioInstructionSchema.nullable(),
   text: overlayTextInstructionSchema.nullable(),
+  shape: overlayShapeInstructionSchema.nullable().optional(),
+  animation: overlayPresetAnimationInstructionSchema.nullable().optional(),
   tts: z.unknown().nullable(),
   durationMs: positiveIntegerSchema.max(120_000)
 });

@@ -1,6 +1,7 @@
 import type { AlertEditorDocument, AlertLayer, TargetProfileId } from "@stream-jams/core";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
+import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
 import { snapLayerGeometry, type LayerGeometry } from "./editor-state.js";
 
 interface AlertCanvasProps {
@@ -9,6 +10,7 @@ interface AlertCanvasProps {
   readonly onGeometryChange: (layerId: string, geometry: LayerGeometry) => void;
   readonly onSelectLayer: (layerId: string) => void;
   readonly preview: boolean;
+  readonly previewRunId?: number;
   readonly profileId: TargetProfileId;
   readonly samplePayload: Record<string, unknown>;
   readonly selectedLayerId: string | null;
@@ -94,7 +96,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
                 <div
                   aria-label={`${layer.name} layer`}
                   className={`alert-canvas__layer${props.selectedLayerId === layer.id ? " alert-canvas__layer--selected" : ""}`}
-                  key={layer.id}
+                  key={`${layer.id}:${props.preview ? props.previewRunId ?? 0 : "edit"}`}
                   onClick={() => props.onSelectLayer(layer.id)}
                   onKeyDown={(event) => {
                     if (!event.key.startsWith("Arrow")) return;
@@ -111,7 +113,12 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   onPointerMove={continueOperation}
                   onPointerUp={endOperation}
                   role="button"
-                  style={layerStyle(layout, dimensions)}
+                  style={layerStyle(
+                    layout,
+                    dimensions,
+                    props.preview ? layer.animation : null,
+                    props.document.durationMs
+                  )}
                   tabIndex={0}
                 >
                   <CanvasLayer assetApi={props.assetApi} layer={layer} samplePayload={props.samplePayload} />
@@ -185,14 +192,17 @@ function CanvasAsset({ assetApi, assetId, kind }: { readonly assetApi: AssetApi;
 
 function layerStyle(
   layout: { readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly zIndex: number },
-  dimensions: { readonly width: number; readonly height: number }
+  dimensions: { readonly width: number; readonly height: number },
+  animation: AlertLayer["animation"] | null,
+  instructionDurationMs: number
 ): CSSProperties {
   return {
     height: `${layout.height / dimensions.height * 100}%`,
     left: `${layout.x / dimensions.width * 100}%`,
     top: `${layout.y / dimensions.height * 100}%`,
     width: `${layout.width / dimensions.width * 100}%`,
-    zIndex: layout.zIndex
+    zIndex: layout.zIndex,
+    ...overlayPresetAnimationStyle(animation, instructionDurationMs)
   };
 }
 

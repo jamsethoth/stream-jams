@@ -46,16 +46,38 @@ export function createInMemoryStreamJamsDatabase(): StreamJamsDatabase {
 }
 
 export function runInTransaction<T>(connection: DatabaseSync, work: () => T): T {
-  connection.exec("BEGIN IMMEDIATE");
+  const transaction = beginTransaction(connection);
 
   try {
     const result = work();
-    connection.exec("COMMIT");
+    transaction.commit();
     return result;
   } catch (error) {
-    connection.exec("ROLLBACK");
+    transaction.rollback();
     throw error;
   }
+}
+
+let nextSavepointId = 0;
+
+function beginTransaction(connection: DatabaseSync): { commit(): void; rollback(): void } {
+  if (!connection.isTransaction) {
+    connection.exec("BEGIN IMMEDIATE");
+    return {
+      commit: () => connection.exec("COMMIT"),
+      rollback: () => connection.exec("ROLLBACK")
+    };
+  }
+
+  const name = `stream_jams_${++nextSavepointId}`;
+  connection.exec(`SAVEPOINT ${name}`);
+  return {
+    commit: () => connection.exec(`RELEASE SAVEPOINT ${name}`),
+    rollback() {
+      connection.exec(`ROLLBACK TO SAVEPOINT ${name}`);
+      connection.exec(`RELEASE SAVEPOINT ${name}`);
+    }
+  };
 }
 
 function createStreamJamsDatabase(databasePath: string): StreamJamsDatabase {

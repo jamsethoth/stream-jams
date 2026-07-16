@@ -262,9 +262,25 @@ export class TwitchOAuthService {
     };
 
     const previousAccount = await this.#repository.findConnectedAccount();
-    await this.#writeSecret(createTwitchTokenSecretRef(account.accountId, "access_token"), tokenGrant.accessToken);
-    await this.#writeSecret(createTwitchTokenSecretRef(account.accountId, "refresh_token"), tokenGrant.refreshToken);
-    const savedAccount = await this.#repository.saveAccount(account);
+    const accessTokenRef = createTwitchTokenSecretRef(account.accountId, "access_token");
+    const refreshTokenRef = createTwitchTokenSecretRef(account.accountId, "refresh_token");
+    const previousAccessToken = await this.#readSecret(accessTokenRef);
+    const previousRefreshToken = await this.#readSecret(refreshTokenRef);
+    let savedAccount: TwitchAccount;
+    try {
+      await this.#writeSecret(accessTokenRef, tokenGrant.accessToken);
+      await this.#writeSecret(refreshTokenRef, tokenGrant.refreshToken);
+      savedAccount = await this.#repository.saveAccount(account);
+    } catch (error) {
+      const rollback = await Promise.allSettled([
+        this.#restoreSecret(accessTokenRef, previousAccessToken),
+        this.#restoreSecret(refreshTokenRef, previousRefreshToken)
+      ]);
+      if (rollback.some((result) => result.status === "rejected")) {
+        throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+      }
+      throw error;
+    }
     if (previousAccount !== null && previousAccount.accountId !== account.accountId) {
       await this.#deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "access_token"));
       await this.#deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "refresh_token"));
@@ -301,6 +317,14 @@ export class TwitchOAuthService {
     } catch {
       throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
     }
+  }
+
+  async #restoreSecret(ref: SecretRef, value: string | null): Promise<void> {
+    if (value === null) {
+      await this.#deleteSecret(ref);
+      return;
+    }
+    await this.#writeSecret(ref, value);
   }
 }
 

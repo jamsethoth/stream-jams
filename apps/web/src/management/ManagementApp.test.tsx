@@ -1,7 +1,7 @@
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
+import type { AssetLibraryItem, DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ManagementApp } from "./ManagementApp.js";
 import type { AssetApi } from "./assets/AssetManager.js";
@@ -68,6 +68,51 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/manage/settings");
     await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(window.location.pathname).toBe("/manage/assets");
+  });
+
+  it("guards unsaved TTS safety settings when navigating", async () => {
+    const user = userEvent.setup();
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    await user.click(screen.getByRole("link", { name: "TTS providers" }));
+    const ttsPanel = screen.getByRole("region", { name: "TTS providers content" });
+    const volume = await within(ttsPanel).findByLabelText("Volume");
+    await user.clear(volume);
+    await user.type(volume, "0.5");
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+
+    expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toHaveTextContent(
+      "TTS safety settings have unsaved changes."
+    );
+    expect(window.location.pathname).toBe("/manage/tts-providers");
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(window.location.pathname).toBe("/manage/assets");
+  });
+
+  it("guards unsaved asset metadata when navigating", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    vi.mocked(managementApi.listAssetLibraryItems).mockResolvedValue([assetLibraryItem]);
+    vi.mocked(managementApi.updateAssetMetadata).mockImplementation(async (_assetId, input) => ({
+      ...assetLibraryItem,
+      displayName: input.displayName,
+      tags: input.tags
+    }));
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    const details = await screen.findByRole("region", { name: "Follower burst details" });
+    const displayName = within(details).getByLabelText("Display name");
+    await user.clear(displayName);
+    await user.type(displayName, "Updated follower burst");
+    await user.click(screen.getByRole("link", { name: "Home" }));
+
+    expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toHaveTextContent(
+      "Asset details have unsaved changes."
+    );
+    expect(window.location.pathname).toBe("/manage/assets");
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(window.location.pathname).toBe("/manage");
   });
 
   it("prefills diagnostics from route context", async () => {
@@ -526,13 +571,30 @@ function createAssetApi(): AssetApi {
       throw new Error("not called");
     },
     async getAssetFile(): Promise<Blob> {
-      throw new Error("not called");
+      return new Blob([new Uint8Array([0])], { type: "image/png" });
     },
     async replaceAsset(): Promise<AssetRecord> {
       throw new Error("not called");
     }
   };
 }
+
+const assetLibraryItem: AssetLibraryItem = {
+  id: "asset-image",
+  displayName: "Follower burst",
+  originalFileName: "follow.png",
+  mediaType: "image",
+  mimeType: "image/png",
+  sizeBytes: 1024,
+  width: 640,
+  height: 360,
+  durationMs: null,
+  health: "available",
+  tags: ["seasonal"],
+  createdAt: "2026-07-15T08:00:00.000Z",
+  updatedAt: "2026-07-15T08:00:00.000Z",
+  usage: { assetId: "asset-image", totalUsageCount: 0, usages: [] }
+};
 
 function diagnosticsWorkspace(): DiagnosticsWorkspaceView {
   return {

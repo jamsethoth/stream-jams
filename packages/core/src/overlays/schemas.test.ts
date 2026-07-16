@@ -85,4 +85,38 @@ describe("overlay schemas", () => {
       }).success
     ).toBe(true);
   });
+
+  it("preserves optional shape and preset animation instructions", () => {
+    const instruction = overlayInstructionSchema.parse({
+      id: "instruction-shape",
+      overlayId: "main",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      visual: null,
+      audio: null,
+      text: null,
+      shape: { fill: "#123456", layout },
+      animation: {
+        mode: "preset",
+        entrance: "scale",
+        exit: "fade",
+        durationMs: 450,
+        delayMs: 120,
+        easing: "ease-in-out"
+      },
+      tts: null,
+      durationMs: 5000
+    });
+
+    expect(instruction.shape).toEqual({ fill: "#123456", layout });
+    expect(instruction.animation).toEqual({
+      mode: "preset",
+      entrance: "scale",
+      exit: "fade",
+      durationMs: 450,
+      delayMs: 120,
+      easing: "ease-in-out"
+    });
+  });
 });

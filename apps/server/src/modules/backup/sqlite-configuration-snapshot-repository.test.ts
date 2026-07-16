@@ -123,6 +123,37 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     ]));
   });
 
+  it("requires at least one alert set and exactly one active alert set", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const withoutSets: ConfigurationBackupArchive["configuration"] = {
+      appConfig: {},
+      ...snapshot,
+      tables: {
+        ...snapshot.tables,
+        alert_collections: [],
+        alert_rule_collections: [],
+        alert_set_metadata: []
+      }
+    };
+    const withoutActiveSet: ConfigurationBackupArchive["configuration"] = {
+      appConfig: {},
+      ...snapshot,
+      tables: {
+        ...snapshot.tables,
+        alert_collections: snapshot.tables.alert_collections?.map((row) => ({ ...row, enabled: 0 })) ?? []
+      }
+    };
+
+    expect(repository.validate(withoutSets)).toEqual(expect.arrayContaining([
+      "alert_collections must contain at least one alert set.",
+      "alert_collections must contain exactly one active alert set."
+    ]));
+    expect(repository.validate(withoutActiveSet)).toContain(
+      "alert_collections must contain exactly one active alert set."
+    );
+  });
+
   it("replaces all owned rows in one transaction and removes existing route keys", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
     const snapshot = repository.snapshot();

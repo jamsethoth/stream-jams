@@ -91,7 +91,15 @@ export class OverlayOutputManagementService {
   async createKey(input: CreateOverlayKeyInput, origin: string): Promise<OverlayOutputKeyResult> {
     this.#assertKnownOutput(input);
     const created = await this.#overlayAccessService.createKey(input);
-    await this.#storeRouteKey(created.record, created.rawKey);
+    try {
+      await this.#storeRouteKey(created.record, created.rawKey);
+    } catch (error) {
+      await this.#overlayAccessService.revokeKey(created.record.id);
+      if (created.record.routeKeySecretRef !== null) {
+        await this.#secretStore.deleteSecret(created.record.routeKeySecretRef);
+      }
+      throw error;
+    }
 
     return {
       keyId: created.record.id,
@@ -103,6 +111,7 @@ export class OverlayOutputManagementService {
   async regenerateKey(input: CreateOverlayKeyInput, origin: string): Promise<OverlayOutputKeyResult> {
     this.#assertKnownOutput(input);
     const currentKeys = await this.#overlayKeyRepository.findByOutput(input);
+    const replacement = await this.createKey(input, origin);
     for (const key of currentKeys.filter((candidate) => candidate.revokedAt === null)) {
       await this.#overlayAccessService.revokeKey(key.id);
       if (key.routeKeySecretRef !== null) {
@@ -110,7 +119,10 @@ export class OverlayOutputManagementService {
       }
     }
 
-    return this.createKey(input, origin);
+    return {
+      ...replacement,
+      output: await this.#toOutputView(input, this.#labelFor(input), true, origin)
+    };
   }
 
   async revokeKey(keyId: string): Promise<OverlayAccessKey | null> {

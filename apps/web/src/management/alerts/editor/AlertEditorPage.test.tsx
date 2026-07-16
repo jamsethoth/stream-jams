@@ -65,6 +65,9 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("Local preview is running.")).toBeInTheDocument();
     expect(sendAlertEditorTest).not.toHaveBeenCalled();
+    const firstPreviewLayer = screen.getByRole("button", { name: "Message layer" });
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("button", { name: "Message layer" })).not.toBe(firstPreviewLayer);
 
     await user.click(screen.getByRole("button", { name: "Send test" }));
     await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith(

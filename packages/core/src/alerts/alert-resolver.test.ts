@@ -1,5 +1,6 @@
 import type { AlertMatch } from "./alert-matcher.js";
 import type { CheerEvent } from "../events/types.js";
+import type { AlertEditorDocument } from "../management/contracts.js";
 import type { AlertRule, AlertVariant } from "./types.js";
 import { describe, expect, it } from "vitest";
 import { DefaultModerationService } from "../moderation/moderation-service.js";
@@ -257,6 +258,97 @@ describe("DefaultAlertResolver", () => {
 
     expect(createResolver().resolveMatches({ matches: [createMatch(rule, event)], target })[0]?.overlayInstruction.tts).toBeNull();
   });
+
+  it("resolves every visible supported editor layer with profile geometry", () => {
+    const event = createCheerEvent({ actor: { id: "viewer-1", displayName: "Profile Viewer" } });
+    const rule = createRule();
+    const document = createEditorDocument(rule);
+    const editorTarget = {
+      overlayId: "overlay-1",
+      purpose: "live" as const,
+      scope: "module" as const,
+      targetProfileId: "landscape" as const
+    };
+    const input = {
+      matches: [createMatch(rule, event)],
+      target: editorTarget,
+      editorDocuments: new Map([[rule.id, document]]),
+      visualAssetMediaTypes: { "asset-image": "gif" as const }
+    };
+
+    const resolved = createResolver().resolveMatches(input);
+
+    expect(resolved.map((alert) => alert.variantId)).toEqual([
+      "layer-text",
+      "layer-image",
+      "layer-audio",
+      "layer-tts",
+      "layer-shape"
+    ]);
+    expect(resolved.map((alert) => alert.overlayInstruction.targetProfileId)).toEqual([
+      "landscape",
+      "landscape",
+      "landscape",
+      "landscape",
+      "landscape"
+    ]);
+    expect(resolved[0]?.overlayInstruction.text).toEqual({
+      text: "Welcome Profile Viewer",
+      layout: { layerId: "layer-text", x: 120, y: 80, width: 600, height: 140, zIndex: 3 }
+    });
+    expect(resolved[1]?.overlayInstruction.visual).toEqual({
+      assetId: "asset-image",
+      mediaType: "gif",
+      layout: { layerId: "layer-image", x: 40, y: 30, width: 320, height: 240, zIndex: 2 }
+    });
+    expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5 });
+    expect(resolved[3]?.overlayInstruction.tts?.text).toBe("Read Profile Viewer");
+    expect(resolved[4]?.overlayInstruction.shape).toEqual({
+      fill: "#fff",
+      layout: { layerId: "layer-shape", x: 0, y: 0, width: 100, height: 100, zIndex: 5 }
+    });
+    expect(resolved.map((alert) => alert.overlayInstruction.animation)).toEqual(Array(5).fill(animation));
+  });
+
+  it("does not resolve editor layers for a disabled target profile", () => {
+    const rule = createRule();
+    const input = {
+      matches: [createMatch(rule, createCheerEvent())],
+      target: {
+        overlayId: "overlay-1",
+        purpose: "live" as const,
+        scope: "module" as const,
+        targetProfileId: "vertical" as const
+      },
+      editorDocuments: new Map([[rule.id, createEditorDocument(rule)]])
+    };
+
+    expect(createResolver().resolveMatches(input)).toEqual([]);
+  });
+
+  it("falls back to legacy rule rendering for a profile target without an editor document", () => {
+    const rule = createRule();
+    const input = {
+      matches: [createMatch(rule, createCheerEvent())],
+      target: {
+        overlayId: "overlay-1",
+        purpose: "live" as const,
+        scope: "module" as const,
+        targetProfileId: "vertical" as const
+      },
+      editorDocuments: new Map<string, AlertEditorDocument>()
+    };
+
+    expect(createResolver().resolveMatches(input)).toEqual([
+      expect.objectContaining({
+        variantId: "variant-1",
+        overlayInstruction: expect.objectContaining({
+          targetProfileId: "vertical",
+          text: expect.objectContaining({ text: "Thanks Viewer" })
+        })
+      })
+    ]);
+  });
 });
 
 const target = {
@@ -340,3 +432,50 @@ function createVariant(overrides: Partial<AlertVariant> = {}): AlertVariant {
     ...overrides
   };
 }
+
+function createEditorDocument(rule: AlertRule): AlertEditorDocument {
+  return {
+    id: rule.id,
+    setId: rule.collectionIds[0]!,
+    providerKind: "twitch",
+    eventType: rule.eventType,
+    kind: "default",
+    parentAlertId: null,
+    name: rule.name,
+    enabled: true,
+    conditions: [],
+    durationMs: 4_000,
+    layers: [
+      { id: "layer-text", name: "Text", type: "text", visible: true, order: 0, animation, template: "Welcome {actor.displayName}" },
+      { id: "layer-image", name: "Image", type: "image", visible: true, order: 1, animation, assetId: "asset-image" },
+      { id: "layer-audio", name: "Audio", type: "audio", visible: true, order: 2, animation, assetId: "asset-audio", volume: 0.5 },
+      { id: "layer-tts", name: "TTS", type: "tts", visible: true, order: 3, animation, template: "Read {actor.displayName}" },
+      { id: "layer-hidden", name: "Hidden", type: "text", visible: false, order: 4, animation, template: "Hidden" },
+      { id: "layer-shape", name: "Shape", type: "shape", visible: true, order: 5, animation, fill: "#fff" }
+    ],
+    targetProfiles: [
+      {
+        id: "landscape",
+        enabled: true,
+        reviewState: "ready",
+        layerLayouts: [
+          { layerId: "layer-text", x: 120, y: 80, width: 600, height: 140, zIndex: 3 },
+          { layerId: "layer-image", x: 40, y: 30, width: 320, height: 240, zIndex: 2 },
+          { layerId: "layer-hidden", x: 0, y: 0, width: 100, height: 100, zIndex: 4 },
+          { layerId: "layer-shape", x: 0, y: 0, width: 100, height: 100, zIndex: 5 }
+        ]
+      },
+      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
+    ],
+    samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: {} }]
+  };
+}
+
+const animation = {
+  mode: "preset" as const,
+  entrance: "fade",
+  exit: "fade",
+  durationMs: 300,
+  delayMs: 0,
+  easing: "ease-out"
+};

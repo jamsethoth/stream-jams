@@ -117,6 +117,20 @@ export interface OverlayTextInstruction {
   readonly layout: OverlayElementLayout;
 }
 
+export interface OverlayShapeInstruction {
+  readonly fill: string;
+  readonly layout: OverlayElementLayout;
+}
+
+export interface OverlayPresetAnimationInstruction {
+  readonly mode: "preset";
+  readonly entrance: string;
+  readonly exit: string;
+  readonly durationMs: number;
+  readonly delayMs: number;
+  readonly easing: string;
+}
+
 export interface OverlayInstruction {
   readonly id: string;
   readonly overlayId: string;
@@ -127,6 +141,8 @@ export interface OverlayInstruction {
   readonly visual: OverlayVisualInstruction | null;
   readonly audio: OverlayAudioInstruction | null;
   readonly text: OverlayTextInstruction | null;
+  readonly shape?: OverlayShapeInstruction | null;
+  readonly animation?: OverlayPresetAnimationInstruction | null;
   readonly tts: TtsPlaybackInstruction | null;
   readonly durationMs: number;
 }

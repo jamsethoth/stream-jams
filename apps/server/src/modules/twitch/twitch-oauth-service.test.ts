@@ -1,4 +1,4 @@
-import type { SecretStore } from "@stream-jams/core";
+import type { SecretRef, SecretStore } from "@stream-jams/core";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
 import type {
@@ -201,6 +201,56 @@ describe("TwitchOAuthService", () => {
       code: "TWITCH_OAUTH_AUTHORIZATION_INVALID"
     });
   });
+
+  it.each(["access_token", "refresh_token", "account"] as const)(
+    "restores previous tokens when %s persistence fails",
+    async (failurePoint) => {
+      const repository = new InMemoryTwitchAccountRepository();
+      repository.account = {
+        accountId: "141981764",
+        login: "streamer",
+        displayName: "Streamer",
+        scopes: defaultTwitchOAuthScopes,
+        connectedAt: "2026-05-30T12:00:00.000Z",
+        updatedAt: "2026-05-30T12:00:00.000Z"
+      };
+      const secretStore = new FailAfterWriteSecretStore();
+      const accessRef = createTwitchTokenSecretRef("141981764", "access_token");
+      const refreshRef = createTwitchTokenSecretRef("141981764", "refresh_token");
+      await secretStore.setSecret(accessRef, "access-token-old");
+      await secretStore.setSecret(refreshRef, "refresh-token-old");
+      secretStore.failOn = failurePoint === "account" ? null : failurePoint;
+      repository.saveError = failurePoint === "account" ? new Error("account save failed") : null;
+      const { service } = createService({ repository, secretStore });
+
+      const error = await service.refreshConnectedAccount().then(
+        () => null,
+        (cause: unknown) => cause
+      );
+
+      expect(error).toBeInstanceOf(Error);
+      expect(String(error)).not.toContain("access-token-2");
+      expect(String(error)).not.toContain("refresh-token-2");
+      await expect(secretStore.getSecret(accessRef)).resolves.toBe("access-token-old");
+      await expect(secretStore.getSecret(refreshRef)).resolves.toBe("refresh-token-old");
+    }
+  );
+
+  it("removes newly introduced tokens when account persistence fails", async () => {
+    const now = createClock();
+    const repository = new InMemoryTwitchAccountRepository();
+    repository.saveError = new Error("account save failed");
+    const secretStore = new InMemorySecretStore();
+    const { apiClient, service } = createService({ now: now.read, repository, secretStore });
+    apiClient.pollResult = { status: "granted", grant: createTokenGrant("1") };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toThrow("account save failed");
+
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBeNull();
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBeNull();
+  });
 });
 
 function createService(
@@ -304,8 +354,12 @@ class FakeTwitchApiClient implements TwitchApiClient {
 
 class InMemoryTwitchAccountRepository implements TwitchAccountRepository {
   account: TwitchAccount | null = null;
+  saveError: Error | null = null;
 
   async saveAccount(account: TwitchAccount): Promise<TwitchAccount> {
+    if (this.saveError !== null) {
+      throw this.saveError;
+    }
     this.account = account;
     return account;
   }
@@ -332,5 +386,17 @@ class FailingSecretStore implements SecretStore {
 
   async deleteSecret(): Promise<void> {
     return;
+  }
+}
+
+class FailAfterWriteSecretStore extends InMemorySecretStore {
+  failOn: "access_token" | "refresh_token" | null = null;
+
+  override async setSecret(ref: SecretRef, value: string): Promise<void> {
+    await super.setSecret(ref, value);
+    if (ref.name === this.failOn) {
+      this.failOn = null;
+      throw new Error(`credential store rejected ${value}`);
+    }
   }
 }

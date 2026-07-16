@@ -11,9 +11,11 @@ import type {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
+import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import "./provider-pages.css";
 
 export type ProviderPageApi = Pick<
@@ -73,12 +75,15 @@ export function ProviderPage({
   const [detail, setDetail] = useState<RegisteredProviderDetail | null>(null);
   const [impact, setImpact] = useState<ProviderActivationImpact | null>(null);
   const [safety, setSafety] = useState<TtsProviderSafetySettings | null>(null);
+  const [savedSafety, setSavedSafety] = useState<TtsProviderSafetySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<ActionableManagementError | null>(null);
   const [operationError, setOperationError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(openSetupOnLoad);
   const [activationOpen, setActivationOpen] = useState(false);
+  const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
 
   const loadProviders = useCallback(async (preferredProviderId?: string) => {
     const loaded = await managementApi.listRegisteredProviders(capability);
@@ -133,6 +138,7 @@ export function ProviderPage({
       setDetail(null);
       setImpact(null);
       setSafety(null);
+      setSavedSafety(null);
       return;
     }
     let cancelled = false;
@@ -149,6 +155,7 @@ export function ProviderPage({
           setDetail(loadedDetail);
           setImpact(loadedImpact);
           setSafety(loadedSafety);
+          setSavedSafety(loadedSafety);
           setOperationError(null);
         }
       })
@@ -157,6 +164,7 @@ export function ProviderPage({
           setDetail(null);
           setImpact(null);
           setSafety(null);
+          setSavedSafety(null);
           setOperationError(actionableError(error, "Unable to load provider details", "Select the provider again or retry after checking Diagnostics."));
         }
       });
@@ -192,19 +200,68 @@ export function ProviderPage({
     await activate(false);
   }
 
-  async function saveSafety(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const persistSafety = useCallback(async (): Promise<boolean> => {
     if (selectedProvider === null || safety === null) {
-      return;
+      return false;
     }
     try {
       const saved = await managementApi.updateTtsSafety(selectedProvider.id, safety);
       setSafety(saved);
+      setSavedSafety(saved);
       setOperationError(null);
       setNotice("TTS safety settings saved.");
+      return true;
     } catch (error) {
       setOperationError(actionableError(error, "Unable to save TTS safety settings", "Review each safety value, then retry the save."));
+      return false;
     }
+  }, [managementApi, safety, selectedProvider]);
+
+  const discardSafety = useCallback(() => {
+    setSafety(savedSafety);
+  }, [savedSafety]);
+
+  const safetyDirty = safety !== null && savedSafety !== null && JSON.stringify(safety) !== JSON.stringify(savedSafety);
+  useDirtyNavigationSource({
+    id: "tts-provider-safety",
+    dirty: safetyDirty,
+    summary: "TTS safety settings have unsaved changes.",
+    save: persistSafety,
+    discard: discardSafety
+  });
+
+  function saveSafety(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void persistSafety();
+  }
+
+  function requestProviderSelection(providerId: string) {
+    if (providerId === selectedProviderId) return;
+    if (safetyDirty) {
+      setSelectionError(null);
+      setPendingProviderId(providerId);
+      return;
+    }
+    setSelectedProviderId(providerId);
+  }
+
+  async function saveAndContinueSelection() {
+    if (pendingProviderId === null) return;
+    setSelectionError(null);
+    if (!await persistSafety()) {
+      setSelectionError("TTS safety settings were not saved. Review each safety value, then retry the save.");
+      return;
+    }
+    setSelectedProviderId(pendingProviderId);
+    setPendingProviderId(null);
+  }
+
+  function discardAndContinueSelection() {
+    if (pendingProviderId === null) return;
+    discardSafety();
+    setSelectedProviderId(pendingProviderId);
+    setPendingProviderId(null);
+    setSelectionError(null);
   }
 
   async function testVoice() {
@@ -268,7 +325,7 @@ export function ProviderPage({
                     </td>
                     <td><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
                     <td>
-                      <button aria-label={`View ${provider.name}`} className="provider-page__secondary-action" onClick={() => setSelectedProviderId(provider.id)} type="button">View</button>
+                      <button aria-label={`View ${provider.name}`} className="provider-page__secondary-action" onClick={() => requestProviderSelection(provider.id)} type="button">View</button>
                     </td>
                   </tr>
                 ))}
@@ -290,6 +347,18 @@ export function ProviderPage({
           )}
         </div>
       ) : null}
+
+      <DirtyNavigationDialog
+        error={selectionError}
+        onCancel={() => { setPendingProviderId(null); setSelectionError(null); }}
+        onDiscard={discardAndContinueSelection}
+        onSave={() => void saveAndContinueSelection()}
+        open={pendingProviderId !== null}
+        saveAvailable
+        saveLabel="Save and continue"
+        summary="TTS safety settings have unsaved changes."
+        title="Switch providers with unsaved changes?"
+      />
 
       <ProviderSetupWizard
         capability={capability}

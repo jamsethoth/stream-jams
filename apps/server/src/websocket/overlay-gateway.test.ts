@@ -167,6 +167,7 @@ describe("OverlayGateway", () => {
 
   it("retains the latest disconnected client state per output for regeneration impact", async () => {
     let now = new Date("2026-07-15T10:00:00.000Z");
+    const disconnectedClientIds: string[] = [];
     const gateway = createGateway({
       allowed: [
         {
@@ -178,7 +179,8 @@ describe("OverlayGateway", () => {
           rawKey: "ovl_vertical"
         }
       ],
-      clock: () => now
+      clock: () => now,
+      onClientDisconnected: (clientId) => disconnectedClientIds.push(clientId)
     });
     await gateway.registerClient(new RecordingSocket(), {
       overlayId: "default",
@@ -193,6 +195,7 @@ describe("OverlayGateway", () => {
     gateway.unregisterClient("client-1");
 
     expect(gateway.clients).toEqual([]);
+    expect(disconnectedClientIds).toEqual(["client-1"]);
     expect(gateway.clientStates).toEqual([
       expect.objectContaining({
         id: "client-1",
@@ -342,6 +345,7 @@ interface AllowedRoute {
 
 function createGateway(options: {
   readonly allowed: readonly AllowedRoute[];
+  readonly onClientDisconnected?: ConstructorParameters<typeof OverlayGateway>[0]["onClientDisconnected"];
   readonly onPlaybackReport?: ConstructorParameters<typeof OverlayGateway>[0]["onPlaybackReport"];
   readonly clock?: () => Date;
 }): OverlayGateway {
@@ -353,6 +357,7 @@ function createGateway(options: {
       return `client-${clientNumber}`;
     },
     ...(options.clock === undefined ? {} : { clock: options.clock }),
+    ...(options.onClientDisconnected === undefined ? {} : { onClientDisconnected: options.onClientDisconnected }),
     ...(options.onPlaybackReport === undefined ? {} : { onPlaybackReport: options.onPlaybackReport })
   });
 }

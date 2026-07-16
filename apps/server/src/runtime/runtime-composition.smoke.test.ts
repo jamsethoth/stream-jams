@@ -1,7 +1,15 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AppConfig, AppConfigUpdate, ConfigStore } from "@stream-jams/core";
+import {
+  moduleOverlayWebSocketPath,
+  type AlertEditorDocument,
+  type AlertRule,
+  type AppConfig,
+  type AppConfigUpdate,
+  type ConfigStore,
+  type OverlayInstruction
+} from "@stream-jams/core";
 import { createSequence, InMemorySecretStore } from "@stream-jams/test-support";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
@@ -241,6 +249,148 @@ describe("runtime app composition smoke", () => {
       scope: "module"
     });
     socket.close();
+  });
+
+  it("delivers saved editor layers from a real event to the matching live profile client", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-07-16T12:00:00.000Z"),
+      generateManagementSessionId: () => "mgmt_live-editor",
+      generateOverlayAccessKeyId: () => "overlay-key-live-editor",
+      generateRawOverlayRouteKey: () => "ovl_live-editor",
+      generateOverlayClientId: createSequence("overlay-client-live-editor")
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    await composition.app.inject({ method: "GET", url: "/management/home", headers: authHeaders });
+    const rules = (await composition.app.inject({ method: "GET", url: "/alerts/rules", headers: authHeaders })).json() as AlertRule[];
+    const followRule = rules.find((rule) => rule.eventType === "follow")!;
+    const document = (await composition.app.inject({
+      method: "GET",
+      url: `/management/alerts/${followRule.id}/editor`,
+      headers: authHeaders
+    })).json() as AlertEditorDocument;
+    const primaryLayer = document.layers.find((layer) => layer.type === "text")!;
+    const editedDocument: AlertEditorDocument = {
+      ...document,
+      enabled: true,
+      layers: [
+        { ...primaryLayer, name: "Primary", order: 0, template: "Primary {actor.displayName}" },
+        { ...primaryLayer, id: "layer-secondary", name: "Secondary", order: 1, template: "Secondary {actor.displayName}" }
+      ],
+      targetProfiles: document.targetProfiles.map((profile) =>
+        profile.id === "landscape"
+          ? {
+              ...profile,
+              enabled: true,
+              reviewState: "ready",
+              layerLayouts: [
+                { layerId: primaryLayer.id, x: 100, y: 120, width: 500, height: 100, zIndex: 2 },
+                { layerId: "layer-secondary", x: 300, y: 400, width: 600, height: 120, zIndex: 3 }
+              ]
+            }
+          : { ...profile, enabled: false, reviewState: "needs-review" }
+      )
+    };
+    const save = await composition.app.inject({
+      method: "PUT",
+      url: `/management/alerts/${followRule.id}/editor`,
+      headers: authHeaders,
+      payload: { document: editedDocument, confirmLiveImpact: true }
+    });
+    expect(save.statusCode).toBe(200);
+
+    const profileKey = await composition.overlayAccessService.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "landscape"
+    });
+    await composition.app.ready();
+    const firstClientMessages: unknown[] = [];
+    const firstSocket = await composition.app.injectWS(
+      moduleOverlayWebSocketPath({
+        moduleId: "alerts",
+        purpose: "live",
+        overlayKey: profileKey.rawKey,
+        targetProfileId: "landscape"
+      }),
+      {},
+      { onInit(webSocket) { webSocket.on("message", (data) => firstClientMessages.push(JSON.parse(data.toString()) as unknown)); } }
+    );
+    const secondClientMessages: unknown[] = [];
+    const secondSocket = await composition.app.injectWS(
+      moduleOverlayWebSocketPath({
+        moduleId: "alerts",
+        purpose: "live",
+        overlayKey: profileKey.rawKey,
+        targetProfileId: "landscape"
+      }),
+      {},
+      { onInit(webSocket) { webSocket.on("message", (data) => secondClientMessages.push(JSON.parse(data.toString()) as unknown)); } }
+    );
+    await waitFor(() =>
+      firstClientMessages.some((message) => isGatewayMessage(message, "overlay.connected")) &&
+      secondClientMessages.some((message) => isGatewayMessage(message, "overlay.connected"))
+    );
+
+    const ingestion = await (composition as RuntimeAppComposition & {
+      readonly eventIngestionService: { ingestTwitchEventSubNotification(message: unknown): Promise<{ readonly status: string }> };
+    }).eventIngestionService.ingestTwitchEventSubNotification(followNotification("live-editor-follow"));
+    await waitFor(() =>
+      firstClientMessages.filter((message) => isGatewayMessage(message, "overlay.playback")).length === 2 &&
+      secondClientMessages.filter((message) => isGatewayMessage(message, "overlay.playback")).length === 2
+    );
+
+    expect(ingestion.status).toBe("accepted");
+    expect(firstClientMessages.filter((message): message is { readonly type: "overlay.playback"; readonly instruction: OverlayInstruction } =>
+      isGatewayMessage(message, "overlay.playback")
+    ).map((message) => ({
+      targetProfileId: message.instruction.targetProfileId,
+      text: message.instruction.text?.text,
+      layout: message.instruction.text?.layout
+    }))).toEqual([
+      {
+        targetProfileId: "landscape",
+        text: "Primary Viewer",
+        layout: { layerId: primaryLayer.id, x: 100, y: 120, width: 500, height: 100, zIndex: 2 }
+      },
+      {
+        targetProfileId: "landscape",
+        text: "Secondary Viewer",
+        layout: { layerId: "layer-secondary", x: 300, y: 400, width: 600, height: 120, zIndex: 3 }
+      }
+    ]);
+    const deliveredInstructions = firstClientMessages.filter((message): message is { readonly type: "overlay.playback"; readonly instruction: OverlayInstruction } =>
+      isGatewayMessage(message, "overlay.playback")
+    ).map((message) => message.instruction);
+    firstSocket.send(JSON.stringify({
+      type: "overlay.playback.completed",
+      instructionId: deliveredInstructions[0]!.id
+    }));
+    firstSocket.send(JSON.stringify({
+      type: "overlay.playback.completed",
+      instructionId: deliveredInstructions[0]!.id
+    }));
+    firstSocket.send(JSON.stringify({
+      type: "overlay.playback.completed",
+      instructionId: deliveredInstructions[1]!.id
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect((await composition.app.inject({ method: "GET", url: "/playback", headers: authHeaders })).json().current).not.toBeNull();
+    secondSocket.terminate();
+    await waitFor(async () => (await composition.app.inject({ method: "GET", url: "/playback", headers: authHeaders })).json().current === null);
+    firstSocket.close();
   });
 
   it("uses the exact default Twitch Client ID or a trimmed override without a client secret", async () => {
@@ -793,9 +943,9 @@ function secretKeyFromCredential(service: string, account: string): string {
   return `${service}:${account}`;
 }
 
-async function waitFor(condition: () => boolean): Promise<void> {
+async function waitFor(condition: () => boolean | Promise<boolean>): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    if (condition()) {
+    if (await condition()) {
       return;
     }
 
@@ -803,4 +953,41 @@ async function waitFor(condition: () => boolean): Promise<void> {
   }
 
   throw new Error("Timed out waiting for condition");
+}
+
+function isGatewayMessage(message: unknown, type: string): boolean {
+  return typeof message === "object" && message !== null && "type" in message && message.type === type;
+}
+
+function followNotification(messageId: string) {
+  return {
+    metadata: {
+      message_id: messageId,
+      message_type: "notification",
+      message_timestamp: "2026-07-16T12:00:00.000Z",
+      subscription_type: "channel.follow",
+      subscription_version: "2"
+    },
+    payload: {
+      subscription: {
+        id: "subscription-channel.follow",
+        status: "enabled",
+        type: "channel.follow",
+        version: "2",
+        cost: 0,
+        condition: { broadcaster_user_id: "broadcaster-1" },
+        transport: { method: "websocket", session_id: "session-1" },
+        created_at: "2026-07-16T11:59:00.000Z"
+      },
+      event: {
+        user_id: "viewer-1",
+        user_login: "viewer",
+        user_name: "Viewer",
+        broadcaster_user_id: "broadcaster-1",
+        broadcaster_user_login: "streamer",
+        broadcaster_user_name: "Streamer",
+        followed_at: "2026-07-16T12:00:00.000Z"
+      }
+    }
+  };
 }

@@ -30,15 +30,23 @@ export interface AlertEditorTestPlayback {
   readonly alerts: readonly ResolvedAlert[];
 }
 
+export interface AlertEditorAtomicSaveInput {
+  readonly document: AlertEditorDocument;
+  readonly metadata: AlertRuleManagementMetadata;
+  readonly rule: AlertRule;
+}
+
 export interface AlertEditorServiceOptions {
   readonly documents: AlertEditorDocumentRepository;
   readonly rules: Pick<AlertRepository, "findRuleById" | "listCollections" | "saveRule">;
   readonly metadata: Pick<AlertSetMetadataRepository, "findRule" | "saveRule">;
   readonly hasConnectedOutput: (targetProfileId: TargetProfileId) => Promise<boolean>;
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
+  readonly findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>;
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
   readonly now?: () => Date;
+  readonly saveAtomically?: (input: AlertEditorAtomicSaveInput) => Promise<AlertEditorDocument>;
 }
 
 export class AlertEditorNotFoundError extends Error {
@@ -119,8 +127,12 @@ export class AlertEditorService {
       }
     }
     const projectedRule = projectDocumentToRule(document, rule);
+    const projectedMetadata = ruleMetadataFromDocument(document);
+    if (this.#options.saveAtomically !== undefined) {
+      return this.#options.saveAtomically({ document, metadata: projectedMetadata, rule: projectedRule });
+    }
     await this.#options.rules.saveRule(projectedRule);
-    await this.#options.metadata.saveRule(ruleMetadataFromDocument(document));
+    await this.#options.metadata.saveRule(projectedMetadata);
     return this.#options.documents.save(document);
   }
 
@@ -145,7 +157,8 @@ export class AlertEditorService {
 
     const referenceId = this.#options.generateReferenceId();
     const sourceEvent = createTestEvent(request.document, request.samplePayload, referenceId, this.#now());
-    const alerts = this.#createTestAlerts(request, profile, sourceEvent);
+    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(request.document);
+    const alerts = this.#createTestAlerts(request, profile, sourceEvent, visualAssetMediaTypes);
     if (alerts.length === 0) {
       throw new AlertEditorDeliveryBlockedError(
         "The selected profile has no visible layer that can be sent with the current audio and TTS settings."
@@ -170,7 +183,8 @@ export class AlertEditorService {
   #createTestAlerts(
     request: AlertEditorTestRequest,
     profile: AlertTargetProfileDocument,
-    sourceEvent: NormalizedStreamEvent
+    sourceEvent: NormalizedStreamEvent,
+    visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>
   ): readonly ResolvedAlert[] {
     const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
     const context = createTemplateContext(request.samplePayload, sourceEvent);
@@ -188,7 +202,8 @@ export class AlertEditorService {
         request.targetProfileId,
         context,
         this.#templateRenderer,
-        this.#options.generateId()
+        this.#options.generateId(),
+        visualAssetMediaTypes
       );
       if (instruction === null) return [];
       return [
@@ -201,6 +216,23 @@ export class AlertEditorService {
         }
       ];
     });
+  }
+
+  async #resolveVisualAssetMediaTypes(
+    document: AlertEditorDocument
+  ): Promise<Readonly<Record<string, "image" | "gif" | "video">>> {
+    if (this.#options.findAssetMediaType === undefined) return {};
+    const mediaTypes: Record<string, "image" | "gif" | "video"> = {};
+    const assetIds = [...new Set(document.layers.flatMap((layer) =>
+      layer.type === "image" || layer.type === "video" ? [layer.assetId] : []
+    ))];
+    await Promise.all(assetIds.map(async (assetId) => {
+      const mediaType = await this.#options.findAssetMediaType!(assetId);
+      if (mediaType === "image" || mediaType === "gif" || mediaType === "video") {
+        mediaTypes[assetId] = mediaType;
+      }
+    }));
+    return mediaTypes;
   }
 }
 
@@ -466,7 +498,8 @@ function createLayerInstruction(
   targetProfileId: TargetProfileId,
   context: Record<string, unknown>,
   renderer: DefaultTemplateRenderer,
-  instructionId: string
+  instructionId: string,
+  visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>
 ): ResolvedAlert["overlayInstruction"] | null {
   const base = {
     id: instructionId,
@@ -485,7 +518,10 @@ function createLayerInstruction(
     return { ...base, text: { text: renderer.render({ template: layer.template, values: context }), layout } };
   }
   if ((layer.type === "image" || layer.type === "video") && layout !== undefined) {
-    return { ...base, visual: { assetId: layer.assetId, mediaType: layer.type, layout } };
+    return {
+      ...base,
+      visual: { assetId: layer.assetId, mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type, layout }
+    };
   }
   if (layer.type === "audio") {
     return { ...base, audio: { assetId: layer.assetId, volume: layer.volume } };

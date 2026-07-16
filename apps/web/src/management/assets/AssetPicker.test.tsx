@@ -1,5 +1,5 @@
 import type { AssetLibraryItem } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetPicker } from "./AssetPicker.js";
@@ -52,6 +52,90 @@ describe("AssetPicker", () => {
     }));
     expect(onSelect).toHaveBeenCalledWith("asset-new");
   });
+
+  it("disables stale selection synchronously when compatible media types change", async () => {
+    const values = fixture();
+    const onSelect = vi.fn();
+    const nextItems = deferred<readonly AssetLibraryItem[]>();
+    vi.mocked(values.managementApi.listAssetLibraryItems)
+      .mockResolvedValueOnce([imageItem, audioItem])
+      .mockReturnValueOnce(nextItems.promise);
+    const { rerender } = render(
+      <AssetPicker
+        {...values}
+        compatibleMediaTypes={["image"]}
+        onCancel={vi.fn()}
+        onSelect={onSelect}
+        open
+        selectedAssetId="asset-image"
+      />
+    );
+
+    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+    rerender(
+      <AssetPicker
+        {...values}
+        compatibleMediaTypes={["audio"]}
+        onCancel={vi.fn()}
+        onSelect={onSelect}
+        open
+        selectedAssetId={null}
+      />
+    );
+
+    expect(screen.getByRole("button", { name: "Use selected asset" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
+    expect(onSelect).not.toHaveBeenCalled();
+    await act(async () => nextItems.resolve([imageItem, audioItem]));
+    const audioOption = await screen.findByRole("option", { name: /Raid chime/ });
+    expect(audioOption).toHaveAttribute("aria-selected", "true");
+    await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
+    expect(onSelect).toHaveBeenCalledWith("asset-audio");
+  });
+
+  it("disables stale selection synchronously when the selected asset ID changes", async () => {
+    const values = fixture();
+    const nextItems = deferred<readonly AssetLibraryItem[]>();
+    vi.mocked(values.managementApi.listAssetLibraryItems)
+      .mockResolvedValueOnce([imageItem, audioItem])
+      .mockReturnValueOnce(nextItems.promise);
+    const { rerender } = render(
+      <AssetPicker {...values} compatibleMediaTypes={["image"]} onCancel={vi.fn()} onSelect={vi.fn()} open selectedAssetId="asset-image" />
+    );
+    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+
+    rerender(
+      <AssetPicker {...values} compatibleMediaTypes={["image"]} onCancel={vi.fn()} onSelect={vi.fn()} open selectedAssetId={null} />
+    );
+
+    expect(screen.getByRole("button", { name: "Use selected asset" })).toBeDisabled();
+    await act(async () => nextItems.resolve([imageItem, audioItem]));
+    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("disables stale selection synchronously when the picker reopens", async () => {
+    const values = fixture();
+    const nextItems = deferred<readonly AssetLibraryItem[]>();
+    vi.mocked(values.managementApi.listAssetLibraryItems)
+      .mockResolvedValueOnce([imageItem, audioItem])
+      .mockReturnValueOnce(nextItems.promise);
+    const props = {
+      ...values,
+      compatibleMediaTypes: ["image"] as const,
+      onCancel: vi.fn(),
+      onSelect: vi.fn(),
+      selectedAssetId: "asset-image"
+    };
+    const { rerender } = render(<AssetPicker {...props} open />);
+    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+
+    rerender(<AssetPicker {...props} open={false} />);
+    rerender(<AssetPicker {...props} open />);
+
+    expect(screen.getByRole("button", { name: "Use selected asset" })).toBeDisabled();
+    await act(async () => nextItems.resolve([imageItem, audioItem]));
+    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+  });
 });
 
 function fixture() {
@@ -68,6 +152,12 @@ function fixture() {
     replaceAsset: vi.fn(async () => { throw new Error("not called"); })
   };
   return { assetApi, managementApi };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => { resolve = complete; });
+  return { promise, resolve };
 }
 
 const imageItem: AssetLibraryItem = {

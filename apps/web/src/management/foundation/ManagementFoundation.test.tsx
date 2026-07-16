@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { DestructiveConfirmationDialog } from "./DestructiveConfirmationDialog.js";
 import { ManagementErrorBanner } from "./ManagementErrorBanner.js";
 import { MaskedValue } from "./MaskedValue.js";
+import { ModalSurface } from "./ModalSurface.js";
 import { ThemeSwitcher } from "./ThemeSwitcher.js";
 
 describe("management UI foundation", () => {
@@ -80,5 +81,25 @@ describe("management UI foundation", () => {
 
     expect(document.documentElement).toHaveAttribute("data-theme", "dark");
     expect(window.localStorage.getItem("stream-jams-theme")).toBe("dark");
+  });
+
+  it("contains keyboard focus within an open modal", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <button type="button">Outside</button>
+        <ModalSurface labelledBy="focus-modal-title" onCancel={vi.fn()} open>
+          <h2 id="focus-modal-title">Focus modal</h2>
+          <button type="button">First action</button>
+          <button type="button">Last action</button>
+        </ModalSurface>
+      </>
+    );
+
+    expect(screen.getByRole("button", { name: "First action" })).toHaveFocus();
+    await user.tab({ shift: true });
+    expect(screen.getByRole("button", { name: "Last action" })).toHaveFocus();
+    await user.tab();
+    expect(screen.getByRole("button", { name: "First action" })).toHaveFocus();
   });
 });

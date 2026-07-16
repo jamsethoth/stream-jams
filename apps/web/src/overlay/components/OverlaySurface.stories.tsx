@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import type { OverlayComposition } from "@stream-jams/core";
 import { OverlaySurface } from "./OverlaySurface.js";
 import {
   errorSafeOverlayComposition,
@@ -58,6 +59,37 @@ export const TextOnly: Story = {
 export const Media: Story = {
   args: {
     composition: mediaOverlayComposition,
+    resolveAssetUrl
+  }
+};
+
+export const AnimatedShape: Story = {
+  args: {
+    composition: {
+      overlayId: "overlay-alerts-test",
+      purpose: "test",
+      scope: "module",
+      targetProfileId: "landscape",
+      modules: [{
+        moduleId: "alerts",
+        enabled: true,
+        instructions: [{
+          id: "instruction-shape",
+          overlayId: "overlay-alerts-test",
+          moduleId: "alerts",
+          purpose: "test",
+          scope: "module",
+          targetProfileId: "landscape",
+          visual: null,
+          audio: null,
+          text: null,
+          shape: { fill: "#45c4ae", layout: { x: 660, y: 390, width: 600, height: 300, zIndex: 4 } },
+          animation: { mode: "preset", entrance: "scale", exit: "fade", durationMs: 600, delayMs: 250, easing: "ease-out" },
+          tts: null,
+          durationMs: 4_000
+        }]
+      }]
+    } satisfies OverlayComposition,
     resolveAssetUrl
   }
 };

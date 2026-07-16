@@ -52,7 +52,7 @@ import { ConfigurationBackupService } from "../modules/backup/configuration-back
 import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
 import { RuntimeMaintenanceGate } from "../modules/backup/runtime-maintenance-gate.js";
 import { SqliteConfigurationSnapshotRepository } from "../modules/backup/sqlite-configuration-snapshot-repository.js";
-import { currentSchemaVersion, openStreamJamsDatabase, type StreamJamsDatabase } from "../modules/db/database.js";
+import { currentSchemaVersion, openStreamJamsDatabase, runInTransaction, type StreamJamsDatabase } from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
 import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
 import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.js";
@@ -121,6 +121,7 @@ export interface RuntimeAppComposition {
   readonly overlayAccessService: LocalOverlayAccessService;
   readonly runtimeSecretStoreStatus: RuntimeSecretStoreStatus;
   readonly twitchEventSubRuntimeService: TwitchEventSubRuntimeService;
+  readonly eventIngestionService: EventIngestionService;
   close(): Promise<void>;
 }
 
@@ -141,6 +142,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const database = openStreamJamsDatabase(join(initialConfig.storage.dataDirectory, "stream-jams.sqlite"));
   const diagnosticsLogRepository = new SqliteDiagnosticsLogRepository(database.connection);
   const alertRepository = new SqliteAlertRepository(database.connection);
+  const alertEditorDocumentRepository = new SqliteAlertEditorDocumentRepository(database.connection, now);
   const alertService = new DefaultAlertService({
     repository: alertRepository,
     generateId: generateAlertConfigurationId
@@ -221,9 +223,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
     clock: now,
+    onClientDisconnected(clientId) {
+      playbackCoordinator.reportClientDisconnected(clientId);
+    },
     onPlaybackReport(report) {
       if (report.status === "completed" || report.status === "failed") {
-        playbackCoordinator.completeCurrent();
+        playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
       }
     }
   });
@@ -249,10 +254,23 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       {
         overlayId: "default",
         purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape"
+      },
+      {
+        overlayId: "default",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "vertical"
+      },
+      {
+        overlayId: "default",
+        purpose: "live",
         scope: "unified"
       }
     ],
     assetRepository,
+    findEditorDocument: (alertId) => alertEditorDocumentRepository.find(alertId),
     overlayPlaybackSink: overlayGateway
   });
   const eventPipeline = new EventPipeline({
@@ -392,7 +410,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
   });
   const alertEditorService = new AlertEditorService({
-    documents: new SqliteAlertEditorDocumentRepository(database.connection, now),
+    documents: alertEditorDocumentRepository,
     rules: alertRepository,
     metadata: alertSetMetadataRepository,
     async hasConnectedOutput(targetProfileId) {
@@ -409,8 +427,18 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     async enqueueTest(playback) {
       playbackCoordinator.enqueueResolvedTest(playback);
     },
+    async findAssetMediaType(assetId) {
+      return (await assetRepository.findById(assetId))?.mediaType ?? null;
+    },
     generateId: () => `editor_${randomBytes(12).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
+    async saveAtomically(input) {
+      return runInTransaction(database.connection, () => {
+        alertRepository.saveRuleSync(input.rule);
+        alertSetMetadataRepository.saveRuleSync(input.metadata);
+        return alertEditorDocumentRepository.saveSync(input.document);
+      });
+    },
     now
   });
   const diagnosticsService = new DiagnosticsService({
@@ -624,6 +652,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayAccessService,
     runtimeSecretStoreStatus: runtimeSecretStore.status,
     twitchEventSubRuntimeService,
+    eventIngestionService,
     async close() {
       twitchEventSubRuntimeService.disconnect();
       await app.close();
