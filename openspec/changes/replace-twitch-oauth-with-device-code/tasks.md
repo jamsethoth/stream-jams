@@ -22,8 +22,8 @@
 
 ## 5. Integration And Documentation
 
-- [ ] 5.1 Replace Playwright Twitch onboarding coverage with Device Code start/poll/success behavior and retain provider validation/registration assertions
-- [ ] 5.2 Update `.env.example`, the MVP runbook, and OAuth planning documents to remove client-secret and callback instructions
+- [x] 5.1 Replace Playwright Twitch onboarding coverage with Device Code start/poll/success behavior and retain provider validation/registration assertions
+- [x] 5.2 Update `.env.example`, the MVP runbook, and OAuth planning documents to remove client-secret and callback instructions
 
 ## 6. Verification
 
