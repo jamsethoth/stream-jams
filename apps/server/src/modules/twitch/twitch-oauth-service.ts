@@ -1,6 +1,6 @@
 import type { SecretRef, SecretStore } from "@stream-jams/core";
 import { runtimeSecretStoreUnavailableMessage } from "../security/runtime-secret-store.js";
-import type { TwitchApiClient, TwitchTokenGrant, TwitchValidatedToken } from "./twitch-api-client.js";
+import type { TwitchApiClient, TwitchDeviceTokenPollResult, TwitchTokenGrant, TwitchValidatedToken } from "./twitch-api-client.js";
 import {
   toTwitchConnectionStatus,
   type TwitchAccount,
@@ -151,11 +151,17 @@ export class TwitchOAuthService {
     }
 
     pendingAuthorization.nextPollAtMs = nowMs + pendingAuthorization.intervalMs;
-    const result = await this.#apiClient.pollDeviceAuthorization({
-      clientId: this.#clientId,
-      deviceCode: pendingAuthorization.deviceCode,
-      scopes: pendingAuthorization.scopes
-    });
+    let result: TwitchDeviceTokenPollResult;
+    try {
+      result = await this.#apiClient.pollDeviceAuthorization({
+        clientId: this.#clientId,
+        deviceCode: pendingAuthorization.deviceCode,
+        scopes: pendingAuthorization.scopes
+      });
+    } catch (error) {
+      this.#pendingAuthorizations.delete(input.authorizationId);
+      throw error;
+    }
     switch (result.status) {
       case "pending":
         return { status: "pending" };

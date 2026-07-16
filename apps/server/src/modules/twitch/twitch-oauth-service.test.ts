@@ -73,6 +73,20 @@ describe("TwitchOAuthService", () => {
     ]);
   });
 
+  it("consumes authorization when Twitch poll rejects", async () => {
+    const now = createClock();
+    const { apiClient, service } = createService({ now: now.read });
+    const upstreamError = new Error("Twitch response was malformed");
+    apiClient.pollError = upstreamError;
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toBe(upstreamError);
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toMatchObject({
+      code: "TWITCH_OAUTH_AUTHORIZATION_INVALID"
+    });
+  });
+
   it.each([
     ["denied", { code: "TWITCH_OAUTH_DENIED", message: "Twitch authorization was denied" }],
     ["expired", { code: "TWITCH_OAUTH_EXPIRED", message: "Twitch authorization expired" }]
@@ -240,6 +254,7 @@ class FakeTwitchApiClient implements TwitchApiClient {
   readonly refreshRequests: TwitchRefreshTokenRequest[] = [];
   readonly startRequests: TwitchDeviceAuthorizationRequest[] = [];
   readonly validateRequests: { readonly accessToken: string }[] = [];
+  pollError: Error | undefined;
   pollResult: TwitchDeviceTokenPollResult = { status: "pending" };
 
   async startDeviceAuthorization(input: TwitchDeviceAuthorizationRequest) {
@@ -255,6 +270,9 @@ class FakeTwitchApiClient implements TwitchApiClient {
 
   async pollDeviceAuthorization(input: TwitchDeviceTokenRequest): Promise<TwitchDeviceTokenPollResult> {
     this.pollRequests.push(input);
+    if (this.pollError !== undefined) {
+      throw this.pollError;
+    }
     return this.pollResult;
   }
 
