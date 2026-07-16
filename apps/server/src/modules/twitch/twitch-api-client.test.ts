@@ -176,7 +176,7 @@ describe("DefaultTwitchApiClient", () => {
     const fetcher = createRecordingFetch(malformedBodies.map((body) => jsonResponse(body)));
     const client = createClient(fetcher.fetch);
 
-    for (const _body of malformedBodies) {
+    for (let index = 0; index < malformedBodies.length; index += 1) {
       await expect(client.startDeviceAuthorization(deviceAuthorizationRequest)).rejects.toBeInstanceOf(
         TwitchApiResponseError
       );

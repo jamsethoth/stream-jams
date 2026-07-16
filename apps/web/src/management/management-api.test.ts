@@ -422,7 +422,7 @@ describe("createHttpManagementApi", () => {
     for (const authorizationId of ["connected", "failed"]) {
       await expect(api.pollTwitchAuth({ authorizationId })).rejects.toThrow("Invalid Twitch authorization response");
     }
-    for (const _time of invalidTimes) {
+    for (let index = 0; index < invalidTimes.length; index += 1) {
       await expect(api.startTwitchAuth()).rejects.toThrow("Invalid Twitch authorization response");
     }
   });

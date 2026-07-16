@@ -1,4 +1,4 @@
-import type { SecretRef, SecretStore } from "@stream-jams/core";
+import type { SecretStore } from "@stream-jams/core";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
 import type {
@@ -322,15 +322,15 @@ class InMemoryTwitchAccountRepository implements TwitchAccountRepository {
 }
 
 class FailingSecretStore implements SecretStore {
-  async setSecret(_ref: SecretRef, _value: string): Promise<void> {
+  async setSecret(): Promise<void> {
     throw new Error("credential store unavailable");
   }
 
-  async getSecret(_ref: SecretRef): Promise<string | null> {
+  async getSecret(): Promise<string | null> {
     return null;
   }
 
-  async deleteSecret(_ref: SecretRef): Promise<void> {
+  async deleteSecret(): Promise<void> {
     return;
   }
 }
