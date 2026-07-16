@@ -446,13 +446,18 @@ function ProviderSetupWizard({
   const [twitchStatusLoading, setTwitchStatusLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const twitchPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const twitchPollTimeoutRef = useRef<number | null>(null);
+  const twitchRequestGenerationRef = useRef(0);
   const clearTwitchPoll = useCallback(() => {
     if (twitchPollTimeoutRef.current !== null) {
-      clearTimeout(twitchPollTimeoutRef.current);
+      window.clearTimeout(twitchPollTimeoutRef.current);
       twitchPollTimeoutRef.current = null;
     }
   }, []);
+  const invalidateTwitchRequest = useCallback(() => {
+    twitchRequestGenerationRef.current += 1;
+    clearTwitchPoll();
+  }, [clearTwitchPoll]);
 
   useEffect(() => {
     if (open) {
@@ -461,14 +466,14 @@ function ProviderSetupWizard({
       setValidation(null);
       setRequestError(null);
       setTwitchStatus(null);
-      clearTwitchPoll();
+      invalidateTwitchRequest();
       setTwitchAuthorization(null);
       setTwitchStatusLoading(false);
       setBusy(false);
     }
-  }, [clearTwitchPoll, defaultKind, open]);
+  }, [defaultKind, invalidateTwitchRequest, open]);
 
-  useEffect(() => () => clearTwitchPoll(), [clearTwitchPoll]);
+  useEffect(() => () => invalidateTwitchRequest(), [invalidateTwitchRequest]);
 
   useEffect(() => {
     if (open) headingRef.current?.focus();
@@ -514,7 +519,7 @@ function ProviderSetupWizard({
   function changeKind(kind: ProviderKind) {
     updateDraft(createDraft(kind));
     setTwitchStatus(null);
-    clearTwitchPoll();
+    invalidateTwitchRequest();
     setTwitchAuthorization(null);
   }
 
@@ -549,13 +554,19 @@ function ProviderSetupWizard({
     }
   }
 
-  function scheduleTwitchPoll(authorization: TwitchAuthorizationViewState) {
+  function scheduleTwitchPoll(authorization: TwitchAuthorizationViewState, generation: number) {
     clearTwitchPoll();
     twitchPollTimeoutRef.current = window.setTimeout(() => {
+      if (generation !== twitchRequestGenerationRef.current) {
+        return;
+      }
       void managementApi.pollTwitchAuth({ authorizationId: authorization.authorizationId })
         .then((result) => {
+          if (generation !== twitchRequestGenerationRef.current) {
+            return;
+          }
           if (result.status === "pending") {
-            scheduleTwitchPoll(authorization);
+            scheduleTwitchPoll(authorization, generation);
             return;
           }
           clearTwitchPoll();
@@ -576,6 +587,9 @@ function ProviderSetupWizard({
           });
         })
         .catch((error: unknown) => {
+          if (generation !== twitchRequestGenerationRef.current) {
+            return;
+          }
           clearTwitchPoll();
           setRequestError(actionableError(error, "Unable to continue Twitch authorization", "Choose Try again to start a new Twitch authorization."));
         });
@@ -583,24 +597,35 @@ function ProviderSetupWizard({
   }
 
   async function startTwitchConnection() {
-    clearTwitchPoll();
+    invalidateTwitchRequest();
+    const generation = twitchRequestGenerationRef.current;
     setTwitchAuthorization(null);
     const popup = window.open("about:blank", "stream-jams-twitch-device-auth");
     setBusy(true);
     setRequestError(null);
     try {
       const result = await managementApi.startTwitchAuth();
+      if (generation !== twitchRequestGenerationRef.current) {
+        popup?.close();
+        return;
+      }
       const authorization: TwitchAuthorizationViewState = result;
       setTwitchAuthorization(authorization);
       if (popup != null) {
         popup.location.href = authorization.verificationUri;
       }
-      scheduleTwitchPoll(authorization);
+      scheduleTwitchPoll(authorization, generation);
     } catch (error) {
+      if (generation !== twitchRequestGenerationRef.current) {
+        popup?.close();
+        return;
+      }
       popup?.close();
       setRequestError(actionableError(error, "Unable to start Twitch authorization", "Confirm Twitch credentials are configured in the local service, then retry."));
     } finally {
-      setBusy(false);
+      if (generation === twitchRequestGenerationRef.current) {
+        setBusy(false);
+      }
     }
   }
 
@@ -639,8 +664,9 @@ function ProviderSetupWizard({
       : `Review ${subject}`;
 
   function cancelSetup() {
-    clearTwitchPoll();
+    invalidateTwitchRequest();
     setTwitchAuthorization(null);
+    setBusy(false);
     onCancel();
   }
 
@@ -753,7 +779,7 @@ function ProviderSetupWizard({
         {validation?.error === null || validation?.error === undefined ? null : <ManagementErrorBanner error={validation.error} />}
 
         <div className="provider-page__actions">
-          <button className="provider-page__secondary-action" disabled={busy} onClick={cancelSetup} type="button">Cancel</button>
+          <button className="provider-page__secondary-action" onClick={cancelSetup} type="button">Cancel</button>
           {step === "select" ? (
             <button onClick={() => setStep("configure")} type="button">Continue</button>
           ) : null}

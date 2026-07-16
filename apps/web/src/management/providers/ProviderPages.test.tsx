@@ -7,7 +7,7 @@ import type {
   RegisteredProviderView,
   TtsProviderSafetySettings
 } from "@stream-jams/core";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EventSourcesPage } from "./EventSourcesPage.js";
@@ -278,8 +278,72 @@ describe("provider pages", () => {
     expect(pollTwitchAuth).not.toHaveBeenCalled();
   });
 
+  it("opens before start resolves and invalidates late start or pending poll work after cleanup", async () => {
+    const user = userEvent.setup();
+    const start = deferred<Awaited<ReturnType<ProviderPageApi["startTwitchAuth"]>>>();
+    const poll = deferred<Awaited<ReturnType<ProviderPageApi["pollTwitchAuth"]>>>();
+    const api = providerApi({
+      startTwitchAuth: vi.fn(() => start.promise),
+      pollTwitchAuth: vi.fn(() => poll.promise)
+    });
+    const popup = { close: vi.fn(), location: { href: "" } } as unknown as Window;
+    vi.spyOn(window, "open").mockReturnValue(popup);
+
+    const view = render(<EventSourcesPage managementApi={api} />);
+    await user.click(await screen.findByRole("button", { name: "Add event source" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Connect Twitch" }));
+    expect(window.open).toHaveBeenCalledWith("about:blank", "stream-jams-twitch-device-auth");
+    expect(popup.location.href).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await act(async () => {
+      start.resolve(deviceAuthorization());
+      await Promise.resolve();
+    });
+    expect(popup.location.href).toBe("");
+    expect(api.registerProvider).not.toHaveBeenCalled();
+
+    view.unmount();
+    const secondStart = deferred<Awaited<ReturnType<ProviderPageApi["startTwitchAuth"]>>>();
+    const secondApi = providerApi({
+      startTwitchAuth: vi.fn(() => secondStart.promise),
+      pollTwitchAuth: vi.fn(() => poll.promise)
+    });
+    const secondView = render(<EventSourcesPage managementApi={secondApi} />);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add event source" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Connect Twitch" }));
+    await act(async () => {
+      secondStart.resolve(deviceAuthorization());
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_999);
+    });
+    expect(secondApi.pollTwitchAuth).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(secondApi.pollTwitchAuth).toHaveBeenCalledTimes(1);
+    secondView.unmount();
+    await act(async () => {
+      poll.resolve({ status: "pending" });
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(secondApi.pollTwitchAuth).toHaveBeenCalledTimes(1);
+    expect(secondApi.registerProvider).not.toHaveBeenCalled();
+  });
+
   it("reports denied and expired authorization results with retry actions", async () => {
     const user = userEvent.setup();
+    vi.spyOn(window, "open").mockReturnValue(null);
     for (const [code, message] of [
       ["TWITCH_OAUTH_DENIED", "Twitch authorization was denied"],
       ["TWITCH_OAUTH_EXPIRED", "Twitch authorization expired"]
@@ -308,6 +372,7 @@ describe("provider pages", () => {
 
   it("stops polling and uses ManagementErrorBanner when the Twitch poll fails", async () => {
     const user = userEvent.setup();
+    vi.spyOn(window, "open").mockReturnValue(null);
     const pollTwitchAuth = vi.fn(async () => { throw new Error("Twitch service unavailable"); });
     const api = providerApi({
       startTwitchAuth: vi.fn(async () => ({
@@ -469,5 +534,24 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
     })),
     pollTwitchAuth: vi.fn(async () => ({ status: "pending" as const })),
     ...overrides
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
+function deviceAuthorization() {
+  return {
+    authorizationId: "auth-deferred",
+    verificationUri: "https://www.twitch.tv/activate",
+    userCode: "DEFER-CODE",
+    expiresAt: "2026-07-16T18:00:00.000Z",
+    intervalSeconds: 5,
+    scopes: []
   };
 }

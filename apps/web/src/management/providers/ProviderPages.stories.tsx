@@ -147,14 +147,26 @@ export const TwitchPopupFallback: Story = {
 
 export const TwitchReview: Story = {
   args: {
-    managementApi: providerApi([], { getTwitchStatus: async () => connectedTwitchStatus })
+    managementApi: providerApi([], {
+      startTwitchAuth: async () => ({
+        authorizationId: "story-connected",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "CONNECTED-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
+        scopes: []
+      }),
+      pollTwitchAuth: async () => ({ status: "connected", connection: connectedTwitchStatus })
+    })
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
-    await userEvent.click(await canvas.findByRole("button", { name: "Test connection" }));
-    await canvas.findByRole("heading", { name: "Review event source" });
+    await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 1_050));
+    await canvas.findByText("Story account (@storyaccount)");
+    await canvas.findByRole("button", { name: "Test connection" });
   }
 };
 

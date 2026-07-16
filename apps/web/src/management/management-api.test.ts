@@ -377,6 +377,56 @@ describe("createHttpManagementApi", () => {
     await expect(api.pollTwitchAuth({ authorizationId: "auth-unsafe" })).rejects.toThrow("Invalid Twitch authorization response");
   });
 
+  it("rejects unknown Device Code response fields and forwards only authorizationId when polling", async () => {
+    const status = connectedTwitchStatus();
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/start") {
+        return jsonResponse({ ...deviceAuthorizationStart(), unexpected: true });
+      }
+      if (url === "/twitch/auth/poll") {
+        expect(init?.body).toBe(JSON.stringify({ authorizationId: "only-this" }));
+        return jsonResponse({ status: "pending", unexpected: true });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+    const pollInput = { authorizationId: "only-this", deviceCode: "never-send" };
+
+    await expect(api.startTwitchAuth()).rejects.toThrow("Invalid Twitch authorization response");
+    await expect(api.pollTwitchAuth(pollInput)).rejects.toThrow("Invalid Twitch authorization response");
+    expect(status.connected).toBe(true);
+  });
+
+  it("rejects unknown fields on connected and failed polls and non-canonical ISO timestamps", async () => {
+    const responses = [
+      { status: "connected", connection: connectedTwitchStatus(), unexpected: true },
+      { status: "failed", code: "TWITCH_OAUTH_DENIED", message: "Denied", unexpected: true }
+    ];
+    const invalidTimes = ["2026-02-30T00:00:00.000Z", "2026-07-16T18:00:00Z", "2026-07-16T18:00:00.000+00:00"];
+    let startIndex = 0;
+    let pollIndex = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/start") {
+        const expiresAt = invalidTimes[startIndex++]!;
+        return jsonResponse({ ...deviceAuthorizationStart(), expiresAt });
+      }
+      if (url === "/twitch/auth/poll") return jsonResponse(responses[pollIndex++]!);
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    for (const authorizationId of ["connected", "failed"]) {
+      await expect(api.pollTwitchAuth({ authorizationId })).rejects.toThrow("Invalid Twitch authorization response");
+    }
+    for (const _time of invalidTimes) {
+      await expect(api.startTwitchAuth()).rejects.toThrow("Invalid Twitch authorization response");
+    }
+  });
+
   it("rejects invalid provider command responses", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -659,6 +709,31 @@ describe("createHttpManagementApi", () => {
     );
   });
 });
+
+function deviceAuthorizationStart() {
+  return {
+    authorizationId: "auth-test",
+    verificationUri: "https://www.twitch.tv/activate",
+    userCode: "TEST-CODE",
+    expiresAt: "2026-07-16T18:00:00.000Z",
+    intervalSeconds: 5,
+    scopes: ["user:read:chat"]
+  };
+}
+
+function connectedTwitchStatus() {
+  return {
+    connected: true as const,
+    account: {
+      accountId: "account-1",
+      login: "jamsethoth",
+      displayName: "Jamsethoth",
+      scopes: ["user:read:chat"],
+      connectedAt: "2026-07-15T05:00:00.000Z",
+      updatedAt: "2026-07-15T05:00:00.000Z"
+    }
+  };
+}
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   return new Response(JSON.stringify(body), {

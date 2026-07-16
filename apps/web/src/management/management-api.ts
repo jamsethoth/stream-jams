@@ -328,7 +328,7 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     pollTwitchAuth(input) {
       return postContract(
         "/twitch/auth/poll",
-        input,
+        { authorizationId: input.authorizationId },
         twitchAuthPollResultContract,
         "Unable to continue Twitch authorization."
       );
@@ -674,8 +674,7 @@ const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView
 const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> = {
   parse(input) {
     if (
-      !isRecord(input)
-      || "deviceCode" in input
+      !hasExactKeys(input, ["authorizationId", "verificationUri", "userCode", "expiresAt", "intervalSeconds", "scopes"])
       || !isNonEmptyString(input.authorizationId)
       || !isNonEmptyString(input.verificationUri)
       || !isNonEmptyString(input.userCode)
@@ -718,14 +717,19 @@ const twitchAuthPollResultContract: RuntimeContract<TwitchAuthPollResultView> = 
     if (!isRecord(input) || !isNonEmptyString(input.status)) {
       throw new TypeError("Invalid Twitch authorization response");
     }
-    if (input.status === "pending") return { status: "pending" };
+    if (input.status === "pending") {
+      if (!hasExactKeys(input, ["status"])) throw new TypeError("Invalid Twitch authorization response");
+      return { status: "pending" };
+    }
     if (input.status === "connected") {
+      if (!hasExactKeys(input, ["status", "connection"])) throw new TypeError("Invalid Twitch authorization response");
       const connection = twitchConnectionStatusContract.parse(input.connection);
       if (!connection.connected) throw new TypeError("Invalid Twitch authorization response");
       return { status: "connected", connection };
     }
     if (
       input.status === "failed"
+      && hasExactKeys(input, ["status", "code", "message"])
       && (input.code === "TWITCH_OAUTH_DENIED" || input.code === "TWITCH_OAUTH_EXPIRED")
       && isNonEmptyString(input.message)
     ) {
@@ -739,6 +743,12 @@ function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
 
+function hasExactKeys(input: unknown, keys: readonly string[]): input is Record<string, unknown> {
+  return isRecord(input)
+    && Object.keys(input).length === keys.length
+    && keys.every((key) => Object.hasOwn(input, key));
+}
+
 function isNonEmptyString(input: unknown): input is string {
   return typeof input === "string" && input.trim().length > 0;
 }
@@ -748,7 +758,10 @@ function isStringArray(input: unknown): input is string[] {
 }
 
 function isTimestamp(input: unknown): input is string {
-  return typeof input === "string" && !Number.isNaN(Date.parse(input));
+  return typeof input === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(input)
+    && !Number.isNaN(Date.parse(input))
+    && new Date(input).toISOString() === input;
 }
 
 function isPositiveInteger(input: unknown): input is number {
