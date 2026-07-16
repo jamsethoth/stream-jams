@@ -192,6 +192,29 @@ describe("twitch auth routes", () => {
     ]);
   });
 
+  it("maps OAuth provider errors to generic safe authorization copy", async () => {
+    const tokenLikeValue = "refresh-token-secret-value";
+    const { app, authHeaders, logs } = await createAppWithTwitchAuth({
+      startError: new TwitchOAuthProviderError(`Missing Twitch refresh token ${tokenLikeValue}`)
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: authHeaders
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({
+      error: {
+        code: "TWITCH_OAUTH_PROVIDER_ERROR",
+        message: "Twitch account authorization failed"
+      }
+    });
+    expect(JSON.stringify(response.json())).not.toContain(tokenLikeValue);
+    expect(JSON.stringify(logs)).not.toContain(tokenLikeValue);
+  });
+
   it("does not register callback routes or invoke OAuth callback work", async () => {
     const { app, service } = await createAppWithTwitchAuth();
 

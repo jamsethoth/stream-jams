@@ -4,7 +4,6 @@ import type {
   TwitchConnectionPollInput,
   TwitchOAuthService
 } from "../../modules/twitch/twitch-oauth-service.js";
-import { runtimeSecretStoreUnavailableMessage } from "../../modules/security/runtime-secret-store.js";
 import { sendHttpError } from "../errors.js";
 
 export interface TwitchAuthRouteDependencies {
@@ -144,7 +143,7 @@ function isTwitchProviderError(error: unknown): error is Error & { readonly code
 function getTwitchProviderErrorMessage(error: Error & { readonly code: string }): string {
   switch (error.code) {
     case "TWITCH_OAUTH_PROVIDER_ERROR":
-      return runtimeSecretStoreUnavailableMessage;
+      return "Twitch account authorization failed";
     case "TWITCH_API_REQUEST_FAILED":
       return "Twitch API request failed";
     case "TWITCH_API_RESPONSE_INVALID":

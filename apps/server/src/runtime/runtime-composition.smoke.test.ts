@@ -438,7 +438,7 @@ describe("runtime app composition smoke", () => {
     expect(start.json()).toMatchObject({
       error: {
         code: "TWITCH_OAUTH_PROVIDER_ERROR",
-        message: runtimeSecretStoreUnavailableMessage
+        message: "Twitch account authorization failed"
       }
     });
   });
