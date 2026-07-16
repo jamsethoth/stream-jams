@@ -291,7 +291,7 @@ describe("createHttpManagementApi", () => {
     await expect(api.testProviderVoice("provider-speakerbot")).resolves.toEqual({ delivered: true, error: null });
   });
 
-  it("loads Twitch connection status and starts authorization", async () => {
+  it("loads Twitch status and runtime-validates Device Code start and poll responses", async () => {
     const status = {
       connected: true as const,
       account: {
@@ -304,8 +304,11 @@ describe("createHttpManagementApi", () => {
       }
     };
     const started = {
-      authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=oauth-state",
-      state: "oauth-state",
+      authorizationId: "auth-123",
+      verificationUri: "https://www.twitch.tv/activate",
+      userCode: "ABCD-EFGH",
+      expiresAt: "2026-07-16T18:00:00.000Z",
+      intervalSeconds: 5,
       scopes: ["user:read:chat"]
     };
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -313,36 +316,65 @@ describe("createHttpManagementApi", () => {
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
       if (url === "/twitch/auth/status") return jsonResponse(status);
       if (url === "/twitch/auth/start") {
-        expect(init).toMatchObject({
-          method: "POST",
-          body: JSON.stringify({ redirectUri: "http://127.0.0.1:39187/twitch/auth/callback" })
-        });
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBeUndefined();
         return jsonResponse(started);
+      }
+      if (url === "/twitch/auth/poll") {
+        const authorizationId = JSON.parse(String(init?.body)).authorizationId;
+        if (authorizationId === "auth-pending") return jsonResponse({ status: "pending" });
+        if (authorizationId === "auth-denied") {
+          return jsonResponse({ status: "failed", code: "TWITCH_OAUTH_DENIED", message: "Twitch authorization was denied" });
+        }
+        if (authorizationId === "auth-expired") {
+          return jsonResponse({ status: "failed", code: "TWITCH_OAUTH_EXPIRED", message: "Twitch authorization expired" });
+        }
+        expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ authorizationId: "auth-123" }) });
+        return jsonResponse({ status: "connected", connection: status });
       }
       throw new Error(`Unexpected request ${url}`);
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.getTwitchStatus()).resolves.toEqual(status);
-    await expect(api.startTwitchAuth({ redirectUri: "http://127.0.0.1:39187/twitch/auth/callback" })).resolves.toEqual(started);
+    await expect(api.startTwitchAuth()).resolves.toEqual(started);
+    await expect(api.pollTwitchAuth({ authorizationId: "auth-pending" })).resolves.toEqual({ status: "pending" });
+    await expect(api.pollTwitchAuth({ authorizationId: "auth-denied" })).resolves.toEqual({
+      status: "failed", code: "TWITCH_OAUTH_DENIED", message: "Twitch authorization was denied"
+    });
+    await expect(api.pollTwitchAuth({ authorizationId: "auth-expired" })).resolves.toEqual({
+      status: "failed", code: "TWITCH_OAUTH_EXPIRED", message: "Twitch authorization expired"
+    });
+    await expect(api.pollTwitchAuth({ authorizationId: "auth-123" })).resolves.toEqual({ status: "connected", connection: status });
   });
 
-  it("rejects malformed Twitch status and unsafe authorization URLs", async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+  it("rejects malformed Device Code responses, unsafe Twitch URLs, leaked device codes, and unknown poll states", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
       if (url === "/twitch/auth/status") return jsonResponse({ connected: true, account: null });
       if (url === "/twitch/auth/start") {
-        return jsonResponse({ authorizationUrl: "javascript:alert(1)", state: "unsafe", scopes: [] });
+        return jsonResponse({
+          authorizationId: "auth-unsafe",
+          verificationUri: "https://id.twitch.tv/activate",
+          userCode: "ABCD-EFGH",
+          expiresAt: "invalid",
+          intervalSeconds: 0,
+          scopes: [],
+          deviceCode: "must-never-reach-the-browser"
+        });
+      }
+      if (url === "/twitch/auth/poll") {
+        expect(init?.body).toBe(JSON.stringify({ authorizationId: "auth-unsafe" }));
+        return jsonResponse({ status: "unknown" });
       }
       throw new Error(`Unexpected request ${url}`);
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.getTwitchStatus()).rejects.toThrow("Invalid Twitch connection status response");
-    await expect(api.startTwitchAuth({ redirectUri: "http://127.0.0.1:39187/twitch/auth/callback" })).rejects.toThrow(
-      "Invalid Twitch authorization response"
-    );
+    await expect(api.startTwitchAuth()).rejects.toThrow("Invalid Twitch authorization response");
+    await expect(api.pollTwitchAuth({ authorizationId: "auth-unsafe" })).rejects.toThrow("Invalid Twitch authorization response");
   });
 
   it("rejects invalid provider command responses", async () => {

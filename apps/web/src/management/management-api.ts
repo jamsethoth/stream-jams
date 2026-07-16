@@ -197,20 +197,25 @@ export type TwitchConnectionStatusView =
   | { readonly connected: false; readonly account: null }
   | { readonly connected: true; readonly account: TwitchConnectedAccountView };
 
-export interface TwitchAuthStartRequestView {
-  readonly redirectUri: string;
-}
-
 export interface TwitchAuthStartResultView {
-  readonly authorizationUrl: string;
-  readonly state: string;
+  readonly authorizationId: string;
+  readonly verificationUri: string;
+  readonly userCode: string;
+  readonly expiresAt: string;
+  readonly intervalSeconds: number;
   readonly scopes: readonly string[];
 }
+
+export type TwitchAuthPollResultView =
+  | { readonly status: "pending" }
+  | { readonly status: "connected"; readonly connection: Extract<TwitchConnectionStatusView, { readonly connected: true }> }
+  | { readonly status: "failed"; readonly code: "TWITCH_OAUTH_DENIED" | "TWITCH_OAUTH_EXPIRED"; readonly message: string };
 
 export interface ManagementApi {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
   getTwitchStatus(): Promise<TwitchConnectionStatusView>;
-  startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
+  startTwitchAuth(): Promise<TwitchAuthStartResultView>;
+  pollTwitchAuth(input: { readonly authorizationId: string }): Promise<TwitchAuthPollResultView>;
   listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
   validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult>;
   registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
@@ -311,12 +316,21 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       );
     },
 
-    startTwitchAuth(input) {
+    startTwitchAuth() {
       return postContract(
         "/twitch/auth/start",
-        input,
+        undefined,
         twitchAuthStartResultContract,
         "Unable to start Twitch authorization."
+      );
+    },
+
+    pollTwitchAuth(input) {
+      return postContract(
+        "/twitch/auth/poll",
+        input,
+        twitchAuthPollResultContract,
+        "Unable to continue Twitch authorization."
       );
     },
 
@@ -659,23 +673,65 @@ const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView
 
 const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> = {
   parse(input) {
-    if (!isRecord(input) || !isNonEmptyString(input.authorizationUrl) || !isNonEmptyString(input.state) || !isStringArray(input.scopes)) {
+    if (
+      !isRecord(input)
+      || "deviceCode" in input
+      || !isNonEmptyString(input.authorizationId)
+      || !isNonEmptyString(input.verificationUri)
+      || !isNonEmptyString(input.userCode)
+      || !isTimestamp(input.expiresAt)
+      || !isPositiveInteger(input.intervalSeconds)
+      || !isStringArray(input.scopes)
+    ) {
       throw new TypeError("Invalid Twitch authorization response");
     }
-    let authorizationUrl: URL;
+    let verificationUri: URL;
     try {
-      authorizationUrl = new URL(input.authorizationUrl);
+      verificationUri = new URL(input.verificationUri);
     } catch {
       throw new TypeError("Invalid Twitch authorization response");
     }
-    if (authorizationUrl.protocol !== "https:" || authorizationUrl.hostname !== "id.twitch.tv") {
+    if (
+      verificationUri.protocol !== "https:"
+      || verificationUri.hostname !== "www.twitch.tv"
+      || verificationUri.pathname !== "/activate"
+      || verificationUri.search !== ""
+      || verificationUri.hash !== ""
+      || verificationUri.username !== ""
+      || verificationUri.password !== ""
+    ) {
       throw new TypeError("Invalid Twitch authorization response");
     }
     return {
-      authorizationUrl: authorizationUrl.toString(),
-      state: input.state,
+      authorizationId: input.authorizationId,
+      verificationUri: verificationUri.toString(),
+      userCode: input.userCode,
+      expiresAt: input.expiresAt,
+      intervalSeconds: input.intervalSeconds,
       scopes: [...input.scopes]
     };
+  }
+};
+
+const twitchAuthPollResultContract: RuntimeContract<TwitchAuthPollResultView> = {
+  parse(input) {
+    if (!isRecord(input) || !isNonEmptyString(input.status)) {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    if (input.status === "pending") return { status: "pending" };
+    if (input.status === "connected") {
+      const connection = twitchConnectionStatusContract.parse(input.connection);
+      if (!connection.connected) throw new TypeError("Invalid Twitch authorization response");
+      return { status: "connected", connection };
+    }
+    if (
+      input.status === "failed"
+      && (input.code === "TWITCH_OAUTH_DENIED" || input.code === "TWITCH_OAUTH_EXPIRED")
+      && isNonEmptyString(input.message)
+    ) {
+      return { status: "failed", code: input.code, message: input.message };
+    }
+    throw new TypeError("Invalid Twitch authorization response");
   }
 };
 
@@ -693,4 +749,8 @@ function isStringArray(input: unknown): input is string[] {
 
 function isTimestamp(input: unknown): input is string {
   return typeof input === "string" && !Number.isNaN(Date.parse(input));
+}
+
+function isPositiveInteger(input: unknown): input is number {
+  return typeof input === "number" && Number.isInteger(input) && input > 0;
 }

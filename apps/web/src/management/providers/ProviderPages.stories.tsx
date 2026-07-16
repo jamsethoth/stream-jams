@@ -115,14 +115,33 @@ export const TwitchConnectionLoading: Story = {
   }
 };
 
-export const TwitchAuthorizationLinkReady: Story = {
+export const TwitchAuthorizationWaiting: Story = {
   args: { managementApi: providerApi([]) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
-    await canvas.findByRole("link", { name: "Continue in Twitch" });
+    await canvas.findByRole("link", { name: "Open Twitch" });
+    await canvas.findByText("STORY-CODE");
+  }
+};
+
+export const TwitchPopupFallback: Story = {
+  args: { managementApi: providerApi([]) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const originalOpen = window.open;
+    window.open = () => null;
+    try {
+      await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+      await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+      await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
+      await canvas.findByRole("link", { name: "Open Twitch" });
+      await canvas.findByText("STORY-CODE");
+    } finally {
+      window.open = originalOpen;
+    }
   }
 };
 
@@ -136,6 +155,56 @@ export const TwitchReview: Story = {
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Test connection" }));
     await canvas.findByRole("heading", { name: "Review event source" });
+  }
+};
+
+export const TwitchAuthorizationDenied: Story = {
+  args: {
+    managementApi: providerApi([], {
+      startTwitchAuth: async () => ({
+        authorizationId: "story-denied",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "DENIED-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
+        scopes: []
+      }),
+      pollTwitchAuth: async () => ({ status: "failed", code: "TWITCH_OAUTH_DENIED", message: "Twitch authorization was denied" })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 1_050));
+    await canvas.findByText("Twitch authorization was denied");
+    await canvas.findByRole("button", { name: "Try again" });
+  }
+};
+
+export const TwitchAuthorizationExpired: Story = {
+  args: {
+    managementApi: providerApi([], {
+      startTwitchAuth: async () => ({
+        authorizationId: "story-expired",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "EXPIRED-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
+        scopes: []
+      }),
+      pollTwitchAuth: async () => ({ status: "failed", code: "TWITCH_OAUTH_EXPIRED", message: "Twitch authorization expired" })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 1_050));
+    await canvas.findByText("Twitch authorization expired");
+    await canvas.findByRole("button", { name: "Try again" });
   }
 };
 

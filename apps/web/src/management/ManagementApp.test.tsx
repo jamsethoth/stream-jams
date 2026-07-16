@@ -259,6 +259,9 @@ function createManagementApi(): ManagementApi {
     startTwitchAuth: vi.fn(async () => {
       throw new Error("not called");
     }),
+    pollTwitchAuth: vi.fn(async () => {
+      throw new Error("not called");
+    }),
     listRegisteredProviders: vi.fn(async (capability) => capability === "event-source" ? eventProviders : [ttsProvider]),
     validateProvider: vi.fn(async (input) => ({
       valid: true,

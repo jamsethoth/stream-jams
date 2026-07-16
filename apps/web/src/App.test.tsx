@@ -37,6 +37,9 @@ function createManagementApi(): ManagementApi {
     async startTwitchAuth() {
       throw new Error("not called");
     },
+    async pollTwitchAuth() {
+      throw new Error("not called");
+    },
     async listRegisteredProviders() {
       return [];
     },

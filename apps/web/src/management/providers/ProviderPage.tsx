@@ -29,6 +29,7 @@ export type ProviderPageApi = Pick<
   | "testProviderVoice"
   | "getTwitchStatus"
   | "startTwitchAuth"
+  | "pollTwitchAuth"
 >;
 
 interface ProviderPageProps {
@@ -46,6 +47,14 @@ interface SetupDraft {
   readonly port: number;
   readonly endpoint: string;
   readonly credential: string;
+}
+
+interface TwitchAuthorizationViewState {
+  readonly authorizationId: string;
+  readonly verificationUri: string;
+  readonly userCode: string;
+  readonly expiresAt: string;
+  readonly intervalSeconds: number;
 }
 
 const safeVoiceTestText = "Stream Jams voice test. Your text to speech provider is ready.";
@@ -433,10 +442,17 @@ function ProviderSetupWizard({
   const [validation, setValidation] = useState<ProviderValidationResult | null>(null);
   const [requestError, setRequestError] = useState<ActionableManagementError | null>(null);
   const [twitchStatus, setTwitchStatus] = useState<TwitchConnectionStatusView | null>(null);
-  const [twitchAuthorizationUrl, setTwitchAuthorizationUrl] = useState<string | null>(null);
+  const [twitchAuthorization, setTwitchAuthorization] = useState<TwitchAuthorizationViewState | null>(null);
   const [twitchStatusLoading, setTwitchStatusLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const twitchPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearTwitchPoll = useCallback(() => {
+    if (twitchPollTimeoutRef.current !== null) {
+      clearTimeout(twitchPollTimeoutRef.current);
+      twitchPollTimeoutRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -445,11 +461,14 @@ function ProviderSetupWizard({
       setValidation(null);
       setRequestError(null);
       setTwitchStatus(null);
-      setTwitchAuthorizationUrl(null);
+      clearTwitchPoll();
+      setTwitchAuthorization(null);
       setTwitchStatusLoading(false);
       setBusy(false);
     }
-  }, [defaultKind, open]);
+  }, [clearTwitchPoll, defaultKind, open]);
+
+  useEffect(() => () => clearTwitchPoll(), [clearTwitchPoll]);
 
   useEffect(() => {
     if (open) headingRef.current?.focus();
@@ -495,7 +514,8 @@ function ProviderSetupWizard({
   function changeKind(kind: ProviderKind) {
     updateDraft(createDraft(kind));
     setTwitchStatus(null);
-    setTwitchAuthorizationUrl(null);
+    clearTwitchPoll();
+    setTwitchAuthorization(null);
   }
 
   async function validate() {
@@ -529,15 +549,55 @@ function ProviderSetupWizard({
     }
   }
 
+  function scheduleTwitchPoll(authorization: TwitchAuthorizationViewState) {
+    clearTwitchPoll();
+    twitchPollTimeoutRef.current = window.setTimeout(() => {
+      void managementApi.pollTwitchAuth({ authorizationId: authorization.authorizationId })
+        .then((result) => {
+          if (result.status === "pending") {
+            scheduleTwitchPoll(authorization);
+            return;
+          }
+          clearTwitchPoll();
+          if (result.status === "connected") {
+            setTwitchAuthorization(null);
+            setTwitchStatus(result.connection);
+            setRequestError(null);
+            return;
+          }
+          setRequestError({
+            summary: result.code === "TWITCH_OAUTH_DENIED" ? "Twitch authorization was denied" : "Twitch authorization expired",
+            cause: result.message,
+            nextStep: "Choose Try again, then complete the Twitch authorization before it expires.",
+            severity: "error",
+            occurredAt: new Date().toISOString(),
+            referenceId: null,
+            correction: null
+          });
+        })
+        .catch((error: unknown) => {
+          clearTwitchPoll();
+          setRequestError(actionableError(error, "Unable to continue Twitch authorization", "Choose Try again to start a new Twitch authorization."));
+        });
+    }, authorization.intervalSeconds * 1_000);
+  }
+
   async function startTwitchConnection() {
+    clearTwitchPoll();
+    setTwitchAuthorization(null);
+    const popup = window.open("about:blank", "stream-jams-twitch-device-auth");
     setBusy(true);
     setRequestError(null);
     try {
-      const result = await managementApi.startTwitchAuth({
-        redirectUri: `${window.location.origin}/twitch/auth/callback`
-      });
-      setTwitchAuthorizationUrl(result.authorizationUrl);
+      const result = await managementApi.startTwitchAuth();
+      const authorization: TwitchAuthorizationViewState = result;
+      setTwitchAuthorization(authorization);
+      if (popup != null) {
+        popup.location.href = authorization.verificationUri;
+      }
+      scheduleTwitchPoll(authorization);
     } catch (error) {
+      popup?.close();
       setRequestError(actionableError(error, "Unable to start Twitch authorization", "Confirm Twitch credentials are configured in the local service, then retry."));
     } finally {
       setBusy(false);
@@ -578,8 +638,14 @@ function ProviderSetupWizard({
       ? `Configure ${formatProviderKind(draft.kind)}`
       : `Review ${subject}`;
 
+  function cancelSetup() {
+    clearTwitchPoll();
+    setTwitchAuthorization(null);
+    onCancel();
+  }
+
   return (
-    <ModalSurface labelledBy="provider-setup-title" onCancel={onCancel} open={open}>
+    <ModalSurface labelledBy="provider-setup-title" onCancel={cancelSetup} open={open}>
       <form className="provider-page__modal-content" onSubmit={(event) => void register(event)}>
         <div>
           <span className="provider-page__eyebrow">Step {stepNumber} of 3</span>
@@ -614,9 +680,21 @@ function ProviderSetupWizard({
                 {!twitchStatusLoading && twitchStatus?.connected === false ? <p>No Twitch account connected</p> : null}
                 {twitchStatus?.connected === true ? null : (
                   <div className="provider-page__connection-actions">
-                    <button disabled={busy} onClick={() => void startTwitchConnection()} type="button">Connect Twitch</button>
-                    {twitchAuthorizationUrl === null ? null : (
-                      <a href={twitchAuthorizationUrl} rel="noreferrer" target="_blank">Continue in Twitch</a>
+                    {twitchAuthorization === null || requestError !== null ? (
+                      <button disabled={busy} onClick={() => void startTwitchConnection()} type="button">
+                        {twitchAuthorization === null ? "Connect Twitch" : "Try again"}
+                      </button>
+                    ) : null}
+                    {twitchAuthorization === null ? null : (
+                      <>
+                        <a href={twitchAuthorization.verificationUri} rel="noreferrer" target="_blank">Open Twitch</a>
+                        <div className="provider-page__twitch-code" role="status">
+                          <span>Code</span>
+                          <code>{twitchAuthorization.userCode}</code>
+                          <span>Expires {new Date(twitchAuthorization.expiresAt).toLocaleTimeString()}</span>
+                        </div>
+                        {requestError === null ? <p role="status">Waiting for Twitch authorization...</p> : null}
+                      </>
                     )}
                   </div>
                 )}
@@ -675,7 +753,7 @@ function ProviderSetupWizard({
         {validation?.error === null || validation?.error === undefined ? null : <ManagementErrorBanner error={validation.error} />}
 
         <div className="provider-page__actions">
-          <button className="provider-page__secondary-action" disabled={busy} onClick={onCancel} type="button">Cancel</button>
+          <button className="provider-page__secondary-action" disabled={busy} onClick={cancelSetup} type="button">Cancel</button>
           {step === "select" ? (
             <button onClick={() => setStep("configure")} type="button">Continue</button>
           ) : null}

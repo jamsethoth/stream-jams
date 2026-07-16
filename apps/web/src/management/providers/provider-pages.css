@@ -204,6 +204,24 @@
   font-weight: 700;
 }
 
+.provider-page__twitch-code {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.provider-page__twitch-code code {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  overflow-wrap: anywhere;
+  padding: 6px 8px;
+  user-select: all;
+}
+
 .provider-page__review {
   display: grid;
   gap: 14px;
@@ -308,5 +326,10 @@
 
   .provider-page__actions button {
     width: 100%;
+  }
+
+  .provider-page__twitch-code {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }

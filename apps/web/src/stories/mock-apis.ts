@@ -23,10 +23,16 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     },
     async startTwitchAuth() {
       return {
-        authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=storybook",
-        state: "storybook",
+        authorizationId: "story-auth",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "STORY-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 5,
         scopes: ["user:read:chat"]
       };
+    },
+    async pollTwitchAuth() {
+      return { status: "pending" as const };
     },
     async listRegisteredProviders() {
       return [];

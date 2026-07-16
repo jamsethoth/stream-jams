@@ -72,7 +72,11 @@ const activeSpeakerBot = provider({
 });
 
 describe("provider pages", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
 
   it("keeps failed validation in the wizard and prevents registration", async () => {
     const user = userEvent.setup();
@@ -150,7 +154,7 @@ describe("provider pages", () => {
     expect(screen.getByRole("status")).toHaveTextContent("inactive");
   });
 
-  it("connects and validates Twitch before registration", async () => {
+  it("opens Device Code Twitch activation synchronously, polls once per interval, then requires an explicit connection test", async () => {
     const user = userEvent.setup();
     const connected = {
       connected: true as const,
@@ -164,16 +168,24 @@ describe("provider pages", () => {
       }
     };
     const registered = detail(activeTwitch);
+    const polledAt: number[] = [];
     const api = providerApi({
       getTwitchStatus: vi
         .fn<ProviderPageApi["getTwitchStatus"]>()
         .mockResolvedValueOnce({ connected: false, account: null })
         .mockResolvedValue(connected),
       startTwitchAuth: vi.fn(async () => ({
-        authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=test",
-        state: "test",
+        authorizationId: "auth-test",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "ABCD-EFGH",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
         scopes: ["user:read:chat"]
       })),
+      pollTwitchAuth: vi.fn<ProviderPageApi["pollTwitchAuth"]>(async () => {
+        polledAt.push(Date.now());
+        return polledAt.length === 1 ? { status: "pending" as const } : { status: "connected" as const, connection: connected };
+      }),
       validateProvider: vi.fn(async () => validResult),
       registerProvider: vi.fn<ProviderPageApi["registerProvider"]>(async () => ({ status: "registered", provider: registered, validation: validResult })),
       listRegisteredProviders: vi
@@ -188,18 +200,135 @@ describe("provider pages", () => {
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(await screen.findByText("No Twitch account connected")).toBeInTheDocument();
+    const popup = { location: { href: "" }, close: vi.fn() } as unknown as Window;
+    const open = vi.spyOn(window, "open").mockReturnValue(popup);
     await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
-    expect(await screen.findByRole("link", { name: "Continue in Twitch" })).toHaveAttribute(
+    expect(open).toHaveBeenCalledWith("about:blank", "stream-jams-twitch-device-auth");
+    expect(screen.getByText("ABCD-EFGH")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Twitch" })).toHaveAttribute(
       "href",
-      "https://id.twitch.tv/oauth2/authorize?state=test"
+      "https://www.twitch.tv/activate"
     );
-    await user.click(screen.getByRole("button", { name: "Check connection" }));
+    expect(popup.location.href).toBe("https://www.twitch.tv/activate");
+    await new Promise((resolve) => window.setTimeout(resolve, 2_150));
+    expect(api.pollTwitchAuth).toHaveBeenCalledTimes(2);
+    expect(polledAt[1]! - polledAt[0]!).toBeGreaterThanOrEqual(900);
+    expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Test connection" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
 
     expect(await screen.findByRole("heading", { name: "Review event source" })).toBeInTheDocument();
     expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Register event source" }));
     expect(api.validateProvider).toHaveBeenCalledWith({ name: "Twitch", kind: "twitch", configuration: {} });
     expect(await screen.findByText("Main Twitch registered and active.")).toBeInTheDocument();
+    open.mockRestore();
+  });
+
+  it("keeps Twitch code and fallback link usable when popup opening is blocked, then clears polling when the wizard closes", async () => {
+    const user = userEvent.setup();
+    const pollTwitchAuth = vi.fn(async () => ({ status: "pending" as const }));
+    const api = providerApi({
+      startTwitchAuth: vi.fn(async () => ({
+        authorizationId: "auth-popup",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "POPUP-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
+        scopes: []
+      })),
+      pollTwitchAuth
+    });
+    vi.spyOn(window, "open").mockReturnValue(null);
+
+    render(<EventSourcesPage managementApi={api} />);
+    await user.click(await screen.findByRole("button", { name: "Add event source" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
+    expect(await screen.findByText("POPUP-CODE")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Twitch" })).toHaveAttribute("href", "https://www.twitch.tv/activate");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+    expect(pollTwitchAuth).not.toHaveBeenCalled();
+    expect(api.registerProvider).not.toHaveBeenCalled();
+  });
+
+  it("clears pending Twitch polling when the provider wizard unmounts", async () => {
+    const user = userEvent.setup();
+    const pollTwitchAuth = vi.fn(async () => ({ status: "pending" as const }));
+    const api = providerApi({
+      startTwitchAuth: vi.fn(async () => ({
+        authorizationId: "auth-unmount",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "UNMOUNT-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
+        scopes: []
+      })),
+      pollTwitchAuth
+    });
+    vi.spyOn(window, "open").mockReturnValue(null);
+    const view = render(<EventSourcesPage managementApi={api} />);
+    await user.click(await screen.findByRole("button", { name: "Add event source" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
+    expect(await screen.findByText("UNMOUNT-CODE")).toBeInTheDocument();
+    view.unmount();
+    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+    expect(pollTwitchAuth).not.toHaveBeenCalled();
+  });
+
+  it("reports denied and expired authorization results with retry actions", async () => {
+    const user = userEvent.setup();
+    for (const [code, message] of [
+      ["TWITCH_OAUTH_DENIED", "Twitch authorization was denied"],
+      ["TWITCH_OAUTH_EXPIRED", "Twitch authorization expired"]
+    ] as const) {
+      const api = providerApi({
+        startTwitchAuth: vi.fn(async () => ({
+          authorizationId: code,
+          verificationUri: "https://www.twitch.tv/activate",
+          userCode: "RETRY-CODE",
+          expiresAt: "2026-07-16T18:00:00.000Z",
+          intervalSeconds: 1,
+          scopes: []
+        })),
+        pollTwitchAuth: vi.fn(async () => ({ status: "failed" as const, code, message }))
+      });
+      render(<EventSourcesPage managementApi={api} />);
+      await user.click(await screen.findByRole("button", { name: "Add event source" }));
+      await user.click(screen.getByRole("button", { name: "Continue" }));
+      await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
+      await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+      expect(await screen.findByRole("alert")).toHaveTextContent(message);
+      expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+      cleanup();
+    }
+  });
+
+  it("stops polling and uses ManagementErrorBanner when the Twitch poll fails", async () => {
+    const user = userEvent.setup();
+    const pollTwitchAuth = vi.fn(async () => { throw new Error("Twitch service unavailable"); });
+    const api = providerApi({
+      startTwitchAuth: vi.fn(async () => ({
+        authorizationId: "auth-error",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "ERROR-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
+        scopes: []
+      })),
+      pollTwitchAuth
+    });
+    render(<EventSourcesPage managementApi={api} />);
+    await user.click(await screen.findByRole("button", { name: "Add event source" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Unable to continue Twitch authorization");
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+    expect(pollTwitchAuth).toHaveBeenCalledTimes(1);
   });
 
   it("shows connection and intake separately and confirms warned activation", async () => {
@@ -330,7 +459,15 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
     updateTtsSafety: vi.fn(async (_providerId, input) => input),
     testProviderVoice: vi.fn(async () => ({ delivered: true, error: null })),
     getTwitchStatus: vi.fn(async () => ({ connected: false as const, account: null })),
-    startTwitchAuth: vi.fn(async () => ({ authorizationUrl: "https://id.twitch.tv/oauth2/authorize", state: "test", scopes: [] })),
+    startTwitchAuth: vi.fn(async () => ({
+      authorizationId: "auth-test",
+      verificationUri: "https://www.twitch.tv/activate",
+      userCode: "ABCD-EFGH",
+      expiresAt: "2026-07-16T18:00:00.000Z",
+      intervalSeconds: 5,
+      scopes: []
+    })),
+    pollTwitchAuth: vi.fn(async () => ({ status: "pending" as const })),
     ...overrides
   };
 }
