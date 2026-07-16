@@ -1,7 +1,7 @@
 ## 1. Twitch API Client And Public Configuration
 
-- [ ] 1.1 Add failing API-client tests for device authorization start, pending/terminal poll responses, successful token grants, malformed responses, and public refresh without client secret
-- [ ] 1.2 Implement Device Code API contracts and parsers, remove authorization-code exchange, and add the project public Client ID with environment override
+- [x] 1.1 Add failing API-client tests for device authorization start, pending/terminal poll responses, successful token grants, malformed responses, and public refresh without client secret
+- [x] 1.2 Implement Device Code API contracts and parsers, remove authorization-code exchange, and add the project public Client ID with environment override
 
 ## 2. Device OAuth Service
 
