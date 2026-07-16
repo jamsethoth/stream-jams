@@ -4,6 +4,7 @@ import type {
   TwitchConnectionPollInput,
   TwitchOAuthService
 } from "../../modules/twitch/twitch-oauth-service.js";
+import { runtimeSecretStoreUnavailableMessage } from "../../modules/security/runtime-secret-store.js";
 import { sendHttpError } from "../errors.js";
 
 export interface TwitchAuthRouteDependencies {
@@ -30,7 +31,7 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
       if (isTwitchProviderError(error)) {
         return sendHttpError(reply, 502, {
           code: error.code,
-          message: error.message
+          message: getTwitchProviderErrorMessage(error)
         });
       }
 
@@ -62,7 +63,7 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
       if (isTwitchProviderError(error)) {
         return sendHttpError(reply, 502, {
           code: error.code,
-          message: error.message
+          message: getTwitchProviderErrorMessage(error)
         });
       }
 
@@ -79,7 +80,7 @@ export function registerTwitchAuthRoutes(app: FastifyInstance, dependencies: Twi
       if (isTwitchProviderError(error)) {
         return sendHttpError(reply, 502, {
           code: error.code,
-          message: error.message
+          message: getTwitchProviderErrorMessage(error)
         });
       }
 
@@ -101,6 +102,7 @@ async function logProviderCall(
   error?: unknown
 ): Promise<void> {
   const logger = outcome === "failed" ? dependencies.runtimeLogger?.warn : dependencies.runtimeLogger?.info;
+  const errorCode = isTwitchProviderError(error) || isTwitchAuthorizationError(error) ? error.code : undefined;
   await logger?.call(dependencies.runtimeLogger, "Twitch provider operation completed", {
     module: "twitch",
     source,
@@ -109,7 +111,9 @@ async function logProviderCall(
     metadata: {
       provider: "twitch",
       outcome,
-      ...(error instanceof Error ? { errorName: error.name, errorMessage: error.message } : {})
+      ...(error instanceof Error
+        ? { errorName: error.name, ...(errorCode === undefined ? {} : { errorCode }) }
+        : {})
     }
   });
 }
@@ -135,6 +139,19 @@ function isTwitchProviderError(error: unknown): error is Error & { readonly code
     isErrorWithCode(error, "TWITCH_API_REQUEST_FAILED") ||
     isErrorWithCode(error, "TWITCH_API_RESPONSE_INVALID")
   );
+}
+
+function getTwitchProviderErrorMessage(error: Error & { readonly code: string }): string {
+  switch (error.code) {
+    case "TWITCH_OAUTH_PROVIDER_ERROR":
+      return runtimeSecretStoreUnavailableMessage;
+    case "TWITCH_API_REQUEST_FAILED":
+      return "Twitch API request failed";
+    case "TWITCH_API_RESPONSE_INVALID":
+      return "Twitch API response was invalid";
+    default:
+      return "Twitch provider operation failed";
+  }
 }
 
 function isErrorWithCode(error: unknown, code: string): error is Error & { readonly code: string } {

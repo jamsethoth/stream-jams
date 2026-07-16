@@ -1,3 +1,4 @@
+import type { LogContext, Logger } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
@@ -157,6 +158,40 @@ describe("twitch auth routes", () => {
     expect(JSON.stringify(poll.json())).not.toContain("refresh-token");
   });
 
+  it("sanitizes provider errors in Twitch responses and runtime logs", async () => {
+    const tokenLikeValue = "access-token-secret-value";
+    const { app, authHeaders, logs } = await createAppWithTwitchAuth({
+      startError: createCodedError("TWITCH_API_REQUEST_FAILED", `Twitch failed with ${tokenLikeValue}`)
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: authHeaders
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({
+      error: {
+        code: "TWITCH_API_REQUEST_FAILED",
+        message: "Twitch API request failed"
+      }
+    });
+    expect(JSON.stringify(response.json())).not.toContain(tokenLikeValue);
+    expect(JSON.stringify(logs)).not.toContain(tokenLikeValue);
+    expect(logs).toEqual([
+      expect.objectContaining({
+        correlationId: expect.any(String),
+        metadata: expect.objectContaining({
+          errorCode: "TWITCH_API_REQUEST_FAILED",
+          errorName: "Error",
+          outcome: "failed",
+          provider: "twitch"
+        })
+      })
+    ]);
+  });
+
   it("does not register callback routes or invoke OAuth callback work", async () => {
     const { app, service } = await createAppWithTwitchAuth();
 
@@ -202,14 +237,36 @@ async function createAppWithTwitchAuth(
     windowMs: 60_000,
     clock: () => new Date("2026-05-30T12:00:00.000Z")
   });
+  const runtimeLogger = new RecordingLogger();
   const app = createServerApp({
     metadata: { appName: "stream-jams", version: "1.2.3" },
     twitchAuthService: service,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
-    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
+    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
+    runtimeLogger
   });
 
-  return { app, authHeaders: { authorization: `Bearer ${session.id}` }, service };
+  return { app, authHeaders: { authorization: `Bearer ${session.id}` }, logs: runtimeLogger.entries, service };
+}
+
+class RecordingLogger implements Logger {
+  readonly entries: LogContext[] = [];
+
+  async debug(_message: string, context: LogContext): Promise<void> {
+    this.entries.push(context);
+  }
+
+  async info(_message: string, context: LogContext): Promise<void> {
+    this.entries.push(context);
+  }
+
+  async warn(_message: string, context: LogContext): Promise<void> {
+    this.entries.push(context);
+  }
+
+  async error(_message: string, context: LogContext): Promise<void> {
+    this.entries.push(context);
+  }
 }
 
 class RecordingTwitchAuthService {
@@ -260,6 +317,10 @@ const startResult = {
   intervalSeconds: 5,
   scopes: ["bits:read"]
 };
+
+function createCodedError(code: string, message: string): Error & { readonly code: string } {
+  return Object.assign(new Error(message), { code });
+}
 
 const disconnectedStatus: TwitchConnectionStatus = { connected: false, account: null };
 
