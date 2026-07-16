@@ -124,7 +124,6 @@ class StreamerBotProviderAdapter implements ProviderManagementAdapter {
 
     try {
       await waitForStreamerBotConnection(client, this.timeoutMs);
-      await client.getInfo();
       return successfulValidation(this.now, "inactive");
     } catch (error) {
       const cause = error instanceof Error ? error.message : "unknown connection error";

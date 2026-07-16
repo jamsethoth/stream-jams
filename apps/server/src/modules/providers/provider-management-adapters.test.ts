@@ -41,21 +41,14 @@ describe("provider management adapters", () => {
     );
   });
 
-  it("validates Streamer.bot with the existing client and GetInfo protocol", async () => {
+  it("validates Streamer.bot from its Hello handshake without a redundant request", async () => {
     const harness = createHarness();
     const validation = harness.adapters.get("streamerbot")?.validate(streamerBotInput());
     const socket = harness.streamerBotSockets[0];
 
-    await socket?.emitMessage({ request: "Hello", info: { name: "Streamer.bot" } });
+    await socket?.emitMessage({ request: "Hello", info: { name: "Streamer.bot", version: "2.6.0" } });
     await vi.advanceTimersByTimeAsync(25);
-    expect(socket?.sent).toEqual([{ request: "GetInfo", id: "streamerbot-request" }]);
-
-    await socket?.emitMessage({
-      id: "streamerbot-request",
-      request: "GetInfo",
-      status: "ok",
-      info: { name: "Streamer.bot", version: "2.6.0" }
-    });
+    expect(socket?.sent).toEqual([]);
 
     await expect(validation).resolves.toMatchObject({
       valid: true,
