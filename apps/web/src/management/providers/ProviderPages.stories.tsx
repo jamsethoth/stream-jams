@@ -5,7 +5,7 @@ import type {
   RegisteredProviderView
 } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { userEvent, within } from "storybook/test";
+import { expect, userEvent, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { EventSourcesPage } from "./EventSourcesPage.js";
@@ -190,7 +190,7 @@ export const TwitchAuthorizationDenied: Story = {
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
     await new Promise((resolve) => window.setTimeout(resolve, 1_050));
-    await canvas.findByText("Twitch authorization was denied");
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("Twitch authorization was denied");
     await canvas.findByRole("button", { name: "Try again" });
   }
 };
@@ -215,7 +215,7 @@ export const TwitchAuthorizationExpired: Story = {
     await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
     await userEvent.click(await canvas.findByRole("button", { name: "Connect Twitch" }));
     await new Promise((resolve) => window.setTimeout(resolve, 1_050));
-    await canvas.findByText("Twitch authorization expired");
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("Twitch authorization expired");
     await canvas.findByRole("button", { name: "Try again" });
   }
 };
