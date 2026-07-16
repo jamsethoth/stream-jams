@@ -27,5 +27,5 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Run focused red/green tests after each implementation task and complete the full unit, lint, typecheck, build, Storybook, and Playwright gates
-- [ ] 6.2 Run strict OpenSpec validation, CodeGraph sync, diff checks, and live desktop/mobile browser verification with no console errors or layout overflow
+- [x] 6.1 Run focused red/green tests after each implementation task and complete the full unit, lint, typecheck, build, Storybook, and Playwright gates
+- [x] 6.2 Run strict OpenSpec validation, CodeGraph sync, diff checks, and live desktop/mobile browser verification with no console errors or layout overflow
