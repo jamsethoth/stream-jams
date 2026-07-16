@@ -2,10 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
-  TwitchOAuthProviderError,
-  TwitchOAuthStateError,
-  type TwitchConnectionStartInput,
-  type TwitchOAuthCallbackInput
+  TwitchOAuthAuthorizationError,
+  TwitchOAuthProviderError
 } from "../../modules/twitch/twitch-oauth-service.js";
 import type { TwitchConnectionStatus } from "../../modules/twitch/twitch-account-repository.js";
 import {
@@ -15,42 +13,151 @@ import {
 import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
 
 describe("twitch auth routes", () => {
-  it("reads status and starts authorization for management sessions", async () => {
+  it("starts device authorization for management sessions and awaits the service", async () => {
     const { app, authHeaders, service } = await createAppWithTwitchAuth();
 
-    const statusResponse = await app.inject({
-      method: "GET",
-      url: "/twitch/auth/status",
-      headers: authHeaders
-    });
-    const startResponse = await app.inject({
+    const response = await app.inject({
       method: "POST",
       url: "/twitch/auth/start",
-      headers: authHeaders,
-      payload: {
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      }
+      headers: authHeaders
     });
 
-    expect(statusResponse.statusCode).toBe(200);
-    expect(statusResponse.json()).toEqual({
-      connected: false,
-      account: null
-    });
-    expect(startResponse.statusCode).toBe(200);
-    expect(startResponse.json()).toEqual({
-      authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=state-1",
-      state: "state-1",
-      scopes: ["bits:read"]
-    });
-    expect(service.startInputs).toEqual([
-      {
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      }
-    ]);
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(startResult);
+    expect(service.startCount).toBe(1);
   });
 
-  it("completes callbacks with valid state without management bearer headers", async () => {
+  it("polls device authorization with a non-empty opaque ID", async () => {
+    const { app, authHeaders, service } = await createAppWithTwitchAuth();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/poll",
+      headers: authHeaders,
+      payload: { authorizationId: "opaque-local-id" }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ status: "pending" });
+    expect(service.pollInputs).toEqual([{ authorizationId: "opaque-local-id" }]);
+  });
+
+  it("rejects invalid device authorization IDs before polling", async () => {
+    const { app, authHeaders, service } = await createAppWithTwitchAuth();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/poll",
+      headers: authHeaders,
+      payload: { authorizationId: " " }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INVALID_TWITCH_AUTH_POLL_REQUEST",
+        message: "Invalid Twitch auth poll request"
+      }
+    });
+    expect(service.pollInputs).toEqual([]);
+  });
+
+  it("maps unknown device authorization IDs to 400", async () => {
+    const { app, authHeaders } = await createAppWithTwitchAuth({
+      pollError: new TwitchOAuthAuthorizationError()
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/poll",
+      headers: authHeaders,
+      payload: { authorizationId: "unknown-local-id" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "TWITCH_OAUTH_AUTHORIZATION_INVALID",
+        message: "Invalid Twitch device authorization"
+      }
+    });
+  });
+
+  it("protects start and poll from missing management sessions", async () => {
+    const { app, service } = await createAppWithTwitchAuth();
+
+    const start = await app.inject({ method: "POST", url: "/twitch/auth/start" });
+    const poll = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/poll",
+      payload: { authorizationId: "opaque-local-id" }
+    });
+
+    expect(start.statusCode).toBe(401);
+    expect(poll.statusCode).toBe(401);
+    expect(service.startCount).toBe(0);
+    expect(service.pollInputs).toEqual([]);
+  });
+
+  it("rate-limits start and poll before service work", async () => {
+    const startApp = await createAppWithTwitchAuth({ maxRequests: 1 });
+    const firstStart = await startApp.app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: startApp.authHeaders
+    });
+    const secondStart = await startApp.app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: startApp.authHeaders
+    });
+    const pollApp = await createAppWithTwitchAuth({ maxRequests: 1 });
+    const firstPoll = await pollApp.app.inject({
+      method: "POST",
+      url: "/twitch/auth/poll",
+      headers: pollApp.authHeaders,
+      payload: { authorizationId: "opaque-local-id" }
+    });
+    const secondPoll = await pollApp.app.inject({
+      method: "POST",
+      url: "/twitch/auth/poll",
+      headers: pollApp.authHeaders,
+      payload: { authorizationId: "opaque-local-id" }
+    });
+
+    expect(firstStart.statusCode).toBe(200);
+    expect(secondStart.statusCode).toBe(429);
+    expect(startApp.service.startCount).toBe(1);
+    expect(firstPoll.statusCode).toBe(200);
+    expect(secondPoll.statusCode).toBe(429);
+    expect(pollApp.service.pollInputs).toEqual([{ authorizationId: "opaque-local-id" }]);
+  });
+
+  it("maps device provider failures to 502 without token data", async () => {
+    const { app, authHeaders } = await createAppWithTwitchAuth({
+      startError: new TwitchOAuthProviderError("Twitch device authorization failed"),
+      pollError: new TwitchOAuthProviderError("Twitch device poll failed")
+    });
+
+    const start = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: authHeaders
+    });
+    const poll = await app.inject({
+      method: "POST",
+      url: "/twitch/auth/poll",
+      headers: authHeaders,
+      payload: { authorizationId: "opaque-local-id" }
+    });
+
+    expect(start.statusCode).toBe(502);
+    expect(poll.statusCode).toBe(502);
+    expect(JSON.stringify(start.json())).not.toContain("access-token");
+    expect(JSON.stringify(poll.json())).not.toContain("refresh-token");
+  });
+
+  it("does not register callback routes or invoke OAuth callback work", async () => {
     const { app, service } = await createAppWithTwitchAuth();
 
     const response = await app.inject({
@@ -58,166 +165,29 @@ describe("twitch auth routes", () => {
       url: "/twitch/auth/callback?code=oauth-code&state=state-1"
     });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toMatchObject({
-      connected: true,
-      account: {
-        accountId: "141981764",
-        login: "streamer"
-      }
-    });
-    expect(service.callbackInputs).toEqual([
-      {
-        code: "oauth-code",
-        state: "state-1"
-      }
-    ]);
-  });
-
-  it("returns 400 for invalid callbacks", async () => {
-    const { app } = await createAppWithTwitchAuth({
-      callbackError: new TwitchOAuthStateError()
-    });
-
-    const response = await app.inject({
-      method: "GET",
-      url: "/twitch/auth/callback?code=oauth-code&state=bad-state"
-    });
-
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({
-      error: {
-        code: "TWITCH_OAUTH_STATE_INVALID",
-        message: "Invalid Twitch OAuth state"
-      }
-    });
+    expect(response.statusCode).toBe(404);
+    expect(service.startCount).toBe(0);
+    expect(service.pollInputs).toEqual([]);
   });
 
   it("refreshes and disconnects management-protected Twitch accounts", async () => {
     const { app, authHeaders, service } = await createAppWithTwitchAuth();
 
-    const refreshResponse = await app.inject({
-      method: "POST",
-      url: "/twitch/auth/refresh",
-      headers: authHeaders
-    });
-    const disconnectResponse = await app.inject({
-      method: "POST",
-      url: "/twitch/auth/disconnect",
-      headers: authHeaders
-    });
+    const refreshResponse = await app.inject({ method: "POST", url: "/twitch/auth/refresh", headers: authHeaders });
+    const disconnectResponse = await app.inject({ method: "POST", url: "/twitch/auth/disconnect", headers: authHeaders });
 
     expect(refreshResponse.statusCode).toBe(200);
-    expect(refreshResponse.json()).toMatchObject({
-      connected: true,
-      account: {
-        displayName: "Streamer"
-      }
-    });
     expect(disconnectResponse.statusCode).toBe(200);
-    expect(disconnectResponse.json()).toEqual({
-      connected: false,
-      account: null
-    });
     expect(service.refreshCount).toBe(1);
     expect(service.disconnectCount).toBe(1);
-  });
-
-  it("maps provider refresh failures without leaking token values", async () => {
-    const { app, authHeaders } = await createAppWithTwitchAuth({
-      refreshError: new TwitchOAuthProviderError("Twitch refresh failed")
-    });
-
-    const response = await app.inject({
-      method: "POST",
-      url: "/twitch/auth/refresh",
-      headers: authHeaders
-    });
-
-    expect(response.statusCode).toBe(502);
-    expect(response.json()).toEqual({
-      error: {
-        code: "TWITCH_OAUTH_PROVIDER_ERROR",
-        message: "Twitch refresh failed"
-      }
-    });
-    expect(JSON.stringify(response.json())).not.toContain("refresh-token");
-  });
-
-  it("rejects missing management sessions and overlay route keys before protected Twitch auth work", async () => {
-    const { app, service } = await createAppWithTwitchAuth();
-
-    const missingSession = await app.inject({
-      method: "GET",
-      url: "/twitch/auth/status"
-    });
-    const overlayKey = await app.inject({
-      method: "POST",
-      url: "/twitch/auth/start",
-      headers: {
-        authorization: "Bearer ovl_not-management"
-      },
-      payload: {
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      }
-    });
-
-    expect(missingSession.statusCode).toBe(401);
-    expect(overlayKey.statusCode).toBe(401);
-    expect(service.statusCount).toBe(0);
-    expect(service.startInputs).toEqual([]);
-  });
-  it("rate-limits Twitch authorization start and callback requests before route work", async () => {
-    const { app, authHeaders, service } = await createAppWithTwitchAuth({
-      maxRequests: 1
-    });
-
-    const firstStart = await app.inject({
-      method: "POST",
-      url: "/twitch/auth/start",
-      headers: authHeaders,
-      payload: {
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      }
-    });
-    const secondStart = await app.inject({
-      method: "POST",
-      url: "/twitch/auth/start",
-      headers: authHeaders,
-      payload: {
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      }
-    });
-
-    expect(firstStart.statusCode).toBe(200);
-    expect(secondStart.statusCode).toBe(429);
-    expect(service.startInputs).toHaveLength(1);
-
-    const firstCallback = await app.inject({
-      method: "GET",
-      url: "/twitch/auth/callback?code=oauth-code-1&state=state-1"
-    });
-    const secondCallback = await app.inject({
-      method: "GET",
-      url: "/twitch/auth/callback?code=oauth-code-2&state=state-2"
-    });
-
-    expect(firstCallback.statusCode).toBe(200);
-    expect(secondCallback.statusCode).toBe(429);
-    expect(service.callbackInputs).toEqual([
-      {
-        code: "oauth-code-1",
-        state: "state-1"
-      }
-    ]);
   });
 });
 
 async function createAppWithTwitchAuth(
   options: {
-    readonly callbackError?: Error | undefined;
-    readonly refreshError?: Error | undefined;
     readonly maxRequests?: number | undefined;
+    readonly pollError?: Error | undefined;
+    readonly startError?: Error | undefined;
   } = {}
 ) {
   const service = new RecordingTwitchAuthService(options);
@@ -233,67 +203,46 @@ async function createAppWithTwitchAuth(
     clock: () => new Date("2026-05-30T12:00:00.000Z")
   });
   const app = createServerApp({
-    metadata: {
-      appName: "stream-jams",
-      version: "1.2.3"
-    },
+    metadata: { appName: "stream-jams", version: "1.2.3" },
     twitchAuthService: service,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
 
-  return {
-    app,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    },
-    service
-  };
+  return { app, authHeaders: { authorization: `Bearer ${session.id}` }, service };
 }
 
 class RecordingTwitchAuthService {
-  readonly startInputs: TwitchConnectionStartInput[] = [];
-  readonly callbackInputs: TwitchOAuthCallbackInput[] = [];
+  readonly pollInputs: { readonly authorizationId: string }[] = [];
   disconnectCount = 0;
   refreshCount = 0;
-  statusCount = 0;
-  readonly #callbackError: Error | undefined;
-  readonly #refreshError: Error | undefined;
+  startCount = 0;
+  readonly #pollError: Error | undefined;
+  readonly #startError: Error | undefined;
 
-  constructor(options: { readonly callbackError?: Error | undefined; readonly refreshError?: Error | undefined }) {
-    this.#callbackError = options.callbackError;
-    this.#refreshError = options.refreshError;
+  constructor(options: { readonly pollError?: Error | undefined; readonly startError?: Error | undefined }) {
+    this.#pollError = options.pollError;
+    this.#startError = options.startError;
   }
 
   async getStatus(): Promise<TwitchConnectionStatus> {
-    this.statusCount += 1;
     return disconnectedStatus;
   }
 
-  createConnectionStart(input: TwitchConnectionStartInput) {
-    this.startInputs.push(input);
-    return {
-      authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=state-1",
-      state: "state-1",
-      scopes: ["bits:read"]
-    };
+  async createConnectionStart() {
+    this.startCount += 1;
+    if (this.#startError !== undefined) throw this.#startError;
+    return startResult;
   }
 
-  async completeCallback(input: TwitchOAuthCallbackInput): Promise<TwitchConnectionStatus> {
-    this.callbackInputs.push(input);
-    if (this.#callbackError !== undefined) {
-      throw this.#callbackError;
-    }
-
-    return connectedStatus;
+  async pollConnection(input: { readonly authorizationId: string }) {
+    this.pollInputs.push(input);
+    if (this.#pollError !== undefined) throw this.#pollError;
+    return { status: "pending" as const };
   }
 
   async refreshConnectedAccount(): Promise<TwitchConnectionStatus> {
     this.refreshCount += 1;
-    if (this.#refreshError !== undefined) {
-      throw this.#refreshError;
-    }
-
     return connectedStatus;
   }
 
@@ -303,10 +252,16 @@ class RecordingTwitchAuthService {
   }
 }
 
-const disconnectedStatus: TwitchConnectionStatus = {
-  connected: false,
-  account: null
+const startResult = {
+  authorizationId: "opaque-local-id",
+  verificationUri: "https://www.twitch.tv/activate",
+  userCode: "ABCD-EFGH",
+  expiresAt: "2026-05-30T12:10:00.000Z",
+  intervalSeconds: 5,
+  scopes: ["bits:read"]
 };
+
+const disconnectedStatus: TwitchConnectionStatus = { connected: false, account: null };
 
 const connectedStatus: TwitchConnectionStatus = {
   connected: true,

@@ -247,10 +247,10 @@ describe("createServerApp", () => {
           async getStatus() {
             throw new Error("not called");
           },
-          createConnectionStart() {
+          async createConnectionStart() {
             throw new Error("not called");
           },
-          async completeCallback() {
+          async pollConnection() {
             throw new Error("not called");
           },
           async refreshConnectedAccount() {

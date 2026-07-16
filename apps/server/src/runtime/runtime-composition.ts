@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, statfs } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -89,7 +89,7 @@ import {
   type TwitchEventSubSocket
 } from "../modules/twitch/twitch-eventsub-client.js";
 import { TwitchEventSubRuntimeService, type TwitchEventSubRuntimeState } from "../modules/twitch/twitch-eventsub-runtime-service.js";
-import { TwitchOAuthService } from "../modules/twitch/twitch-oauth-service.js";
+import { defaultTwitchClientId, TwitchOAuthService } from "../modules/twitch/twitch-oauth-service.js";
 import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
 import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../server/port-availability.js";
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
@@ -126,6 +126,7 @@ export interface RuntimeAppComposition {
 
 export async function createRuntimeAppComposition(options: RuntimeAppCompositionOptions): Promise<RuntimeAppComposition> {
   const environment = options.environment ?? process.env;
+  const twitchClientId = environment.TWITCH_CLIENT_ID?.trim() || defaultTwitchClientId;
   const now = options.now ?? (() => new Date());
   const portAvailability = options.portAvailability ?? new NodePortAvailabilityChecker();
   const configStore =
@@ -273,7 +274,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const twitchEventSubRuntimeService = new TwitchEventSubRuntimeService({
     accountRepository: twitchAccountRepository,
-    clientId: environment.TWITCH_CLIENT_ID ?? "",
+    clientId: twitchClientId,
     eventSubClient: twitchEventSubClient,
     ingestionService: eventIngestionService,
     now,
@@ -281,9 +282,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const twitchAuthService = new TwitchOAuthService({
     apiClient: twitchApiClient,
-    clientId: environment.TWITCH_CLIENT_ID ?? "",
-    clientSecret: environment.TWITCH_CLIENT_SECRET ?? "",
-    generateState: () => randomBytes(24).toString("base64url"),
+    clientId: twitchClientId,
+    generateAuthorizationId: randomUUID,
+    now,
     onConnectionChanged: async () => {
       await twitchEventSubRuntimeService.connectStoredAccount();
     },

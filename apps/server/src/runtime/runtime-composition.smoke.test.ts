@@ -4,7 +4,14 @@ import { join } from "node:path";
 import type { AppConfig, AppConfigUpdate, ConfigStore } from "@stream-jams/core";
 import { createSequence, InMemorySecretStore } from "@stream-jams/test-support";
 import { afterEach, describe, expect, it } from "vitest";
-import type { TwitchApiClient, TwitchCurrentUser, TwitchTokenGrant, TwitchValidatedToken } from "../modules/twitch/twitch-api-client.js";
+import type {
+  TwitchApiClient,
+  TwitchCurrentUser,
+  TwitchDeviceAuthorizationRequest,
+  TwitchDeviceTokenRequest,
+  TwitchTokenGrant,
+  TwitchValidatedToken
+} from "../modules/twitch/twitch-api-client.js";
 import type {
   TwitchEventSubApiClient,
   TwitchEventSubCreateSubscriptionInput,
@@ -31,10 +38,7 @@ describe("runtime app composition smoke", () => {
       homeDirectory: testRoot,
       webBuildDirectory,
       configStore: new StaticConfigStore(createConfig(testRoot)),
-      environment: {
-        TWITCH_CLIENT_ID: "test-client",
-        TWITCH_CLIENT_SECRET: "test-secret"
-      },
+      environment: { TWITCH_CLIENT_ID: "test-client" },
       secretStore: new InMemorySecretStore(),
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
@@ -239,16 +243,60 @@ describe("runtime app composition smoke", () => {
     socket.close();
   });
 
+  it("uses the exact default Twitch Client ID or a trimmed override without a client secret", async () => {
+    const defaultRoot = await createTemporaryDirectory();
+    const defaultClient = new RecordingTwitchApiClient();
+    const defaultComposition = await createRuntimeAppComposition({
+      homeDirectory: defaultRoot,
+      webBuildDirectory: await createWebBuildFixture(defaultRoot),
+      configStore: new StaticConfigStore(createConfig(defaultRoot)),
+      environment: {},
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: defaultClient,
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(defaultComposition);
+    const defaultSession = await defaultComposition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const defaultStart = await defaultComposition.app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: managementAuthHeaders(defaultSession)
+    });
+
+    const overrideRoot = await createTemporaryDirectory();
+    const overrideClient = new RecordingTwitchApiClient();
+    const overrideComposition = await createRuntimeAppComposition({
+      homeDirectory: overrideRoot,
+      webBuildDirectory: await createWebBuildFixture(overrideRoot),
+      configStore: new StaticConfigStore(createConfig(overrideRoot)),
+      environment: { TWITCH_CLIENT_ID: "  override-client-id  " },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: overrideClient,
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(overrideComposition);
+    const overrideSession = await overrideComposition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const overrideStart = await overrideComposition.app.inject({
+      method: "POST",
+      url: "/twitch/auth/start",
+      headers: managementAuthHeaders(overrideSession)
+    });
+
+    expect(defaultStart.statusCode).toBe(200);
+    expect(defaultClient.deviceStartRequests[0]?.clientId).toBe("r6jy78npqxcqe68xpsctkcecti6ba3");
+    expect(overrideStart.statusCode).toBe(200);
+    expect(overrideClient.deviceStartRequests[0]?.clientId).toBe("override-client-id");
+  });
+
   it("persists overlay module config across runtime restart", async () => {
     const testRoot = await createTemporaryDirectory();
     const firstComposition = await createRuntimeAppComposition({
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
-      environment: {
-        TWITCH_CLIENT_ID: "test-client",
-        TWITCH_CLIENT_SECRET: "test-secret"
-      },
+      environment: { TWITCH_CLIENT_ID: "test-client" },
       secretStore: new InMemorySecretStore(),
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
@@ -286,10 +334,7 @@ describe("runtime app composition smoke", () => {
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
-      environment: {
-        TWITCH_CLIENT_ID: "test-client",
-        TWITCH_CLIENT_SECRET: "test-secret"
-      },
+      environment: { TWITCH_CLIENT_ID: "test-client" },
       secretStore: new InMemorySecretStore(),
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
@@ -332,11 +377,7 @@ describe("runtime app composition smoke", () => {
         webBuildDirectory: await createWebBuildFixture(testRoot),
         configStore: new StaticConfigStore(createConfig(testRoot)),
         credentialAdapter: credentials,
-        environment: {
-          NODE_ENV: nodeEnv,
-          TWITCH_CLIENT_ID: "test-client",
-          TWITCH_CLIENT_SECRET: "test-secret"
-        },
+        environment: { NODE_ENV: nodeEnv, TWITCH_CLIENT_ID: "test-client" },
         twitchApiClient: new ThrowingTwitchApiClient(),
         twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
         twitchEventSubSocketFactory: createForbiddenTwitchSocket,
@@ -356,10 +397,7 @@ describe("runtime app composition smoke", () => {
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
       credentialAdapter: new FailingCredentialAdapter(),
-      environment: {
-        TWITCH_CLIENT_ID: "test-client",
-        TWITCH_CLIENT_SECRET: "test-secret"
-      },
+      environment: { TWITCH_CLIENT_ID: "test-client" },
       twitchApiClient: new ThrowingTwitchApiClient(),
       twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
       twitchEventSubSocketFactory: createForbiddenTwitchSocket,
@@ -379,14 +417,7 @@ describe("runtime app composition smoke", () => {
       url: "/diagnostics?limit=5",
       headers: authHeaders
     });
-    const start = await app.inject({
-      method: "POST",
-      url: "/twitch/auth/start",
-      headers: authHeaders,
-      payload: {
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      }
-    });
+    const start = await app.inject({ method: "POST", url: "/twitch/auth/start", headers: authHeaders });
 
     expect(composition.runtimeSecretStoreStatus).toEqual({
       state: "degraded",
@@ -412,22 +443,26 @@ describe("runtime app composition smoke", () => {
     });
   });
 
-  it("persists Twitch token references across runtime restart without exposing token material in diagnostics", async () => {
+  it("persists device-authorized Twitch tokens and keeps the EventSub connection callback", async () => {
     const testRoot = await createTemporaryDirectory();
     const credentials = new RecordingCredentialAdapter();
+    let currentTime = new Date("2026-06-16T12:00:00.000Z");
+    const firstEventSubApiClient = new RecordingTwitchEventSubApiClient();
+    const firstSockets: ControlledTwitchSocket[] = [];
     const firstComposition = await createRuntimeAppComposition({
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
       credentialAdapter: credentials,
-      environment: {
-        TWITCH_CLIENT_ID: "test-client",
-        TWITCH_CLIENT_SECRET: "test-secret"
-      },
+      environment: { TWITCH_CLIENT_ID: "  test-client  " },
       twitchApiClient: new RecordingTwitchApiClient(),
-      twitchEventSubApiClient: new RecordingTwitchEventSubApiClient(),
-      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
-      now: () => new Date("2026-06-16T12:00:00.000Z"),
+      twitchEventSubApiClient: firstEventSubApiClient,
+      twitchEventSubSocketFactory: () => {
+        const socket = new ControlledTwitchSocket();
+        firstSockets.push(socket);
+        return socket;
+      },
+      now: () => currentTime,
       generateManagementSessionId: () => "mgmt_restart-secret-store"
     });
     runtimeCompositions.push(firstComposition);
@@ -438,17 +473,13 @@ describe("runtime app composition smoke", () => {
       url: "/auth/management/sessions"
     });
     const authHeaders = managementAuthHeaders(session);
-    const start = await firstApp.inject({
+    const start = await firstApp.inject({ method: "POST", url: "/twitch/auth/start", headers: authHeaders });
+    currentTime = new Date("2026-06-16T12:00:05.000Z");
+    const poll = await firstApp.inject({
       method: "POST",
-      url: "/twitch/auth/start",
+      url: "/twitch/auth/poll",
       headers: authHeaders,
-      payload: {
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      }
-    });
-    const callback = await firstApp.inject({
-      method: "GET",
-      url: `/twitch/auth/callback?code=oauth-code&state=${encodeURIComponent((start.json() as { readonly state: string }).state)}`
+      payload: { authorizationId: (start.json() as { readonly authorizationId: string }).authorizationId }
     });
     const diagnosticsExport = await firstApp.inject({
       method: "GET",
@@ -456,11 +487,17 @@ describe("runtime app composition smoke", () => {
       headers: authHeaders
     });
 
-    expect(callback.statusCode).toBe(200);
+    expect(start.statusCode).toBe(200);
+    expect(poll.statusCode).toBe(200);
+    expect(poll.json()).toMatchObject({ status: "connected" });
     expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-1");
     expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-1");
     expect(JSON.stringify(diagnosticsExport.json())).not.toContain("access-token-1");
     expect(JSON.stringify(diagnosticsExport.json())).not.toContain("refresh-token-1");
+    await waitFor(() => firstSockets.length > 0);
+    firstSockets[0]?.emitWelcome();
+    await waitFor(() => firstEventSubApiClient.requests.length > 0);
+    expect(firstEventSubApiClient.requests[0]?.clientId).toBe("test-client");
 
     await firstComposition.close();
     runtimeCompositions.splice(runtimeCompositions.indexOf(firstComposition), 1);
@@ -472,10 +509,7 @@ describe("runtime app composition smoke", () => {
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
       credentialAdapter: credentials,
-      environment: {
-        TWITCH_CLIENT_ID: "test-client",
-        TWITCH_CLIENT_SECRET: "test-secret"
-      },
+      environment: { TWITCH_CLIENT_ID: "test-client" },
       twitchApiClient: new RecordingTwitchApiClient(),
       twitchEventSubApiClient: eventSubApiClient,
       twitchEventSubSocketFactory: () => {
@@ -613,13 +647,31 @@ class FailingCredentialAdapter implements OsCredentialAdapter {
 }
 
 class RecordingTwitchApiClient implements TwitchApiClient {
-  async exchangeAuthorizationCode(): Promise<TwitchTokenGrant> {
+  readonly deviceStartRequests: TwitchDeviceAuthorizationRequest[] = [];
+  readonly devicePollRequests: TwitchDeviceTokenRequest[] = [];
+
+  async startDeviceAuthorization(input: TwitchDeviceAuthorizationRequest) {
+    this.deviceStartRequests.push(input);
     return {
-      accessToken: "access-token-1",
-      refreshToken: "refresh-token-1",
-      expiresIn: 14_400,
-      scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
-      tokenType: "bearer"
+      deviceCode: "device-code-1",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://www.twitch.tv/activate",
+      expiresIn: 600,
+      interval: 5
+    };
+  }
+
+  async pollDeviceAuthorization(input: TwitchDeviceTokenRequest) {
+    this.devicePollRequests.push(input);
+    return {
+      status: "granted" as const,
+      grant: {
+        accessToken: "access-token-1",
+        refreshToken: "refresh-token-1",
+        expiresIn: 14_400,
+        scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
+        tokenType: "bearer" as const
+      }
     };
   }
 
@@ -706,8 +758,12 @@ class ControlledTwitchSocket implements TwitchEventSubSocket {
 }
 
 class ThrowingTwitchApiClient implements TwitchApiClient {
-  async exchangeAuthorizationCode(): Promise<TwitchTokenGrant> {
-    throw new Error("Twitch OAuth exchange must not run in runtime composition smoke tests");
+  async startDeviceAuthorization(): Promise<never> {
+    throw new Error("Twitch device authorization must not run in runtime composition smoke tests");
+  }
+
+  async pollDeviceAuthorization(): Promise<never> {
+    throw new Error("Twitch device authorization polling must not run in runtime composition smoke tests");
   }
 
   async refreshUserToken(): Promise<TwitchTokenGrant> {
