@@ -1,14 +1,28 @@
-export interface TwitchTokenRequest {
+export interface TwitchDeviceAuthorizationRequest {
   readonly clientId: string;
-  readonly clientSecret: string;
+  readonly scopes: readonly string[];
 }
 
-export interface TwitchAuthorizationCodeRequest extends TwitchTokenRequest {
-  readonly code: string;
-  readonly redirectUri: string;
+export interface TwitchDeviceAuthorization {
+  readonly deviceCode: string;
+  readonly userCode: string;
+  readonly verificationUri: string;
+  readonly expiresIn: number;
+  readonly interval: number;
 }
 
-export interface TwitchRefreshTokenRequest extends TwitchTokenRequest {
+export interface TwitchDeviceTokenRequest extends TwitchDeviceAuthorizationRequest {
+  readonly deviceCode: string;
+}
+
+export type TwitchDeviceTokenPollResult =
+  | { readonly status: "pending" }
+  | { readonly status: "denied" }
+  | { readonly status: "expired" }
+  | { readonly status: "granted"; readonly grant: TwitchTokenGrant };
+
+export interface TwitchRefreshTokenRequest {
+  readonly clientId: string;
   readonly refreshToken: string;
 }
 
@@ -44,7 +58,8 @@ export interface TwitchCurrentUser {
 }
 
 export interface TwitchApiClient {
-  exchangeAuthorizationCode(input: TwitchAuthorizationCodeRequest): Promise<TwitchTokenGrant>;
+  startDeviceAuthorization(input: TwitchDeviceAuthorizationRequest): Promise<TwitchDeviceAuthorization>;
+  pollDeviceAuthorization(input: TwitchDeviceTokenRequest): Promise<TwitchDeviceTokenPollResult>;
   refreshUserToken(input: TwitchRefreshTokenRequest): Promise<TwitchTokenGrant>;
   validateToken(input: TwitchValidateTokenRequest): Promise<TwitchValidatedToken>;
   getCurrentUser(input: TwitchCurrentUserRequest): Promise<TwitchCurrentUser>;
@@ -85,23 +100,57 @@ export class DefaultTwitchApiClient implements TwitchApiClient {
     this.#apiBaseUrl = options.apiBaseUrl ?? "https://api.twitch.tv/helix";
   }
 
-  exchangeAuthorizationCode(input: TwitchAuthorizationCodeRequest): Promise<TwitchTokenGrant> {
-    return this.#requestToken(
-      new URLSearchParams({
+  async startDeviceAuthorization(input: TwitchDeviceAuthorizationRequest): Promise<TwitchDeviceAuthorization> {
+    const body = await this.#requestJson(this.#authBaseUrl + "/device", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
         client_id: input.clientId,
-        client_secret: input.clientSecret,
-        code: input.code,
-        grant_type: "authorization_code",
-        redirect_uri: input.redirectUri
+        scopes: input.scopes.join(" ")
       })
-    );
+    });
+
+    return parseDeviceAuthorization(body);
+  }
+
+  async pollDeviceAuthorization(input: TwitchDeviceTokenRequest): Promise<TwitchDeviceTokenPollResult> {
+    const response = await this.#fetch(this.#authBaseUrl + "/token", {
+      method: "POST",
+      headers: {
+        "content-type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        client_id: input.clientId,
+        scopes: input.scopes.join(" "),
+        device_code: input.deviceCode,
+        grant_type: "urn:ietf:params:oauth:grant-type:device_code"
+      })
+    });
+    const body = await readJsonResponse(response);
+
+    if (!response.ok) {
+      const message = isRecord(body) ? body.message : undefined;
+      switch (message) {
+        case "authorization_pending":
+          return { status: "pending" };
+        case "access_denied":
+          return { status: "denied" };
+        case "invalid device code":
+          return { status: "expired" };
+        default:
+          throw new TwitchApiHttpError(response.status);
+      }
+    }
+
+    return { status: "granted", grant: parseTokenGrant(body) };
   }
 
   refreshUserToken(input: TwitchRefreshTokenRequest): Promise<TwitchTokenGrant> {
     return this.#requestToken(
       new URLSearchParams({
         client_id: input.clientId,
-        client_secret: input.clientSecret,
         grant_type: "refresh_token",
         refresh_token: input.refreshToken
       })
@@ -143,16 +192,43 @@ export class DefaultTwitchApiClient implements TwitchApiClient {
 
   async #requestJson(url: string, init: RequestInit): Promise<unknown> {
     const response = await this.#fetch(url, init);
+    const body = await readJsonResponse(response);
     if (!response.ok) {
       throw new TwitchApiHttpError(response.status);
     }
 
-    try {
-      return await response.json();
-    } catch {
-      throw new TwitchApiResponseError();
-    }
+    return body;
   }
+}
+
+function parseDeviceAuthorization(body: unknown): TwitchDeviceAuthorization {
+  if (!isRecord(body)) {
+    throw new TwitchApiResponseError();
+  }
+
+  const deviceCode = body.device_code;
+  const userCode = body.user_code;
+  const verificationUri = body.verification_uri;
+  const expiresIn = body.expires_in;
+  const interval = body.interval;
+  if (
+    !isNonEmptyString(deviceCode) ||
+    !isNonEmptyString(userCode) ||
+    !isNonEmptyString(verificationUri) ||
+    !isPositiveInteger(expiresIn) ||
+    !isPositiveInteger(interval) ||
+    !isTwitchVerificationUri(verificationUri)
+  ) {
+    throw new TwitchApiResponseError();
+  }
+
+  return {
+    deviceCode,
+    userCode,
+    verificationUri,
+    expiresIn,
+    interval
+  };
 }
 
 function parseTokenGrant(body: unknown): TwitchTokenGrant {
@@ -244,6 +320,31 @@ function parseScopes(value: unknown): readonly string[] | null {
 
 function isInteger(value: unknown): value is number {
   return Number.isInteger(value);
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return isInteger(value) && value > 0;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isTwitchVerificationUri(value: string): boolean {
+  try {
+    const uri = new URL(value);
+    return uri.protocol === "https:" && uri.hostname === "www.twitch.tv";
+  } catch {
+    return false;
+  }
+}
+
+async function readJsonResponse(response: Response): Promise<unknown> {
+  try {
+    return await response.json();
+  } catch {
+    throw new TwitchApiResponseError();
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
