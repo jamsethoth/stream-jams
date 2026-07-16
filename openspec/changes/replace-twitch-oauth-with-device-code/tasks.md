@@ -5,8 +5,8 @@
 
 ## 2. Device OAuth Service
 
-- [ ] 2.1 Add failing service tests for opaque authorization IDs, server-only device codes, interval enforcement, expiry cleanup, terminal failures, successful secure storage, token rotation, and EventSub notification
-- [ ] 2.2 Replace callback state handling with the in-memory Device Code authorization lifecycle while preserving validated token storage and account metadata
+- [x] 2.1 Add failing service tests for opaque authorization IDs, server-only device codes, interval enforcement, expiry cleanup, terminal failures, successful secure storage, token rotation, and EventSub notification
+- [x] 2.2 Replace callback state handling with the in-memory Device Code authorization lifecycle while preserving validated token storage and account metadata
 
 ## 3. HTTP Routes And Runtime Wiring
 
