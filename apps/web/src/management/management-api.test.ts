@@ -427,6 +427,39 @@ describe("createHttpManagementApi", () => {
     }
   });
 
+  it("rejects extra fields inside connected poll connection and account objects", async () => {
+    const connection = connectedTwitchStatus();
+    const responses = [
+      { status: "connected", connection: { ...connection, deviceCode: "must-not-sanitize" } },
+      { status: "connected", connection: { ...connection, account: { ...connection.account, unexpected: true } } }
+    ];
+    let index = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/poll") return jsonResponse(responses[index++]!);
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.pollTwitchAuth({ authorizationId: "connection-extra" })).rejects.toThrow("Invalid Twitch connection status response");
+    await expect(api.pollTwitchAuth({ authorizationId: "account-extra" })).rejects.toThrow("Invalid Twitch connection status response");
+  });
+
+  it("rejects Twitch activation URLs with non-default ports", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/start") {
+        return jsonResponse({ ...deviceAuthorizationStart(), verificationUri: "https://www.twitch.tv:444/activate" });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.startTwitchAuth()).rejects.toThrow("Invalid Twitch authorization response");
+  });
+
   it("rejects invalid provider command responses", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

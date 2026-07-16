@@ -638,14 +638,16 @@ interface RuntimeContract<T> {
 
 const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView> = {
   parse(input) {
-    if (!isRecord(input) || typeof input.connected !== "boolean") {
+    if (!hasExactKeys(input, ["connected", "account"]) || typeof input.connected !== "boolean") {
       throw new TypeError("Invalid Twitch connection status response");
     }
     if (!input.connected) {
       if (input.account !== null) throw new TypeError("Invalid Twitch connection status response");
       return { connected: false, account: null };
     }
-    if (!isRecord(input.account)) throw new TypeError("Invalid Twitch connection status response");
+    if (!hasExactKeys(input.account, ["accountId", "login", "displayName", "scopes", "connectedAt", "updatedAt"])) {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
     const account = input.account;
     if (
       !isNonEmptyString(account.accountId)
@@ -692,7 +694,9 @@ const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> 
     }
     if (
       verificationUri.protocol !== "https:"
+      || verificationUri.origin !== "https://www.twitch.tv"
       || verificationUri.hostname !== "www.twitch.tv"
+      || verificationUri.port !== ""
       || verificationUri.pathname !== "/activate"
       || verificationUri.search !== ""
       || verificationUri.hash !== ""
