@@ -1,8 +1,11 @@
+import type { SecretRef, SecretStore } from "@stream-jams/core";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
 import type {
   TwitchApiClient,
-  TwitchAuthorizationCodeRequest,
+  TwitchDeviceAuthorizationRequest,
+  TwitchDeviceTokenPollResult,
+  TwitchDeviceTokenRequest,
   TwitchRefreshTokenRequest,
   TwitchTokenGrant
 } from "./twitch-api-client.js";
@@ -10,229 +13,258 @@ import type { TwitchAccount, TwitchAccountRepository, TwitchConnectionStatus } f
 import {
   createTwitchTokenSecretRef,
   defaultTwitchOAuthScopes,
-  TwitchOAuthService,
-  TwitchOAuthStateError
+  TwitchOAuthService
 } from "./twitch-oauth-service.js";
 
 describe("TwitchOAuthService", () => {
-  it("generates authorization-code URLs with state and MVP scopes", () => {
-    const { service } = createService();
-
-    const authorization = service.createConnectionStart({
-      redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-    });
-    const url = new URL(authorization.authorizationUrl);
-
-    expect(url.origin + url.pathname).toBe("https://id.twitch.tv/oauth2/authorize");
-    expect(url.searchParams.get("response_type")).toBe("code");
-    expect(url.searchParams.get("client_id")).toBe("client-id");
-    expect(url.searchParams.get("redirect_uri")).toBe("http://127.0.0.1:39187/twitch/auth/callback");
-    expect(url.searchParams.get("state")).toBe("state-1");
-    expect(url.searchParams.get("scope")?.split(" ")).toEqual(defaultTwitchOAuthScopes);
-    expect(authorization.scopes).toEqual(defaultTwitchOAuthScopes);
-  });
-
-  it("rejects callback state mismatches before token exchange", async () => {
+  it("starts device authorization with sorted default scopes and keeps deviceCode server-side", async () => {
     const { apiClient, service } = createService();
 
-    await expect(service.completeCallback({ code: "oauth-code", state: "missing-state" })).rejects.toBeInstanceOf(
-      TwitchOAuthStateError
-    );
+    const authorization = await service.createConnectionStart();
 
-    expect(apiClient.exchangeRequests).toEqual([]);
-  });
-
-  it("stores OAuth tokens through SecretStore and persists only non-secret account metadata", async () => {
-    const { apiClient, repository, secretStore, service } = createService();
-    const authorization = service.createConnectionStart({
-      redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-    });
-
-    const status = await service.completeCallback({
-      code: "oauth-code",
-      state: authorization.state
-    });
-
-    expect(apiClient.exchangeRequests).toEqual([
+    expect(apiClient.startRequests).toEqual([
       {
         clientId: "client-id",
-        clientSecret: "client-secret",
-        code: "oauth-code",
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
+        scopes: [...defaultTwitchOAuthScopes].sort()
       }
     ]);
-    expect(status).toMatchObject({
-      connected: true,
-      account: {
-        accountId: "141981764",
-        login: "streamer",
-        displayName: "Streamer",
-        scopes: defaultTwitchOAuthScopes
-      }
+    expect(authorization).toEqual({
+      authorizationId: "authorization-1",
+      verificationUri: "https://www.twitch.tv/activate",
+      userCode: "ABCD-EFGH",
+      expiresAt: "2026-05-30T12:10:00.000Z",
+      intervalSeconds: 5,
+      scopes: [...defaultTwitchOAuthScopes].sort()
     });
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBe(
-      "access-token-1"
-    );
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBe(
-      "refresh-token-1"
-    );
-    expect(JSON.stringify(await repository.findConnectedAccount())).not.toContain("access-token");
-    expect(JSON.stringify(await repository.findConnectedAccount())).not.toContain("refresh-token");
+    expect(authorization).not.toHaveProperty("deviceCode");
   });
 
-  it("refreshes connected accounts and rotates stored token secrets", async () => {
-    const { apiClient, secretStore, service } = createService();
-    const authorization = service.createConnectionStart({
-      redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-    });
-    await service.completeCallback({ code: "oauth-code", state: authorization.state });
+  it("uses injected authorization IDs", async () => {
+    const { service } = createService({ generateAuthorizationId: () => "opaque-id" });
 
-    const refreshed = await service.refreshConnectedAccount();
+    await expect(service.createConnectionStart()).resolves.toMatchObject({ authorizationId: "opaque-id" });
+  });
 
-    expect(refreshed.connected).toBe(true);
-    expect(apiClient.refreshRequests).toEqual([
+  it("does not poll Twitch before the configured interval", async () => {
+    const now = createClock();
+    const { apiClient, service } = createService({ now: now.read });
+    const authorization = await service.createConnectionStart();
+
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).resolves.toEqual({ status: "pending" });
+
+    expect(apiClient.pollRequests).toEqual([]);
+  });
+
+  it("advances next poll time after an upstream pending response", async () => {
+    const now = createClock();
+    const { apiClient, service } = createService({ now: now.read });
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).resolves.toEqual({ status: "pending" });
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).resolves.toEqual({ status: "pending" });
+
+    expect(apiClient.pollRequests).toEqual([
       {
         clientId: "client-id",
-        clientSecret: "client-secret",
-        refreshToken: "refresh-token-1"
+        deviceCode: "device-code-1",
+        scopes: [...defaultTwitchOAuthScopes].sort()
       }
     ]);
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBe(
-      "access-token-2"
-    );
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBe(
-      "refresh-token-2"
-    );
   });
 
-  it("disconnects accounts by deleting token secrets and metadata", async () => {
-    const { repository, secretStore, service } = createService();
-    const authorization = service.createConnectionStart({
-      redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-    });
-    await service.completeCallback({ code: "oauth-code", state: authorization.state });
+  it.each([
+    ["denied", { code: "TWITCH_OAUTH_DENIED", message: "Twitch authorization was denied" }],
+    ["expired", { code: "TWITCH_OAUTH_EXPIRED", message: "Twitch authorization expired" }]
+  ] as const)("returns terminal %s result and removes pending authorization", async (upstreamStatus, expected) => {
+    const now = createClock();
+    const { apiClient, service } = createService({ now: now.read });
+    apiClient.pollResult = { status: upstreamStatus };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
 
-    const status = await service.disconnect();
-
-    expect(status).toEqual({
-      connected: false,
-      account: null
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).resolves.toEqual({
+      status: "failed",
+      ...expected
     });
-    await expect(repository.findConnectedAccount()).resolves.toBeNull();
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBeNull();
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBeNull();
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toMatchObject({
+      code: "TWITCH_OAUTH_AUTHORIZATION_INVALID"
+    });
   });
-  it("notifies connection lifecycle hooks after account connection changes", async () => {
+
+  it("rejects unknown authorization IDs with a controlled client error", async () => {
+    const { service } = createService();
+
+    await expect(service.pollConnection({ authorizationId: "missing-id" })).rejects.toMatchObject({
+      code: "TWITCH_OAUTH_AUTHORIZATION_INVALID"
+    });
+  });
+
+  it("stores granted tokens through SecretStore, persists metadata, and notifies connection changes", async () => {
+    const now = createClock();
     const notifications: TwitchConnectionStatus[] = [];
-    const { service } = createService({
+    const { apiClient, repository, secretStore, service } = createService({
+      now: now.read,
       onConnectionChanged(status) {
         notifications.push(status);
       }
     });
-    const authorization = service.createConnectionStart({
-      redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-    });
+    apiClient.pollResult = { status: "granted", grant: createTokenGrant("1") };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
 
-    await service.completeCallback({ code: "oauth-code", state: authorization.state });
-    await service.refreshConnectedAccount();
-    await service.disconnect();
+    const result = await service.pollConnection({ authorizationId: authorization.authorizationId });
 
-    expect(notifications.map((status) => status.connected)).toEqual([true, true, false]);
-    expect(notifications[0]).toMatchObject({
-      connected: true,
-      account: {
-        accountId: "141981764",
-        scopes: defaultTwitchOAuthScopes
+    expect(result).toMatchObject({
+      status: "connected",
+      connection: {
+        connected: true,
+        account: {
+          accountId: "141981764",
+          login: "streamer",
+          displayName: "Streamer",
+          scopes: defaultTwitchOAuthScopes,
+          connectedAt: "2026-05-30T12:00:05.000Z"
+        }
       }
     });
-    expect(notifications[2]).toEqual({
-      connected: false,
-      account: null
+    expect(apiClient.validateRequests).toEqual([{ accessToken: "access-token-1" }]);
+    expect(apiClient.currentUserRequests).toEqual([{ accessToken: "access-token-1", clientId: "client-id" }]);
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBe("access-token-1");
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBe("refresh-token-1");
+    expect(JSON.stringify(await repository.findConnectedAccount())).not.toContain("access-token");
+    expect(JSON.stringify(await repository.findConnectedAccount())).not.toContain("refresh-token");
+    expect(notifications).toHaveLength(1);
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toMatchObject({
+      code: "TWITCH_OAUTH_AUTHORIZATION_INVALID"
     });
   });
-  it("removes prior account token secrets when a different broadcaster connects", async () => {
-    const { repository, secretStore, service } = createService();
-    await repository.saveAccount({
-      accountId: "old-id",
-      login: "oldstreamer",
-      displayName: "Old Streamer",
-      scopes: ["bits:read"],
-      connectedAt: "2026-05-30T11:00:00.000Z",
-      updatedAt: "2026-05-30T11:00:00.000Z"
+
+  it("refreshes public-client tokens while preserving original connectedAt", async () => {
+    const now = createClock();
+    const { apiClient, repository, secretStore, service } = createService({ now: now.read });
+    apiClient.pollResult = { status: "granted", grant: createTokenGrant("1") };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+    await service.pollConnection({ authorizationId: authorization.authorizationId });
+    now.advance(60_000);
+
+    await expect(service.refreshConnectedAccount()).resolves.toMatchObject({ connected: true });
+
+    expect(apiClient.refreshRequests).toEqual([{ clientId: "client-id", refreshToken: "refresh-token-1" }]);
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBe("access-token-2");
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "refresh_token"))).resolves.toBe("refresh-token-2");
+    await expect(repository.findConnectedAccount()).resolves.toMatchObject({
+      connectedAt: "2026-05-30T12:00:05.000Z",
+      updatedAt: "2026-05-30T12:01:05.000Z"
     });
-    await secretStore.setSecret(createTwitchTokenSecretRef("old-id", "access_token"), "old-access");
-    await secretStore.setSecret(createTwitchTokenSecretRef("old-id", "refresh_token"), "old-refresh");
-    const authorization = service.createConnectionStart({
-      redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
+  });
+
+  it("does not persist metadata or report success when credential storage fails", async () => {
+    const now = createClock();
+    const repository = new InMemoryTwitchAccountRepository();
+    const secretStore = new FailingSecretStore();
+    const notifications: TwitchConnectionStatus[] = [];
+    const { apiClient, service } = createService({
+      now: now.read,
+      onConnectionChanged(status) {
+        notifications.push(status);
+      },
+      repository,
+      secretStore
+    });
+    apiClient.pollResult = { status: "granted", grant: createTokenGrant("1") };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toMatchObject({
+      code: "TWITCH_OAUTH_PROVIDER_ERROR"
     });
 
-    const status = await service.completeCallback({
-      code: "oauth-code",
-      state: authorization.state
+    await expect(repository.findConnectedAccount()).resolves.toBeNull();
+    expect(notifications).toEqual([]);
+    await expect(service.pollConnection({ authorizationId: authorization.authorizationId })).rejects.toMatchObject({
+      code: "TWITCH_OAUTH_AUTHORIZATION_INVALID"
     });
-
-    expect(status).toMatchObject({
-      connected: true,
-      account: {
-        accountId: "141981764"
-      }
-    });
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("old-id", "access_token"))).resolves.toBeNull();
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("old-id", "refresh_token"))).resolves.toBeNull();
-    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBe("access-token-1");
   });
 });
 
-function createService(options: { readonly onConnectionChanged?: (status: TwitchConnectionStatus) => void | Promise<void> } = {}) {
+function createService(
+  options: {
+    readonly generateAuthorizationId?: () => string;
+    readonly now?: () => Date;
+    readonly onConnectionChanged?: (status: TwitchConnectionStatus) => void | Promise<void>;
+    readonly repository?: TwitchAccountRepository;
+    readonly secretStore?: SecretStore;
+  } = {}
+) {
   const apiClient = new FakeTwitchApiClient();
-  const repository = new InMemoryTwitchAccountRepository();
-  const secretStore = new InMemorySecretStore();
+  const repository = options.repository ?? new InMemoryTwitchAccountRepository();
+  const secretStore = options.secretStore ?? new InMemorySecretStore();
   const service = new TwitchOAuthService({
     apiClient,
     clientId: "client-id",
-    clientSecret: "client-secret",
-    generateState: () => "state-1",
-    now: () => new Date("2026-05-30T12:00:00.000Z"),
+    generateAuthorizationId: options.generateAuthorizationId ?? (() => "authorization-1"),
+    now: options.now ?? (() => new Date("2026-05-30T12:00:00.000Z")),
     ...(options.onConnectionChanged === undefined ? {} : { onConnectionChanged: options.onConnectionChanged }),
     repository,
     secretStore
   });
 
+  return { apiClient, repository, secretStore, service };
+}
+
+function createClock() {
+  let nowMs = Date.parse("2026-05-30T12:00:00.000Z");
   return {
-    apiClient,
-    repository,
-    secretStore,
-    service
+    advance(milliseconds: number) {
+      nowMs += milliseconds;
+    },
+    read: () => new Date(nowMs)
+  };
+}
+
+function createTokenGrant(suffix: string): TwitchTokenGrant {
+  return {
+    accessToken: `access-token-${suffix}`,
+    refreshToken: `refresh-token-${suffix}`,
+    expiresIn: 14_400,
+    scopes: defaultTwitchOAuthScopes,
+    tokenType: "bearer"
   };
 }
 
 class FakeTwitchApiClient implements TwitchApiClient {
-  readonly exchangeRequests: TwitchAuthorizationCodeRequest[] = [];
+  readonly currentUserRequests: { readonly accessToken: string; readonly clientId: string }[] = [];
+  readonly pollRequests: TwitchDeviceTokenRequest[] = [];
   readonly refreshRequests: TwitchRefreshTokenRequest[] = [];
+  readonly startRequests: TwitchDeviceAuthorizationRequest[] = [];
+  readonly validateRequests: { readonly accessToken: string }[] = [];
+  pollResult: TwitchDeviceTokenPollResult = { status: "pending" };
 
-  async exchangeAuthorizationCode(input: TwitchAuthorizationCodeRequest): Promise<TwitchTokenGrant> {
-    this.exchangeRequests.push(input);
+  async startDeviceAuthorization(input: TwitchDeviceAuthorizationRequest) {
+    this.startRequests.push(input);
     return {
-      accessToken: "access-token-1",
-      refreshToken: "refresh-token-1",
-      expiresIn: 14_400,
-      scopes: defaultTwitchOAuthScopes,
-      tokenType: "bearer"
+      deviceCode: "device-code-1",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://www.twitch.tv/activate",
+      expiresIn: 600,
+      interval: 5
     };
+  }
+
+  async pollDeviceAuthorization(input: TwitchDeviceTokenRequest): Promise<TwitchDeviceTokenPollResult> {
+    this.pollRequests.push(input);
+    return this.pollResult;
   }
 
   async refreshUserToken(input: TwitchRefreshTokenRequest): Promise<TwitchTokenGrant> {
     this.refreshRequests.push(input);
-    return {
-      accessToken: "access-token-2",
-      refreshToken: "refresh-token-2",
-      expiresIn: 14_000,
-      scopes: defaultTwitchOAuthScopes,
-      tokenType: "bearer"
-    };
+    return createTokenGrant("2");
   }
 
-  async validateToken() {
+  async validateToken(input: { readonly accessToken: string }) {
+    this.validateRequests.push(input);
     return {
       clientId: "client-id",
       login: "streamer",
@@ -242,7 +274,8 @@ class FakeTwitchApiClient implements TwitchApiClient {
     };
   }
 
-  async getCurrentUser() {
+  async getCurrentUser(input: { readonly accessToken: string; readonly clientId: string }) {
+    this.currentUserRequests.push(input);
     return {
       id: "141981764",
       login: "streamer",
@@ -267,5 +300,19 @@ class InMemoryTwitchAccountRepository implements TwitchAccountRepository {
     if (this.account?.accountId === accountId) {
       this.account = null;
     }
+  }
+}
+
+class FailingSecretStore implements SecretStore {
+  async setSecret(_ref: SecretRef, _value: string): Promise<void> {
+    throw new Error("credential store unavailable");
+  }
+
+  async getSecret(_ref: SecretRef): Promise<string | null> {
+    return null;
+  }
+
+  async deleteSecret(_ref: SecretRef): Promise<void> {
+    return;
   }
 }

@@ -8,6 +8,8 @@ import {
   type TwitchConnectionStatus
 } from "./twitch-account-repository.js";
 
+export const defaultTwitchClientId = "r6jy78npqxcqe68xpsctkcecti6ba3";
+
 export const defaultTwitchOAuthScopes = [
   "bits:read",
   "channel:read:redemptions",
@@ -17,27 +19,33 @@ export const defaultTwitchOAuthScopes = [
 
 export type TwitchTokenSecretName = "access_token" | "refresh_token";
 
-export interface TwitchConnectionStartInput {
-  readonly redirectUri: string;
-}
-
 export interface TwitchConnectionStartResult {
-  readonly authorizationUrl: string;
-  readonly state: string;
+  readonly authorizationId: string;
+  readonly verificationUri: string;
+  readonly userCode: string;
+  readonly expiresAt: string;
+  readonly intervalSeconds: number;
   readonly scopes: readonly string[];
 }
 
-export interface TwitchOAuthCallbackInput {
-  readonly code: string;
-  readonly state: string;
+export interface TwitchConnectionPollInput {
+  readonly authorizationId: string;
 }
+
+export type TwitchConnectionPollResult =
+  | { readonly status: "pending" }
+  | { readonly status: "connected"; readonly connection: TwitchConnectionStatus }
+  | {
+      readonly status: "failed";
+      readonly code: "TWITCH_OAUTH_DENIED" | "TWITCH_OAUTH_EXPIRED";
+      readonly message: string;
+    };
 
 export interface TwitchOAuthServiceOptions {
   readonly apiClient: TwitchApiClient;
   readonly clientId: string;
-  readonly clientSecret: string;
   readonly assertSecretStoreAvailable?: (() => void) | undefined;
-  readonly generateState: () => string;
+  readonly generateAuthorizationId: () => string;
   readonly now?: (() => Date) | undefined;
   readonly onConnectionChanged?: ((status: TwitchConnectionStatus) => void | Promise<void>) | undefined;
   readonly repository: TwitchAccountRepository;
@@ -45,16 +53,20 @@ export interface TwitchOAuthServiceOptions {
   readonly secretStore: SecretStore;
 }
 
-interface PendingOAuthState {
-  readonly redirectUri: string;
+interface PendingDeviceAuthorization {
+  readonly deviceCode: string;
+  readonly scopes: readonly string[];
+  readonly expiresAtMs: number;
+  readonly intervalMs: number;
+  nextPollAtMs: number;
 }
 
-export class TwitchOAuthStateError extends Error {
-  readonly code = "TWITCH_OAUTH_STATE_INVALID";
+export class TwitchOAuthAuthorizationError extends Error {
+  readonly code = "TWITCH_OAUTH_AUTHORIZATION_INVALID";
 
   constructor() {
-    super("Invalid Twitch OAuth state");
-    this.name = "TwitchOAuthStateError";
+    super("Invalid Twitch device authorization");
+    this.name = "TwitchOAuthAuthorizationError";
   }
 }
 
@@ -71,11 +83,10 @@ export class TwitchOAuthService {
   readonly #apiClient: TwitchApiClient;
   readonly #assertSecretStoreAvailable: (() => void) | undefined;
   readonly #clientId: string;
-  readonly #clientSecret: string;
-  readonly #generateState: () => string;
+  readonly #generateAuthorizationId: () => string;
   readonly #now: () => Date;
   readonly #onConnectionChanged: ((status: TwitchConnectionStatus) => void | Promise<void>) | undefined;
-  readonly #pendingStates = new Map<string, PendingOAuthState>();
+  readonly #pendingAuthorizations = new Map<string, PendingDeviceAuthorization>();
   readonly #repository: TwitchAccountRepository;
   readonly #scopes: readonly string[];
   readonly #secretStore: SecretStore;
@@ -84,8 +95,7 @@ export class TwitchOAuthService {
     this.#apiClient = options.apiClient;
     this.#assertSecretStoreAvailable = options.assertSecretStoreAvailable;
     this.#clientId = options.clientId;
-    this.#clientSecret = options.clientSecret;
-    this.#generateState = options.generateState;
+    this.#generateAuthorizationId = options.generateAuthorizationId;
     this.#now = options.now ?? (() => new Date());
     this.#onConnectionChanged = options.onConnectionChanged;
     this.#repository = options.repository;
@@ -97,42 +107,80 @@ export class TwitchOAuthService {
     return toTwitchConnectionStatus(await this.#repository.findConnectedAccount());
   }
 
-  createConnectionStart(input: TwitchConnectionStartInput): TwitchConnectionStartResult {
+  async createConnectionStart(): Promise<TwitchConnectionStartResult> {
+    const now = this.#now();
+    this.#pruneExpiredAuthorizations(now.getTime());
     this.#assertConfigured();
-    const state = this.#generateState();
-    this.#pendingStates.set(state, {
-      redirectUri: input.redirectUri
+    const authorization = await this.#apiClient.startDeviceAuthorization({
+      clientId: this.#clientId,
+      scopes: this.#scopes
+    });
+    const expiresAtMs = now.getTime() + authorization.expiresIn * 1_000;
+    const authorizationId = this.#generateAuthorizationId();
+
+    this.#pendingAuthorizations.set(authorizationId, {
+      deviceCode: authorization.deviceCode,
+      scopes: this.#scopes,
+      expiresAtMs,
+      intervalMs: authorization.interval * 1_000,
+      nextPollAtMs: now.getTime() + authorization.interval * 1_000
     });
 
-    const authorizationUrl = new URL("https://id.twitch.tv/oauth2/authorize");
-    authorizationUrl.searchParams.set("response_type", "code");
-    authorizationUrl.searchParams.set("client_id", this.#clientId);
-    authorizationUrl.searchParams.set("redirect_uri", input.redirectUri);
-    authorizationUrl.searchParams.set("scope", this.#scopes.join(" "));
-    authorizationUrl.searchParams.set("state", state);
-
     return {
-      authorizationUrl: authorizationUrl.toString(),
-      state,
+      authorizationId,
+      verificationUri: authorization.verificationUri,
+      userCode: authorization.userCode,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      intervalSeconds: authorization.interval,
       scopes: this.#scopes
     };
   }
 
-  async completeCallback(input: TwitchOAuthCallbackInput): Promise<TwitchConnectionStatus> {
+  async pollConnection(input: TwitchConnectionPollInput): Promise<TwitchConnectionPollResult> {
+    const now = this.#now();
+    const nowMs = now.getTime();
+    this.#pruneExpiredAuthorizations(nowMs);
     this.#assertConfigured();
-    const pendingState = this.#pendingStates.get(input.state);
-    if (pendingState === undefined) {
-      throw new TwitchOAuthStateError();
+    const pendingAuthorization = this.#pendingAuthorizations.get(input.authorizationId);
+    if (pendingAuthorization === undefined) {
+      throw new TwitchOAuthAuthorizationError();
     }
 
-    this.#pendingStates.delete(input.state);
-    const tokenGrant = await this.#apiClient.exchangeAuthorizationCode({
+    if (pendingAuthorization.nextPollAtMs > nowMs) {
+      return { status: "pending" };
+    }
+
+    pendingAuthorization.nextPollAtMs = nowMs + pendingAuthorization.intervalMs;
+    const result = await this.#apiClient.pollDeviceAuthorization({
       clientId: this.#clientId,
-      clientSecret: this.#clientSecret,
-      code: input.code,
-      redirectUri: pendingState.redirectUri
+      deviceCode: pendingAuthorization.deviceCode,
+      scopes: pendingAuthorization.scopes
     });
-    return this.#storeTokenGrant(tokenGrant);
+    switch (result.status) {
+      case "pending":
+        return { status: "pending" };
+      case "denied":
+        this.#pendingAuthorizations.delete(input.authorizationId);
+        return {
+          status: "failed",
+          code: "TWITCH_OAUTH_DENIED",
+          message: "Twitch authorization was denied"
+        };
+      case "expired":
+        this.#pendingAuthorizations.delete(input.authorizationId);
+        return {
+          status: "failed",
+          code: "TWITCH_OAUTH_EXPIRED",
+          message: "Twitch authorization expired"
+        };
+      case "granted": {
+        this.#pendingAuthorizations.delete(input.authorizationId);
+        return {
+          status: "connected",
+          connection: await this.#storeTokenGrant(result.grant)
+        };
+      }
+    }
   }
 
   async refreshConnectedAccount(): Promise<TwitchConnectionStatus> {
@@ -149,7 +197,6 @@ export class TwitchOAuthService {
 
     const tokenGrant = await this.#apiClient.refreshUserToken({
       clientId: this.#clientId,
-      clientSecret: this.#clientSecret,
       refreshToken
     });
     return this.#storeTokenGrant(tokenGrant, currentAccount.connectedAt);
@@ -170,14 +217,22 @@ export class TwitchOAuthService {
   }
 
   #assertConfigured(): void {
-    if (this.#clientId.trim() === "" || this.#clientSecret.trim() === "") {
-      throw new TwitchOAuthProviderError("Twitch OAuth client credentials are not configured");
+    if (this.#clientId.trim() === "") {
+      throw new TwitchOAuthProviderError("Twitch OAuth client ID is not configured");
     }
 
     try {
       this.#assertSecretStoreAvailable?.();
     } catch {
       throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    }
+  }
+
+  #pruneExpiredAuthorizations(nowMs: number): void {
+    for (const [authorizationId, authorization] of this.#pendingAuthorizations) {
+      if (authorization.expiresAtMs <= nowMs) {
+        this.#pendingAuthorizations.delete(authorizationId);
+      }
     }
   }
 
