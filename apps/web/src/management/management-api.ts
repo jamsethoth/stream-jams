@@ -692,13 +692,22 @@ const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> 
     } catch {
       throw new TypeError("Invalid Twitch authorization response");
     }
+    const deviceCodes = verificationUri.searchParams.getAll("device-code");
+    const publicFlags = verificationUri.searchParams.getAll("public");
+    const hasAllowedSearch = [...verificationUri.searchParams.keys()].every(
+      (key) => key === "device-code" || key === "public"
+    )
+      && deviceCodes.length <= 1
+      && (deviceCodes.length === 0 || deviceCodes[0] === input.userCode)
+      && publicFlags.length <= 1
+      && (publicFlags.length === 0 || publicFlags[0] === "true");
     if (
       verificationUri.protocol !== "https:"
       || verificationUri.origin !== "https://www.twitch.tv"
       || verificationUri.hostname !== "www.twitch.tv"
       || verificationUri.port !== ""
       || verificationUri.pathname !== "/activate"
-      || verificationUri.search !== ""
+      || !hasAllowedSearch
       || verificationUri.hash !== ""
       || verificationUri.username !== ""
       || verificationUri.password !== ""

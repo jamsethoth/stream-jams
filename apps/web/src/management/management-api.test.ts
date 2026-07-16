@@ -305,7 +305,7 @@ describe("createHttpManagementApi", () => {
     };
     const started = {
       authorizationId: "auth-123",
-      verificationUri: "https://www.twitch.tv/activate",
+      verificationUri: "https://www.twitch.tv/activate?device-code=ABCD-EFGH",
       userCode: "ABCD-EFGH",
       expiresAt: "2026-07-16T18:00:00.000Z",
       intervalSeconds: 5,
@@ -458,6 +458,33 @@ describe("createHttpManagementApi", () => {
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.startTwitchAuth()).rejects.toThrow("Invalid Twitch authorization response");
+  });
+
+  it("allows only documented Twitch activation query parameters for the returned user code", async () => {
+    const verificationUris = [
+      "https://www.twitch.tv/activate?public=true&device-code=TEST-CODE",
+      "https://www.twitch.tv/activate?device-code=OTHER-CODE",
+      "https://www.twitch.tv/activate?device-code=TEST-CODE&device-code=TEST-CODE",
+      "https://www.twitch.tv/activate?device-code=TEST-CODE&redirect=https://example.com"
+    ];
+    let responseIndex = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/start") {
+        return jsonResponse({ ...deviceAuthorizationStart(), verificationUri: verificationUris[responseIndex++] });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.startTwitchAuth()).resolves.toEqual({
+      ...deviceAuthorizationStart(),
+      verificationUri: verificationUris[0]
+    });
+    for (let index = 1; index < verificationUris.length; index += 1) {
+      await expect(api.startTwitchAuth()).rejects.toThrow("Invalid Twitch authorization response");
+    }
   });
 
   it("rejects invalid provider command responses", async () => {
