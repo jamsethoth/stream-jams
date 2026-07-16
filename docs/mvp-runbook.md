@@ -64,11 +64,13 @@ Overlay route keys are secrets. Do not paste them into chat, logs, screenshots, 
 
 ## Twitch Connection
 
-1. Set `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` in the local environment before startup.
-2. Open `Twitch` in the management UI.
-3. Select `Connect Twitch` and complete the Twitch authorization flow.
-4. Return to the management UI and verify the connected account and EventSub status.
-5. Use `Refresh Twitch` after token or connection issues, and `Disconnect Twitch` before switching accounts.
+1. Open `Event sources`, choose `Add event source`, select Twitch, and continue.
+2. Select `Connect Twitch`. Stream Jams opens Twitch and displays a short code in the wizard.
+3. Enter the displayed code in Twitch. Use `Open Twitch` if the browser window was blocked or closed.
+4. Return to the wizard and wait for the connected Twitch account to appear.
+5. Select `Test connection` to validate both the Twitch account and EventSub intake, then review and register the event source.
+
+This ordinary setup flow needs no `TWITCH_CLIENT_SECRET`, client-secret setup, or OAuth callback URL. `TWITCH_CLIENT_ID` is optional only for local development or fork overrides.
 
 Twitch access and refresh tokens are stored through the OS credential store in both normal development and production-style local startup. Stream Jams uses Windows Credential Manager on Windows, macOS Keychain on macOS, and Linux Secret Service/libsecret on Linux. Token values are not stored in SQLite, config files, diagnostics exports, browser bundles, overlay URLs, or logs.
 

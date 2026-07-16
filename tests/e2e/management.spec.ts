@@ -37,7 +37,9 @@ test("management diagnostics include backend error code and id", async ({ page }
 });
 
 test("event source onboarding connects validates and registers Twitch", async ({ page }) => {
-  let twitchStatusChecks = 0;
+  const startBodies: (string | null)[] = [];
+  const pollBodies: (string | null)[] = [];
+  let pollCount = 0;
   let registered = false;
   const provider = {
     id: "provider-twitch-e2e",
@@ -70,10 +72,9 @@ test("event source onboarding connects validates and registers Twitch", async ({
     await route.fulfill({ contentType: "application/json", json: { id: "mgmt_provider_e2e", csrfToken: "csrf_provider_e2e" } });
   });
   await page.route("**/twitch/auth/status", async (route) => {
-    twitchStatusChecks += 1;
     await route.fulfill({
       contentType: "application/json",
-      json: twitchStatusChecks === 1
+      json: pollCount < 2
         ? { connected: false, account: null }
         : {
             connected: true,
@@ -89,17 +90,44 @@ test("event source onboarding connects validates and registers Twitch", async ({
     });
   });
   await page.route("**/twitch/auth/start", async (route) => {
-    expect(route.request().postDataJSON()).toEqual({
-      redirectUri: "http://127.0.0.1:4173/twitch/auth/callback"
-    });
+    startBodies.push(route.request().postData());
     await route.fulfill({
       contentType: "application/json",
       json: {
-        authorizationUrl: "https://id.twitch.tv/oauth2/authorize?state=e2e",
-        state: "e2e",
+        authorizationId: "authorization-e2e",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "E2E-CODE",
+        expiresAt: "2026-07-16T18:00:00.000Z",
+        intervalSeconds: 1,
         scopes: ["user:read:chat"]
       }
     });
+  });
+  await page.route("**/twitch/auth/poll", async (route) => {
+    pollBodies.push(route.request().postData());
+    pollCount += 1;
+    await route.fulfill({
+      contentType: "application/json",
+      json: pollCount === 1
+        ? { status: "pending" }
+        : {
+            status: "connected",
+            connection: {
+              connected: true,
+              account: {
+                accountId: "account-e2e",
+                login: "jamsethoth",
+                displayName: "Jamsethoth",
+                scopes: ["user:read:chat"],
+                connectedAt: "2026-07-16T12:00:00.000Z",
+                updatedAt: "2026-07-16T12:00:00.000Z"
+              }
+            }
+          }
+    });
+  });
+  await page.context().route("https://www.twitch.tv/activate", async (route) => {
+    await route.fulfill({ contentType: "text/html", body: "Twitch activation" });
   });
   await page.route(/^https?:\/\/[^/]+\/management\/providers(?:[/?].*)?$/u, async (route) => {
     const request = route.request();
@@ -132,12 +160,27 @@ test("event source onboarding connects validates and registers Twitch", async ({
   await expect(page.getByRole("heading", { name: "Configure Twitch" })).toBeVisible();
   await expect(page.getByText("No Twitch account connected")).toBeVisible();
 
+  const popupPromise = page.waitForEvent("popup");
+  const popupRequestPromise = page.context().waitForEvent("request", (request) => request.url() === "https://www.twitch.tv/activate");
   await page.getByRole("button", { name: "Connect Twitch" }).click();
-  await expect(page.getByRole("link", { name: "Continue in Twitch" })).toHaveAttribute(
+  const [popup] = await Promise.all([popupPromise, popupRequestPromise]);
+  await expect(popup).toHaveURL("https://www.twitch.tv/activate");
+  await expect.poll(() => popup.evaluate(() => window.name)).toBe("stream-jams-twitch-device-auth");
+  await expect(page.getByRole("link", { name: "Open Twitch" })).toHaveAttribute(
     "href",
-    "https://id.twitch.tv/oauth2/authorize?state=e2e"
+    "https://www.twitch.tv/activate"
   );
-  await page.getByRole("button", { name: "Check connection" }).click();
+  await expect(page.getByText("E2E-CODE")).toBeVisible();
+  await expect(page.getByText("Jamsethoth (@jamsethoth)")).toBeVisible();
+  expect(startBodies).toEqual([null]);
+  expect(pollBodies).toEqual([
+    JSON.stringify({ authorizationId: "authorization-e2e" }),
+    JSON.stringify({ authorizationId: "authorization-e2e" })
+  ]);
+  expect(JSON.stringify([...startBodies, ...pollBodies])).not.toMatch(/client.?secret|device.?code|token|callback|redirect.?uri/iu);
+
+  await expect(page.getByRole("button", { name: "Test connection" })).toBeVisible();
+  await page.getByRole("button", { name: "Test connection" }).click();
   await expect(page.getByRole("heading", { name: "Review event source" })).toBeVisible();
   await expect(page.getByText("Jamsethoth (@jamsethoth)")).toBeVisible();
 
