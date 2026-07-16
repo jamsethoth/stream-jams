@@ -282,6 +282,14 @@ function toServerErrorResponse(error: unknown): { readonly statusCode: number; r
     };
   }
 
+  if (error instanceof Error && "code" in error && error.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE") {
+    return {
+      statusCode: 415,
+      code: "UNSUPPORTED_MEDIA_TYPE",
+      message: "Use application/json for requests with a body, or omit Content-Type for empty requests."
+    };
+  }
+
   return {
     statusCode: 500,
     code: "INTERNAL_SERVER_ERROR",
