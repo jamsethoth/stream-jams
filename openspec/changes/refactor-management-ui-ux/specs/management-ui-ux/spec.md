@@ -73,9 +73,16 @@ The system SHALL group providers by capability, use one wizard per setup flow, v
 #### Scenario: Event-source runtime failure exposes actionable evidence
 
 - **WHEN** an event source reports `Error` as its live status
-- **THEN** selecting that source shows the current runtime cause, next step, occurrence time, and reference ID when available in the provider detail panel
-- **AND** the detail provides an `Open diagnostics` link filtered to the reference ID when available, or to the Diagnostics workspace otherwise
+- **THEN** selecting that source shows the current runtime cause, next step, occurrence time, and reference ID in the provider detail panel
+- **AND** the detail provides an `Open diagnostics` link filtered to that reference ID
 - **AND** the provider table remains compact instead of duplicating the full error message inline
+
+#### Scenario: Event-source live status refreshes without page reload
+
+- **WHEN** a user keeps the Event sources page open
+- **THEN** the system refreshes registered-provider live status every five seconds without requiring a page reload
+- **AND** the selected provider remains selected as status changes
+- **AND** a refresh failure preserves the last known provider state and shows an actionable refresh error
 
 #### Scenario: Activation reports alert impact
 

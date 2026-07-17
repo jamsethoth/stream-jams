@@ -59,9 +59,9 @@ Alternative considered: adopt MUI, Carbon React, or Tailwind for the refactor. R
 
 Provider settings, alert-set edits, alert-editor documents, asset changes, route-key regeneration, and restore require explicit actions. Low-risk view preferences may persist automatically. Provider `Save` and `Set active`, and alert-set `Save` and `Activate set`, remain distinct commands with impact checks.
 
-Event-source lists expose saved activation as `Usage` and transient runtime evidence as `Live status`. Setup is complete before registration, so list rows do not repeat a setup-ready state. Inactive sources report `Not running`; active sources report `Starting`, `Healthy`, `Reconnecting`, or `Error` from the actual provider runtime.
+Event-source lists expose saved activation as `Usage` and transient runtime evidence as `Live status`. Setup is complete before registration, so list rows do not repeat a setup-ready state. Inactive sources report `Not running`; active sources report `Starting`, `Healthy`, `Reconnecting`, or `Error` from the actual provider runtime. The page polls the existing registered-provider query every five seconds, preserves selection, and retains the last known state while surfacing refresh failures.
 
-An event-source runtime failure is projected into the selected provider view as transient actionable evidence rather than persisted setup state. The existing management error banner shows the runtime message, next step, occurrence time, and reference ID when available, with a correction link to the Diagnostics workspace filtered by that reference. The table retains only the `Error` status so it remains scannable; selecting the row exposes the complete failure in the right detail panel.
+An event-source runtime failure is projected into the selected provider view as transient actionable evidence rather than persisted setup state. Provider runtimes and the event-ingestion pipeline generate a reference ID where each distinct failure originates, emit one redacted diagnostic entry with that ID, and carry the same ID through live status and management detail. Repeated reads reuse the ID for the same provider, occurrence time, and message; recovery or a later distinct occurrence receives a new ID. The existing management error banner shows the runtime message, next step, occurrence time, and reference ID, with a correction link to the Diagnostics workspace filtered by that reference. The table retains only the `Error` status so it remains scannable; selecting the row exposes the complete failure in the right detail panel.
 
 ### Model alerts independently from registered provider instances
 
@@ -77,7 +77,7 @@ The library owns file metadata, health, tags, and usage summaries. Editor picker
 
 ### Derive diagnostics from sanitized operational data
 
-Problems, normalized Events, and Raw logs are views over redacted runtime evidence. Reference IDs and correction targets are carried through typed records. Display, copy, and export never bypass existing redaction or expose raw provider payloads, credentials, or route keys.
+Problems, normalized Events, and Raw logs are views over redacted runtime evidence. Reference IDs and correction targets are carried through typed records. `Copy error JSON` serializes the selected sanitized problem view as formatted JSON and uses the existing visible clipboard success/failure pattern. Display, copy, and export never bypass existing redaction or expose raw provider payloads, credentials, or route keys.
 
 ### Treat backup/restore as a validated transaction
 

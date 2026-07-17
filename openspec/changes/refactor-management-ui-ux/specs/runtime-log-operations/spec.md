@@ -20,6 +20,13 @@ The system SHALL provide Problems, Events, and Raw logs diagnostics views over s
 - **WHEN** a user searches Diagnostics for a known reference ID
 - **THEN** matching problems, events, and redacted log entries are discoverable in their owning views
 
+#### Scenario: Provider runtime failure creates traceable evidence
+
+- **WHEN** a provider runtime or its event-ingestion pipeline creates a distinct live failure
+- **THEN** the failure source generates a reference ID and records redacted diagnostic evidence with the same ID
+- **AND** provider status and management error detail expose that reference ID
+- **AND** repeated status reads do not create duplicate diagnostic entries for the same failure
+
 ### Requirement: Diagnostic Correction Links Preserve Context
 
 The system SHALL link diagnostic failures to the provider, alert, asset, browser-source output, or settings location that can correct them.
@@ -45,6 +52,13 @@ The system SHALL expose logging configuration, redacted recent runtime entries, 
 
 - **WHEN** a management user chooses `Copy sanitized event`
 - **THEN** the copied record contains diagnostic context and reference IDs but no secret or disallowed raw payload fields
+
+#### Scenario: Selected problem is copied as JSON
+
+- **WHEN** a management user chooses `Copy error JSON` for the selected Diagnostics problem
+- **THEN** the clipboard receives a formatted JSON document containing the sanitized problem identifier, area, summary, cause, next step, severity, occurrence time, reference ID, and correction target
+- **AND** the UI reports copy success or a human-readable copy failure with a next step
+- **AND** the copied JSON contains no secret or disallowed raw payload fields
 
 #### Scenario: Diagnostics export includes safe log metadata
 

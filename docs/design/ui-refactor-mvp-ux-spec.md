@@ -218,7 +218,8 @@ Event-source rows show:
 - `Live status`: `Starting`, `Healthy`, `Reconnecting`, or `Error` for the source in use; inactive sources show `Not running`.
 
 Live status is transient runtime evidence, not the saved validation result. Last validation and known setup errors remain in provider details.
-When live status is `Error`, selecting the provider shows the current runtime cause, a human-readable next step, occurrence time, and reference ID when available in the right detail panel. The error includes an `Open diagnostics` link filtered by reference ID when available, or opens the Diagnostics workspace unfiltered otherwise. The table retains the compact `Error` status instead of repeating the full failure inline.
+The Event sources page refreshes live status every five seconds without a page reload and preserves the selected provider. If refresh fails, the last known state remains visible and an actionable refresh error is shown.
+When live status is `Error`, the provider runtime or event-ingestion pipeline generates a reference ID at the distinct failure source and records redacted diagnostic evidence with that same ID. Repeated status reads reuse the reference for the same occurrence; a recovered or later failure receives a new ID. Selecting the provider shows the current runtime cause, a human-readable next step, occurrence time, and reference ID in the right detail panel. The error includes an `Open diagnostics` link filtered by reference ID. The table retains the compact `Error` status instead of repeating the full failure inline.
 Event-source copy should not hardcode one-active-provider language so future multi-active provider support remains possible.
 
 ### Activation Impact Checks
@@ -656,6 +657,7 @@ Problems:
 - Active issues grouped by severity, then area: Integrations, Alerts, Assets, Output, System.
 - Active problems are not dismissible while true.
 - Resolved historical entries can be cleared/filtered from view but remain in logs by retention.
+- Selected problem includes `Copy error JSON`, which copies the complete sanitized problem view as formatted JSON and reports clipboard success or failure.
 
 Events:
 

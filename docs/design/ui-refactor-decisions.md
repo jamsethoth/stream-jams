@@ -187,8 +187,12 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Event-source rows show `Usage` as `In use` or `Not in use`.
 - Event-source rows show transient `Live status` as `Starting`, `Healthy`, `Reconnecting`, or `Error` while in use; inactive sources show `Not running`.
 - Last validation and known setup errors remain in provider details rather than duplicating runtime health in the table.
-- Selecting an event source with `Error` live status shows the current runtime cause, next step, occurrence time, and reference ID when available in the right detail panel.
-- Runtime error detail includes an `Open diagnostics` link filtered by reference ID when available; without a reference ID it opens the Diagnostics workspace unfiltered.
+- Event-source live status refreshes every five seconds while the page is open without changing the selected provider.
+- Failed live-status refresh keeps the last known state visible and shows an actionable refresh error.
+- Provider runtimes and the event-ingestion pipeline generate a reference ID at each distinct live failure source, record one redacted diagnostic entry with the same ID, and expose it through provider status.
+- Repeated status reads reuse the reference ID for the same failure occurrence; recovery or a later occurrence receives a new ID.
+- Selecting an event source with `Error` live status shows the current runtime cause, next step, occurrence time, and reference ID in the right detail panel.
+- Runtime error detail includes an `Open diagnostics` link filtered by reference ID.
 - The event-source table remains compact and does not repeat the full runtime error inline.
 - TTS provider setup should include `Test voice` before completion when the provider supports it.
 - TTS provider page should show provider `Connection` and `Used by alerts` count/link.
@@ -637,6 +641,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Diagnostics filters and sort should persist for the current session only.
 - Any user-facing error should include a reference ID when available.
 - Diagnostics should support search by reference ID.
+- Selected Diagnostics problems include `Copy error JSON`, which copies the sanitized problem fields as formatted JSON with visible clipboard success or failure feedback.
 - Active Diagnostics problems are not dismissible while still true.
 - Resolved historical Diagnostics entries can be cleared or filtered from the view while remaining in logs according to retention.
 - Tips and noncritical noise can be dismissed.
