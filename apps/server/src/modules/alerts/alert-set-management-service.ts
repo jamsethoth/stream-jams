@@ -63,7 +63,6 @@ type ManagedAlertService = Pick<
 export interface AlertSetManagementServiceOptions {
   readonly alertService: ManagedAlertService;
   readonly metadataRepository: AlertSetMetadataRepository;
-  readonly getActiveEventProviderKind: () => Promise<ProviderKind | null>;
   readonly listBrowserSources: () => Promise<readonly AlertBrowserSourceView[]>;
 }
 
@@ -81,13 +80,11 @@ const starterAlerts = [
 export class AlertSetManagementService {
   readonly #alertService: ManagedAlertService;
   readonly #metadataRepository: AlertSetMetadataRepository;
-  readonly #getActiveEventProviderKind: () => Promise<ProviderKind | null>;
   readonly #listBrowserSources: () => Promise<readonly AlertBrowserSourceView[]>;
 
   constructor(options: AlertSetManagementServiceOptions) {
     this.#alertService = options.alertService;
     this.#metadataRepository = options.metadataRepository;
-    this.#getActiveEventProviderKind = options.getActiveEventProviderKind;
     this.#listBrowserSources = options.listBrowserSources;
   }
 
@@ -100,10 +97,9 @@ export class AlertSetManagementService {
     }
     const rules = await this.#alertService.listRules();
     const browserSources = await this.#listBrowserSources();
-    const activeProviderKind = await this.#getActiveEventProviderKind();
     return Promise.all(
       collections.map(async (collection) =>
-        this.#toOverview(collection.id, rules, browserSources, activeProviderKind)
+        this.#toOverview(collection.id, rules, browserSources)
       )
     );
   }
@@ -292,8 +288,7 @@ export class AlertSetManagementService {
   async #toOverview(
     setId: string,
     allRules: readonly AlertRule[],
-    browserSources: readonly AlertBrowserSourceView[],
-    activeProviderKind: ProviderKind | null
+    browserSources: readonly AlertBrowserSourceView[]
   ): Promise<AlertSetOverview> {
     const collection = await this.#findCollection(setId);
     const metadata = await this.#setMetadata(setId);
@@ -312,7 +307,6 @@ export class AlertSetManagementService {
     }
 
     for (const rule of enabledRules) {
-      const ruleMetadata = await this.#ruleMetadata(rule.id);
       if (!rule.variants.some((variant) => variant.enabled)) {
         issues.push(validationIssue({
           id: `${rule.id}:no-enabled-variation`,
@@ -321,18 +315,6 @@ export class AlertSetManagementService {
           message: `${rule.name} has no enabled default or variation.`,
           nextStep: "Open the alert and enable a valid default or variation.",
           alertId: rule.id,
-          eventType: rule.eventType
-        }));
-      }
-      if (activeProviderKind !== null && activeProviderKind !== ruleMetadata.providerKind) {
-        issues.push(validationIssue({
-          id: `${rule.id}:provider-kind-mismatch`,
-          severity: "warning",
-          code: "PROVIDER_KIND_MISMATCH",
-          message: `${rule.name} targets ${formatProviderKind(ruleMetadata.providerKind)}, but ${formatProviderKind(activeProviderKind)} is active.`,
-          nextStep: "Confirm the set change or update the alert to the active event-source kind.",
-          alertId: rule.id,
-          providerKind: ruleMetadata.providerKind,
           eventType: rule.eventType
         }));
       }
@@ -539,14 +521,4 @@ function omitId<T extends { readonly id: string }>(value: T): Omit<T, "id"> {
   const { id, ...rest } = value;
   void id;
   return rest;
-}
-
-function formatProviderKind(kind: ProviderKind): string {
-  const labels: Record<ProviderKind, string> = {
-    twitch: "Twitch",
-    streamerbot: "Streamer.bot",
-    speakerbot: "Speaker.bot",
-    "browser-speech": "Browser Speech"
-  };
-  return labels[kind];
 }

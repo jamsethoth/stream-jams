@@ -31,7 +31,7 @@ describe("AlertSetsPage", () => {
 
   it("shows activation impact and requires explicit warning confirmation", async () => {
     const seasonal = { ...overview(), id: "set-seasonal", name: "Seasonal", active: false, starter: false };
-    const warning = issue("provider-warning", "warning", "PROVIDER_KIND_MISMATCH", "Alerts use Twitch while Streamer.bot is active.");
+    const warning = issue("asset-warning", "warning", "ASSET_NEEDS_REVIEW", "One alert uses an asset that needs review.");
     const api = alertSetsApi({
       listAlertSets: vi.fn(async () => [overview(), seasonal]),
       getAlertSet: vi.fn(async (setId) => ({
@@ -52,7 +52,7 @@ describe("AlertSetsPage", () => {
     await user.click(screen.getByRole("button", { name: "Make Seasonal active" }));
     const dialog = await screen.findByRole("dialog", { name: "Activate Seasonal?" });
     expect(dialog).toBeInTheDocument();
-    expect(within(dialog).getByText("Alerts use Twitch while Streamer.bot is active.")).toBeInTheDocument();
+    expect(within(dialog).getByText("One alert uses an asset that needs review.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Activate with warnings" }));
 
     expect(api.activateAlertSet).toHaveBeenCalledWith("set-seasonal", true);

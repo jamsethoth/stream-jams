@@ -32,7 +32,7 @@ try {
   });
 
   if (result.status === "started") {
-    await composition.twitchEventSubRuntimeService.connectStoredAccount();
+    await composition.syncEventSourceRuntime();
     console.info(`Stream Jams server listening on ${result.url}`);
   } else {
     console.error(

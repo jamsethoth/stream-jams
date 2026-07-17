@@ -14,6 +14,7 @@ export const ActiveProblems: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("heading", { name: "Error · Providers" })).toBeVisible();
     await expect(canvas.getByRole("link", { name: "Open event sources" })).toHaveAttribute("href", expect.stringContaining("diagnostic=ref-provider-1"));
+    await expect(canvas.getByRole("button", { name: "Copy error JSON" })).toBeVisible();
   }
 };
 

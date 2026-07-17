@@ -1,0 +1,20 @@
+{
+  "timeStamp": "2026-07-17T12:03:00.000Z",
+  "event": {
+    "source": "Twitch",
+    "type": "Cheer"
+  },
+  "data": {
+    "user": {
+      "id": "user-cheer",
+      "login": "cheerer",
+      "name": "Cheerer"
+    },
+    "messageId": "message-cheer",
+    "anonymous": false,
+    "text": "Great stream",
+    "createdAt": "2026-07-17T12:03:00.000Z",
+    "bits": 500,
+    "isTest": false
+  }
+}

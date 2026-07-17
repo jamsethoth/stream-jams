@@ -30,7 +30,8 @@ describe("twitch eventsub routes", () => {
       rejectedCount: 0,
       lastEventAt: "2026-05-30T12:00:00.000Z",
       lastErrorAt: null,
-      message: null
+      message: null,
+      referenceId: null
     });
   });
 
@@ -96,7 +97,8 @@ class RecordingEventSubStatusService {
       rejectedCount: 0,
       lastEventAt: "2026-05-30T12:00:00.000Z",
       lastErrorAt: null,
-      message: null
+      message: null,
+      referenceId: null
     };
   }
 }

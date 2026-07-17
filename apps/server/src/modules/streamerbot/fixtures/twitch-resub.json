@@ -1,0 +1,23 @@
+{
+  "timeStamp": "2026-07-17T12:02:00.000Z",
+  "event": {
+    "source": "Twitch",
+    "type": "ReSub"
+  },
+  "data": {
+    "user": {
+      "id": "user-resub",
+      "login": "resubscriber",
+      "name": "Resubscriber"
+    },
+    "messageId": "message-resub",
+    "text": "Seven months!",
+    "createdAt": "2026-07-17T12:02:00.000Z",
+    "cumulativeMonths": 7,
+    "durationMonths": 1,
+    "streakMonths": 3,
+    "subTier": "2000",
+    "isPrime": false,
+    "isTest": false
+  }
+}

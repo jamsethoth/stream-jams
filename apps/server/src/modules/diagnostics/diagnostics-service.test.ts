@@ -2,6 +2,7 @@ import type { AlertMatchLogRecord, EventLogRecord, NormalizedStreamEvent, Playba
 import { describe, expect, it } from "vitest";
 import { createRedactor } from "../security/redactor.js";
 import { DiagnosticsLimitError, DiagnosticsService, type DiagnosticsRuntimeLogSource } from "./diagnostics-service.js";
+import type { RuntimeLogEntry } from "./runtime-jsonl-logger.js";
 
 const followEvent: NormalizedStreamEvent = {
   id: "event-follow-1",
@@ -70,7 +71,8 @@ describe("DiagnosticsService", () => {
           label: "Twitch EventSub",
           state: "degraded",
           lastErrorAt: "2026-05-31T02:00:03.000Z",
-          message: "Reconnect failed with Bearer oauth-secret"
+          message: "Reconnect failed with Bearer oauth-secret",
+          referenceId: "ref-twitch-1"
         })
       }
     ]);
@@ -98,7 +100,8 @@ describe("DiagnosticsService", () => {
     expect(diagnostics.providerErrors).toEqual([
       expect.objectContaining({
         id: "provider-status:twitch",
-        message: "Reconnect failed with Bearer [REDACTED]"
+        message: "Reconnect failed with Bearer [REDACTED]",
+        correlationId: "ref-twitch-1"
       }),
       expect.objectContaining({
         id: "event-log:event-log-1",
@@ -117,6 +120,100 @@ describe("DiagnosticsService", () => {
         authorization: "[REDACTED]"
       }
     });
+  });
+
+  it("does not project a historical provider error after the provider recovers", async () => {
+    const service = createService(new RecordingDiagnosticsRepository(), [
+      {
+        getStatus: () => ({
+          providerId: "twitch",
+          label: "Twitch EventSub",
+          state: "ready",
+          lastErrorAt: "2026-05-31T02:00:03.000Z",
+          message: null,
+          referenceId: null
+        })
+      }
+    ]);
+
+    await expect(service.getDiagnostics()).resolves.toMatchObject({ providerErrors: [] });
+  });
+
+  it("keeps provider runtime failures in raw logs without duplicating current provider problems", async () => {
+    const runtimeLogSource = new RecordingRuntimeLogSource();
+    const service = createService(new RecordingDiagnosticsRepository(), [
+      {
+        getStatus: () => ({
+          providerId: "twitch",
+          label: "Twitch EventSub",
+          state: "degraded",
+          lastErrorAt: "2026-05-31T02:04:00.000Z",
+          message: "Provider failed",
+          referenceId: "correlation-1"
+        })
+      }
+    ], runtimeLogSource);
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.problems.filter((problem) => problem.referenceId === "correlation-1")).toEqual([
+      expect.objectContaining({ id: "provider-status:twitch" })
+    ]);
+    expect(workspace.rawLogs).toContainEqual(expect.objectContaining({
+      referenceId: "correlation-1",
+      component: "twitch"
+    }));
+  });
+
+  it("does not keep a recovered provider failure open from its historical runtime log", async () => {
+    const service = createService(new RecordingDiagnosticsRepository(), [
+      {
+        getStatus: () => ({
+          providerId: "twitch",
+          label: "Twitch EventSub",
+          state: "ready",
+          lastErrorAt: "2026-05-31T02:04:00.000Z",
+          message: null,
+          referenceId: null
+        })
+      }
+    ], new RecordingRuntimeLogSource());
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.problems).not.toContainEqual(expect.objectContaining({ referenceId: "correlation-1" }));
+    expect(workspace.rawLogs).toContainEqual(expect.objectContaining({ referenceId: "correlation-1" }));
+  });
+
+  it("keeps shared event-intake failures in raw logs instead of duplicating provider status", async () => {
+    const runtimeLogSource = new RecordingRuntimeLogSource([{
+      timestamp: "2026-05-31T02:04:00.000Z",
+      level: "ERROR",
+      event: "event-intake",
+      component: "events",
+      message: "Normalized stream event ingestion failed",
+      correlationId: "ref-ingestion-1",
+      processingId: null
+    }]);
+    const service = createService(new RecordingDiagnosticsRepository(), [
+      {
+        getStatus: () => ({
+          providerId: "provider-streamerbot",
+          label: "Streamer.bot event intake",
+          state: "degraded",
+          lastErrorAt: "2026-05-31T02:04:00.000Z",
+          message: "Normalized stream event ingestion failed",
+          referenceId: "ref-ingestion-1"
+        })
+      }
+    ], runtimeLogSource);
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.problems.filter((problem) => problem.referenceId === "ref-ingestion-1")).toEqual([
+      expect.objectContaining({ id: "provider-status:provider-streamerbot" })
+    ]);
+    expect(workspace.rawLogs).toContainEqual(expect.objectContaining({ referenceId: "ref-ingestion-1" }));
   });
 
   it("includes safe log metadata by default and bounded redacted runtime logs only in debug exports", async () => {
@@ -195,7 +292,8 @@ describe("DiagnosticsService", () => {
           label: "Secret store",
           state: "degraded",
           lastErrorAt: "2026-05-31T02:00:04.000Z",
-          message: "Configuration secret store could not be opened"
+          message: "Configuration secret store could not be opened",
+          referenceId: null
         })
       }
     ], runtimeLogSource, {
@@ -440,6 +538,21 @@ class RecordingRuntimeLogSource implements DiagnosticsRuntimeLogSource {
   };
   readonly recentRequests: Array<{ readonly limit: number; readonly sinceHours?: number | undefined }> = [];
 
+  constructor(private readonly entries: readonly RuntimeLogEntry[] = [
+    {
+      timestamp: "2026-05-31T02:04:00.000Z",
+      level: "ERROR" as const,
+      event: "twitch.eventsub",
+      component: "twitch",
+      message: "Provider failed with Bearer oauth-secret",
+      correlationId: "correlation-1",
+      processingId: null,
+      details: {
+        authorization: "Bearer oauth-secret"
+      }
+    }
+  ]) {}
+
   async getMetadata() {
     return this.metadata;
   }
@@ -447,20 +560,7 @@ class RecordingRuntimeLogSource implements DiagnosticsRuntimeLogSource {
   async listRecent(options: { readonly limit: number; readonly sinceHours?: number | undefined }) {
     this.recentRequests.push(options);
     return {
-      entries: [
-        {
-          timestamp: "2026-05-31T02:04:00.000Z",
-          level: "ERROR" as const,
-          event: "provider.failure",
-          component: "twitch",
-          message: "Provider failed with Bearer oauth-secret",
-          correlationId: "correlation-1",
-          processingId: null,
-          details: {
-            authorization: "Bearer oauth-secret"
-          }
-        }
-      ].slice(0, options.limit),
+      entries: this.entries.slice(0, options.limit),
       truncated: true
     };
   }

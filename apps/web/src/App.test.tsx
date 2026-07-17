@@ -62,6 +62,9 @@ function createManagementApi(): ManagementApi {
     async activateProvider() {
       throw new Error("not called");
     },
+    async deactivateProvider() {
+      throw new Error("not called");
+    },
     async getProviderActivationImpact() {
       return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
     },

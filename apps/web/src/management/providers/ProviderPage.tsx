@@ -3,6 +3,7 @@ import type {
   ProviderActivationImpact,
   ProviderCapability,
   ProviderKind,
+  ProviderLiveStatus,
   ProviderSetupInput,
   ProviderValidationResult,
   RegisteredProviderDetail,
@@ -25,6 +26,7 @@ export type ProviderPageApi = Pick<
   | "registerProvider"
   | "getProvider"
   | "activateProvider"
+  | "deactivateProvider"
   | "getProviderActivationImpact"
   | "getTtsProviderSafetySettings"
   | "updateTtsSafety"
@@ -59,6 +61,10 @@ interface TwitchAuthorizationViewState {
   readonly intervalSeconds: number;
 }
 
+type PendingProviderAction =
+  | { readonly kind: "activate"; readonly provider: RegisteredProviderView; readonly impact: ProviderActivationImpact }
+  | { readonly kind: "deactivate"; readonly provider: RegisteredProviderView; readonly impact: null };
+
 const safeVoiceTestText = "Stream Jams voice test. Your text to speech provider is ready.";
 
 export function ProviderPage({
@@ -78,10 +84,14 @@ export function ProviderPage({
   const [savedSafety, setSavedSafety] = useState<TtsProviderSafetySettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<ActionableManagementError | null>(null);
+  const [refreshError, setRefreshError] = useState<ActionableManagementError | null>(null);
   const [operationError, setOperationError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(openSetupOnLoad);
-  const [activationOpen, setActivationOpen] = useState(false);
+  const [reconnectProvider, setReconnectProvider] = useState<RegisteredProviderView | null>(null);
+  const [pendingAction, setPendingAction] = useState<PendingProviderAction | null>(null);
+  const [actionLoadingProviderId, setActionLoadingProviderId] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
   const [pendingProviderId, setPendingProviderId] = useState<string | null>(null);
   const [selectionError, setSelectionError] = useState<string | null>(null);
 
@@ -125,6 +135,48 @@ export function ProviderPage({
   }, [capability, copy.title, initialProviderId, managementApi]);
 
   useEffect(() => {
+    if (capability !== "event-source") return;
+    let cancelled = false;
+    let refreshing = false;
+    const refresh = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const loaded = await managementApi.listRegisteredProviders("event-source");
+        if (cancelled) return;
+        setProviders(loaded);
+        setSelectedProviderId((current) =>
+          loaded.find((provider) => provider.id === current)?.id
+            ?? loaded.find((provider) => provider.active)?.id
+            ?? loaded[0]?.id
+            ?? null
+        );
+        setDetail((current) => {
+          if (current === null) return null;
+          const provider = loaded.find((candidate) => candidate.id === current.provider.id);
+          return provider === undefined ? current : { ...current, provider };
+        });
+        setRefreshError(null);
+      } catch (error) {
+        if (!cancelled) {
+          setRefreshError(actionableError(
+            error,
+            "Unable to refresh live status",
+            "Check the local service and Diagnostics. Live status will retry automatically."
+          ));
+        }
+      } finally {
+        refreshing = false;
+      }
+    };
+    const interval = window.setInterval(() => void refresh(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [capability, managementApi]);
+
+  useEffect(() => {
     if (openSetupOnLoad) setSetupOpen(true);
   }, [openSetupOnLoad]);
 
@@ -134,7 +186,7 @@ export function ProviderPage({
   );
 
   useEffect(() => {
-    if (selectedProvider === null) {
+    if (selectedProviderId === null) {
       setDetail(null);
       setImpact(null);
       setSafety(null);
@@ -142,12 +194,12 @@ export function ProviderPage({
       return;
     }
     let cancelled = false;
-    const detailRequest = managementApi.getProvider(selectedProvider.id);
-    const impactRequest = selectedProvider.active
+    const detailRequest = managementApi.getProvider(selectedProviderId);
+    const impactRequest = selectedProvider?.active !== false
       ? Promise.resolve<ProviderActivationImpact | null>(null)
-      : managementApi.getProviderActivationImpact(selectedProvider.id);
+      : managementApi.getProviderActivationImpact(selectedProviderId);
     const safetyRequest = capability === "tts"
-      ? managementApi.getTtsProviderSafetySettings(selectedProvider.id)
+      ? managementApi.getTtsProviderSafetySettings(selectedProviderId)
       : Promise.resolve<TtsProviderSafetySettings | null>(null);
     void Promise.all([detailRequest, impactRequest, safetyRequest])
       .then(([loadedDetail, loadedImpact, loadedSafety]) => {
@@ -171,33 +223,52 @@ export function ProviderPage({
     return () => {
       cancelled = true;
     };
-  }, [capability, managementApi, selectedProvider]);
+  }, [capability, managementApi, selectedProvider?.active, selectedProviderId]);
 
-  async function activate(confirmWarnings: boolean) {
-    if (selectedProvider === null) {
-      return;
-    }
+  async function requestActivation(provider: RegisteredProviderView) {
+    setActionLoadingProviderId(provider.id);
+    setOperationError(null);
     try {
-      await managementApi.activateProvider(selectedProvider.id, confirmWarnings);
-      await loadProviders(selectedProvider.id);
-      setActivationOpen(false);
-      setOperationError(null);
-      setNotice(`${selectedProvider.name} is active.`);
+      const nextImpact = await managementApi.getProviderActivationImpact(provider.id);
+      setPendingAction({ kind: "activate", provider, impact: nextImpact });
     } catch (error) {
-      setActivationOpen(false);
-      setOperationError(actionableError(error, "Unable to activate provider", "Review activation impact and resolve blockers before retrying."));
+      setOperationError(actionableError(error, "Unable to review provider activation", "Select the provider, review its connection state, then retry activation."));
+    } finally {
+      setActionLoadingProviderId(null);
     }
   }
 
-  async function requestActivation() {
-    if (impact === null || impact.blockers.length > 0) {
-      return;
+  function requestDeactivation(provider: RegisteredProviderView) {
+    setOperationError(null);
+    setPendingAction({ kind: "deactivate", provider, impact: null });
+  }
+
+  async function confirmProviderAction() {
+    if (pendingAction === null) return;
+    setActionBusy(true);
+    try {
+      if (pendingAction.kind === "activate") {
+        await managementApi.activateProvider(pendingAction.provider.id, true);
+      } else {
+        await managementApi.deactivateProvider(pendingAction.provider.id);
+      }
+      await loadProviders(pendingAction.provider.id);
+      setOperationError(null);
+      setNotice(`${pendingAction.provider.name} is ${pendingAction.kind === "activate" ? "active" : "inactive"}.`);
+      setPendingAction(null);
+    } catch (error) {
+      const activating = pendingAction.kind === "activate";
+      setPendingAction(null);
+      setOperationError(actionableError(
+        error,
+        `Unable to ${activating ? "activate" : "deactivate"} provider`,
+        activating
+          ? "Review activation impact and resolve blockers before retrying."
+          : "Confirm the provider still exists and is active, then retry deactivation."
+      ));
+    } finally {
+      setActionBusy(false);
     }
-    if (impact.warnings.length > 0) {
-      setActivationOpen(true);
-      return;
-    }
-    await activate(false);
   }
 
   const persistSafety = useCallback(async (): Promise<boolean> => {
@@ -288,10 +359,11 @@ export function ProviderPage({
           <h2>{copy.title}</h2>
           <p>Register providers, validate connections, and choose which provider is active.</p>
         </div>
-        <button onClick={() => setSetupOpen(true)} type="button">{copy.add}</button>
+        <button onClick={() => { setReconnectProvider(null); setSetupOpen(true); }} type="button">{copy.add}</button>
       </div>
 
       {pageError === null ? null : <ManagementErrorBanner error={pageError} />}
+      {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
       {operationError === null ? null : <ManagementErrorBanner error={operationError} />}
       {notice === null ? null : <p className="provider-page__notice" role="status">{notice}</p>}
 
@@ -304,29 +376,72 @@ export function ProviderPage({
               <thead>
                 <tr>
                   <th scope="col">Provider</th>
-                  <th scope="col">Connection</th>
-                  {capability === "event-source" ? <th scope="col">Intake</th> : <th scope="col">Used by alerts</th>}
-                  <th scope="col">Runtime</th>
-                  <th scope="col">Actions</th>
+                  {capability === "event-source" ? (
+                    <>
+                      <th scope="col">Usage</th>
+                      <th scope="col">Live status</th>
+                    </>
+                  ) : (
+                    <>
+                      <th scope="col">Connection</th>
+                      <th scope="col">Used by alerts</th>
+                      <th scope="col">Runtime</th>
+                    </>
+                  )}
+                  {capability === "event-source" ? <th scope="col">Actions</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {providers.map((provider) => (
-                  <tr className={provider.id === selectedProviderId ? "provider-page__selected-row" : undefined} key={provider.id}>
+                  <tr
+                    className={provider.id === selectedProviderId ? "provider-page__selected-row" : undefined}
+                    key={provider.id}
+                    onClick={() => requestProviderSelection(provider.id)}
+                  >
                     <th scope="row">
-                      <span>{provider.name}</span>
-                      <small>{formatProviderKind(provider.kind)}</small>
+                      <button
+                        aria-label={`Select ${provider.name}`}
+                        aria-pressed={provider.id === selectedProviderId}
+                        className="provider-page__provider-select"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          requestProviderSelection(provider.id);
+                        }}
+                        type="button"
+                      >
+                        <span>{provider.name}</span>
+                        <small>{formatProviderKind(provider.kind)}</small>
+                      </button>
                     </th>
-                    <td><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></td>
-                    <td>
-                      {capability === "event-source"
-                        ? <StatusBadge label={formatState(provider.intakeState ?? "inactive")} tone={intakeTone(provider.intakeState)} />
-                        : `${provider.usedByAlertCount}`}
-                    </td>
-                    <td><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
-                    <td>
-                      <button aria-label={`View ${provider.name}`} className="provider-page__secondary-action" onClick={() => requestProviderSelection(provider.id)} type="button">View</button>
-                    </td>
+                    {capability === "event-source" ? (
+                      <>
+                        <td><StatusBadge label={provider.active ? "In use" : "Not in use"} tone={provider.active ? "positive" : "neutral"} /></td>
+                        <td><StatusBadge label={formatLiveStatus(eventSourceLiveStatus(provider))} tone={liveStatusTone(eventSourceLiveStatus(provider))} /></td>
+                      </>
+                    ) : (
+                      <>
+                        <td><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></td>
+                        <td>{provider.usedByAlertCount}</td>
+                        <td><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
+                      </>
+                    )}
+                    {capability === "event-source" ? (
+                      <td>
+                        <button
+                          aria-label={`${provider.active ? "Deactivate" : "Activate"} ${provider.name}`}
+                          className="provider-page__secondary-action"
+                          disabled={actionLoadingProviderId === provider.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (provider.active) requestDeactivation(provider);
+                            else void requestActivation(provider);
+                          }}
+                          type="button"
+                        >
+                          {actionLoadingProviderId === provider.id ? "Checking..." : provider.active ? "Deactivate" : "Activate"}
+                        </button>
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>
@@ -338,7 +453,10 @@ export function ProviderPage({
               capability={capability}
               detail={detail}
               impact={impact}
-              onActivate={() => void requestActivation()}
+              onActivate={capability === "tts" && selectedProvider !== null ? () => void requestActivation(selectedProvider) : null}
+              onReconnect={capability === "event-source" && detail.provider.kind === "twitch" && eventSourceLiveStatus(detail.provider) === "error"
+                ? () => setReconnectProvider(detail.provider)
+                : null}
               onSafetyChange={setSafety}
               onSafetySubmit={saveSafety}
               onTestVoice={() => void testVoice()}
@@ -363,27 +481,66 @@ export function ProviderPage({
       <ProviderSetupWizard
         capability={capability}
         managementApi={managementApi}
-        onCancel={() => setSetupOpen(false)}
+        onCancel={() => { setSetupOpen(false); setReconnectProvider(null); }}
+        onReconnected={async (providerId, providerName) => {
+          await loadProviders(providerId);
+          setReconnectProvider(null);
+          setNotice(`${providerName} reconnected. Live status is updating.`);
+        }}
         onRegistered={async (providerId, providerName, active) => {
           await loadProviders(providerId);
           setSetupOpen(false);
+          setReconnectProvider(null);
           setNotice(active
             ? `${providerName} registered and active.`
             : `${providerName} registered but inactive. Set it active when you are ready to switch ${capability === "event-source" ? "event intake" : "text-to-speech output"}.`);
         }}
-        open={setupOpen}
+        open={setupOpen || reconnectProvider !== null}
+        reconnectProvider={reconnectProvider}
       />
 
-      <ModalSurface labelledBy="provider-activation-title" onCancel={() => setActivationOpen(false)} open={activationOpen}>
+      <ModalSurface labelledBy="provider-action-title" onCancel={() => { if (!actionBusy) setPendingAction(null); }} open={pendingAction !== null}>
         <div className="provider-page__modal-content">
-          <h2 id="provider-activation-title">Set {selectedProvider?.name ?? "provider"} active?</h2>
-          <p>This changes which {capability === "event-source" ? "event source receives live events" : "TTS provider handles speech"}.</p>
-          <div className="provider-page__errors">
-            {impact?.warnings.map((item, index) => <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />)}
-          </div>
+          <h2 id="provider-action-title">
+            {pendingAction?.kind === "deactivate" ? "Deactivate" : "Activate"} {pendingAction?.provider.name ?? "provider"}?
+          </h2>
+          {pendingAction?.kind === "deactivate" ? (
+            <>
+              <p>Live event intake will stop for {pendingAction.provider.name}. Provider settings and alert mappings will remain saved, and the provider connection can remain connected.</p>
+              <p>Activate this or another event source to resume intake.</p>
+              <p>
+                {pendingAction.provider.usedByAlertCount} {pendingAction.provider.usedByAlertCount === 1 ? "alert uses" : "alerts use"} this provider type.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>
+                {capability === "event-source"
+                  ? providers.some((provider) => provider.active)
+                    ? `${providers.find((provider) => provider.active)?.name} will become inactive. Saved configuration will not be deleted.`
+                    : `${pendingAction?.provider.name ?? "This event source"} will become the active event source. Saved configuration will not be deleted.`
+                  : "This provider will handle text-to-speech output. The current active provider will become inactive."}
+              </p>
+              <p>{pendingAction?.impact.matchedAlertCount ?? 0} matching alerts, {pendingAction?.impact.unmatchedAlertCount ?? 0} unmatched alerts.</p>
+              <div className="provider-page__errors">
+                {[...(pendingAction?.impact.blockers ?? []), ...(pendingAction?.impact.warnings ?? [])].map((item, index) => (
+                  <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />
+                ))}
+              </div>
+            </>
+          )}
           <div className="provider-page__actions">
-            <button className="provider-page__secondary-action" onClick={() => setActivationOpen(false)} type="button">Cancel</button>
-            <button onClick={() => void activate(true)} type="button">Set active provider</button>
+            <button className="provider-page__secondary-action" disabled={actionBusy} onClick={() => setPendingAction(null)} type="button">Cancel</button>
+            <button
+              className={pendingAction?.kind === "deactivate" ? "button button--danger" : undefined}
+              disabled={actionBusy || (pendingAction?.impact?.blockers.length ?? 0) > 0}
+              onClick={() => void confirmProviderAction()}
+              type="button"
+            >
+              {pendingAction?.kind === "deactivate"
+                ? "Deactivate event source"
+                : capability === "event-source" ? "Activate event source" : "Activate TTS provider"}
+            </button>
           </div>
         </div>
       </ModalSurface>
@@ -396,6 +553,7 @@ function ProviderDetail({
   detail,
   impact,
   onActivate,
+  onReconnect,
   onSafetyChange,
   onSafetySubmit,
   onTestVoice,
@@ -404,7 +562,8 @@ function ProviderDetail({
   readonly capability: ProviderCapability;
   readonly detail: RegisteredProviderDetail;
   readonly impact: ProviderActivationImpact | null;
-  readonly onActivate: () => void;
+  readonly onActivate: (() => void) | null;
+  readonly onReconnect: (() => void) | null;
   readonly onSafetyChange: (safety: TtsProviderSafetySettings) => void;
   readonly onSafetySubmit: (event: FormEvent<HTMLFormElement>) => void;
   readonly onTestVoice: () => void;
@@ -418,12 +577,24 @@ function ProviderDetail({
           <h3 id="provider-detail-title">{provider.name}</h3>
           <p>{formatProviderKind(provider.kind)}</p>
         </div>
-        <StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} />
+        <StatusBadge
+          label={capability === "event-source" ? provider.active ? "In use" : "Not in use" : provider.active ? "Active" : "Inactive"}
+          tone={provider.active ? "positive" : "neutral"}
+        />
       </div>
       {provider.error === null ? null : <ManagementErrorBanner error={provider.error} />}
+      {onReconnect === null ? null : (
+        <div className="provider-page__connection-actions">
+          <button onClick={onReconnect} type="button">Reconnect Twitch</button>
+        </div>
+      )}
       <dl className="provider-page__facts">
-        <div><dt>Connection</dt><dd>{formatState(provider.connectionState)}</dd></div>
-        {capability === "event-source" ? <div><dt>Intake</dt><dd>{formatState(provider.intakeState ?? "inactive")}</dd></div> : null}
+        {capability === "event-source" ? (
+          <>
+            <div><dt>Usage</dt><dd>{provider.active ? "In use" : "Not in use"}</dd></div>
+            <div><dt>Live status</dt><dd>{formatLiveStatus(eventSourceLiveStatus(provider))}</dd></div>
+          </>
+        ) : <div><dt>Connection</dt><dd>{formatState(provider.connectionState)}</dd></div>}
         <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : new Date(provider.validatedAt).toLocaleString()}</dd></div>
         <div>
           <dt>Used by alerts</dt>
@@ -442,9 +613,11 @@ function ProviderDetail({
                   <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />
                 ))}
               </div>
-              <button disabled={impact.blockers.length > 0} onClick={onActivate} type="button">
-                {impact.blockers.length > 0 ? "Resolve blockers to activate" : "Set active"}
-              </button>
+              {onActivate === null ? null : (
+                <button disabled={impact.blockers.length > 0} onClick={onActivate} type="button">
+                  {impact.blockers.length > 0 ? "Resolve blockers to activate" : "Set active"}
+                </button>
+              )}
             </>
           )}
         </section>
@@ -496,16 +669,21 @@ function ProviderSetupWizard({
   capability,
   managementApi,
   onCancel,
+  onReconnected,
   onRegistered,
-  open
+  open,
+  reconnectProvider
 }: {
   readonly capability: ProviderCapability;
   readonly managementApi: ProviderPageApi;
   readonly onCancel: () => void;
+  readonly onReconnected: (providerId: string, providerName: string) => Promise<void>;
   readonly onRegistered: (providerId: string, providerName: string, active: boolean) => Promise<void>;
   readonly open: boolean;
+  readonly reconnectProvider: RegisteredProviderView | null;
 }) {
   const defaultKind: ProviderKind = capability === "event-source" ? "twitch" : "speakerbot";
+  const reconnecting = reconnectProvider !== null;
   const [step, setStep] = useState<"select" | "configure" | "review">("select");
   const [draft, setDraft] = useState<SetupDraft>(() => createDraft(defaultKind));
   const [validation, setValidation] = useState<ProviderValidationResult | null>(null);
@@ -530,8 +708,10 @@ function ProviderSetupWizard({
 
   useEffect(() => {
     if (open) {
-      setStep("select");
-      setDraft(createDraft(defaultKind));
+      setStep(reconnecting ? "configure" : "select");
+      setDraft(reconnecting
+        ? { ...createDraft("twitch"), name: reconnectProvider.name }
+        : createDraft(defaultKind));
       setValidation(null);
       setRequestError(null);
       setTwitchStatus(null);
@@ -540,7 +720,7 @@ function ProviderSetupWizard({
       setTwitchStatusLoading(false);
       setBusy(false);
     }
-  }, [defaultKind, invalidateTwitchRequest, open]);
+  }, [defaultKind, invalidateTwitchRequest, open, reconnectProvider, reconnecting]);
 
   useEffect(() => () => invalidateTwitchRequest(), [invalidateTwitchRequest]);
 
@@ -643,6 +823,22 @@ function ProviderSetupWizard({
             setTwitchAuthorization(null);
             setTwitchStatus(result.connection);
             setRequestError(null);
+            if (reconnectProvider !== null) {
+              setBusy(true);
+              void onReconnected(reconnectProvider.id, reconnectProvider.name)
+                .catch((error: unknown) => {
+                  if (generation === twitchRequestGenerationRef.current) {
+                    setRequestError(actionableError(
+                      error,
+                      "Unable to finish Twitch reconnection",
+                      "Refresh the provider status. If it still reports an error, retry Twitch authorization."
+                    ));
+                  }
+                })
+                .finally(() => {
+                  if (generation === twitchRequestGenerationRef.current) setBusy(false);
+                });
+            }
             return;
           }
           setRequestError({
@@ -729,7 +925,7 @@ function ProviderSetupWizard({
   const heading = step === "select"
     ? `Add ${subject}`
     : step === "configure"
-      ? `Configure ${formatProviderKind(draft.kind)}`
+      ? reconnectProvider === null ? `Configure ${formatProviderKind(draft.kind)}` : `Reconnect ${reconnectProvider.name}`
       : `Review ${subject}`;
 
   function cancelSetup() {
@@ -743,7 +939,7 @@ function ProviderSetupWizard({
     <ModalSurface labelledBy="provider-setup-title" onCancel={cancelSetup} open={open}>
       <form className="provider-page__modal-content" onSubmit={(event) => void register(event)}>
         <div>
-          <span className="provider-page__eyebrow">Step {stepNumber} of 3</span>
+          <span className="provider-page__eyebrow">{reconnecting ? "Connection recovery" : `Step ${stepNumber} of 3`}</span>
           <h2 id="provider-setup-title" ref={headingRef} tabIndex={-1}>{heading}</h2>
         </div>
 
@@ -761,10 +957,12 @@ function ProviderSetupWizard({
 
         {step === "configure" ? (
           <div className="provider-page__form">
-            <label>
-              <span>Connection name</span>
-              <input onChange={(event) => updateDraft({ ...draft, name: event.currentTarget.value })} required value={draft.name} />
-            </label>
+            {reconnecting ? null : (
+              <label>
+                <span>Connection name</span>
+                <input onChange={(event) => updateDraft({ ...draft, name: event.currentTarget.value })} required value={draft.name} />
+              </label>
+            )}
             {draft.kind === "twitch" ? (
               <section aria-labelledby="twitch-account-title" className="provider-page__connection-panel">
                 <h3 id="twitch-account-title">Twitch account</h3>
@@ -773,11 +971,11 @@ function ProviderSetupWizard({
                   <p><strong>Connected:</strong> {formatTwitchAccount(twitchStatus)}</p>
                 ) : null}
                 {!twitchStatusLoading && twitchStatus?.connected === false ? <p>No Twitch account connected</p> : null}
-                {twitchStatus?.connected === true ? null : (
+                {!reconnecting && twitchStatus?.connected === true ? null : (
                   <div className="provider-page__connection-actions">
                     {twitchAuthorization === null || requestError !== null ? (
                       <button disabled={busy} onClick={() => void startTwitchConnection()} type="button">
-                        {twitchAuthorization === null ? "Connect Twitch" : "Try again"}
+                        {twitchAuthorization === null ? reconnecting ? "Reconnect Twitch" : "Connect Twitch" : "Try again"}
                       </button>
                     ) : null}
                     {twitchAuthorization === null ? null : (
@@ -852,7 +1050,7 @@ function ProviderSetupWizard({
           {step === "select" ? (
             <button onClick={() => setStep("configure")} type="button">Continue</button>
           ) : null}
-          {step === "configure" ? (
+          {step === "configure" && !reconnecting ? (
             <>
               <button className="provider-page__secondary-action" disabled={busy} onClick={() => setStep("select")} type="button">Back</button>
               <button disabled={busy || twitchStatusLoading || draft.name.trim().length === 0} onClick={() => void validate()} type="button">
@@ -924,8 +1122,30 @@ function connectionTone(state: RegisteredProviderView["connectionState"]): Statu
   return state === "connected" ? "positive" : state === "error" ? "negative" : state === "validating" ? "info" : "neutral";
 }
 
-function intakeTone(state: RegisteredProviderView["intakeState"]): StatusBadgeTone {
-  return state === "active" ? "positive" : state === "error" ? "negative" : "neutral";
+function eventSourceLiveStatus(provider: RegisteredProviderView): ProviderLiveStatus {
+  if (provider.liveStatus !== undefined) return provider.liveStatus;
+  if (!provider.active) return "not-running";
+  if (provider.connectionState === "validating") return "starting";
+  if (provider.connectionState === "disconnected") return "reconnecting";
+  return provider.connectionState === "connected" && provider.intakeState === "active" ? "healthy" : "error";
+}
+
+function liveStatusTone(state: ProviderLiveStatus): StatusBadgeTone {
+  if (state === "healthy") return "positive";
+  if (state === "error") return "negative";
+  if (state === "reconnecting") return "warning";
+  return state === "starting" ? "info" : "neutral";
+}
+
+function formatLiveStatus(state: ProviderLiveStatus): string {
+  const labels: Record<ProviderLiveStatus, string> = {
+    "not-running": "Not running",
+    starting: "Starting",
+    healthy: "Healthy",
+    reconnecting: "Reconnecting",
+    error: "Error"
+  };
+  return labels[state];
 }
 
 function formatProviderKind(kind: ProviderKind): string {

@@ -19,6 +19,7 @@ export interface DiagnosticsProviderStatus {
   readonly state: "idle" | "ready" | "degraded";
   readonly lastErrorAt: string | null;
   readonly message: string | null;
+  readonly referenceId: string | null;
 }
 
 export interface DiagnosticsProviderStatusSource {
@@ -277,14 +278,14 @@ export class DiagnosticsService {
       }));
     const providerStatusErrors = this.#providerStatusSources
       .map((source) => source.getStatus())
-      .filter((status) => status.lastErrorAt !== null || (status.state === "degraded" && status.message !== null))
+      .filter((status) => status.state === "degraded")
       .map((status) => ({
         id: `provider-status:${status.providerId}`,
         providerId: status.providerId,
         label: status.label,
         occurredAt: status.lastErrorAt ?? this.#now().toISOString(),
         message: this.#redactor.redactText(status.message ?? "Provider status degraded"),
-        correlationId: null,
+        correlationId: status.referenceId,
         processingId: null
       }));
 
@@ -397,7 +398,7 @@ export class DiagnosticsService {
         };
       });
     const runtimeProblems = runtimeLogs
-      .filter((entry) => entry.level === "ERROR")
+      .filter((entry) => entry.level === "ERROR" && !isProviderStatusDiagnostic(entry))
       .map((entry, index) => {
         const referenceId = entry.correlationId === "" ? null : entry.correlationId;
         const correction = correctionForEvidence(`${entry.component} ${entry.event} ${entry.message}`, referenceId);
@@ -453,6 +454,14 @@ export class DiagnosticsService {
       ...(sinceHours === undefined ? {} : { sinceHours })
     });
   }
+}
+
+function isProviderStatusDiagnostic(entry: RuntimeLogEntry): boolean {
+  return (
+    (entry.component === "twitch" && (entry.event === "twitch.eventsub" || entry.event === "twitch.runtime"))
+    || (entry.component === "streamerbot" && entry.event === "streamerbot.event-intake")
+    || (entry.component === "events" && entry.event === "event-intake")
+  );
 }
 
 function providerCorrection(providerId: string, referenceId: string | null, providerKindOrId = providerId) {

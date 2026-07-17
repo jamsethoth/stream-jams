@@ -48,7 +48,7 @@ export const ActivationBlocked: Story = {
 export const ActivationWarning: Story = {
   args: {
     managementApi: api([activeSet, inactiveSet], detailById(), {
-      warnings: [issue("provider-kind", "warning", "This set uses Twitch alerts while Streamer.bot is active.")]
+      warnings: [issue("asset-review", "warning", "One alert uses an asset that needs review.")]
     })
   },
   play: async ({ canvasElement }) => {

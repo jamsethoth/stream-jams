@@ -22,6 +22,7 @@ describe("ProviderManagementService", () => {
   let secrets: InMemorySecrets;
   let impacts: Map<string, ProviderActivationImpact>;
   let service: ProviderManagementService;
+  let eventSourceSyncCount: number;
 
   beforeEach(() => {
     database = createInMemoryStreamJamsDatabase();
@@ -30,6 +31,7 @@ describe("ProviderManagementService", () => {
     });
     secrets = new InMemorySecrets();
     impacts = new Map();
+    eventSourceSyncCount = 0;
     let id = 0;
     service = new ProviderManagementService({
       repository,
@@ -42,6 +44,9 @@ describe("ProviderManagementService", () => {
       secretStore: secrets,
       getActivationImpact: async (providerId) => impacts.get(providerId) ?? emptyImpact,
       getUsedByAlertCount: async (kind) => (kind === "speakerbot" ? 3 : 2),
+      onEventSourceChanged: async () => {
+        eventSourceSyncCount += 1;
+      },
       generateId: () => `provider-${++id}`,
       generateReferenceId: () => "provider-ref-1",
       now: () => new Date("2026-07-15T12:00:00.000Z")
@@ -102,6 +107,38 @@ describe("ProviderManagementService", () => {
     const activated = await service.activateProvider(second.provider.provider.id, true);
     expect(activated.provider.active).toBe(true);
     expect(activated.replacedProviderId).toBe("provider-1");
+  });
+
+  it("deactivates an event source without deleting its registration", async () => {
+    const registered = await service.registerProvider(twitchSetup());
+    if (registered.status !== "registered") {
+      throw new Error("Expected Twitch registration");
+    }
+
+    const deactivated = await service.deactivateProvider(registered.provider.provider.id);
+
+    expect(deactivated).toMatchObject({ active: false, intakeState: "inactive" });
+    expect(await repository.findActive("event-source")).toBeNull();
+    await expect(service.getProvider(registered.provider.provider.id)).resolves.toMatchObject({
+      provider: { id: registered.provider.provider.id, active: false }
+    });
+  });
+
+  it("synchronizes runtime only after durable active event-source changes", async () => {
+    const twitch = await service.registerProvider(twitchSetup());
+    const streamerBot = await service.registerProvider(streamerBotSetup());
+    if (twitch.status !== "registered" || streamerBot.status !== "registered") {
+      throw new Error("Expected event-source registrations");
+    }
+
+    expect(eventSourceSyncCount).toBe(1);
+    await service.activateProvider(streamerBot.provider.provider.id, true);
+    expect(eventSourceSyncCount).toBe(2);
+    await service.deactivateProvider(streamerBot.provider.provider.id);
+    expect(eventSourceSyncCount).toBe(3);
+
+    await service.registerProvider(speakerBotSetup());
+    expect(eventSourceSyncCount).toBe(3);
   });
 
   it("returns derived usage, saves TTS safety, and runs a provider voice test", async () => {

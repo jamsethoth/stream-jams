@@ -123,6 +123,28 @@ describe("management target and provider contracts", () => {
     expect(first).toMatchObject({ id: "provider-twitch-main", kind: "twitch", active: true });
     expect(second).toMatchObject({ id: "provider-twitch-alt", kind: "twitch", active: false });
   });
+
+  it("represents transient event-source live status separately from registration state", () => {
+    const liveStatus = schema("providerLiveStatusSchema");
+    const provider = schema("registeredProviderViewSchema");
+
+    expect(liveStatus.safeParse("healthy").success).toBe(true);
+    expect(liveStatus.safeParse("not-running").success).toBe(true);
+    expect(liveStatus.safeParse("connected").success).toBe(false);
+    expect(provider.parse({
+      id: "provider-streamerbot-main",
+      name: "Main Streamer.bot",
+      kind: "streamerbot",
+      capability: "event-source",
+      active: true,
+      connectionState: "connected",
+      intakeState: "active",
+      liveStatus: "healthy",
+      validatedAt: "2026-07-15T05:00:00.000Z",
+      error: null,
+      usedByAlertCount: 4
+    })).toMatchObject({ liveStatus: "healthy" });
+  });
 });
 
 describe("management alert contracts and rules", () => {

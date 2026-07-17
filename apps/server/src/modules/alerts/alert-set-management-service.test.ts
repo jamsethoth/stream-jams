@@ -2,12 +2,10 @@ import {
   DefaultAlertService,
   type AlertCollection,
   type AlertRepository,
-  type AlertRule,
-  type ProviderKind
+  type AlertRule
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import {
-  AlertSetActivationConfirmationRequiredError,
   AlertSetActivationBlockedError,
   AlertSetDeleteBlockedError,
   AlertSetManagementService,
@@ -65,12 +63,16 @@ describe("AlertSetManagementService", () => {
     expect((await fixture.service.getSet(starter!.id)).overview.active).toBe(false);
   });
 
-  it("blocks invalid activation and requires confirmation for provider mismatch warnings", async () => {
-    const fixture = createFixture(() => "streamerbot");
-    const [starter] = await fixture.service.listSets();
+  it("blocks activation when a set has no enabled alerts", async () => {
+    const fixture = createFixture();
     const invalid = await fixture.service.createSet({ name: "Empty" });
 
     await expect(fixture.service.activateSet(invalid.id, false)).rejects.toBeInstanceOf(AlertSetActivationBlockedError);
+  });
+
+  it("keeps canonical alerts compatible when Streamer.bot is the active event source", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
 
     const starterDetail = await fixture.service.getSet(starter!.id);
     await fixture.service.setAlertEnabled(starterDetail.inventory[0]!.id, true);
@@ -78,10 +80,10 @@ describe("AlertSetManagementService", () => {
     const seasonalDetail = await fixture.service.getSet(seasonal.id);
     await fixture.service.setAlertEnabled(seasonalDetail.inventory[0]!.id, true);
 
-    await expect(fixture.service.activateSet(seasonal.id, false)).rejects.toBeInstanceOf(
-      AlertSetActivationConfirmationRequiredError
+    expect((await fixture.service.getSet(seasonal.id)).overview.validationIssues).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "PROVIDER_KIND_MISMATCH" })])
     );
-    await expect(fixture.service.activateSet(seasonal.id, true)).resolves.toMatchObject({
+    await expect(fixture.service.activateSet(seasonal.id, false)).resolves.toMatchObject({
       activeSet: { id: seasonal.id }
     });
   });
@@ -98,7 +100,7 @@ describe("AlertSetManagementService", () => {
   });
 });
 
-function createFixture(getActiveEventProviderKind: () => ProviderKind | null = () => "twitch") {
+function createFixture() {
   const alertRepository = new InMemoryAlertRepository();
   let nextId = 0;
   const alertService = new DefaultAlertService({
@@ -109,7 +111,6 @@ function createFixture(getActiveEventProviderKind: () => ProviderKind | null = (
   const service = new AlertSetManagementService({
     alertService,
     metadataRepository,
-    getActiveEventProviderKind: async () => getActiveEventProviderKind(),
     listBrowserSources: async () => [
       {
         id: "module:alerts:landscape:live",

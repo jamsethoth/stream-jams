@@ -11,8 +11,8 @@ import type { ManagementApi, TwitchConnectionStatusView } from "../management-ap
 import { EventSourcesPage } from "./EventSourcesPage.js";
 import { TtsProvidersPage } from "./TtsProvidersPage.js";
 
-const activeTwitch = provider("provider-twitch", "Main Twitch", "twitch", true, "connected", "active");
-const inactiveStreamerBot = provider("provider-streamerbot", "Studio Streamer.bot", "streamerbot", false, "connected", "inactive");
+const activeTwitch = provider("provider-twitch", "Main Twitch", "twitch", true, "connected", "active", "healthy");
+const inactiveStreamerBot = provider("provider-streamerbot", "Studio Streamer.bot", "streamerbot", false, "connected", "inactive", "not-running");
 const connectedTwitchStatus: TwitchConnectionStatusView = {
   connected: true,
   account: {
@@ -32,6 +32,21 @@ const activationWarning: ActionableManagementError = {
   occurredAt: "2026-07-15T05:00:00.000Z",
   referenceId: null,
   correction: { label: "Review active alerts", route: "/manage/modules/alerts" }
+};
+const runtimeError: ActionableManagementError = {
+  summary: "Streamer.bot event intake failed",
+  cause: "The WebSocket connection closed.",
+  nextStep: "Start Streamer.bot's WebSocket server, then reactivate this event source.",
+  severity: "error",
+  occurredAt: "2026-07-15T05:00:00.000Z",
+  referenceId: "ref-runtime-story",
+  correction: { label: "Open Diagnostics", route: "/manage/diagnostics?reference=ref-runtime-story" }
+};
+const twitchRuntimeError: ActionableManagementError = {
+  ...runtimeError,
+  summary: "Twitch EventSub status degraded",
+  cause: "Twitch API returned HTTP 401.",
+  nextStep: "Reconnect Twitch, then confirm live status returns to Healthy."
 };
 const invalidValidation: ProviderValidationResult = {
   valid: false,
@@ -60,6 +75,29 @@ type Story = StoryObj<typeof meta>;
 
 export const ConfiguredEventSources: Story = {
   args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) }
+};
+
+export const EventSourceRuntimeFailure: Story = {
+  args: {
+    managementApi: providerApi([
+      { ...activeTwitch, kind: "streamerbot", name: "Studio Streamer.bot", liveStatus: "error", error: runtimeError },
+      inactiveStreamerBot
+    ])
+  }
+};
+
+export const TwitchRuntimeFailureRecovery: Story = {
+  args: {
+    managementApi: providerApi(
+      [{ ...activeTwitch, liveStatus: "error", error: twitchRuntimeError }],
+      { getTwitchStatus: async () => connectedTwitchStatus }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Reconnect Twitch" }));
+    await canvas.findByRole("dialog", { name: "Reconnect Main Twitch" });
+  }
 };
 
 export const ConfiguredTtsProvider: Story = {
@@ -252,9 +290,17 @@ export const ActivationWarning: Story = {
   args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "View Studio Streamer.bot" }));
-    await userEvent.click(await canvas.findByRole("button", { name: "Set active" }));
-    await canvas.findByRole("dialog", { name: "Set Studio Streamer.bot active?" });
+    await userEvent.click(await canvas.findByRole("button", { name: "Activate Studio Streamer.bot" }));
+    await canvas.findByRole("dialog", { name: "Activate Studio Streamer.bot?" });
+  }
+};
+
+export const DeactivationWarning: Story = {
+  args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Deactivate Main Twitch" }));
+    await canvas.findByRole("dialog", { name: "Deactivate Main Twitch?" });
   }
 };
 
@@ -264,7 +310,8 @@ function provider(
   kind: "twitch" | "streamerbot",
   active: boolean,
   connectionState: RegisteredProviderView["connectionState"],
-  intakeState: RegisteredProviderView["intakeState"]
+  intakeState: RegisteredProviderView["intakeState"],
+  liveStatus: RegisteredProviderView["liveStatus"]
 ): RegisteredProviderView {
   return {
     id,
@@ -274,6 +321,7 @@ function provider(
     active,
     connectionState,
     intakeState,
+    ...(liveStatus === undefined ? {} : { liveStatus }),
     validatedAt: "2026-07-15T05:00:00.000Z",
     error: null,
     usedByAlertCount: 6

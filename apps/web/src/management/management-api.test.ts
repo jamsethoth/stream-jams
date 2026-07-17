@@ -265,6 +265,10 @@ describe("createHttpManagementApi", () => {
         expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ confirmWarnings: true }) });
         return jsonResponse({ provider: provider.provider, replacedProviderId: null, impact });
       }
+      if (url === "/management/providers/provider-speakerbot/deactivate") {
+        expect(init).toMatchObject({ method: "POST" });
+        return jsonResponse({ ...provider.provider, active: false });
+      }
       if (url === "/management/providers/provider-speakerbot/tts-safety") {
         expect(init).toMatchObject({ method: "PUT", body: JSON.stringify(safety) });
         return jsonResponse(safety);
@@ -286,6 +290,10 @@ describe("createHttpManagementApi", () => {
       provider: provider.provider,
       replacedProviderId: null,
       impact
+    });
+    await expect(api.deactivateProvider("provider-speakerbot")).resolves.toEqual({
+      ...provider.provider,
+      active: false
     });
     await expect(api.updateTtsSafety("provider-speakerbot", safety)).resolves.toEqual(safety);
     await expect(api.testProviderVoice("provider-speakerbot")).resolves.toEqual({ delivered: true, error: null });

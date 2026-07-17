@@ -47,6 +47,27 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
     setQuery(initialReferenceId ?? "");
   }, [initialReferenceId]);
 
+  useEffect(() => {
+    if (workspace === null || initialReferenceId === undefined) return;
+    const problem = workspace.problems.find((item) => item.referenceId === initialReferenceId);
+    if (problem !== undefined) {
+      setActiveTab("problems");
+      setSelectedProblemId(problem.id);
+      return;
+    }
+    const event = workspace.events.find((item) => item.referenceId === initialReferenceId);
+    if (event !== undefined) {
+      setActiveTab("events");
+      setSelectedEventId(event.id);
+      return;
+    }
+    const log = workspace.rawLogs.find((item) => item.referenceId === initialReferenceId);
+    if (log !== undefined) {
+      setActiveTab("raw-logs");
+      setSelectedLogId(log.id);
+    }
+  }, [initialReferenceId, workspace]);
+
   const problems = useMemo(
     () => filterProblems(workspace?.problems ?? [], query, filter, sortOrder),
     [workspace, query, filter, sortOrder]
@@ -234,6 +255,7 @@ function ProblemsView(props: {
       <EvidenceList occurredAt={props.selected.occurredAt} referenceId={props.selected.referenceId} />
       <div className="diagnostics-workspace__detail-actions">
         {props.selected.correction === null ? null : <a className="button" href={props.selected.correction.route}>{props.selected.correction.label}</a>}
+        <button className="button button--secondary" onClick={() => void props.onCopy("Error JSON", JSON.stringify(props.selected, null, 2))} type="button">Copy error JSON</button>
         {props.selected.referenceId === null ? null : <button className="button button--secondary" onClick={() => void props.onCopy("Reference ID", props.selected!.referenceId!)} type="button">Copy reference ID</button>}
       </div>
     </>}

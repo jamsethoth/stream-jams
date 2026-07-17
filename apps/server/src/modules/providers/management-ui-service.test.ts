@@ -6,10 +6,11 @@ import type {
   DiagnosticsWorkspaceView,
   ProviderCapability,
   ProviderKind,
+  ProviderLiveStatus,
   RegisteredProviderView
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { ManagementUiService } from "./management-ui-service.js";
+import { ManagementUiService, type ManagementUiServiceOptions } from "./management-ui-service.js";
 
 describe("ManagementUiService", () => {
   it("reports first-run setup actions without treating OBS verification as readiness", async () => {
@@ -49,6 +50,49 @@ describe("ManagementUiService", () => {
     expect(summary.actionableProblems).toEqual([providerError]);
   });
 
+  it("projects live runtime status onto event-source views and Home readiness", async () => {
+    const active = provider("event", "streamerbot", "event-source", true, "connected", "active", null);
+    const inactive = provider("backup", "twitch", "event-source", false, "connected", "inactive", null);
+    const getEventSourceRuntimeView = vi.fn((candidate: RegisteredProviderView) => ({
+      liveStatus: candidate.active ? "healthy" as const : "not-running" as const,
+      error: null
+    }));
+    const service = createService([active, inactive], null, getEventSourceRuntimeView);
+
+    await expect(service.listRegisteredProviders("event-source")).resolves.toEqual([
+      expect.objectContaining({ id: "event", liveStatus: "healthy" }),
+      expect.objectContaining({ id: "backup", liveStatus: "not-running" })
+    ]);
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      readiness: expect.arrayContaining([expect.objectContaining({ id: "event-source", state: "complete" })])
+    });
+    expect(getEventSourceRuntimeView).toHaveBeenCalledWith(active);
+  });
+
+  it("projects the current runtime error onto event-source list and detail views", async () => {
+    const active = provider("event", "twitch", "event-source", true, "connected", "active", null);
+    const runtimeError = {
+      summary: "Twitch EventSub live status error",
+      cause: "Twitch EventSub WebSocket error",
+      nextStep: "Review the provider connection and reconnect it before retrying.",
+      severity: "error" as const,
+      occurredAt: "2026-07-17T12:00:00.000Z",
+      referenceId: "ref-twitch-1",
+      correction: {
+        label: "Open diagnostics",
+        route: "/manage/diagnostics?reference=ref-twitch-1"
+      }
+    };
+    const service = createService([active], null, () => ({ liveStatus: "error", error: runtimeError }));
+
+    await expect(service.listRegisteredProviders("event-source")).resolves.toEqual([
+      expect.objectContaining({ id: "event", liveStatus: "error", error: runtimeError })
+    ]);
+    await expect(service.getRegisteredProvider("event")).resolves.toMatchObject({
+      provider: { id: "event", liveStatus: "error", error: runtimeError }
+    });
+  });
+
   it("keeps starter setup actionable until review is complete or a valid alert is enabled", async () => {
     const pending = createService([], alertSet("pending", 0));
     const enabled = createService([], alertSet("pending", 1));
@@ -66,16 +110,36 @@ describe("ManagementUiService", () => {
   });
 });
 
-function createService(providers: readonly RegisteredProviderView[], activeSet: AlertSetOverview | null = null) {
-  return new ManagementUiService({
+function createService(
+  providers: readonly RegisteredProviderView[],
+  activeSet: AlertSetOverview | null = null,
+  getEventSourceRuntimeView: (provider: RegisteredProviderView) => {
+    readonly liveStatus: ProviderLiveStatus;
+    readonly error: RegisteredProviderView["error"];
+  } = (providerView) => ({
+    liveStatus: !providerView.active
+      ? "not-running"
+      : providerView.connectionState === "connected" && providerView.intakeState === "active"
+        ? "healthy"
+        : "error",
+    error: providerView.error
+  })
+) {
+  const options: ManagementUiServiceOptions = {
     providerService: {
       listProviders: vi.fn(async (capability: ProviderCapability) =>
         providers.filter((providerView) => providerView.capability === capability)
       ),
-      getProvider: vi.fn(),
+      getProvider: vi.fn(async (providerId: string) => ({
+        provider: providers.find((providerView) => providerView.id === providerId)!,
+        configuration: {},
+        availableVoices: [],
+        ttsSafety: null
+      })),
       validateProvider: vi.fn(),
       registerProvider: vi.fn(),
       activateProvider: vi.fn(),
+      deactivateProvider: vi.fn(),
       getActivationImpact: vi.fn(),
       getTtsSafety: vi.fn(),
       updateTtsSafety: vi.fn(),
@@ -142,8 +206,10 @@ function createService(providers: readonly RegisteredProviderView[], activeSet: 
       logRetentionHours: 48,
       secretExclusions: ["Provider credentials", "Overlay route keys"],
       blockers: []
-    })
-  });
+    }),
+    getEventSourceRuntimeView
+  };
+  return new ManagementUiService(options);
 }
 
 function alertSet(starterReviewState: "pending" | "complete", enabledAlertCount: number): AlertSetOverview {

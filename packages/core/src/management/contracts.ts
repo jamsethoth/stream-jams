@@ -55,6 +55,7 @@ export const providerCapabilitySchema = z.enum(["event-source", "tts"]);
 export const providerKindSchema = z.enum(["twitch", "streamerbot", "speakerbot", "browser-speech"]);
 export const providerConnectionStateSchema = z.enum(["unconfigured", "validating", "connected", "disconnected", "error"]);
 export const providerIntakeStateSchema = z.enum(["active", "inactive", "error"]);
+export const providerLiveStatusSchema = z.enum(["not-running", "starting", "healthy", "reconnecting", "error"]);
 
 const providerSetupBaseSchema = z.object({
   name: nonEmptyStringSchema
@@ -106,6 +107,7 @@ export const registeredProviderViewSchema = z.object({
   active: z.boolean(),
   connectionState: providerConnectionStateSchema,
   intakeState: providerIntakeStateSchema.nullable(),
+  liveStatus: providerLiveStatusSchema.optional(),
   validatedAt: isoDateTimeSchema.nullable(),
   error: actionableManagementErrorSchema.nullable(),
   usedByAlertCount: nonNegativeIntegerSchema
@@ -713,6 +715,7 @@ export type ProviderKind = z.infer<typeof providerKindSchema>;
 export type ProviderSetupInput = z.infer<typeof providerSetupInputSchema>;
 export type ProviderValidationResult = z.infer<typeof providerValidationResultSchema>;
 export type RegisteredProviderView = z.infer<typeof registeredProviderViewSchema>;
+export type ProviderLiveStatus = z.infer<typeof providerLiveStatusSchema>;
 export type RegisteredProviderDetail = z.infer<typeof registeredProviderDetailSchema>;
 export type ProviderRegistrationAttempt = z.infer<typeof providerRegistrationAttemptSchema>;
 export type ProviderActivationImpact = z.infer<typeof providerActivationImpactSchema>;

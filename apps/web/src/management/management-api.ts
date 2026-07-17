@@ -221,6 +221,7 @@ export interface ManagementApi {
   registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
   getProvider(providerId: string): Promise<RegisteredProviderDetail>;
   activateProvider(providerId: string, confirmWarnings?: boolean): Promise<ProviderActivationResult>;
+  deactivateProvider(providerId: string): Promise<RegisteredProviderView>;
   getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
   getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings>;
   updateTtsSafety(providerId: string, input: TtsProviderSafetySettings): Promise<TtsProviderSafetySettings>;
@@ -374,6 +375,15 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         { confirmWarnings },
         providerActivationResultSchema,
         "Unable to activate provider."
+      );
+    },
+
+    deactivateProvider(providerId) {
+      return postContract(
+        `/management/providers/${encodeURIComponent(providerId)}/deactivate`,
+        undefined,
+        registeredProviderViewSchema,
+        "Unable to deactivate provider."
       );
     },
 

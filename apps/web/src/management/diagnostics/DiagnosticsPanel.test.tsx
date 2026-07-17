@@ -76,6 +76,51 @@ describe("DiagnosticsPanel", () => {
     expect(await screen.findByText("Sanitized event copied")).toBeInTheDocument();
   });
 
+  it("opens a referenced historical failure in raw logs when it is no longer an active problem", async () => {
+    render(
+      <DiagnosticsPanel
+        initialReferenceId="ref-runtime-1"
+        managementApi={managementApi({ ...workspace(), problems: [] })}
+      />
+    );
+
+    expect(await screen.findByLabelText("Raw log detail")).toHaveTextContent("ref-runtime-1");
+    expect(screen.getByRole("tab", { name: /Raw logs/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Copy sanitized event" })).toBeInTheDocument();
+  });
+
+  it("copies the selected sanitized problem as formatted JSON", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+
+    await user.click(screen.getByRole("button", { name: "Copy error JSON" }));
+
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(workspace().problems[0], null, 2));
+    const copied = String(writeText.mock.calls[0]?.[0]);
+    expect(JSON.parse(copied)).toMatchObject({
+      referenceId: "ref-provider-1",
+      correction: { route: "/manage/event-sources?diagnostic=ref-provider-1" }
+    });
+    expect(copied).not.toContain("oauth-secret");
+    expect(await screen.findByText("Error JSON copied")).toBeInTheDocument();
+  });
+
+  it("shows a human-readable failure when error JSON cannot be copied", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn<(value: string) => Promise<void>>().mockRejectedValue(new Error("Clipboard denied"));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+
+    await user.click(screen.getByRole("button", { name: "Copy error JSON" }));
+
+    expect(await screen.findByText("Error JSON could not be copied")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Allow clipboard access, then retry");
+  });
+
   it("shows human-readable export failure recovery and preserves the backend reference ID", async () => {
     const user = userEvent.setup();
     const api = managementApi();

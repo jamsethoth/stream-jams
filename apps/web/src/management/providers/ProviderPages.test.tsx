@@ -34,6 +34,16 @@ const warning: ActionableManagementError = {
   correction: { label: "Review alerts", route: "/manage/modules/alerts?filter=unmatched" }
 };
 
+const runtimeError: ActionableManagementError = {
+  summary: "Streamer.bot live status error",
+  cause: "Streamer.bot request timed out",
+  nextStep: "Review the provider connection and reconnect it before retrying.",
+  severity: "error",
+  occurredAt: "2026-07-17T12:00:00.000Z",
+  referenceId: "ref-streamerbot-runtime",
+  correction: { label: "Open diagnostics", route: "/manage/diagnostics?reference=ref-streamerbot-runtime" }
+};
+
 const validResult: ProviderValidationResult = {
   valid: true,
   connectionState: "connected",
@@ -130,6 +140,141 @@ describe("provider pages", () => {
     render(<EventSourcesPage initialProviderId={inactiveStreamerBot.id} managementApi={api} />);
 
     expect(await screen.findByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
+  });
+
+  it("shows event-source usage and live status without redundant connection, intake, or runtime columns", async () => {
+    const providers = [
+      { ...activeTwitch, liveStatus: "healthy" },
+      { ...inactiveStreamerBot, liveStatus: "not-running" }
+    ] as readonly RegisteredProviderView[];
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => providers),
+      getProvider: vi.fn(async (providerId) => detail(providers.find((providerView) => providerView.id === providerId)!))
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    const table = await screen.findByRole("table");
+    expect(within(table).getByRole("columnheader", { name: "Usage" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Live status" })).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Connection" })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Intake" })).not.toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Runtime" })).not.toBeInTheDocument();
+    expect(within(await screen.findByRole("row", { name: /Main Twitch/ })).getByText("In use")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Main Twitch/ })).getByText("Healthy")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Local Streamer\.bot/ })).getByText("Not in use")).toBeInTheDocument();
+    expect(within(screen.getByRole("row", { name: /Local Streamer\.bot/ })).getByText("Not running")).toBeInTheDocument();
+  });
+
+  it("reconnects an existing Twitch provider without registering a duplicate", async () => {
+    const user = userEvent.setup();
+    const failedTwitch = {
+      ...activeTwitch,
+      liveStatus: "error" as const,
+      error: {
+        ...runtimeError,
+        summary: "Twitch EventSub status degraded",
+        cause: "Twitch API returned HTTP 401"
+      }
+    };
+    const healthyTwitch = { ...activeTwitch, liveStatus: "healthy" as const, error: null };
+    const connected = {
+      connected: true as const,
+      account: {
+        accountId: "twitch-account",
+        login: "jamsethoth",
+        displayName: "Jamsethoth",
+        scopes: ["user:read:chat"],
+        connectedAt: "2026-07-17T12:00:00.000Z",
+        updatedAt: "2026-07-17T12:00:00.000Z"
+      }
+    };
+    const listRegisteredProviders = vi
+      .fn<ProviderPageApi["listRegisteredProviders"]>()
+      .mockResolvedValueOnce([failedTwitch])
+      .mockResolvedValue([healthyTwitch]);
+    const api = providerApi({
+      listRegisteredProviders,
+      getProvider: vi.fn(async () => detail(failedTwitch)),
+      getTwitchStatus: vi.fn(async () => connected),
+      startTwitchAuth: vi.fn(async () => ({
+        authorizationId: "auth-reconnect",
+        verificationUri: "https://www.twitch.tv/activate",
+        userCode: "RECONNECT",
+        expiresAt: "2026-07-17T13:00:00.000Z",
+        intervalSeconds: 0.001,
+        scopes: ["user:read:chat"]
+      })),
+      pollTwitchAuth: vi.fn(async () => ({ status: "connected" as const, connection: connected }))
+    });
+    const popup = { location: { href: "" }, close: vi.fn() } as unknown as Window;
+    vi.spyOn(window, "open").mockReturnValue(popup);
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    await user.click(await screen.findByRole("button", { name: "Reconnect Twitch" }));
+    const dialog = screen.getByRole("dialog", { name: "Reconnect Main Twitch" });
+    expect(within(dialog).queryByLabelText("Provider type")).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Register event source" })).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Reconnect Twitch" }));
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Main Twitch reconnected. Live status is updating.");
+    expect(api.registerProvider).not.toHaveBeenCalled();
+    expect(listRegisteredProviders).toHaveBeenCalledTimes(2);
+  });
+
+  it("refreshes event-source live status every five seconds while preserving selection", async () => {
+    vi.useFakeTimers();
+    const initialProviders = [
+      { ...activeTwitch, liveStatus: "healthy" as const },
+      { ...inactiveStreamerBot, active: true, liveStatus: "error" as const, error: runtimeError }
+    ];
+    const refreshedProviders = [
+      initialProviders[0]!,
+      { ...initialProviders[1]!, liveStatus: "healthy" as const, error: null }
+    ];
+    const listRegisteredProviders = vi
+      .fn<ProviderPageApi["listRegisteredProviders"]>()
+      .mockResolvedValueOnce(initialProviders)
+      .mockResolvedValue(refreshedProviders);
+    const api = providerApi({
+      listRegisteredProviders,
+      getProvider: vi.fn(async (providerId) =>
+        detail(initialProviders.find((providerView) => providerView.id === providerId)!)
+      )
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    await act(async () => { await Promise.resolve(); });
+    fireEvent.click(screen.getByRole("row", { name: /Local Streamer\.bot/ }));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
+    expect(screen.getByText("Streamer.bot request timed out")).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+
+    expect(listRegisteredProviders).toHaveBeenCalledTimes(2);
+    expect(within(screen.getByRole("row", { name: /Local Streamer\.bot/ })).getByText("Healthy")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
+    expect(screen.queryByText("Streamer.bot request timed out")).not.toBeInTheDocument();
+  });
+
+  it("keeps the last event-source state visible when a background refresh fails", async () => {
+    vi.useFakeTimers();
+    const listRegisteredProviders = vi
+      .fn<ProviderPageApi["listRegisteredProviders"]>()
+      .mockResolvedValueOnce([{ ...activeTwitch, liveStatus: "healthy" }])
+      .mockRejectedValueOnce(new Error("Local service request failed"));
+    const api = providerApi({ listRegisteredProviders });
+
+    render(<EventSourcesPage managementApi={api} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole("row", { name: /Main Twitch/ })).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+
+    expect(screen.getByRole("row", { name: /Main Twitch/ })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Unable to refresh live status");
   });
 
   it("registers only after successful validation", async () => {
@@ -411,7 +556,7 @@ describe("provider pages", () => {
     expect(pollTwitchAuth).toHaveBeenCalledTimes(1);
   });
 
-  it("shows connection and intake separately and confirms warned activation", async () => {
+  it("selects an event source by row and confirms activation from its inline action", async () => {
     const user = userEvent.setup();
     const impact: ProviderActivationImpact = {
       matchedAlertCount: 3,
@@ -433,18 +578,74 @@ describe("provider pages", () => {
 
     render(<EventSourcesPage managementApi={api} />);
     const row = await screen.findByRole("row", { name: /Local Streamer\.bot/ });
-    expect(within(row).getByText("Connected")).toBeInTheDocument();
-    expect(within(row).getAllByText("Inactive")).toHaveLength(2);
-    await user.click(within(row).getByRole("button", { name: "View Local Streamer.bot" }));
+    expect(within(row).getByText("Not in use")).toBeInTheDocument();
+    expect(within(row).getByText("Not running")).toBeInTheDocument();
+    expect(within(row).queryByRole("button", { name: /View/ })).not.toBeInTheDocument();
+    const selectButton = within(row).getByRole("button", { name: "Select Local Streamer.bot" });
+    const activateButton = within(row).getByRole("button", { name: "Activate Local Streamer.bot" });
+    await user.click(activateButton);
+    expect(selectButton).toHaveAttribute("aria-pressed", "false");
+    expect(await screen.findByRole("heading", { name: "Main Twitch" })).toBeInTheDocument();
+    await user.click(within(screen.getByRole("dialog", { name: "Activate Local Streamer.bot?" })).getByRole("button", { name: "Cancel" }));
 
+    await user.click(row);
+
+    expect(await screen.findByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
     expect(await screen.findByText(/2 unmatched alerts/)).toBeInTheDocument();
     expect(screen.getByText("ref-impact-9")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Set active" }));
-    const dialog = screen.getByRole("dialog", { name: "Set Local Streamer.bot active?" });
+    await user.click(activateButton);
+    const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
     expect(dialog).toHaveTextContent("Two enabled alerts do not match Streamer.bot events.");
-    await user.click(within(dialog).getByRole("button", { name: "Set active provider" }));
+    expect(activateProvider).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Activate event source" }));
 
     expect(activateProvider).toHaveBeenCalledWith(inactiveStreamerBot.id, true);
+  });
+
+  it("describes activation when no event source is currently active", async () => {
+    const user = userEvent.setup();
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [inactiveStreamerBot]),
+      getProvider: vi.fn(async () => detail(inactiveStreamerBot))
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    const row = await screen.findByRole("row", { name: /Local Streamer\.bot/ });
+    await user.click(within(row).getByRole("button", { name: "Activate Local Streamer.bot" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
+    expect(dialog).toHaveTextContent("Local Streamer.bot will become the active event source");
+    expect(dialog).not.toHaveTextContent("current event source");
+  });
+
+  it("describes the impact and requires confirmation before deactivating an event source", async () => {
+    const user = userEvent.setup();
+    let providers: readonly RegisteredProviderView[] = [activeTwitch];
+    const deactivateProvider = vi.fn(async () => {
+      const deactivated = { ...activeTwitch, active: false, intakeState: "inactive" as const };
+      providers = [deactivated];
+      return deactivated;
+    });
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => providers),
+      getProvider: vi.fn(async () => detail(providers[0]!)),
+      deactivateProvider
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    const row = await screen.findByRole("row", { name: /Main Twitch/ });
+    await user.click(within(row).getByRole("button", { name: "Deactivate Main Twitch" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Deactivate Main Twitch?" });
+    expect(dialog).toHaveTextContent("Live event intake will stop");
+    expect(dialog).toHaveTextContent("settings and alert mappings will remain saved");
+    expect(dialog).toHaveTextContent("Activate this or another event source to resume intake");
+    expect(deactivateProvider).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByRole("button", { name: "Deactivate event source" }));
+
+    expect(deactivateProvider).toHaveBeenCalledWith(activeTwitch.id);
+    expect(await screen.findByRole("status")).toHaveTextContent("Main Twitch is inactive");
   });
 
   it("saves TTS safety settings and runs the fixed safe voice test", async () => {
@@ -499,7 +700,7 @@ describe("provider pages", () => {
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
     await user.clear(screen.getByLabelText("Volume"));
     await user.type(screen.getByLabelText("Volume"), "0.5");
-    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+    await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
 
     const dialog = screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" });
     expect(within(dialog).getByRole("button", { name: "Save and continue" })).toBeInTheDocument();
@@ -508,7 +709,7 @@ describe("provider pages", () => {
     expect(screen.getByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
     expect(screen.getByLabelText("Volume")).toHaveValue(0.5);
 
-    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+    await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Discard" }));
     expect(await screen.findByRole("heading", { name: "Backup Speaker.bot" })).toBeInTheDocument();
     expect(updateTtsSafety).not.toHaveBeenCalled();
@@ -528,7 +729,7 @@ describe("provider pages", () => {
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
     await user.clear(screen.getByLabelText("Volume"));
     await user.type(screen.getByLabelText("Volume"), "0.6");
-    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+    await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 
     await waitFor(() => expect(updateTtsSafety).toHaveBeenCalledWith(activeSpeakerBot.id, { ...ttsSafety, volume: 0.6 }));
@@ -548,7 +749,7 @@ describe("provider pages", () => {
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
     await user.clear(screen.getByLabelText("Volume"));
     await user.type(screen.getByLabelText("Volume"), "0.6");
-    await user.click(screen.getByRole("button", { name: "View Backup Speaker.bot" }));
+    await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 
     const dialog = screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" });
@@ -594,6 +795,7 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
       replacedProviderId: null,
       impact: { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] }
     })),
+    deactivateProvider: vi.fn(async () => ({ ...activeTwitch, active: false, intakeState: "inactive" as const })),
     getProviderActivationImpact: vi.fn(async () => ({
       matchedAlertCount: 0,
       unmatchedAlertCount: 0,

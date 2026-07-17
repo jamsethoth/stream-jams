@@ -18,6 +18,7 @@ import {
   type ProviderActivationImpact,
   type ProviderActivationResult,
   type ProviderCapability,
+  type ProviderLiveStatus,
   type ProviderRegistrationAttempt,
   type ProviderSetupInput,
   type ProviderValidationResult,
@@ -38,6 +39,7 @@ type ProviderService = Pick<
   | "validateProvider"
   | "registerProvider"
   | "activateProvider"
+  | "deactivateProvider"
   | "getActivationImpact"
   | "getTtsSafety"
   | "updateTtsSafety"
@@ -61,6 +63,7 @@ type AlertSetService = Pick<
 export interface ManagementUiServiceOptions {
   readonly providerService: ProviderService;
   readonly alertSetService: AlertSetService;
+  readonly getEventSourceRuntimeView: (provider: RegisteredProviderView) => EventSourceRuntimeView;
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
   readonly saveAlertEditorDocument: (
@@ -77,6 +80,11 @@ export interface ManagementUiServiceOptions {
   readonly getConfigurationBackupSummary: () => Promise<ConfigurationBackupSummary>;
 }
 
+export interface EventSourceRuntimeView {
+  readonly liveStatus: ProviderLiveStatus;
+  readonly error: RegisteredProviderView["error"];
+}
+
 export class ManagementUiService {
   readonly #options: ManagementUiServiceOptions;
 
@@ -86,7 +94,7 @@ export class ManagementUiService {
 
   async getHomeSetupSummary(): Promise<HomeSetupSummary> {
     const [eventSources, ttsProviders, alertSets, hasBrowserOutput] = await Promise.all([
-      this.#options.providerService.listProviders("event-source"),
+      this.listRegisteredProviders("event-source"),
       this.#options.providerService.listProviders("tts"),
       this.#options.alertSetService.listSets(),
       this.#options.hasBrowserOutput()
@@ -115,12 +123,18 @@ export class ManagementUiService {
     });
   }
 
-  listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]> {
-    return this.#options.providerService.listProviders(capability);
+  async listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]> {
+    const providers = await this.#options.providerService.listProviders(capability);
+    return capability === "event-source"
+      ? providers.map((provider) => this.#withLiveStatus(provider))
+      : providers;
   }
 
-  getRegisteredProvider(providerId: string): Promise<RegisteredProviderDetail> {
-    return this.#options.providerService.getProvider(providerId);
+  async getRegisteredProvider(providerId: string): Promise<RegisteredProviderDetail> {
+    const detail = await this.#options.providerService.getProvider(providerId);
+    return detail.provider.capability === "event-source"
+      ? { ...detail, provider: this.#withLiveStatus(detail.provider) }
+      : detail;
   }
 
   validateProviderSetup(input: ProviderSetupInput): Promise<ProviderValidationResult> {
@@ -133,6 +147,10 @@ export class ManagementUiService {
 
   activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult> {
     return this.#options.providerService.activateProvider(providerId, confirmWarnings);
+  }
+
+  deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
+    return this.#options.providerService.deactivateProvider(providerId);
   }
 
   getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact> {
@@ -233,16 +251,21 @@ export class ManagementUiService {
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary> {
     return this.#options.getConfigurationBackupSummary();
   }
+
+  #withLiveStatus(provider: RegisteredProviderView): RegisteredProviderView {
+    const runtime = this.#options.getEventSourceRuntimeView(provider);
+    return { ...provider, liveStatus: runtime.liveStatus, error: runtime.error ?? provider.error };
+  }
 }
 
 function eventSourceReadiness(provider: RegisteredProviderView | null): HomeReadinessItem {
   if (provider === null) {
     return setupItem("event-source", "Event source", "action-required", "Add event source", "/manage/event-sources?setup=add");
   }
-  if (provider.connectionState === "connected" && provider.intakeState === "active") {
+  if (provider.liveStatus === "healthy") {
     return setupItem("event-source", "Event source", "complete", "Review event source", "/manage/event-sources");
   }
-  const blocked = provider.connectionState === "error" || provider.intakeState === "error";
+  const blocked = provider.liveStatus === "error";
   return setupItem(
     "event-source",
     "Event source",

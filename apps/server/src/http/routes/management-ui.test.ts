@@ -179,6 +179,20 @@ describe("management UI contract routes", () => {
     expect(service.registeredSetups).toEqual([setup]);
   });
 
+  it("deactivates a registered provider through an explicit command", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/management/providers/provider-twitch-main/deactivate",
+      headers: authHeaders
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: "provider-twitch-main", active: false, intakeState: "inactive" });
+    expect(service.deactivationRequests).toEqual(["provider-twitch-main"]);
+  });
+
   it("returns provider details and applies activation, safety, and voice-test commands", async () => {
     const { app, authHeaders, service } = await createApp();
     const detail = await app.inject({
@@ -342,6 +356,7 @@ async function createApp() {
 class StubManagementUiQueryService {
   readonly registeredSetups: unknown[] = [];
   readonly activationRequests: Array<{ readonly providerId: string; readonly confirmWarnings: boolean }> = [];
+  readonly deactivationRequests: string[] = [];
   readonly alertSetCommands: unknown[][] = [];
   readonly assetCommands: unknown[][] = [];
   readonly editorCommands: unknown[][] = [];
@@ -419,6 +434,17 @@ class StubManagementUiQueryService {
       provider: (await this.getRegisteredProvider(providerId)).provider,
       replacedProviderId: null,
       impact: await this.getProviderActivationImpact()
+    };
+  }
+
+  async deactivateProvider(providerId: string) {
+    this.deactivationRequests.push(providerId);
+    return {
+      ...(await this.getRegisteredProvider(providerId)).provider,
+      capability: "event-source" as const,
+      kind: "twitch" as const,
+      active: false,
+      intakeState: "inactive" as const
     };
   }
 

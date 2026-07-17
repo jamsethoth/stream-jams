@@ -1,0 +1,20 @@
+{
+  "timeStamp": "2026-07-17T12:05:00.000Z",
+  "event": {
+    "source": "Twitch",
+    "type": "RewardRedemption"
+  },
+  "data": {
+    "user": {
+      "id": "user-reward",
+      "login": "redeemer",
+      "name": "Redeemer"
+    },
+    "redemptionId": "redemption-1",
+    "rewardId": "reward-1",
+    "rewardName": "Hydrate",
+    "rawInput": "hydrate please",
+    "createdAt": "2026-07-17T12:05:00.000Z",
+    "isTest": false
+  }
+}

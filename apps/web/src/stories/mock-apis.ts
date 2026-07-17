@@ -56,6 +56,9 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async activateProvider() {
       throw new Error("No provider activation configured for this story.");
     },
+    async deactivateProvider() {
+      throw new Error("No provider deactivation configured for this story.");
+    },
     async getProviderActivationImpact() {
       return { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] };
     },

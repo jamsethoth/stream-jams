@@ -21,6 +21,7 @@ Replace the temporary Dashboard, Twitch, and TTS route adapters with setup-focus
 
 - Home shows derived setup tasks, active alert-set summary, top actionable problems, and connections. It does not show live queue or raw logs.
 - Event sources uses a selectable list/detail layout and a guided add-source wizard. Connection and intake are distinct states.
+- Event-source rows select directly without a `View` action and expose confirmed `Activate` or `Deactivate` actions. Deactivation may intentionally leave no active event source without deleting its configuration.
 - TTS providers uses the same list/detail model with a separate wizard, fixed safe voice test, usage count, and provider-owned safety controls.
 - Validation failures remain inside the wizard with a summary, next step, retry action, and reference ID.
 - Activation impact is loaded before `Set active`; blockers prevent activation and warnings require explicit confirmation.

@@ -198,7 +198,7 @@ describe("ManagementApp", () => {
     expect(await within(diagnosticsPanel).findByText("Sanitized support bundle ready")).toBeInTheDocument();
   });
 
-  it("shows connection and intake separately and registers only after validation", async () => {
+  it("shows usage and live status separately and registers only after validation", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
     render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
@@ -207,8 +207,8 @@ describe("ManagementApp", () => {
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
     expect(await within(twitchPanel).findByRole("heading", { name: "Event sources" })).toBeInTheDocument();
     expect((await within(twitchPanel).findAllByText("Main Twitch")).length).toBeGreaterThan(0);
-    expect(within(twitchPanel).getByRole("columnheader", { name: "Connection" })).toBeInTheDocument();
-    expect(within(twitchPanel).getByRole("columnheader", { name: "Intake" })).toBeInTheDocument();
+    expect(within(twitchPanel).getByRole("columnheader", { name: "Usage" })).toBeInTheDocument();
+    expect(within(twitchPanel).getByRole("columnheader", { name: "Live status" })).toBeInTheDocument();
 
     await user.click(within(twitchPanel).getByRole("button", { name: "Add event source" }));
     const dialog = screen.getByRole("dialog", { name: "Add event source" });
@@ -230,11 +230,11 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
-    await user.click(await within(twitchPanel).findByRole("button", { name: "View Studio Streamer.bot" }));
-    expect(await within(twitchPanel).findByRole("heading", { name: "Activation impact" })).toBeInTheDocument();
-    await user.click(within(twitchPanel).getByRole("button", { name: "Set active" }));
+    await user.click(await within(twitchPanel).findByRole("button", { name: "Activate Studio Streamer.bot" }));
+    const dialog = await within(twitchPanel).findByRole("dialog", { name: "Activate Studio Streamer.bot?" });
+    await user.click(within(dialog).getByRole("button", { name: "Activate event source" }));
 
-    expect(managementApi.activateProvider).toHaveBeenCalledWith("provider-streamerbot", false);
+    expect(managementApi.activateProvider).toHaveBeenCalledWith("provider-streamerbot", true);
   });
 
 });
@@ -362,6 +362,11 @@ function createManagementApi(): ManagementApi {
       provider: { ...(eventProviders.find((provider) => provider.id === providerId) ?? eventProviders[0]!), active: true },
       replacedProviderId: "provider-twitch",
       impact: { matchedAlertCount: 0, unmatchedAlertCount: 0, blockers: [], warnings: [] }
+    })),
+    deactivateProvider: vi.fn(async (providerId) => ({
+      ...(eventProviders.find((provider) => provider.id === providerId) ?? eventProviders[0]!),
+      active: false,
+      intakeState: "inactive" as const
     })),
     getProviderActivationImpact: vi.fn(async () => ({
       matchedAlertCount: 0,

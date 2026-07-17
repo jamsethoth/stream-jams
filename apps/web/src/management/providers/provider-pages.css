@@ -86,8 +86,34 @@
   margin-top: 4px;
 }
 
-.provider-page__selected-row {
+.provider-page__table tbody tr {
+  cursor: pointer;
+}
+
+.provider-page__table tbody tr:hover {
+  background: var(--color-surface-subtle);
+}
+
+.provider-page__selected-row,
+.provider-page__selected-row:hover {
   background: var(--color-accent-soft);
+}
+
+.provider-page__provider-select {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.provider-page__provider-select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
 }
 
 .provider-page__detail {

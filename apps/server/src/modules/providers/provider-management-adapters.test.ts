@@ -208,7 +208,8 @@ function createHarness(options: HarnessOptions = {}) {
           rejectedCount: 0,
           lastEventAt: null,
           lastErrorAt: null,
-          message: state === "error" ? "Twitch EventSub access token is unavailable" : null
+          message: state === "error" ? "Twitch EventSub access token is unavailable" : null,
+          referenceId: state === "error" ? "ref-twitch-eventsub" : null
         };
       }
     },

@@ -29,7 +29,7 @@ The system SHALL allow authorized management users to create, rename, duplicate,
 
 ### Requirement: Alert Sets Use Provider Event And Variation Hierarchy
 
-The system SHALL organize each alert set by provider kind, system-defined event type, event default, and conditional variations while using stable IDs for routing and references.
+The system SHALL organize each alert set by provider catalog context, system-defined event type, event default, and conditional variations while using stable IDs for routing and references. Provider catalog context SHALL support authoring and sample payload selection without becoming an implicit runtime eligibility condition.
 
 #### Scenario: Variation is created from event default
 

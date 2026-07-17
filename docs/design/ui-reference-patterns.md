@@ -25,7 +25,7 @@ StreamElements documents a flow of `Streaming tools > Overlays`, `New Overlay`, 
 Implications for Stream Jams:
 
 - `Modules > Alerts > Sets` should make default alert content visible and reviewable.
-- Alert editing should be event-oriented: provider kind, event type, default alert, then variations.
+- Alert editing should be event-oriented: provider catalog context, event type, default alert, then variations; catalog context does not bind runtime eligibility.
 - Variations need explicit override warnings and validation so users understand what will actually fire.
 - Starter alerts should be generated disabled and marked `Needs review`.
 

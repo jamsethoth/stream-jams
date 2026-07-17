@@ -84,6 +84,7 @@ export interface ManagementUiQueryService {
   validateProviderSetup(input: ProviderSetupInput): Promise<ProviderValidationResult>;
   registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
   activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult>;
+  deactivateProvider(providerId: string): Promise<RegisteredProviderView>;
   getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
   getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings>;
   updateTtsProviderSafetySettings(
@@ -176,6 +177,16 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     try {
       return providerActivationResultSchema.parse(
         await service.activateProvider(readParam(request.params, "providerId"), confirmation ?? false)
+      );
+    } catch (error) {
+      return sendProviderCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/providers/:providerId/deactivate", { preHandler }, async (request, reply) => {
+    try {
+      return registeredProviderViewSchema.parse(
+        await service.deactivateProvider(readParam(request.params, "providerId"))
       );
     } catch (error) {
       return sendProviderCommandError(reply, error);

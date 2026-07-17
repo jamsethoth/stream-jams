@@ -20,7 +20,8 @@ describe("StreamerBotClient", () => {
       lastErrorAt: null,
       instance: null,
       subscriptionSourceKeys: [],
-      pendingRequestCount: 0
+      pendingRequestCount: 0,
+      referenceId: null
     });
 
     harness.client.connect();
@@ -349,8 +350,14 @@ describe("StreamerBotClient", () => {
     expect(closeHarness.client.getStatus()).toMatchObject({
       state: "reconnecting",
       pendingRequestCount: 0,
-      message: "Streamer.bot connection closed"
+      message: "Streamer.bot connection closed",
+      referenceId: "ref-1"
     });
+    expect(closeHarness.diagnostics).toEqual([{
+      level: "error",
+      message: "Streamer.bot connection closed",
+      referenceId: "ref-1"
+    }]);
 
     const errorHarness = createConnectedClientHarness({ requestIds: ["info-1", "events-1"] });
     const errorInfo = errorHarness.client.getInfo();
@@ -366,8 +373,22 @@ describe("StreamerBotClient", () => {
     expect(errorHarness.client.getStatus()).toMatchObject({
       state: "error",
       pendingRequestCount: 0,
-      message: "Streamer.bot WebSocket error"
+      message: "Streamer.bot WebSocket error",
+      referenceId: "ref-1"
     });
+    expect(errorHarness.diagnostics).toEqual([{
+      level: "error",
+      message: "Streamer.bot WebSocket error",
+      referenceId: "ref-1"
+    }]);
+
+    errorHarness.sockets[0]?.emitClose();
+    expect(errorHarness.client.getStatus()).toMatchObject({
+      state: "reconnecting",
+      message: "Streamer.bot WebSocket error",
+      referenceId: "ref-1"
+    });
+    expect(errorHarness.diagnostics).toHaveLength(1);
   });
 
   it("forwards valid event envelopes without requiring known source/type pairs", async () => {
@@ -447,12 +468,19 @@ describe("StreamerBotClient", () => {
 
     harness.runNextScheduled();
     expect(harness.openedUrls).toHaveLength(2);
+    await harness.sockets[1]?.emitMessage(hello());
+    expect(harness.client.getStatus()).toMatchObject({
+      state: "connected",
+      lastErrorAt: null,
+      message: null,
+      referenceId: null
+    });
 
     harness.sockets[1]?.emitClose({ reason: "still lost" });
     harness.runNextScheduled();
     harness.sockets[2]?.emitClose({ reason: "still lost" });
 
-    expect(harness.scheduled.map((item) => item.delayMs)).toEqual([10, 20, 20]);
+    expect(harness.scheduled.map((item) => item.delayMs)).toEqual([10, 10, 20]);
   });
 
   it("resubscribes stored selections after reconnect", async () => {
@@ -524,8 +552,10 @@ function createClientHarness(options: HarnessOptions = {}) {
   const scheduled: { readonly callback: () => void; readonly delayMs: number }[] = [];
   const scheduledQueue: { readonly callback: () => void; readonly delayMs: number }[] = [];
   const events: StreamerBotEventEnvelope[] = [];
+  const diagnostics: Array<{ readonly level: "warn" | "error"; readonly message: string; readonly referenceId: string }> = [];
   const requestIds = options.requestIds ?? createRequestIds();
   let requestIdIndex = 0;
+  let referenceId = 0;
   const client = new StreamerBotClient({
     socketFactory(url) {
       openedUrls.push(url);
@@ -543,6 +573,10 @@ function createClientHarness(options: HarnessOptions = {}) {
     },
     onEvent(envelope) {
       events.push(envelope);
+    },
+    generateReferenceId: () => `ref-${++referenceId}`,
+    onDiagnostic(entry) {
+      diagnostics.push(entry);
     },
     now: () => new Date("2026-06-08T12:00:00.000Z"),
     schedule(callback, delayMs) {
@@ -563,6 +597,7 @@ function createClientHarness(options: HarnessOptions = {}) {
 
   return {
     client,
+    diagnostics,
     events,
     openedUrls,
     runNextScheduled() {

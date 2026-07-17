@@ -29,7 +29,7 @@
 - [x] 3.4 Enforce one active provider per capability and show alert-impact blockers or warnings before activation.
 - [x] 3.5 Add first-run, partial, configured, validation-failure, and activation-impact tests and Storybook states.
 - [x] 3.6 Replace redundant event-source connection/intake/runtime columns with `Usage` and transient `Live status`, including inactive and runtime-failure states.
-- [ ] 3.7 Poll event-source live status every five seconds and project source-referenced runtime failures into selected-provider detail with a filtered Diagnostics link.
+- [x] 3.7 Poll event-source live status every five seconds and project source-referenced runtime failures into selected-provider detail with a filtered Diagnostics link.
 
 ## 4. Alert Sets And Browser Sources
 
@@ -63,7 +63,7 @@
 - [x] 7.3 Add provider, alert, asset, output, and settings correction deep links that preserve diagnostic context.
 - [x] 7.4 Preserve sanitized diagnostics/debug exports and add sanitized copy plus visible export-failure handling.
 - [x] 7.5 Add redaction, search, deep-link, export, UI, Storybook, and Playwright coverage for approved diagnostics states.
-- [ ] 7.6 Add `Copy error JSON` for the selected sanitized Diagnostics problem with visible clipboard success and failure states.
+- [x] 7.6 Add `Copy error JSON` for the selected sanitized Diagnostics problem with visible clipboard success and failure states.
 
 ## 8. Settings Backup And Restore
 

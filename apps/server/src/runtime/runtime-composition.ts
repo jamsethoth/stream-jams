@@ -18,8 +18,10 @@ import {
   createAppVersion,
   createDefaultOverlayModuleRegistry,
   overlayScopeSchema,
+  type ActionableManagementError,
   type ConfigStore,
   type AlertBrowserSourceView,
+  type ProviderLiveStatus,
   type ProviderKind,
   type SecretStore
 } from "@stream-jams/core";
@@ -57,7 +59,10 @@ import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.j
 import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
 import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.js";
 import { SqliteDiagnosticsLogRepository } from "../modules/diagnostics/sqlite-log-repository.js";
-import { EventIngestionService } from "../modules/events/event-ingestion-service.js";
+import {
+  EventIngestionService,
+  type EventIngestionDiagnostic
+} from "../modules/events/event-ingestion-service.js";
 import { EventPipeline } from "../modules/events/event-pipeline.js";
 import { SqliteOverlayModuleConfigRepository } from "../modules/overlay-modules/sqlite-module-config-repository.js";
 import { LocalOverlayAccessService } from "../modules/overlays/overlay-access-service.js";
@@ -73,6 +78,7 @@ import {
   type SpeakerBotSocket
 } from "../modules/providers/provider-management-adapters.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
+import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
 import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
 import { createRedactor } from "../modules/security/redactor.js";
@@ -81,18 +87,30 @@ import {
   type RuntimeSecretStoreStatus
 } from "../modules/security/runtime-secret-store.js";
 import { createDefaultTtsProviderRegistry } from "../modules/tts/tts-provider-registry.js";
+import { StreamerBotClient, type StreamerBotSocket } from "../modules/streamerbot/streamerbot-client.js";
+import { createNodeStreamerBotSocket } from "../modules/streamerbot/node-streamerbot-socket.js";
+import {
+  StreamerBotRuntimeService,
+  type StreamerBotRuntimeDiagnostic
+} from "../modules/streamerbot/streamerbot-runtime-service.js";
 import { DefaultTwitchApiClient, type TwitchApiClient } from "../modules/twitch/twitch-api-client.js";
 import {
   DefaultTwitchEventSubApiClient,
   TwitchEventSubClient,
   type TwitchEventSubApiClient,
+  type TwitchEventSubDiagnostic,
   type TwitchEventSubSocket
 } from "../modules/twitch/twitch-eventsub-client.js";
-import { TwitchEventSubRuntimeService, type TwitchEventSubRuntimeState } from "../modules/twitch/twitch-eventsub-runtime-service.js";
+import {
+  TwitchEventSubRuntimeService,
+  type TwitchEventSubRuntimeDiagnostic,
+  type TwitchEventSubRuntimeState
+} from "../modules/twitch/twitch-eventsub-runtime-service.js";
 import { defaultTwitchClientId, TwitchOAuthService } from "../modules/twitch/twitch-oauth-service.js";
 import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
 import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../server/port-availability.js";
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
+import { syncEventSourceRuntimes } from "./event-source-runtime-coordinator.js";
 
 export interface RuntimeAppCompositionOptions {
   readonly homeDirectory: string;
@@ -105,6 +123,7 @@ export interface RuntimeAppCompositionOptions {
   readonly twitchApiClient?: TwitchApiClient;
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
   readonly twitchEventSubSocketFactory?: (url: string) => TwitchEventSubSocket;
+  readonly streamerBotSocketFactory?: (url: string) => StreamerBotSocket;
   readonly now?: () => Date;
   readonly generateManagementSessionId?: () => string;
   readonly generateManagementCsrfToken?: () => string;
@@ -121,7 +140,9 @@ export interface RuntimeAppComposition {
   readonly overlayAccessService: LocalOverlayAccessService;
   readonly runtimeSecretStoreStatus: RuntimeSecretStoreStatus;
   readonly twitchEventSubRuntimeService: TwitchEventSubRuntimeService;
+  readonly streamerBotRuntimeService: StreamerBotRuntimeService;
   readonly eventIngestionService: EventIngestionService;
+  syncEventSourceRuntime(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -143,6 +164,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const diagnosticsLogRepository = new SqliteDiagnosticsLogRepository(database.connection);
   const alertRepository = new SqliteAlertRepository(database.connection);
   const alertEditorDocumentRepository = new SqliteAlertEditorDocumentRepository(database.connection, now);
+  const providerRegistrationRepository = new SqliteProviderRegistrationRepository(database.connection);
   const alertService = new DefaultAlertService({
     repository: alertRepository,
     generateId: generateAlertConfigurationId
@@ -278,16 +300,45 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     diagnosticsLogRepository,
     generateId: generateEventPipelineId
   });
+  const generateEventSourceReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
   const eventIngestionService = new EventIngestionService({
-    sink: eventPipeline
+    sink: eventPipeline,
+    generateReferenceId: generateEventSourceReferenceId,
+    onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "events", "event-intake", entry)
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
+  const streamerBotRuntimeService = new StreamerBotRuntimeService({
+    repository: providerRegistrationRepository,
+    secretStore,
+    createClient(onEvent) {
+      return new StreamerBotClient({
+        socketFactory: options.streamerBotSocketFactory ?? createNodeStreamerBotSocket,
+        onEvent,
+        generateReferenceId: generateEventSourceReferenceId,
+        onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
+        now
+      });
+    },
+    ingestionService: {
+      ingestNormalizedEvent: (event) =>
+        maintenanceGate.runIntake(() => eventIngestionService.ingestNormalizedEvent(event))
+    },
+    generateReferenceId: generateEventSourceReferenceId,
+    onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
+    now
+  });
   const twitchEventSubClient = new TwitchEventSubClient({
     apiClient: options.twitchEventSubApiClient ?? new DefaultTwitchEventSubApiClient(),
     socketFactory: options.twitchEventSubSocketFactory ?? createNodeWebSocket,
     onNotification: async (message) => {
+      const activeEventSource = await providerRegistrationRepository.findActive("event-source");
+      if (activeEventSource?.provider.kind !== "twitch") {
+        return;
+      }
       await maintenanceGate.runIntake(() => eventIngestionService.ingestTwitchEventSubNotification(message));
     },
+    generateReferenceId: generateEventSourceReferenceId,
+    onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "twitch", "twitch.eventsub", entry),
     now
   });
   const twitchEventSubRuntimeService = new TwitchEventSubRuntimeService({
@@ -295,28 +346,32 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     clientId: twitchClientId,
     eventSubClient: twitchEventSubClient,
     ingestionService: eventIngestionService,
+    generateReferenceId: generateEventSourceReferenceId,
+    onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "twitch", "twitch.runtime", entry),
     now,
     secretStore
+  });
+  const syncEventSourceRuntime = () => syncEventSourceRuntimes({
+    repository: providerRegistrationRepository,
+    twitchRuntime: twitchEventSubRuntimeService,
+    streamerBotRuntime: streamerBotRuntimeService
   });
   const twitchAuthService = new TwitchOAuthService({
     apiClient: twitchApiClient,
     clientId: twitchClientId,
     generateAuthorizationId: randomUUID,
     now,
-    onConnectionChanged: async () => {
-      await twitchEventSubRuntimeService.connectStoredAccount();
-    },
+    onConnectionChanged: syncEventSourceRuntime,
     repository: twitchAccountRepository,
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
   });
-  const providerRegistrationRepository = new SqliteProviderRegistrationRepository(database.connection);
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
     adapters: createProviderManagementAdapters({
       twitchOAuthService: twitchAuthService,
       twitchEventSubRuntimeService,
-      streamerBotSocketFactory: createNodeProviderWebSocket,
+      streamerBotSocketFactory: options.streamerBotSocketFactory ?? createNodeStreamerBotSocket,
       speakerBotSocketFactory: createNodeProviderWebSocket,
       ttsService,
       now
@@ -335,25 +390,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       const current = await providerRegistrationRepository.findActive(target.provider.capability);
       const changesProviderKind =
         current !== null && current.provider.id !== target.provider.id && current.provider.kind !== target.provider.kind;
-      if (!changesProviderKind || affectedAlertCount === 0) {
-        return { matchedAlertCount: affectedAlertCount, unmatchedAlertCount: 0, blockers: [], warnings: [] };
-      }
-      return {
-        matchedAlertCount: 0,
-        unmatchedAlertCount: affectedAlertCount,
-        blockers: [],
-        warnings: [
-          {
-            summary: "Active alerts use a different provider kind",
-            cause: `${affectedAlertCount} active alert${affectedAlertCount === 1 ? "" : "s"} currently use ${current.provider.name}.`,
-            nextStep: `Confirm the switch to ${target.provider.name}, then review affected alerts before going live.`,
-            severity: "warning",
-            occurredAt: now().toISOString(),
-            referenceId: null,
-            correction: { label: "Review active alerts", route: "/manage/modules/alerts" }
-          }
-        ]
-      };
+      return evaluateProviderActivationImpact({
+        capability: target.provider.capability,
+        affectedAlertCount,
+        changesProviderKind,
+        currentProviderName: current?.provider.name ?? "the current provider",
+        targetProviderName: target.provider.name,
+        occurredAt: now().toISOString()
+      });
     },
     async getUsedByAlertCount(kind: ProviderKind) {
       const activeRules = await alertService.listActiveRules();
@@ -363,16 +407,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     generateId: () => `provider_${randomBytes(16).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
+    onEventSourceChanged: syncEventSourceRuntime,
     now
   });
   const alertSetMetadataRepository = new SqliteAlertSetMetadataRepository(database.connection);
   const alertSetManagementService = new AlertSetManagementService({
     alertService,
     metadataRepository: alertSetMetadataRepository,
-    async getActiveEventProviderKind() {
-      const providers = await providerManagementService.listProviders("event-source");
-      return providers.find((provider) => provider.active)?.kind ?? null;
-    },
     async listBrowserSources(): Promise<readonly AlertBrowserSourceView[]> {
       const origin = `http://${initialConfig.server.host}:${initialConfig.server.port}`;
       const outputs = await overlayOutputManagementService.listOutputs(origin);
@@ -454,7 +495,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
             label: "Runtime secret store",
             state: status.state,
             lastErrorAt: status.lastErrorAt,
-            message: status.message
+            message: status.message,
+            referenceId: null
           };
         }
       },
@@ -466,7 +508,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
             label: "Twitch EventSub",
             state: toDiagnosticsProviderState(status.state),
             lastErrorAt: status.lastErrorAt,
-            message: status.message
+            message: status.message,
+            referenceId: status.referenceId
+          };
+        }
+      },
+      {
+        getStatus() {
+          const status = streamerBotRuntimeService.getStatus();
+          return {
+            providerId: status.activeProviderId ?? "streamerbot",
+            label: "Streamer.bot event intake",
+            state: toDiagnosticsProviderState(status.state),
+            lastErrorAt: status.lastErrorAt,
+            message: status.message,
+            referenceId: status.referenceId
           };
         }
       }
@@ -506,13 +562,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetValidator,
     async getRuntime() {
       const eventSubState = twitchEventSubRuntimeService.getStatus().state;
+      const streamerBotState = streamerBotRuntimeService.getStatus().state;
       const playback = playbackCoordinator.getSnapshot();
       return {
         intakeActive:
           maintenanceGate.activeIntakeCount > 0 ||
           eventSubState === "connecting" ||
           eventSubState === "connected" ||
-          eventSubState === "reconnecting",
+          eventSubState === "reconnecting" ||
+          streamerBotState === "connecting" ||
+          streamerBotState === "connected" ||
+          streamerBotState === "reconnecting",
         playbackActive: playback.current !== null,
         queuedPlaybackCount: playback.queued.length
       };
@@ -544,6 +604,24 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const managementUiService = new ManagementUiService({
     providerService: providerManagementService,
     alertSetService: alertSetManagementService,
+    getEventSourceRuntimeView(provider) {
+      if (!provider.active) return { liveStatus: "not-running", error: null };
+      if (provider.kind === "twitch") {
+        const status = twitchEventSubRuntimeService.getStatus();
+        return {
+          liveStatus: toProviderLiveStatus(status.state),
+          error: toEventSourceRuntimeError(provider.name, status)
+        };
+      }
+      if (provider.kind === "streamerbot") {
+        const status = streamerBotRuntimeService.getStatus();
+        return {
+          liveStatus: toProviderLiveStatus(status.state),
+          error: toEventSourceRuntimeError(provider.name, status)
+        };
+      }
+      return { liveStatus: "error", error: provider.error };
+    },
     hasBrowserOutput: async () =>
       (await overlayOutputManagementService.listOutputs(`http://${initialConfig.server.host}:${initialConfig.server.port}`)).some(
         (output) =>
@@ -652,9 +730,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayAccessService,
     runtimeSecretStoreStatus: runtimeSecretStore.status,
     twitchEventSubRuntimeService,
+    streamerBotRuntimeService,
     eventIngestionService,
+    syncEventSourceRuntime,
     async close() {
       twitchEventSubRuntimeService.disconnect();
+      streamerBotRuntimeService.disconnect();
       await app.close();
       database.close();
     }
@@ -673,6 +754,87 @@ function toDiagnosticsProviderState(state: TwitchEventSubRuntimeState): "idle" |
     case "error":
       return "degraded";
   }
+}
+
+function toProviderLiveStatus(state: TwitchEventSubRuntimeState): ProviderLiveStatus {
+  switch (state) {
+    case "connected":
+      return "healthy";
+    case "connecting":
+      return "starting";
+    case "reconnecting":
+      return "reconnecting";
+    case "idle":
+    case "degraded":
+    case "error":
+      return "error";
+  }
+}
+
+function toEventSourceRuntimeError(
+  providerName: string,
+  status: {
+    readonly state: TwitchEventSubRuntimeState;
+    readonly message: string | null;
+    readonly lastErrorAt: string | null;
+    readonly referenceId: string | null;
+  }
+): ActionableManagementError | null {
+  if (toProviderLiveStatus(status.state) !== "error") return null;
+  const diagnosticsRoute = status.referenceId === null
+    ? "/manage/diagnostics"
+    : `/manage/diagnostics?reference=${encodeURIComponent(status.referenceId)}`;
+  return {
+    summary: `${providerName} live status error`,
+    cause: status.message ?? `${providerName} runtime reported an error.`,
+    nextStep: "Review the provider connection and reconnect it before retrying.",
+    severity: "error",
+    occurredAt: status.lastErrorAt,
+    referenceId: status.referenceId,
+    correction: { label: "Open diagnostics", route: diagnosticsRoute }
+  };
+}
+
+async function writeStreamerBotRuntimeDiagnostic(
+  logger: RuntimeJsonlLogger,
+  entry: StreamerBotRuntimeDiagnostic
+): Promise<void> {
+  const context = {
+    module: "streamerbot",
+    source: "streamerbot.event-intake",
+    correlationId: entry.referenceId,
+    processingId: null,
+    metadata: {
+      referenceId: entry.referenceId,
+      ...(entry.source === undefined ? {} : { upstreamSource: entry.source }),
+      ...(entry.type === undefined ? {} : { upstreamType: entry.type })
+    }
+  };
+  switch (entry.level) {
+    case "info":
+      await logger.info(entry.message, context);
+      return;
+    case "warn":
+      await logger.warn(entry.message, context);
+      return;
+    case "error":
+      await logger.error(entry.message, context);
+  }
+}
+
+async function writeEventSourceFailureDiagnostic(
+  logger: RuntimeJsonlLogger,
+  module: string,
+  source: string,
+  entry: EventIngestionDiagnostic | TwitchEventSubDiagnostic | TwitchEventSubRuntimeDiagnostic
+): Promise<void> {
+  await logger.error(entry.message, {
+    module,
+    source,
+    correlationId: entry.referenceId,
+    processingId: null,
+    metadata: { referenceId: entry.referenceId }
+  });
 }
 
 interface NodeWebSocketConstructor {

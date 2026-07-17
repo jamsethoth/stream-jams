@@ -18,7 +18,8 @@ describe("TwitchEventSubRuntimeService", () => {
       connectedAt: "2026-05-31T12:00:00.000Z",
       lastMessageAt: "2026-05-31T12:00:01.000Z",
       lastErrorAt: null,
-      subscriptionTypes: ["channel.follow"]
+      subscriptionTypes: ["channel.follow"],
+      referenceId: null
     });
     const service = new TwitchEventSubRuntimeService({
       accountRepository: repository,
@@ -31,7 +32,8 @@ describe("TwitchEventSubRuntimeService", () => {
         rejectedCount: 0,
         lastEventAt: "2026-05-31T12:00:02.000Z",
         lastErrorAt: null,
-        message: null
+        message: null,
+        referenceId: null
       }),
       secretStore
     });
@@ -57,33 +59,75 @@ describe("TwitchEventSubRuntimeService", () => {
     ]);
   });
 
-  it("disconnects the EventSub client when no connected account is stored", async () => {
+  it("reports an actionable failure when the active Twitch source has no connected account", async () => {
     const eventSubClient = new RecordingEventSubClient();
+    const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
     const service = new TwitchEventSubRuntimeService({
       accountRepository: new InMemoryTwitchAccountRepository(null),
       clientId: "client-id",
       eventSubClient,
       ingestionService: new StaticIngestionStatusService(),
+      generateReferenceId: () => "ref-missing-account",
+      onDiagnostic(entry) {
+        diagnostics.push(entry);
+      },
       secretStore: new InMemorySecretStore()
     });
 
     await expect(service.connectStoredAccount()).resolves.toMatchObject({
-      state: "idle",
+      state: "error",
       connectionState: "idle",
-      message: null
+      message: "Twitch account connection is unavailable",
+      referenceId: "ref-missing-account"
     });
     expect(eventSubClient.disconnectCount).toBe(1);
+    expect(diagnostics).toEqual([{
+      message: "Twitch account connection is unavailable",
+      referenceId: "ref-missing-account"
+    }]);
+  });
+
+  it("does not inherit another provider's ingestion failure while Twitch is idle", () => {
+    const service = new TwitchEventSubRuntimeService({
+      accountRepository: new InMemoryTwitchAccountRepository(null),
+      clientId: "client-id",
+      eventSubClient: new RecordingEventSubClient(),
+      ingestionService: new StaticIngestionStatusService({
+        state: "degraded",
+        acceptedCount: 0,
+        duplicateCount: 0,
+        rejectedCount: 1,
+        lastEventAt: null,
+        lastErrorAt: "2026-05-31T13:00:00.000Z",
+        message: "Streamer.bot event ingestion failed",
+        referenceId: "ref-streamerbot-ingestion"
+      }),
+      secretStore: new InMemorySecretStore()
+    });
+
+    expect(service.getStatus()).toMatchObject({
+      state: "idle",
+      connectionState: "idle",
+      lastErrorAt: null,
+      message: null,
+      referenceId: null
+    });
   });
 
   it("reports connection startup failures without exposing token values", async () => {
     const secretStore = new InMemorySecretStore();
     await secretStore.setSecret(createTwitchTokenSecretRef("141981764", "access_token"), "access-token-secret");
     const eventSubClient = new RecordingEventSubClient(undefined, new Error("access-token-secret leaked by runtime"));
+    const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
     const service = new TwitchEventSubRuntimeService({
       accountRepository: new InMemoryTwitchAccountRepository(connectedAccount),
       clientId: "client-id",
       eventSubClient,
       ingestionService: new StaticIngestionStatusService(),
+      generateReferenceId: () => "ref-twitch-runtime-1",
+      onDiagnostic(entry) {
+        diagnostics.push(entry);
+      },
       now: () => new Date("2026-05-31T13:00:00.000Z"),
       secretStore
     });
@@ -92,8 +136,15 @@ describe("TwitchEventSubRuntimeService", () => {
       state: "error",
       connectionState: "idle",
       lastErrorAt: "2026-05-31T13:00:00.000Z",
-      message: "Twitch EventSub WebSocket could not be started"
+      message: "Twitch EventSub WebSocket could not be started",
+      referenceId: "ref-twitch-runtime-1"
     });
+    service.getStatus();
+    service.getStatus();
+    expect(diagnostics).toEqual([{
+      message: "Twitch EventSub WebSocket could not be started",
+      referenceId: "ref-twitch-runtime-1"
+    }]);
     expect(JSON.stringify(service.getStatus())).not.toContain("access-token-secret");
   });
 });
@@ -121,7 +172,8 @@ class RecordingEventSubClient {
         connectedAt: null,
         lastMessageAt: null,
         lastErrorAt: null,
-        subscriptionTypes: []
+        subscriptionTypes: [],
+        referenceId: null
       };
   }
 
@@ -142,7 +194,8 @@ class RecordingEventSubClient {
       connectedAt: null,
       lastMessageAt: null,
       lastErrorAt: null,
-      subscriptionTypes: []
+      subscriptionTypes: [],
+      referenceId: null
     };
   }
 
@@ -174,5 +227,6 @@ const idleIngestionStatus: EventIngestionStatus = {
   rejectedCount: 0,
   lastEventAt: null,
   lastErrorAt: null,
-  message: null
+  message: null,
+  referenceId: null
 };

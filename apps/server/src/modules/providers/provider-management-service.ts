@@ -46,6 +46,7 @@ export interface ProviderManagementServiceOptions {
   readonly getUsedByAlertCount: (kind: ProviderKind) => Promise<number>;
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
+  readonly onEventSourceChanged?: (() => void | Promise<void>) | undefined;
   readonly now?: () => Date;
 }
 
@@ -90,6 +91,7 @@ export class ProviderManagementService {
   readonly #getUsedByAlertCount: ProviderManagementServiceOptions["getUsedByAlertCount"];
   readonly #generateId: () => string;
   readonly #generateReferenceId: () => string;
+  readonly #onEventSourceChanged: () => void | Promise<void>;
   readonly #now: () => Date;
 
   constructor(options: ProviderManagementServiceOptions) {
@@ -100,6 +102,7 @@ export class ProviderManagementService {
     this.#getUsedByAlertCount = options.getUsedByAlertCount;
     this.#generateId = options.generateId;
     this.#generateReferenceId = options.generateReferenceId;
+    this.#onEventSourceChanged = options.onEventSourceChanged ?? (() => {});
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -170,6 +173,9 @@ export class ProviderManagementService {
 
     try {
       const saved = await this.#repository.save(record);
+      if (saved.provider.capability === "event-source" && saved.provider.active) {
+        await this.#onEventSourceChanged();
+      }
       return providerRegistrationAttemptSchema.parse({
         status: "registered",
         provider: await this.#toDetail(saved),
@@ -233,11 +239,32 @@ export class ProviderManagementService {
       }
     }
 
+    if (target.provider.capability === "event-source") {
+      await this.#onEventSourceChanged();
+    }
+
     return providerActivationResultSchema.parse({
       provider: (await this.#toDetail(activated)).provider,
       replacedProviderId: result.replacedProviderId,
       impact
     });
+  }
+
+  async deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
+    const target = await this.#requireRecord(providerId);
+    const deactivated = await this.#repository.save({
+      ...target,
+      provider: {
+        ...target.provider,
+        active: false,
+        intakeState: target.provider.capability === "event-source" ? "inactive" : null
+      },
+      updatedAt: this.#now().toISOString()
+    });
+    if (target.provider.capability === "event-source") {
+      await this.#onEventSourceChanged();
+    }
+    return (await this.#toDetail(deactivated)).provider;
   }
 
   async getTtsSafety(providerId: string): Promise<TtsProviderSafetySettings> {

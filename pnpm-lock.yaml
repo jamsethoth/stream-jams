@@ -56,6 +56,9 @@ importers:
       fastify:
         specifier: 5.8.5
         version: 5.8.5
+      ws:
+        specifier: 8.21.0
+        version: 8.21.0
     devDependencies:
       '@stream-jams/test-support':
         specifier: workspace:0.0.0

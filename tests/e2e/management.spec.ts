@@ -41,6 +41,7 @@ test("event source onboarding connects validates and registers Twitch", async ({
   const pollBodies: (string | null)[] = [];
   let pollCount = 0;
   let registered = false;
+  let deactivationRequests = 0;
   const provider = {
     id: "provider-twitch-e2e",
     name: "Twitch",
@@ -150,6 +151,13 @@ test("event source onboarding connects validates and registers Twitch", async ({
       await route.fulfill({ contentType: "application/json", json: detail });
       return;
     }
+    if (url.pathname === `/management/providers/${provider.id}/deactivate` && request.method() === "POST") {
+      deactivationRequests += 1;
+      provider.active = false;
+      provider.intakeState = "inactive";
+      await route.fulfill({ contentType: "application/json", json: provider });
+      return;
+    }
     await route.abort("failed");
   });
 
@@ -186,7 +194,20 @@ test("event source onboarding connects validates and registers Twitch", async ({
 
   await page.getByRole("button", { name: "Register event source" }).click();
   await expect(page.getByText("Twitch registered and active.")).toBeVisible();
-  await expect(page.getByRole("row", { name: /Twitch/ })).toContainText("Active");
+  const row = page.getByRole("row", { name: /Twitch/ });
+  await expect(row).toContainText("In use");
+  await expect(row).toContainText("Healthy");
+  await expect(row.getByRole("button", { name: /View/ })).toHaveCount(0);
+  await row.click();
+  await expect(page.getByRole("heading", { name: "Twitch" })).toBeVisible();
+
+  await row.getByRole("button", { name: "Deactivate Twitch" }).click();
+  const dialog = page.getByRole("dialog", { name: "Deactivate Twitch?" });
+  await expect(dialog).toContainText("Live event intake will stop");
+  expect(deactivationRequests).toBe(0);
+  await dialog.getByRole("button", { name: "Deactivate event source" }).click();
+  await expect(page.getByText("Twitch is inactive.")).toBeVisible();
+  expect(deactivationRequests).toBe(1);
 });
 
 test("diagnostics workspace preserves correction context and copies sanitized evidence", async ({ page, context }) => {
@@ -292,6 +313,15 @@ test("diagnostics workspace preserves correction context and copies sanitized ev
     "href",
     "/manage/modules/alerts?diagnostic=ref-output-e2e#browser-sources"
   );
+  await page.getByRole("button", { name: "Copy error JSON" }).click();
+  const copiedProblem = JSON.parse(await page.evaluate(() => navigator.clipboard.readText())) as {
+    readonly referenceId: string;
+    readonly correction: { readonly route: string };
+  };
+  expect(copiedProblem).toMatchObject({
+    referenceId: "ref-output-e2e",
+    correction: { route: "/manage/modules/alerts?diagnostic=ref-output-e2e#browser-sources" }
+  });
   await page.getByRole("link", { name: "Open browser sources" }).click();
   await expect(page).toHaveURL(/\/modules\/alerts\?diagnostic=ref-output-e2e#browser-sources$/);
   await expect(page.getByRole("heading", { name: "Browser sources" })).toBeVisible();
