@@ -171,19 +171,25 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Exiting an incomplete provider setup discards the setup state.
 - Draft or resumable provider setup is backlog.
 - Successful provider setup automatically sets the provider active when no active provider exists for that capability.
-- If an active provider already exists, new provider is registered inactive and the user can choose `Set active`.
+- If an active provider already exists, a new provider is registered inactive and the user can choose `Activate`.
 - Providers are grouped by capability:
   - `Event sources`: Twitch, Streamer.bot events, future event providers.
   - `TTS providers`: Speaker.bot and future TTS providers.
 - Any number of providers can be registered per capability.
-- Exactly one provider per capability can be active in the MVP.
-- `Save provider` stores settings; `Set active` changes runtime behavior.
+- At most one provider per capability can be active in the MVP; event sources may intentionally have none active.
+- `Save provider` stores settings; `Activate` and `Deactivate` change runtime behavior after explicit impact confirmation.
+- Deactivating an event source stops routing its events and live runtime but preserves its registration, setup, and last validation result.
 - `Test connection` validates a provider without activating it.
 - `Test connection` updates test result/status only and never sets the provider active.
 - Active providers receive alerts automatically on app start for now.
 - Event-source UI should avoid hardcoding one-active-provider language so it can evolve to multiple active providers later.
-- Event-source tables should keep connection state separate from runtime intake state.
-- Event-source rows should show separate `Connection` and `Intake` states.
+- Partial provider setup is not persisted in MVP, so registered-provider tables do not need a setup-readiness column.
+- Event-source rows show `Usage` as `In use` or `Not in use`.
+- Event-source rows show transient `Live status` as `Starting`, `Healthy`, `Reconnecting`, or `Error` while in use; inactive sources show `Not running`.
+- Last validation and known setup errors remain in provider details rather than duplicating runtime health in the table.
+- Selecting an event source with `Error` live status shows the current runtime cause, next step, occurrence time, and reference ID when available in the right detail panel.
+- Runtime error detail includes an `Open diagnostics` link filtered by reference ID when available; without a reference ID it opens the Diagnostics workspace unfiltered.
+- The event-source table remains compact and does not repeat the full runtime error inline.
 - TTS provider setup should include `Test voice` before completion when the provider supports it.
 - TTS provider page should show provider `Connection` and `Used by alerts` count/link.
 - TTS provider owns provider-wide safety controls for speech output.
@@ -203,12 +209,13 @@ It is not the final implementation spec. Update it as decisions change, then pro
 
 ## Provider Activation Impact Checks
 
-- Alert rules target provider kind plus event type, not a specific registered provider.
-- Example: `Twitch > Follow`, not `Twitch account: jamsethoth > Follow`.
+- Alert rules match canonical event type plus explicit conditions, not an ingestion provider kind or specific registered provider.
+- Provider kind remains authoring metadata for event catalogs, sample payloads, and editor organization.
+- Example: a canonical `Raid` alert can be authored from the Twitch catalog and receive either direct Twitch EventSub or Streamer.bot-ingested Twitch raids.
 - When setting a provider active, check the active alert set:
-  - If no rules match that provider kind, warn that live alerts may stop.
-  - If some rules match and some do not, show counts.
-  - If all relevant rules match, use normal activation confirmation.
+  - Event-source changes keep alerts matched when the source supplies the same canonical event types.
+  - An explicit `ingestProvider` condition can intentionally restrict a rule and should be reflected in impact counts.
+  - Missing canonical event support should produce specific unmatched counts and warnings when provider capability discovery is available.
 - TTS provider activation should similarly check active alerts that use TTS.
 
 ## Assets
@@ -391,10 +398,10 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Alert and variation names only need to be unique within their parent event type.
 - Generated default names should be plain and editable, such as `Default follow`, `Large raid`, or `Subscriber tier 2`.
 - Search and list results should show hierarchy context, such as `Summer Set / Twitch / Raid / Large raid`.
-- Provider kind and event type labels are system-defined and not renamed.
+- Provider catalog and event type labels are system-defined and not renamed; provider catalog context does not bind runtime eligibility.
 - Registered provider instances can have user-facing nicknames on integration pages.
 - Event types with no configured alerts stay visible in the editor tree with an `Add alert` action.
-- Empty event type `Add alert` opens a template chooser scoped to that provider kind and event type.
+- Empty event type `Add alert` opens a template chooser scoped to that provider catalog and event type.
 - Event type has default target-profile enablement.
 - Variation can either use event default profile enablement or override it.
 - MVP variation conditions use simple event-specific fields, not a generic condition builder.

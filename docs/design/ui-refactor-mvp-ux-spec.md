@@ -198,27 +198,40 @@ OBS can become readiness only if OBS WebSocket integration is added later.
 Provider activation:
 
 - Any number of providers may be registered per capability.
-- Exactly one provider per capability can be active in MVP.
+- At most one provider per capability can be active in MVP.
 - If no active provider exists, successful setup sets new provider active.
 - If active provider already exists, new provider is registered inactive and user can choose `Set active`.
 - `Save provider` stores settings.
 - `Set active` changes runtime behavior.
 - `Test connection` validates provider without activating it.
+- Event-source rows are selected by clicking the row or using the provider-name selection control; a separate `View` action is not shown.
+- Event-source rows expose `Activate` or `Deactivate` in the Actions column.
+- Activation and deactivation always show affected scope, consequences, and recovery before requiring confirmation.
+- Deactivating the active event source may leave no event source active. Its registration, settings, and alert mappings remain saved.
+- Deactivation stops routing new events and disconnects that source's live runtime while preserving registration, settings, and last validation state.
+- TTS providers retain the active-provider switching flow; deactivation is not exposed in the TTS provider list.
 
-Event-source rows show separate `Connection` and `Intake` states.
+Event-source rows do not show a setup state because provider setup must validate before registration and partial registrations are not persisted in MVP.
+Event-source rows show:
+
+- `Usage`: `In use` or `Not in use`, reflecting explicit activation.
+- `Live status`: `Starting`, `Healthy`, `Reconnecting`, or `Error` for the source in use; inactive sources show `Not running`.
+
+Live status is transient runtime evidence, not the saved validation result. Last validation and known setup errors remain in provider details.
+When live status is `Error`, selecting the provider shows the current runtime cause, a human-readable next step, occurrence time, and reference ID when available in the right detail panel. The error includes an `Open diagnostics` link filtered by reference ID when available, or opens the Diagnostics workspace unfiltered otherwise. The table retains the compact `Error` status instead of repeating the full failure inline.
 Event-source copy should not hardcode one-active-provider language so future multi-active provider support remains possible.
 
 ### Activation Impact Checks
 
-Alert rules target provider kind plus event type, not a specific registered provider.
+Alert rules match canonical event type plus explicit conditions, not an ingestion provider kind or specific registered provider.
 
-Example: `Twitch > Follow`, not `Twitch account: jamsethoth > Follow`.
+Provider kind remains authoring metadata for event catalogs, sample payloads, and editor organization. For example, a canonical `Raid` alert authored from the Twitch catalog can receive either direct Twitch EventSub or Streamer.bot-ingested Twitch raids.
 
 When setting a provider active:
 
-- If no rules match that provider kind, warn live alerts may stop.
-- If some rules match and some do not, show counts.
-- If all relevant rules match, use normal activation confirmation.
+- Event-source changes keep alerts matched when the source supplies the same canonical event types.
+- An explicit `ingestProvider` condition can intentionally restrict a rule and is reflected in impact counts.
+- Missing canonical event support produces specific unmatched counts and warnings when provider capability discovery is available.
 - TTS provider activation similarly checks active alerts that use TTS.
 
 ### TTS Providers
@@ -406,7 +419,7 @@ Separate Output tab is backlog if output management grows.
 Hierarchy:
 
 - Set
-- Provider kind
+- Provider catalog context
 - Event type
 - Variation
 
@@ -417,7 +430,7 @@ Rules:
 - Variation starts from event default and can diverge.
 - Users can rename alerts and variations.
 - Alert/variation names need only be unique within parent event type.
-- Provider kind and event type labels are system-defined.
+- Provider catalog and event type labels are system-defined; provider catalog context is not an implicit runtime eligibility condition.
 - Registered provider instances can have nicknames on integration pages.
 - Empty event types remain visible with `Add alert`.
 - `Add alert` opens template chooser scoped to provider/event type.

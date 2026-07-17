@@ -59,9 +59,13 @@ Alternative considered: adopt MUI, Carbon React, or Tailwind for the refactor. R
 
 Provider settings, alert-set edits, alert-editor documents, asset changes, route-key regeneration, and restore require explicit actions. Low-risk view preferences may persist automatically. Provider `Save` and `Set active`, and alert-set `Save` and `Activate set`, remain distinct commands with impact checks.
 
+Event-source lists expose saved activation as `Usage` and transient runtime evidence as `Live status`. Setup is complete before registration, so list rows do not repeat a setup-ready state. Inactive sources report `Not running`; active sources report `Starting`, `Healthy`, `Reconnecting`, or `Error` from the actual provider runtime.
+
+An event-source runtime failure is projected into the selected provider view as transient actionable evidence rather than persisted setup state. The existing management error banner shows the runtime message, next step, occurrence time, and reference ID when available, with a correction link to the Diagnostics workspace filtered by that reference. The table retains only the `Error` status so it remains scannable; selecting the row exposes the complete failure in the right detail panel.
+
 ### Model alerts independently from registered provider instances
 
-Alert rules target provider kind and event type. Any number of provider registrations may exist per capability, but only one is active in MVP. Alert sets use stable IDs and exactly one active set. Two fixed target profiles, landscape and vertical, store independent layout while sharing alert content where defined.
+Alert rules match canonical event type plus explicit conditions. Provider catalog context supplies authoring fields and sample payloads without becoming an implicit runtime eligibility condition. Any number of provider registrations may exist per capability, but only one is active in MVP. Alert sets use stable IDs and exactly one active set. Two fixed target profiles, landscape and vertical, store independent layout while sharing alert content where defined.
 
 ### Reuse output authorization and playback paths
 

@@ -62,6 +62,21 @@ The system SHALL group providers by capability, use one wizard per setup flow, v
 - **THEN** the new provider is registered inactive
 - **AND** activation remains a separate explicit action
 
+#### Scenario: Event-source list separates usage from live health
+
+- **WHEN** a user reviews registered event sources
+- **THEN** each row shows whether the source is `In use` or `Not in use`
+- **AND** the source in use shows transient live status as `Starting`, `Healthy`, `Reconnecting`, or `Error`
+- **AND** an inactive source shows `Not running`
+- **AND** saved validation details remain in the selected-provider detail instead of appearing as a redundant setup column
+
+#### Scenario: Event-source runtime failure exposes actionable evidence
+
+- **WHEN** an event source reports `Error` as its live status
+- **THEN** selecting that source shows the current runtime cause, next step, occurrence time, and reference ID when available in the provider detail panel
+- **AND** the detail provides an `Open diagnostics` link filtered to the reference ID when available, or to the Diagnostics workspace otherwise
+- **AND** the provider table remains compact instead of duplicating the full error message inline
+
 #### Scenario: Activation reports alert impact
 
 - **WHEN** a user requests activation of a provider whose kind is not used by all relevant active alerts
