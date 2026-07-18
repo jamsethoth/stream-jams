@@ -23,7 +23,7 @@ export interface ManagementHttpClient {
   putJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
   patchJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
   deleteJson<T>(path: string, fallbackMessage: string): Promise<T>;
-  deleteRequest(path: string, fallbackMessage: string): Promise<void>;
+  deleteRequest(path: string, fallbackMessage: string, body?: unknown): Promise<void>;
 }
 
 export function createManagementHttpClient(options: HttpManagementClientOptions = {}): ManagementHttpClient {
@@ -115,15 +115,18 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     deleteJson<T>(path: string, fallbackMessage: string) {
       return requestJson<T>(path, { method: "DELETE", fallbackMessage });
     },
-    async deleteRequest(path: string, fallbackMessage: string) {
+    async deleteRequest(path: string, fallbackMessage: string, body?: unknown) {
+      const hasBody = body !== undefined;
       await requestWithSession(
         path,
         (session) => ({
           method: "DELETE",
           headers: {
             authorization: `Bearer ${session.id}`,
-            "x-stream-jams-csrf": session.csrfToken
-          }
+            "x-stream-jams-csrf": session.csrfToken,
+            ...(hasBody ? { "content-type": "application/json" } : {})
+          },
+          ...(hasBody ? { body: JSON.stringify(body) } : {})
         }),
         fallbackMessage
       );

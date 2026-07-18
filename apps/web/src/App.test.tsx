@@ -89,6 +89,18 @@ function createManagementApi(): ManagementApi {
     async createAlert() {
       throw new Error("not called");
     },
+    async createAlertVariation() {
+      throw new Error("not called");
+    },
+    async duplicateManagedAlert() {
+      throw new Error("not called");
+    },
+    async resetManagedAlert() {
+      throw new Error("not called");
+    },
+    async deleteManagedAlert() {
+      return undefined;
+    },
     async renameAlertSet() {
       throw new Error("not called");
     },

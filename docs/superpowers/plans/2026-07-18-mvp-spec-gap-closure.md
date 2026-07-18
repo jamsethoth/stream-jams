@@ -125,16 +125,16 @@
 - `EventInspector` edits rule-wide conditions, variation conditions, variation weight/priority, rule priority, and cooldown.
 - `copyAlertDesign(source, target)` copies layers, assets, animation, and both profile layouts only; identity, conditions, enablement, and sample data stay unchanged.
 
-- [ ] Write failing API-client tests for all four management commands from Task 2.
-- [ ] Write failing component tests for create variation, duplicate alert/variation, reset, delete confirmation, copy design, enable/disable, and condition editing.
-- [ ] Add event-specific condition choices: raid viewer minimum, subscription tier/month minimum, cheer bits minimum, and explicit ingest-provider restriction.
-- [ ] Render weight/priority only for variations; render shared cooldown/rule priority with clear shared-impact copy.
-- [ ] Keep destructive and active-output actions behind impact confirmation; failures stay visible with reference ID and next step.
-- [ ] Add Storybook states for default plus variations, destructive confirmation, duplicate needs-review, and invalid condition input.
-- [ ] Add one Playwright flow creating a variation, editing its condition, saving it, duplicating it, and deleting only the duplicate.
-- [ ] Run `corepack.cmd pnpm test -- apps/web/src/management/management-api.test.ts apps/web/src/management/alerts/AlertSetsPage.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx apps/web/src/management/alerts/editor/editor-state.test.ts`; expect all selected tests to pass.
-- [ ] Run `corepack.cmd pnpm test:e2e -- --grep "alert variation"`; expect the new workflow to pass.
-- [ ] Commit as `feat: complete alert variation authoring`.
+- [x] Write failing API-client tests for all four management commands from Task 2.
+- [x] Write failing component tests for create variation, duplicate alert/variation, reset, delete confirmation, copy design, enable/disable, and condition editing.
+- [x] Add event-specific condition choices: raid viewer minimum, subscription tier/month minimum, cheer bits minimum, and explicit ingest-provider restriction.
+- [x] Render weight/priority only for variations; render shared cooldown/rule priority with clear shared-impact copy.
+- [x] Keep destructive and active-output actions behind impact confirmation; failures stay visible with reference ID and next step.
+- [x] Add Storybook states for default plus variations, destructive confirmation, duplicate needs-review, and invalid condition input.
+- [x] Add one Playwright flow creating a variation, editing its condition, saving it, duplicating it, and deleting only the duplicate.
+- [x] Run `corepack.cmd pnpm test -- apps/web/src/management/management-api.test.ts apps/web/src/management/alerts/AlertSetsPage.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx apps/web/src/management/alerts/editor/editor-state.test.ts`; expect all selected tests to pass.
+- [x] Run `corepack.cmd pnpm test:e2e -- --grep "alert variation"`; expect the new workflow to pass.
+- [x] Commit as `feat: complete alert variation authoring`.
 
 ### Task 4: Complete Profile And Canvas Controls
 

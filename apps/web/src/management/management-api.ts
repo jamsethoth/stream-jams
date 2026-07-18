@@ -30,6 +30,7 @@ import {
   type AlertSetActivationResult,
   type AlertSetDetail,
   type AlertInventoryRow,
+  type AlertVariationCreateInput,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -233,6 +234,10 @@ export interface ManagementApi {
   getAlertSet(setId: string): Promise<AlertSetDetail>;
   createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
   createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow>;
+  createAlertVariation(alertId: string, input: AlertVariationCreateInput): Promise<AlertInventoryRow>;
+  duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow>;
+  resetManagedAlert(alertId: string, confirmLiveImpact?: boolean): Promise<AlertInventoryRow>;
+  deleteManagedAlert(alertId: string, confirmLiveImpact?: boolean): Promise<void>;
   renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
@@ -451,6 +456,41 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
           input,
           "Unable to create alert."
         )
+      );
+    },
+
+    createAlertVariation(alertId, input) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/variations`,
+        input,
+        alertInventoryRowSchema,
+        "Unable to create alert variation."
+      );
+    },
+
+    duplicateManagedAlert(alertId) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/duplicate`,
+        undefined,
+        alertInventoryRowSchema,
+        "Unable to duplicate alert."
+      );
+    },
+
+    resetManagedAlert(alertId, confirmLiveImpact = false) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/reset`,
+        { confirmLiveImpact },
+        alertInventoryRowSchema,
+        "Unable to reset alert."
+      );
+    },
+
+    async deleteManagedAlert(alertId, confirmLiveImpact = false) {
+      await client.deleteRequest(
+        `/management/alerts/${encodeURIComponent(alertId)}`,
+        "Unable to delete alert.",
+        { confirmLiveImpact }
       );
     },
 

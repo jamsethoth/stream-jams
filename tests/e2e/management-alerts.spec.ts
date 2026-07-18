@@ -1,6 +1,20 @@
 import { expect, test } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
 
+interface AlertInventoryFixture {
+  readonly id: string;
+  readonly setId: string;
+  readonly providerKind: "twitch";
+  readonly eventType: "raid";
+  readonly parentAlertId: string | null;
+  readonly name: string;
+  readonly kind: "default" | "variation";
+  readonly enabled: boolean;
+  readonly reviewState: "ready" | "needs-review";
+  readonly targetProfileIds: readonly ("landscape" | "vertical")[];
+  readonly previewText: string;
+}
+
 test("management alerts reviews the starter set and safely manages its landscape output", async ({ page }) => {
   await mockManagementShell(page);
   const commands: Array<{ readonly command: string; readonly body: unknown }> = [];
@@ -293,6 +307,151 @@ test("management alerts creates a disabled alert and opens its focused editor", 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-cheer\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
   expect(createAlertRequests).toEqual([{ eventType: "cheer", name: "New cheer" }]);
+});
+
+test("alert variation can be created edited duplicated and selectively deleted", async ({ page }) => {
+  await mockManagementShell(page);
+  const requests: Array<{ readonly command: string; readonly id: string; readonly body: unknown }> = [];
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: true,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+  const defaultRaid: AlertInventoryFixture = {
+    id: "alert-raid",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "raid",
+    parentAlertId: null,
+    name: "New raid",
+    kind: "default",
+    enabled: true,
+    reviewState: "ready",
+    targetProfileIds: ["landscape"],
+    previewText: "Raid preview"
+  };
+  let inventory: AlertInventoryFixture[] = [defaultRaid];
+  let variationDocument = {
+    ...alertEditorDocument(),
+    id: "variant-large-raid",
+    eventType: "raid",
+    kind: "variation",
+    parentAlertId: defaultRaid.id,
+    name: "Large raid",
+    enabled: false,
+    conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: 0,
+    rulePriority: 0,
+    targetProfiles: alertEditorDocument().targetProfiles.map((profile) => ({
+      ...profile,
+      enabled: false,
+      reviewState: "needs-review" as const
+    }))
+  };
+  const detail = () => ({ overview, inventory, browserSources: [] });
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({ contentType: "application/json", json: [overview] }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({ contentType: "application/json", json: detail() }));
+  await page.route("**/management/alerts/alert-raid/variations", async (route) => {
+    const body = route.request().postDataJSON() as { readonly name: string };
+    const created: AlertInventoryFixture = {
+      ...defaultRaid,
+      id: variationDocument.id,
+      parentAlertId: defaultRaid.id,
+      name: body.name,
+      kind: "variation",
+      enabled: false,
+      reviewState: "needs-review",
+      targetProfileIds: []
+    };
+    inventory = [...inventory, created];
+    variationDocument = { ...variationDocument, name: body.name };
+    requests.push({ command: "create", id: defaultRaid.id, body });
+    await route.fulfill({ contentType: "application/json", status: 201, json: created });
+  });
+  await page.route("**/management/alerts/variant-large-raid/editor", async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { readonly document: typeof variationDocument; readonly confirmLiveImpact: boolean };
+      variationDocument = body.document;
+      requests.push({ command: "save", id: variationDocument.id, body });
+    }
+    await route.fulfill({ contentType: "application/json", json: variationDocument });
+  });
+  await page.route("**/management/alerts/variant-large-raid/duplicate", async (route) => {
+    const duplicate: AlertInventoryFixture = {
+      ...inventory.find((alert) => alert.id === variationDocument.id)!,
+      id: "variant-large-raid-copy",
+      name: "Large raid copy",
+      enabled: false,
+      reviewState: "needs-review"
+    };
+    inventory = [...inventory, duplicate];
+    requests.push({ command: "duplicate", id: variationDocument.id, body: null });
+    await route.fulfill({ contentType: "application/json", status: 201, json: duplicate });
+  });
+  await page.route("**/management/alerts/variant-large-raid-copy", async (route) => {
+    const body = route.request().postDataJSON();
+    inventory = inventory.filter((alert) => alert.id !== "variant-large-raid-copy");
+    requests.push({ command: "delete", id: "variant-large-raid-copy", body });
+    await route.fulfill({ status: 204 });
+  });
+
+  await page.goto("/manage/modules/alerts");
+  await page.getByRole("button", { name: "Add variation to New raid" }).click();
+  const createDialog = page.getByRole("dialog", { name: "Add variation to New raid" });
+  await createDialog.getByLabel("Variation name").fill("Large raid");
+  await createDialog.getByRole("button", { name: "Create variation" }).click();
+  await expect(page.getByText("Large raid created disabled and marked Needs review.")).toBeVisible();
+  await page.getByRole("button", { name: "Edit Large raid" }).click();
+
+  await expect(page).toHaveURL(/\/modules\/alerts\/editor\/variant-large-raid/u);
+  await page.getByRole("tab", { name: "Alert" }).click();
+  await page.getByRole("button", { name: "Mark profile reviewed" }).click();
+  await page.getByRole("checkbox", { name: "Use this profile for live alerts" }).check();
+  await page.getByRole("tab", { name: "Event" }).click();
+  const variationConditions = page.getByRole("group", { name: "Variation conditions" });
+  await variationConditions.getByRole("button", { name: "Add raid viewer minimum" }).click();
+  await variationConditions.getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" }).fill("25");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Back to alerts" }).click();
+
+  await page.locator("summary[aria-label='More actions for Large raid']").click();
+  await page.getByRole("button", { name: "Duplicate Large raid" }).click();
+  await expect(page.getByText("Large raid copy duplicated disabled and marked Needs review.")).toBeVisible();
+  await page.locator("summary[aria-label='More actions for Large raid']").click();
+  await page.locator("summary[aria-label='More actions for Large raid copy']").click();
+  await page.getByRole("button", { name: "Delete Large raid copy" }).click();
+  await page.getByRole("dialog", { name: "Delete Large raid copy?" }).getByRole("button", { name: "Delete alert" }).click();
+  await expect(page.getByText("Large raid copy deleted.")).toBeVisible();
+  await expect(page.getByRole("row", { name: /Large raid copy/u })).toHaveCount(0);
+  await expect(page.getByRole("row", { name: /Large raid/u })).toBeVisible();
+
+  expect(requests).toEqual([
+    { command: "create", id: "alert-raid", body: { name: "Large raid" } },
+    {
+      command: "save",
+      id: "variant-large-raid",
+      body: expect.objectContaining({
+        confirmLiveImpact: false,
+        document: expect.objectContaining({ variantConditions: [{ field: "raidViewers", operator: "min", value: 25 }] })
+      })
+    },
+    { command: "duplicate", id: "variant-large-raid", body: null },
+    { command: "delete", id: "variant-large-raid-copy", body: { confirmLiveImpact: true } }
+  ]);
 });
 
 test("focused alert editor saves layouts and separates preview from test delivery", async ({ page }) => {

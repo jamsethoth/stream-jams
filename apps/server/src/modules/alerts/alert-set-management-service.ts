@@ -762,7 +762,7 @@ function copyEditorDocument(
   return {
     ...structuredClone(source),
     ...identity,
-    targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, reviewState: "needs-review" }))
+    targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
   };
 }
 

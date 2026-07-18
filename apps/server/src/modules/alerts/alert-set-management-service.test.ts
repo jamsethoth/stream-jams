@@ -194,8 +194,8 @@ describe("AlertSetManagementService", () => {
       name: "VIP follower",
       enabled: false,
       targetProfiles: [
-        expect.objectContaining({ id: "landscape", reviewState: "needs-review" }),
-        expect.objectContaining({ id: "vertical", reviewState: "needs-review" })
+        expect.objectContaining({ id: "landscape", enabled: false, reviewState: "needs-review" }),
+        expect.objectContaining({ id: "vertical", enabled: false, reviewState: "needs-review" })
       ]
     });
   });
@@ -250,7 +250,14 @@ describe("AlertSetManagementService", () => {
     });
     expect(defaultCopy).toMatchObject({ parentAlertId: null, kind: "default", enabled: false, reviewState: "needs-review" });
     expect(defaultCopy.id).not.toBe(defaultAlert.id);
-    await expect(fixture.documents.find(variationCopy.id)).resolves.toMatchObject({ id: variationCopy.id, enabled: false });
+    await expect(fixture.documents.find(variationCopy.id)).resolves.toMatchObject({
+      id: variationCopy.id,
+      enabled: false,
+      targetProfiles: [
+        expect.objectContaining({ enabled: false, reviewState: "needs-review" }),
+        expect.objectContaining({ enabled: false, reviewState: "needs-review" })
+      ]
+    });
   });
 
   it("resets a variation to its default design and deletes only the selected variation", async () => {

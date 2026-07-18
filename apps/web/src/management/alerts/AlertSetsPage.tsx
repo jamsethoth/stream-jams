@@ -23,6 +23,10 @@ export type AlertSetsPageApi = Pick<
   | "getAlertSet"
   | "createAlertSet"
   | "createAlert"
+  | "createAlertVariation"
+  | "duplicateManagedAlert"
+  | "resetManagedAlert"
+  | "deleteManagedAlert"
   | "renameAlertSet"
   | "duplicateAlertSet"
   | "getAlertSetActivationImpact"
@@ -54,6 +58,11 @@ interface RegenerateDialogState {
   readonly requiresTypedConfirmation: boolean;
 }
 
+interface AlertMutationDialogState {
+  readonly action: "reset" | "delete";
+  readonly alert: AlertInventoryRow;
+}
+
 export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
@@ -69,6 +78,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [createAlertEventType, setCreateAlertEventType] = useState<AlertCreateInput["eventType"]>(alertStarterTemplates[0].eventType);
   const [createAlertName, setCreateAlertName] = useState<string>(alertStarterTemplates[0].defaultName);
   const [createAlertError, setCreateAlertError] = useState<ActionableManagementError | null>(null);
+  const [variationParent, setVariationParent] = useState<AlertInventoryRow | null>(null);
+  const [variationName, setVariationName] = useState("");
+  const [variationError, setVariationError] = useState<ActionableManagementError | null>(null);
+  const [alertMutation, setAlertMutation] = useState<AlertMutationDialogState | null>(null);
   const [activationImpact, setActivationImpact] = useState<AlertSetActivationImpact | null>(null);
   const [activationSet, setActivationSet] = useState<AlertSetOverview | null>(null);
   const [previewAlert, setPreviewAlert] = useState<AlertInventoryRow | null>(null);
@@ -273,6 +286,72 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         "The alert was not created",
         cause,
         "Review the event type and alert name, then try again."
+      ));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openVariationDialog(alert: AlertInventoryRow) {
+    setVariationParent(alert);
+    setVariationName(`${alert.name} variation`);
+    setVariationError(null);
+  }
+
+  async function submitVariation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (variationParent === null || variationName.trim() === "") return;
+    setBusy(true);
+    setVariationError(null);
+    try {
+      const created = await managementApi.createAlertVariation(variationParent.id, { name: variationName.trim() });
+      await refresh(created.setId);
+      setVariationParent(null);
+      setNotice(`${created.name} created disabled and marked Needs review.`);
+    } catch (cause) {
+      setVariationError(toActionableError(
+        "The variation was not created",
+        cause,
+        "Choose a unique name for this alert, then try again."
+      ));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function duplicateAlert(alert: AlertInventoryRow) {
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await managementApi.duplicateManagedAlert(alert.id);
+      await refresh(created.setId);
+      setNotice(`${created.name} duplicated disabled and marked Needs review.`);
+    } catch (cause) {
+      setError(toActionableError("The alert was not duplicated", cause, "Review the alert and try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmAlertMutation() {
+    if (alertMutation === null) return;
+    const { action, alert } = alertMutation;
+    setBusy(true);
+    setError(null);
+    try {
+      if (action === "reset") {
+        await managementApi.resetManagedAlert(alert.id, true);
+      } else {
+        await managementApi.deleteManagedAlert(alert.id, true);
+      }
+      await refresh(alert.setId);
+      setNotice(action === "reset" ? `${alert.name} reset to its event default and marked Needs review.` : `${alert.name} deleted.`);
+      setAlertMutation(null);
+    } catch (cause) {
+      setError(toActionableError(
+        action === "reset" ? "The alert was not reset" : "The alert was not deleted",
+        cause,
+        action === "reset" ? "Review the alert state and try again." : "Confirm the alert still exists, then try again."
       ));
     } finally {
       setBusy(false);
@@ -538,10 +617,14 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       issues={expandedDetail.overview.validationIssues}
                       onEventFilter={setEventFilter}
                       onAdd={openCreateAlertDialog}
+                      onCreateVariation={openVariationDialog}
+                      onDelete={(alert) => setAlertMutation({ action: "delete", alert })}
+                      onDuplicate={(alert) => void duplicateAlert(alert)}
                       onEdit={onEditAlert}
                       onPreview={setPreviewAlert}
                       onProfileFilter={setProfileFilter}
                       onQuery={setQuery}
+                      onReset={(alert) => setAlertMutation({ action: "reset", alert })}
                       onStatusFilter={setStatusFilter}
                       onTest={requestInlineTest}
                       onTestProfile={(alert, targetProfileId) => void sendInlineTest(alert, targetProfileId)}
@@ -574,10 +657,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         onSubmit={submitCreateAlert}
         open={createAlertOpen}
       />
+      <VariationDialog alert={variationParent} busy={busy} error={variationError} name={variationName} onCancel={() => setVariationParent(null)} onName={setVariationName} onSubmit={submitVariation} />
       <ActivationDialog busy={busy} impact={activationImpact} onCancel={() => { setActivationSet(null); setActivationImpact(null); }} onConfirm={() => void confirmActivation()} set={activationSet} />
       <PreviewDialog alert={previewAlert} onCancel={() => setPreviewAlert(null)} />
       <RegenerateDialog busy={busy} confirmation={regenerateConfirmation} onCancel={() => setRegenerateDialog(null)} onChange={setRegenerateConfirmation} onConfirm={() => void regenerateBrowserSource()} state={regenerateDialog} />
       <DeleteDialog busy={busy} onCancel={() => setDeleteSet(null)} onConfirm={() => void confirmDelete()} set={deleteSet} />
+      <AlertMutationDialog busy={busy} onCancel={() => setAlertMutation(null)} onConfirm={() => void confirmAlertMutation()} state={alertMutation} />
     </div>
   );
 }
@@ -612,11 +697,15 @@ function AlertInventory({
   eventTypes,
   issues,
   onAdd,
+  onCreateVariation,
+  onDelete,
+  onDuplicate,
   onEventFilter,
   onEdit,
   onPreview,
   onProfileFilter,
   onQuery,
+  onReset,
   onStatusFilter,
   onTest,
   onTestProfile,
@@ -634,11 +723,15 @@ function AlertInventory({
   readonly eventTypes: readonly string[];
   readonly issues: readonly AlertValidationIssue[];
   readonly onAdd: () => void;
+  readonly onCreateVariation: (alert: AlertInventoryRow) => void;
+  readonly onDelete: (alert: AlertInventoryRow) => void;
+  readonly onDuplicate: (alert: AlertInventoryRow) => void;
   readonly onEventFilter: (value: string) => void;
   readonly onEdit: (alert: AlertInventoryRow) => void;
   readonly onPreview: (alert: AlertInventoryRow) => void;
   readonly onProfileFilter: (value: string) => void;
   readonly onQuery: (value: string) => void;
+  readonly onReset: (alert: AlertInventoryRow) => void;
   readonly onStatusFilter: (value: string) => void;
   readonly onTest: (alert: AlertInventoryRow) => void;
   readonly onTestProfile: (alert: AlertInventoryRow, targetProfileId: TargetProfileId) => void;
@@ -650,6 +743,7 @@ function AlertInventory({
   readonly testingAlertId: string | null;
   readonly totalCount: number;
 }) {
+  const orderedAlerts = orderAlertRows(alerts);
   return (
     <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__inventory">
       <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{alerts.length} of {totalCount} shown</p></div><button disabled={busy} onClick={onAdd} type="button">Add alert</button></div>
@@ -663,13 +757,13 @@ function AlertInventory({
         <table className="alert-sets-page__table alert-sets-page__table--inventory">
           <thead><tr><th scope="col">Alert</th><th scope="col">Event</th><th scope="col">Profiles</th><th scope="col">State</th><th scope="col">Validation</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
-            {alerts.map((alert) => {
+            {orderedAlerts.map((alert) => {
               const alertIssues = issues.filter((issue) => issue.alertId === alert.id);
               const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
               const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
               const testMenuOpen = testMenuAlertId === alert.id;
               return (
-                <tr key={alert.id}>
+                <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
                   <th scope="row"><span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"}</small></th>
                   <td><span>{formatEventType(alert.eventType)}</span><small>{formatProvider(alert.providerKind)} catalog</small></td>
                   <td>{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
@@ -686,7 +780,16 @@ function AlertInventory({
                       <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" onClick={() => onEdit(alert)} type="button">Edit</button>
                       <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Preview</button>
                       <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
+                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                       <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
+                      <details className="alert-sets-page__action-menu">
+                        <summary aria-label={`More actions for ${alert.name}`}>More</summary>
+                        <div role="group" aria-label={`Additional actions for ${alert.name}`}>
+                          <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
+                          <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
+                          <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
+                        </div>
+                      </details>
                     </div>
                     {testMenuOpen ? (
                       <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">
@@ -849,6 +952,33 @@ function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType
   );
 }
 
+function VariationDialog({ alert, busy, error, name, onCancel, onName, onSubmit }: {
+  readonly alert: AlertInventoryRow | null;
+  readonly busy: boolean;
+  readonly error: ActionableManagementError | null;
+  readonly name: string;
+  readonly onCancel: () => void;
+  readonly onName: (name: string) => void;
+  readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <ModalSurface labelledBy="alert-variation-dialog-title" onCancel={onCancel} open={alert !== null}>
+      <form className="alert-sets-page__modal" onSubmit={onSubmit}>
+        <div>
+          <h2 id="alert-variation-dialog-title">Add variation to {alert?.name}</h2>
+          <p>The variation copies the default design and starts disabled until reviewed.</p>
+        </div>
+        {error === null ? null : <ManagementErrorBanner error={error} />}
+        <label><span>Variation name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} /></label>
+        <div className="management-modal__actions">
+          <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
+          <button disabled={busy || name.trim() === ""} type="submit">Create variation</button>
+        </div>
+      </form>
+    </ModalSurface>
+  );
+}
+
 function ActivationDialog({ busy, impact, onCancel, onConfirm, set }: { readonly busy: boolean; readonly impact: AlertSetActivationImpact | null; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
   return <ModalSurface labelledBy="alert-set-activation-title" onCancel={onCancel} open={set !== null && impact !== null}><div className="alert-sets-page__modal"><div><h2 id="alert-set-activation-title">Activate {set?.name}?</h2><p>{impact?.replacingActiveSetName === null ? "This set will receive live events." : `${impact?.replacingActiveSetName} will become inactive. Saved configuration will not be deleted.`}</p></div><ImpactFacts impact={impact} />{(impact?.blockers.length ?? 0) > 0 ? <IssueGroup heading="Resolve before activation" issues={impact?.blockers ?? []} /> : null}{(impact?.warnings.length ?? 0) > 0 ? <IssueGroup heading="Review before activation" issues={impact?.warnings ?? []} /> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || (impact?.blockers.length ?? 0) > 0} onClick={onConfirm} type="button">{(impact?.warnings.length ?? 0) > 0 ? "Activate with warnings" : "Activate"}</button></div></div></ModalSurface>;
 }
@@ -874,6 +1004,46 @@ function RegenerateDialog({ busy, confirmation, onCancel, onChange, onConfirm, s
 
 function DeleteDialog({ busy, onCancel, onConfirm, set }: { readonly busy: boolean; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
   return <ModalSurface labelledBy="delete-alert-set-title" onCancel={onCancel} open={set !== null}><div className="alert-sets-page__modal"><div><h2 id="delete-alert-set-title">Delete {set?.name}?</h2><p>This permanently deletes the set and its alerts. Assets used elsewhere remain available.</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={onConfirm} type="button">Delete alert set</button></div></div></ModalSurface>;
+}
+
+function AlertMutationDialog({ busy, onCancel, onConfirm, state }: {
+  readonly busy: boolean;
+  readonly onCancel: () => void;
+  readonly onConfirm: () => void;
+  readonly state: AlertMutationDialogState | null;
+}) {
+  const reset = state?.action === "reset";
+  const title = reset ? `Reset ${state?.alert.name}?` : `Delete ${state?.alert.name}?`;
+  return (
+    <ModalSurface labelledBy="alert-mutation-dialog-title" onCancel={onCancel} open={state !== null}>
+      <div className="alert-sets-page__modal">
+        <div>
+          <h2 id="alert-mutation-dialog-title">{title}</h2>
+          <p>{reset
+            ? "The saved design and matching controls will return to the event default. The alert will be disabled and require review."
+            : state?.alert.kind === "default"
+              ? "This permanently deletes the default alert and all of its variations. Shared assets remain available."
+              : "This permanently deletes only this variation. Shared assets remain available."}</p>
+          {state?.alert.enabled ? <p><strong>Live impact:</strong> This alert is enabled in the selected set. Confirming can change live output immediately.</p> : null}
+        </div>
+        <div className="management-modal__actions">
+          <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
+          <button className={reset ? "button button--primary" : "button button--danger"} disabled={busy} onClick={onConfirm} type="button">{reset ? "Reset alert" : "Delete alert"}</button>
+        </div>
+      </div>
+    </ModalSurface>
+  );
+}
+
+function orderAlertRows(alerts: readonly AlertInventoryRow[]): readonly AlertInventoryRow[] {
+  const defaults = alerts.filter((alert) => alert.kind === "default");
+  const attachedIds = new Set<string>();
+  const ordered = defaults.flatMap((alert) => {
+    const variations = alerts.filter((candidate) => candidate.parentAlertId === alert.id);
+    variations.forEach((variation) => attachedIds.add(variation.id));
+    return [alert, ...variations];
+  });
+  return [...ordered, ...alerts.filter((alert) => alert.kind === "variation" && !attachedIds.has(alert.id))];
 }
 
 function outputRequest(source: AlertBrowserSourceView) {

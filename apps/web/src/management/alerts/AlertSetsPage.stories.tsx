@@ -100,6 +100,48 @@ export const CreateAlert: Story = {
   }
 };
 
+export const DefaultWithVariations: Story = {
+  args: { managementApi: api([activeSet], detailWithVariation()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const variation = await canvas.findByRole("row", { name: /Large raid/u });
+    await expect(variation).toHaveClass("alert-sets-page__variation-row");
+    await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
+  }
+};
+
+export const DuplicateVariationNeedsReview: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      ...api([activeSet], detailWithVariation()),
+      duplicateManagedAlert: async () => ({
+        ...detailWithVariation().inventory[2]!,
+        id: "variant-large-raid-copy",
+        name: "Large raid copy",
+        enabled: false,
+        reviewState: "needs-review"
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("More", { selector: "summary[aria-label='More actions for Large raid']" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Duplicate Large raid" }));
+    await expect(await canvas.findByText("Large raid copy duplicated disabled and marked Needs review.")).toBeVisible();
+  }
+};
+
+export const DestructiveVariationConfirmation: Story = {
+  args: { managementApi: api([activeSet], detailWithVariation()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("More", { selector: "summary[aria-label='More actions for Large raid']" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Delete Large raid" }));
+    const dialog = within(await canvas.findByRole("dialog", { name: "Delete Large raid?" }));
+    await expect(dialog.getByText("This permanently deletes only this variation. Shared assets remain available.")).toBeVisible();
+  }
+};
+
 export const CopyFailure: Story = {
   args: { managementApi: api([activeSet], detail(activeSet)) },
   play: async ({ canvasElement }) => {
@@ -236,6 +278,20 @@ function detail(set: AlertSetOverview): AlertSetDetail {
         url: null,
         copyableUrlStatus: "create-required"
       }
+    ]
+  };
+}
+
+function detailWithVariation(): AlertSetDetail {
+  const source = detail(activeSet);
+  const raid = source.inventory[1]!;
+  return {
+    ...source,
+    inventory: [
+      source.inventory[0]!,
+      raid,
+      { ...raid, id: "variant-large-raid", parentAlertId: raid.id, name: "Large raid", kind: "variation", enabled: false, reviewState: "needs-review" },
+      ...source.inventory.slice(2)
     ]
   };
 }

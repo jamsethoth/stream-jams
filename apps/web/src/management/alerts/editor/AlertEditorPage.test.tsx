@@ -1,5 +1,5 @@
 import type { AlertEditorDocument, AlertSetDetail } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
@@ -426,6 +426,229 @@ describe("AlertEditorPage", () => {
     expect(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" }))
       .toHaveTextContent("Database write failed. Reference ref-save-17.");
     expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
+  });
+
+  it("edits variation conditions and shared rule controls", async () => {
+    const user = userEvent.setup();
+    const variation: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-large-raid",
+      eventType: "raid",
+      kind: "variation",
+      parentAlertId: "alert-raid",
+      name: "Large raid",
+      weight: 2,
+      priority: 5
+    };
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={variation.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => variation),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const variationConditions = screen.getByRole("group", { name: "Variation conditions" });
+    await user.click(within(variationConditions).getByRole("button", { name: "Add raid viewer minimum" }));
+    const viewerMinimum = within(variationConditions).getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" });
+    await user.clear(viewerMinimum);
+    await user.type(viewerMinimum, "25");
+    await user.click(within(variationConditions).getByRole("button", { name: "Add ingest provider restriction" }));
+    await user.selectOptions(
+      within(variationConditions).getByRole("combobox", { name: "Variation conditions Ingest provider restriction" }),
+      "streamerbot"
+    );
+    await user.clear(screen.getByRole("spinbutton", { name: "Variation weight" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Variation weight" }), "4");
+    await user.clear(screen.getByRole("spinbutton", { name: "Variation priority" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Variation priority" }), "8");
+    await user.clear(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }), "15");
+    await user.clear(screen.getByRole("spinbutton", { name: "Rule priority" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Rule priority" }), "3");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      variation.id,
+      expect.objectContaining({
+        weight: 4,
+        priority: 8,
+        cooldownSeconds: 15,
+        rulePriority: 3,
+        variantConditions: [
+          { field: "raidViewers", operator: "min", value: 25 },
+          { field: "ingestProvider", operator: "equals", value: "streamerbot" }
+        ]
+      }),
+      false
+    ));
+  });
+
+  it("blocks saving an invalid minimum condition and explains the correction", async () => {
+    const user = userEvent.setup();
+    const variation: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-invalid-raid",
+      eventType: "raid",
+      kind: "variation",
+      parentAlertId: "alert-raid",
+      name: "Invalid raid variation"
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={variation.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => variation),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Variation conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add raid viewer minimum" }));
+    const input = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" });
+    await user.clear(input);
+    await user.type(input, "0");
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewer minimum must be 1 or greater.");
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("preserves and displays an existing condition outside the authoring catalog", async () => {
+    const user = userEvent.setup();
+    const document: AlertEditorDocument = {
+      ...editorDocument(),
+      conditions: [{ field: "providerId", operator: "equals", value: "twitch" }]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, saved) => saved),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(conditions).toHaveTextContent('providerIdequals "twitch"');
+    expect(within(conditions).queryByRole("spinbutton", { name: /providerId/u })).not.toBeInTheDocument();
+  });
+
+  it("copies only design fields from another alert", async () => {
+    const user = userEvent.setup();
+    const target: AlertEditorDocument = {
+      ...editorDocument(),
+      conditions: [{ field: "ingestProvider", operator: "equals", value: "streamerbot" }]
+    };
+    const source: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "alert-raid",
+      eventType: "raid",
+      name: "New raid",
+      enabled: false,
+      layers: [{
+        id: "layer-source",
+        name: "Raid message",
+        type: "text",
+        visible: true,
+        order: 0,
+        template: "Raid from {userName}!",
+        animation: { mode: "preset", entrance: "scale", exit: "fade", durationMs: 500, delayMs: 25, easing: "ease-out" }
+      }],
+      targetProfiles: target.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: false,
+        reviewState: "needs-review",
+        layerLayouts: [{ layerId: "layer-source", x: 100, y: 200, width: 300, height: 120, zIndex: 0 }]
+      })),
+      samplePayloads: [{ id: "source", label: "Source sample", kind: "built-in", payload: { userName: "Source" } }]
+    };
+    const getAlertEditorDocument = vi.fn(async (alertId: string) => alertId === source.id ? source : target);
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={target.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument,
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Copy design from..." }));
+    const dialog = screen.getByRole("dialog", { name: "Copy design from another alert?" });
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "Source alert" }), source.id);
+    await user.click(within(dialog).getByRole("button", { name: "Copy design" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    const saved = saveAlertEditorDocument.mock.calls[0]![1];
+    expect(saved).toMatchObject({
+      id: target.id,
+      eventType: target.eventType,
+      name: target.name,
+      enabled: target.enabled,
+      conditions: target.conditions,
+      samplePayloads: target.samplePayloads,
+      layers: source.layers
+    });
+    expect(saved.targetProfiles.map(({ enabled, reviewState, layerLayouts }) => ({ enabled, reviewState, layerLayouts }))).toEqual([
+      { enabled: true, reviewState: "ready", layerLayouts: source.targetProfiles[0]!.layerLayouts },
+      { enabled: false, reviewState: "needs-review", layerLayouts: source.targetProfiles[1]!.layerLayouts }
+    ]);
   });
 });
 

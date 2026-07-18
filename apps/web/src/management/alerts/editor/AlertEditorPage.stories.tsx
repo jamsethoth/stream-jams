@@ -89,6 +89,43 @@ export const EventSamples: Story = {
   }
 };
 
+export const VariationAuthoring: Story = {
+  args: {
+    alertId: "variant-large-raid",
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => variationDocument(),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    await expect(canvas.getByRole("group", { name: "Variation conditions" })).toBeVisible();
+    await expect(canvas.getByRole("spinbutton", { name: "Variation weight" })).toHaveValue(2);
+    await expect(canvas.getByText("Rule controls are shared by the default and every variation for this event.")).toBeVisible();
+  }
+};
+
+export const InvalidConditionInput: Story = {
+  args: {
+    alertId: "variant-large-raid",
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ({
+        ...variationDocument(),
+        variantConditions: [{ field: "raidViewers", operator: "min", value: 0 }]
+      }),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const conditions = within(canvas.getByRole("group", { name: "Variation conditions" }));
+    await expect(conditions.getByRole("alert")).toHaveTextContent("Raid viewer minimum must be 1 or greater.");
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+  }
+};
+
 export const DeliveryFailure: Story = {
   args: {
     managementApi: createStoryManagementApi({
@@ -160,6 +197,20 @@ function editorDocument(): AlertEditorDocument {
       { id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "James" } },
       { id: "edge", label: "Long-content example", kind: "built-in", payload: { userName: "A-Very-Long-Display-Name" } }
     ]
+  };
+}
+
+function variationDocument(): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    id: "variant-large-raid",
+    eventType: "raid",
+    kind: "variation",
+    parentAlertId: "alert-raid",
+    name: "Large raid",
+    enabled: false,
+    weight: 2,
+    priority: 5
   };
 }
 

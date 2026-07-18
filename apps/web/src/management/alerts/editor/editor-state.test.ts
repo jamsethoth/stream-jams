@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   addLayer,
   applyEditorUpdate,
+  copyAlertDesign,
   createEditorState,
   deleteLayer,
   duplicateLayer,
@@ -74,6 +75,50 @@ describe("alert editor history", () => {
 });
 
 describe("alert editor layer operations", () => {
+  it("copies design and both profile layouts without replacing target identity or matching controls", () => {
+    const source = {
+      ...createDocument(),
+      id: "alert-source",
+      name: "Source",
+      conditions: [{ field: "ingestProvider", operator: "equals" as const, value: "twitch" }],
+      layers: createDocument().layers.map((layer) => ({ ...layer, name: `Source ${layer.name}` }))
+    };
+    const target = {
+      ...createDocument(),
+      id: "variant-target",
+      parentAlertId: "alert-follow",
+      kind: "variation" as const,
+      name: "Target",
+      enabled: false,
+      variantConditions: [{ field: "raidViewers", operator: "min" as const, value: 50 }],
+      weight: 4,
+      priority: 7,
+      cooldownSeconds: 20,
+      samplePayloads: [{ id: "target-sample", label: "Target", kind: "built-in" as const, payload: { target: true } }]
+    };
+
+    const copied = copyAlertDesign(source, target);
+
+    expect(copied.layers.map((layer) => layer.name)).toEqual(["Source Follower name", "Source Avatar"]);
+    expect(copied.targetProfiles.map((profile) => profile.layerLayouts)).toEqual(
+      source.targetProfiles.map((profile) => profile.layerLayouts)
+    );
+    expect(copied).toMatchObject({
+      id: target.id,
+      parentAlertId: target.parentAlertId,
+      kind: target.kind,
+      name: target.name,
+      enabled: false,
+      conditions: target.conditions,
+      variantConditions: target.variantConditions,
+      weight: 4,
+      priority: 7,
+      cooldownSeconds: 20,
+      samplePayloads: target.samplePayloads
+    });
+    expect(copied.layers).not.toBe(source.layers);
+  });
+
   it("updates and toggles a layer without mutating the input document", () => {
     const document = createDocument();
     const updated = updateLayer(document, "layer-text", (layer) =>

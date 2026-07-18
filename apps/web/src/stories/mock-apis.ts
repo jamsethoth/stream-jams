@@ -95,6 +95,18 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
         previewText: "Starter alert preview"
       };
     },
+    async createAlertVariation() {
+      throw new Error("No alert variation configured for this story.");
+    },
+    async duplicateManagedAlert() {
+      throw new Error("No alert duplication configured for this story.");
+    },
+    async resetManagedAlert() {
+      throw new Error("No alert reset configured for this story.");
+    },
+    async deleteManagedAlert() {
+      return undefined;
+    },
     async renameAlertSet(setId, input) {
       return emptyAlertSet(setId, input.name);
     },

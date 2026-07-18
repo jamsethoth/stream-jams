@@ -200,6 +200,46 @@ describe("createHttpManagementApi", () => {
     await expect(api.deleteAlertSet("set-seasonal")).resolves.toBeUndefined();
   });
 
+  it("manages alert variations through typed commands", async () => {
+    const variation = {
+      ...alertInventoryRow(),
+      id: "variation-vip",
+      kind: "variation" as const,
+      parentAlertId: "alert/follow",
+      name: "VIP follower"
+    };
+    const duplicate = { ...variation, id: "variation-copy", name: "VIP follower copy" };
+    const reset = { ...variation, reviewState: "needs-review" as const };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/management/alerts/alert%2Ffollow/variations") {
+        expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ name: "VIP follower" }) });
+        return jsonResponse(variation, { status: 201 });
+      }
+      if (url === "/management/alerts/variation-vip/duplicate") {
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBeUndefined();
+        return jsonResponse(duplicate, { status: 201 });
+      }
+      if (url === "/management/alerts/variation-vip/reset") {
+        expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ confirmLiveImpact: true }) });
+        return jsonResponse(reset);
+      }
+      if (url === "/management/alerts/variation-vip" && init?.method === "DELETE") {
+        expect(init.body).toBe(JSON.stringify({ confirmLiveImpact: true }));
+        return new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.createAlertVariation("alert/follow", { name: "VIP follower" })).resolves.toEqual(variation);
+    await expect(api.duplicateManagedAlert("variation-vip")).resolves.toEqual(duplicate);
+    await expect(api.resetManagedAlert("variation-vip", true)).resolves.toEqual(reset);
+    await expect(api.deleteManagedAlert("variation-vip", true)).resolves.toBeUndefined();
+  });
+
   it("manages provider registration and TTS safety through typed contracts", async () => {
     const setup = {
       name: "Studio Speaker.bot",
@@ -924,6 +964,7 @@ function alertInventoryRow() {
     eventType: "follow",
     name: "New follower",
     kind: "default",
+    parentAlertId: null,
     enabled: false,
     reviewState: "needs-review",
     targetProfileIds: ["landscape"],

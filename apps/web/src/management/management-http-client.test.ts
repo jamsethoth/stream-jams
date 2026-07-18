@@ -35,10 +35,12 @@ describe("createManagementHttpClient", () => {
 
       if (url === "/deleted") {
         expect(init).toMatchObject({
-          method: "DELETE"
+          method: "DELETE",
+          body: JSON.stringify({ confirm: true })
         });
         expect(init?.headers).toMatchObject({
           authorization: "Bearer mgmt_session",
+          "content-type": "application/json",
           "x-stream-jams-csrf": "csrf_session"
         });
         return jsonResponse({ deleted: true });
@@ -50,7 +52,7 @@ describe("createManagementHttpClient", () => {
 
     await expect(client.getJson("/read", "Unable to read.")).resolves.toEqual({ ok: true });
     await expect(client.postJson("/write", { value: 1 }, "Unable to write.")).resolves.toEqual({ saved: true });
-    await expect(client.deleteJson("/deleted", "Unable to delete.")).resolves.toEqual({ deleted: true });
+    await expect(client.deleteRequest("/deleted", "Unable to delete.", { confirm: true })).resolves.toBeUndefined();
     expect(fetcher.mock.calls.filter(([url]) => String(url) === "/auth/management/sessions")).toHaveLength(1);
   });
 

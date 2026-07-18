@@ -389,6 +389,16 @@ function createManagementApi(): ManagementApi {
     createAlert: vi.fn(async () => {
       throw new Error("not called");
     }),
+    createAlertVariation: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    duplicateManagedAlert: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    resetManagedAlert: vi.fn(async () => {
+      throw new Error("not called");
+    }),
+    deleteManagedAlert: vi.fn(async () => undefined),
     renameAlertSet: vi.fn(async () => {
       throw new Error("not called");
     }),

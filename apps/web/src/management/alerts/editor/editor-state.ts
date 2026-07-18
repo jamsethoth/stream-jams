@@ -91,6 +91,21 @@ export function isEditorDirty(state: AlertEditorState): boolean {
   return state.document !== state.savedDocument;
 }
 
+export function copyAlertDesign(
+  source: AlertEditorDocument,
+  target: AlertEditorDocument
+): AlertEditorDocument {
+  const sourceProfiles = new Map(source.targetProfiles.map((profile) => [profile.id, profile]));
+  return {
+    ...target,
+    layers: structuredClone(source.layers),
+    targetProfiles: target.targetProfiles.map((profile) => ({
+      ...profile,
+      layerLayouts: structuredClone(sourceProfiles.get(profile.id)?.layerLayouts ?? [])
+    }))
+  };
+}
+
 export function updateLayer(
   document: AlertEditorDocument,
   layerId: string,

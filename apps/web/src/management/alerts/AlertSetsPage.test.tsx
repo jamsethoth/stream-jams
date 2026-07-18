@@ -150,6 +150,65 @@ describe("AlertSetsPage", () => {
     expect(onEditAlert).toHaveBeenCalledWith(created);
   });
 
+  it("nests variations under their default and supports create and duplicate commands", async () => {
+    const source = detail();
+    const defaultAlert = source.inventory[0]!;
+    const variation = {
+      ...defaultAlert,
+      id: "variant-vip",
+      parentAlertId: defaultAlert.id,
+      kind: "variation" as const,
+      name: "VIP follower"
+    };
+    source.inventory = [defaultAlert, variation, ...source.inventory.slice(1)];
+    const createAlertVariation = vi.fn(async (_alertId, input) => ({ ...variation, id: "variant-new", name: input.name }));
+    const duplicateManagedAlert = vi.fn(async () => ({ ...variation, id: "variant-copy", name: "VIP follower copy" }));
+    const api = alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source),
+      createAlertVariation,
+      duplicateManagedAlert
+    });
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    const rows = await screen.findAllByRole("row");
+    expect(rows.map((row) => row.textContent).join("|")).toMatch(/New follower.*VIP follower.*New raid/u);
+    expect(screen.getByRole("row", { name: /VIP follower/u })).toHaveClass("alert-sets-page__variation-row");
+
+    await user.click(screen.getByRole("button", { name: "Add variation to New follower" }));
+    const dialog = screen.getByRole("dialog", { name: "Add variation to New follower" });
+    await user.clear(within(dialog).getByLabelText("Variation name"));
+    await user.type(within(dialog).getByLabelText("Variation name"), "Large follower");
+    await user.click(within(dialog).getByRole("button", { name: "Create variation" }));
+    await waitFor(() => expect(createAlertVariation).toHaveBeenCalledWith("alert-follow", { name: "Large follower" }));
+
+    await user.click(screen.getByText("More", { selector: "summary[aria-label='More actions for VIP follower']" }));
+    await user.click(screen.getByRole("button", { name: "Duplicate VIP follower" }));
+    await waitFor(() => expect(duplicateManagedAlert).toHaveBeenCalledWith("variant-vip"));
+  });
+
+  it("requires consequence confirmation before resetting or deleting an alert", async () => {
+    const resetManagedAlert = vi.fn(async () => detail().inventory[0]!);
+    const deleteManagedAlert = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ resetManagedAlert, deleteManagedAlert })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByText("More", { selector: "summary[aria-label='More actions for New follower']" }));
+    await user.click(screen.getByRole("button", { name: "Reset New follower" }));
+    const resetDialog = screen.getByRole("dialog", { name: "Reset New follower?" });
+    expect(resetDialog).toHaveTextContent("return to the event default");
+    await user.click(within(resetDialog).getByRole("button", { name: "Reset alert" }));
+    await waitFor(() => expect(resetManagedAlert).toHaveBeenCalledWith("alert-follow", true));
+
+    await user.click(screen.getByText("More", { selector: "summary[aria-label='More actions for New follower']" }));
+    await user.click(screen.getByRole("button", { name: "Delete New follower" }));
+    const deleteDialog = screen.getByRole("dialog", { name: "Delete New follower?" });
+    expect(deleteDialog).toHaveTextContent("all of its variations");
+    await user.click(within(deleteDialog).getByRole("button", { name: "Delete alert" }));
+    await waitFor(() => expect(deleteManagedAlert).toHaveBeenCalledWith("alert-follow", true));
+  });
+
   it("keeps alert creation open with an actionable error when the command fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const createAlert = vi.fn(async () => Promise.reject(new Error("Local persistence failed")));
@@ -296,6 +355,10 @@ type AlertSetsApi = Pick<
   | "getAlertSet"
   | "createAlertSet"
   | "createAlert"
+  | "createAlertVariation"
+  | "duplicateManagedAlert"
+  | "resetManagedAlert"
+  | "deleteManagedAlert"
   | "renameAlertSet"
   | "duplicateAlertSet"
   | "getAlertSetActivationImpact"
@@ -316,6 +379,10 @@ function alertSetsApi(overrides: Partial<AlertSetsApi> = {}): AlertSetsApi {
     getAlertSet: vi.fn(async () => source),
     createAlertSet: vi.fn(async ({ name }) => ({ ...source.overview, id: "set-new", name, active: false, starter: false })),
     createAlert: vi.fn(async (_setId, input) => ({ ...source.inventory[0]!, id: "alert-new", ...input })),
+    createAlertVariation: vi.fn(async (alertId, input) => ({ ...source.inventory[0]!, id: "variant-new", parentAlertId: alertId, kind: "variation" as const, name: input.name })),
+    duplicateManagedAlert: vi.fn(async () => ({ ...source.inventory[0]!, id: "alert-copy", name: "New follower copy" })),
+    resetManagedAlert: vi.fn(async () => source.inventory[0]!),
+    deleteManagedAlert: vi.fn(async () => undefined),
     renameAlertSet: vi.fn(async (_setId, { name }) => ({ ...source.overview, name })),
     duplicateAlertSet: vi.fn(async (_setId, { name }) => ({ ...source.overview, id: "set-copy", name, active: false, starter: false })),
     getAlertSetActivationImpact: vi.fn(async () => impact()),
