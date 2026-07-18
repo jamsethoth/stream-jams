@@ -15,11 +15,12 @@ import { ModalSurface } from "../../foundation/ModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
-import { AlertCanvas } from "./AlertCanvas.js";
+import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
 import {
   addLayer,
   applyEditorUpdate,
   copyAlertDesign,
+  copyProfileLayout,
   createEditorState,
   deleteLayer,
   duplicateLayer,
@@ -32,7 +33,8 @@ import {
   undoEditorUpdate,
   updateLayer,
   updateLayerGeometry,
-  type AlertEditorState
+  type AlertEditorState,
+  type CanvasViewState
 } from "./editor-state.js";
 import "./alert-editor-page.css";
 
@@ -72,7 +74,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTab>("layers");
   const [search, setSearch] = useState("");
-  const [zoom, setZoom] = useState(100);
+  const [canvasViews, setCanvasViews] = useState<Record<TargetProfileId, CanvasViewState>>(() => initialCanvasViews());
+  const [fitRequestId, setFitRequestId] = useState(0);
+  const [showSafeArea, setShowSafeArea] = useState(true);
+  const [showGrid, setShowGrid] = useState(true);
+  const [canvasBackground, setCanvasBackground] = useState<CanvasBackground>({ mode: "checkerboard", color: "#1a1e23" });
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [sampleDraft, setSampleDraft] = useState("{}");
   const [sampleError, setSampleError] = useState<string | null>(null);
@@ -87,6 +93,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [saveWarning, setSaveWarning] = useState<SaveWarningState | null>(null);
   const [copyDesignOpen, setCopyDesignOpen] = useState(false);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
+  const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
+  const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -97,6 +105,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       const loadedSetDetail = await props.managementApi.getAlertSet(document.setId);
       if (!active) return;
       setEditor(createEditorState(document));
+      setProfileId(props.targetProfileId === "vertical" ? "vertical" : "landscape");
+      setCanvasViews(initialCanvasViews());
       setSelectedLayerId(document.layers[0]?.id ?? null);
       const firstSample = document.samplePayloads[0] ?? null;
       setSampleId(firstSample?.id ?? null);
@@ -106,7 +116,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       if (active) setError(actionableError("The alert editor could not be opened", cause, "Return to Alerts and choose the alert again."));
     });
     return () => { active = false; };
-  }, [props.alertId, props.managementApi]);
+  }, [props.alertId, props.managementApi, props.targetProfileId]);
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
@@ -180,6 +190,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const document = editor?.document ?? null;
   const selectedLayer = document?.layers.find((layer) => layer.id === selectedLayerId) ?? null;
   const profile = document?.targetProfiles.find((candidate) => candidate.id === profileId) ?? null;
+  const canvasView = canvasViews[profileId];
   const documentConditionError = document === null ? null : alertDocumentConditionError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
   const visibleAlerts = useMemo(() => {
@@ -195,6 +206,56 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setEditor((current) => current === null ? null : applyEditorUpdate(current, update));
     setPreview(false);
     setNotice(null);
+  }
+
+  const updateCurrentCanvasView = useCallback((next: CanvasViewState) => {
+    setCanvasViews((current) => ({ ...current, [profileId]: next }));
+  }, [profileId]);
+
+  function requestProfileSwitch(nextProfileId: TargetProfileId) {
+    if (nextProfileId === profileId) return;
+    if (editor !== null && isEditorDirty(editor)) {
+      setPendingProfileId(nextProfileId);
+      return;
+    }
+    setProfileId(nextProfileId);
+  }
+
+  function discardAndSwitchProfile() {
+    if (pendingProfileId === null) return;
+    const nextProfileId = pendingProfileId;
+    discard();
+    setPendingProfileId(null);
+    setProfileId(nextProfileId);
+  }
+
+  async function saveAndSwitchProfile() {
+    if (pendingProfileId === null) return;
+    const nextProfileId = pendingProfileId;
+    setPendingProfileId(null);
+    try {
+      if (await saveForNavigation()) setProfileId(nextProfileId);
+    } catch {
+      // Save failures remain visible through the editor error banner.
+    }
+  }
+
+  function requestProfileCopy() {
+    if (editor === null) return;
+    const sourceId = profileId === "landscape" ? "vertical" : "landscape";
+    const request = { sourceId, targetId: profileId } as const;
+    if (profileLayoutChanged(editor.savedDocument, editor.document, profileId)) {
+      setProfileCopy(request);
+      return;
+    }
+    applyProfileCopy(request);
+  }
+
+  function applyProfileCopy(request = profileCopy) {
+    if (request === null) return;
+    updateDocument((current) => copyProfileLayout(current, request.sourceId, request.targetId));
+    setProfileCopy(null);
+    setNotice(`${profileLabel(request.sourceId)} layout copied to ${profileLabel(request.targetId)}. Review the generated layout before enabling it.`);
   }
 
   function chooseSample(nextSampleId: string) {
@@ -389,7 +450,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div className="alert-editor-page__stage-toolbar">
             <div aria-label="Target profile" className="alert-editor-page__segments">
               {document.targetProfiles.map((candidate) => (
-                <button aria-pressed={candidate.id === profileId} key={candidate.id} onClick={() => setProfileId(candidate.id)} type="button">
+                <button aria-pressed={candidate.id === profileId} key={candidate.id} onClick={() => requestProfileSwitch(candidate.id)} type="button">
                   {profileLabel(candidate.id)}
                   {candidate.reviewState === "needs-review" ? <span>Needs review</span> : candidate.enabled ? <span>Active</span> : <span>Off</span>}
                 </button>
@@ -398,10 +459,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <div className="alert-editor-page__canvas-tools">
               <button aria-label="Undo" className="button button--secondary button--compact" disabled={editor.past.length === 0} onClick={() => setEditor(undoEditorUpdate(editor))} type="button">Undo</button>
               <button aria-label="Redo" className="button button--secondary button--compact" disabled={editor.future.length === 0} onClick={() => setEditor(redoEditorUpdate(editor))} type="button">Redo</button>
-              <button aria-label="Zoom out" className="button button--secondary button--compact" disabled={zoom <= 50} onClick={() => setZoom((current) => Math.max(50, current - 25))} type="button">-</button>
-              <output aria-label="Canvas zoom">{zoom}%</output>
-              <button aria-label="Zoom in" className="button button--secondary button--compact" disabled={zoom >= 150} onClick={() => setZoom((current) => Math.min(150, current + 25))} type="button">+</button>
-              <button className="button button--secondary button--compact" onClick={() => setZoom(100)} type="button">100%</button>
+              <button aria-label="Toggle safe area and center guides" aria-pressed={showSafeArea} className="button button--secondary button--compact" onClick={() => setShowSafeArea((current) => !current)} type="button">Guides</button>
+              <button aria-label="Toggle canvas grid" aria-pressed={showGrid} className="button button--secondary button--compact" onClick={() => setShowGrid((current) => !current)} type="button">Grid</button>
+              <label className="alert-editor-page__canvas-background"><span>Canvas background</span><select aria-label="Canvas background" onChange={(event) => { const mode = event.currentTarget.value as CanvasBackground["mode"]; setCanvasBackground((current) => ({ ...current, mode })); }} value={canvasBackground.mode}><option value="checkerboard">Checkerboard</option><option value="neutral">Neutral</option><option value="test">Test color</option></select></label>
+              {canvasBackground.mode === "test" ? <label className="alert-editor-page__test-background"><span>Test background color</span><input aria-label="Test background color" onChange={(event) => setCanvasBackground({ mode: "test", color: event.currentTarget.value })} type="color" value={canvasBackground.color} /></label> : null}
+              <button aria-label="Zoom out" className="button button--secondary button--compact" disabled={canvasView.zoom <= 25} onClick={() => updateCurrentCanvasView({ ...canvasView, zoom: Math.max(25, canvasView.zoom - 25) })} type="button">-</button>
+              <output aria-label="Canvas zoom">{canvasView.zoom}%</output>
+              <button aria-label="Zoom in" className="button button--secondary button--compact" disabled={canvasView.zoom >= 150} onClick={() => updateCurrentCanvasView({ ...canvasView, zoom: Math.min(150, canvasView.zoom + 25) })} type="button">+</button>
+              <button className="button button--secondary button--compact" onClick={() => setFitRequestId((current) => current + 1)} type="button">Fit</button>
+              <button className="button button--secondary button--compact" onClick={() => updateCurrentCanvasView({ zoom: 100, scrollLeft: 0, scrollTop: 0 })} type="button">100%</button>
             </div>
           </div>
           {profile.reviewState === "needs-review" ? (
@@ -412,15 +478,20 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           ) : null}
           <AlertCanvas
             assetApi={props.assetApi}
+            background={canvasBackground}
             document={document}
+            fitRequestId={fitRequestId}
             onGeometryChange={(layerId, geometry) => updateDocument((current) => updateLayerGeometry(current, profileId, layerId, geometry))}
             onSelectLayer={(layerId) => { setSelectedLayerId(layerId); setTab("layers"); }}
+            onViewStateChange={updateCurrentCanvasView}
             preview={preview}
             previewRunId={previewRunId}
             profileId={profileId}
             samplePayload={samplePayload ?? {}}
             selectedLayerId={selectedLayerId}
-            zoom={zoom}
+            showGrid={showGrid}
+            showSafeArea={showSafeArea}
+            viewState={canvasView}
           />
         </main>
 
@@ -445,7 +516,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
               setCopyDesignSourceId(visibleAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
               setCopyDesignOpen(true);
-            }} profileId={profileId} />
+            }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
           ) : (
             <EventInspector
               document={document}
@@ -501,6 +572,18 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
             <button className="button button--primary" disabled={busy} onClick={() => void confirmSaveWarning()} type="button">Save changes</button>
           </div>
+        </div>
+      </ModalSurface>
+      <ModalSurface labelledBy="profile-switch-warning-title" onCancel={() => setPendingProfileId(null)} open={pendingProfileId !== null}>
+        <div className="alert-editor-page__save-warning">
+          <div><h2 id="profile-switch-warning-title">Switch profiles with unsaved changes?</h2><p>Choose whether to save or discard the current alert changes before opening {pendingProfileId === null ? "the other profile" : profileLabel(pendingProfileId)}.</p></div>
+          <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setPendingProfileId(null)} type="button">Cancel</button><button className="button button--danger-quiet" disabled={busy} onClick={discardAndSwitchProfile} type="button">Discard and switch</button><button className="button button--primary" disabled={busy} onClick={() => void saveAndSwitchProfile()} type="button">Save and switch</button></div>
+        </div>
+      </ModalSurface>
+      <ModalSurface labelledBy="profile-copy-warning-title" onCancel={() => setProfileCopy(null)} open={profileCopy !== null}>
+        <div className="alert-editor-page__save-warning">
+          <div><h2 id="profile-copy-warning-title">Replace edited {profileCopy === null ? "target" : profileLabel(profileCopy.targetId)} layout?</h2><p>Your unsaved target-profile layout changes will be replaced by a scaled copy. The copied profile will be disabled and marked Needs review.</p></div>
+          <div className="management-modal__actions"><button className="button button--secondary" onClick={() => setProfileCopy(null)} type="button">Cancel</button><button className="button button--primary" onClick={() => applyProfileCopy()} type="button">Replace layout</button></div>
         </div>
       </ModalSurface>
     </div>
@@ -581,7 +664,14 @@ function LayerInspector({
               ))}
             </fieldset>
           )}
-          <fieldset className="alert-editor-inspector__animation"><legend>Animation preset</legend><label><span>Entrance</span><select onChange={(event) => { const entrance = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, entrance } }))); }} value={selectedLayer.animation.entrance}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-up">Slide up</option></select></label><label><span>Exit</span><select onChange={(event) => { const exit = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, exit } }))); }} value={selectedLayer.animation.exit}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-down">Slide down</option></select></label></fieldset>
+          <fieldset className="alert-editor-inspector__animation">
+            <legend>Animation preset</legend>
+            <label><span>Entrance</span><select onChange={(event) => { const entrance = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, entrance } }))); }} value={selectedLayer.animation.entrance}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-up">Slide up</option></select></label>
+            <label><span>Exit</span><select onChange={(event) => { const exit = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, exit } }))); }} value={selectedLayer.animation.exit}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-down">Slide down</option></select></label>
+            <label><span>Animation duration (milliseconds)</span><input aria-label="Animation duration (milliseconds)" min="0" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, durationMs } }))); }} type="number" value={selectedLayer.animation.durationMs} /></label>
+            <label><span>Animation delay (milliseconds)</span><input aria-label="Animation delay (milliseconds)" min="0" onChange={(event) => { const delayMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, delayMs } }))); }} type="number" value={selectedLayer.animation.delayMs} /></label>
+            <label><span>Animation easing</span><select aria-label="Animation easing" onChange={(event) => { const easing = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, easing } }))); }} value={selectedLayer.animation.easing}><option value="linear">Linear</option><option value="ease">Ease</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in out</option></select></label>
+          </fieldset>
           <div className="alert-editor-inspector__actions">
             <button className="button button--secondary button--compact" disabled={selectedLayer.order === 0} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order - 1))} type="button">Move up</button>
             <button className="button button--secondary button--compact" disabled={selectedLayer.order === document.layers.length - 1} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order + 1))} type="button">Move down</button>
@@ -594,10 +684,11 @@ function LayerInspector({
   );
 }
 
-function AlertInspector({ document, onChange, onCopyDesign, profileId }: {
+function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
   readonly document: AlertEditorDocument;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
   readonly onCopyDesign: () => void;
+  readonly onCopyProfileLayout: () => void;
   readonly profileId: TargetProfileId;
 }) {
   const profile = document.targetProfiles.find((candidate) => candidate.id === profileId)!;
@@ -608,6 +699,7 @@ function AlertInspector({ document, onChange, onCopyDesign, profileId }: {
       <label><span>Duration (milliseconds)</span><input min="100" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => ({ ...current, durationMs })); }} type="number" value={document.durationMs} /></label>
       <label className="alert-editor-inspector__check"><input checked={document.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
       <button className="button button--secondary" onClick={onCopyDesign} type="button">Copy design from...</button>
+      <button className="button button--secondary" onClick={onCopyProfileLayout} type="button">Copy layout from {profileId === "landscape" ? "Vertical" : "Landscape"}</button>
       <section className="alert-editor-inspector__profile-state">
         <div><strong>{profileLabel(profileId)} profile</strong><StatusBadge label={profile.reviewState === "ready" ? "Reviewed" : "Needs review"} tone={profile.reviewState === "ready" ? "positive" : "warning"} /></div>
         {profile.reviewState === "needs-review" ? <button className="button button--secondary" onClick={() => onChange((current) => updateProfile(current, profileId, { reviewState: "ready" }))} type="button">Mark profile reviewed</button> : null}
@@ -785,6 +877,32 @@ function alertDocumentConditionError(document: AlertEditorDocument): string | nu
     if (message !== null) return message;
   }
   return null;
+}
+
+function initialCanvasViews(): Record<TargetProfileId, CanvasViewState> {
+  return {
+    landscape: { zoom: 100, scrollLeft: 0, scrollTop: 0 },
+    vertical: { zoom: 100, scrollLeft: 0, scrollTop: 0 }
+  };
+}
+
+function profileLayoutChanged(
+  savedDocument: AlertEditorDocument,
+  document: AlertEditorDocument,
+  profileId: TargetProfileId
+): boolean {
+  const saved = savedDocument.targetProfiles.find((profile) => profile.id === profileId)?.layerLayouts ?? [];
+  const current = document.targetProfiles.find((profile) => profile.id === profileId)?.layerLayouts ?? [];
+  return saved.length !== current.length || saved.some((layout, index) => {
+    const candidate = current[index];
+    return candidate === undefined
+      || layout.layerId !== candidate.layerId
+      || layout.x !== candidate.x
+      || layout.y !== candidate.y
+      || layout.width !== candidate.width
+      || layout.height !== candidate.height
+      || layout.zIndex !== candidate.zIndex;
+  });
 }
 
 const animation = { mode: "preset" as const, entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" };

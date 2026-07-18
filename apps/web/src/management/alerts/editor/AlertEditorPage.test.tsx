@@ -267,6 +267,137 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("dialog", { name: "Save changes to active alert?" })).not.toBeInTheDocument();
   });
 
+  it("requires Save Discard or Cancel before switching profiles with unsaved changes", async () => {
+    const user = userEvent.setup();
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    await user.clear(template);
+    await user.type(template, "Unsaved profile change");
+    await user.click(screen.getByRole("button", { name: /Vertical/ }));
+    const dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Vertical/ }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).getByRole("button", { name: "Discard and switch" }));
+    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Thanks, {userName}!");
+
+    await user.click(screen.getByRole("button", { name: /Landscape/ }));
+    await user.clear(screen.getByRole("textbox", { name: "Message template" }));
+    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Save this change");
+    await user.click(screen.getByRole("button", { name: /Vertical/ }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).getByRole("button", { name: "Save and switch" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
+  });
+
+  it("remembers canvas zoom by profile and confirms before replacing an edited target layout", async () => {
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("region", { name: "Landscape alert canvas" });
+    await user.click(screen.getByRole("button", { name: "Zoom in" }));
+    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("125%");
+    await user.click(screen.getByRole("button", { name: /Vertical/ }));
+    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("100%");
+
+    const xPosition = screen.getByLabelText("X");
+    await user.clear(xPosition);
+    await user.type(xPosition, "240");
+    await user.click(screen.getByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Copy layout from Landscape" }));
+    const dialog = screen.getByRole("dialog", { name: "Replace edited Vertical layout?" });
+    await user.click(within(dialog).getByRole("button", { name: "Replace layout" }));
+    await user.click(screen.getByRole("tab", { name: "Layers" }));
+    expect(screen.getByLabelText("X")).toHaveValue(343);
+
+    await user.click(screen.getByRole("button", { name: /Landscape/ }));
+    await user.click(within(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).getByRole("button", { name: "Discard and switch" }));
+    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("125%");
+  });
+
+  it("edits preset animation timing and easing", async () => {
+    const user = userEvent.setup();
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("region", { name: "Landscape alert canvas" });
+    await user.clear(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }), "650");
+    await user.clear(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }));
+    await user.type(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }), "120");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Animation easing" }), "linear");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    expect(saveAlertEditorDocument.mock.calls[0]![1].layers[0]?.animation).toMatchObject({
+      durationMs: 650,
+      delayMs: 120,
+      easing: "linear"
+    });
+  });
+
   it("keeps editor actions unavailable until active-set status is known", async () => {
     let resolveSet: ((value: AlertSetDetail) => void) | undefined;
     const setDetail = new Promise<AlertSetDetail>((resolve) => {

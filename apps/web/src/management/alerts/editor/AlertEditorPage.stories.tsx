@@ -40,6 +40,42 @@ export const VerticalNeedsReview: Story = {
   }
 };
 
+export const CopiedVerticalLayout: Story = {
+  args: { targetProfileId: "vertical" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Copy layout from Landscape" }));
+    await expect(canvas.getByText("Landscape layout copied to Vertical. Review the generated layout before enabling it.")).toBeVisible();
+    await expect(canvas.getAllByText("Needs review")).not.toHaveLength(0);
+  }
+};
+
+export const HiddenGuidesWithTestBackground: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByRole("region", { name: "Landscape alert canvas" });
+    await userEvent.click(canvas.getByRole("button", { name: "Toggle safe area and center guides" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Toggle canvas grid" }));
+    await userEvent.selectOptions(canvas.getByRole("combobox", { name: "Canvas background" }), "test");
+    await expect(canvas.getByLabelText("Test background color")).toBeVisible();
+    await expect(canvas.getByText("Guides hidden")).toBeVisible();
+  }
+};
+
+export const DirtyProfileSwitch: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const template = await canvas.findByRole("textbox", { name: "Message template" });
+    await userEvent.clear(template);
+    await userEvent.type(template, "Unsaved profile edit");
+    await userEvent.click(canvas.getByRole("button", { name: /Vertical/ }));
+    const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Switch profiles with unsaved changes?" }));
+    await expect(dialog.getByRole("button", { name: "Save and switch" })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Discard and switch" })).toBeVisible();
+  }
+};
+
 export const UnsavedEdit: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

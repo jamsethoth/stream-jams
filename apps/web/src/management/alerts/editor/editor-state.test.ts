@@ -4,6 +4,7 @@ import {
   addLayer,
   applyEditorUpdate,
   copyAlertDesign,
+  copyProfileLayout,
   createEditorState,
   deleteLayer,
   duplicateLayer,
@@ -200,6 +201,24 @@ describe("alert editor layer operations", () => {
 });
 
 describe("alert editor profile geometry", () => {
+  it("scales a copied layout to the target profile without changing the source", () => {
+    const document = createDocument();
+    const sourceProfile = document.targetProfiles[0];
+    const copied = copyProfileLayout(document, "landscape", "vertical");
+
+    expect(copied.targetProfiles[0]).toBe(sourceProfile);
+    expect(copied.targetProfiles[1]).toMatchObject({
+      id: "vertical",
+      enabled: false,
+      reviewState: "needs-review",
+      layerLayouts: [
+        { layerId: "layer-text", x: 399, y: 747, width: 281, height: 213, zIndex: 0 },
+        { layerId: "layer-image", x: 484, y: 391, width: 113, height: 356, zIndex: 1 }
+      ]
+    });
+    expect(document.targetProfiles[1]?.layerLayouts[0]).toMatchObject({ x: 290, y: 800, width: 500, height: 120 });
+  });
+
   it("updates exact geometry only for the selected target profile", () => {
     const document = createDocument();
     const landscape = document.targetProfiles[0];

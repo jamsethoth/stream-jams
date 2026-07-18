@@ -2,19 +2,31 @@ import type { AlertEditorDocument, AlertLayer, TargetProfileId } from "@stream-j
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
-import { snapLayerGeometry, type LayerGeometry } from "./editor-state.js";
+import { snapLayerGeometry, type CanvasViewState, type LayerGeometry } from "./editor-state.js";
+
+export interface CanvasBackground {
+  readonly mode: "checkerboard" | "neutral" | "test";
+  readonly color: string;
+}
 
 interface AlertCanvasProps {
   readonly assetApi: AssetApi;
+  readonly background?: CanvasBackground;
   readonly document: AlertEditorDocument;
+  readonly fitRequestId?: number;
   readonly onGeometryChange: (layerId: string, geometry: LayerGeometry) => void;
   readonly onSelectLayer: (layerId: string) => void;
+  readonly onViewStateChange?: (viewState: CanvasViewState) => void;
   readonly preview: boolean;
   readonly previewRunId?: number;
   readonly profileId: TargetProfileId;
   readonly samplePayload: Record<string, unknown>;
   readonly selectedLayerId: string | null;
-  readonly zoom: number;
+  readonly showGrid?: boolean;
+  readonly showSafeArea?: boolean;
+  readonly viewState?: CanvasViewState;
+  /** @deprecated Use viewState for profile-specific zoom and pan state. */
+  readonly zoom?: number;
 }
 
 interface PointerOperation {
@@ -30,8 +42,30 @@ export function AlertCanvas(props: AlertCanvasProps) {
   const profile = props.document.targetProfiles.find((candidate) => candidate.id === props.profileId)!;
   const dimensions = props.profileId === "landscape" ? { width: 1920, height: 1080 } : { width: 1080, height: 1920 };
   const surfaceRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const processedFitRequestRef = useRef(0);
   const operationRef = useRef<PointerOperation | null>(null);
   const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
+  const viewState = props.viewState ?? { zoom: props.zoom ?? 100, scrollLeft: 0, scrollTop: 0 };
+  const background = props.background ?? { mode: "checkerboard", color: "#1a1e23" };
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (viewport === null) return;
+    viewport.scrollLeft = viewState.scrollLeft;
+    viewport.scrollTop = viewState.scrollTop;
+  }, [props.profileId, viewState.scrollLeft, viewState.scrollTop]);
+
+  useEffect(() => {
+    const requestId = props.fitRequestId ?? 0;
+    if (requestId === 0 || requestId === processedFitRequestRef.current) return;
+    processedFitRequestRef.current = requestId;
+    const viewport = viewportRef.current;
+    if (viewport === null || props.onViewStateChange === undefined) return;
+    const horizontalZoom = (Math.max(1, viewport.clientWidth - 56) / dimensions.width) * 100;
+    const verticalZoom = (Math.max(1, viewport.clientHeight - 56) / dimensions.height) * 100;
+    props.onViewStateChange({ zoom: Math.max(10, Math.min(150, Math.floor(Math.min(horizontalZoom, verticalZoom)))), scrollLeft: 0, scrollTop: 0 });
+  }, [dimensions.height, dimensions.width, props.fitRequestId, props.onViewStateChange]);
 
   function beginOperation(event: ReactPointerEvent<HTMLElement>, layerId: string, mode: "move" | "resize") {
     const layout = layouts.get(layerId);
@@ -78,15 +112,32 @@ export function AlertCanvas(props: AlertCanvasProps) {
       className="alert-canvas"
       role="region"
     >
-      <div className="alert-canvas__viewport">
+      <div
+        className="alert-canvas__viewport"
+        onScroll={(event) => props.onViewStateChange?.({
+          ...viewState,
+          scrollLeft: event.currentTarget.scrollLeft,
+          scrollTop: event.currentTarget.scrollTop
+        })}
+        ref={viewportRef}
+      >
         <div
           className={`alert-canvas__surface alert-canvas__surface--${props.profileId}${props.preview ? " alert-canvas__surface--preview" : ""}`}
           ref={surfaceRef}
-          style={{ width: `${props.zoom}%` }}
+          style={{
+            backgroundColor: background.color,
+            backgroundImage: background.mode === "checkerboard" ? undefined : "none",
+            width: `${dimensions.width * viewState.zoom / 100}px`
+          }}
         >
-          <div aria-hidden="true" className="alert-canvas__safe-area" />
-          <div aria-hidden="true" className="alert-canvas__center-line alert-canvas__center-line--vertical" />
-          <div aria-hidden="true" className="alert-canvas__center-line alert-canvas__center-line--horizontal" />
+          {props.showGrid === false ? null : <div aria-hidden="true" className="alert-canvas__grid" />}
+          {props.showSafeArea === false ? null : (
+            <>
+              <div aria-hidden="true" className="alert-canvas__safe-area" />
+              <div aria-hidden="true" className="alert-canvas__center-line alert-canvas__center-line--vertical" />
+              <div aria-hidden="true" className="alert-canvas__center-line alert-canvas__center-line--horizontal" />
+            </>
+          )}
           {props.document.layers
             .filter((layer) => layer.visible && layouts.has(layer.id))
             .sort((left, right) => left.order - right.order)
@@ -140,7 +191,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
       </div>
       <footer>
         <span>{dimensions.width} x {dimensions.height}</span>
-        <span>Safe area and center guides</span>
+        <span>{props.showSafeArea === false ? "Guides hidden" : "Safe area and center guides"}</span>
       </footer>
     </div>
   );

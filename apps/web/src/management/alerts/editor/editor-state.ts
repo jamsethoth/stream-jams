@@ -6,6 +6,12 @@ export type LayerGeometry = Pick<LayerLayout, "x" | "y" | "width" | "height">;
 export type LayerGeometryByProfile = Partial<Record<TargetProfileId, LayerGeometry>>;
 export type EditorArrowKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
 
+export interface CanvasViewState {
+  readonly zoom: number;
+  readonly scrollLeft: number;
+  readonly scrollTop: number;
+}
+
 export interface AlertEditorState {
   readonly document: AlertEditorDocument;
   readonly savedDocument: AlertEditorDocument;
@@ -103,6 +109,36 @@ export function copyAlertDesign(
       ...profile,
       layerLayouts: structuredClone(sourceProfiles.get(profile.id)?.layerLayouts ?? [])
     }))
+  };
+}
+
+export function copyProfileLayout(
+  document: AlertEditorDocument,
+  sourceId: TargetProfileId,
+  targetId: TargetProfileId
+): AlertEditorDocument {
+  if (sourceId === targetId) return document;
+  const source = document.targetProfiles.find((profile) => profile.id === sourceId);
+  const sourceDefinition = targetProfileDefinitions.find((profile) => profile.id === sourceId);
+  const targetDefinition = targetProfileDefinitions.find((profile) => profile.id === targetId);
+  if (source === undefined || sourceDefinition === undefined || targetDefinition === undefined) return document;
+
+  const scaleX = targetDefinition.width / sourceDefinition.width;
+  const scaleY = targetDefinition.height / sourceDefinition.height;
+  return {
+    ...document,
+    targetProfiles: document.targetProfiles.map((profile) => profile.id !== targetId ? profile : {
+      ...profile,
+      enabled: false,
+      reviewState: "needs-review",
+      layerLayouts: source.layerLayouts.map((layout) => ({
+        ...layout,
+        x: Math.round(layout.x * scaleX),
+        y: Math.round(layout.y * scaleY),
+        width: Math.round(layout.width * scaleX),
+        height: Math.round(layout.height * scaleY)
+      }))
+    })
   };
 }
 

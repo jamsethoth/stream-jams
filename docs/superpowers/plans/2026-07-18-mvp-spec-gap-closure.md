@@ -153,14 +153,14 @@
 - Add pure `copyProfileLayout(document, sourceId, targetId)`; scale geometry by source/target dimensions and mark target `needs-review`.
 - `Reset to template` calls Task 2's reset command after impact confirmation; do not invent a second template store.
 
-- [ ] Write failing pure tests for cross-profile scaling, preserving source layout, target review state, and profile-specific view state.
-- [ ] Write failing page tests for dirty profile switching with Save/Discard/Cancel and confirmation before overwriting an edited target profile.
-- [ ] Add safe-area and grid toggles, neutral/checkerboard plus optional test background, fit-to-view, 100%, zoom controls, and scroll-based pan memory.
-- [ ] Add animation duration, delay, and easing controls beside existing entrance/exit presets.
-- [ ] Use the existing dirty-navigation modal semantics for profile switching; Discard reverts the document, Save persists it, and Cancel stays on the current profile.
-- [ ] Add Storybook coverage for copied vertical layout, hidden guides/test background, and dirty profile switch.
-- [ ] Run `corepack.cmd pnpm test -- apps/web/src/management/alerts/editor/AlertCanvas.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx apps/web/src/management/alerts/editor/editor-state.test.ts`; expect all selected tests to pass.
-- [ ] Commit as `feat: complete alert canvas profile controls`.
+- [x] Write failing pure tests for cross-profile scaling, preserving source layout, target review state, and profile-specific view state.
+- [x] Write failing page tests for dirty profile switching with Save/Discard/Cancel and confirmation before overwriting an edited target profile.
+- [x] Add safe-area and grid toggles, neutral/checkerboard plus optional test background, fit-to-view, 100%, zoom controls, and scroll-based pan memory.
+- [x] Add animation duration, delay, and easing controls beside existing entrance/exit presets.
+- [x] Use the existing dirty-navigation modal semantics for profile switching; Discard reverts the document, Save persists it, and Cancel stays on the current profile.
+- [x] Add Storybook coverage for copied vertical layout, hidden guides/test background, and dirty profile switch.
+- [x] Run `corepack.cmd pnpm test -- apps/web/src/management/alerts/editor/AlertCanvas.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx apps/web/src/management/alerts/editor/editor-state.test.ts`; expect all selected tests to pass.
+- [x] Commit as `feat: complete alert canvas profile controls`.
 
 ### Task 5: Complete Preview And Sample Editing
 

@@ -16,7 +16,11 @@ describe("AlertCanvas", () => {
       profileId: "landscape" as const,
       samplePayload: {},
       selectedLayerId: null,
-      zoom: 100
+      viewState: { zoom: 100, scrollLeft: 0, scrollTop: 0 },
+      background: { mode: "checkerboard" as const, color: "#1a1e23" },
+      showGrid: true,
+      showSafeArea: true,
+      onViewStateChange: vi.fn()
     };
     const { container, rerender } = render(<AlertCanvas {...props} preview={false} />);
     const layer = screen.getByRole("button", { name: "Badge layer" });
@@ -44,6 +48,51 @@ describe("AlertCanvas", () => {
 
     rerender(<AlertCanvas {...props} preview previewRunId={2} />);
     expect(screen.getByRole("button", { name: "Badge layer" })).not.toBe(firstPreviewLayer);
+  });
+
+  it("supports session-only canvas guides and background choices", () => {
+    const { container, rerender } = render(
+      <AlertCanvas
+        assetApi={assetApi}
+        background={{ mode: "neutral", color: "#20252b" }}
+        document={editorDocument}
+        onGeometryChange={vi.fn()}
+        onSelectLayer={vi.fn()}
+        onViewStateChange={vi.fn()}
+        preview={false}
+        profileId="landscape"
+        samplePayload={{}}
+        selectedLayerId={null}
+        showGrid={false}
+        showSafeArea={false}
+        viewState={{ zoom: 100, scrollLeft: 0, scrollTop: 0 }}
+      />
+    );
+
+    expect(container.querySelector(".alert-canvas__safe-area")).not.toBeInTheDocument();
+    expect(container.querySelector(".alert-canvas__grid")).not.toBeInTheDocument();
+    expect(container.querySelector(".alert-canvas__surface")).toHaveStyle({ backgroundColor: "#20252b" });
+
+    rerender(
+      <AlertCanvas
+        assetApi={assetApi}
+        background={{ mode: "test", color: "#00ff00" }}
+        document={editorDocument}
+        onGeometryChange={vi.fn()}
+        onSelectLayer={vi.fn()}
+        onViewStateChange={vi.fn()}
+        preview={false}
+        profileId="landscape"
+        samplePayload={{}}
+        selectedLayerId={null}
+        showGrid
+        showSafeArea
+        viewState={{ zoom: 100, scrollLeft: 0, scrollTop: 0 }}
+      />
+    );
+    expect(container.querySelector(".alert-canvas__safe-area")).toBeInTheDocument();
+    expect(container.querySelector(".alert-canvas__grid")).toBeInTheDocument();
+    expect(container.querySelector(".alert-canvas__surface")).toHaveStyle({ backgroundColor: "#00ff00" });
   });
 });
 
