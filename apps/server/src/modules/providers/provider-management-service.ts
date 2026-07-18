@@ -314,7 +314,7 @@ export class ProviderManagementService {
         error: await this.#managementError(
           "Voice test failed",
           error instanceof Error ? error.message : "The provider returned an unknown voice-test error.",
-          "Check the provider connection, then retry the voice test."
+          "Review the provider error, correct the voice alias or connection settings, then retry the voice test."
         )
       });
     }

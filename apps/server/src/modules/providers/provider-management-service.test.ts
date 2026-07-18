@@ -199,6 +199,7 @@ describe("ProviderManagementService", () => {
       delivered: false,
       error: {
         cause: "Speaker.bot requires a default voice before it can be tested.",
+        nextStep: "Review the provider error, correct the voice alias or connection settings, then retry the voice test.",
         referenceId: "provider-ref-voice-test"
       }
     });
@@ -211,7 +212,7 @@ describe("ProviderManagementService", () => {
         processingId: null,
         metadata: {
           summary: "Voice test failed",
-          nextStep: "Check the provider connection, then retry the voice test."
+          nextStep: "Review the provider error, correct the voice alias or connection settings, then retry the voice test."
         }
       }
     );

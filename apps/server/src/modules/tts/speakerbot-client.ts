@@ -109,7 +109,8 @@ export class SpeakerBotClient {
           return;
         }
         if (response.status === "error") {
-          finish(new Error(`Speaker.bot ${request} request failed`));
+          const detail = readProviderError(response.error);
+          finish(new Error(`Speaker.bot ${request} request failed${detail === null ? "" : `: ${detail}`}`));
           return;
         }
         finish(null, response);
@@ -144,4 +145,13 @@ function parseResponse(data: unknown): Record<string, unknown> | null {
   return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
     ? (parsed as Record<string, unknown>)
     : null;
+}
+
+function readProviderError(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const message = Array.from(value, (character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127 ? " " : character;
+  }).join("").replace(/\s+/g, " ").trim();
+  return message === "" ? null : message.slice(0, 300);
 }

@@ -64,7 +64,7 @@ describe("SpeakerBotClient", () => {
     await expect(result).resolves.toMatchObject({ message: "Speaker.bot returned an invalid response" });
   });
 
-  it("rejects error responses without exposing response details", async () => {
+  it("rejects error responses with bounded provider guidance only", async () => {
     const harness = createHarness();
     const result = harness.client.speak("ws://127.0.0.1:7680/private", {
       voice: "private-voice",
@@ -77,12 +77,50 @@ describe("SpeakerBotClient", () => {
       id: "request-1",
       request: "Speak",
       status: "error",
-      error: "private-server-detail"
+      error: "  Voice Alias 'EventVoice' was not found.\r\n",
+      details: "private-response-payload"
     });
 
     const error = await result;
-    expect(error).toMatchObject({ message: "Speaker.bot Speak request failed" });
+    expect(error).toMatchObject({
+      message: "Speaker.bot Speak request failed: Voice Alias 'EventVoice' was not found."
+    });
     expect(String(error)).not.toContain("private");
+  });
+
+  it("uses the generic failure when Speaker.bot omits a usable error message", async () => {
+    const harness = createHarness();
+    const result = harness.client.speak("ws://127.0.0.1:7680/", {
+      voice: "EventVoice",
+      message: "Raid incoming",
+      badWordFilter: true
+    }).catch((error: unknown) => error);
+
+    await harness.socket.emitOpen();
+    await harness.socket.emitMessage({
+      id: "request-1",
+      request: "Speak",
+      status: "error",
+      error: { raw: "private-response-payload" }
+    });
+
+    await expect(result).resolves.toMatchObject({ message: "Speaker.bot Speak request failed" });
+  });
+
+  it("caps provider error messages", async () => {
+    const harness = createHarness();
+    const result = harness.client.speak("ws://127.0.0.1:7680/", {
+      voice: "EventVoice",
+      message: "Raid incoming",
+      badWordFilter: true
+    }).catch((error: unknown) => error);
+
+    await harness.socket.emitOpen();
+    await harness.socket.emitMessage({ id: "request-1", status: "error", error: "x".repeat(400) });
+
+    await expect(result).resolves.toMatchObject({
+      message: `Speaker.bot Speak request failed: ${"x".repeat(300)}`
+    });
   });
 
   it.each([
