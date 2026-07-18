@@ -86,6 +86,9 @@ function createManagementApi(): ManagementApi {
     async createAlertSet() {
       throw new Error("not called");
     },
+    async createAlert() {
+      throw new Error("not called");
+    },
     async renameAlertSet() {
       throw new Error("not called");
     },

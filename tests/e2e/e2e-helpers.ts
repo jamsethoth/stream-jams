@@ -171,6 +171,7 @@ export function textInstruction(input: {
   readonly text: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly durationMs?: number | undefined;
   readonly moduleId?: string | undefined;
   readonly overlayId?: string | undefined;
 }): OverlayInstruction {
@@ -193,7 +194,7 @@ export function textInstruction(input: {
       }
     },
     tts: null,
-    durationMs: 4000
+    durationMs: input.durationMs ?? 4000
   };
 }
 

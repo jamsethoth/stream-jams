@@ -1,4 +1,5 @@
 import {
+  alertCreateInputSchema,
   alertEditorDocumentSchema,
   alertEditorSaveInputSchema,
   alertEditorTestRequestSchema,
@@ -8,6 +9,7 @@ import {
   alertSetDetailSchema,
   alertSetMutationInputSchema,
   alertSetOverviewSchema,
+  alertInventoryRowSchema,
   assetLibraryItemSchema,
   assetChangeImpactSchema,
   assetMediaTypeSchema,
@@ -26,11 +28,13 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertCreateInput,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
   type AlertSetActivationImpact,
   type AlertSetActivationResult,
   type AlertSetDetail,
+  type AlertInventoryRow,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -95,6 +99,7 @@ export interface ManagementUiQueryService {
   listAlertSets(): Promise<readonly AlertSetOverview[]>;
   getAlertSet(setId: string): Promise<AlertSetDetail>;
   createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow>;
   renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
@@ -257,6 +262,23 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
       return alertSetOverviewSchema.parse(
         await service.renameAlertSet(readParam(request.params, "setId"), input)
       );
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alert-sets/:setId/alerts", { preHandler }, async (request, reply) => {
+    const input = alertCreateInputSchema.safeParse(request.body);
+    if (!input.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_CREATE_INPUT",
+        message: "Choose a supported event type and enter an alert name between 1 and 120 characters."
+      });
+    }
+    try {
+      return reply.status(201).send(alertInventoryRowSchema.parse(
+        await service.createAlert(readParam(request.params, "setId"), input.data)
+      ));
     } catch (error) {
       return sendAlertSetCommandError(reply, error);
     }

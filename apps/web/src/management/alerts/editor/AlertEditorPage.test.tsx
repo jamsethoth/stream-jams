@@ -72,7 +72,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Send test" }));
     await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith(
       "alert-follow",
-      expect.objectContaining({ targetProfileId: "landscape", includeAudio: false, includeTts: false })
+      expect.objectContaining({ targetProfileId: "landscape", includeAudio: true, includeTts: true })
     ));
     expect(await screen.findByText(/Queued on Landscape.*ref-editor-test/)).toBeInTheDocument();
 
@@ -83,6 +83,77 @@ describe("AlertEditorPage", () => {
     await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "raid");
     await user.click(screen.getByRole("button", { name: /New raid/ }));
     expect(onOpenAlert).toHaveBeenCalledWith("alert-raid", "vertical");
+  });
+
+  it("shows alert and set validation details with correction steps in the editor", async () => {
+    const setDetail = alertSetDetail();
+    setDetail.overview.validationIssues = [
+      {
+        id: "set-warning",
+        severity: "warning",
+        code: "SET_WARNING",
+        message: "This set needs an enabled alert.",
+        nextStep: "Enable a reviewed alert before activation.",
+        targetProfileId: null,
+        providerKind: null,
+        eventType: null,
+        alertId: null,
+        referenceId: null
+      },
+      {
+        id: "follow-blocker",
+        severity: "blocker",
+        code: "FOLLOW_BLOCKER",
+        message: "New follower has no enabled variation.",
+        nextStep: "Enable the default variation.",
+        targetProfileId: "landscape",
+        providerKind: "twitch",
+        eventType: "follow",
+        alertId: "alert-follow",
+        referenceId: "ref-follow-validation"
+      },
+      {
+        id: "raid-blocker",
+        severity: "blocker",
+        code: "RAID_BLOCKER",
+        message: "New raid has no enabled variation.",
+        nextStep: "Enable its default variation.",
+        targetProfileId: null,
+        providerKind: "twitch",
+        eventType: "raid",
+        alertId: "alert-raid",
+        referenceId: null
+      }
+    ];
+
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => setDetail),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const validation = await screen.findByRole("region", { name: "Validation issues" });
+    expect(validation).toHaveTextContent("This set needs an enabled alert.");
+    expect(validation).toHaveTextContent("Enable a reviewed alert before activation.");
+    expect(validation).toHaveTextContent("New follower has no enabled variation.");
+    expect(validation).toHaveTextContent("Enable the default variation.");
+    expect(validation).toHaveTextContent("ref-follow-validation");
+    expect(validation).not.toHaveTextContent("New raid has no enabled variation.");
   });
 
   it("guards route changes while the alert has unsaved edits", async () => {

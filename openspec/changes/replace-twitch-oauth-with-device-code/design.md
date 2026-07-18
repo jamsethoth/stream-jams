@@ -44,6 +44,10 @@ Alternative: background server timers. Rejected because request-driven polling i
 
 Successful Device Code exchange feeds the existing validation, current-user lookup, OS credential writes, account repository save, and connection-change callback. Public refresh omits client secret and replaces both rotated tokens atomically through the same pipeline.
 
+Runtime recovery reuses that pipeline. EventSub startup validates the stored access token before subscribing, an hourly timer repeats validation, and an EventSub HTTP 401 triggers one forced refresh instead of reconnecting with the same rejected token. Successful refresh replaces both rotated secrets and reconnects EventSub. Failed refresh leaves a referenced runtime error for the existing reconnect wizard.
+
+The EventSub client also resets a watchdog from Twitch's `keepalive_timeout_seconds` on every welcome, keepalive, and notification. A silent session is closed and recreated with the existing bounded reconnect backoff.
+
 ### Replace rather than retain Authorization Code Grant
 
 Remove the callback route, pending state map, callback parser, authorization-code exchange, and `TWITCH_CLIENT_SECRET` runtime input after replacement coverage is green. A second unused grant increases security and maintenance surface.

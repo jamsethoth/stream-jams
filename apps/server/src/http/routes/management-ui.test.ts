@@ -265,6 +265,12 @@ describe("management UI contract routes", () => {
       url: "/management/alert-sets/set-default/starter-review",
       headers: authHeaders
     });
+    const alertCreated = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/alerts",
+      headers: authHeaders,
+      payload: { eventType: "cheer", name: "Big cheer" }
+    });
     const enabled = await app.inject({
       method: "PATCH",
       url: "/management/alerts/alert-follow/enabled",
@@ -273,7 +279,7 @@ describe("management UI contract routes", () => {
     });
     const deleted = await app.inject({ method: "DELETE", url: "/management/alert-sets/set-seasonal", headers: authHeaders });
 
-    expect([detail, created, renamed, duplicated, impact, activated, reviewed, enabled].map((response) => response.statusCode)).toEqual([
+    expect([detail, created, renamed, duplicated, impact, activated, reviewed, alertCreated, enabled].map((response) => response.statusCode)).toEqual([
       200,
       201,
       200,
@@ -281,6 +287,7 @@ describe("management UI contract routes", () => {
       200,
       200,
       200,
+      201,
       200
     ]);
     expect(deleted.statusCode).toBe(204);
@@ -290,6 +297,7 @@ describe("management UI contract routes", () => {
       ["duplicate", "set-default", "Everyday copy"],
       ["activate", "set-default", true],
       ["review", "set-default"],
+      ["create-alert", "set-default", "cheer", "Big cheer"],
       ["enable-alert", "alert-follow", true],
       ["delete", "set-seasonal"]
     ]);
@@ -471,6 +479,18 @@ class StubManagementUiQueryService {
   async createAlertSet(input: { readonly name: string }) {
     this.alertSetCommands.push(["create", input.name]);
     return { ...alertSetOverview(), id: "set-seasonal", name: input.name, active: false, starter: false };
+  }
+
+  async createAlert(setId: string, input: { readonly eventType: "cheer"; readonly name: string }) {
+    this.alertSetCommands.push(["create-alert", setId, input.eventType, input.name]);
+    return {
+      ...alertInventoryRow(),
+      id: "alert-cheer",
+      setId,
+      eventType: input.eventType,
+      name: input.name,
+      previewText: "Thanks for the cheer, {actor.displayName}!"
+    };
   }
 
   async renameAlertSet(setId: string, input: { readonly name: string }) {

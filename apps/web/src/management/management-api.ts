@@ -1,4 +1,5 @@
 import {
+  alertInventoryRowSchema,
   alertEditorDocumentSchema,
   alertEditorTestResultSchema,
   alertSetActivationImpactSchema,
@@ -22,11 +23,13 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertCreateInput,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
   type AlertSetActivationImpact,
   type AlertSetActivationResult,
   type AlertSetDetail,
+  type AlertInventoryRow,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -229,6 +232,7 @@ export interface ManagementApi {
   listAlertSets(): Promise<readonly AlertSetOverview[]>;
   getAlertSet(setId: string): Promise<AlertSetDetail>;
   createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow>;
   renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
@@ -437,6 +441,16 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     async createAlertSet(input) {
       return alertSetOverviewSchema.parse(
         await client.postJson<unknown>("/management/alert-sets", input, "Unable to create alert set.")
+      );
+    },
+
+    async createAlert(setId, input) {
+      return alertInventoryRowSchema.parse(
+        await client.postJson<unknown>(
+          `/management/alert-sets/${encodeURIComponent(setId)}/alerts`,
+          input,
+          "Unable to create alert."
+        )
       );
     },
 

@@ -29,3 +29,10 @@
 
 - [x] 6.1 Run focused red/green tests after each implementation task and complete the full unit, lint, typecheck, build, Storybook, and Playwright gates
 - [x] 6.2 Run strict OpenSpec validation, CodeGraph sync, diff checks, and live desktop/mobile browser verification with no console errors or layout overflow
+
+## 7. Runtime Token Recovery
+
+- [x] 7.1 Add failing tests for startup/hourly validation, automatic refresh after EventSub HTTP 401, rotated-token reconnection, failed-refresh diagnostics, and keepalive timeout recovery
+- [x] 7.2 Reuse the OAuth refresh pipeline for startup validation and EventSub recovery without retrying rejected credentials or exposing tokens
+- [x] 7.3 Schedule hourly validation, add the EventSub keepalive watchdog, and stop both cleanly during runtime shutdown
+- [x] 7.4 Run focused and full validation, strict OpenSpec validation, and live recovery verification

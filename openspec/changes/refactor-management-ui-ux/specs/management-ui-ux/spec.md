@@ -106,6 +106,12 @@ The system SHALL use explicit domain saves, dirty-state guards, consistent confi
 - **THEN** the system shows a human-readable summary, known cause, next step, severity, useful timestamp, and reference ID when available
 - **AND** it provides a correction deep link when the owning surface is known
 
+#### Scenario: Expired management session is renewed
+
+- **WHEN** an authenticated management request is rejected because its local session expired or no longer exists
+- **THEN** the management client creates a replacement session and retries the request once
+- **AND** the user does not need to reload the page to restore management polling or actions
+
 #### Scenario: Canvas is unavailable on narrow mobile
 
 - **WHEN** a user opens the focused alert editor below the supported canvas width

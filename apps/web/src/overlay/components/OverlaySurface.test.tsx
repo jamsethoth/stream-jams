@@ -1,9 +1,12 @@
 import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { OverlaySurface } from "./OverlaySurface.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("OverlaySurface", () => {
   it("renders animated shapes with target-profile geometry and preset timing", () => {
@@ -45,6 +48,7 @@ describe("OverlaySurface", () => {
   });
 
   it("applies normalized audio volume to the media element", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     render(
       <OverlaySurface
         composition={composition({
@@ -56,6 +60,32 @@ describe("OverlaySurface", () => {
     );
 
     expect((screen.getByTestId("overlay-audio-instruction-1") as HTMLAudioElement).volume).toBe(0.35);
+  });
+
+  it("reports a browser-rejected audio start with an actionable failure", async () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
+      new DOMException("Playback requires user interaction", "NotAllowedError")
+    );
+    const onPlaybackEvent = vi.fn();
+
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          audio: { assetId: "asset-audio", volume: 0.35 }
+        })}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    await waitFor(() =>
+      expect(onPlaybackEvent).toHaveBeenCalledWith({
+        instructionId: "instruction-1",
+        status: "failed",
+        message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
+      })
+    );
   });
 });
 

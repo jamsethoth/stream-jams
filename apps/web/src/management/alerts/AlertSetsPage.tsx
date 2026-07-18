@@ -1,13 +1,16 @@
-import type {
-  ActionableManagementError,
-  AlertBrowserSourceView,
-  AlertInventoryRow,
-  AlertSetActivationImpact,
-  AlertSetDetail,
-  AlertSetOverview,
-  AlertValidationIssue
+import {
+  alertStarterTemplates,
+  type ActionableManagementError,
+  type AlertBrowserSourceView,
+  type AlertCreateInput,
+  type AlertInventoryRow,
+  type AlertSetActivationImpact,
+  type AlertSetDetail,
+  type AlertSetOverview,
+  type AlertValidationIssue,
+  type TargetProfileId
 } from "@stream-jams/core";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
@@ -19,6 +22,7 @@ export type AlertSetsPageApi = Pick<
   | "listAlertSets"
   | "getAlertSet"
   | "createAlertSet"
+  | "createAlert"
   | "renameAlertSet"
   | "duplicateAlertSet"
   | "getAlertSetActivationImpact"
@@ -26,6 +30,8 @@ export type AlertSetsPageApi = Pick<
   | "markStarterAlertSetReviewComplete"
   | "setManagedAlertEnabled"
   | "deleteAlertSet"
+  | "getAlertEditorDocument"
+  | "sendAlertEditorTest"
   | "createOverlayOutputKey"
   | "regenerateOverlayOutputKey"
 >;
@@ -51,6 +57,7 @@ interface RegenerateDialogState {
 export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
+  const [expandedSetId, setExpandedSetId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AlertSetDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -58,9 +65,15 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [notice, setNotice] = useState<string | null>(null);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [nameDraft, setNameDraft] = useState("");
+  const [createAlertOpen, setCreateAlertOpen] = useState(false);
+  const [createAlertEventType, setCreateAlertEventType] = useState<AlertCreateInput["eventType"]>(alertStarterTemplates[0].eventType);
+  const [createAlertName, setCreateAlertName] = useState<string>(alertStarterTemplates[0].defaultName);
+  const [createAlertError, setCreateAlertError] = useState<ActionableManagementError | null>(null);
   const [activationImpact, setActivationImpact] = useState<AlertSetActivationImpact | null>(null);
   const [activationSet, setActivationSet] = useState<AlertSetOverview | null>(null);
   const [previewAlert, setPreviewAlert] = useState<AlertInventoryRow | null>(null);
+  const [testMenuAlertId, setTestMenuAlertId] = useState<string | null>(null);
+  const [testingAlertId, setTestingAlertId] = useState<string | null>(null);
   const [regenerateDialog, setRegenerateDialog] = useState<RegenerateDialogState | null>(null);
   const [regenerateConfirmation, setRegenerateConfirmation] = useState("");
   const [deleteSet, setDeleteSet] = useState<AlertSetOverview | null>(null);
@@ -69,6 +82,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [eventFilter, setEventFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [profileFilter, setProfileFilter] = useState("all");
+  const [browserSourceStatusUpdatedAt, setBrowserSourceStatusUpdatedAt] = useState<string | null>(null);
+  const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
+  const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
+  const browserSourceRefreshFailed = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -82,7 +99,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
           ?? loadedSets[0]
           ?? null;
         setSelectedSetId(selected?.id ?? null);
-        setDetail(selected === null ? null : await managementApi.getAlertSet(selected.id));
+        setExpandedSetId(selected?.id ?? null);
+        const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
+        if (!active) return;
+        setDetail(loadedDetail);
+        setBrowserSourceStatusUpdatedAt(loadedDetail === null ? null : new Date().toISOString());
+        browserSourceRefreshFailed.current = false;
+        setBrowserSourceRefreshError(null);
       } catch (cause) {
         if (active) setError(toActionableError("Alert sets could not be loaded", cause, "Refresh the page and try again."));
       } finally {
@@ -95,7 +118,47 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   }, [initialSetId, managementApi]);
 
   useEffect(() => {
+    if (selectedSetId === null) return;
+    let cancelled = false;
+    let refreshing = false;
+    browserSourceRefreshFailed.current = false;
+
+    const refreshBrowserSourceStatus = async () => {
+      if (refreshing) return;
+      refreshing = true;
+      try {
+        const refreshed = await managementApi.getAlertSet(selectedSetId);
+        if (cancelled) return;
+        setDetail((current) => current?.overview.id === selectedSetId
+          ? { ...current, browserSources: refreshed.browserSources }
+          : current);
+        setBrowserSourceStatusUpdatedAt(new Date().toISOString());
+        browserSourceRefreshFailed.current = false;
+        setBrowserSourceRefreshError(null);
+      } catch (cause) {
+        if (!cancelled && !browserSourceRefreshFailed.current) {
+          browserSourceRefreshFailed.current = true;
+          setBrowserSourceRefreshError(toActionableError(
+            "Unable to refresh browser-source status",
+            cause,
+            "Check the local service and Diagnostics. Live status will retry automatically."
+          ));
+        }
+      } finally {
+        refreshing = false;
+      }
+    };
+
+    const interval = window.setInterval(() => void refreshBrowserSourceStatus(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [managementApi, selectedSetId]);
+
+  useEffect(() => {
     if (detail === null || window.location.hash !== "#browser-sources") return;
+    setBrowserSourcesExpanded(true);
     const browserSources = document.getElementById("browser-sources");
     if (browserSources === null || typeof browserSources.scrollIntoView !== "function") return;
     browserSources.scrollIntoView({ block: "start" });
@@ -111,13 +174,24 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     );
   }, [detail, eventFilter, profileFilter, query, statusFilter]);
 
-  async function selectSet(setId: string) {
-    if (setId === selectedSetId) return;
+  async function toggleSet(setId: string) {
+    if (setId === expandedSetId) {
+      setExpandedSetId(null);
+      setTestMenuAlertId(null);
+      return;
+    }
+    setExpandedSetId(setId);
+    setTestMenuAlertId(null);
+    if (setId === selectedSetId && detail?.overview.id === setId) return;
     setSelectedSetId(setId);
     setLoading(true);
     setError(null);
+    browserSourceRefreshFailed.current = false;
+    setBrowserSourceRefreshError(null);
     try {
-      setDetail(await managementApi.getAlertSet(setId));
+      const selectedDetail = await managementApi.getAlertSet(setId);
+      setDetail(selectedDetail);
+      setBrowserSourceStatusUpdatedAt(new Date().toISOString());
     } catch (cause) {
       setError(toActionableError("The alert set could not be opened", cause, "Refresh the alert-set list and try again."));
     } finally {
@@ -133,7 +207,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       ?? refreshedSets[0]
       ?? null;
     setSelectedSetId(selected?.id ?? null);
-    setDetail(selected === null ? null : await managementApi.getAlertSet(selected.id));
+    setExpandedSetId(selected?.id ?? null);
+    const refreshedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
+    setDetail(refreshedDetail);
+    setBrowserSourceStatusUpdatedAt(refreshedDetail === null ? null : new Date().toISOString());
+    browserSourceRefreshFailed.current = false;
+    setBrowserSourceRefreshError(null);
   }
 
   function openNameDialog(action: NameAction, set: AlertSetOverview | null) {
@@ -158,6 +237,43 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       setNameDialog(null);
     } catch (cause) {
       setError(toActionableError("The alert set was not saved", cause, "Check the name and try again."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openCreateAlertDialog() {
+    const template = alertStarterTemplates[0];
+    setCreateAlertEventType(template.eventType);
+    setCreateAlertName(template.defaultName);
+    setCreateAlertError(null);
+    setCreateAlertOpen(true);
+  }
+
+  function selectAlertEventType(eventType: AlertCreateInput["eventType"]) {
+    const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType);
+    setCreateAlertEventType(eventType);
+    if (template !== undefined) setCreateAlertName(template.defaultName);
+  }
+
+  async function submitCreateAlert(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (detail === null || createAlertName.trim() === "") return;
+    setBusy(true);
+    setCreateAlertError(null);
+    try {
+      const created = await managementApi.createAlert(detail.overview.id, {
+        eventType: createAlertEventType,
+        name: createAlertName.trim()
+      });
+      setCreateAlertOpen(false);
+      onEditAlert(created);
+    } catch (cause) {
+      setCreateAlertError(toActionableError(
+        "The alert was not created",
+        cause,
+        "Review the event type and alert name, then try again."
+      ));
     } finally {
       setBusy(false);
     }
@@ -225,13 +341,56 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
+  function requestInlineTest(alert: AlertInventoryRow) {
+    if (alert.targetProfileIds.length === 0) {
+      setError(toActionableError(
+        "The alert test was not sent",
+        new Error("The saved alert does not target an enabled profile."),
+        "Open the alert, enable and review a target profile, then try again."
+      ));
+      return;
+    }
+    if (alert.targetProfileIds.length === 1) {
+      void sendInlineTest(alert, alert.targetProfileIds[0]!);
+      return;
+    }
+    setTestMenuAlertId((current) => current === alert.id ? null : alert.id);
+  }
+
+  async function sendInlineTest(alert: AlertInventoryRow, targetProfileId: TargetProfileId) {
+    setTestingAlertId(alert.id);
+    setTestMenuAlertId(null);
+    setError(null);
+    try {
+      const document = await managementApi.getAlertEditorDocument(alert.id);
+      const sample = document.samplePayloads.find((candidate) => candidate.kind === "built-in");
+      if (sample === undefined) throw new Error("The saved alert has no built-in sample payload.");
+      const result = await managementApi.sendAlertEditorTest(alert.id, {
+        document,
+        targetProfileId,
+        samplePayload: sample.payload,
+        includeAudio: true,
+        includeTts: true
+      });
+      setNotice(`${alert.name} test queued for ${formatProfile(result.targetProfileId)}. Reference ${result.referenceId}.`);
+    } catch (cause) {
+      setError(toActionableError(
+        "The alert test was not sent",
+        cause,
+        `Review the alert and connect the ${formatProfile(targetProfileId)} browser source, then try again.`
+      ));
+    } finally {
+      setTestingAlertId(null);
+    }
+  }
+
   async function createBrowserSource(source: AlertBrowserSourceView) {
     setBusy(true);
     setError(null);
     try {
       await managementApi.createOverlayOutputKey(outputRequest(source));
       await refresh(detail?.overview.id ?? null);
-      setNotice(`${formatProfile(source.targetProfileId)} ${source.purpose} URL created.`);
+      setNotice(`${formatProfile(source.targetProfileId)} URL created.`);
     } catch (cause) {
       setError(toActionableError("The browser-source URL was not created", cause, "Check Diagnostics, then try again."));
     } finally {
@@ -246,7 +405,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     try {
       await managementApi.regenerateOverlayOutputKey(outputRequest(regenerateDialog.source));
       await refresh(detail?.overview.id ?? null);
-      setNotice(`${formatProfile(regenerateDialog.source.targetProfileId)} ${regenerateDialog.source.purpose} URL regenerated. Update every browser source that used the old URL.`);
+      setNotice(`${formatProfile(regenerateDialog.source.targetProfileId)} URL regenerated. Update every browser source that used the old URL.`);
       setRegenerateDialog(null);
       setRegenerateConfirmation("");
     } catch (cause) {
@@ -261,7 +420,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     try {
       if (navigator.clipboard === undefined) throw new Error("Clipboard access is unavailable in this browser.");
       await navigator.clipboard.writeText(source.url);
-      setNotice(`${formatProfile(source.targetProfileId)} ${source.purpose} URL copied.`);
+      setNotice(`${formatProfile(source.targetProfileId)} URL copied.`);
     } catch (cause) {
       setError(toActionableError("The browser-source URL was not copied", cause, "Reveal the URL and copy it manually."));
     }
@@ -293,16 +452,40 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
 
   return (
     <div className="alert-sets-page">
-      <div className="alert-sets-page__toolbar">
-        <div>
-          <h2>Alert sets</h2>
-          <p>Prepare collections of alerts, validate their profiles, and choose the one used for live events.</p>
-        </div>
-        <button onClick={() => openNameDialog("create", null)} type="button">Create set</button>
-      </div>
-
       {error === null ? null : <ManagementErrorBanner error={error} />}
       {notice === null ? null : <p className="alert-sets-page__notice" role="status">{notice}</p>}
+
+      {detail === null ? null : (
+        <BrowserSources
+          busy={busy}
+          expanded={browserSourcesExpanded}
+          onCopy={(source) => void copyBrowserSource(source)}
+          onCreate={(source) => void createBrowserSource(source)}
+          onRegenerate={(source) => {
+            setRegenerateConfirmation("");
+            setRegenerateDialog({
+              source,
+              requiresTypedConfirmation: source.connectionState !== "never-connected" || source.lastConnectedAt !== null
+            });
+          }}
+          onReveal={(source) => setRevealedSourceIds((current) => new Set([...current, source.id]))}
+          onToggle={() => setBrowserSourcesExpanded((current) => !current)}
+          profiles={detail.overview.targetProfiles}
+          refreshError={browserSourceRefreshError}
+          revealedSourceIds={revealedSourceIds}
+          sources={detail.browserSources}
+          statusUpdatedAt={browserSourceStatusUpdatedAt}
+        />
+      )}
+
+      <section aria-labelledby="alert-sets-heading" className="alert-sets-page__management">
+        <div className="alert-sets-page__toolbar">
+          <div>
+            <h2 id="alert-sets-heading">Alert sets</h2>
+            <p>Prepare collections of alerts, validate their profiles, and choose the one used for live events.</p>
+          </div>
+          <button onClick={() => openNameDialog("create", null)} type="button">Create set</button>
+        </div>
 
       {sets.length === 0 ? (
         <section className="alert-sets-page__empty">
@@ -311,83 +494,86 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
           <button onClick={() => openNameDialog("create", null)} type="button">Create alert set</button>
         </section>
       ) : (
-        <div className="alert-sets-page__workspace">
-          <section aria-labelledby="available-alert-sets-heading" className="alert-sets-page__set-list">
-            <div className="alert-sets-page__section-heading">
-              <div>
-                <h3 id="available-alert-sets-heading">Available sets</h3>
-                <p>{sets.length} configured</p>
-              </div>
-            </div>
-            <div className="alert-sets-page__table-wrap">
-              <table className="alert-sets-page__table alert-sets-page__table--set-list">
-                <thead><tr><th scope="col">Set</th><th scope="col">Alerts</th><th scope="col">Status</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-                <tbody>
-                  {sets.map((set) => (
-                    <tr className={set.id === selectedSetId ? "alert-sets-page__selected-row" : undefined} key={set.id}>
-                      <th scope="row"><span>{set.name}</span>{set.starter ? <small>Starter</small> : null}</th>
-                      <td>{set.enabledAlertCount}</td>
-                      <td><StatusBadge label={set.active ? "Active" : "Inactive"} tone={set.active ? "positive" : "neutral"} /></td>
-                      <td className="alert-sets-page__row-actions">
-                        <button aria-label={`View ${set.name}`} className="button button--secondary" onClick={() => void selectSet(set.id)} type="button">View</button>
-                        {set.active ? null : <button aria-label={`Make ${set.name} active`} disabled={busy} onClick={() => void prepareActivation(set)} type="button">Activate</button>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          {detail === null ? null : (
-            <div className="alert-sets-page__detail">
-              <SetOverview
-                busy={busy}
-                detail={detail}
-                onDelete={() => setDeleteSet(detail.overview)}
-                onDuplicate={() => openNameDialog("duplicate", detail.overview)}
-                onMarkReviewed={() => void markStarterReviewComplete()}
-                onRename={() => openNameDialog("rename", detail.overview)}
-              />
-              <ValidationSummary issues={detail.overview.validationIssues} />
-              <AlertInventory
-                alerts={filteredInventory}
-                busy={busy}
-                eventFilter={eventFilter}
-                eventTypes={[...new Set(detail.inventory.map((alert) => alert.eventType))]}
-                onEventFilter={setEventFilter}
-                onEdit={onEditAlert}
-                onPreview={setPreviewAlert}
-                onProfileFilter={setProfileFilter}
-                onQuery={setQuery}
-                onStatusFilter={setStatusFilter}
-                onToggle={(alert) => void toggleAlert(alert)}
-                profileFilter={profileFilter}
-                query={query}
-                statusFilter={statusFilter}
-                totalCount={detail.inventory.length}
-              />
-              <BrowserSources
-                busy={busy}
-                onCopy={(source) => void copyBrowserSource(source)}
-                onCreate={(source) => void createBrowserSource(source)}
-                onRegenerate={(source) => {
-                  setRegenerateConfirmation("");
-                  setRegenerateDialog({
-                    source,
-                    requiresTypedConfirmation: source.connectionState !== "never-connected" || source.lastConnectedAt !== null
-                  });
-                }}
-                onReveal={(source) => setRevealedSourceIds((current) => new Set([...current, source.id]))}
-                revealedSourceIds={revealedSourceIds}
-                sources={detail.browserSources}
-              />
-            </div>
-          )}
-        </div>
+        <section aria-labelledby="available-alert-sets-heading" className="alert-sets-page__set-list">
+          <div className="alert-sets-page__section-heading">
+            <div><h3 id="available-alert-sets-heading">Available sets</h3><p>{sets.length} configured</p></div>
+          </div>
+          <div className="alert-sets-page__set-stack">
+            {sets.map((set) => {
+              const expanded = set.id === expandedSetId && detail?.overview.id === set.id;
+              const expandedDetail = expanded ? detail : null;
+              return (
+                <article aria-label={`${set.name} alert set`} className={`alert-sets-page__set${expanded ? " alert-sets-page__set--expanded" : ""}`} key={set.id} role="region">
+                  <div className="alert-sets-page__set-row">
+                    <button
+                      aria-expanded={expanded}
+                      aria-label={`${expanded ? "Collapse" : "Expand"} ${set.name}`}
+                      className="alert-sets-page__set-toggle"
+                      onClick={() => void toggleSet(set.id)}
+                      type="button"
+                    >
+                      <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                      <strong>{set.name}</strong>
+                      {set.starter ? <small>Starter</small> : null}
+                    </button>
+                    <div className="alert-sets-page__set-state">
+                      <StatusBadge label={set.active ? "Active" : "Inactive"} tone={set.active ? "positive" : "neutral"} />
+                      <span>{set.enabledAlertCount} enabled</span>
+                      <ValidationRollup detail={detail?.overview.id === set.id ? detail : null} set={set} />
+                    </div>
+                    <div className="alert-sets-page__row-actions alert-sets-page__set-actions">
+                      {set.starter && set.starterReviewState === "pending" && expanded ? <button disabled={busy} onClick={() => void markStarterReviewComplete()} type="button">Mark starter review done</button> : null}
+                      {set.active ? null : <button aria-label={`Make ${set.name} active`} disabled={busy} onClick={() => void prepareActivation(set)} type="button">Activate</button>}
+                      <button aria-label={`Rename ${set.name}`} className="button button--secondary" disabled={busy} onClick={() => openNameDialog("rename", set)} type="button">Rename</button>
+                      <button aria-label={`Duplicate ${set.name}`} className="button button--secondary" disabled={busy} onClick={() => openNameDialog("duplicate", set)} type="button">Duplicate</button>
+                      <button aria-label={`Delete ${set.name}`} className="button button--danger-quiet" disabled={busy || set.active} onClick={() => setDeleteSet(set)} type="button">Delete</button>
+                    </div>
+                  </div>
+                  {expandedDetail === null ? null : (
+                    <AlertInventory
+                      alerts={filteredInventory}
+                      busy={busy}
+                      eventFilter={eventFilter}
+                      eventTypes={[...new Set(expandedDetail.inventory.map((alert) => alert.eventType))]}
+                      issues={expandedDetail.overview.validationIssues}
+                      onEventFilter={setEventFilter}
+                      onAdd={openCreateAlertDialog}
+                      onEdit={onEditAlert}
+                      onPreview={setPreviewAlert}
+                      onProfileFilter={setProfileFilter}
+                      onQuery={setQuery}
+                      onStatusFilter={setStatusFilter}
+                      onTest={requestInlineTest}
+                      onTestProfile={(alert, targetProfileId) => void sendInlineTest(alert, targetProfileId)}
+                      onToggle={(alert) => void toggleAlert(alert)}
+                      profileFilter={profileFilter}
+                      query={query}
+                      statusFilter={statusFilter}
+                      testMenuAlertId={testMenuAlertId}
+                      testingAlertId={testingAlertId}
+                      totalCount={expandedDetail.inventory.length}
+                    />
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
       )}
+      </section>
 
       <NameDialog busy={busy} draft={nameDraft} onCancel={() => setNameDialog(null)} onChange={setNameDraft} onSubmit={submitNameDialog} state={nameDialog} />
+      <CreateAlertDialog
+        busy={busy}
+        error={createAlertError}
+        eventType={createAlertEventType}
+        name={createAlertName}
+        onCancel={() => setCreateAlertOpen(false)}
+        onEventType={selectAlertEventType}
+        onName={setCreateAlertName}
+        onSubmit={submitCreateAlert}
+        open={createAlertOpen}
+      />
       <ActivationDialog busy={busy} impact={activationImpact} onCancel={() => { setActivationSet(null); setActivationImpact(null); }} onConfirm={() => void confirmActivation()} set={activationSet} />
       <PreviewDialog alert={previewAlert} onCancel={() => setPreviewAlert(null)} />
       <RegenerateDialog busy={busy} confirmation={regenerateConfirmation} onCancel={() => setRegenerateDialog(null)} onChange={setRegenerateConfirmation} onConfirm={() => void regenerateBrowserSource()} state={regenerateDialog} />
@@ -396,62 +582,26 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   );
 }
 
-function SetOverview({
-  busy,
-  detail,
-  onDelete,
-  onDuplicate,
-  onMarkReviewed,
-  onRename
-}: {
-  readonly busy: boolean;
-  readonly detail: AlertSetDetail;
-  readonly onDelete: () => void;
-  readonly onDuplicate: () => void;
-  readonly onMarkReviewed: () => void;
-  readonly onRename: () => void;
-}) {
-  const set = detail.overview;
-  const needsReviewCount = detail.inventory.filter((alert) => alert.reviewState === "needs-review").length;
-  return (
-    <section className={`alert-sets-page__set-overview alert-sets-page__set-overview--${set.active ? "active" : "inactive"}`}>
-      <div>
-        <span className="alert-sets-page__eyebrow">{set.active ? "Active set" : "Selected set"}</span>
-        <h3>{set.name}</h3>
-        <p>{set.enabledAlertCount} enabled of {detail.inventory.length} alerts</p>
-      </div>
-      <div className="alert-sets-page__overview-status">
-        <StatusBadge label={set.active ? "Live events use this set" : "Saved, not active"} tone={set.active ? "positive" : "neutral"} />
-        {needsReviewCount > 0 ? <span>{needsReviewCount} alerts need review</span> : <span>Review complete</span>}
-      </div>
-      <div className="alert-sets-page__actions">
-        {set.starter && set.starterReviewState === "pending" ? <button disabled={busy} onClick={onMarkReviewed} type="button">Mark starter review done</button> : null}
-        <button className="button button--secondary" disabled={busy} onClick={onRename} type="button">Rename</button>
-        <button className="button button--secondary" disabled={busy} onClick={onDuplicate} type="button">Duplicate</button>
-        <button className="button button--danger" disabled={busy || set.active} onClick={onDelete} title={set.active ? "Activate another set before deleting this one." : undefined} type="button">Delete</button>
-      </div>
-    </section>
-  );
-}
+function ValidationRollup({ detail, set }: { readonly detail: AlertSetDetail | null; readonly set: AlertSetOverview }) {
+  const blockerCount = set.validationIssues.filter((issue) => issue.severity === "blocker").length;
+  const warningCount = set.validationIssues.filter((issue) => issue.severity === "warning").length;
+  const needsReviewCount = detail === null
+    ? set.targetProfiles.filter((profile) => profile.reviewState === "needs-review").length
+    : detail.inventory.filter((alert) => alert.reviewState === "needs-review").length;
+  const needsReviewLabel = detail === null
+    ? `${needsReviewCount} profile${needsReviewCount === 1 ? " needs" : "s need"} review`
+    : `${needsReviewCount} need review`;
 
-function ValidationSummary({ issues }: { readonly issues: readonly AlertValidationIssue[] }) {
-  const blockers = issues.filter((issue) => issue.severity === "blocker");
-  const warnings = issues.filter((issue) => issue.severity === "warning");
+  if (blockerCount === 0 && warningCount === 0 && needsReviewCount === 0) {
+    return <span className="alert-sets-page__validation-rollup alert-sets-page__validation-rollup--ready">Ready</span>;
+  }
+
   return (
-    <section aria-labelledby="alert-validation-heading" className="alert-sets-page__section">
-      <div className="alert-sets-page__section-heading">
-        <div><h3 id="alert-validation-heading">Validation</h3><p>Only enabled profiles affect activation.</p></div>
-        <div className="alert-sets-page__validation-counts">
-          <StatusBadge label={`${blockers.length} blockers`} tone={blockers.length > 0 ? "negative" : "positive"} />
-          <StatusBadge label={`${warnings.length} warnings`} tone={warnings.length > 0 ? "warning" : "neutral"} />
-        </div>
-      </div>
-      {issues.length === 0 ? <p className="alert-sets-page__success">This set is ready to activate.</p> : (
-        <ul className="alert-sets-page__issue-list">
-          {issues.map((issue) => <li className={`alert-sets-page__issue alert-sets-page__issue--${issue.severity}`} key={issue.id}><strong>{issue.message}</strong><span>{issue.nextStep}</span>{issue.referenceId === null ? null : <code>{issue.referenceId}</code>}</li>)}
-        </ul>
-      )}
-    </section>
+    <span aria-label="Validation summary" className="alert-sets-page__validation-rollup">
+      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, "blocker")}</span> : null}
+      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, "warning")}</span> : null}
+      {needsReviewCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">{needsReviewLabel}</span> : null}
+    </span>
   );
 }
 
@@ -460,37 +610,49 @@ function AlertInventory({
   busy,
   eventFilter,
   eventTypes,
+  issues,
+  onAdd,
   onEventFilter,
   onEdit,
   onPreview,
   onProfileFilter,
   onQuery,
   onStatusFilter,
+  onTest,
+  onTestProfile,
   onToggle,
   profileFilter,
   query,
   statusFilter,
+  testMenuAlertId,
+  testingAlertId,
   totalCount
 }: {
   readonly alerts: readonly AlertInventoryRow[];
   readonly busy: boolean;
   readonly eventFilter: string;
   readonly eventTypes: readonly string[];
+  readonly issues: readonly AlertValidationIssue[];
+  readonly onAdd: () => void;
   readonly onEventFilter: (value: string) => void;
   readonly onEdit: (alert: AlertInventoryRow) => void;
   readonly onPreview: (alert: AlertInventoryRow) => void;
   readonly onProfileFilter: (value: string) => void;
   readonly onQuery: (value: string) => void;
   readonly onStatusFilter: (value: string) => void;
+  readonly onTest: (alert: AlertInventoryRow) => void;
+  readonly onTestProfile: (alert: AlertInventoryRow, targetProfileId: TargetProfileId) => void;
   readonly onToggle: (alert: AlertInventoryRow) => void;
   readonly profileFilter: string;
   readonly query: string;
   readonly statusFilter: string;
+  readonly testMenuAlertId: string | null;
+  readonly testingAlertId: string | null;
   readonly totalCount: number;
 }) {
   return (
-    <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__section">
-      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{alerts.length} of {totalCount} shown</p></div></div>
+    <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__inventory">
+      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{alerts.length} of {totalCount} shown</p></div><button disabled={busy} onClick={onAdd} type="button">Add alert</button></div>
       <div className="alert-sets-page__filters">
         <label><span>Search</span><input onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} /></label>
         <label><span>Event</span><select onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</select></label>
@@ -499,16 +661,44 @@ function AlertInventory({
       </div>
       <div className="alert-sets-page__table-wrap">
         <table className="alert-sets-page__table alert-sets-page__table--inventory">
-          <thead><tr><th scope="col">Alert</th><th scope="col">Event</th><th scope="col">Provider</th><th scope="col">Profiles</th><th scope="col">Review</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+          <thead><tr><th scope="col">Alert</th><th scope="col">Event</th><th scope="col">Profiles</th><th scope="col">State</th><th scope="col">Validation</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
           <tbody>
-            {alerts.map((alert) => (
-              <tr key={alert.id}>
-                <th scope="row"><span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"}</small></th>
-                <td>{formatEventType(alert.eventType)}</td><td>{formatProvider(alert.providerKind)}</td><td>{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
-                <td><StatusBadge label={alert.reviewState === "needs-review" ? "Needs review" : "Ready"} tone={alert.reviewState === "needs-review" ? "warning" : "positive"} /></td>
-                <td className="alert-sets-page__row-actions"><button onClick={() => onEdit(alert)} type="button">Edit</button><button className="button button--secondary" onClick={() => onPreview(alert)} type="button">Preview</button><button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button></td>
-              </tr>
-            ))}
+            {alerts.map((alert) => {
+              const alertIssues = issues.filter((issue) => issue.alertId === alert.id);
+              const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
+              const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
+              const testMenuOpen = testMenuAlertId === alert.id;
+              return (
+                <tr key={alert.id}>
+                  <th scope="row"><span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"}</small></th>
+                  <td><span>{formatEventType(alert.eventType)}</span><small>{formatProvider(alert.providerKind)} catalog</small></td>
+                  <td>{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
+                  <td><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
+                  <td>
+                    <span className="alert-sets-page__alert-validation">
+                      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, "blocker")}</span> : null}
+                      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, "warning")}</span> : null}
+                      {alert.reviewState === "needs-review" ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">Needs review</span> : blockerCount === 0 && warningCount === 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--ready">Ready</span> : null}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
+                      <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" onClick={() => onEdit(alert)} type="button">Edit</button>
+                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Preview</button>
+                      <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
+                      <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
+                    </div>
+                    {testMenuOpen ? (
+                      <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">
+                        {alert.targetProfileIds.map((targetProfileId) => (
+                          <button aria-label={`Send ${alert.name} test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -519,41 +709,94 @@ function AlertInventory({
 
 function BrowserSources({
   busy,
+  expanded,
   onCopy,
   onCreate,
   onRegenerate,
   onReveal,
+  onToggle,
+  profiles,
+  refreshError,
   revealedSourceIds,
-  sources
+  sources,
+  statusUpdatedAt
 }: {
   readonly busy: boolean;
+  readonly expanded: boolean;
   readonly onCopy: (source: AlertBrowserSourceView) => void;
   readonly onCreate: (source: AlertBrowserSourceView) => void;
   readonly onRegenerate: (source: AlertBrowserSourceView) => void;
   readonly onReveal: (source: AlertBrowserSourceView) => void;
+  readonly onToggle: () => void;
+  readonly profiles: AlertSetOverview["targetProfiles"];
+  readonly refreshError: ActionableManagementError | null;
   readonly revealedSourceIds: ReadonlySet<string>;
   readonly sources: readonly AlertBrowserSourceView[];
+  readonly statusUpdatedAt: string | null;
 }) {
+  const readyCount = sources.filter((source) => source.copyableUrlStatus === "available").length;
+  const needsSetupCount = sources.length - readyCount;
+
   return (
-    <section aria-labelledby="browser-sources-heading" className="alert-sets-page__section" id="browser-sources">
-      <div className="alert-sets-page__section-heading"><div><h3 id="browser-sources-heading">Browser sources</h3><p>Use separate live and test URLs for each target profile.</p></div></div>
-      <div className="alert-sets-page__source-list">
-        {sources.map((source) => {
-          const label = `${formatProfile(source.targetProfileId)} ${source.purpose}`;
-          const revealed = revealedSourceIds.has(source.id);
-          return (
-            <article className="alert-sets-page__source" key={source.id}>
-              <div className="alert-sets-page__source-heading"><div><strong>{label}</strong><span>{source.connectionState === "connected" ? "Connected now" : source.lastConnectedAt === null ? "Never connected" : `Last connected ${new Date(source.lastConnectedAt).toLocaleString()}`}</span></div><StatusBadge label={formatConnectionState(source.connectionState)} tone={source.connectionState === "connected" ? "positive" : source.connectionState === "never-connected" ? "neutral" : "warning"} /></div>
-              {source.url === null ? <p className="alert-sets-page__source-missing">Create a route-key URL before adding this source to OBS.</p> : <input aria-label={`${label} browser source`} readOnly value={revealed ? source.url : maskRouteKey(source.url)} />}
-              <div className="alert-sets-page__row-actions">
-                {source.copyableUrlStatus === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</button> : null}
-                {source.url === null ? null : <><button aria-label={`Reveal ${label} URL`} className="button button--secondary" disabled={revealed} onClick={() => onReveal(source)} type="button">Reveal</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
-                {source.copyableUrlStatus !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}
-              </div>
-            </article>
-          );
-        })}
+    <section aria-label="Browser sources" className="alert-sets-page__browser-source-band" id="browser-sources">
+      <div className="alert-sets-page__browser-source-row">
+        <div className="alert-sets-page__browser-source-heading">
+          <h2>
+            <button
+              aria-controls="browser-source-details"
+              aria-expanded={expanded}
+              aria-label={`${expanded ? "Collapse" : "Expand"} browser sources`}
+              className="alert-sets-page__browser-source-toggle"
+              onClick={onToggle}
+              type="button"
+            >
+              <span aria-hidden="true">{expanded ? "\u2212" : "+"}</span>
+              <span>Browser sources</span>
+            </button>
+          </h2>
+          <p>One live URL per target profile.</p>
+        </div>
+        <div aria-label="Browser source summary" className="alert-sets-page__browser-source-summary">
+          <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--ready">{readyCount} ready</span>
+          <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--warning">{needsSetupCount} needs setup</span>
+          {refreshError === null ? null : <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--error">Status refresh failed</span>}
+        </div>
       </div>
+      {expanded ? (
+        <div className="alert-sets-page__browser-source-details" id="browser-source-details">
+          <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
+            {refreshError === null
+              ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${new Date(statusUpdatedAt).toLocaleTimeString()}`
+              : statusUpdatedAt === null ? "Connection status stale." : `Connection status stale. Last updated ${new Date(statusUpdatedAt).toLocaleTimeString()}`}
+          </p>
+          {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
+          <div className="alert-sets-page__source-list">
+            {sources.map((source) => {
+              const label = formatProfile(source.targetProfileId);
+              const revealed = revealedSourceIds.has(source.id);
+              const profileEnabled = profiles.find((profile) => profile.id === source.targetProfileId)?.enabled === true;
+              const ready = source.copyableUrlStatus === "available";
+              const listenerStatus = source.connectionState === "connected"
+                ? "Listening now"
+                : source.lastConnectedAt === null
+                  ? "Not listening. No connection recorded."
+                  : `Not listening. Last seen ${new Date(source.lastConnectedAt).toLocaleString()}`;
+              return (
+                <article aria-label={`${label} browser source`} className="alert-sets-page__source" key={source.id}>
+                  <div className="alert-sets-page__source-heading"><div><strong>{label}</strong><span>{profileEnabled ? "Profile enabled" : "Profile disabled"}</span></div><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
+                  <p className="alert-sets-page__source-telemetry">{listenerStatus}</p>
+                  {source.url === null ? <p className="alert-sets-page__source-missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code className="alert-sets-page__source-masked">{maskRouteKey(source.url)}</code>}
+                  <div className="alert-sets-page__row-actions">
+                    {source.copyableUrlStatus === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</button> : null}
+                    {source.url === null ? null : <><button aria-label={`Reveal ${label} URL`} className="button button--secondary" disabled={revealed} onClick={() => onReveal(source)} type="button">Reveal</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
+                    {source.copyableUrlStatus !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -561,6 +804,49 @@ function BrowserSources({
 function NameDialog({ busy, draft, onCancel, onChange, onSubmit, state }: { readonly busy: boolean; readonly draft: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void; readonly state: NameDialogState | null }) {
   const title = state?.action === "create" ? "Create alert set" : state?.action === "rename" ? "Rename alert set" : "Duplicate alert set";
   return <ModalSurface labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}><div><h2 id="alert-set-name-dialog-title">{title}</h2><p>Saving does not change which alert set is active.</p></div><label><span>Alert set name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required value={draft} /></label><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</button></div></form></ModalSurface>;
+}
+
+function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType, onName, onSubmit, open }: {
+  readonly busy: boolean;
+  readonly error: ActionableManagementError | null;
+  readonly eventType: AlertCreateInput["eventType"];
+  readonly name: string;
+  readonly onCancel: () => void;
+  readonly onEventType: (eventType: AlertCreateInput["eventType"]) => void;
+  readonly onName: (name: string) => void;
+  readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  readonly open: boolean;
+}) {
+  const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
+  return (
+    <ModalSurface labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
+      <form className="alert-sets-page__modal" onSubmit={onSubmit}>
+        <div>
+          <h2 id="alert-create-dialog-title">Add alert</h2>
+          <p>The alert starts disabled. Review both target profiles in the editor before enabling it.</p>
+        </div>
+        {error === null ? null : <ManagementErrorBanner error={error} />}
+        <label>
+          <span>Event type</span>
+          <select autoFocus onChange={(event) => onEventType(event.currentTarget.value as AlertCreateInput["eventType"])} value={eventType}>
+            {alertStarterTemplates.map((candidate) => <option key={candidate.eventType} value={candidate.eventType}>{candidate.label}</option>)}
+          </select>
+        </label>
+        <label>
+          <span>Alert name</span>
+          <input autoComplete="off" maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} />
+        </label>
+        <div className="alert-sets-page__template-preview">
+          <span>Starter message</span>
+          <p>{template.text}</p>
+        </div>
+        <div className="management-modal__actions">
+          <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
+          <button disabled={busy || name.trim() === ""} type="submit">{busy ? "Creating..." : "Create alert"}</button>
+        </div>
+      </form>
+    </ModalSurface>
+  );
 }
 
 function ActivationDialog({ busy, impact, onCancel, onConfirm, set }: { readonly busy: boolean; readonly impact: AlertSetActivationImpact | null; readonly onCancel: () => void; readonly onConfirm: () => void; readonly set: AlertSetOverview | null }) {
@@ -581,7 +867,7 @@ function PreviewDialog({ alert, onCancel }: { readonly alert: AlertInventoryRow 
 }
 
 function RegenerateDialog({ busy, confirmation, onCancel, onChange, onConfirm, state }: { readonly busy: boolean; readonly confirmation: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onConfirm: () => void; readonly state: RegenerateDialogState | null }) {
-  const label = state === null ? "Browser source" : `${formatProfile(state.source.targetProfileId)} ${state.source.purpose}`;
+  const label = state === null ? "Browser source" : formatProfile(state.source.targetProfileId);
   const confirmed = !state?.requiresTypedConfirmation || confirmation === "REGENERATE";
   return <ModalSurface labelledBy="regenerate-browser-source-title" onCancel={onCancel} open={state !== null}><div className="alert-sets-page__modal"><div><h2 id="regenerate-browser-source-title">Regenerate {label} URL?</h2><p>The current URL will stop working immediately. Update every browser source that uses it.</p></div>{state?.requiresTypedConfirmation ? <label><span>Type REGENERATE to continue</span><input autoComplete="off" onChange={(event) => onChange(event.currentTarget.value)} value={confirmation} /></label> : null}<div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button className="button button--danger" disabled={busy || !confirmed} onClick={onConfirm} type="button">Regenerate URL</button></div></div></ModalSurface>;
 }
@@ -606,12 +892,12 @@ function formatProvider(value: string): string {
   return value === "streamerbot" ? "Streamer.bot" : value === "speakerbot" ? "Speaker.bot" : value === "browser-speech" ? "Browser Speech" : "Twitch";
 }
 
-function formatProfile(value: "landscape" | "vertical"): string {
-  return value === "landscape" ? "Landscape" : "Vertical";
+function formatCount(value: number, noun: string): string {
+  return `${value} ${noun}${value === 1 ? "" : "s"}`;
 }
 
-function formatConnectionState(value: AlertBrowserSourceView["connectionState"]): string {
-  return value === "never-connected" ? "Never connected" : value === "connected" ? "Connected" : "Disconnected";
+function formatProfile(value: "landscape" | "vertical"): string {
+  return value === "landscape" ? "Landscape" : "Vertical";
 }
 
 function toActionableError(summary: string, cause: unknown, nextStep: string): ActionableManagementError {

@@ -1,6 +1,12 @@
 import type { SecretRef, SecretStore } from "@stream-jams/core";
 import { runtimeSecretStoreUnavailableMessage } from "../security/runtime-secret-store.js";
-import type { TwitchApiClient, TwitchDeviceTokenPollResult, TwitchTokenGrant, TwitchValidatedToken } from "./twitch-api-client.js";
+import {
+  TwitchApiHttpError,
+  type TwitchApiClient,
+  type TwitchDeviceTokenPollResult,
+  type TwitchTokenGrant,
+  type TwitchValidatedToken
+} from "./twitch-api-client.js";
 import {
   toTwitchConnectionStatus,
   type TwitchAccount,
@@ -189,7 +195,42 @@ export class TwitchOAuthService {
     }
   }
 
-  async refreshConnectedAccount(): Promise<TwitchConnectionStatus> {
+  async validateConnectedAccount(
+    options: { readonly notifyConnectionChanged?: boolean } = {}
+  ): Promise<{ readonly connection: TwitchConnectionStatus; readonly refreshed: boolean }> {
+    this.#assertConfigured();
+    const currentAccount = await this.#repository.findConnectedAccount();
+    if (currentAccount === null) {
+      return { connection: toTwitchConnectionStatus(null), refreshed: false };
+    }
+
+    const accessToken = await this.#readSecret(createTwitchTokenSecretRef(currentAccount.accountId, "access_token"));
+    if (accessToken === null) {
+      throw new TwitchOAuthProviderError("Twitch access token is unavailable");
+    }
+
+    try {
+      const validatedToken = await this.#apiClient.validateToken({ accessToken });
+      assertValidatedTokenMatchesClient(validatedToken, this.#clientId);
+      if (validatedToken.userId !== currentAccount.accountId) {
+        throw new TwitchOAuthProviderError("Twitch token account did not match connected account");
+      }
+      return { connection: toTwitchConnectionStatus(currentAccount), refreshed: false };
+    } catch (error) {
+      if (!(error instanceof TwitchApiHttpError) || error.status !== 401) {
+        throw error;
+      }
+    }
+
+    return {
+      connection: await this.refreshConnectedAccount(options),
+      refreshed: true
+    };
+  }
+
+  async refreshConnectedAccount(
+    options: { readonly notifyConnectionChanged?: boolean } = {}
+  ): Promise<TwitchConnectionStatus> {
     this.#assertConfigured();
     const currentAccount = await this.#repository.findConnectedAccount();
     if (currentAccount === null) {
@@ -205,7 +246,11 @@ export class TwitchOAuthService {
       clientId: this.#clientId,
       refreshToken
     });
-    return this.#storeTokenGrant(tokenGrant, currentAccount.connectedAt);
+    return this.#storeTokenGrant(
+      tokenGrant,
+      currentAccount.connectedAt,
+      options.notifyConnectionChanged ?? true
+    );
   }
 
   async disconnect(): Promise<TwitchConnectionStatus> {
@@ -242,7 +287,11 @@ export class TwitchOAuthService {
     }
   }
 
-  async #storeTokenGrant(tokenGrant: TwitchTokenGrant, existingConnectedAt?: string): Promise<TwitchConnectionStatus> {
+  async #storeTokenGrant(
+    tokenGrant: TwitchTokenGrant,
+    existingConnectedAt?: string,
+    notifyConnectionChanged = true
+  ): Promise<TwitchConnectionStatus> {
     const validatedToken = await this.#apiClient.validateToken({
       accessToken: tokenGrant.accessToken
     });
@@ -287,7 +336,9 @@ export class TwitchOAuthService {
     }
 
     const status = toTwitchConnectionStatus(savedAccount);
-    await this.#notifyConnectionChanged(status);
+    if (notifyConnectionChanged) {
+      await this.#notifyConnectionChanged(status);
+    }
     return status;
   }
 

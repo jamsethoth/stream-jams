@@ -237,6 +237,34 @@ describe("TwitchEventSubClient", () => {
     });
   });
 
+  it("reconnects when the server stops sending messages before the keepalive deadline", async () => {
+    const harness = createClientHarness();
+
+    harness.client.connect(connectionInput());
+    await harness.sockets[0]?.emitMessage(sessionWelcome("session-1"));
+
+    expect(harness.watchdogDelays).toEqual([11_000]);
+
+    await harness.sockets[0]?.emitMessage({
+      metadata: {
+        message_type: "session_keepalive",
+        message_timestamp: "2026-05-30T12:00:10.000Z"
+      },
+      payload: {}
+    });
+    expect(harness.watchdogDelays).toEqual([11_000, 11_000]);
+
+    harness.runLatestWatchdog();
+
+    expect(harness.sockets[0]?.closeCount).toBe(1);
+    expect(harness.client.getStatus()).toMatchObject({
+      state: "reconnecting",
+      message: "Twitch EventSub keepalive timed out",
+      referenceId: "ref-1"
+    });
+    expect(harness.scheduled).toEqual([1_000]);
+  });
+
   it("clears a transient transport failure after a valid message but retains revocation failures", async () => {
     const harness = createClientHarness();
 
@@ -319,8 +347,13 @@ describe("TwitchEventSubClient", () => {
     });
   });
 
-  it("retries partial subscription setup failures and preserves their diagnostic reference", async () => {
-    const harness = createClientHarness();
+  it("hands an HTTP 401 subscription failure to authorization recovery without retrying the stale token", async () => {
+    let authorizationFailures = 0;
+    const harness = createClientHarness({
+      onAuthorizationFailure() {
+        authorizationFailures += 1;
+      }
+    });
     harness.apiClient.subscriptionFailure = new TwitchEventSubApiError(401);
     harness.apiClient.failSubscriptionType = "channel.subscribe";
     harness.client.connect(connectionInput());
@@ -338,40 +371,12 @@ describe("TwitchEventSubClient", () => {
       subscriptionTypes: []
     });
     expect(harness.sockets[0]?.closeCount).toBe(1);
-    expect(harness.scheduled).toEqual([1_000]);
-
-    harness.runScheduled();
-    await harness.sockets[1]?.emitMessage(sessionWelcome("session-2"));
-
-    expect(harness.client.getStatus()).toMatchObject({
-      state: "error",
-      referenceId: "ref-1",
-      subscriptionTypes: []
-    });
+    expect(authorizationFailures).toBe(1);
+    expect(harness.scheduled).toEqual([]);
     expect(harness.diagnostics).toEqual([{
       message: "Twitch EventSub subscription setup failed (Twitch API returned HTTP 401)",
       referenceId: "ref-1"
     }]);
-    expect(harness.scheduled).toEqual([1_000, 2_000]);
-
-    harness.apiClient.subscriptionFailure = null;
-    harness.apiClient.failSubscriptionType = null;
-    harness.runScheduled();
-    await harness.sockets[2]?.emitMessage(sessionWelcome("session-3"));
-
-    expect(harness.client.getStatus()).toMatchObject({
-      state: "connected",
-      message: null,
-      referenceId: null,
-      subscriptionTypes: [
-        "channel.follow",
-        "channel.subscribe",
-        "channel.subscription.message",
-        "channel.cheer",
-        "channel.raid",
-        "channel.channel_points_custom_reward_redemption.add"
-      ]
-    });
   });
 
   it("ignores stale subscription setup after the connection is replaced", async () => {
@@ -452,11 +457,14 @@ describe("TwitchEventSubClient", () => {
 
 function createClientHarness(options: {
   readonly onNotification?: ((message: unknown) => void | Promise<void>) | undefined;
+  readonly onAuthorizationFailure?: (() => void | Promise<void>) | undefined;
 } = {}) {
   const sockets: FakeSocket[] = [];
   const openedUrls: string[] = [];
   const scheduled: number[] = [];
   const scheduledCallbacks: (() => void)[] = [];
+  const watchdogDelays: number[] = [];
+  const watchdogs: { callback: () => void; cancelled: boolean }[] = [];
   const apiClient = new RecordingEventSubApiClient();
   const notifications: { readonly metadata: { readonly message_id: string } }[] = [];
   const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
@@ -473,9 +481,19 @@ function createClientHarness(options: {
       notifications.push(message as { readonly metadata: { readonly message_id: string } });
       await options.onNotification?.(message);
     },
+    onAuthorizationFailure: options.onAuthorizationFailure,
     schedule(callback, delayMs) {
       scheduled.push(delayMs);
       scheduledCallbacks.push(callback);
+    },
+    scheduleWatchdog(callback, delayMs) {
+      watchdogDelays.push(delayMs);
+      const watchdog = { callback, cancelled: false };
+      watchdogs.push(watchdog);
+      return watchdog;
+    },
+    cancelWatchdog(handle) {
+      (handle as { cancelled: boolean }).cancelled = true;
     },
     now: () => new Date("2026-05-30T12:00:30.000Z"),
     generateReferenceId: () => `ref-${++reference}`,
@@ -493,8 +511,18 @@ function createClientHarness(options: {
     runScheduled() {
       scheduledCallbacks.shift()?.();
     },
+    runLatestWatchdog() {
+      for (let index = watchdogs.length - 1; index >= 0; index -= 1) {
+        const watchdog = watchdogs[index];
+        if (watchdog !== undefined && !watchdog.cancelled) {
+          watchdog.callback();
+          break;
+        }
+      }
+    },
     scheduled,
-    sockets
+    sockets,
+    watchdogDelays
   };
 }
 

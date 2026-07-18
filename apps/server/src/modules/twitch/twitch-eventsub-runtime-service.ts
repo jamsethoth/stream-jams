@@ -48,6 +48,7 @@ export interface TwitchEventSubRuntimeServiceOptions {
   readonly secretStore: Pick<SecretStore, "getSecret">;
   readonly generateReferenceId?: (() => string) | undefined;
   readonly onDiagnostic?: ((entry: TwitchEventSubRuntimeDiagnostic) => void | Promise<void>) | undefined;
+  readonly validateConnectedAccount?: (() => void | Promise<void>) | undefined;
 }
 
 interface RuntimeSyncError {
@@ -65,6 +66,7 @@ export class TwitchEventSubRuntimeService {
   readonly #secretStore: Pick<SecretStore, "getSecret">;
   readonly #generateReferenceId: () => string;
   readonly #onDiagnostic: NonNullable<TwitchEventSubRuntimeServiceOptions["onDiagnostic"]>;
+  readonly #validateConnectedAccount: NonNullable<TwitchEventSubRuntimeServiceOptions["validateConnectedAccount"]>;
   #runtimeError: RuntimeSyncError | null = null;
 
   constructor(options: TwitchEventSubRuntimeServiceOptions) {
@@ -76,9 +78,18 @@ export class TwitchEventSubRuntimeService {
     this.#secretStore = options.secretStore;
     this.#generateReferenceId = options.generateReferenceId ?? generateReferenceId;
     this.#onDiagnostic = options.onDiagnostic ?? (() => {});
+    this.#validateConnectedAccount = options.validateConnectedAccount ?? (() => {});
   }
 
   async connectStoredAccount(): Promise<TwitchEventSubRuntimeStatus> {
+    try {
+      await this.#validateConnectedAccount();
+    } catch {
+      this.#eventSubClient.disconnect();
+      await this.#recordRuntimeError("Twitch authorization could not be validated or refreshed");
+      return this.getStatus();
+    }
+
     const account = await this.#accountRepository.findConnectedAccount();
     if (account === null) {
       this.#eventSubClient.disconnect();
@@ -128,6 +139,12 @@ export class TwitchEventSubRuntimeService {
   disconnect(): void {
     this.#runtimeError = null;
     this.#eventSubClient.disconnect();
+  }
+
+  async reportAuthorizationFailure(): Promise<TwitchEventSubRuntimeStatus> {
+    this.#eventSubClient.disconnect();
+    await this.#recordRuntimeError("Twitch authorization could not be validated or refreshed");
+    return this.getStatus();
   }
 
   getStatus(): TwitchEventSubRuntimeStatus {

@@ -21,6 +21,7 @@ describe("TwitchEventSubRuntimeService", () => {
       subscriptionTypes: ["channel.follow"],
       referenceId: null
     });
+    let validationCount = 0;
     const service = new TwitchEventSubRuntimeService({
       accountRepository: repository,
       clientId: "client-id",
@@ -35,7 +36,10 @@ describe("TwitchEventSubRuntimeService", () => {
         message: null,
         referenceId: null
       }),
-      secretStore
+      secretStore,
+      async validateConnectedAccount() {
+        validationCount += 1;
+      }
     });
 
     await expect(service.connectStoredAccount()).resolves.toMatchObject({
@@ -57,6 +61,39 @@ describe("TwitchEventSubRuntimeService", () => {
         }
       }
     ]);
+    expect(validationCount).toBe(1);
+  });
+
+  it("reports an actionable authorization failure before opening EventSub", async () => {
+    const eventSubClient = new RecordingEventSubClient();
+    const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
+    const service = new TwitchEventSubRuntimeService({
+      accountRepository: new InMemoryTwitchAccountRepository(connectedAccount),
+      clientId: "client-id",
+      eventSubClient,
+      ingestionService: new StaticIngestionStatusService(),
+      generateReferenceId: () => "ref-twitch-auth",
+      onDiagnostic(entry) {
+        diagnostics.push(entry);
+      },
+      secretStore: new InMemorySecretStore(),
+      async validateConnectedAccount() {
+        throw new Error("expired access token");
+      }
+    });
+
+    await expect(service.connectStoredAccount()).resolves.toMatchObject({
+      state: "error",
+      connectionState: "idle",
+      message: "Twitch authorization could not be validated or refreshed",
+      referenceId: "ref-twitch-auth"
+    });
+    expect(eventSubClient.connectInputs).toEqual([]);
+    expect(eventSubClient.disconnectCount).toBe(1);
+    expect(diagnostics).toEqual([{
+      message: "Twitch authorization could not be validated or refreshed",
+      referenceId: "ref-twitch-auth"
+    }]);
   });
 
   it("reports an actionable failure when the active Twitch source has no connected account", async () => {

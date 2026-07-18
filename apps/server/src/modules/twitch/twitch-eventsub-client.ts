@@ -74,6 +74,9 @@ export interface TwitchEventSubClientOptions {
   readonly backoffMs?: readonly number[] | undefined;
   readonly generateReferenceId?: (() => string) | undefined;
   readonly onDiagnostic?: ((entry: TwitchEventSubDiagnostic) => void | Promise<void>) | undefined;
+  readonly onAuthorizationFailure?: (() => void | Promise<void>) | undefined;
+  readonly scheduleWatchdog?: ((callback: () => void, delayMs: number) => unknown) | undefined;
+  readonly cancelWatchdog?: ((handle: unknown) => void) | undefined;
 }
 
 interface TwitchSessionMessage {
@@ -90,6 +93,7 @@ interface TwitchSessionMessage {
       readonly status: string;
       readonly reconnect_url: string | null | undefined;
       readonly connected_at: string;
+      readonly keepalive_timeout_seconds: number | null | undefined;
     } | undefined;
     readonly subscription: {
       readonly status: string;
@@ -174,6 +178,9 @@ export class TwitchEventSubClient {
   readonly #backoffMs: readonly number[];
   readonly #generateReferenceId: () => string;
   readonly #onDiagnostic: NonNullable<TwitchEventSubClientOptions["onDiagnostic"]>;
+  readonly #onAuthorizationFailure: NonNullable<TwitchEventSubClientOptions["onAuthorizationFailure"]>;
+  readonly #scheduleWatchdog: NonNullable<TwitchEventSubClientOptions["scheduleWatchdog"]>;
+  readonly #cancelWatchdog: NonNullable<TwitchEventSubClientOptions["cancelWatchdog"]>;
   #connection: TwitchEventSubConnectionInput | null = null;
   #connectionGeneration = 0;
   #reconnectAttempt = 0;
@@ -192,6 +199,8 @@ export class TwitchEventSubClient {
   #recoverableFailureReferenceId: string | null = null;
   #persistentFailure: PersistentFailure | null = null;
   #stopped = true;
+  #watchdogHandle: unknown | null = null;
+  #watchdogDelayMs: number | null = null;
 
   constructor(options: TwitchEventSubClientOptions) {
     this.#apiClient = options.apiClient;
@@ -203,11 +212,15 @@ export class TwitchEventSubClient {
     this.#backoffMs = options.backoffMs ?? [1_000, 2_000, 5_000, 10_000];
     this.#generateReferenceId = options.generateReferenceId ?? generateReferenceId;
     this.#onDiagnostic = options.onDiagnostic ?? (() => {});
+    this.#onAuthorizationFailure = options.onAuthorizationFailure ?? (() => {});
+    this.#scheduleWatchdog = options.scheduleWatchdog ?? ((callback, delayMs) => setTimeout(callback, delayMs));
+    this.#cancelWatchdog = options.cancelWatchdog ?? ((handle) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   }
 
   connect(input: TwitchEventSubConnectionInput): void {
     const connectionGeneration = ++this.#connectionGeneration;
     this.#stopped = true;
+    this.#clearWatchdog();
     const previousSocket = this.#socket;
     this.#socket = null;
     previousSocket?.close();
@@ -221,6 +234,7 @@ export class TwitchEventSubClient {
   disconnect(): void {
     this.#connectionGeneration += 1;
     this.#stopped = true;
+    this.#clearWatchdog();
     this.#socket?.close();
     this.#socket = null;
     this.#status = {
@@ -243,6 +257,7 @@ export class TwitchEventSubClient {
   }
 
   #openSocket(url: string, recreateSubscriptions: boolean, connectionGeneration: number): void {
+    this.#clearWatchdog();
     this.#status = {
       ...this.#status,
       state: "connecting",
@@ -284,6 +299,9 @@ export class TwitchEventSubClient {
     const rawMessage = typeof data === "string" ? (JSON.parse(data) as unknown) : data;
     const message = parseMessage(rawMessage);
     const timestamp = requiredString(message.metadata.message_timestamp);
+    if (message.metadata.message_type !== "session_welcome") {
+      this.#resetWatchdog(connectionGeneration, socket);
+    }
     switch (message.metadata.message_type) {
       case "session_welcome":
         await this.#handleWelcome(message, recreateSubscriptions, connectionGeneration, socket);
@@ -358,6 +376,15 @@ export class TwitchEventSubClient {
           occurredAt,
           { lastMessageAt: occurredAt }
         );
+        if (error instanceof TwitchEventSubApiError && error.status === 401) {
+          this.#detachSocket(socket);
+          try {
+            await this.#onAuthorizationFailure();
+          } catch {
+            // The persistent failure already provides the actionable diagnostic reference.
+          }
+          return;
+        }
         this.#retrySubscriptionSetup(connectionGeneration, socket);
         return;
       }
@@ -380,16 +407,23 @@ export class TwitchEventSubClient {
     } else if (this.#persistentFailure !== null) {
       this.#restorePersistentFailure(occurredAt);
     }
+    this.#startWatchdog(session.keepalive_timeout_seconds, connectionGeneration, socket);
   }
 
   #retrySubscriptionSetup(connectionGeneration: number, socket: TwitchEventSubSocket): void {
     if (!this.#isCurrentConnection(connectionGeneration, socket)) {
       return;
     }
-    const failedSocket = socket;
-    this.#socket = null;
-    failedSocket?.close();
+    this.#detachSocket(socket);
     this.#scheduleReconnect(connectionGeneration);
+  }
+
+  #detachSocket(socket: TwitchEventSubSocket): void {
+    this.#clearWatchdog();
+    if (this.#socket === socket) {
+      this.#socket = null;
+    }
+    socket.close();
   }
 
   #handleReconnect(message: TwitchSessionMessage, connectionGeneration: number): void {
@@ -415,6 +449,7 @@ export class TwitchEventSubClient {
     if (this.#stopped || this.#connection === null) {
       return;
     }
+    this.#clearWatchdog();
 
     if (this.#status.state === "error" && this.#status.message === "Twitch EventSub WebSocket error") {
       this.#recoverableFailureReferenceId = null;
@@ -437,6 +472,47 @@ export class TwitchEventSubClient {
         this.#openSocket(this.#baseUrl, true, connectionGeneration);
       }
     }, delayMs);
+  }
+
+  #startWatchdog(
+    keepaliveTimeoutSeconds: number | null | undefined,
+    connectionGeneration: number,
+    socket: TwitchEventSubSocket
+  ): void {
+    this.#watchdogDelayMs = typeof keepaliveTimeoutSeconds === "number"
+      ? keepaliveTimeoutSeconds * 1_000 + 1_000
+      : null;
+    this.#resetWatchdog(connectionGeneration, socket);
+  }
+
+  #resetWatchdog(connectionGeneration: number, socket: TwitchEventSubSocket): void {
+    this.#clearWatchdog(false);
+    if (this.#watchdogDelayMs === null) {
+      return;
+    }
+    this.#watchdogHandle = this.#scheduleWatchdog(() => {
+      this.#watchdogHandle = null;
+      if (!this.#isCurrentConnection(connectionGeneration, socket)) {
+        return;
+      }
+      this.#recordIssue(
+        "reconnecting",
+        "Twitch EventSub keepalive timed out",
+        this.#now().toISOString()
+      );
+      this.#detachSocket(socket);
+      this.#scheduleReconnect(connectionGeneration);
+    }, this.#watchdogDelayMs);
+  }
+
+  #clearWatchdog(clearDelay = true): void {
+    if (this.#watchdogHandle !== null) {
+      this.#cancelWatchdog(this.#watchdogHandle);
+      this.#watchdogHandle = null;
+    }
+    if (clearDelay) {
+      this.#watchdogDelayMs = null;
+    }
   }
 
   #isCurrentConnection(connectionGeneration: number, socket: TwitchEventSubSocket): boolean {
@@ -654,7 +730,11 @@ function sessionFromRecord(record: Record<string, unknown>): Exclude<TwitchSessi
     id: requiredString(record.id),
     status: requiredString(record.status),
     reconnect_url: typeof record.reconnect_url === "string" || record.reconnect_url === null ? record.reconnect_url : undefined,
-    connected_at: requiredString(record.connected_at)
+    connected_at: requiredString(record.connected_at),
+    keepalive_timeout_seconds:
+      typeof record.keepalive_timeout_seconds === "number" || record.keepalive_timeout_seconds === null
+        ? record.keepalive_timeout_seconds
+        : undefined
   };
 }
 

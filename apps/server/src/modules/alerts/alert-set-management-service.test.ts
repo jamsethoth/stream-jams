@@ -48,6 +48,30 @@ describe("AlertSetManagementService", () => {
     expect(detail.inventory.every((row) => !row.enabled)).toBe(true);
   });
 
+  it("creates a disabled needs-review alert from the canonical event starter template", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+
+    const created = await fixture.service.createAlert(starter!.id, {
+      eventType: "cheer",
+      name: "Big cheer"
+    });
+
+    expect(created).toMatchObject({
+      setId: starter!.id,
+      providerKind: "twitch",
+      eventType: "cheer",
+      name: "Big cheer",
+      kind: "default",
+      enabled: false,
+      reviewState: "needs-review",
+      targetProfileIds: ["landscape", "vertical"],
+      previewText: "Thanks for the cheer, {actor.displayName}!"
+    });
+    const persisted = await fixture.service.getSet(starter!.id);
+    expect(persisted.inventory).toContainEqual(created);
+  });
+
   it("keeps save and activation distinct and atomically replaces the active set", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();

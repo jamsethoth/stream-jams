@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, type CSSProperties } from "react";
 import type {
   OverlayComposition,
   OverlayElementLayout,
@@ -55,6 +55,19 @@ function OverlayInstructionLayer({
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
 }) {
   const completionReportedRef = useRef(false);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const reportFailure = useCallback((message: string) => {
+    if (completionReportedRef.current) {
+      return;
+    }
+
+    completionReportedRef.current = true;
+    onPlaybackEvent?.({
+      instructionId: instruction.id,
+      status: "failed",
+      message
+    });
+  }, [instruction.id, onPlaybackEvent]);
 
   useEffect(() => {
     onPlaybackEvent?.({
@@ -62,6 +75,10 @@ function OverlayInstructionLayer({
       status: "started"
     });
     const timeoutId = window.setTimeout(() => {
+      if (completionReportedRef.current) {
+        return;
+      }
+
       completionReportedRef.current = true;
       onPlaybackEvent?.({
         instructionId: instruction.id,
@@ -81,17 +98,17 @@ function OverlayInstructionLayer({
     window.speechSynthesis.speak(utterance);
   }, [instruction.tts]);
 
-  const reportFailure = (message: string) => {
-    if (completionReportedRef.current) {
+  const audioAssetId = instruction.audio?.assetId ?? null;
+  const audioVolume = instruction.audio?.volume ?? 1;
+  useEffect(() => {
+    const element = audioElementRef.current;
+    if (element === null || audioAssetId === null) {
       return;
     }
 
-    onPlaybackEvent?.({
-      instructionId: instruction.id,
-      status: "failed",
-      message
-    });
-  };
+    element.volume = Math.min(1, Math.max(0, audioVolume));
+    void element.play().catch((error: unknown) => reportFailure(audioStartFailureMessage(error)));
+  }, [audioAssetId, audioVolume, reportFailure]);
 
   return (
     <>
@@ -134,19 +151,23 @@ function OverlayInstructionLayer({
       )}
       {instruction.audio === null ? null : (
         <audio
-          autoPlay
           data-testid={`overlay-audio-${instruction.id}`}
-          onError={() => reportFailure("Audio playback failed")}
-          ref={(element) => {
-            if (element !== null && instruction.audio !== null) {
-              element.volume = Math.min(1, Math.max(0, instruction.audio.volume));
-            }
-          }}
+          onError={() => reportFailure("Audio playback failed. Confirm the audio file is supported, then retry.")}
+          preload="auto"
+          ref={audioElementRef}
           src={resolveAssetUrl(instruction.audio.assetId)}
         />
       )}
     </>
   );
+}
+
+function audioStartFailureMessage(error: unknown): string {
+  if (typeof error === "object" && error !== null && "name" in error && error.name === "NotAllowedError") {
+    return "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry.";
+  }
+
+  return "Audio playback could not start. Confirm the browser source is not muted and supports the audio file, then retry.";
 }
 
 function elementStyle(

@@ -20,13 +20,16 @@ import type {
   TwitchTokenGrant,
   TwitchValidatedToken
 } from "../modules/twitch/twitch-api-client.js";
-import type {
-  TwitchEventSubApiClient,
-  TwitchEventSubCreateSubscriptionInput,
-  TwitchEventSubCreateSubscriptionResult,
-  TwitchEventSubSocket
+import {
+  TwitchEventSubApiError,
+  type TwitchEventSubApiClient,
+  type TwitchEventSubCreateSubscriptionInput,
+  type TwitchEventSubCreateSubscriptionResult,
+  type TwitchEventSubSocket
 } from "../modules/twitch/twitch-eventsub-client.js";
-import type { OsCredentialAdapter } from "../modules/security/os-secret-store.js";
+import type {
+  OsCredentialAdapter
+} from "../modules/security/os-secret-store.js";
 import { runtimeSecretStoreUnavailableMessage } from "../modules/security/runtime-secret-store.js";
 import type { StreamerBotSocket } from "../modules/streamerbot/streamerbot-client.js";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
@@ -40,6 +43,86 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("projects overlay playback failures into operator diagnostics", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-07-18T01:45:00.000Z")
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    const profileKey = await composition.overlayAccessService.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "landscape"
+    });
+    const messages: unknown[] = [];
+
+    await composition.app.ready();
+    const socket = await composition.app.injectWS(
+      moduleOverlayWebSocketPath({
+        moduleId: "alerts",
+        purpose: "live",
+        overlayKey: profileKey.rawKey,
+        targetProfileId: "landscape"
+      }),
+      {},
+      { onInit(webSocket) { webSocket.on("message", (data) => messages.push(JSON.parse(data.toString()) as unknown)); } }
+    );
+    await waitFor(() => messages.some((message) => isGatewayMessage(message, "overlay.connected")));
+
+    socket.send(JSON.stringify({
+      type: "overlay.playback.failed",
+      instructionId: "instruction-audio-blocked",
+      message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
+    }));
+
+    await waitFor(async () => {
+      const response = await composition.app.inject({
+        method: "GET",
+        url: "/management/diagnostics/workspace",
+        headers: authHeaders
+      });
+      const workspace = response.json() as { readonly rawLogs: readonly Record<string, unknown>[] };
+      return workspace.rawLogs.some((entry) => entry.referenceId === "instruction-audio-blocked");
+    });
+    const workspace = (await composition.app.inject({
+      method: "GET",
+      url: "/management/diagnostics/workspace",
+      headers: authHeaders
+    })).json() as {
+      readonly problems: readonly Record<string, unknown>[];
+      readonly rawLogs: readonly Record<string, unknown>[];
+    };
+
+    expect(workspace.problems).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        area: "outputs",
+        referenceId: "instruction-audio-blocked",
+        summary: expect.stringContaining("Audio playback was blocked by the browser"),
+        correction: expect.objectContaining({ label: "Open browser sources" })
+      })
+    ]));
+    expect(workspace.rawLogs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: "overlay.playback.failed",
+        referenceId: "instruction-audio-blocked",
+        message: expect.stringContaining("Audio playback was blocked by the browser")
+      })
+    ]));
+    socket.close();
+  });
+
   it("writes Twitch ingestion failures with the same source reference exposed by runtime status", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({
@@ -101,20 +184,24 @@ describe("runtime app composition smoke", () => {
     });
   }, 30_000);
 
-  it("switches persistent intake to Streamer.bot without invalidating canonical alerts", async () => {
+  it("switches persistent intake between Twitch and Streamer.bot without reauthorization", async () => {
     const testRoot = await createTemporaryDirectory();
     const credentials = new RecordingCredentialAdapter();
     let currentTime = new Date("2026-07-17T12:00:00.000Z");
     const twitchSockets: ControlledTwitchSocket[] = [];
     const streamerBotSockets: ControlledStreamerBotSocket[] = [];
     const eventSubApiClient = new RecordingTwitchEventSubApiClient();
+    eventSubApiClient.failNextWithUnauthorized = true;
+    const twitchApiClient = new RecordingTwitchApiClient();
+    const recurringCallbacks: (() => void)[] = [];
+    const recurringDelays: number[] = [];
     const composition = await createRuntimeAppComposition({
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
       configStore: new StaticConfigStore(createConfig(testRoot)),
       credentialAdapter: credentials,
       environment: { TWITCH_CLIENT_ID: "test-client" },
-      twitchApiClient: new RecordingTwitchApiClient(),
+      twitchApiClient,
       twitchEventSubApiClient: eventSubApiClient,
       twitchEventSubSocketFactory: () => {
         const socket = new ControlledTwitchSocket();
@@ -126,6 +213,12 @@ describe("runtime app composition smoke", () => {
         streamerBotSockets.push(socket);
         return socket;
       },
+      scheduleRecurring(callback, delayMs) {
+        recurringCallbacks.push(callback);
+        recurringDelays.push(delayMs);
+        return callback;
+      },
+      cancelRecurring() {},
       now: () => currentTime
     });
     runtimeCompositions.push(composition);
@@ -150,13 +243,30 @@ describe("runtime app composition smoke", () => {
       payload: { name: "Twitch", kind: "twitch", configuration: {} }
     });
     expect(twitchRegistration.statusCode, twitchRegistration.body).toBe(201);
+    const twitchProviderId = (twitchRegistration.json() as {
+      readonly provider: { readonly provider: { readonly id: string } };
+    }).provider.provider.id;
     await waitFor(() => twitchSockets.length === 1);
     twitchSockets[0]?.emitWelcome();
-    await waitFor(() => eventSubApiClient.requests.length > 0);
+    await waitFor(() => twitchApiClient.refreshRequests.length === 1 && twitchSockets.length === 2);
+    twitchSockets[1]?.emitWelcome();
+    await waitFor(() => eventSubApiClient.requests.length > 1);
+    expect(recurringDelays).toEqual([60 * 60 * 1_000]);
+    expect(twitchApiClient.validateRequests).toHaveLength(4);
+
+    recurringCallbacks[0]?.();
+    await waitFor(() => twitchApiClient.validateRequests.length === 5);
+    expect(twitchSockets).toHaveLength(2);
 
     const sets = await composition.app.inject({ method: "GET", url: "/management/alert-sets", headers: authHeaders });
     const setId = (sets.json() as readonly { readonly id: string }[])[0]!.id;
     const setDetail = await composition.app.inject({ method: "GET", url: `/management/alert-sets/${setId}`, headers: authHeaders });
+    expect((setDetail.json() as {
+      readonly browserSources: readonly { readonly targetProfileId: string; readonly purpose: string }[];
+    }).browserSources).toEqual([
+      expect.objectContaining({ targetProfileId: "landscape", purpose: "live" }),
+      expect.objectContaining({ targetProfileId: "vertical", purpose: "live" })
+    ]);
     const alertId = (setDetail.json() as { readonly inventory: readonly { readonly id: string }[] }).inventory[0]!.id;
     const enabled = await composition.app.inject({
       method: "PATCH",
@@ -213,6 +323,17 @@ describe("runtime app composition smoke", () => {
       expect.objectContaining({ kind: "twitch", active: false, liveStatus: "not-running" }),
       expect.objectContaining({ kind: "streamerbot", active: true, liveStatus: "healthy" })
     ]));
+    const inactiveTwitchAuth = await composition.app.inject({
+      method: "GET",
+      url: "/twitch/auth/status",
+      headers: authHeaders
+    });
+    expect(inactiveTwitchAuth.json()).toMatchObject({
+      connected: true,
+      account: { accountId: "141981764" }
+    });
+    expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-2");
+    expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-2");
 
     await streamerBotSockets[1]!.emitEvent({
       timeStamp: "2026-07-17T12:04:00.000Z",
@@ -225,13 +346,29 @@ describe("runtime app composition smoke", () => {
     });
     await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === 1);
 
-    const deactivation = await composition.app.inject({
+    const twitchReactivation = await composition.app.inject({
       method: "POST",
-      url: `/management/providers/${streamerBotProviderId}/deactivate`,
+      url: `/management/providers/${twitchProviderId}/activate`,
+      headers: authHeaders,
+      payload: { confirmWarnings: false }
+    });
+    expect(twitchReactivation.statusCode, twitchReactivation.body).toBe(200);
+    await waitFor(() => twitchSockets.length === 3);
+    twitchSockets[2]?.emitWelcome();
+    await waitFor(() => composition.twitchEventSubRuntimeService.getStatus().state === "connected");
+    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("idle");
+    expect(twitchApiClient.deviceStartRequests).toHaveLength(1);
+    expect(twitchApiClient.devicePollRequests).toHaveLength(1);
+    expect(twitchApiClient.refreshRequests).toHaveLength(1);
+    const reactivatedSources = await composition.app.inject({
+      method: "GET",
+      url: "/management/providers?capability=event-source",
       headers: authHeaders
     });
-    expect(deactivation.statusCode).toBe(200);
-    expect(composition.streamerBotRuntimeService.getStatus().state).toBe("idle");
+    expect(reactivatedSources.json()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "twitch", active: true, liveStatus: "healthy" }),
+      expect.objectContaining({ kind: "streamerbot", active: false, liveStatus: "not-running" })
+    ]));
   });
 
   it("serves local runtime surfaces and representative adapters from one composition factory", async () => {
@@ -1017,6 +1154,8 @@ class FailingCredentialAdapter implements OsCredentialAdapter {
 class RecordingTwitchApiClient implements TwitchApiClient {
   readonly deviceStartRequests: TwitchDeviceAuthorizationRequest[] = [];
   readonly devicePollRequests: TwitchDeviceTokenRequest[] = [];
+  readonly validateRequests: { readonly accessToken: string }[] = [];
+  readonly refreshRequests: Parameters<TwitchApiClient["refreshUserToken"]>[0][] = [];
 
   async startDeviceAuthorization(input: TwitchDeviceAuthorizationRequest) {
     this.deviceStartRequests.push(input);
@@ -1043,11 +1182,19 @@ class RecordingTwitchApiClient implements TwitchApiClient {
     };
   }
 
-  async refreshUserToken(): Promise<TwitchTokenGrant> {
-    throw new Error("Twitch token refresh must not run in runtime composition smoke tests");
+  async refreshUserToken(input: Parameters<TwitchApiClient["refreshUserToken"]>[0]): Promise<TwitchTokenGrant> {
+    this.refreshRequests.push(input);
+    return {
+      accessToken: "access-token-2",
+      refreshToken: "refresh-token-2",
+      expiresIn: 14_400,
+      scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
+      tokenType: "bearer"
+    };
   }
 
-  async validateToken(): Promise<TwitchValidatedToken> {
+  async validateToken(input: { readonly accessToken: string }): Promise<TwitchValidatedToken> {
+    this.validateRequests.push(input);
     return {
       clientId: "test-client",
       login: "streamer",
@@ -1068,9 +1215,14 @@ class RecordingTwitchApiClient implements TwitchApiClient {
 
 class RecordingTwitchEventSubApiClient implements TwitchEventSubApiClient {
   readonly requests: TwitchEventSubCreateSubscriptionInput[] = [];
+  failNextWithUnauthorized = false;
 
   async createSubscription(input: TwitchEventSubCreateSubscriptionInput): Promise<TwitchEventSubCreateSubscriptionResult> {
     this.requests.push(input);
+    if (this.failNextWithUnauthorized) {
+      this.failNextWithUnauthorized = false;
+      throw new TwitchEventSubApiError(401);
+    }
     return {
       id: "subscription-" + this.requests.length,
       status: "enabled",

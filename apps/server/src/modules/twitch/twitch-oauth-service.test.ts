@@ -9,6 +9,7 @@ import type {
   TwitchRefreshTokenRequest,
   TwitchTokenGrant
 } from "./twitch-api-client.js";
+import { TwitchApiHttpError } from "./twitch-api-client.js";
 import type { TwitchAccount, TwitchAccountRepository, TwitchConnectionStatus } from "./twitch-account-repository.js";
 import {
   createTwitchTokenSecretRef,
@@ -174,6 +175,55 @@ describe("TwitchOAuthService", () => {
     });
   });
 
+  it("validates a connected account without rotating valid credentials", async () => {
+    const now = createClock();
+    const { apiClient, service } = createService({ now: now.read });
+    apiClient.pollResult = { status: "granted", grant: createTokenGrant("1") };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+    await service.pollConnection({ authorizationId: authorization.authorizationId });
+    apiClient.validateRequests.length = 0;
+
+    await expect(service.validateConnectedAccount()).resolves.toMatchObject({
+      refreshed: false,
+      connection: { connected: true }
+    });
+
+    expect(apiClient.validateRequests).toEqual([{ accessToken: "access-token-1" }]);
+    expect(apiClient.refreshRequests).toEqual([]);
+  });
+
+  it("refreshes once when connected-account validation receives HTTP 401", async () => {
+    const now = createClock();
+    const notifications: TwitchConnectionStatus[] = [];
+    const { apiClient, secretStore, service } = createService({
+      now: now.read,
+      onConnectionChanged(status) {
+        notifications.push(status);
+      }
+    });
+    apiClient.pollResult = { status: "granted", grant: createTokenGrant("1") };
+    const authorization = await service.createConnectionStart();
+    now.advance(5_000);
+    await service.pollConnection({ authorizationId: authorization.authorizationId });
+    apiClient.validateRequests.length = 0;
+    notifications.length = 0;
+    apiClient.validateError = new TwitchApiHttpError(401);
+
+    await expect(service.validateConnectedAccount({ notifyConnectionChanged: false })).resolves.toMatchObject({
+      refreshed: true,
+      connection: { connected: true }
+    });
+
+    expect(apiClient.validateRequests).toEqual([
+      { accessToken: "access-token-1" },
+      { accessToken: "access-token-2" }
+    ]);
+    expect(apiClient.refreshRequests).toEqual([{ clientId: "client-id", refreshToken: "refresh-token-1" }]);
+    await expect(secretStore.getSecret(createTwitchTokenSecretRef("141981764", "access_token"))).resolves.toBe("access-token-2");
+    expect(notifications).toEqual([]);
+  });
+
   it("does not persist metadata or report success when credential storage fails", async () => {
     const now = createClock();
     const repository = new InMemoryTwitchAccountRepository();
@@ -306,6 +356,7 @@ class FakeTwitchApiClient implements TwitchApiClient {
   readonly validateRequests: { readonly accessToken: string }[] = [];
   pollError: Error | undefined;
   pollResult: TwitchDeviceTokenPollResult = { status: "pending" };
+  validateError: Error | null = null;
 
   async startDeviceAuthorization(input: TwitchDeviceAuthorizationRequest) {
     this.startRequests.push(input);
@@ -333,6 +384,11 @@ class FakeTwitchApiClient implements TwitchApiClient {
 
   async validateToken(input: { readonly accessToken: string }) {
     this.validateRequests.push(input);
+    if (this.validateError !== null) {
+      const error = this.validateError;
+      this.validateError = null;
+      throw error;
+    }
     return {
       clientId: "client-id",
       login: "streamer",

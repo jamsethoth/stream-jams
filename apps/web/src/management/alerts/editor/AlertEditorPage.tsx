@@ -74,8 +74,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [sampleDraft, setSampleDraft] = useState("{}");
   const [sampleError, setSampleError] = useState<string | null>(null);
-  const [includeAudio, setIncludeAudio] = useState(false);
-  const [includeTts, setIncludeTts] = useState(false);
+  const [includeAudio, setIncludeAudio] = useState(true);
+  const [includeTts, setIncludeTts] = useState(true);
   const [preview, setPreview] = useState(false);
   const [previewRunId, setPreviewRunId] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -181,6 +181,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const query = search.trim().toLowerCase();
     return (setDetail?.inventory ?? []).filter((alert) => query === "" || `${alert.name} ${alert.eventType}`.toLowerCase().includes(query));
   }, [search, setDetail]);
+  const validationIssues = useMemo(() => (setDetail?.overview.validationIssues ?? []).filter((issue) =>
+    (issue.alertId === null || issue.alertId === props.alertId) &&
+    (issue.targetProfileId === null || issue.targetProfileId === profileId)
+  ), [profileId, props.alertId, setDetail]);
 
   function updateDocument(update: (document: AlertEditorDocument) => AlertEditorDocument) {
     setEditor((current) => current === null ? null : applyEditorUpdate(current, update));
@@ -318,6 +322,23 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
       {error === null ? null : <ManagementErrorBanner error={error} />}
       {notice === null ? null : <p className="alert-editor-page__notice" role="status">{notice}</p>}
+      {validationIssues.length === 0 ? null : (
+        <section aria-label="Validation issues" className="alert-editor-page__validation">
+          <div>
+            <strong>Validation issues</strong>
+            <span>{profileLabel(profileId)} profile and set-wide checks</span>
+          </div>
+          <ul>
+            {validationIssues.map((issue) => (
+              <li className={`alert-editor-page__validation-issue alert-editor-page__validation-issue--${issue.severity}`} key={issue.id}>
+                <span className="alert-editor-page__validation-severity">{issue.severity === "blocker" ? "Blocker" : "Warning"}</span>
+                <div><strong>{issue.message}</strong><span>{issue.nextStep}</span></div>
+                {issue.referenceId === null ? null : <code>{issue.referenceId}</code>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       <div className="alert-editor-page__workspace">
         <aside className="alert-editor-page__alerts" aria-label="Alerts in selected set">

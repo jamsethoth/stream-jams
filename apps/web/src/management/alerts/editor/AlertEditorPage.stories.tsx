@@ -95,7 +95,7 @@ export const DeliveryFailure: Story = {
       getAlertEditorDocument: async () => document,
       getAlertSet: async () => alertSetDetail(),
       sendAlertEditorTest: async () => {
-        throw new Error("No connected landscape test output. Reference ref-story-output.");
+        throw new Error("No connected landscape browser source. Reference ref-story-output.");
       }
     })
   },

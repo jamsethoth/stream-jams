@@ -293,19 +293,25 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - `Mark starter review done` is a set-level action, not a per-alert action.
 - Marking starter review done hides first-run checklist pressure but does not enable alerts.
 - Individual starter alerts still require explicit `Enable`.
-- A set list/switcher should be available near the overview.
+- Alert-set management uses one full-width expandable list; it does not reserve a separate selected-set overview panel.
+- The active set is expanded by default, and expanding another set reveals its alert inventory in place.
+- Alert-set actions such as activate, rename, duplicate, delete, and starter-review completion stay inline on the set row.
+- The selected set's alerts appear directly beneath its expanded row with search and filters.
+- Alert rows expose `Edit`, `Preview`, `Test`, and `Enable`/`Disable` inline.
+- Inline `Test` uses the saved alert document and built-in sample payload through the same delivery API as the focused editor. When multiple target profiles are available, the user chooses one before delivery.
+- Browser sources use a compact, collapsible module-level section above and outside alert-set management rather than a separate large panel or alert-set card. It is collapsed by default, retains readiness and refresh-failure rollups, and expands when deep-linked.
 - `Modules > Alerts` uses tabs for related views inside the module:
   - `Sets`
   - `Editor`
   - `Settings`
-- `Sets` contains active alert set overview, set switch/activation, alert inventory table, and validation.
-- `Sets` should include a table/list of available alert sets under the active-set summary.
+- `Sets` contains sibling Browser sources and Alert sets sections: Browser sources owns module output management, while Alert sets owns the expandable hierarchy, activation, inventory, and validation rollups.
 - Alert set table rows show status such as active, inactive, has blockers, or has warnings.
 - Alert rows and editor nodes can show multiple status badges when multiple states apply.
 - Use composable badges such as `Enabled`, `Disabled`, `Needs review`, `Invalid`, `Warning`, and `Live` instead of one combined status.
 - Status and validation badges should be actionable where practical, filtering or jumping to affected items.
-- Set overview validation should group results by target profile first, then event type.
-- Validation item details should show severity, affected profile/event/alert, human-readable cause, and primary fix action or deep link.
+- Collapsed set rows retain blocker, warning, and needs-review counts so validation state remains visible without opening a detail panel.
+- Alert rows show alert-specific validation counts inline; detailed messages, correction steps, and reference IDs appear in the focused editor for that alert and selected profile.
+- Set-wide validation messages also appear in the focused editor because they can affect the current alert's ability to activate with its set.
 - Inactive valid set row action is `Activate`, not `Enable`.
 - Inactive set with blockers should show `Review blockers`.
 - Inactive set with warnings can show `Activate...` and open a confirmation showing warnings.
@@ -313,7 +319,7 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Activation warnings allow activation with confirmation.
 - Active set row action should be `Open` or `Edit`, not a disabled activate action.
 - Activation confirmation should explain that the selected set replaces the current active set for live alerts.
-- Alert inventory on the Sets page shows only alerts for the selected set.
+- Alert inventory on the Sets page shows only alerts for the expanded selected set.
 - Cross-set global alert inventory is backlog unless a strong management need appears.
 - `Editor` is a full workspace with persistent alert tree/list, canvas, inspector, and preview/test/save controls.
 - Set overview and alert inventory rows should deep-link into `Editor` with the selected set/provider/event/variation.
@@ -350,8 +356,9 @@ It is not the final implementation spec. Update it as decisions change, then pro
 - Backlog:
   - Save-all or multi-alert draft editing.
 - `Modules > Alerts` should include an `Output` or `Browser sources` section on the Sets page, not a separate tab in the MVP.
-- The output section should show landscape and vertical URLs, copy actions, route-key regeneration, last connected client, and test send controls.
-- Output section should show `Connected`, `Disconnected`, or `Never connected` per target profile.
+- The output section should show landscape and vertical URLs, copy actions, route-key regeneration, selected-set profile state, and secondary listener telemetry.
+- Output readiness should be `Ready` or `Needs setup` from route-key URL availability; current listeners must not determine configuration readiness.
+- Listener telemetry should refresh every five seconds, retain the last known state on failure, and visibly become stale with an actionable error.
 - Copying output URL should show immediate success or failure feedback.
 - Copy failures should include a next step and log/reference ID when applicable.
 - Output URL display masks route keys by default.

@@ -158,6 +158,10 @@ describe("createHttpManagementApi", () => {
         expect(init.body).toBe(JSON.stringify({ name: "Seasonal" }));
         return jsonResponse({ ...overview, id: "set-seasonal", name: "Seasonal", active: false, starter: false });
       }
+      if (url === "/management/alert-sets/set-default/alerts" && init?.method === "POST") {
+        expect(init.body).toBe(JSON.stringify({ eventType: "cheer", name: "Big cheer" }));
+        return jsonResponse({ ...alertInventoryRow(), id: "alert-cheer", eventType: "cheer", name: "Big cheer" });
+      }
       if (url === "/management/alert-sets/set-default" && init?.method === "PATCH") {
         return jsonResponse({ ...overview, name: "Everyday" });
       }
@@ -182,6 +186,11 @@ describe("createHttpManagementApi", () => {
 
     await expect(api.getAlertSet("set-default")).resolves.toEqual(detail);
     await expect(api.createAlertSet({ name: "Seasonal" })).resolves.toMatchObject({ id: "set-seasonal" });
+    await expect(api.createAlert("set-default", { eventType: "cheer", name: "Big cheer" })).resolves.toMatchObject({
+      id: "alert-cheer",
+      enabled: false,
+      reviewState: "needs-review"
+    });
     await expect(api.renameAlertSet("set-default", { name: "Everyday" })).resolves.toMatchObject({ name: "Everyday" });
     await expect(api.duplicateAlertSet("set-default", { name: "Everyday copy" })).resolves.toMatchObject({ id: "set-copy" });
     await expect(api.getAlertSetActivationImpact("set-default")).resolves.toEqual(impact);

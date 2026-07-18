@@ -386,6 +386,9 @@ function createManagementApi(): ManagementApi {
     createAlertSet: vi.fn(async () => {
       throw new Error("not called");
     }),
+    createAlert: vi.fn(async () => {
+      throw new Error("not called");
+    }),
     renameAlertSet: vi.fn(async () => {
       throw new Error("not called");
     }),

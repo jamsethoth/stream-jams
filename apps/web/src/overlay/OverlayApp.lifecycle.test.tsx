@@ -1,0 +1,131 @@
+import type { OverlayClientMessage } from "./overlay-client.js";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { OverlayApp } from "./OverlayApp.js";
+
+const clientHarness = vi.hoisted(() => ({
+  close: vi.fn(),
+  onMessage: null as ((message: unknown) => void) | null,
+  reportCompleted: vi.fn(),
+  reportFailed: vi.fn(),
+  reportStarted: vi.fn()
+}));
+
+vi.mock("./overlay-client.js", async () => {
+  const actual = await vi.importActual<typeof import("./overlay-client.js")>("./overlay-client.js");
+  return {
+    ...actual,
+    connectOverlayClient: vi.fn((options: { readonly onMessage: (message: OverlayClientMessage) => void }) => {
+      clientHarness.onMessage = options.onMessage as (message: unknown) => void;
+      return {
+        close: clientHarness.close,
+        reporter: {
+          reportCompleted: clientHarness.reportCompleted,
+          reportFailed: clientHarness.reportFailed,
+          reportStarted: clientHarness.reportStarted
+        }
+      };
+    })
+  };
+});
+
+describe("OverlayApp playback lifecycle", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");
+  });
+
+  afterEach(() => {
+    cleanup();
+    clientHarness.onMessage = null;
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("removes an instruction after reporting its configured playback duration", () => {
+    render(<OverlayApp />);
+
+    act(() => {
+      clientHarness.onMessage?.({
+        type: "composition",
+        composition: {
+          overlayId: "default",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "landscape",
+          modules: [{ moduleId: "alerts", enabled: true, instructions: [] }]
+        }
+      });
+      clientHarness.onMessage?.({
+        type: "playback",
+        instruction: {
+          id: "instruction-test",
+          overlayId: "default",
+          moduleId: "alerts",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "landscape",
+          visual: null,
+          audio: null,
+          text: {
+            text: "Temporary test alert",
+            layout: { x: 10, y: 20, width: 300, height: 80, zIndex: 1 }
+          },
+          tts: null,
+          durationMs: 250
+        }
+      });
+    });
+
+    expect(screen.getByText("Temporary test alert")).toBeInTheDocument();
+    expect(clientHarness.reportStarted).toHaveBeenCalledWith("instruction-test");
+
+    act(() => vi.advanceTimersByTime(250));
+
+    expect(clientHarness.reportCompleted).toHaveBeenCalledWith("instruction-test");
+    expect(screen.queryByText("Temporary test alert")).not.toBeInTheDocument();
+  });
+
+  it("removes an instruction after reporting a playback failure", () => {
+    render(<OverlayApp />);
+
+    act(() => {
+      clientHarness.onMessage?.({
+        type: "composition",
+        composition: {
+          overlayId: "default",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "landscape",
+          modules: [{ moduleId: "alerts", enabled: true, instructions: [] }]
+        }
+      });
+      clientHarness.onMessage?.({
+        type: "playback",
+        instruction: {
+          id: "instruction-failed",
+          overlayId: "default",
+          moduleId: "alerts",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "landscape",
+          visual: {
+            assetId: "missing-image",
+            mediaType: "image",
+            layout: { x: 10, y: 20, width: 300, height: 80, zIndex: 1 }
+          },
+          audio: null,
+          text: null,
+          tts: null,
+          durationMs: 5_000
+        }
+      });
+    });
+
+    fireEvent.error(screen.getByTestId("overlay-visual-instruction-failed"));
+
+    expect(clientHarness.reportFailed).toHaveBeenCalledWith("instruction-failed", "Image playback failed");
+    expect(screen.queryByTestId("overlay-visual-instruction-failed")).not.toBeInTheDocument();
+  });
+});

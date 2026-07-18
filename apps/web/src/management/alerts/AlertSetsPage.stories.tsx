@@ -1,4 +1,4 @@
-import type { AlertSetDetail, AlertSetOverview, AlertValidationIssue } from "@stream-jams/core";
+import type { AlertCreateInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -18,15 +18,28 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ActiveSet: Story = {
-  args: { managementApi: api([activeSet], detail(activeSet)) }
+  args: { managementApi: api([activeSet], detail(activeSet)) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const browserSources = await canvas.findByRole("region", { name: "Browser sources" });
+    await expect(browserSources).toHaveClass("alert-sets-page__browser-source-band");
+    await expect(within(browserSources).getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");
+    const alertSets = canvas.getByRole("region", { name: "Alert sets" });
+    const selectedSet = canvas.getByRole("region", { name: "Default alert set" });
+    await expect(alertSets).toContainElement(selectedSet);
+    await expect(alertSets).not.toContainElement(browserSources);
+    await expect(within(selectedSet).getByRole("button", { name: "Collapse Default" })).toHaveAttribute("aria-expanded", "true");
+    await within(selectedSet).findByRole("button", { name: "Test New follower" });
+  }
 };
 
 export const InactiveSelectedSet: Story = {
   args: { managementApi: api([activeSet, inactiveSet], detailById()) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "View Seasonal" }));
-    await canvas.findByText("Saved, not active");
+    await userEvent.click(await canvas.findByRole("button", { name: "Expand Seasonal" }));
+    const selectedSet = await canvas.findByRole("region", { name: "Seasonal alert set" });
+    await within(selectedSet).findByText("Inactive");
   }
 };
 
@@ -38,7 +51,7 @@ export const ActivationBlocked: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "View Seasonal" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Expand Seasonal" }));
     await userEvent.click(canvas.getByRole("button", { name: "Make Seasonal active" }));
     const dialog = await canvas.findByRole("dialog", { name: "Activate Seasonal?" });
     await expect(within(dialog).getByRole("button", { name: "Activate" })).toBeDisabled();
@@ -53,7 +66,7 @@ export const ActivationWarning: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "View Seasonal" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Expand Seasonal" }));
     await userEvent.click(canvas.getByRole("button", { name: "Make Seasonal active" }));
     await canvas.findByRole("button", { name: "Activate with warnings" });
   }
@@ -63,6 +76,27 @@ export const StarterNeedsReview: Story = {
   args: { managementApi: api([activeSet], detail(activeSet)) },
   play: async ({ canvasElement }) => {
     await within(canvasElement).findByRole("button", { name: "Mark starter review done" });
+  }
+};
+
+const createAlert = fn(async (setId: string, input: AlertCreateInput) => ({
+  ...alert("alert-cheer", input.name, input.eventType, setId, false, "needs-review"),
+  targetProfileIds: ["landscape" as const, "vertical" as const]
+}));
+
+export const CreateAlert: Story = {
+  args: {
+    managementApi: { ...api([activeSet], detail(activeSet)), createAlert },
+    onEditAlert: fn()
+  },
+  play: async ({ args, canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
+    const dialog = await canvas.findByRole("dialog", { name: "Add alert" });
+    await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
+    await expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Create alert" }));
+    await waitFor(() => expect(args.onEditAlert).toHaveBeenCalledWith(expect.objectContaining({ id: "alert-cheer" })));
   }
 };
 
@@ -77,7 +111,8 @@ export const CopyFailure: Story = {
     });
     try {
       const canvas = within(canvasElement);
-      await userEvent.click(await canvas.findByRole("button", { name: "Copy Landscape live URL" }));
+      await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
+      await userEvent.click(await canvas.findByRole("button", { name: "Copy Landscape URL" }));
       await canvas.findByText("The browser-source URL was not copied");
     } finally {
       console.error = reportError;
@@ -89,10 +124,28 @@ export const RegenerationConfirmation: Story = {
   args: { managementApi: api([activeSet], detail(activeSet)) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Regenerate Landscape live URL" }));
-    const dialog = await canvas.findByRole("dialog", { name: "Regenerate Landscape live URL?" });
+    await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Regenerate Landscape URL" }));
+    const dialog = await canvas.findByRole("dialog", { name: "Regenerate Landscape URL?" });
     await userEvent.type(within(dialog).getByLabelText("Type REGENERATE to continue"), "REGENERATE");
     await waitFor(() => expect(within(dialog).getByRole("button", { name: "Regenerate URL" })).toBeEnabled());
+  }
+};
+
+export const StatusRefreshFailure: Story = {
+  args: { managementApi: statusRefreshFailureApi() },
+  play: async ({ canvasElement }) => {
+    const reportError = console.error;
+    console.error = fn();
+    try {
+      const canvas = within(canvasElement);
+      await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
+      await canvas.findByText(/Connection status stale/u, {}, { timeout: 7_000 });
+      await expect(canvas.getByRole("alert")).toHaveTextContent("Unable to refresh browser-source status");
+      await expect(canvas.getByText("Listening now")).toBeVisible();
+    } finally {
+      console.error = reportError;
+    }
   }
 };
 
@@ -135,6 +188,20 @@ function api(
   });
 }
 
+function statusRefreshFailureApi() {
+  const source = detail(activeSet);
+  const managementApi = api([activeSet], source);
+  let reads = 0;
+  return {
+    ...managementApi,
+    getAlertSet: async () => {
+      reads += 1;
+      if (reads > 1) throw new Error("Local service request failed");
+      return source;
+    }
+  };
+}
+
 function detailById() {
   return (setId: string) => detail(setId === inactiveSet.id ? inactiveSet : activeSet);
 }
@@ -160,29 +227,9 @@ function detail(set: AlertSetOverview): AlertSetDetail {
         copyableUrlStatus: "available"
       },
       {
-        id: "module:alerts:landscape:test",
-        targetProfileId: "landscape",
-        purpose: "test",
-        connectionState: "never-connected",
-        lastConnectedAt: null,
-        keyId: "key-test-landscape",
-        url: "http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_story_test?profile=landscape",
-        copyableUrlStatus: "available"
-      },
-      {
         id: "module:alerts:vertical:live",
         targetProfileId: "vertical",
         purpose: "live",
-        connectionState: "never-connected",
-        lastConnectedAt: null,
-        keyId: null,
-        url: null,
-        copyableUrlStatus: "create-required"
-      },
-      {
-        id: "module:alerts:vertical:test",
-        targetProfileId: "vertical",
-        purpose: "test",
         connectionState: "never-connected",
         lastConnectedAt: null,
         keyId: null,
@@ -213,7 +260,7 @@ function overview(id: string, name: string, active: boolean): AlertSetOverview {
 function alert(
   id: string,
   name: string,
-  eventType: "follow" | "raid" | "subscription" | "channel_point_redemption",
+  eventType: "follow" | "raid" | "subscription" | "resubscription" | "cheer" | "channel_point_redemption",
   setId: string,
   enabled: boolean,
   reviewState: "ready" | "needs-review"

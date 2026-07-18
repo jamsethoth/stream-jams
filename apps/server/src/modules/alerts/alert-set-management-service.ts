@@ -1,11 +1,14 @@
 import {
+  alertCreateInputSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
   alertSetDetailSchema,
   alertSetMutationInputSchema,
   alertSetOverviewSchema,
+  alertStarterTemplates,
   evaluateAlertSetActivation,
   type AlertBrowserSourceView,
+  type AlertCreateInput,
   type AlertInventoryRow,
   type AlertRule,
   type AlertService,
@@ -66,16 +69,8 @@ export interface AlertSetManagementServiceOptions {
   readonly listBrowserSources: () => Promise<readonly AlertBrowserSourceView[]>;
 }
 
-const starterAlerts = [
-  { name: "New follower", eventType: "follow", text: "Thanks for following, {actor.displayName}!" },
-  { name: "New raid", eventType: "raid", text: "Welcome raiders from {actor.displayName}!" },
-  { name: "New subscriber", eventType: "subscription", text: "Thanks for subscribing, {actor.displayName}!" },
-  { name: "Custom reward", eventType: "channel_point_redemption", text: "{actor.displayName} redeemed a reward!" }
-] as const satisfies readonly {
-  readonly name: string;
-  readonly eventType: StreamEventType;
-  readonly text: string;
-}[];
+const starterAlertEventTypes: readonly StreamEventType[] = ["follow", "raid", "subscription", "channel_point_redemption"];
+const starterAlerts = alertStarterTemplates.filter((template) => starterAlertEventTypes.includes(template.eventType));
 
 export class AlertSetManagementService {
   readonly #alertService: ManagedAlertService;
@@ -125,6 +120,23 @@ export class AlertSetManagementService {
     const created = await this.#alertService.createCollection({ name: parsed.name, enabled: false });
     await this.#metadataRepository.saveSet(defaultSetMetadata(created.id));
     return (await this.getSet(created.id)).overview;
+  }
+
+  async createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow> {
+    const parsed = alertCreateInputSchema.parse(input);
+    await this.#findCollection(setId);
+    const template = alertStarterTemplates.find((candidate) => candidate.eventType === parsed.eventType);
+    if (template === undefined) {
+      throw new Error(`No starter alert template exists for ${parsed.eventType}`);
+    }
+    const created = await this.#alertService.createRule(starterRuleInput(setId, template, parsed.name));
+    await this.#metadataRepository.saveRule({
+      ruleId: created.id,
+      providerKind: "twitch",
+      reviewState: "needs-review",
+      targetProfileIds: ["landscape", "vertical"]
+    });
+    return this.#toInventoryRow(setId, created);
   }
 
   async renameSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview> {
@@ -462,10 +474,11 @@ function defaultSetMetadata(setId: string): AlertSetMetadata {
 
 function starterRuleInput(
   setId: string,
-  definition: (typeof starterAlerts)[number]
+  definition: (typeof alertStarterTemplates)[number],
+  name: string = definition.defaultName
 ): Parameters<ManagedAlertService["createRule"]>[0] {
   return {
-    name: definition.name,
+    name,
     eventType: definition.eventType,
     enabled: false,
     collectionIds: [setId],

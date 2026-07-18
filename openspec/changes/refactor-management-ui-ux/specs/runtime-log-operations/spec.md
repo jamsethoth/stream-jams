@@ -27,6 +27,12 @@ The system SHALL provide Problems, Events, and Raw logs diagnostics views over s
 - **AND** provider status and management error detail expose that reference ID
 - **AND** repeated status reads do not create duplicate diagnostic entries for the same failure
 
+#### Scenario: Overlay playback failure creates traceable evidence
+
+- **WHEN** an overlay client reports that browser playback failed
+- **THEN** the runtime records redacted error evidence with the instruction ID as its reference ID
+- **AND** the failure is discoverable in Problems and Raw logs without exposing it on the live overlay
+
 ### Requirement: Diagnostic Correction Links Preserve Context
 
 The system SHALL link diagnostic failures to the provider, alert, asset, browser-source output, or settings location that can correct them.

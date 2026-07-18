@@ -202,6 +202,40 @@ describe("AlertEditorService", () => {
     }));
   });
 
+  it("includes a configured audio layer when test audio is enabled", async () => {
+    const harness = createHarness();
+    const document = await harness.service.getDocument(rule.id);
+    const audioLayer = {
+      id: "layer-audio",
+      name: "Celebration sound",
+      type: "audio" as const,
+      visible: true,
+      order: document.layers.length,
+      animation: document.layers[0]!.animation,
+      assetId: "asset-audio",
+      volume: 0.65
+    };
+
+    await harness.service.sendTest(rule.id, {
+      document: { ...document, layers: [...document.layers, audioLayer] },
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James" },
+      includeAudio: true,
+      includeTts: true
+    });
+
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      alerts: expect.arrayContaining([
+        expect.objectContaining({
+          variantId: audioLayer.id,
+          overlayInstruction: expect.objectContaining({
+            audio: { assetId: "asset-audio", volume: 0.65 }
+          })
+        })
+      ])
+    }));
+  });
+
   it("rolls back rule, metadata, and document writes when the final save fails", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const rules = new SqliteAlertRepository(database.connection);

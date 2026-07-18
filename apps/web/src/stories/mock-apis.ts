@@ -80,6 +80,20 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async createAlertSet(input) {
       return emptyAlertSet("set-story", input.name);
     },
+    async createAlert(setId, input) {
+      return {
+        id: "alert-story",
+        setId,
+        providerKind: "twitch" as const,
+        eventType: input.eventType,
+        name: input.name,
+        kind: "default" as const,
+        enabled: false,
+        reviewState: "needs-review" as const,
+        targetProfileIds: ["landscape" as const, "vertical" as const],
+        previewText: "Starter alert preview"
+      };
+    },
     async renameAlertSet(setId, input) {
       return emptyAlertSet(setId, input.name);
     },

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  alertCreateInputSchema,
   alertSetActivationImpactSchema,
+  alertBrowserSourceViewSchema,
   alertSetDetailSchema,
   alertSetMutationInputSchema,
   alertSetOverviewSchema
@@ -78,6 +80,19 @@ describe("alert set management contracts", () => {
     expect(parsed.browserSources[0]?.targetProfileId).toBe("landscape");
   });
 
+  it("rejects separate test-purpose browser sources from alert management", () => {
+    expect(alertBrowserSourceViewSchema.safeParse({
+      id: "module:alerts:landscape:test",
+      targetProfileId: "landscape",
+      purpose: "test",
+      connectionState: "never-connected",
+      lastConnectedAt: null,
+      keyId: null,
+      url: null,
+      copyableUrlStatus: "create-required"
+    }).success).toBe(false);
+  });
+
   it("parses activation impact separately from saved set state", () => {
     expect(
       alertSetActivationImpactSchema.parse({
@@ -95,6 +110,14 @@ describe("alert set management contracts", () => {
   it("requires a non-empty set name for create and rename commands", () => {
     expect(alertSetMutationInputSchema.parse({ name: "  Seasonal  " }).name).toBe("Seasonal");
     expect(() => alertSetMutationInputSchema.parse({ name: "   " })).toThrow();
+  });
+
+  it("accepts canonical event types for alert creation and trims the alert name", () => {
+    expect(alertCreateInputSchema.parse({ eventType: "cheer", name: "  New cheer  " })).toEqual({
+      eventType: "cheer",
+      name: "New cheer"
+    });
+    expect(alertCreateInputSchema.safeParse({ eventType: "twitch.raid", name: "Raid" }).success).toBe(false);
   });
 
   it("retains the original overview validation behavior", () => {

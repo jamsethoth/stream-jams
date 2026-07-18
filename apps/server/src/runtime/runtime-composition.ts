@@ -130,6 +130,8 @@ export interface RuntimeAppCompositionOptions {
   readonly generateOverlayAccessKeyId?: () => string;
   readonly generateRawOverlayRouteKey?: () => string;
   readonly generateOverlayClientId?: () => string;
+  readonly scheduleRecurring?: ((callback: () => void, delayMs: number) => unknown) | undefined;
+  readonly cancelRecurring?: ((handle: unknown) => void) | undefined;
 }
 
 export interface RuntimeAppComposition {
@@ -249,6 +251,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       playbackCoordinator.reportClientDisconnected(clientId);
     },
     onPlaybackReport(report) {
+      if (report.status === "failed") {
+        void runtimeLogger.error(
+          `Overlay playback failed: ${report.message ?? "No failure reason was reported."}`,
+          {
+            module: "overlay",
+            source: "overlay.playback.failed",
+            correlationId: report.instructionId,
+            processingId: null,
+            metadata: {
+              clientId: report.clientId,
+              instructionId: report.instructionId
+            }
+          }
+        );
+      }
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
       }
@@ -327,6 +344,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
     now
   });
+  const twitchAuthServiceRef: { current: TwitchOAuthService | null } = { current: null };
   const twitchEventSubClient = new TwitchEventSubClient({
     apiClient: options.twitchEventSubApiClient ?? new DefaultTwitchEventSubApiClient(),
     socketFactory: options.twitchEventSubSocketFactory ?? createNodeWebSocket,
@@ -336,6 +354,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         return;
       }
       await maintenanceGate.runIntake(() => eventIngestionService.ingestTwitchEventSubNotification(message));
+    },
+    onAuthorizationFailure: async () => {
+      const authService = twitchAuthServiceRef.current;
+      if (authService === null) throw new Error("Twitch authorization service is unavailable");
+      await authService.refreshConnectedAccount();
     },
     generateReferenceId: generateEventSourceReferenceId,
     onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "twitch", "twitch.eventsub", entry),
@@ -349,7 +372,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: generateEventSourceReferenceId,
     onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "twitch", "twitch.runtime", entry),
     now,
-    secretStore
+    secretStore,
+    async validateConnectedAccount() {
+      const authService = twitchAuthServiceRef.current;
+      if (authService === null) throw new Error("Twitch authorization service is unavailable");
+      await authService.validateConnectedAccount({ notifyConnectionChanged: false });
+    }
   });
   const syncEventSourceRuntime = () => syncEventSourceRuntimes({
     repository: providerRegistrationRepository,
@@ -366,6 +394,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore,
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
   });
+  twitchAuthServiceRef.current = twitchAuthService;
+  const twitchValidationInterval = (options.scheduleRecurring ?? setInterval)(() => {
+    void twitchAuthService.validateConnectedAccount().catch(async () => {
+      await twitchEventSubRuntimeService.reportAuthorizationFailure();
+    });
+  }, 60 * 60 * 1_000);
+  if (typeof twitchValidationInterval === "object" && twitchValidationInterval !== null && "unref" in twitchValidationInterval) {
+    const unref = (twitchValidationInterval as { readonly unref?: () => void }).unref;
+    unref?.call(twitchValidationInterval);
+  }
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
     adapters: createProviderManagementAdapters({
@@ -422,6 +460,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           (output) =>
             output.scope === "module" &&
             output.moduleId === "alerts" &&
+            output.purpose === "live" &&
             (output.targetProfileId === "landscape" || output.targetProfileId === "vertical")
         )
         .map((output) => {
@@ -440,7 +479,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           return {
             id: output.id,
             targetProfileId: output.targetProfileId as "landscape" | "vertical",
-            purpose: output.purpose,
+            purpose: "live" as const,
             connectionState: connected ? "connected" : latest === null ? "never-connected" : "disconnected",
             lastConnectedAt: latest?.connectedAt ?? null,
             keyId: output.keyId,
@@ -734,6 +773,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     eventIngestionService,
     syncEventSourceRuntime,
     async close() {
+      (options.cancelRecurring ?? clearInterval)(twitchValidationInterval as ReturnType<typeof setInterval>);
       twitchEventSubRuntimeService.disconnect();
       streamerBotRuntimeService.disconnect();
       await app.close();

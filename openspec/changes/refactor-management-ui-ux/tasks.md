@@ -35,9 +35,24 @@
 
 - [x] 4.1 Replace the default Alerts surface with selected/active alert-set overview, set switching, validation, inventory, and starter-review actions.
 - [x] 4.2 Implement distinct save and activation flows with one active set, blockers, warnings, and live-impact summaries.
-- [x] 4.3 Move browser-source output management into Alerts and show landscape/vertical state, last connection, and test targets.
+- [x] 4.3 Move browser-source output management into Alerts and show landscape/vertical live state, configuration readiness, and listener telemetry.
 - [x] 4.4 Reuse existing route-key APIs with masked display, reveal/copy feedback, and connection-aware regeneration confirmation.
 - [x] 4.5 Add alert-set, starter, validation, copy-failure, output, and route-key tests and Storybook states.
+- [x] 4.6 Narrow the alert browser-source contract and server mapping to one live output per target profile while preserving test playback through that output.
+- [x] 4.7 Remove separate test-source cards and copy from the Alerts UI, stories, and browser regressions.
+- [x] 4.8 Replace listener-derived primary browser-source badges with readiness and selected-set profile state, retaining listener details as secondary telemetry.
+- [x] 4.9 Poll selected-set browser-source telemetry every five seconds, surface stale refresh failures, and update unit, Storybook, Playwright, and UX documentation coverage.
+- [x] 4.10 Add failing component and Playwright regressions for the compact browser-source band, expandable alert-set hierarchy, inline set/alert actions, and validation rollups.
+- [x] 4.11 Replace the selected-set overview/detail columns with a full-width expandable alert-set list and compact module-level browser-source band.
+- [x] 4.12 Add inline saved-alert Test with explicit profile choice, existing test-delivery APIs, visible success reference IDs, and actionable failure reporting.
+- [x] 4.13 Render alert-specific and set-wide validation messages with correction steps in the focused alert editor and update Storybook/UX guidance.
+- [x] 4.14 Run focused tests, frontend quality gates, strict OpenSpec validation, production rebuild, and service restart.
+- [x] 4.15 Add component regressions for standalone, default-collapsed Browser sources with persistent rollups and deep-link expansion.
+- [x] 4.16 Move Browser sources outside the Alert sets region and implement its accessible compact disclosure row.
+- [x] 4.17 Update Storybook and Playwright coverage, run frontend quality gates and strict OpenSpec validation, then rebuild and restart the service.
+- [x] 4.18 Add failing service, route, management-client, component, and browser regressions for creating an alert in the selected set.
+- [x] 4.19 Add the management alert-create command and an `Add alert` dialog that opens the new disabled needs-review alert in the focused editor.
+- [x] 4.20 Update Storybook coverage, run frontend and repository quality gates, validate OpenSpec strictly, then rebuild and restart the service.
 
 ## 5. Assets Library And Picker
 
@@ -55,6 +70,13 @@
 - [x] 6.4 Implement undo/redo, explicit save, revert, and the shared dirty guard across alert, set, profile, and route switches.
 - [x] 6.5 Implement built-in/session sample payloads, always-available canvas Preview, connected-output Send test, target selection, and blocked state.
 - [x] 6.6 Add editor domain, interaction, accessibility, Storybook, and Playwright coverage for all approved editor states.
+- [x] 6.7 Add failing regressions for default Send test audio/TTS and terminal overlay-instruction cleanup.
+- [x] 6.8 Include configured audio/TTS in Send test by default and remove completed or failed instructions from client rendering state.
+- [x] 6.9 Run focused and full frontend validation, strict OpenSpec validation, then rebuild and restart the local service.
+- [x] 6.10 Add failing regressions for automatic management-session renewal and rejected browser audio playback.
+- [x] 6.11 Renew rejected management sessions once and explicitly report browser audio start failures.
+- [x] 6.12 Record failed overlay playback as traceable operator diagnostics.
+- [x] 6.13 Run focused and full validation, strict OpenSpec validation, then rebuild and restart the local service.
 
 ## 7. Diagnostics
 

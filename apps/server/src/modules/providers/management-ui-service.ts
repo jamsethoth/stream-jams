@@ -1,11 +1,13 @@
 import {
   homeSetupSummarySchema,
+  type AlertCreateInput,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
   type AlertSetActivationImpact,
   type AlertSetActivationResult,
   type AlertSetDetail,
+  type AlertInventoryRow,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -51,6 +53,7 @@ type AlertSetService = Pick<
   | "listSets"
   | "getSet"
   | "createSet"
+  | "createAlert"
   | "renameSet"
   | "duplicateSet"
   | "getActivationImpact"
@@ -182,6 +185,10 @@ export class ManagementUiService {
 
   createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview> {
     return this.#options.alertSetService.createSet(input);
+  }
+
+  createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow> {
+    return this.#options.alertSetService.createAlert(setId, input);
   }
 
   renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview> {

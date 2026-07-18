@@ -149,6 +149,7 @@ function createService(
       listSets: async () => (activeSet === null ? [] : [activeSet]),
       getSet: vi.fn(),
       createSet: vi.fn(),
+      createAlert: vi.fn(),
       renameSet: vi.fn(),
       duplicateSet: vi.fn(),
       getActivationImpact: vi.fn(),

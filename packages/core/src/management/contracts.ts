@@ -215,10 +215,29 @@ export const alertInventoryRowSchema = z.object({
   previewText: z.string()
 });
 
+export const alertCreateInputSchema = z.object({
+  eventType: streamEventTypeSchema,
+  name: z.string().trim().min(1).max(120)
+});
+
+export const alertStarterTemplates = [
+  { eventType: "follow", label: "Follow", defaultName: "New follower", text: "Thanks for following, {actor.displayName}!" },
+  { eventType: "subscription", label: "Subscription", defaultName: "New subscriber", text: "Thanks for subscribing, {actor.displayName}!" },
+  { eventType: "resubscription", label: "Resubscription", defaultName: "Resubscription", text: "Thanks for resubscribing, {actor.displayName}!" },
+  { eventType: "cheer", label: "Cheer", defaultName: "New cheer", text: "Thanks for the cheer, {actor.displayName}!" },
+  { eventType: "raid", label: "Raid", defaultName: "New raid", text: "Welcome raiders from {actor.displayName}!" },
+  { eventType: "channel_point_redemption", label: "Channel point redemption", defaultName: "Custom reward", text: "{actor.displayName} redeemed a reward!" }
+] as const satisfies readonly {
+  readonly eventType: z.infer<typeof streamEventTypeSchema>;
+  readonly label: string;
+  readonly defaultName: string;
+  readonly text: string;
+}[];
+
 export const alertBrowserSourceViewSchema = z.object({
   id: nonEmptyStringSchema,
   targetProfileId: targetProfileIdSchema,
-  purpose: overlayPurposeSchema,
+  purpose: z.literal("live"),
   connectionState: z.enum(["connected", "disconnected", "never-connected"]),
   lastConnectedAt: isoDateTimeSchema.nullable(),
   keyId: nonEmptyStringSchema.nullable(),
@@ -726,6 +745,7 @@ export type AlertValidationIssue = z.infer<typeof alertValidationIssueSchema>;
 export type AlertOutputState = z.infer<typeof alertOutputStateSchema>;
 export type AlertSetOverview = z.infer<typeof alertSetOverviewSchema>;
 export type AlertInventoryRow = z.infer<typeof alertInventoryRowSchema>;
+export type AlertCreateInput = z.infer<typeof alertCreateInputSchema>;
 export type AlertBrowserSourceView = z.infer<typeof alertBrowserSourceViewSchema>;
 export type AlertSetDetail = z.infer<typeof alertSetDetailSchema>;
 export type AlertSetMutationInput = z.infer<typeof alertSetMutationInputSchema>;

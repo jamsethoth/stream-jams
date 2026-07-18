@@ -39,10 +39,12 @@ test("live module overlay renders a synthetic follow playback event", async ({ p
     id: "live-follow",
     purpose: "live",
     scope: "module",
-    text: "Live follow from Viewer"
+    text: "Live follow from Viewer",
+    durationMs: 500
   }));
 
   await expect(page.getByText("Live follow from Viewer")).toBeVisible();
+  await expect(page.getByText("Live follow from Viewer")).toHaveCount(0);
 });
 
 test("unified overlay renders enabled modules and excludes disabled modules", async ({ page }) => {

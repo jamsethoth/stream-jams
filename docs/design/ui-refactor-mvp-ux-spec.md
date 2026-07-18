@@ -330,7 +330,7 @@ Image and video rows show thumbnails.
 
 ## Alerts Module
 
-`Modules > Alerts` defaults to active alert set overview.
+`Modules > Alerts` defaults to the active alert set expanded in the set hierarchy.
 
 MVP tabs:
 
@@ -370,18 +370,20 @@ MVP tabs:
 
 Sets page contains:
 
-- Active alert set overview.
-- Set switch/activation.
-- Alert inventory for selected set.
-- Validation summary.
-- Browser-source output section.
+- A compact, collapsible Browser sources section above and outside alert-set management.
+- Full-width expandable alert-set list with inline set actions.
+- Alert inventory nested under the expanded selected set.
+- Inline alert actions for edit, preview, saved-alert test, and enable/disable.
+- Validation rollups on set and alert rows.
 
 Status rules:
 
 - Use composable badges: `Enabled`, `Disabled`, `Needs review`, `Invalid`, `Warning`, `Live`.
 - Badges should be actionable where practical.
-- Validation groups by target profile, then event type.
-- Validation details show severity, affected profile/event/alert, cause, and fix action/deep link.
+- Collapsed sets retain blocker, warning, and needs-review counts.
+- Alert rows show counts without expanding full error text into the management list.
+- Focused alert editor shows alert-specific and set-wide validation details relevant to the selected target profile, including cause, next step, and reference ID when available.
+- Inline `Test` loads the saved alert document, uses a built-in sample, and sends through the same delivery API as editor `Send test`; multiple available profiles require explicit profile choice.
 - Blockers prevent `Activate set`.
 - Warnings allow activation with confirmation.
 - Inactive valid set action: `Activate`.
@@ -397,9 +399,9 @@ Output section shows per target profile:
 - Vertical URL.
 - Copy action.
 - Route-key regeneration.
-- Last connected client.
-- Test send controls.
-- `Connected`, `Disconnected`, or `Never connected`.
+- Configuration readiness: `Ready` or `Needs setup`.
+- Selected-set profile state: enabled or disabled.
+- Secondary listener telemetry: `Listening now`, `Not listening`, and last seen time.
 
 Rules:
 
@@ -412,6 +414,13 @@ Rules:
 - Regeneration requires typed confirmation when key is in use or has recent connections.
 - Regeneration can use normal confirmation when no client ever connected.
 - Regeneration warns user to update OBS/browser-source URLs.
+- Listener telemetry refreshes every five seconds without a page reload.
+- Failed telemetry refresh retains the last known state, marks it stale, and shows an actionable error.
+- Current listeners do not determine whether saved browser-source configuration is ready.
+- Browser-source controls stay in a compact horizontal band and expand only secret URL content or confirmation flows when requested.
+- Browser sources are collapsed by default and retain readiness and stale-status rollups in the collapsed row.
+- Opening a Browser sources deep link expands the section before scrolling it into view.
+- Browser sources and Alert sets are sibling module sections; browser-source output is not presented as an alert set.
 
 Separate Output tab is backlog if output management grows.
 

@@ -61,6 +61,8 @@ Provider settings, alert-set edits, alert-editor documents, asset changes, route
 
 Event-source lists expose saved activation as `Usage` and transient runtime evidence as `Live status`. Setup is complete before registration, so list rows do not repeat a setup-ready state. Inactive sources report `Not running`; active sources report `Starting`, `Healthy`, `Reconnecting`, or `Error` from the actual provider runtime. The page polls the existing registered-provider query every five seconds, preserves selection, and retains the last known state while surfacing refresh failures.
 
+Browser-source cards use route-key URL availability for primary `Ready` or `Needs setup` state and show selected-set profile enablement separately. Current listener state is secondary runtime telemetry because OBS may connect or disconnect independently of saved configuration. The Alerts page polls the selected set every five seconds, updates only browser-source telemetry, and retains the last known state while marking failed refreshes stale and actionable.
+
 An event-source runtime failure is projected into the selected provider view as transient actionable evidence rather than persisted setup state. Provider runtimes and the event-ingestion pipeline generate a reference ID where each distinct failure originates, emit one redacted diagnostic entry with that ID, and carry the same ID through live status and management detail. Repeated reads reuse the ID for the same provider, occurrence time, and message; recovery or a later distinct occurrence receives a new ID. The existing management error banner shows the runtime message, next step, occurrence time, and reference ID, with a correction link to the Diagnostics workspace filtered by that reference. The table retains only the `Error` status so it remains scannable; selecting the row exposes the complete failure in the right detail panel.
 
 ### Model alerts independently from registered provider instances
@@ -70,6 +72,10 @@ Alert rules match canonical event type plus explicit conditions. Provider catalo
 ### Reuse output authorization and playback paths
 
 Browser-source outputs remain module/profile scoped and use existing overlay route-key authorization. Management masks keys by default and exposes reveal/copy/regenerate actions through authorized APIs. Editor Preview is local and always available; Send test uses the normalized playback/output path and requires a connected target.
+
+### Keep alert-set management compact and hierarchical
+
+The Alerts module presents browser-source readiness in a compact, collapsible module-level section above and outside alert-set management. The section is collapsed by default, retains readiness and stale-refresh rollups, and expands automatically when deep-linked. Alert sets use a separate full-width expandable hierarchy: set activation and rename/duplicate/delete actions stay on the set row, and the expanded selected set exposes its alerts with Edit, Preview, Test, and Enable/Disable actions inline. Validation is exception-focused: alert-specific blocker/warning counts appear on the affected alert row, set-wide and child counts roll up to the set row while collapsed, and detailed messages plus correction steps render in the focused alert editor. This removes the separate selected-set overview and validation panels without hiding activation blockers or actionable failures.
 
 ### Keep assets globally referenced by ID
 

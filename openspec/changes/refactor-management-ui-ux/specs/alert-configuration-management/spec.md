@@ -27,6 +27,21 @@ The system SHALL allow authorized management users to create, rename, duplicate,
 - **THEN** deletion is blocked
 - **AND** the system offers the applicable activate-another-set or reset-default recovery path
 
+#### Scenario: Alert sets use a compact expandable hierarchy
+
+- **WHEN** a management user opens the Alerts module
+- **THEN** alert sets appear as full-width expandable rows with activation, rename, duplicate, and delete actions inline
+- **AND** module-level Browser sources are outside the Alert sets region
+- **AND** expanding the selected set reveals its alerts with Edit, Preview, Test, and Enable/Disable actions inline
+- **AND** no separate selected-set overview panel is required
+
+#### Scenario: Validation rolls up without duplicating details
+
+- **WHEN** an alert or set has validation blockers, warnings, or review-required state
+- **THEN** the affected alert row shows the applicable severity and count
+- **AND** the alert-set row shows rolled-up counts while its alerts are collapsed
+- **AND** opening an affected alert shows the full messages and correction steps in the focused editor
+
 ### Requirement: Alert Sets Use Provider Event And Variation Hierarchy
 
 The system SHALL organize each alert set by provider catalog context, system-defined event type, event default, and conditional variations while using stable IDs for routing and references. Provider catalog context SHALL support authoring and sample payload selection without becoming an implicit runtime eligibility condition.
@@ -85,6 +100,14 @@ The system SHALL provide a distinct focused editor route with selected-set alert
 
 The system SHALL allow authorized management users to create, edit, enable, disable, duplicate, reset, and delete alert defaults and variations with layers, global asset references, per-profile layout, duration, conditions, weight, and priority.
 
+#### Scenario: Alert is created from the selected set
+
+- **WHEN** a management user chooses `Add alert` in an expanded alert set and selects a supported canonical event type
+- **THEN** the system creates a disabled alert from the built-in starter template for that event type
+- **AND** both target profiles and the alert are marked for review
+- **AND** the focused editor opens for the new alert without changing which alert set is active
+- **AND** creation failure remains visible with a human-readable cause, next step, and reference ID when available
+
 #### Scenario: Variant with media assets is saved
 
 - **WHEN** a management user selects visual and audio assets for an alert variation
@@ -121,7 +144,22 @@ The system SHALL provide separate editor Preview and Send test workflows: Previe
 
 - **WHEN** a management user sends a test for a connected target profile
 - **THEN** the system enqueues normalized test playback for the selected alert and output
+- **AND** configured audio and TTS are included by default unless the user explicitly disables them for the editor session
 - **AND** logs and history distinguish the item as test data
+
+#### Scenario: Completed test playback leaves the overlay
+
+- **WHEN** a rendered test instruction reaches its configured duration or reports playback failure
+- **THEN** the overlay reports the terminal playback state to the server
+- **AND** the terminal instruction is removed from the rendered overlay without waiting for a server response
+
+#### Scenario: Saved alert is tested from alert-set inventory
+
+- **WHEN** a management user chooses Test from an alert row
+- **THEN** the UI uses the saved alert document and its first built-in sample payload
+- **AND** one available target profile sends immediately while multiple available profiles require an explicit target choice
+- **AND** success names the target profile and reference ID
+- **AND** failure remains visible with a human-readable cause, next step, and reference ID
 
 #### Scenario: Test send is blocked without connected output
 

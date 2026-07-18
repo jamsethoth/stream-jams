@@ -50,6 +50,10 @@ export function OverlayApp() {
   }, [route]);
 
   const onPlaybackEvent = useCallback((event: OverlayPlaybackEvent) => {
+    if (event.status === "completed" || event.status === "failed") {
+      setComposition((current) => removeInstruction(current, event.instructionId));
+    }
+
     const reporter = connectionRef.current?.reporter;
     if (reporter === undefined) {
       return;
@@ -116,6 +120,28 @@ function appendInstruction(
     ...currentComposition,
     modules
   };
+}
+
+function removeInstruction(composition: OverlayComposition | null, instructionId: string): OverlayComposition | null {
+  if (composition === null) {
+    return null;
+  }
+
+  let changed = false;
+  const modules = composition.modules.map((moduleSnapshot): OverlayModuleSnapshot => {
+    const instructions = moduleSnapshot.instructions.filter((instruction) => instruction.id !== instructionId);
+    if (instructions.length === moduleSnapshot.instructions.length) {
+      return moduleSnapshot;
+    }
+
+    changed = true;
+    return {
+      ...moduleSnapshot,
+      instructions
+    };
+  });
+
+  return changed ? { ...composition, modules } : composition;
 }
 
 function instructionMatchesRoute(

@@ -64,6 +64,27 @@ The system SHALL refresh connected Twitch accounts with the client ID and stored
 - **WHEN** Twitch rejects an expired or invalid refresh token
 - **THEN** the system fails closed and directs the user to connect Twitch again
 
+### Requirement: Runtime token lifecycle recovery
+The system SHALL validate a connected Twitch token when EventSub starts and at least hourly while the app is running, SHALL automatically refresh an invalid access token once, and SHALL reconnect EventSub with the rotated token pair without user action.
+
+#### Scenario: Startup finds an expired access token
+- **WHEN** Twitch rejects the stored access token during startup validation
+- **THEN** the system refreshes and validates the token pair before creating EventSub subscriptions
+- **AND** the user is not asked to authorize Twitch again
+
+#### Scenario: EventSub subscription returns unauthorized
+- **WHEN** EventSub subscription creation returns HTTP 401
+- **THEN** the system stops retrying with the rejected access token, refreshes the token pair once, and reconnects EventSub
+
+#### Scenario: Automatic refresh fails
+- **WHEN** Twitch rejects the refresh token or token recovery otherwise fails
+- **THEN** EventSub stops retrying the rejected credentials
+- **AND** management reports an actionable reconnect requirement with a diagnostics reference ID
+
+#### Scenario: EventSub becomes silent
+- **WHEN** no notification or keepalive arrives within the session keepalive timeout
+- **THEN** the system treats the connection as lost and reconnects with bounded backoff
+
 ### Requirement: Management Device Code experience
 The Event Source wizard SHALL start Device Code OAuth from `Connect Twitch`, attempt to open Twitch activation, poll automatically, and keep an accessible fallback inside the wizard.
 
