@@ -31,6 +31,55 @@ describe("SettingsPanel", () => {
     expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
   });
 
+  it("opens the data folder and clears retained logs with visible completion", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+
+    render(<SettingsPanel managementApi={managementApi} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open data folder" }));
+    expect(managementApi.openDataFolder).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("status")).toHaveTextContent("Data folder opened");
+
+    await user.click(screen.getByRole("button", { name: "Clear old logs now" }));
+    expect(managementApi.clearOldLogs).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("status")).toHaveTextContent("3 old log files cleared");
+  });
+
+  it("disables maintenance actions and explains work while cleanup is busy", async () => {
+    const user = userEvent.setup();
+    let finishCleanup: ((result: { readonly deletedCount: number }) => void) | undefined;
+    const managementApi = createManagementApi({
+      clearOldLogs: vi.fn(() => new Promise<{ readonly deletedCount: number }>((resolve) => {
+        finishCleanup = resolve;
+      }))
+    });
+
+    render(<SettingsPanel managementApi={managementApi} />);
+    await user.click(await screen.findByRole("button", { name: "Clear old logs now" }));
+
+    expect(screen.getByRole("button", { name: "Clearing old logs..." })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Open data folder" })).toBeDisabled();
+    finishCleanup?.({ deletedCount: 0 });
+    expect(await screen.findByText("No expired log files needed clearing.")).toBeVisible();
+  });
+
+  it("shows a human-readable maintenance failure with next step and reference ID", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi({
+      openDataFolder: vi.fn(async () => {
+        throw new Error("A server error occurred. Use the error ID to find details in backend logs. (INTERNAL_SERVER_ERROR, err_open_folder)");
+      })
+    });
+
+    render(<SettingsPanel managementApi={managementApi} />);
+    await user.click(await screen.findByRole("button", { name: "Open data folder" }));
+
+    expect(await screen.findByText("Data folder was not opened")).toBeVisible();
+    expect(screen.getByText("Open the configured data folder manually, then check Diagnostics and retry.")).toBeVisible();
+    expect(screen.getByText("err_open_folder")).toBeVisible();
+  });
+
   it("restores the backup and restore hash target after async settings load", async () => {
     const scrollIntoView = vi.fn();
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
@@ -123,7 +172,7 @@ describe("SettingsPanel", () => {
 
 type SettingsApi = Pick<
   ManagementApi,
-  "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration"
+  "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
 >;
 
 function createManagementApi(overrides: Partial<SettingsApi> = {}): SettingsApi {
@@ -154,6 +203,8 @@ function createManagementApi(overrides: Partial<SettingsApi> = {}): SettingsApi 
       reconnectProviders: ["Twitch"],
       warnings: []
     })),
+    openDataFolder: vi.fn(async () => ({ dataDirectory: "C:/Users/James/.stream-jams/data" })),
+    clearOldLogs: vi.fn(async () => ({ deletedCount: 3 })),
     ...overrides
   };
 }

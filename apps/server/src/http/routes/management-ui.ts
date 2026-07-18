@@ -16,9 +16,11 @@ import {
   assetChangeImpactSchema,
   assetMediaTypeSchema,
   assetMetadataUpdateInputSchema,
+  clearOldLogsResultSchema,
   configurationBackupSummarySchema,
   diagnosticsWorkspaceViewSchema,
   homeSetupSummarySchema,
+  openDataFolderResultSchema,
   providerActivationResultSchema,
   providerActivationImpactSchema,
   providerCapabilitySchema,
@@ -44,9 +46,11 @@ import {
   type AssetChangeImpact,
   type AssetMediaType,
   type AssetMetadataUpdateInput,
+  type ClearOldLogsResult,
   type ConfigurationBackupSummary,
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
+  type OpenDataFolderResult,
   type ProviderActivationImpact,
   type ProviderActivationResult,
   type ProviderCapability,
@@ -129,6 +133,8 @@ export interface ManagementUiQueryService {
   deleteAsset(assetId: string): Promise<void>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
+  openDataFolder(): Promise<OpenDataFolderResult>;
+  clearOldLogs(): Promise<ClearOldLogsResult>;
 }
 
 export interface ManagementUiRouteDependencies {
@@ -532,6 +538,14 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
 
   app.get("/management/settings/backup-summary", { preHandler }, async () =>
     configurationBackupSummarySchema.parse(await service.getConfigurationBackupSummary())
+  );
+
+  app.post("/management/settings/open-data-folder", { preHandler }, async () =>
+    openDataFolderResultSchema.parse(await service.openDataFolder())
+  );
+
+  app.post("/management/settings/clear-old-logs", { preHandler }, async () =>
+    clearOldLogsResultSchema.parse(await service.clearOldLogs())
   );
 }
 

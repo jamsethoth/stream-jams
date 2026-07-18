@@ -62,6 +62,7 @@ import {
 } from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
 import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
+import { LogRetentionService } from "../modules/diagnostics/log-retention-service.js";
 import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.js";
 import { SqliteDiagnosticsLogRepository } from "../modules/diagnostics/sqlite-log-repository.js";
 import {
@@ -92,6 +93,7 @@ import {
   type RuntimeSecretStoreStatus
 } from "../modules/security/runtime-secret-store.js";
 import { createDefaultTtsProviderRegistry } from "../modules/tts/tts-provider-registry.js";
+import { LocalMaintenanceService, createPlatformPathOpener } from "../modules/settings/local-maintenance-service.js";
 import { StreamerBotClient, type StreamerBotSocket } from "../modules/streamerbot/streamerbot-client.js";
 import { createNodeStreamerBotSocket } from "../modules/streamerbot/node-streamerbot-socket.js";
 import {
@@ -228,10 +230,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const secretStore = runtimeSecretStore.secretStore;
   const redactor = createRedactor();
+  const logDirectory = join(initialConfig.storage.dataDirectory, "logs");
+  const logRetentionService = new LogRetentionService();
   const runtimeLogger = new RuntimeJsonlLogger({
-    logDirectory: join(initialConfig.storage.dataDirectory, "logs"),
+    logDirectory,
     settings: logSettings,
     redactor,
+    retentionService: logRetentionService,
+    now
+  });
+  const localMaintenanceService = new LocalMaintenanceService({
+    dataDirectory: initialConfig.storage.dataDirectory,
+    logDirectory,
+    logSettings,
+    logRetentionService,
+    pathOpener: createPlatformPathOpener(),
     now
   });
   const overlayOutputManagementService = new OverlayOutputManagementService({
@@ -688,7 +701,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     deleteAsset: (assetId) => assetLibraryService.deleteAsset(assetId),
     getDiagnosticsWorkspace: () =>
       diagnosticsService.getWorkspace({ limit: 200, runtimeLogLimit: 200, sinceHours: 2 }),
-    getConfigurationBackupSummary: () => configurationBackupService.summary()
+    getConfigurationBackupSummary: () => configurationBackupService.summary(),
+    openDataFolder: () => localMaintenanceService.openDataFolder(),
+    clearOldLogs: () => localMaintenanceService.clearOldLogs()
   });
   const overlayCompositionService = new DefaultOverlayCompositionService({
     configService: overlayModuleConfigService,

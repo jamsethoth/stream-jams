@@ -476,6 +476,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         </div>
       </header>
 
+      <section aria-labelledby="alert-editor-screen-guard-title" className="alert-editor-page__screen-guard">
+        <h3 id="alert-editor-screen-guard-title">Alert editor requires a larger screen</h3>
+        <p>Open this alert on a screen wider than 700px to edit layers and layouts.</p>
+      </section>
+
       {error === null ? null : <ManagementErrorBanner error={error} />}
       {notice === null ? null : <p className="alert-editor-page__notice" role="status">{notice}</p>}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event condition needs correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}

@@ -565,6 +565,8 @@ function createManagementApi(): ManagementApi {
       ],
       runtimeLogging: null
     })),
+    openDataFolder: vi.fn(async () => ({ dataDirectory: "C:/Users/James/.stream-jams/data" })),
+    clearOldLogs: vi.fn(async () => ({ deletedCount: 0 })),
     exportDebugDiagnostics: vi.fn(async () => ({
       generatedAt: "2026-05-31T02:05:00.000Z",
       debugExport: true as const,

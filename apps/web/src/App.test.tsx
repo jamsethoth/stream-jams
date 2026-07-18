@@ -211,6 +211,12 @@ function createManagementApi(): ManagementApi {
     async regenerateOverlayOutputKey() {
       throw new Error("Not implemented in test mock");
     },
+    async openDataFolder() {
+      return { dataDirectory: "C:/Users/James/.stream-jams/data" };
+    },
+    async clearOldLogs() {
+      return { deletedCount: 0 };
+    },
     async exportDiagnostics() {
       return {
         generatedAt: "2026-05-31T02:05:00.000Z",

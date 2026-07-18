@@ -72,7 +72,9 @@ describe("createHttpManagementApi", () => {
         },
         "/management/settings/backup": backupArchive(),
         "/management/settings/backup/preflight": backupPreflight(),
-        "/management/settings/backup/restore": backupRestoreResult()
+        "/management/settings/backup/restore": backupRestoreResult(),
+        "/management/settings/open-data-folder": { dataDirectory: "C:/Users/James/.stream-jams/data" },
+        "/management/settings/clear-old-logs": { deletedCount: 3 }
       };
 
       if (url in responses) {
@@ -97,6 +99,8 @@ describe("createHttpManagementApi", () => {
     expect(api.exportConfigurationBackup).toBeTypeOf("function");
     expect(api.preflightConfigurationRestore).toBeTypeOf("function");
     expect(api.restoreConfiguration).toBeTypeOf("function");
+    expect(api.openDataFolder).toBeTypeOf("function");
+    expect(api.clearOldLogs).toBeTypeOf("function");
 
     await expect(api.getHomeSetupSummary()).resolves.toMatchObject({ activeAlertSet: null });
     await expect(api.listRegisteredProviders("event-source")).resolves.toHaveLength(1);
@@ -121,6 +125,16 @@ describe("createHttpManagementApi", () => {
     await expect(api.exportConfigurationBackup()).resolves.toMatchObject({ manifest: { archiveVersion: 1 } });
     await expect(api.preflightConfigurationRestore(archive)).resolves.toMatchObject({ state: "valid" });
     await expect(api.restoreConfiguration({ archive, archiveId: backupPreflight().archiveId, confirmation: "RESTORE", regenerateRouteKeys: true })).resolves.toMatchObject({ state: "completed" });
+    await expect(api.openDataFolder()).resolves.toEqual({ dataDirectory: "C:/Users/James/.stream-jams/data" });
+    await expect(api.clearOldLogs()).resolves.toEqual({ deletedCount: 3 });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/management/settings/open-data-folder",
+      expect.objectContaining({ method: "POST" })
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "/management/settings/clear-old-logs",
+      expect.objectContaining({ method: "POST" })
+    );
   });
 
   it("rejects invalid UI refactor responses at the existing client boundary", async () => {
@@ -890,6 +904,8 @@ interface UiContractManagementApi {
   exportConfigurationBackup(): Promise<unknown>;
   preflightConfigurationRestore(archive: ReturnType<typeof backupArchive>): Promise<unknown>;
   restoreConfiguration(input: unknown): Promise<unknown>;
+  openDataFolder(): Promise<unknown>;
+  clearOldLogs(): Promise<unknown>;
 }
 
 function backupArchive() {

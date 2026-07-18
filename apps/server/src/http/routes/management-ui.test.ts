@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createServerApp, type ServerAppDependencies } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
@@ -52,6 +52,35 @@ describe("management UI contract routes", () => {
       error: {
         code: "INVALID_PROVIDER_CAPABILITY",
         message: "Provider capability must be event-source or tts"
+      }
+    });
+  });
+
+  it("runs protected local settings maintenance commands", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const opened = await app.inject({ method: "POST", url: "/management/settings/open-data-folder", headers: authHeaders });
+    const cleared = await app.inject({ method: "POST", url: "/management/settings/clear-old-logs", headers: authHeaders });
+
+    expect(opened.statusCode).toBe(200);
+    expect(opened.json()).toEqual({ dataDirectory: "C:/Users/James/.stream-jams/data" });
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json()).toEqual({ deletedCount: 3 });
+    expect(service.maintenanceCommands).toEqual(["open-data-folder", "clear-old-logs"]);
+  });
+
+  it("returns a reference ID when retained-log cleanup fails", async () => {
+    const { app, authHeaders, service } = await createApp();
+    service.failLogCleanup = true;
+
+    const response = await app.inject({ method: "POST", url: "/management/settings/clear-old-logs", headers: authHeaders });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        id: "err_settings_maintenance",
+        message: "A server error occurred. Use the error ID to find details in backend logs."
       }
     });
   });
@@ -396,7 +425,9 @@ async function createApp() {
     metadata: { appName: "stream-jams", version: "0.0.0" },
     managementUiQueryService: new StubManagementUiQueryService(),
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
-    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
+    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
+    generateServerErrorId: () => "err_settings_maintenance",
+    serverErrorLogger: vi.fn()
   } as ServerAppDependencies & { readonly managementUiQueryService: StubManagementUiQueryService };
 
   return {
@@ -413,6 +444,8 @@ class StubManagementUiQueryService {
   readonly alertSetCommands: unknown[][] = [];
   readonly assetCommands: unknown[][] = [];
   readonly editorCommands: unknown[][] = [];
+  readonly maintenanceCommands: string[] = [];
+  failLogCleanup = false;
 
   async getHomeSetupSummary() {
     return { readiness: [], activeAlertSet: null, actionableProblems: [] };
@@ -607,6 +640,11 @@ class StubManagementUiQueryService {
       name: "New follower",
       enabled: true,
       conditions: [],
+      variantConditions: [],
+      weight: 1,
+      priority: null,
+      cooldownSeconds: 0,
+      rulePriority: 0,
       durationMs: 5000,
       layers: [],
       targetProfiles: [
@@ -689,6 +727,17 @@ class StubManagementUiQueryService {
       secretExclusions: ["Provider credentials", "Overlay route keys"],
       blockers: []
     };
+  }
+
+  async openDataFolder() {
+    this.maintenanceCommands.push("open-data-folder");
+    return { dataDirectory: "C:/Users/James/.stream-jams/data" };
+  }
+
+  async clearOldLogs() {
+    this.maintenanceCommands.push("clear-old-logs");
+    if (this.failLogCleanup) throw new Error("Log directory permission denied");
+    return { deletedCount: 3 };
   }
 }
 

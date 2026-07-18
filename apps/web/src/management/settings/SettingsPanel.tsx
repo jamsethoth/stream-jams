@@ -17,7 +17,7 @@ import "./settings-panel.css";
 
 type SettingsApi = Pick<
   ManagementApi,
-  "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration"
+  "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
 >;
 
 export interface SettingsPanelProps {
@@ -37,6 +37,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   const [confirmation, setConfirmation] = useState("");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [maintenanceBusy, setMaintenanceBusy] = useState<"open-data-folder" | "clear-old-logs" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
@@ -181,6 +182,46 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     }
   }
 
+  async function openDataFolder() {
+    setMaintenanceBusy("open-data-folder");
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await managementApi.openDataFolder();
+      setNotice(`Data folder opened: ${result.dataDirectory}`);
+    } catch (cause) {
+      setError(actionable(
+        "Data folder was not opened",
+        cause,
+        "Open the configured data folder manually, then check Diagnostics and retry."
+      ));
+    } finally {
+      setMaintenanceBusy(null);
+    }
+  }
+
+  async function clearOldLogs() {
+    setMaintenanceBusy("clear-old-logs");
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await managementApi.clearOldLogs();
+      setNotice(
+        result.deletedCount === 0
+          ? "No expired log files needed clearing."
+          : `${result.deletedCount} old log file${result.deletedCount === 1 ? "" : "s"} cleared.`
+      );
+    } catch (cause) {
+      setError(actionable(
+        "Old logs were not cleared",
+        cause,
+        "Check data-folder permissions and Diagnostics, then retry."
+      ));
+    } finally {
+      setMaintenanceBusy(null);
+    }
+  }
+
   if (loading) return <p className="management-empty" role="status">Loading settings...</p>;
 
   return (
@@ -216,6 +257,15 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
             <div><dt>Log level</dt><dd>{summary.logLevel}</dd></div>
             <div><dt>Log retention</dt><dd>{formatHours(summary.logRetentionHours)}</dd></div>
           </dl>
+          <div className="settings-page__section-heading settings-page__section-heading--action">
+            <div><strong>Local maintenance</strong><p>Open application data or apply the configured retention policy now.</p></div>
+            <button className="button button--secondary" disabled={busy || maintenanceBusy !== null} onClick={() => void openDataFolder()} type="button">
+              {maintenanceBusy === "open-data-folder" ? "Opening data folder..." : "Open data folder"}
+            </button>
+            <button className="button button--secondary" disabled={busy || maintenanceBusy !== null} onClick={() => void clearOldLogs()} type="button">
+              {maintenanceBusy === "clear-old-logs" ? "Clearing old logs..." : "Clear old logs now"}
+            </button>
+          </div>
         </section>
       )}
 

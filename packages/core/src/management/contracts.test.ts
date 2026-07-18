@@ -535,6 +535,17 @@ describe("management asset diagnostics home and backup contracts", () => {
     ).toBe(true);
   });
 
+  it("validates local settings maintenance results", () => {
+    const openedFolder = schema("openDataFolderResultSchema");
+    const clearedLogs = schema("clearOldLogsResultSchema");
+
+    expect(openedFolder.parse({ dataDirectory: "C:/Users/James/.stream-jams/data" })).toEqual({
+      dataDirectory: "C:/Users/James/.stream-jams/data"
+    });
+    expect(clearedLogs.parse({ deletedCount: 3 })).toEqual({ deletedCount: 3 });
+    expect(clearedLogs.safeParse({ deletedCount: -1 }).success).toBe(false);
+  });
+
   it("validates complete backup archives and rejects secret-bearing fields", () => {
     const archiveSchema = schema("configurationBackupArchiveSchema");
     const archive = {

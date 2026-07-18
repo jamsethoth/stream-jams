@@ -582,6 +582,14 @@ export const configurationBackupSummarySchema = z.object({
   blockers: z.array(actionableManagementErrorSchema)
 });
 
+export const openDataFolderResultSchema = z.object({
+  dataDirectory: nonEmptyStringSchema
+});
+
+export const clearOldLogsResultSchema = z.object({
+  deletedCount: nonNegativeIntegerSchema
+});
+
 const backupChecksumSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
 const backupJsonRecordSchema = z.record(z.string(), z.unknown());
 
@@ -851,6 +859,8 @@ export type DiagnosticsRawLogView = z.infer<typeof diagnosticsRawLogViewSchema>;
 export type DiagnosticsWorkspaceView = z.infer<typeof diagnosticsWorkspaceViewSchema>;
 export type HomeSetupSummary = z.infer<typeof homeSetupSummarySchema>;
 export type ConfigurationBackupSummary = z.infer<typeof configurationBackupSummarySchema>;
+export type OpenDataFolderResult = z.infer<typeof openDataFolderResultSchema>;
+export type ClearOldLogsResult = z.infer<typeof clearOldLogsResultSchema>;
 export type ConfigurationBackupProviderMetadata = z.infer<typeof configurationBackupProviderMetadataSchema>;
 export type ConfigurationBackupOutput = z.infer<typeof configurationBackupOutputSchema>;
 export type ConfigurationBackupAsset = z.infer<typeof configurationBackupAssetSchema>;

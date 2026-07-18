@@ -213,14 +213,14 @@
 - `LocalMaintenanceService` receives the configured data directory, existing `LogRetentionService`, current log settings, and an injected platform path opener.
 - At `max-width: 700px`, keep Back navigation and render a larger-screen message while hiding the interactive editor workspace.
 
-- [ ] Write failing service tests for Windows/macOS/Linux open commands, spawn failure, bounded retention cleanup, missing log directory, and referenced cleanup failure.
-- [ ] Implement the path opener with `node:child_process.spawn`: `explorer.exe` on Windows, `open` on macOS, and `xdg-open` on Linux. Pass only the configured data directory, never request input.
-- [ ] Reuse `LogRetentionService.cleanupExpiredLogs`; return deleted count instead of adding another deletion path.
-- [ ] Add Settings buttons, busy/success/error states, and Storybook coverage. Errors include cause, next step, and reference ID.
-- [ ] Add the mobile message in the existing editor component and use the current `700px` CSS breakpoint; avoid JavaScript viewport branching.
-- [ ] Add Playwright checks for both settings actions and the 390px editor guard.
-- [ ] Run `corepack.cmd pnpm test -- apps/server/src/modules/settings/local-maintenance-service.test.ts apps/server/src/http/routes/management-ui.test.ts apps/web/src/management/settings/SettingsPanel.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx`; expect all selected tests to pass.
-- [ ] Commit as `feat: add local maintenance and mobile editor guard`.
+- [x] Write failing service tests for Windows/macOS/Linux open commands, spawn failure, bounded retention cleanup, missing log directory, and referenced cleanup failure.
+- [x] Implement the path opener with `node:child_process.spawn`: `explorer.exe` on Windows, `open` on macOS, and `xdg-open` on Linux. Pass only the configured data directory, never request input.
+- [x] Reuse `LogRetentionService.cleanupExpiredLogs`; return deleted count instead of adding another deletion path.
+- [x] Add Settings buttons, busy/success/error states, and Storybook coverage. Errors include cause, next step, and reference ID.
+- [x] Add the mobile message in the existing editor component and use the current `700px` CSS breakpoint; avoid JavaScript viewport branching.
+- [x] Add Playwright checks for both settings actions and the 390px editor guard.
+- [x] Run `corepack.cmd pnpm test -- apps/server/src/modules/settings/local-maintenance-service.test.ts apps/server/src/http/routes/management-ui.test.ts apps/web/src/management/settings/SettingsPanel.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx`; expect all selected tests to pass.
+- [x] Commit as `feat: add local maintenance and mobile editor guard`.
 
 ### Task 7: Route Live Alert TTS Through Active Speaker.bot
 

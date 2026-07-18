@@ -536,6 +536,12 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.getByRole("button", { name: /Vertical/u }).click();
   await expect(page.getByRole("button", { name: "Send test" })).toBeDisabled();
   await expect(page.getByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByRole("heading", { name: "Alert editor requires a larger screen" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back to alerts" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Vertical alert canvas" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Save" })).toBeHidden();
 });
 
 function alertEditorDocument() {

@@ -196,6 +196,12 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
         warnings: []
       };
     },
+    async openDataFolder() {
+      return { dataDirectory: "C:/Users/James/.stream-jams/data" };
+    },
+    async clearOldLogs() {
+      return { deletedCount: 0 };
+    },
     async getServerConfig() {
       return storyServerConfig;
     },

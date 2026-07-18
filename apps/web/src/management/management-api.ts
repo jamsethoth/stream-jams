@@ -8,12 +8,14 @@ import {
   alertSetOverviewSchema,
   assetLibraryItemSchema,
   assetChangeImpactSchema,
+  clearOldLogsResultSchema,
   configurationBackupSummarySchema,
   configurationBackupArchiveSchema,
   configurationRestorePreflightSchema,
   configurationRestoreResultSchema,
   diagnosticsWorkspaceViewSchema,
   homeSetupSummarySchema,
+  openDataFolderResultSchema,
   providerActivationImpactSchema,
   providerActivationResultSchema,
   providerRegistrationAttemptSchema,
@@ -37,6 +39,7 @@ import {
   type AssetChangeImpact,
   type AssetMediaType,
   type AssetMetadataUpdateInput,
+  type ClearOldLogsResult,
   type ConfigurationBackupSummary,
   type ConfigurationBackupArchive,
   type ConfigurationRestorePreflight,
@@ -44,6 +47,7 @@ import {
   type ConfigurationRestoreResult,
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
+  type OpenDataFolderResult,
   type ProviderActivationImpact,
   type ProviderActivationResult,
   type ProviderCapability,
@@ -261,6 +265,8 @@ export interface ManagementApi {
   exportConfigurationBackup(): Promise<ConfigurationBackupArchive>;
   preflightConfigurationRestore(archive: ConfigurationBackupArchive): Promise<ConfigurationRestorePreflight>;
   restoreConfiguration(input: ConfigurationRestoreRequest): Promise<ConfigurationRestoreResult>;
+  openDataFolder(): Promise<OpenDataFolderResult>;
+  clearOldLogs(): Promise<ClearOldLogsResult>;
   getServerConfig(): Promise<ServerConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
   getModerationSettings(): Promise<ModerationSettingsView>;
@@ -652,6 +658,24 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         input,
         configurationRestoreResultSchema,
         "Unable to restore configuration backup."
+      );
+    },
+
+    openDataFolder() {
+      return postContract(
+        "/management/settings/open-data-folder",
+        undefined,
+        openDataFolderResultSchema,
+        "Unable to open the local data folder."
+      );
+    },
+
+    clearOldLogs() {
+      return postContract(
+        "/management/settings/clear-old-logs",
+        undefined,
+        clearOldLogsResultSchema,
+        "Unable to clear old logs."
       );
     },
 

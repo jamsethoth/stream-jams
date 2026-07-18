@@ -115,11 +115,11 @@
 
 - [x] 11.1 Complete target-profile copy, profile-specific canvas view state, guide/background controls, fit/reset controls, and dirty profile switching.
 - [x] 11.2 Complete animation timing, sample-payload reset and variable insertion, and local audio/TTS preview controls.
-- [ ] 11.3 Replace the unsupported narrow-screen editor workspace with an actionable larger-screen requirement.
+- [x] 11.3 Replace the unsupported narrow-screen editor workspace with an actionable larger-screen requirement.
 
 ## 12. Audited Settings Gap Closure
 
-- [ ] 12.1 Add explicit local data-folder and retained-log maintenance actions with failure diagnostics.
+- [x] 12.1 Add explicit local data-folder and retained-log maintenance actions with failure diagnostics.
 
 ## 13. Audited Speaker.bot Runtime Gap Closure
 

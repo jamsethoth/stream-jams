@@ -16,8 +16,10 @@ import {
   type AssetMediaType,
   type AssetMetadataUpdateInput,
   type ConfigurationBackupSummary,
+  type ClearOldLogsResult,
   type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
+  type OpenDataFolderResult,
   type ProviderActivationImpact,
   type ProviderActivationResult,
   type ProviderCapability,
@@ -86,6 +88,8 @@ export interface ManagementUiServiceOptions {
   readonly deleteAsset: (assetId: string) => Promise<void>;
   readonly getDiagnosticsWorkspace: () => Promise<DiagnosticsWorkspaceView>;
   readonly getConfigurationBackupSummary: () => Promise<ConfigurationBackupSummary>;
+  readonly openDataFolder?: () => Promise<OpenDataFolderResult>;
+  readonly clearOldLogs?: () => Promise<ClearOldLogsResult>;
 }
 
 export interface EventSourceRuntimeView {
@@ -278,6 +282,20 @@ export class ManagementUiService {
 
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary> {
     return this.#options.getConfigurationBackupSummary();
+  }
+
+  openDataFolder(): Promise<OpenDataFolderResult> {
+    const openDataFolder = this.#options.openDataFolder;
+    return openDataFolder === undefined
+      ? Promise.reject(new Error("Local data-folder maintenance is unavailable."))
+      : openDataFolder();
+  }
+
+  clearOldLogs(): Promise<ClearOldLogsResult> {
+    const clearOldLogs = this.#options.clearOldLogs;
+    return clearOldLogs === undefined
+      ? Promise.reject(new Error("Local log maintenance is unavailable."))
+      : clearOldLogs();
   }
 
   #withLiveStatus(provider: RegisteredProviderView): RegisteredProviderView {
