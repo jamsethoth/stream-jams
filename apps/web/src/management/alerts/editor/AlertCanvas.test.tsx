@@ -46,6 +46,11 @@ describe("AlertCanvas", () => {
       animationTimingFunction: "ease-in-out, ease-in-out"
     });
 
+    rerender(<AlertCanvas {...props} preview previewElapsedMs={150} previewRunId={1} />);
+    expect(screen.getByRole("button", { name: "Badge layer" })).toHaveStyle({
+      animationDelay: "-75ms, 1550ms"
+    });
+
     rerender(<AlertCanvas {...props} preview previewRunId={2} />);
     expect(screen.getByRole("button", { name: "Badge layer" })).not.toBe(firstPreviewLayer);
   });

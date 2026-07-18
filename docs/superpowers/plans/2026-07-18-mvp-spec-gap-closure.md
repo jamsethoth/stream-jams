@@ -178,14 +178,14 @@
 - Preview audio/TTS toggles default off and remain separate from Send test toggles, which default on.
 - Preview clock owns `playing`, `elapsedMs`, and `durationMs`; replay resets to zero, pause freezes, and seek clamps to duration.
 
-- [ ] Write failing schema tests for normal and edge-case built-in samples plus event-specific sample validation.
-- [ ] Write failing page tests for template-variable insertion, sample reset, invalid sample blocking, preview replay/pause/seek, and preview audio/TTS opt-in defaults.
-- [ ] Keep custom sample edits session-only. `Reset sample` restores the selected built-in payload without saving it to SQLite.
-- [ ] Drive preset animation preview from one request-animation-frame clock and negative animation delay; do not add a timeline library.
-- [ ] Reuse existing asset blob loading for optional audio preview and browser `speechSynthesis` for editor-only TTS preview; never call Speaker.bot from Preview.
-- [ ] Add Storybook states for invalid sample, paused preview, edge-case sample, and optional preview media.
-- [ ] Run `corepack.cmd pnpm test -- packages/core/src/management/contracts.test.ts apps/web/src/management/alerts/editor/AlertCanvas.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx`; expect all selected tests to pass.
-- [ ] Commit as `feat: complete alert preview and samples`.
+- [x] Write failing schema tests for normal and edge-case built-in samples plus event-specific sample validation.
+- [x] Write failing page tests for template-variable insertion, sample reset, invalid sample blocking, preview replay/pause/seek, and preview audio/TTS opt-in defaults.
+- [x] Keep custom sample edits session-only. `Reset sample` restores the selected built-in payload without saving it to SQLite.
+- [x] Drive preset animation preview from one request-animation-frame clock and negative animation delay; do not add a timeline library.
+- [x] Reuse existing asset blob loading for optional audio preview and browser `speechSynthesis` for editor-only TTS preview; never call Speaker.bot from Preview.
+- [x] Add Storybook states for invalid sample, paused preview, edge-case sample, and optional preview media.
+- [x] Run `corepack.cmd pnpm test -- packages/core/src/management/contracts.test.ts apps/web/src/management/alerts/editor/AlertCanvas.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx`; expect all selected tests to pass.
+- [x] Commit as `feat: complete alert preview and samples`.
 
 ### Task 6: Add Settings Maintenance Actions And Narrow-Screen Guard
 

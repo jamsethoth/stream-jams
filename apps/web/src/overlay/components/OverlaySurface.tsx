@@ -194,7 +194,8 @@ function layoutStyle(layout: OverlayElementLayout): CSSProperties {
 
 export function overlayPresetAnimationStyle(
   animation: OverlayPresetAnimationInstruction | null | undefined,
-  instructionDurationMs: number
+  instructionDurationMs: number,
+  elapsedMs = 0
 ): CSSProperties {
   if (animation == null) return {};
   const exitDelayMs = Math.max(
@@ -204,7 +205,7 @@ export function overlayPresetAnimationStyle(
   return {
     animationName: `${entranceAnimationName(animation.entrance)}, ${exitAnimationName(animation.exit)}`,
     animationDuration: `${animation.durationMs}ms, ${animation.durationMs}ms`,
-    animationDelay: `${animation.delayMs}ms, ${exitDelayMs}ms`,
+    animationDelay: `${animation.delayMs - elapsedMs}ms, ${exitDelayMs - elapsedMs}ms`,
     animationTimingFunction: `${animation.easing}, ${animation.easing}`,
     animationFillMode: "both, forwards"
   };

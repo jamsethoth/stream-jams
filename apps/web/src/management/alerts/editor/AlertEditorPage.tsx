@@ -1,5 +1,6 @@
 import {
   getAlertEditorAffectedProfileIds,
+  validateAlertSamplePayload,
   type ActionableManagementError,
   type AlertEditorDocument,
   type AlertLayer,
@@ -7,7 +8,7 @@ import {
   type AssetMediaType,
   type TargetProfileId
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
@@ -82,10 +83,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [sampleDraft, setSampleDraft] = useState("{}");
   const [sampleError, setSampleError] = useState<string | null>(null);
-  const [includeAudio, setIncludeAudio] = useState(true);
-  const [includeTts, setIncludeTts] = useState(true);
+  const [sendIncludeAudio, setSendIncludeAudio] = useState(true);
+  const [sendIncludeTts, setSendIncludeTts] = useState(true);
+  const [previewIncludeAudio, setPreviewIncludeAudio] = useState(false);
+  const [previewIncludeTts, setPreviewIncludeTts] = useState(false);
   const [preview, setPreview] = useState(false);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [previewElapsedMs, setPreviewElapsedMs] = useState(0);
   const [previewRunId, setPreviewRunId] = useState(0);
+  const previewFrameRef = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -111,12 +117,34 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       const firstSample = document.samplePayloads[0] ?? null;
       setSampleId(firstSample?.id ?? null);
       setSampleDraft(JSON.stringify(firstSample?.payload ?? {}, null, 2));
+      setSampleError(firstSample === null ? "No sample payload is available." : validateAlertSamplePayload(document.eventType, firstSample.payload));
       setSetDetail(loadedSetDetail);
     }).catch((cause: unknown) => {
       if (active) setError(actionableError("The alert editor could not be opened", cause, "Return to Alerts and choose the alert again."));
     });
     return () => { active = false; };
   }, [props.alertId, props.managementApi, props.targetProfileId]);
+
+  useEffect(() => {
+    if (!previewPlaying || editor === null) return;
+    const durationMs = editor.document.durationMs;
+    const startedAt = performance.now() - previewElapsedMs;
+    const tick = (timestamp: number) => {
+      const nextElapsedMs = Math.min(durationMs, Math.max(0, Math.round(timestamp - startedAt)));
+      setPreviewElapsedMs(nextElapsedMs);
+      if (nextElapsedMs >= durationMs) {
+        setPreviewPlaying(false);
+        previewFrameRef.current = null;
+        return;
+      }
+      previewFrameRef.current = requestAnimationFrame(tick);
+    };
+    previewFrameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (previewFrameRef.current !== null) cancelAnimationFrame(previewFrameRef.current);
+      previewFrameRef.current = null;
+    };
+  }, [editor, previewPlaying, previewRunId]);
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
@@ -205,6 +233,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   function updateDocument(update: (document: AlertEditorDocument) => AlertEditorDocument) {
     setEditor((current) => current === null ? null : applyEditorUpdate(current, update));
     setPreview(false);
+    setPreviewPlaying(false);
+    setPreviewElapsedMs(0);
     setNotice(null);
   }
 
@@ -264,18 +294,59 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     if (sample === undefined) return;
     setSampleId(sample.id);
     setSampleDraft(JSON.stringify(sample.payload, null, 2));
-    setSampleError(null);
+    setSampleError(validateAlertSamplePayload(document.eventType, sample.payload));
     setPreview(false);
+    setPreviewPlaying(false);
+    setPreviewElapsedMs(0);
   }
 
   function previewLocally() {
-    if (samplePayload === null) {
-      setSampleError("Enter a valid JSON object before previewing.");
+    if (samplePayload === null || document === null) {
+      setSampleError("Sample payload must be a valid JSON object.");
+      return;
+    }
+    const validationError = validateAlertSamplePayload(document.eventType, samplePayload);
+    if (validationError !== null) {
+      setSampleError(validationError);
       return;
     }
     setPreview(true);
+    setPreviewPlaying(true);
+    setPreviewElapsedMs(0);
     setPreviewRunId((current) => current + 1);
     setNotice("Local preview is running.");
+    void playPreviewMedia(document, samplePayload);
+  }
+
+  async function playPreviewMedia(currentDocument: AlertEditorDocument, payload: Record<string, unknown>) {
+    try {
+      if (previewIncludeAudio) {
+        const audioLayers = currentDocument.layers.filter(
+          (layer): layer is Extract<AlertLayer, { type: "audio" }> => layer.visible && layer.type === "audio"
+        );
+        await Promise.all(audioLayers.map(async (layer) => {
+          const blob = await props.assetApi.getAssetFile(layer.assetId);
+          const url = URL.createObjectURL(blob);
+          const audio = new Audio(url);
+          audio.volume = layer.volume;
+          await audio.play();
+          window.setTimeout(() => URL.revokeObjectURL(url), currentDocument.durationMs + 1_000);
+        }));
+      }
+      if (previewIncludeTts) {
+        if (typeof speechSynthesis === "undefined" || typeof SpeechSynthesisUtterance === "undefined") {
+          throw new Error("This browser does not provide local speech synthesis.");
+        }
+        speechSynthesis.cancel();
+        currentDocument.layers.filter(
+          (layer): layer is Extract<AlertLayer, { type: "tts" }> => layer.visible && layer.type === "tts"
+        ).forEach((layer) => {
+          speechSynthesis.speak(new SpeechSynthesisUtterance(renderTemplateValue(layer.template, payload)));
+        });
+      }
+    } catch (cause) {
+      setError(actionableError("Local preview media could not be played", cause, "Check the selected audio asset and browser audio permissions, then replay the preview."));
+    }
   }
 
   async function sendTest() {
@@ -287,8 +358,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         document,
         targetProfileId: profileId,
         samplePayload,
-        includeAudio,
-        includeTts
+        includeAudio: sendIncludeAudio,
+        includeTts: sendIncludeTts
       });
       setNotice(`Queued on ${profileLabel(profileId)}. Reference ${result.referenceId}.`);
     } catch (cause) {
@@ -382,7 +453,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={props.onBack} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
   }
 
-  const canSend = profile.enabled && profile.reviewState === "ready" && samplePayload !== null && documentConditionError === null && !busy;
+  const canSend = profile.enabled && profile.reviewState === "ready" && samplePayload !== null && sampleError === null && documentConditionError === null && !busy;
   return (
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
@@ -397,7 +468,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         </div>
         <div className="alert-editor-page__header-actions">
           <button className="button button--secondary" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</button>
-          <button className="button button--secondary" onClick={previewLocally} type="button">Preview</button>
+          <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null} onClick={previewLocally} type="button">Preview</button>
+          {preview ? <button className="button button--secondary" onClick={() => previewPlaying ? setPreviewPlaying(false) : previewLocally()} type="button">{previewPlaying ? "Pause preview" : "Replay preview"}</button> : null}
+          {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => { setPreviewPlaying(false); setPreviewElapsedMs(Math.max(0, Math.min(document.durationMs, Number(event.currentTarget.value)))); }} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
           <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || busy} onClick={() => void requestSave()} type="button">Save</button>
         </div>
@@ -485,6 +558,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             onSelectLayer={(layerId) => { setSelectedLayerId(layerId); setTab("layers"); }}
             onViewStateChange={updateCurrentCanvasView}
             preview={preview}
+            previewElapsedMs={previewElapsedMs}
             previewRunId={previewRunId}
             profileId={profileId}
             samplePayload={samplePayload ?? {}}
@@ -520,17 +594,25 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           ) : (
             <EventInspector
               document={document}
-              includeAudio={includeAudio}
-              includeTts={includeTts}
-              onIncludeAudio={setIncludeAudio}
-              onIncludeTts={setIncludeTts}
+              previewIncludeAudio={previewIncludeAudio}
+              previewIncludeTts={previewIncludeTts}
+              sendIncludeAudio={sendIncludeAudio}
+              sendIncludeTts={sendIncludeTts}
+              onPreviewIncludeAudio={setPreviewIncludeAudio}
+              onPreviewIncludeTts={setPreviewIncludeTts}
+              onSendIncludeAudio={setSendIncludeAudio}
+              onSendIncludeTts={setSendIncludeTts}
               onChange={updateDocument}
               onPreview={previewLocally}
+              onResetSample={() => sampleId === null ? undefined : chooseSample(sampleId)}
               onSample={chooseSample}
               onSampleDraft={(value) => {
                 setSampleDraft(value);
-                setSampleError(parseSample(value) === null ? "Sample payload must be a valid JSON object." : null);
+                const parsed = parseSample(value);
+                setSampleError(parsed === null ? "Sample payload must be a valid JSON object." : validateAlertSamplePayload(document.eventType, parsed));
                 setPreview(false);
+                setPreviewPlaying(false);
+                setPreviewElapsedMs(0);
               }}
               onSend={() => void sendTest()}
               sampleDraft={sampleDraft}
@@ -648,7 +730,13 @@ function LayerInspector({
           <h3>{selectedLayer.name}</h3>
           <label><span>Layer name</span><input onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, name: value }))); }} value={selectedLayer.name} /></label>
           {(selectedLayer.type === "text" || selectedLayer.type === "tts") ? (
-            <label><span>{selectedLayer.type === "text" ? "Message template" : "TTS template"}</span><textarea aria-label={selectedLayer.type === "text" ? "Message template" : "TTS template"} onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: value } : layer)); }} value={selectedLayer.template} /></label>
+            <>
+              <label><span>{selectedLayer.type === "text" ? "Message template" : "TTS template"}</span><textarea aria-label={selectedLayer.type === "text" ? "Message template" : "TTS template"} onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: value } : layer)); }} value={selectedLayer.template} /></label>
+              <div aria-label="Template variables" className="alert-editor-inspector__variables">
+                <span>Insert variable</span>
+                <div>{(document.templateVariables ?? []).map((variable) => <button aria-label={`Insert {${variable.key}}`} className="button button--secondary button--compact" key={variable.key} onClick={() => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: `${layer.template}{${variable.key}}` } : layer))} title={variable.description} type="button">{variable.label}</button>)}</div>
+              </div>
+            </>
           ) : null}
           {(selectedLayer.type === "image" || selectedLayer.type === "video" || selectedLayer.type === "audio") ? (
             <div className="alert-editor-inspector__asset"><span>Asset</span><code>{selectedLayer.assetId}</code><button className="button button--secondary button--compact" onClick={() => onChooseAsset(selectedLayer)} type="button">Choose asset</button></div>
@@ -712,12 +800,17 @@ function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout,
 
 function EventInspector(props: {
   readonly document: AlertEditorDocument;
-  readonly includeAudio: boolean;
-  readonly includeTts: boolean;
+  readonly previewIncludeAudio: boolean;
+  readonly previewIncludeTts: boolean;
+  readonly sendIncludeAudio: boolean;
+  readonly sendIncludeTts: boolean;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
-  readonly onIncludeAudio: (value: boolean) => void;
-  readonly onIncludeTts: (value: boolean) => void;
+  readonly onPreviewIncludeAudio: (value: boolean) => void;
+  readonly onPreviewIncludeTts: (value: boolean) => void;
+  readonly onSendIncludeAudio: (value: boolean) => void;
+  readonly onSendIncludeTts: (value: boolean) => void;
   readonly onPreview: () => void;
+  readonly onResetSample: () => void;
   readonly onSample: (sampleId: string) => void;
   readonly onSampleDraft: (value: string) => void;
   readonly onSend: () => void;
@@ -754,8 +847,10 @@ function EventInspector(props: {
       <label><span>Sample payload</span><select onChange={(event) => props.onSample(event.currentTarget.value)} value={props.sampleId ?? ""}>{props.document.samplePayloads.map((sample) => <option key={sample.id} value={sample.id}>{sample.label}</option>)}</select></label>
       <label><span>Session payload (JSON)</span><textarea aria-invalid={props.sampleError !== null} onChange={(event) => props.onSampleDraft(event.currentTarget.value)} rows={12} value={props.sampleDraft} /></label>
       {props.sampleError === null ? <p>Session edits are used only for preview and testing.</p> : <p className="alert-editor-inspector__field-error" role="alert">{props.sampleError}</p>}
-      <fieldset className="alert-editor-inspector__audio"><legend>Test playback</legend><label className="alert-editor-inspector__check"><input checked={props.includeAudio} onChange={(event) => props.onIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Include audio</span></label><label className="alert-editor-inspector__check"><input checked={props.includeTts} onChange={(event) => props.onIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Include TTS</span></label></fieldset>
-      <div className="alert-editor-inspector__actions"><button className="button button--secondary" onClick={props.onPreview} type="button">Preview</button><button className="button button--primary" disabled={props.sendDisabled} onClick={props.onSend} type="button">Send test</button></div>
+      <button className="button button--secondary" onClick={props.onResetSample} type="button">Reset sample</button>
+      <fieldset className="alert-editor-inspector__audio"><legend>Local preview</legend><label className="alert-editor-inspector__check"><input checked={props.previewIncludeAudio} onChange={(event) => props.onPreviewIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Preview audio</span></label><label className="alert-editor-inspector__check"><input checked={props.previewIncludeTts} onChange={(event) => props.onPreviewIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Preview TTS</span></label></fieldset>
+      <fieldset className="alert-editor-inspector__audio"><legend>Send test</legend><label className="alert-editor-inspector__check"><input checked={props.sendIncludeAudio} onChange={(event) => props.onSendIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Send audio</span></label><label className="alert-editor-inspector__check"><input checked={props.sendIncludeTts} onChange={(event) => props.onSendIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Send TTS</span></label></fieldset>
+      <div className="alert-editor-inspector__actions"><button className="button button--secondary" disabled={props.sampleError !== null} onClick={props.onPreview} type="button">Replay preview</button><button className="button button--primary" disabled={props.sendDisabled} onClick={props.onSend} type="button">Send test</button></div>
     </div>
   );
 }
@@ -935,6 +1030,14 @@ function parseSample(value: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function renderTemplateValue(template: string, values: Record<string, unknown>): string {
+  return template.replace(/\{([^{}]+)\}/gu, (_match, path: string) => {
+    const value = path.trim().split(".").reduce<unknown>((current, segment) =>
+      typeof current === "object" && current !== null ? (current as Record<string, unknown>)[segment] : undefined, values);
+    return value === null || value === undefined || typeof value === "object" ? "" : String(value);
+  });
 }
 
 function compatibleMediaTypes(type: PickerState["type"]): readonly AssetMediaType[] {

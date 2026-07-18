@@ -1,12 +1,15 @@
 import type { AlertEditorDocument, AlertSetDetail } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
 import { AlertEditorPage } from "./AlertEditorPage.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("AlertEditorPage", () => {
   it("loads a focused canvas workspace and keeps Preview separate from Send test", async () => {
@@ -396,6 +399,131 @@ describe("AlertEditorPage", () => {
       delayMs: 120,
       easing: "linear"
     });
+  });
+
+  it("inserts event variables and keeps edited samples session-only with reset and validation", async () => {
+    const user = userEvent.setup();
+    const raidDocument: AlertEditorDocument = {
+      ...editorDocument(),
+      eventType: "raid",
+      templateVariables: [
+        { key: "userName", label: "User name", description: "Display name for the event actor." },
+        { key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }
+      ],
+      samplePayloads: [
+        { id: "normal", label: "Normal raid", kind: "built-in", payload: { userName: "Raider", raidViewers: 25, amount: 25 } },
+        { id: "edge", label: "Large raid", kind: "built-in", payload: { userName: "Long-Raider-Name", raidViewers: 5000, amount: 5000 } }
+      ]
+    };
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => raidDocument),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    await user.clear(template);
+    await user.type(template, "Welcome ");
+    await user.click(screen.getByRole("button", { name: "Insert {userName}" }));
+    expect(template).toHaveValue("Welcome {userName}");
+
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sample payload" }), "edge");
+    const payload = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    expect((payload as HTMLTextAreaElement).value).toContain("Long-Raider-Name");
+    await user.clear(payload);
+    await user.click(payload);
+    await user.paste('{"userName":"Edited","raidViewers":50,"amount":50}');
+    await user.click(screen.getByRole("button", { name: "Reset sample" }));
+    expect((payload as HTMLTextAreaElement).value).toContain("Long-Raider-Name");
+
+    await user.clear(payload);
+    await user.click(payload);
+    await user.paste('{"userName":"Invalid","raidViewers":0,"amount":0}');
+    expect(screen.getByRole("alert")).toHaveTextContent("Raid viewer count must be a positive number.");
+    expect(screen.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+  });
+
+  it("keeps local preview media opt-in and supports pause seek and replay", async () => {
+    const user = userEvent.setup();
+    const play = vi.fn(async () => undefined);
+    const speak = vi.fn();
+    vi.stubGlobal("Audio", class { volume = 1; play = play; });
+    vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
+    vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
+    const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
+    const previewDocument: AlertEditorDocument = {
+      ...editorDocument(),
+      templateVariables: [{ key: "userName", label: "User name", description: "Display name for the event actor." }],
+      layers: [
+        ...editorDocument().layers,
+        { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-audio", volume: 0.5, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
+        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, template: "Hello {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+      ]
+    };
+    const sendAlertEditorTest = vi.fn();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={{ ...assetApi, getAssetFile }}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => previewDocument),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("region", { name: "Landscape alert canvas" });
+    getAssetFile.mockClear();
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(getAssetFile).not.toHaveBeenCalledWith("asset-audio");
+    expect(speak).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Pause preview" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Pause preview" }));
+    expect(screen.getByText("Preview paused")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    expect(screen.getByRole("checkbox", { name: "Preview audio" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Preview TTS" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Send audio" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Send TTS" })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview TTS" }));
+    await user.click(screen.getAllByRole("button", { name: "Replay preview" }).at(-1)!);
+
+    await waitFor(() => expect(getAssetFile).toHaveBeenCalledWith("asset-audio"));
+    expect(speak).toHaveBeenCalledOnce();
+    expect(sendAlertEditorTest).not.toHaveBeenCalled();
+    const seek = screen.getByRole("slider", { name: "Preview position" });
+    fireEvent.change(seek, { target: { value: "1200" } });
+    expect(seek).toHaveValue("1200");
   });
 
   it("keeps editor actions unavailable until active-set status is known", async () => {

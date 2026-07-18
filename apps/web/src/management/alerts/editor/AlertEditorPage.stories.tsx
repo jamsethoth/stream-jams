@@ -125,6 +125,75 @@ export const EventSamples: Story = {
   }
 };
 
+export const EdgeCaseSample: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    await userEvent.selectOptions(canvas.getByRole("combobox", { name: "Sample payload" }), "edge");
+    await expect((canvas.getByRole("textbox", { name: "Session payload (JSON)" }) as HTMLTextAreaElement).value).toContain(
+      "A-Very-Long-Display-Name"
+    );
+  }
+};
+
+export const PausedPreview: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Preview" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Pause preview" }));
+    await expect(canvas.getByText("Preview paused")).toBeVisible();
+    await expect(canvas.getByRole("slider", { name: "Preview position" })).toBeVisible();
+  }
+};
+
+export const InvalidSample: Story = {
+  args: {
+    alertId: "alert-raid",
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ({
+        ...variationDocument(),
+        id: "alert-raid",
+        kind: "default",
+        parentAlertId: null,
+        samplePayloads: [{ id: "normal", label: "Invalid raid", kind: "built-in", payload: { userName: "Raider", raidViewers: 0, amount: 0 } }]
+      }),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    await expect(canvas.getByRole("alert")).toHaveTextContent("Raid viewer count must be a positive number.");
+    await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
+  }
+};
+
+export const OptionalPreviewMedia: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ({
+        ...document,
+        layers: [
+          ...document.layers,
+          { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-alert-audio", volume: 0.7, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
+          { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, template: "Welcome {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+        ]
+      }),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    await userEvent.click(canvas.getByRole("checkbox", { name: "Preview audio" }));
+    await userEvent.click(canvas.getByRole("checkbox", { name: "Preview TTS" }));
+    await expect(canvas.getByRole("checkbox", { name: "Preview audio" })).toBeChecked();
+    await expect(canvas.getByRole("checkbox", { name: "Preview TTS" })).toBeChecked();
+    await expect(canvas.getByRole("checkbox", { name: "Send audio" })).toBeChecked();
+    await expect(canvas.getByRole("checkbox", { name: "Send TTS" })).toBeChecked();
+  }
+};
+
 export const VariationAuthoring: Story = {
   args: {
     alertId: "variant-large-raid",
@@ -205,6 +274,10 @@ function editorDocument(): AlertEditorDocument {
     cooldownSeconds: 0,
     rulePriority: 0,
     durationMs: 5_000,
+    templateVariables: [
+      { key: "userName", label: "User name", description: "Display name for the event actor." },
+      { key: "actor.displayName", label: "Actor display name", description: "Normalized display name for the event actor." }
+    ],
     layers: [
       { id: "layer-text", name: "Message", type: "text", visible: true, order: 0, template: "Thanks, {userName}!", animation: preset("fade") },
       { id: "layer-image", name: "Celebration", type: "image", visible: true, order: 1, assetId: "asset-alert-image", animation: preset("scale") }
@@ -246,7 +319,15 @@ function variationDocument(): AlertEditorDocument {
     name: "Large raid",
     enabled: false,
     weight: 2,
-    priority: 5
+    priority: 5,
+    templateVariables: [
+      ...(editorDocument().templateVariables ?? []),
+      { key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }
+    ],
+    samplePayloads: [
+      { id: "normal", label: "Normal raid", kind: "built-in", payload: { userName: "Raider", raidViewers: 25, amount: 25 } },
+      { id: "edge", label: "Large raid", kind: "built-in", payload: { userName: "A-Very-Long-Raider-Name", raidViewers: 5_000, amount: 5_000 } }
+    ]
   };
 }
 

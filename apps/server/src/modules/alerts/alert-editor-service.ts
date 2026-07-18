@@ -2,6 +2,7 @@ import {
   DefaultTemplateRenderer,
   alertEditorDocumentSchema,
   alertEditorTestRequestSchema,
+  getAlertTemplateVariableCatalog,
   getAlertEditorAffectedProfileIds,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
@@ -318,6 +319,7 @@ function createDocumentFromRule(
         fitLayout(variant.layout, 1080, 1920)
       )
     ],
+    templateVariables: getAlertTemplateVariableCatalog(rule.eventType),
     samplePayloads: createBuiltInSamples(rule.eventType)
   };
   return alertEditorDocumentSchema.parse(document);
@@ -365,7 +367,8 @@ function hydrateDocument(
     weight: resolved.variant.weight,
     priority: resolved.variant.priority ?? null,
     cooldownSeconds: resolved.rule.cooldownSeconds,
-    rulePriority: resolved.rule.priority
+    rulePriority: resolved.rule.priority,
+    templateVariables: getAlertTemplateVariableCatalog(resolved.rule.eventType)
   });
 }
 

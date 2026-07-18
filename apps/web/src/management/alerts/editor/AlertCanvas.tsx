@@ -18,6 +18,7 @@ interface AlertCanvasProps {
   readonly onSelectLayer: (layerId: string) => void;
   readonly onViewStateChange?: (viewState: CanvasViewState) => void;
   readonly preview: boolean;
+  readonly previewElapsedMs?: number;
   readonly previewRunId?: number;
   readonly profileId: TargetProfileId;
   readonly samplePayload: Record<string, unknown>;
@@ -168,7 +169,8 @@ export function AlertCanvas(props: AlertCanvasProps) {
                     layout,
                     dimensions,
                     props.preview ? layer.animation : null,
-                    props.document.durationMs
+                    props.document.durationMs,
+                    props.previewElapsedMs ?? 0
                   )}
                   tabIndex={0}
                 >
@@ -245,7 +247,8 @@ function layerStyle(
   layout: { readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly zIndex: number },
   dimensions: { readonly width: number; readonly height: number },
   animation: AlertLayer["animation"] | null,
-  instructionDurationMs: number
+  instructionDurationMs: number,
+  elapsedMs: number
 ): CSSProperties {
   return {
     height: `${layout.height / dimensions.height * 100}%`,
@@ -253,7 +256,7 @@ function layerStyle(
     top: `${layout.y / dimensions.height * 100}%`,
     width: `${layout.width / dimensions.width * 100}%`,
     zIndex: layout.zIndex,
-    ...overlayPresetAnimationStyle(animation, instructionDurationMs)
+    ...overlayPresetAnimationStyle(animation, instructionDurationMs, elapsedMs)
   };
 }
 

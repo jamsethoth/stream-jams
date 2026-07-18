@@ -339,6 +339,43 @@ describe("management alert contracts and rules", () => {
     });
   });
 
+  it("provides event variables and validates normal and edge-case built-in samples", () => {
+    const sample = schema("alertSamplePayloadSchema");
+    const variableCatalog = exportedFunction("getAlertTemplateVariableCatalog") as unknown as (
+      eventType: string
+    ) => readonly { readonly key: string }[];
+    const validateSample = exportedFunction("validateAlertSamplePayload") as unknown as (
+      eventType: string,
+      payload: Record<string, unknown>
+    ) => string | null;
+
+    expect(sample.safeParse({
+      id: "normal",
+      label: "Normal raid",
+      kind: "built-in",
+      payload: { userName: "Raider", raidViewers: 25, amount: 25 }
+    }).success).toBe(true);
+    expect(sample.safeParse({
+      id: "edge",
+      label: "Large raid",
+      kind: "built-in",
+      payload: { userName: "A-Very-Long-Raider-Name", raidViewers: 5_000, amount: 5_000 }
+    }).success).toBe(true);
+    expect(variableCatalog("raid").map((variable) => variable.key)).toEqual(
+      expect.arrayContaining(["userName", "actor.displayName", "raidViewers"])
+    );
+    expect(validateSample("raid", { raidViewers: 1 })).toBeNull();
+    expect(validateSample("raid", { raidViewers: 0 })).toBe("Raid viewer count must be a positive number.");
+    expect(validateSample("cheer", { cheerAmount: 100 })).toBeNull();
+    expect(validateSample("subscription", { tier: "prime", amount: 1 })).toBeNull();
+    expect(validateSample("subscription", { tier: "500", amount: 1 })).toBe(
+      "Subscription samples require a supported tier and positive month or quantity value."
+    );
+    expect(validateSample("channel_point_redemption", { rewardTitle: "  " })).toBe(
+      "Channel Point samples require a reward title."
+    );
+  });
+
   it("permits activation with warnings but blocks invalid enabled profiles", () => {
     const evaluate = exportedFunction("evaluateAlertSetActivation");
 

@@ -356,6 +356,65 @@ export const alertSamplePayloadSchema = z.object({
   payload: metadataSchema
 });
 
+export const alertTemplateVariableSchema = z.object({
+  key: nonEmptyStringSchema,
+  label: nonEmptyStringSchema,
+  description: nonEmptyStringSchema
+});
+
+type AlertSampleEventType = z.infer<typeof streamEventTypeSchema>;
+
+const commonTemplateVariables = [
+  { key: "userName", label: "User name", description: "Display name for the event actor." },
+  { key: "actor.displayName", label: "Actor display name", description: "Normalized display name for the event actor." }
+] as const;
+
+const eventTemplateVariables: Record<AlertSampleEventType, readonly z.infer<typeof alertTemplateVariableSchema>[]> = {
+  follow: [],
+  raid: [{ key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }],
+  cheer: [{ key: "cheerAmount", label: "Bits", description: "Number of Bits cheered." }],
+  subscription: [
+    { key: "amount", label: "Quantity", description: "Subscription quantity or month value." },
+    { key: "tier", label: "Tier", description: "Subscription tier." }
+  ],
+  resubscription: [
+    { key: "amount", label: "Months", description: "Resubscription month value." },
+    { key: "tier", label: "Tier", description: "Subscription tier." }
+  ],
+  channel_point_redemption: [
+    { key: "rewardTitle", label: "Reward title", description: "Channel Point reward title." },
+    { key: "userInput", label: "User input", description: "Optional text entered with the redemption." }
+  ]
+};
+
+export function getAlertTemplateVariableCatalog(eventType: AlertSampleEventType) {
+  return [...commonTemplateVariables, ...eventTemplateVariables[eventType]];
+}
+
+export function validateAlertSamplePayload(
+  eventType: AlertSampleEventType,
+  payload: Record<string, unknown>
+): string | null {
+  const positiveNumber = (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0;
+  switch (eventType) {
+    case "raid":
+      return positiveNumber(payload.raidViewers ?? payload.amount) ? null : "Raid viewer count must be a positive number.";
+    case "cheer":
+      return positiveNumber(payload.cheerAmount ?? payload.amount) ? null : "Cheer bit amount must be a positive number.";
+    case "subscription":
+    case "resubscription":
+      return typeof payload.tier === "string" && ["prime", "1000", "2000", "3000"].includes(payload.tier) && positiveNumber(payload.amount)
+        ? null
+        : "Subscription samples require a supported tier and positive month or quantity value.";
+    case "channel_point_redemption":
+      return typeof payload.rewardTitle === "string" && payload.rewardTitle.trim() !== ""
+        ? null
+        : "Channel Point samples require a reward title.";
+    case "follow":
+      return null;
+  }
+}
+
 export const alertEditorDocumentSchema = z.object({
   id: nonEmptyStringSchema,
   setId: nonEmptyStringSchema,
@@ -374,6 +433,7 @@ export const alertEditorDocumentSchema = z.object({
   durationMs: positiveIntegerSchema.max(120_000),
   layers: z.array(alertLayerSchema),
   targetProfiles: alertTargetProfileDocumentsSchema,
+  templateVariables: z.array(alertTemplateVariableSchema).optional(),
   samplePayloads: z.array(alertSamplePayloadSchema).min(1)
 });
 
@@ -775,6 +835,7 @@ export type AlertSetActivationResult = z.infer<typeof alertSetActivationResultSc
 export type AlertLayer = z.infer<typeof alertLayerSchema>;
 export type AlertTargetProfileDocument = z.infer<typeof alertTargetProfileDocumentSchema>;
 export type AlertSamplePayload = z.infer<typeof alertSamplePayloadSchema>;
+export type AlertTemplateVariable = z.infer<typeof alertTemplateVariableSchema>;
 export type AlertEditorDocument = z.infer<typeof alertEditorDocumentSchema>;
 export type AlertEditorSaveInput = z.infer<typeof alertEditorSaveInputSchema>;
 export type AlertEditorTestRequest = z.infer<typeof alertEditorTestRequestSchema>;
