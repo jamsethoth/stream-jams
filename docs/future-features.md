@@ -4,6 +4,32 @@ This document captures intentionally deferred product and architecture ideas tha
 
 Each item should become its own design/spec before implementation.
 
+## Third-Party And Charity Donation Events
+
+**Status:** Deferred.
+
+**Captured:** 2026-07-18.
+
+**Why deferred:** The normalized Twitch event expansion can preserve the existing Twitch source-platform model. Donations introduce monetary values, currencies, provider-specific identities, and multiple upstream integrations, so combining them would hide a separate domain and source-model change inside an event catalog update.
+
+**Future capability:** Normalize donation events from integrations such as Streamlabs, StreamElements, Ko-fi, and Twitch charity campaigns into provider-independent alert events.
+
+**Design questions to answer before implementation:**
+
+- Which upstream integrations and donation meanings belong in the first supported set?
+- How should amounts, currencies, fees, refunds, anonymous donors, messages, and campaign identities normalize?
+- Should Twitch charity donations be distinct from creator-directed third-party donations?
+- How should one active event-source provider discover and subscribe to donation integrations exposed through Streamer.bot?
+- Which monetary and donor fields are safe for alert conditions, templates, logs, exports, and TTS?
+- How should duplicate donations be detected when more than one integration reports the same transaction?
+
+**Likely prerequisites:**
+
+- An explicit non-Twitch source-platform identity model.
+- A currency-safe normalized monetary value type.
+- Fixture-backed provider mappings and redaction rules for every supported integration.
+- UX for grouped donation event choices and provider-specific readiness.
+
 ## Startup Module Setup Wizard
 
 **Status:** Deferred.
