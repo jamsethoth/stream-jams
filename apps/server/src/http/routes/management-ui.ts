@@ -1,5 +1,6 @@
 import {
   alertCreateInputSchema,
+  alertVariationCreateInputSchema,
   alertEditorDocumentSchema,
   alertEditorSaveInputSchema,
   alertEditorTestRequestSchema,
@@ -10,6 +11,7 @@ import {
   alertSetMutationInputSchema,
   alertSetOverviewSchema,
   alertInventoryRowSchema,
+  managedAlertMutationInputSchema,
   assetLibraryItemSchema,
   assetChangeImpactSchema,
   assetMediaTypeSchema,
@@ -37,6 +39,7 @@ import {
   type AlertInventoryRow,
   type AlertSetMutationInput,
   type AlertSetOverview,
+  type AlertVariationCreateInput,
   type AssetLibraryItem,
   type AssetChangeImpact,
   type AssetMediaType,
@@ -64,11 +67,13 @@ import {
 } from "../../modules/providers/provider-management-service.js";
 import {
   AlertRuleForSetNotFoundError,
+  AlertManagedLiveImpactConfirmationRequiredError,
   AlertSetActivationBlockedError,
   AlertSetActivationConfirmationRequiredError,
   AlertSetDeleteBlockedError,
   AlertSetNameConflictError,
-  AlertSetNotFoundError
+  AlertSetNotFoundError,
+  AlertVariationNameConflictError
 } from "../../modules/alerts/alert-set-management-service.js";
 import {
   AssetLibraryInUseError,
@@ -100,6 +105,10 @@ export interface ManagementUiQueryService {
   getAlertSet(setId: string): Promise<AlertSetDetail>;
   createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
   createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow>;
+  createAlertVariation(alertId: string, input: AlertVariationCreateInput): Promise<AlertInventoryRow>;
+  duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow>;
+  resetManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<AlertInventoryRow>;
+  deleteManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<void>;
   renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
   getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
@@ -350,6 +359,67 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     }
   });
 
+  app.post("/management/alerts/:alertId/variations", { preHandler }, async (request, reply) => {
+    const input = alertVariationCreateInputSchema.safeParse(request.body);
+    if (!input.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_VARIATION_INPUT",
+        message: "Enter a variation name between 1 and 120 characters."
+      });
+    }
+    try {
+      return reply.status(201).send(alertInventoryRowSchema.parse(
+        await service.createAlertVariation(readParam(request.params, "alertId"), input.data)
+      ));
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alerts/:alertId/duplicate", { preHandler }, async (request, reply) => {
+    try {
+      return reply.status(201).send(alertInventoryRowSchema.parse(
+        await service.duplicateManagedAlert(readParam(request.params, "alertId"))
+      ));
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/alerts/:alertId/reset", { preHandler }, async (request, reply) => {
+    const input = managedAlertMutationInputSchema.safeParse(request.body ?? {});
+    if (!input.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_MUTATION_CONFIRMATION",
+        message: "confirmLiveImpact must be true or false."
+      });
+    }
+    try {
+      return alertInventoryRowSchema.parse(await service.resetManagedAlert(
+        readParam(request.params, "alertId"),
+        input.data.confirmLiveImpact
+      ));
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
+  app.delete("/management/alerts/:alertId", { preHandler }, async (request, reply) => {
+    const input = managedAlertMutationInputSchema.safeParse(request.body ?? {});
+    if (!input.success) {
+      return sendHttpError(reply, 400, {
+        code: "INVALID_ALERT_MUTATION_CONFIRMATION",
+        message: "confirmLiveImpact must be true or false."
+      });
+    }
+    try {
+      await service.deleteManagedAlert(readParam(request.params, "alertId"), input.data.confirmLiveImpact);
+      return reply.status(204).send();
+    } catch (error) {
+      return sendAlertSetCommandError(reply, error);
+    }
+  });
+
   app.delete("/management/alert-sets/:setId", { preHandler }, async (request, reply) => {
     try {
       await service.deleteAlertSet(readParam(request.params, "setId"));
@@ -554,6 +624,12 @@ function sendAlertSetCommandError(reply: Parameters<typeof sendHttpError>[0], er
       message: "Choose a different name; alert set names must be unique."
     });
   }
+  if (error instanceof AlertVariationNameConflictError) {
+    return sendHttpError(reply, 409, {
+      code: "ALERT_VARIATION_NAME_CONFLICT",
+      message: "Choose a different name; variations for the same alert must be unique."
+    });
+  }
   if (error instanceof AlertSetActivationBlockedError) {
     return reply.status(409).send({
       error: { code: "ALERT_SET_ACTIVATION_BLOCKED", message: error.message },
@@ -569,6 +645,12 @@ function sendAlertSetCommandError(reply: Parameters<typeof sendHttpError>[0], er
   if (error instanceof AlertSetDeleteBlockedError) {
     return sendHttpError(reply, 409, {
       code: error.reason === "active" ? "ACTIVE_ALERT_SET_DELETE_BLOCKED" : "ONLY_ALERT_SET_DELETE_BLOCKED",
+      message: error.message
+    });
+  }
+  if (error instanceof AlertManagedLiveImpactConfirmationRequiredError) {
+    return sendHttpError(reply, 409, {
+      code: error.code,
       message: error.message
     });
   }

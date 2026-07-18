@@ -108,23 +108,48 @@ describe("ManagementUiService", () => {
       readiness: expect.arrayContaining([expect.objectContaining({ id: "starter-alert-set", state: "complete" })])
     });
   });
+
+  it("forwards managed-alert authoring commands without changing their inputs", async () => {
+    const createVariation = vi.fn(async () => ({ id: "variant-1" }));
+    const duplicateAlert = vi.fn(async () => ({ id: "alert-copy" }));
+    const resetAlert = vi.fn(async () => ({ id: "alert-1" }));
+    const deleteAlert = vi.fn(async () => undefined);
+    const service = createService([], null, undefined, {
+      createAlertVariation: createVariation as never,
+      duplicateManagedAlert: duplicateAlert as never,
+      resetManagedAlert: resetAlert as never,
+      deleteManagedAlert: deleteAlert
+    });
+
+    await service.createAlertVariation("alert-1", { name: "VIP" });
+    await service.duplicateManagedAlert("alert-1");
+    await service.resetManagedAlert("alert-1", true);
+    await service.deleteManagedAlert("variant-1", false);
+
+    expect(createVariation).toHaveBeenCalledWith("alert-1", { name: "VIP" });
+    expect(duplicateAlert).toHaveBeenCalledWith("alert-1");
+    expect(resetAlert).toHaveBeenCalledWith("alert-1", true);
+    expect(deleteAlert).toHaveBeenCalledWith("variant-1", false);
+  });
 });
 
 function createService(
   providers: readonly RegisteredProviderView[],
   activeSet: AlertSetOverview | null = null,
-  getEventSourceRuntimeView: (provider: RegisteredProviderView) => {
+  getEventSourceRuntimeView: ((provider: RegisteredProviderView) => {
     readonly liveStatus: ProviderLiveStatus;
     readonly error: RegisteredProviderView["error"];
-  } = (providerView) => ({
+  }) | undefined = undefined,
+  alertSetOverrides: Partial<ManagementUiServiceOptions["alertSetService"]> = {}
+) {
+  const runtimeView = getEventSourceRuntimeView ?? ((providerView: RegisteredProviderView) => ({
     liveStatus: !providerView.active
       ? "not-running"
       : providerView.connectionState === "connected" && providerView.intakeState === "active"
         ? "healthy"
         : "error",
     error: providerView.error
-  })
-) {
+  }));
   const options: ManagementUiServiceOptions = {
     providerService: {
       listProviders: vi.fn(async (capability: ProviderCapability) =>
@@ -150,13 +175,18 @@ function createService(
       getSet: vi.fn(),
       createSet: vi.fn(),
       createAlert: vi.fn(),
+      createAlertVariation: vi.fn(),
+      duplicateManagedAlert: vi.fn(),
+      resetManagedAlert: vi.fn(),
+      deleteManagedAlert: vi.fn(),
       renameSet: vi.fn(),
       duplicateSet: vi.fn(),
       getActivationImpact: vi.fn(),
       activateSet: vi.fn(),
       markStarterReviewComplete: vi.fn(),
       setAlertEnabled: vi.fn(),
-      deleteSet: vi.fn()
+      deleteSet: vi.fn(),
+      ...alertSetOverrides
     },
     hasBrowserOutput: async () => false,
     getAlertEditorDocument: async (): Promise<AlertEditorDocument> => {
@@ -208,7 +238,7 @@ function createService(
       secretExclusions: ["Provider credentials", "Overlay route keys"],
       blockers: []
     }),
-    getEventSourceRuntimeView
+    getEventSourceRuntimeView: runtimeView
   };
   return new ManagementUiService(options);
 }

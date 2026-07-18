@@ -54,7 +54,12 @@ import { ConfigurationBackupService } from "../modules/backup/configuration-back
 import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
 import { RuntimeMaintenanceGate } from "../modules/backup/runtime-maintenance-gate.js";
 import { SqliteConfigurationSnapshotRepository } from "../modules/backup/sqlite-configuration-snapshot-repository.js";
-import { currentSchemaVersion, openStreamJamsDatabase, runInTransaction, type StreamJamsDatabase } from "../modules/db/database.js";
+import {
+  currentSchemaVersion,
+  openStreamJamsDatabase,
+  runInTransactionAsync,
+  type StreamJamsDatabase
+} from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
 import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
 import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.js";
@@ -449,10 +454,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   const alertSetMetadataRepository = new SqliteAlertSetMetadataRepository(database.connection);
-  const alertSetManagementService = new AlertSetManagementService({
-    alertService,
-    metadataRepository: alertSetMetadataRepository,
-    async listBrowserSources(): Promise<readonly AlertBrowserSourceView[]> {
+  const listAlertBrowserSources = async (): Promise<readonly AlertBrowserSourceView[]> => {
       const origin = `http://${initialConfig.server.host}:${initialConfig.server.port}`;
       const outputs = await overlayOutputManagementService.listOutputs(origin);
       return outputs
@@ -487,8 +489,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
             copyableUrlStatus: output.copyableUrlStatus
           };
         });
-    }
-  });
+  };
   const alertEditorService = new AlertEditorService({
     documents: alertEditorDocumentRepository,
     rules: alertRepository,
@@ -513,13 +514,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: () => `editor_${randomBytes(12).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
     async saveAtomically(input) {
-      return runInTransaction(database.connection, () => {
+      return runInTransactionAsync(database.connection, async () => {
         alertRepository.saveRuleSync(input.rule);
         alertSetMetadataRepository.saveRuleSync(input.metadata);
         return alertEditorDocumentRepository.saveSync(input.document);
       });
     },
     now
+  });
+  const alertSetManagementService = new AlertSetManagementService({
+    alertService,
+    metadataRepository: alertSetMetadataRepository,
+    documents: alertEditorDocumentRepository,
+    getEditorDocument: (editorId) => alertEditorService.getDocument(editorId),
+    runAtomically: (work) => runInTransactionAsync(database.connection, work),
+    listBrowserSources: listAlertBrowserSources
   });
   const diagnosticsService = new DiagnosticsService({
     repository: diagnosticsLogRepository,

@@ -89,6 +89,150 @@ describe("AlertEditorService", () => {
     );
   });
 
+  it("loads defaults and variations as separate hydrated editor documents", async () => {
+    const variationRule: AlertRule = {
+      ...rule,
+      conditions: [{ field: "ingestProvider", operator: "equals", value: "twitch" }],
+      cooldownSeconds: 15,
+      priority: 10,
+      variants: [
+        { ...rule.variants[0]!, weight: 2, priority: 1 },
+        {
+          ...rule.variants[0]!,
+          id: "variant-vip",
+          name: "VIP follower",
+          enabled: false,
+          weight: 4,
+          priority: 20,
+          conditions: [{ field: "metadata.vip", operator: "equals", value: true }],
+          textTemplate: "Welcome back, {actor.displayName}!"
+        }
+      ]
+    };
+    const harness = createHarnessWithRule(variationRule);
+
+    await expect(harness.service.getDocument(variationRule.id)).resolves.toMatchObject({
+      id: variationRule.id,
+      parentAlertId: null,
+      kind: "default",
+      name: variationRule.name,
+      conditions: variationRule.conditions,
+      variantConditions: [],
+      weight: 2,
+      priority: 1,
+      cooldownSeconds: 15,
+      rulePriority: 10
+    });
+    await expect(harness.service.getDocument("variant-vip")).resolves.toMatchObject({
+      id: "variant-vip",
+      parentAlertId: variationRule.id,
+      kind: "variation",
+      name: "VIP follower",
+      enabled: false,
+      conditions: variationRule.conditions,
+      variantConditions: [{ field: "metadata.vip", operator: "equals", value: true }],
+      weight: 4,
+      priority: 20,
+      cooldownSeconds: 15,
+      rulePriority: 10,
+      layers: [{ type: "text", template: "Welcome back, {actor.displayName}!" }]
+    });
+  });
+
+  it("hydrates stored documents from current rule and variation controls", async () => {
+    const variationRule: AlertRule = {
+      ...rule,
+      name: "Current rule name",
+      cooldownSeconds: 45,
+      priority: 12,
+      variants: [{ ...rule.variants[0]!, name: "Current default", weight: 3, priority: 7 }]
+    };
+    const generated = await createHarnessWithRule(variationRule).service.getDocument(variationRule.id);
+    const stored = {
+      ...generated,
+      name: "Stale name",
+      weight: 1,
+      priority: null,
+      cooldownSeconds: 0,
+      rulePriority: 0,
+      layers: generated.layers.map((layer) => layer.type === "text" ? { ...layer, template: "Stored design" } : layer)
+    } satisfies AlertEditorDocument;
+    const harness = createHarnessWithRule(variationRule, stored);
+
+    await expect(harness.service.getDocument(variationRule.id)).resolves.toMatchObject({
+      name: "Current rule name",
+      weight: 3,
+      priority: 7,
+      cooldownSeconds: 45,
+      rulePriority: 12,
+      layers: [{ type: "text", template: "Stored design" }]
+    });
+  });
+
+  it("saves only the selected variation and keeps metadata keyed by its rule", async () => {
+    const variationRule: AlertRule = {
+      ...rule,
+      variants: [
+        rule.variants[0]!,
+        { ...rule.variants[0]!, id: "variant-vip", name: "VIP", textTemplate: "VIP original" }
+      ]
+    };
+    const harness = createHarnessWithRule(variationRule);
+    const document = await harness.service.getDocument("variant-vip");
+    const edited: AlertEditorDocument = {
+      ...document,
+      name: "VIP updated",
+      variantConditions: [{ field: "metadata.vip", operator: "equals", value: true }],
+      weight: 5,
+      priority: 30,
+      layers: document.layers.map((layer) => layer.type === "text" ? { ...layer, template: "VIP updated text" } : layer)
+    };
+
+    await harness.service.saveDocument("variant-vip", edited);
+
+    expect(harness.rules.saveRule).toHaveBeenCalledWith(expect.objectContaining({
+      id: variationRule.id,
+      variants: [
+        variationRule.variants[0],
+        expect.objectContaining({
+          id: "variant-vip",
+          name: "VIP updated",
+          conditions: edited.variantConditions,
+          weight: 5,
+          priority: 30,
+          textTemplate: "VIP updated text"
+        })
+      ]
+    }));
+    expect(harness.metadata.saveRule).toHaveBeenCalledWith(expect.objectContaining({ ruleId: variationRule.id }));
+  });
+
+  it("uses the parent rule and selected variation identities for variation tests", async () => {
+    const variationRule: AlertRule = {
+      ...rule,
+      variants: [
+        rule.variants[0]!,
+        { ...rule.variants[0]!, id: "variant-vip", name: "VIP" }
+      ]
+    };
+    const harness = createHarnessWithRule(variationRule);
+    const document = await harness.service.getDocument("variant-vip");
+
+    await harness.service.sendTest(document.id, {
+      document,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James" },
+      includeAudio: true,
+      includeTts: true
+    });
+
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      alerts: expect.arrayContaining([
+        expect.objectContaining({ ruleId: variationRule.id, variantId: "variant-vip" })
+      ])
+    }));
+  });
+
   it("rejects a document without a valid enabled profile", async () => {
     const harness = createHarness();
     const document = await harness.service.getDocument(rule.id);
@@ -193,7 +337,7 @@ describe("AlertEditorService", () => {
     expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
       alerts: expect.arrayContaining([
         expect.objectContaining({
-          variantId: videoLayer.id,
+          variantId: rule.id,
           overlayInstruction: expect.objectContaining({
             visual: expect.objectContaining({ assetId: "asset-gif", mediaType: "gif" })
           })
@@ -227,7 +371,7 @@ describe("AlertEditorService", () => {
     expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
       alerts: expect.arrayContaining([
         expect.objectContaining({
-          variantId: audioLayer.id,
+          variantId: rule.id,
           overlayInstruction: expect.objectContaining({
             audio: { assetId: "asset-audio", volume: 0.65 }
           })
@@ -279,10 +423,12 @@ function createHarness(
 ) {
   const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
     find: vi.fn(async () => null),
-    save: vi.fn(async (document: AlertEditorDocument) => document)
+    save: vi.fn(async (document: AlertEditorDocument) => document),
+    delete: vi.fn(async () => undefined)
   };
   const rules = {
     findRuleById: vi.fn(async () => rule),
+    listRules: vi.fn(async () => [rule]),
     listCollections: vi.fn(async () => [{ id: "set-default", name: "Default", enabled: activeSet }]),
     saveRule: vi.fn(async (savedRule: AlertRule) => savedRule)
   };
@@ -305,4 +451,33 @@ function createHarness(
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, hasConnectedOutput, enqueueTest };
+}
+
+function createHarnessWithRule(ruleFixture: AlertRule, storedDocument: AlertEditorDocument | null = null) {
+  const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
+    find: vi.fn(async (editorId: string) => editorId === storedDocument?.id ? storedDocument : null),
+    save: vi.fn(async (document: AlertEditorDocument) => document),
+    delete: vi.fn(async () => undefined)
+  };
+  const rules = {
+    findRuleById: vi.fn(async (ruleId: string) => ruleId === ruleFixture.id ? ruleFixture : null),
+    listRules: vi.fn(async () => [ruleFixture]),
+    listCollections: vi.fn(async () => [{ id: "set-default", name: "Default", enabled: false }]),
+    saveRule: vi.fn(async (savedRule: AlertRule) => savedRule)
+  };
+  const metadata = {
+    findRule: vi.fn(async () => null),
+    saveRule: vi.fn(async (value: AlertRuleManagementMetadata) => value)
+  };
+  const enqueueTest = vi.fn(async () => undefined);
+  const service = new AlertEditorService({
+    documents,
+    rules,
+    metadata,
+    hasConnectedOutput: async () => true,
+    enqueueTest,
+    generateId: () => "generated",
+    generateReferenceId: () => "reference"
+  });
+  return { service, documents, rules, metadata, enqueueTest };
 }

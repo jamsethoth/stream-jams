@@ -23,6 +23,7 @@ import type {
 export interface AlertEditorDocumentRepository {
   find(alertId: string): Promise<AlertEditorDocument | null>;
   save(document: AlertEditorDocument): Promise<AlertEditorDocument>;
+  delete(alertId: string): Promise<void>;
 }
 
 export interface AlertEditorTestPlayback {
@@ -38,7 +39,7 @@ export interface AlertEditorAtomicSaveInput {
 
 export interface AlertEditorServiceOptions {
   readonly documents: AlertEditorDocumentRepository;
-  readonly rules: Pick<AlertRepository, "findRuleById" | "listCollections" | "saveRule">;
+  readonly rules: Pick<AlertRepository, "findRuleById" | "listRules" | "listCollections" | "saveRule">;
   readonly metadata: Pick<AlertSetMetadataRepository, "findRule" | "saveRule">;
   readonly hasConnectedOutput: (targetProfileId: TargetProfileId) => Promise<boolean>;
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
@@ -96,12 +97,12 @@ export class AlertEditorService {
   }
 
   async getDocument(alertId: string): Promise<AlertEditorDocument> {
+    const resolved = await this.#resolveEditorItem(alertId);
     const stored = await this.#options.documents.find(alertId);
-    if (stored !== null) return stored;
-
-    const rule = await this.#findRule(alertId);
-    const metadata = await this.#options.metadata.findRule(alertId);
-    return createDocumentFromRule(rule, metadata);
+    const metadata = await this.#options.metadata.findRule(resolved.rule.id);
+    return stored === null
+      ? createDocumentFromRule(resolved, metadata)
+      : hydrateDocument(stored, resolved, metadata);
   }
 
   async saveDocument(
@@ -115,9 +116,12 @@ export class AlertEditorService {
     }
     validateDocumentForSave(document);
 
-    const rule = await this.#findRule(alertId);
-    const current = await this.#options.documents.find(alertId)
-      ?? createDocumentFromRule(rule, await this.#options.metadata.findRule(alertId));
+    const resolved = await this.#resolveEditorItem(alertId);
+    const metadata = await this.#options.metadata.findRule(resolved.rule.id);
+    const stored = await this.#options.documents.find(alertId);
+    const current = stored === null
+      ? createDocumentFromRule(resolved, metadata)
+      : hydrateDocument(stored, resolved, metadata);
     const affectedProfileIds = getAlertEditorAffectedProfileIds(current, document);
     if (!confirmLiveImpact && affectedProfileIds.length > 0) {
       const collections = await this.#options.rules.listCollections();
@@ -126,8 +130,8 @@ export class AlertEditorService {
         throw new AlertEditorLiveImpactConfirmationRequiredError(affectedProfileIds);
       }
     }
-    const projectedRule = projectDocumentToRule(document, rule);
-    const projectedMetadata = ruleMetadataFromDocument(document);
+    const projectedRule = projectDocumentToRule(document, resolved);
+    const projectedMetadata = ruleMetadataFromDocument(document, resolved.rule.id);
     if (this.#options.saveAtomically !== undefined) {
       return this.#options.saveAtomically({ document, metadata: projectedMetadata, rule: projectedRule });
     }
@@ -174,10 +178,21 @@ export class AlertEditorService {
     };
   }
 
-  async #findRule(alertId: string): Promise<AlertRule> {
-    const rule = await this.#options.rules.findRuleById(alertId);
-    if (rule === null) throw new AlertEditorNotFoundError(alertId);
-    return rule;
+  async #resolveEditorItem(editorId: string): Promise<ResolvedEditorItem> {
+    const directRule = await this.#options.rules.findRuleById(editorId);
+    if (directRule !== null) {
+      const variant = directRule.variants[0];
+      if (variant === undefined) throw new AlertEditorNotFoundError(editorId);
+      return { rule: directRule, variant, variantIndex: 0, editorId, kind: "default" };
+    }
+
+    for (const rule of await this.#options.rules.listRules()) {
+      const variantIndex = rule.variants.findIndex((variant, index) => index > 0 && variant.id === editorId);
+      if (variantIndex >= 0) {
+        return { rule, variant: rule.variants[variantIndex]!, variantIndex, editorId, kind: "variation" };
+      }
+    }
+    throw new AlertEditorNotFoundError(editorId);
   }
 
   #createTestAlerts(
@@ -210,8 +225,8 @@ export class AlertEditorService {
         {
           id: this.#options.generateId(),
           sourceEventId: sourceEvent.id,
-          ruleId: request.document.id,
-          variantId: layer.id,
+          ruleId: request.document.parentAlertId ?? request.document.id,
+          variantId: request.document.id,
           overlayInstruction: instruction
         }
       ];
@@ -245,42 +260,56 @@ const animation = {
   easing: "ease-out"
 };
 
+interface ResolvedEditorItem {
+  readonly rule: AlertRule;
+  readonly variant: AlertRule["variants"][number];
+  readonly variantIndex: number;
+  readonly editorId: string;
+  readonly kind: "default" | "variation";
+}
+
 function createDocumentFromRule(
-  rule: AlertRule,
+  resolved: ResolvedEditorItem,
   metadata: AlertRuleManagementMetadata | null
 ): AlertEditorDocument {
-  const variant = rule.variants[0];
-  if (variant === undefined || rule.collectionIds[0] === undefined) {
+  const { rule, variant } = resolved;
+  if (rule.collectionIds[0] === undefined) {
     throw new AlertEditorValidationError(["This alert is missing a set or default variation and cannot be edited."]);
   }
 
   const layers: AlertLayer[] = [];
   if (variant.visualAssetId !== null) {
-    layers.push(layerBase(`${rule.id}-visual`, "Visual", "image", layers.length, { assetId: variant.visualAssetId }));
+    layers.push(layerBase(`${resolved.editorId}-visual`, "Visual", "image", layers.length, { assetId: variant.visualAssetId }));
   }
-  layers.push(layerBase(`${rule.id}-text`, "Message", "text", layers.length, { template: variant.textTemplate }));
+  layers.push(layerBase(`${resolved.editorId}-text`, "Message", "text", layers.length, { template: variant.textTemplate }));
   if (variant.audioAssetId !== null) {
-    layers.push(layerBase(`${rule.id}-audio`, "Audio", "audio", layers.length, { assetId: variant.audioAssetId, volume: 1 }));
+    layers.push(layerBase(`${resolved.editorId}-audio`, "Audio", "audio", layers.length, { assetId: variant.audioAssetId, volume: 1 }));
   }
   if (variant.ttsConfig !== null) {
-    layers.push(layerBase(`${rule.id}-tts`, "Text to speech", "tts", layers.length, { template: variant.ttsConfig.template }));
+    layers.push(layerBase(`${resolved.editorId}-tts`, "Text to speech", "tts", layers.length, { template: variant.ttsConfig.template }));
   }
 
   const enabledProfiles = new Set(metadata?.targetProfileIds ?? ["landscape"]);
+  const landscapeReviewState = metadata?.reviewState === "needs-review" ? "needs-review" : "ready";
   const document = {
-    id: rule.id,
+    id: resolved.editorId,
     setId: rule.collectionIds[0],
     providerKind: metadata?.providerKind ?? "twitch",
     eventType: rule.eventType,
-    kind: "default" as const,
-    parentAlertId: null,
-    name: rule.name,
-    enabled: rule.enabled,
+    kind: resolved.kind,
+    parentAlertId: resolved.kind === "variation" ? rule.id : null,
+    name: resolved.kind === "default" ? rule.name : variant.name,
+    enabled: variant.enabled,
     conditions: rule.conditions,
+    variantConditions: variant.conditions ?? [],
+    weight: variant.weight,
+    priority: variant.priority ?? null,
+    cooldownSeconds: rule.cooldownSeconds,
+    rulePriority: rule.priority,
     durationMs: variant.durationMs,
     layers,
     targetProfiles: [
-      createTargetProfile("landscape", enabledProfiles.has("landscape"), "ready", layers, variant.layout),
+      createTargetProfile("landscape", enabledProfiles.has("landscape"), landscapeReviewState, layers, variant.layout),
       createTargetProfile(
         "vertical",
         enabledProfiles.has("vertical"),
@@ -292,6 +321,52 @@ function createDocumentFromRule(
     samplePayloads: createBuiltInSamples(rule.eventType)
   };
   return alertEditorDocumentSchema.parse(document);
+}
+
+export function createAlertEditorDocumentFromRule(
+  rule: AlertRule,
+  variantIndex: number,
+  metadata: AlertRuleManagementMetadata | null
+): AlertEditorDocument {
+  const variant = rule.variants[variantIndex];
+  if (variant === undefined || variantIndex < 0) {
+    throw new AlertEditorNotFoundError(variantIndex === 0 ? rule.id : String(variantIndex));
+  }
+  return createDocumentFromRule({
+    rule,
+    variant,
+    variantIndex,
+    editorId: variantIndex === 0 ? rule.id : variant.id,
+    kind: variantIndex === 0 ? "default" : "variation"
+  }, metadata);
+}
+
+function hydrateDocument(
+  stored: AlertEditorDocument,
+  resolved: ResolvedEditorItem,
+  metadata: AlertRuleManagementMetadata | null
+): AlertEditorDocument {
+  const setId = resolved.rule.collectionIds[0];
+  if (setId === undefined) {
+    throw new AlertEditorValidationError(["This alert is missing a set and cannot be edited."]);
+  }
+  return alertEditorDocumentSchema.parse({
+    ...stored,
+    id: resolved.editorId,
+    setId,
+    providerKind: metadata?.providerKind ?? stored.providerKind,
+    eventType: resolved.rule.eventType,
+    kind: resolved.kind,
+    parentAlertId: resolved.kind === "variation" ? resolved.rule.id : null,
+    name: resolved.kind === "default" ? resolved.rule.name : resolved.variant.name,
+    enabled: resolved.variant.enabled,
+    conditions: resolved.rule.conditions,
+    variantConditions: resolved.variant.conditions ?? [],
+    weight: resolved.variant.weight,
+    priority: resolved.variant.priority ?? null,
+    cooldownSeconds: resolved.rule.cooldownSeconds,
+    rulePriority: resolved.rule.priority
+  });
 }
 
 function layerBase<T extends AlertLayer["type"]>(
@@ -368,11 +443,8 @@ function requiresLayout(layer: AlertLayer): boolean {
   return layer.type === "text" || layer.type === "image" || layer.type === "video" || layer.type === "shape";
 }
 
-function projectDocumentToRule(document: AlertEditorDocument, rule: AlertRule): AlertRule {
-  const currentVariant = rule.variants[0];
-  if (currentVariant === undefined) {
-    throw new AlertEditorValidationError(["This alert has no default variation to update."]);
-  }
+function projectDocumentToRule(document: AlertEditorDocument, resolved: ResolvedEditorItem): AlertRule {
+  const { rule, variant: currentVariant } = resolved;
   const text = document.layers.find((layer) => layer.type === "text");
   const visual = document.layers.find((layer) => layer.type === "image" || layer.type === "video");
   const audio = document.layers.find((layer) => layer.type === "audio");
@@ -382,15 +454,21 @@ function projectDocumentToRule(document: AlertEditorDocument, rule: AlertRule): 
   const layout = profile.layerLayouts.find((candidate) => candidate.layerId === primaryLayerId) ?? currentVariant.layout;
   return {
     ...rule,
-    name: document.name,
+    name: resolved.kind === "default" ? document.name : rule.name,
     eventType: document.eventType,
-    enabled: document.enabled,
+    enabled: rule.variants.some((variant, index) => index === resolved.variantIndex ? document.enabled : variant.enabled),
     conditions: document.conditions,
     collectionIds: [document.setId],
-    variants: [
-      {
+    cooldownSeconds: document.cooldownSeconds,
+    priority: document.rulePriority,
+    variants: rule.variants.map((variant, index) => index === resolved.variantIndex
+      ? {
         ...currentVariant,
+        name: resolved.kind === "variation" ? document.name : currentVariant.name,
         enabled: document.enabled,
+        conditions: document.variantConditions,
+        weight: document.weight,
+        ...(document.priority === null ? { priority: undefined } : { priority: document.priority }),
         visualAssetId: visual?.assetId ?? null,
         audioAssetId: audio?.assetId ?? null,
         textTemplate: text?.template ?? "",
@@ -400,15 +478,14 @@ function projectDocumentToRule(document: AlertEditorDocument, rule: AlertRule): 
             : { ...currentVariant.ttsConfig, enabled: true, template: tts.template },
         durationMs: document.durationMs,
         layout
-      },
-      ...rule.variants.slice(1)
-    ]
+      }
+      : variant)
   };
 }
 
-function ruleMetadataFromDocument(document: AlertEditorDocument): AlertRuleManagementMetadata {
+function ruleMetadataFromDocument(document: AlertEditorDocument, ruleId: string): AlertRuleManagementMetadata {
   return {
-    ruleId: document.id,
+    ruleId,
     providerKind: document.providerKind,
     reviewState: document.targetProfiles.some((profile) => profile.enabled && profile.reviewState === "needs-review")
       ? "needs-review"

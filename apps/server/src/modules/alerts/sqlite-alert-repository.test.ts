@@ -51,6 +51,25 @@ describe("SqliteAlertRepository", () => {
     await expect(repository.findRuleById("rule-1")).resolves.toEqual(ruleWithVariantSelection);
   });
 
+  it("preserves default and variation order independently of their IDs", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteAlertRepository(database.connection);
+    const collection = createCollection("collection-1", "Main Alerts");
+    const rule = createRule("rule-1", [collection.id]);
+    const defaultVariant = { ...rule.variants[0]!, id: "variant-z-default", name: "Default" };
+    const variation = { ...rule.variants[0]!, id: "variant-a-special", name: "Special" };
+
+    await repository.saveCollection(collection);
+    await repository.saveRule({ ...rule, variants: [defaultVariant, variation] });
+
+    await expect(repository.findRuleById(rule.id)).resolves.toMatchObject({
+      variants: [
+        { id: "variant-z-default", name: "Default" },
+        { id: "variant-a-special", name: "Special" }
+      ]
+    });
+  });
+
   it("removes deleted collections from persisted rule collection ids", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);

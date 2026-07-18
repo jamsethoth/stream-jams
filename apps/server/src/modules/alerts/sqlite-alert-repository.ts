@@ -101,6 +101,10 @@ export class SqliteAlertRepository implements AlertRepository {
 
   saveRuleSync(rule: AlertRule): AlertRule {
     const parsed = alertRuleSchema.parse(rule);
+    const variantIds = parsed.variants.map((variant) => variant.id);
+    if (new Set(variantIds).size !== variantIds.length) {
+      throw new Error(`Alert rule "${parsed.id}" contains duplicate variant IDs`);
+    }
 
     runInTransaction(this.#connection, () => {
       this.#connection
@@ -125,7 +129,6 @@ export class SqliteAlertRepository implements AlertRepository {
 
       this.#connection.prepare("DELETE FROM alert_rule_collections WHERE rule_id = ?").run(parsed.id);
       this.#connection.prepare("DELETE FROM alert_rule_conditions WHERE rule_id = ?").run(parsed.id);
-      this.#connection.prepare("DELETE FROM alert_variants WHERE rule_id = ?").run(parsed.id);
 
       const insertCollection = this.#connection.prepare(
         "INSERT INTO alert_rule_collections (rule_id, collection_id) VALUES (?, ?)"
@@ -156,10 +159,29 @@ export class SqliteAlertRepository implements AlertRepository {
           text_template,
           tts_config_json,
           duration_ms,
-          layout_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          layout_json,
+          variant_order
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          enabled = excluded.enabled,
+          weight = excluded.weight,
+          conditions_json = excluded.conditions_json,
+          priority = excluded.priority,
+          visual_asset_id = excluded.visual_asset_id,
+          audio_asset_id = excluded.audio_asset_id,
+          text_template = excluded.text_template,
+          tts_config_json = excluded.tts_config_json,
+          duration_ms = excluded.duration_ms,
+          layout_json = excluded.layout_json,
+          variant_order = excluded.variant_order`
       );
-      for (const variant of parsed.variants) {
+      const findVariantOwner = this.#connection.prepare("SELECT rule_id FROM alert_variants WHERE id = ?");
+      for (const [variantOrder, variant] of parsed.variants.entries()) {
+        const owner = findVariantOwner.get(variant.id);
+        if (owner !== undefined && String(owner.rule_id) !== parsed.id) {
+          throw new Error(`Alert variant "${variant.id}" already belongs to another rule`);
+        }
         insertVariant.run(
           variant.id,
           parsed.id,
@@ -173,8 +195,15 @@ export class SqliteAlertRepository implements AlertRepository {
           variant.textTemplate,
           variant.ttsConfig === null ? null : JSON.stringify(variant.ttsConfig),
           variant.durationMs,
-          JSON.stringify(variant.layout)
+          JSON.stringify(variant.layout),
+          variantOrder
         );
+      }
+      const retainedVariantIds = new Set(parsed.variants.map((variant) => variant.id));
+      const deleteVariant = this.#connection.prepare("DELETE FROM alert_variants WHERE id = ?");
+      for (const row of this.#connection.prepare("SELECT id FROM alert_variants WHERE rule_id = ?").all(parsed.id)) {
+        const variantId = String(row.id);
+        if (!retainedVariantIds.has(variantId)) deleteVariant.run(variantId);
       }
     });
 
@@ -188,7 +217,7 @@ export class SqliteAlertRepository implements AlertRepository {
   async listRules(): Promise<readonly AlertRule[]> {
     const rows = this.#connection
       .prepare(
-        `SELECT id, name, event_type, enabled, cooldown_seconds, priority
+         `SELECT id, name, event_type, enabled, cooldown_seconds, priority
          FROM alert_rules
          ORDER BY id`
       )
@@ -258,7 +287,7 @@ export class SqliteAlertRepository implements AlertRepository {
         `SELECT id, name, enabled, weight, conditions_json, priority, visual_asset_id, audio_asset_id, text_template, tts_config_json, duration_ms, layout_json
          FROM alert_variants
          WHERE rule_id = ?
-         ORDER BY id`
+         ORDER BY variant_order, id`
       )
       .all(ruleId)
       .map((row) => mapVariantRow(row as unknown as AlertVariantRow));

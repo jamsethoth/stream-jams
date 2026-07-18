@@ -35,9 +35,11 @@ export interface ResolveAlertMatchesInput {
   readonly target: AlertResolverTarget;
   readonly visualAssetMediaTypes?: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>;
   readonly editorDocuments?: ReadonlyMap<string, AlertEditorDocument>;
+  readonly selectedVariants?: ReadonlyMap<string, AlertVariant>;
 }
 
 export interface AlertResolver {
+  selectVariants(matches: readonly AlertMatch[]): ReadonlyMap<string, AlertVariant>;
   resolveMatches(input: ResolveAlertMatchesInput): readonly ResolvedAlert[];
 }
 
@@ -95,17 +97,30 @@ export class DefaultAlertResolver implements AlertResolver {
     const targetProfileId = toEditorTargetProfileId(input.target.targetProfileId);
     if (targetProfileId !== null) {
       return matches.flatMap((match) => {
-        const document = input.editorDocuments?.get(match.rule.id);
+        const variant = input.selectedVariants?.get(match.rule.id) ?? this.#selectVariant(match);
+        const defaultVariant = match.rule.variants[0];
+        const editorId = variant.id === defaultVariant?.id ? match.rule.id : variant.id;
+        const document = input.editorDocuments?.get(editorId);
         return document === undefined
-          ? [this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {})]
-          : this.#resolveEditorDocument(match, document, targetProfileId, input.target, input.visualAssetMediaTypes ?? {});
+          ? [this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}, variant)]
+          : this.#resolveEditorDocument(match, variant, document, targetProfileId, input.target, input.visualAssetMediaTypes ?? {});
       });
     }
-    return matches.map((match) => this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}));
+    return matches.map((match) => this.#resolveMatch(
+      match,
+      input.target,
+      input.visualAssetMediaTypes ?? {},
+      input.selectedVariants?.get(match.rule.id)
+    ));
+  }
+
+  selectVariants(matches: readonly AlertMatch[]): ReadonlyMap<string, AlertVariant> {
+    return new Map(matches.map((match) => [match.rule.id, this.#selectVariant(match)]));
   }
 
   #resolveEditorDocument(
     match: AlertMatch,
+    variant: AlertVariant,
     document: AlertEditorDocument,
     targetProfileId: TargetProfileId,
     target: AlertResolverTarget,
@@ -135,7 +150,7 @@ export class DefaultAlertResolver implements AlertResolver {
           id: this.#generateId("resolved-alert"),
           sourceEventId: match.event.id,
           ruleId: match.rule.id,
-          variantId: layer.id,
+          variantId: variant.id,
           overlayInstruction: instruction
         }];
       });
@@ -207,9 +222,10 @@ export class DefaultAlertResolver implements AlertResolver {
   #resolveMatch(
     match: AlertMatch,
     target: AlertResolverTarget,
-    visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>
+    visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>,
+    selectedVariant?: AlertVariant
   ): ResolvedAlert {
-    const variant = this.#selectVariant(match);
+    const variant = selectedVariant ?? this.#selectVariant(match);
     const resolvedAlertId = this.#generateId("resolved-alert");
     const overlayInstruction = this.#createOverlayInstruction(match, variant, target, visualAssetMediaTypes);
 

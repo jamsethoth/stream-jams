@@ -270,6 +270,7 @@ function alert(
     setId,
     providerKind: "twitch" as const,
     eventType,
+    parentAlertId: null,
     name,
     kind: "default" as const,
     enabled,

@@ -105,6 +105,9 @@ describe("createServerApp", () => {
             throw new Error("not called");
           },
           async deleteRule() {},
+          async createVariant() {
+            throw new Error("not called");
+          },
           async saveVariant() {
             throw new Error("not called");
           },

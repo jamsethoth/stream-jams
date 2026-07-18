@@ -42,7 +42,98 @@ describe("SqliteAlertEditorDocumentRepository", () => {
     await repository.save(renamed);
     await expect(repository.find(document.id)).resolves.toEqual(renamed);
   });
+
+  it("stores and deletes a variation document by its variant identity", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = new SqliteAlertRepository(database.connection);
+    await alerts.saveCollection({ id: "set-default", name: "Default", enabled: true });
+    await alerts.saveRule({
+      id: "alert-follow",
+      name: "New follower",
+      eventType: "follow",
+      enabled: true,
+      collectionIds: ["set-default"],
+      conditions: [],
+      variants: [{
+        id: "variant-follow",
+        name: "Default",
+        enabled: true,
+        weight: 1,
+        visualAssetId: null,
+        audioAssetId: null,
+        textTemplate: "{userName}",
+        ttsConfig: null,
+        durationMs: 5_000,
+        layout: { x: 710, y: 420, width: 500, height: 120, zIndex: 1 }
+      }],
+      cooldownSeconds: 0,
+      priority: 0
+    });
+    const repository = new SqliteAlertEditorDocumentRepository(database.connection);
+    const document = {
+      ...editorDocument(),
+      id: "variant-follow",
+      kind: "variation" as const,
+      parentAlertId: "alert-follow"
+    };
+
+    await expect(repository.save(document)).resolves.toEqual(document);
+    await expect(repository.find(document.id)).resolves.toEqual(document);
+    await expect(repository.delete(document.id)).resolves.toBeUndefined();
+    await expect(repository.find(document.id)).resolves.toBeNull();
+  });
+
+  it("preserves a variation document when its owning rule is updated", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = new SqliteAlertRepository(database.connection);
+    await alerts.saveCollection({ id: "set-default", name: "Default", enabled: true });
+    const defaultVariant = alertVariant("variant-follow", "Default");
+    const variation = alertVariant("variant-vip", "VIP");
+    const rule = {
+      id: "alert-follow",
+      name: "New follower",
+      eventType: "follow" as const,
+      enabled: true,
+      collectionIds: ["set-default"],
+      conditions: [],
+      variants: [defaultVariant, variation],
+      cooldownSeconds: 0,
+      priority: 0
+    };
+    await alerts.saveRule(rule);
+    const repository = new SqliteAlertEditorDocumentRepository(database.connection);
+    const document = {
+      ...editorDocument(),
+      id: variation.id,
+      kind: "variation" as const,
+      parentAlertId: rule.id,
+      name: variation.name
+    };
+    await repository.save(document);
+
+    await alerts.saveRule({
+      ...rule,
+      variants: [defaultVariant, { ...variation, enabled: false }]
+    });
+
+    await expect(repository.find(variation.id)).resolves.toEqual(document);
+  });
 });
+
+function alertVariant(id: string, name: string) {
+  return {
+    id,
+    name,
+    enabled: true,
+    weight: 1,
+    visualAssetId: null,
+    audioAssetId: null,
+    textTemplate: "{userName}",
+    ttsConfig: null,
+    durationMs: 5_000,
+    layout: { x: 710, y: 420, width: 500, height: 120, zIndex: 1 }
+  };
+}
 
 function editorDocument(): AlertEditorDocument {
   return {
@@ -55,6 +146,11 @@ function editorDocument(): AlertEditorDocument {
     name: "New follower",
     enabled: true,
     conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: 0,
+    rulePriority: 0,
     durationMs: 5_000,
     layers: [{
       id: "layer-text",

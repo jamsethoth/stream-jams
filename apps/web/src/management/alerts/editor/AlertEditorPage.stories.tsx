@@ -126,6 +126,11 @@ function editorDocument(): AlertEditorDocument {
     name: "New follower",
     enabled: true,
     conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: 0,
+    rulePriority: 0,
     durationMs: 5_000,
     layers: [
       { id: "layer-text", name: "Message", type: "text", visible: true, order: 0, template: "Thanks, {userName}!", animation: preset("fade") },
@@ -175,8 +180,8 @@ function alertSetDetail(): AlertSetDetail {
       outputs: []
     },
     inventory: [
-      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", name: "New follower", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
-      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
+      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
+      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
   };

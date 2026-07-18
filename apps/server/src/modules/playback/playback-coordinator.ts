@@ -122,12 +122,14 @@ export class PlaybackCoordinator {
 
     const editorDocuments = await this.#loadEditorDocuments(readyMatches);
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(readyMatches, editorDocuments.values());
+    const selectedVariants = this.#resolver.selectVariants(readyMatches);
     const resolvedAlerts = this.#targets.flatMap((target) =>
       this.#resolver.resolveMatches({
         matches: readyMatches,
         target,
         visualAssetMediaTypes,
-        editorDocuments
+        editorDocuments,
+        selectedVariants
       })
     );
     const snapshot = this.#deliverCurrent(this.#queue.enqueue({
@@ -295,9 +297,13 @@ export class PlaybackCoordinator {
     const documents = new Map<string, AlertEditorDocument>();
     if (this.#findEditorDocument === null) return documents;
 
-    await Promise.all([...new Set(matches.map((match) => match.rule.id))].map(async (ruleId) => {
-      const document = await this.#findEditorDocument!(ruleId);
-      if (document !== null) documents.set(ruleId, document);
+    const editorIds = new Set(matches.flatMap((match) => [
+      match.rule.id,
+      ...match.rule.variants.slice(1).map((variant) => variant.id)
+    ]));
+    await Promise.all([...editorIds].map(async (editorId) => {
+      const document = await this.#findEditorDocument!(editorId);
+      if (document !== null) documents.set(editorId, document);
     }));
     return documents;
   }

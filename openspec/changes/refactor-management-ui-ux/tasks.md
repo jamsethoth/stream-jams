@@ -107,8 +107,8 @@
 ## 10. Audited Alert Authoring Gap Closure
 
 - [x] 10.1 Define stable default/variation editor identities, parent linkage, rule controls, variant controls, and service-owned variation ID generation.
-- [ ] 10.2 Persist and resolve one editor document per default or variation, including migration, backup, transaction, and live-playback coverage.
-- [ ] 10.3 Add create-variation, duplicate, reset, and delete management commands with explicit live-impact handling.
+- [x] 10.2 Persist and resolve one editor document per default or variation, including migration, backup, transaction, and live-playback coverage.
+- [x] 10.3 Add create-variation, duplicate, reset, and delete management commands with explicit live-impact handling.
 - [ ] 10.4 Complete default and variation authoring in the alert-set inventory and focused editor.
 
 ## 11. Audited Focused Editor Gap Closure

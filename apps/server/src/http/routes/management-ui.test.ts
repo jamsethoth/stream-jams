@@ -277,9 +277,32 @@ describe("management UI contract routes", () => {
       headers: authHeaders,
       payload: { enabled: true }
     });
+    const variation = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/variations",
+      headers: authHeaders,
+      payload: { name: "VIP follower" }
+    });
+    const alertCopy = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/duplicate",
+      headers: authHeaders
+    });
+    const resetAlert = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/reset",
+      headers: authHeaders,
+      payload: { confirmLiveImpact: true }
+    });
+    const deletedAlert = await app.inject({
+      method: "DELETE",
+      url: "/management/alerts/variant-vip",
+      headers: authHeaders,
+      payload: { confirmLiveImpact: true }
+    });
     const deleted = await app.inject({ method: "DELETE", url: "/management/alert-sets/set-seasonal", headers: authHeaders });
 
-    expect([detail, created, renamed, duplicated, impact, activated, reviewed, alertCreated, enabled].map((response) => response.statusCode)).toEqual([
+    expect([detail, created, renamed, duplicated, impact, activated, reviewed, alertCreated, enabled, variation, alertCopy, resetAlert].map((response) => response.statusCode)).toEqual([
       200,
       201,
       200,
@@ -287,9 +310,13 @@ describe("management UI contract routes", () => {
       200,
       200,
       200,
+      201,
+      200,
+      201,
       201,
       200
     ]);
+    expect(deletedAlert.statusCode).toBe(204);
     expect(deleted.statusCode).toBe(204);
     expect(service.alertSetCommands).toEqual([
       ["create", "Spooky season"],
@@ -299,6 +326,10 @@ describe("management UI contract routes", () => {
       ["review", "set-default"],
       ["create-alert", "set-default", "cheer", "Big cheer"],
       ["enable-alert", "alert-follow", true],
+      ["create-variation", "alert-follow", "VIP follower"],
+      ["duplicate-alert", "alert-follow"],
+      ["reset-alert", "alert-follow", true],
+      ["delete-alert", "variant-vip", true],
       ["delete", "set-seasonal"]
     ]);
   });
@@ -317,8 +348,22 @@ describe("management UI contract routes", () => {
       headers: authHeaders,
       payload: { enabled: "yes" }
     });
+    const invalidVariation = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/variations",
+      headers: authHeaders,
+      payload: { name: "" }
+    });
+    const invalidReset = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/reset",
+      headers: authHeaders,
+      payload: { confirmLiveImpact: "yes" }
+    });
 
     expect(invalidName.statusCode).toBe(400);
+    expect(invalidVariation.statusCode).toBe(400);
+    expect(invalidReset.statusCode).toBe(400);
     expect(invalidName.json()).toEqual({
       error: {
         code: "INVALID_ALERT_SET_NAME",
@@ -522,6 +567,31 @@ class StubManagementUiQueryService {
     return { overview: alertSetOverview(), inventory: [{ ...alertInventoryRow(), enabled }], browserSources: [] };
   }
 
+  async createAlertVariation(alertId: string, input: { readonly name: string }) {
+    this.alertSetCommands.push(["create-variation", alertId, input.name]);
+    return {
+      ...alertInventoryRow(),
+      id: "variant-vip",
+      parentAlertId: alertId,
+      kind: "variation" as const,
+      name: input.name
+    };
+  }
+
+  async duplicateManagedAlert(alertId: string) {
+    this.alertSetCommands.push(["duplicate-alert", alertId]);
+    return { ...alertInventoryRow(), id: "alert-follow-copy", name: "New follower copy" };
+  }
+
+  async resetManagedAlert(alertId: string, confirmLiveImpact: boolean) {
+    this.alertSetCommands.push(["reset-alert", alertId, confirmLiveImpact]);
+    return alertInventoryRow();
+  }
+
+  async deleteManagedAlert(alertId: string, confirmLiveImpact: boolean) {
+    this.alertSetCommands.push(["delete-alert", alertId, confirmLiveImpact]);
+  }
+
   async deleteAlertSet(setId: string) {
     this.alertSetCommands.push(["delete", setId]);
   }
@@ -642,6 +712,7 @@ function alertSetOverview() {
 function alertInventoryRow() {
   return {
     id: "alert-follow",
+    parentAlertId: null,
     setId: "set-default",
     providerKind: "twitch" as const,
     eventType: "follow" as const,

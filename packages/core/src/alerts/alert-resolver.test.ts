@@ -278,13 +278,7 @@ describe("DefaultAlertResolver", () => {
 
     const resolved = createResolver().resolveMatches(input);
 
-    expect(resolved.map((alert) => alert.variantId)).toEqual([
-      "layer-text",
-      "layer-image",
-      "layer-audio",
-      "layer-tts",
-      "layer-shape"
-    ]);
+    expect(resolved.map((alert) => alert.variantId)).toEqual(Array(5).fill("variant-1"));
     expect(resolved.map((alert) => alert.overlayInstruction.targetProfileId)).toEqual([
       "landscape",
       "landscape",
@@ -324,6 +318,41 @@ describe("DefaultAlertResolver", () => {
     };
 
     expect(createResolver().resolveMatches(input)).toEqual([]);
+  });
+
+  it("renders the saved editor document for the selected variation", () => {
+    const baseRule = createRule();
+    const rule: AlertRule = {
+      ...baseRule,
+      variants: [
+        { ...baseRule.variants[0]!, enabled: false },
+        { ...baseRule.variants[0]!, id: "variant-special", name: "Special", enabled: true, textTemplate: "Legacy special" }
+      ]
+    };
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule),
+      id: "variant-special",
+      kind: "variation",
+      parentAlertId: rule.id,
+      name: "Special",
+      layers: createEditorDocument(rule).layers.map((layer) =>
+        layer.type === "text" ? { ...layer, template: "Saved variation {actor.displayName}" } : layer
+      )
+    };
+
+    const resolved = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent())],
+      target: {
+        overlayId: "overlay-1",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape"
+      },
+      editorDocuments: new Map([[document.id, document]])
+    });
+
+    expect(resolved[0]?.overlayInstruction.text?.text).toBe("Saved variation Viewer");
+    expect(resolved.every((alert) => alert.variantId === "variant-special")).toBe(true);
   });
 
   it("falls back to legacy rule rendering for a profile target without an editor document", () => {

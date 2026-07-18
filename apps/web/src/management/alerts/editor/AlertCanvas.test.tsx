@@ -64,6 +64,11 @@ const editorDocument: AlertEditorDocument = {
   name: "Follower",
   enabled: true,
   conditions: [],
+  variantConditions: [],
+  weight: 1,
+  priority: null,
+  cooldownSeconds: 0,
+  rulePriority: 0,
   durationMs: 2_000,
   layers: [{
     id: "layer-shape",

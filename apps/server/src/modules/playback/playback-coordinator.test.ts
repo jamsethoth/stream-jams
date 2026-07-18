@@ -300,18 +300,82 @@ describe("PlaybackCoordinator", () => {
     }))).toEqual([
       expect.objectContaining({ variantId: "variant-1", targetProfileId: undefined }),
       {
-        variantId: "layer-primary",
+        variantId: "variant-1",
         targetProfileId: "landscape",
         text: "Primary Viewer",
         layout: { layerId: "layer-primary", x: 100, y: 120, width: 500, height: 100, zIndex: 2 }
       },
       {
-        variantId: "layer-secondary",
+        variantId: "variant-1",
         targetProfileId: "landscape",
         text: "Secondary Viewer",
         layout: { layerId: "layer-secondary", x: 300, y: 400, width: 600, height: 120, zIndex: 3 }
       }
     ]);
+  });
+
+  it("loads variation editor documents for live profile playback", async () => {
+    const baseRule = createRule({ id: "rule-variation-live" });
+    const rule: AlertRule = {
+      ...baseRule,
+      variants: [
+        { ...baseRule.variants[0]!, enabled: false },
+        createVariant({ id: "variant-special", name: "Special", enabled: true, textTemplate: "Legacy special" })
+      ]
+    };
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule),
+      id: "variant-special",
+      kind: "variation",
+      parentAlertId: rule.id,
+      name: "Special",
+      layers: createEditorDocument(rule).layers.map((layer) =>
+        layer.type === "text" ? { ...layer, template: "Saved variation {actor.displayName}" } : layer
+      )
+    };
+    const requestedEditorIds: string[] = [];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      additionalTargets: [
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" }
+      ],
+      findEditorDocument: async (editorId) => {
+        requestedEditorIds.push(editorId);
+        return editorId === document.id ? document : null;
+      }
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(requestedEditorIds).toContain("variant-special");
+    expect(result.snapshot.current?.alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        overlayInstruction: expect.objectContaining({ text: expect.objectContaining({ text: "Saved variation Viewer" }) })
+      })
+    ]));
+  });
+
+  it("selects one weighted variation for every target of the same event", async () => {
+    const baseRule = createRule({ id: "rule-weighted" });
+    const rule: AlertRule = {
+      ...baseRule,
+      variants: [
+        createVariant({ id: "variant-a", name: "A", weight: 1 }),
+        createVariant({ id: "variant-b", name: "B", weight: 1 })
+      ]
+    };
+    const randomValues = [0.1, 0.9];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      additionalTargets: [
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" }
+      ],
+      random: () => randomValues.shift() ?? 0.9
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(result.snapshot.current?.alerts.map((alert) => alert.variantId)).toEqual(["variant-a", "variant-a"]);
   });
 
   it("matches, resolves, and enqueues all ready alerts from one accepted event", async () => {
@@ -386,6 +450,7 @@ function createCoordinator(
     readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
     readonly findEditorDocument?: (alertId: string) => Promise<AlertEditorDocument | null>;
     readonly clock?: MutableClock;
+    readonly random?: () => number;
   } = {}
 ): PlaybackCoordinator {
   const clock = options.clock ?? new MutableClock("2026-05-30T12:00:00.000Z");
@@ -397,7 +462,7 @@ function createCoordinator(
     matcher: new DefaultAlertMatcher(),
     resolver: new DefaultAlertResolver({
       generateId: (kind) => `${kind}-${nextResolvedId++}`,
-      random: () => 0
+      random: options.random ?? (() => 0)
     }),
     queue: options.queue ?? new DefaultPlaybackQueue({
       clock: () => clock.now(),
@@ -598,6 +663,11 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
     name: rule.name,
     enabled: true,
     conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: rule.cooldownSeconds,
+    rulePriority: rule.priority,
     durationMs: 3_000,
     layers: [
       { id: "layer-primary", name: "Primary", type: "text", visible: true, order: 0, animation, template: "Primary {actor.displayName}" },

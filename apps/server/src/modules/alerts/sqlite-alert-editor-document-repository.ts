@@ -27,6 +27,10 @@ export class SqliteAlertEditorDocumentRepository implements AlertEditorDocumentR
     return this.saveSync(candidate);
   }
 
+  async delete(editorId: string): Promise<void> {
+    this.#connection.prepare("DELETE FROM alert_editor_documents WHERE alert_id = ?").run(editorId);
+  }
+
   saveSync(candidate: AlertEditorDocument): AlertEditorDocument {
     const document = alertEditorDocumentSchema.parse(candidate);
     this.#connection

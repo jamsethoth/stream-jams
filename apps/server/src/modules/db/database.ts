@@ -10,6 +10,8 @@ import { overlayKeyTargetProfileMigration } from "./migrations/006-overlay-key-t
 import { alertSetManagementMigration } from "./migrations/007-alert-set-management.js";
 import { assetLibraryMetadataMigration } from "./migrations/008-asset-library-metadata.js";
 import { alertEditorDocumentsMigration } from "./migrations/009-alert-editor-documents.js";
+import { variantAlertEditorDocumentsMigration } from "./migrations/010-variant-alert-editor-documents.js";
+import { alertVariantOrderMigration } from "./migrations/011-alert-variant-order.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -31,7 +33,9 @@ const migrations = [
   overlayKeyTargetProfileMigration,
   alertSetManagementMigration,
   assetLibraryMetadataMigration,
-  alertEditorDocumentsMigration
+  alertEditorDocumentsMigration,
+  variantAlertEditorDocumentsMigration,
+  alertVariantOrderMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;
@@ -55,6 +59,35 @@ export function runInTransaction<T>(connection: DatabaseSync, work: () => T): T 
   } catch (error) {
     transaction.rollback();
     throw error;
+  }
+}
+
+const asyncTransactionQueues = new WeakMap<DatabaseSync, { tail: Promise<void> }>();
+
+export async function runInTransactionAsync<T>(connection: DatabaseSync, work: () => Promise<T>): Promise<T> {
+  const queue = asyncTransactionQueues.get(connection) ?? { tail: Promise.resolve() };
+  const previous = queue.tail;
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  queue.tail = current;
+  asyncTransactionQueues.set(connection, queue);
+  await previous;
+
+  try {
+    const transaction = beginTransaction(connection);
+    try {
+      const result = await work();
+      transaction.commit();
+      return result;
+    } catch (error) {
+      transaction.rollback();
+      throw error;
+    }
+  } finally {
+    release();
+    if (queue.tail === current) asyncTransactionQueues.delete(connection);
   }
 }
 

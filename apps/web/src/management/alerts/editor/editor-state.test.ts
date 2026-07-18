@@ -257,6 +257,11 @@ function createDocument(): AlertEditorDocument {
     name: "New follower",
     enabled: true,
     conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: 0,
+    rulePriority: 0,
     durationMs: 5000,
     layers: [
       { ...layerBase("layer-text", "Follower name", 0), type: "text", template: "{userName}" },

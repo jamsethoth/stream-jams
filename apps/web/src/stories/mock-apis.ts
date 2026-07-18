@@ -86,6 +86,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
         setId,
         providerKind: "twitch" as const,
         eventType: input.eventType,
+        parentAlertId: null,
         name: input.name,
         kind: "default" as const,
         enabled: false,

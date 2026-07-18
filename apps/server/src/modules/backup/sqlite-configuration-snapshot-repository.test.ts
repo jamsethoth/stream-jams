@@ -92,6 +92,42 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     ]));
   });
 
+  it("validates and restores a variation-keyed editor document", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const variationDocument = {
+      ...editorDocument(),
+      id: "variant-follow",
+      kind: "variation",
+      parentAlertId: "alert-follow"
+    };
+    const tables = {
+      ...snapshot.tables,
+      alert_variants: snapshot.tables.alert_variants?.map((row) => ({ ...row, tts_config_json: "null" })) ?? [],
+      alert_editor_documents: [
+        ...(snapshot.tables.alert_editor_documents ?? []),
+        {
+          alert_id: "variant-follow",
+          document_json: JSON.stringify(variationDocument),
+          updated_at: "2026-07-15T04:00:00.000Z"
+        }
+      ]
+    };
+    const configuration: ConfigurationBackupArchive["configuration"] = {
+      appConfig: {},
+      tables,
+      providerReconnectMetadata: [],
+      overlayOutputs: []
+    };
+
+    expect(repository.validate(configuration)).toEqual([]);
+    repository.replace({ tables, assets: [seededAsset()] });
+    expect(database.connection.prepare("SELECT alert_id FROM alert_editor_documents ORDER BY alert_id").all()).toEqual([
+      { alert_id: "alert-follow" },
+      { alert_id: "variant-follow" }
+    ]);
+  });
+
   it("rejects duplicate keys and multiple active sets or providers before insertion", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
     const snapshot = repository.snapshot();
@@ -226,6 +262,11 @@ function editorDocument() {
     name: "Follow",
     enabled: true,
     conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: 0,
+    rulePriority: 0,
     durationMs: 5_000,
     layers: [],
     targetProfiles: [
@@ -233,5 +274,17 @@ function editorDocument() {
       { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
     ],
     samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: { userName: "James" } }]
+  };
+}
+
+function seededAsset() {
+  return {
+    id: "asset-follow",
+    originalFileName: "follow.png",
+    mediaType: "image" as const,
+    mimeType: "image/png",
+    sizeBytes: 8,
+    checksum: `sha256:${"a".repeat(64)}`,
+    storagePath: "image/asset-follow.png"
   };
 }

@@ -8,6 +8,7 @@ import {
   type AlertSetActivationResult,
   type AlertSetDetail,
   type AlertInventoryRow,
+  type AlertVariationCreateInput,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -54,6 +55,10 @@ type AlertSetService = Pick<
   | "getSet"
   | "createSet"
   | "createAlert"
+  | "createAlertVariation"
+  | "duplicateManagedAlert"
+  | "resetManagedAlert"
+  | "deleteManagedAlert"
   | "renameSet"
   | "duplicateSet"
   | "getActivationImpact"
@@ -189,6 +194,22 @@ export class ManagementUiService {
 
   createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow> {
     return this.#options.alertSetService.createAlert(setId, input);
+  }
+
+  createAlertVariation(alertId: string, input: AlertVariationCreateInput): Promise<AlertInventoryRow> {
+    return this.#options.alertSetService.createAlertVariation(alertId, input);
+  }
+
+  duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow> {
+    return this.#options.alertSetService.duplicateManagedAlert(alertId);
+  }
+
+  resetManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<AlertInventoryRow> {
+    return this.#options.alertSetService.resetManagedAlert(alertId, confirmLiveImpact);
+  }
+
+  deleteManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<void> {
+    return this.#options.alertSetService.deleteManagedAlert(alertId, confirmLiveImpact);
   }
 
   renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview> {

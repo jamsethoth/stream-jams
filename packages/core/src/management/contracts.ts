@@ -221,6 +221,14 @@ export const alertCreateInputSchema = z.object({
   name: z.string().trim().min(1).max(120)
 });
 
+export const alertVariationCreateInputSchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+
+export const managedAlertMutationInputSchema = z.object({
+  confirmLiveImpact: z.boolean().default(false)
+});
+
 export const alertStarterTemplates = [
   { eventType: "follow", label: "Follow", defaultName: "New follower", text: "Thanks for following, {actor.displayName}!" },
   { eventType: "subscription", label: "Subscription", defaultName: "New subscriber", text: "Thanks for subscribing, {actor.displayName}!" },
@@ -718,6 +726,11 @@ function alertEditorLiveOutputState(document: AlertEditorDocument, profileId: Ta
     providerKind: document.providerKind,
     eventType: document.eventType,
     conditions: document.conditions,
+    variantConditions: document.variantConditions,
+    weight: document.weight,
+    priority: document.priority,
+    cooldownSeconds: document.cooldownSeconds,
+    rulePriority: document.rulePriority,
     durationMs: document.durationMs,
     layers: document.layers.map(alertLayerLiveOutputState),
     layerLayouts: profile.layerLayouts
@@ -751,6 +764,8 @@ export type AlertValidationIssue = z.infer<typeof alertValidationIssueSchema>;
 export type AlertOutputState = z.infer<typeof alertOutputStateSchema>;
 export type AlertSetOverview = z.infer<typeof alertSetOverviewSchema>;
 export type AlertInventoryRow = z.infer<typeof alertInventoryRowSchema>;
+export type AlertVariationCreateInput = z.infer<typeof alertVariationCreateInputSchema>;
+export type ManagedAlertMutationInput = z.infer<typeof managedAlertMutationInputSchema>;
 export type AlertCreateInput = z.infer<typeof alertCreateInputSchema>;
 export type AlertBrowserSourceView = z.infer<typeof alertBrowserSourceViewSchema>;
 export type AlertSetDetail = z.infer<typeof alertSetDetailSchema>;

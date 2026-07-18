@@ -183,6 +183,16 @@ describe("management alert contracts and rules", () => {
     ).toMatchObject({ id: "variant-vip-follow", kind: "variation", parentAlertId: "rule-follow" });
   });
 
+  it("validates variation creation and live-impact confirmation inputs", () => {
+    const createVariation = schema("alertVariationCreateInputSchema");
+    const managedMutation = schema("managedAlertMutationInputSchema");
+
+    expect(createVariation.parse({ name: "  VIP follower  " })).toEqual({ name: "VIP follower" });
+    expect(createVariation.safeParse({ name: "" }).success).toBe(false);
+    expect(managedMutation.parse({})).toEqual({ confirmLiveImpact: false });
+    expect(managedMutation.parse({ confirmLiveImpact: true })).toEqual({ confirmLiveImpact: true });
+  });
+
   it("validates a focused editor document with both target-profile layouts", () => {
     const editorDocument = schema("alertEditorDocumentSchema");
     const document = {
@@ -283,6 +293,15 @@ describe("management alert contracts and rules", () => {
       layers: document.layers.map((layer) => ({ ...layer, template: "Welcome, {userName}!" }))
     };
     expect(affectedProfiles(document as never, liveEdit as never)).toEqual(["landscape"]);
+    for (const liveControlEdit of [
+      { ...document, variantConditions: [{ field: "amount", operator: "min", value: 10 }] },
+      { ...document, weight: 2 },
+      { ...document, priority: 2 },
+      { ...document, cooldownSeconds: 5 },
+      { ...document, rulePriority: 2 }
+    ]) {
+      expect(affectedProfiles(document as never, liveControlEdit as never)).toEqual(["landscape"]);
+    }
     const disabledProfileEdit = {
       ...document,
       targetProfiles: document.targetProfiles.map((profile) =>

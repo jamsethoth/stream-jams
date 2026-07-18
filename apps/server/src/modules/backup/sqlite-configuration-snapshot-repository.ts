@@ -514,6 +514,8 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   const ids = (tableName: string, column: string) => new Set((tables[tableName] ?? []).map((row) => String(row[column])));
   const collectionIds = ids("alert_collections", "id");
   const ruleIds = ids("alert_rules", "id");
+  const variantIds = ids("alert_variants", "id");
+  const alertEditorDocumentIds = new Set([...ruleIds, ...variantIds]);
   const assetIds = ids("asset_metadata", "id");
   checkReferences(errors, tables.alert_rule_collections, "rule_id", ruleIds, "alert_rules");
   checkReferences(errors, tables.alert_rule_collections, "collection_id", collectionIds, "alert_collections");
@@ -522,7 +524,7 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   checkReferences(errors, tables.alert_set_metadata, "set_id", collectionIds, "alert_collections");
   checkReferences(errors, tables.alert_rule_management_metadata, "rule_id", ruleIds, "alert_rules");
   checkReferences(errors, tables.asset_library_metadata, "asset_id", assetIds, "asset_metadata");
-  checkReferences(errors, tables.alert_editor_documents, "alert_id", ruleIds, "alert_rules");
+  checkReferences(errors, tables.alert_editor_documents, "alert_id", alertEditorDocumentIds, "alert_rules or alert_variants");
   for (const [index, row] of (tables.alert_variants ?? []).entries()) {
     for (const column of ["visual_asset_id", "audio_asset_id"] as const) {
       const value = row[column];

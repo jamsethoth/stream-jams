@@ -41,14 +41,14 @@
 - Add `AlertService.createVariant(ruleId, input)` so ID generation stays in the existing domain service.
 - Speaker.bot configuration stores provider kind and template per alert; voice alias remains in provider safety settings.
 
-- [ ] Add unchecked gap-closure sections to `refactor-management-ui-ux/tasks.md`; do not leave the change at 76/76 while its spec is unmet.
-- [ ] Replace the stale Speaker.bot dependency gate with an explicit dependency on Tasks 1-3 of this plan and record the provider-level voice decision.
-- [ ] Write failing contract tests for default/variation identity, parent linkage, rule/variant controls, and backward parsing of stored default documents.
-- [ ] Write failing `DefaultAlertService.createVariant` tests for generated IDs, duplicate-ID protection, and rule-not-found behavior.
-- [ ] Run `corepack.cmd pnpm test -- packages/core/src/management/contracts.test.ts packages/core/src/alerts/alert-service.test.ts`; expect failures from missing fields and method.
-- [ ] Add the minimum Zod fields and `createVariant` implementation, using schema defaults only for stored-document compatibility; server hydration in Task 2 restores actual rule values.
-- [ ] Rerun the focused command; expect all selected tests to pass.
-- [ ] Commit as `feat: define variant-aware alert editor contracts`.
+- [x] Add unchecked gap-closure sections to `refactor-management-ui-ux/tasks.md`; do not leave the change at 76/76 while its spec is unmet.
+- [x] Replace the stale Speaker.bot dependency gate with an explicit dependency on Tasks 1-3 of this plan and record the provider-level voice decision.
+- [x] Write failing contract tests for default/variation identity, parent linkage, rule/variant controls, and backward parsing of stored default documents.
+- [x] Write failing `DefaultAlertService.createVariant` tests for generated IDs, duplicate-ID protection, and rule-not-found behavior.
+- [x] Run `corepack.cmd pnpm test -- packages/core/src/management/contracts.test.ts packages/core/src/alerts/alert-service.test.ts`; expect failures from missing fields and method.
+- [x] Add the minimum Zod fields and `createVariant` implementation, using schema defaults only for stored-document compatibility; server hydration in Task 2 restores actual rule values.
+- [x] Rerun the focused command; expect all selected tests to pass.
+- [x] Commit as `feat: define variant-aware alert editor contracts`.
 
 ### Task 2: Project Every Stored Variant Into One Editor Item
 
@@ -57,8 +57,12 @@
 - Modify: `apps/server/src/modules/alerts/alert-editor-service.test.ts`
 - Modify: `apps/server/src/modules/alerts/sqlite-alert-editor-document-repository.ts`
 - Modify: `apps/server/src/modules/alerts/sqlite-alert-editor-document-repository.test.ts`
-- Add: `apps/server/src/modules/db/migrations/013-variant-alert-editor-documents.ts`
-- Modify: `apps/server/src/modules/db/migrations/index.ts`
+- Add: `apps/server/src/modules/db/migrations/010-variant-alert-editor-documents.ts`
+- Add: `apps/server/src/modules/db/migrations/011-alert-variant-order.ts`
+- Modify: `apps/server/src/modules/db/database.ts`
+- Modify: `apps/server/src/modules/db/database.test.ts`
+- Modify: `apps/server/src/modules/alerts/sqlite-alert-repository.ts`
+- Modify: `apps/server/src/modules/alerts/sqlite-alert-repository.test.ts`
 - Modify: `apps/server/src/modules/backup/sqlite-configuration-snapshot-repository.ts`
 - Modify: `apps/server/src/modules/backup/sqlite-configuration-snapshot-repository.test.ts`
 - Modify: `apps/server/src/modules/alerts/alert-set-management-service.ts`
@@ -71,12 +75,17 @@
 - Modify: `apps/server/src/runtime/runtime-composition.smoke.test.ts`
 - Modify: `apps/server/src/modules/playback/playback-coordinator.ts`
 - Modify: `apps/server/src/modules/playback/playback-coordinator.test.ts`
+- Modify: `packages/core/src/alerts/alert-resolver.ts`
+- Modify: `packages/core/src/alerts/alert-resolver.test.ts`
+- Modify: `apps/server/src/app.test.ts`
 
 **Interfaces:**
 - Default editor key resolves to `rule.id` and `rule.variants[0]`; variation key resolves to its owning rule and exact variant.
 - `AlertEditorDocumentRepository.delete(editorId)` removes obsolete variation/default documents.
 - Editor-document persistence accepts rule IDs and variant IDs without weakening referential cleanup, and backup validation recognizes both identities.
 - Live playback loads the saved editor document for the matched variant ID, falling back to the default rule document only for the default variant.
+- Weighted variation selection happens once per event and is reused by every output target; resolved diagnostics retain the selected variant ID for every rendered layer.
+- Variant order is persisted explicitly so the default remains first regardless of generated IDs, and async alert mutations serialize per SQLite connection.
 - Add management commands `createAlertVariation`, `duplicateManagedAlert`, `resetManagedAlert`, and `deleteManagedAlert`.
 - Add routes:
   - `POST /management/alerts/:alertId/variations`
@@ -84,17 +93,17 @@
   - `POST /management/alerts/:alertId/reset`
   - `DELETE /management/alerts/:alertId`
 
-- [ ] Write failing editor-service tests proving all variants load separately, old stored default documents are hydrated from their current rule/variant, and saving one variant preserves every sibling.
-- [ ] Write failing migration, backup, and playback tests proving variant-keyed documents round-trip, restore safely, and render for matched variations.
-- [ ] Write failing management-service tests for create-from-default, duplicate disabled/needs-review, reset, variation deletion, rule deletion, per-variant enablement, and flattened inventory ordering.
-- [ ] Write failing route tests for valid commands, malformed input, missing IDs, last/default deletion impact, and live-output confirmation.
-- [ ] Run `corepack.cmd pnpm test -- apps/server/src/modules/alerts/alert-editor-service.test.ts apps/server/src/modules/alerts/alert-set-management-service.test.ts apps/server/src/http/routes/management-ui.test.ts`; expect command failures.
-- [ ] Replace first-variant-only projection with one resolver returning `{ rule, variant, editorId, kind }`; update only the resolved variant on save.
-- [ ] Flatten each rule into one default row plus variation rows. Toggle a row's variant and derive `rule.enabled` from whether any variant remains enabled.
-- [ ] Persist copied profile documents for duplicates, delete their editor documents with their domain records, and keep set duplication disabled/needs-review.
-- [ ] Wrap domain, editor-document, and metadata writes in the existing runtime SQLite transaction boundary.
-- [ ] Rerun the focused command plus `apps/server/src/runtime/runtime-composition.smoke.test.ts`; expect all selected tests to pass.
-- [ ] Commit as `feat: support variant-aware alert persistence`.
+- [x] Write failing editor-service tests proving all variants load separately, old stored default documents are hydrated from their current rule/variant, and saving one variant preserves every sibling.
+- [x] Write failing migration, backup, and playback tests proving variant-keyed documents round-trip, restore safely, and render for matched variations.
+- [x] Write failing management-service tests for create-from-default, duplicate disabled/needs-review, reset, variation deletion, rule deletion, per-variant enablement, and flattened inventory ordering.
+- [x] Write failing route tests for valid commands, malformed input, missing IDs, last/default deletion impact, and live-output confirmation.
+- [x] Run `corepack.cmd pnpm test -- apps/server/src/modules/alerts/alert-editor-service.test.ts apps/server/src/modules/alerts/alert-set-management-service.test.ts apps/server/src/http/routes/management-ui.test.ts`; expect command failures.
+- [x] Replace first-variant-only projection with one resolver returning `{ rule, variant, editorId, kind }`; update only the resolved variant on save.
+- [x] Flatten each rule into one default row plus variation rows. Toggle a row's variant and derive `rule.enabled` from whether any variant remains enabled.
+- [x] Persist copied profile documents for duplicates, delete their editor documents with their domain records, and keep set duplication disabled/needs-review.
+- [x] Wrap domain, editor-document, and metadata writes in the existing runtime SQLite transaction boundary.
+- [x] Rerun the focused command plus `apps/server/src/runtime/runtime-composition.smoke.test.ts`; expect all selected tests to pass.
+- [x] Commit as `feat: support variant-aware alert persistence`.
 
 ### Task 3: Complete Alert And Variation Authoring Workflows
 
