@@ -444,6 +444,11 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
     name: rule.name,
     enabled: true,
     conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: rule.cooldownSeconds,
+    rulePriority: rule.priority,
     durationMs: 4_000,
     layers: [
       { id: "layer-text", name: "Text", type: "text", visible: true, order: 0, animation, template: "Welcome {actor.displayName}" },

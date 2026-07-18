@@ -130,6 +130,65 @@ describe("DefaultAlertService", () => {
     );
   });
 
+  it("creates variants with service-generated IDs", async () => {
+    const repository = new InMemoryAlertRepository();
+    const service = createService(repository);
+    const collection = await service.createCollection({ name: "Main", enabled: true });
+    const rule = await service.createRule(createRuleInput([collection.id]));
+    const sourceVariant = rule.variants[0];
+    if (sourceVariant === undefined) {
+      throw new Error("Missing variant fixture");
+    }
+
+    await expect(
+      service.createVariant(rule.id, {
+        ...sourceVariant,
+        name: "VIP Follow"
+      })
+    ).resolves.toMatchObject({
+      variants: [
+        { id: sourceVariant.id },
+        { id: "variant_4", name: "VIP Follow" }
+      ]
+    });
+  });
+
+  it("rejects generated variant IDs that already exist", async () => {
+    const repository = new InMemoryAlertRepository();
+    const service = new DefaultAlertService({
+      repository,
+      generateId: (kind) => (kind === "collection" ? "collection_main" : "shared_id")
+    });
+    const collection = await service.createCollection({ name: "Main", enabled: true });
+    const rule = await service.createRule(createRuleInput([collection.id]));
+    const sourceVariant = rule.variants[0];
+    if (sourceVariant === undefined) {
+      throw new Error("Missing variant fixture");
+    }
+
+    await expect(service.createVariant(rule.id, sourceVariant)).rejects.toEqual(
+      new AlertVariantIdConflictError(sourceVariant.id)
+    );
+  });
+
+  it("rejects variant creation for a missing rule", async () => {
+    const service = createService(new InMemoryAlertRepository());
+
+    await expect(
+      service.createVariant("missing_rule", {
+        name: "VIP Follow",
+        enabled: false,
+        weight: 1,
+        visualAssetId: null,
+        audioAssetId: null,
+        textTemplate: "Welcome!",
+        ttsConfig: null,
+        durationMs: 5000,
+        layout: { x: 0, y: 0, width: 640, height: 360, zIndex: 1 }
+      })
+    ).rejects.toEqual(new AlertRuleNotFoundError("missing_rule"));
+  });
+
   it("rejects duplicate variant IDs before repository persistence", async () => {
     const repository = new InMemoryAlertRepository();
     const service = createService(repository);

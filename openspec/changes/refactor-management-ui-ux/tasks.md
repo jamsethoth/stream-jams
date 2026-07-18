@@ -103,3 +103,29 @@
 - [x] 9.4 Add deep-link regressions for Home actions, asset usages, alert editor context, diagnostics corrections, and browser-source outputs.
 - [x] 9.5 Audit every approved high-fidelity workflow against implementation or an explicit backlog item.
 - [x] 9.6 Run lint, typecheck, unit tests, build, applicable Storybook tests, and applicable Playwright tests.
+
+## 10. Audited Alert Authoring Gap Closure
+
+- [x] 10.1 Define stable default/variation editor identities, parent linkage, rule controls, variant controls, and service-owned variation ID generation.
+- [ ] 10.2 Persist and resolve one editor document per default or variation, including migration, backup, transaction, and live-playback coverage.
+- [ ] 10.3 Add create-variation, duplicate, reset, and delete management commands with explicit live-impact handling.
+- [ ] 10.4 Complete default and variation authoring in the alert-set inventory and focused editor.
+
+## 11. Audited Focused Editor Gap Closure
+
+- [ ] 11.1 Complete target-profile copy, profile-specific canvas view state, guide/background controls, fit/reset controls, and dirty profile switching.
+- [ ] 11.2 Complete animation timing, sample-payload reset and variable insertion, and local audio/TTS preview controls.
+- [ ] 11.3 Replace the unsupported narrow-screen editor workspace with an actionable larger-screen requirement.
+
+## 12. Audited Settings Gap Closure
+
+- [ ] 12.1 Add explicit local data-folder and retained-log maintenance actions with failure diagnostics.
+
+## 13. Audited Speaker.bot Runtime Gap Closure
+
+- [ ] 13.1 Route configured live alert TTS through the active Speaker.bot provider while keeping voice and safety controls provider-owned.
+- [ ] 13.2 Keep editor Preview local-only and prevent duplicate Speaker.bot triggers across target profiles.
+
+## 14. Completion Truth
+
+- [ ] 14.1 Re-audit closed MVP specs, run all required validation, rebuild and restart affected services, and update completion evidence only after live verification.

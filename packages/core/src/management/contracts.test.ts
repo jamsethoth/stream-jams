@@ -148,6 +148,41 @@ describe("management target and provider contracts", () => {
 });
 
 describe("management alert contracts and rules", () => {
+  it("uses stable default and variation editor identities in alert inventory", () => {
+    const inventoryRow = schema("alertInventoryRowSchema");
+
+    expect(
+      inventoryRow.parse({
+        id: "rule-follow",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "follow",
+        name: "New follower",
+        kind: "default",
+        enabled: true,
+        reviewState: "ready",
+        targetProfileIds: ["landscape"],
+        previewText: "Thanks for following!"
+      })
+    ).toMatchObject({ id: "rule-follow", kind: "default", parentAlertId: null });
+
+    expect(
+      inventoryRow.parse({
+        id: "variant-vip-follow",
+        parentAlertId: "rule-follow",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "follow",
+        name: "VIP follower",
+        kind: "variation",
+        enabled: false,
+        reviewState: "needs-review",
+        targetProfileIds: ["landscape", "vertical"],
+        previewText: "Welcome back!"
+      })
+    ).toMatchObject({ id: "variant-vip-follow", kind: "variation", parentAlertId: "rule-follow" });
+  });
+
   it("validates a focused editor document with both target-profile layouts", () => {
     const editorDocument = schema("alertEditorDocumentSchema");
     const document = {
@@ -203,15 +238,44 @@ describe("management alert contracts and rules", () => {
       ]
     } as const;
 
-    expect(editorDocument.parse(document)).toEqual(document);
+    expect(editorDocument.parse(document)).toEqual({
+      ...document,
+      variantConditions: [],
+      weight: 1,
+      priority: null,
+      cooldownSeconds: 0,
+      rulePriority: 0
+    });
+    expect(
+      editorDocument.parse({
+        ...document,
+        variantConditions: [{ field: "payload.viewerCount", operator: "min", value: 25 }],
+        weight: 3,
+        priority: 20,
+        cooldownSeconds: 15,
+        rulePriority: 10
+      })
+    ).toMatchObject({
+      variantConditions: [{ field: "payload.viewerCount", operator: "min", value: 25 }],
+      weight: 3,
+      priority: 20,
+      cooldownSeconds: 15,
+      rulePriority: 10
+    });
     expect(editorDocument.safeParse({ ...document, targetProfiles: [document.targetProfiles[0]] }).success).toBe(false);
     expect(
       editorDocument.safeParse({ ...document, targetProfiles: [document.targetProfiles[0], document.targetProfiles[0]] }).success
     ).toBe(false);
 
     const saveInput = schema("alertEditorSaveInputSchema");
-    expect(saveInput.parse({ document })).toEqual({ document, confirmLiveImpact: false });
-    expect(saveInput.parse({ document, confirmLiveImpact: true })).toEqual({ document, confirmLiveImpact: true });
+    expect(saveInput.parse({ document })).toEqual({
+      document: editorDocument.parse(document),
+      confirmLiveImpact: false
+    });
+    expect(saveInput.parse({ document, confirmLiveImpact: true })).toEqual({
+      document: editorDocument.parse(document),
+      confirmLiveImpact: true
+    });
 
     const affectedProfiles = exportedFunction("getAlertEditorAffectedProfileIds");
     const liveEdit = {
@@ -237,7 +301,7 @@ describe("management alert contracts and rules", () => {
       includeAudio: false,
       includeTts: false
     } as const;
-    expect(testRequest.parse(request)).toEqual(request);
+    expect(testRequest.parse(request)).toEqual({ ...request, document: editorDocument.parse(document) });
     expect(testRequest.safeParse({ ...request, targetProfileId: "square" }).success).toBe(false);
 
     const testResult = schema("alertEditorTestResultSchema");

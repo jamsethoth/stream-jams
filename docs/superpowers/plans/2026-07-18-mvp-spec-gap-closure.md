@@ -57,6 +57,10 @@
 - Modify: `apps/server/src/modules/alerts/alert-editor-service.test.ts`
 - Modify: `apps/server/src/modules/alerts/sqlite-alert-editor-document-repository.ts`
 - Modify: `apps/server/src/modules/alerts/sqlite-alert-editor-document-repository.test.ts`
+- Add: `apps/server/src/modules/db/migrations/013-variant-alert-editor-documents.ts`
+- Modify: `apps/server/src/modules/db/migrations/index.ts`
+- Modify: `apps/server/src/modules/backup/sqlite-configuration-snapshot-repository.ts`
+- Modify: `apps/server/src/modules/backup/sqlite-configuration-snapshot-repository.test.ts`
 - Modify: `apps/server/src/modules/alerts/alert-set-management-service.ts`
 - Modify: `apps/server/src/modules/alerts/alert-set-management-service.test.ts`
 - Modify: `apps/server/src/modules/providers/management-ui-service.ts`
@@ -65,10 +69,14 @@
 - Modify: `apps/server/src/http/routes/management-ui.test.ts`
 - Modify: `apps/server/src/runtime/runtime-composition.ts`
 - Modify: `apps/server/src/runtime/runtime-composition.smoke.test.ts`
+- Modify: `apps/server/src/modules/playback/playback-coordinator.ts`
+- Modify: `apps/server/src/modules/playback/playback-coordinator.test.ts`
 
 **Interfaces:**
 - Default editor key resolves to `rule.id` and `rule.variants[0]`; variation key resolves to its owning rule and exact variant.
 - `AlertEditorDocumentRepository.delete(editorId)` removes obsolete variation/default documents.
+- Editor-document persistence accepts rule IDs and variant IDs without weakening referential cleanup, and backup validation recognizes both identities.
+- Live playback loads the saved editor document for the matched variant ID, falling back to the default rule document only for the default variant.
 - Add management commands `createAlertVariation`, `duplicateManagedAlert`, `resetManagedAlert`, and `deleteManagedAlert`.
 - Add routes:
   - `POST /management/alerts/:alertId/variations`
@@ -77,6 +85,7 @@
   - `DELETE /management/alerts/:alertId`
 
 - [ ] Write failing editor-service tests proving all variants load separately, old stored default documents are hydrated from their current rule/variant, and saving one variant preserves every sibling.
+- [ ] Write failing migration, backup, and playback tests proving variant-keyed documents round-trip, restore safely, and render for matched variations.
 - [ ] Write failing management-service tests for create-from-default, duplicate disabled/needs-review, reset, variation deletion, rule deletion, per-variant enablement, and flattened inventory ordering.
 - [ ] Write failing route tests for valid commands, malformed input, missing IDs, last/default deletion impact, and live-output confirmation.
 - [ ] Run `corepack.cmd pnpm test -- apps/server/src/modules/alerts/alert-editor-service.test.ts apps/server/src/modules/alerts/alert-set-management-service.test.ts apps/server/src/http/routes/management-ui.test.ts`; expect command failures.

@@ -57,6 +57,19 @@ The system SHALL organize each alert set by provider catalog context, system-def
 - **WHEN** a user duplicates an alert or variation
 - **THEN** the duplicate is saved disabled and marked `Needs review`
 
+#### Scenario: Defaults and variations keep stable editor identities
+
+- **WHEN** alert inventory and focused-editor documents are projected from a stored rule
+- **THEN** the event default uses the rule ID as its editor route key
+- **AND** each conditional variation uses its variant ID and links to the parent rule ID
+- **AND** saving one variation preserves every sibling variation and its independent profile layouts
+
+#### Scenario: Matched variation uses its own saved design
+
+- **WHEN** live or test matching selects a conditional variation
+- **THEN** playback loads the editor document keyed by that variation ID
+- **AND** it does not substitute the event default's saved design
+
 ### Requirement: Alerts Support Landscape And Vertical Target Profiles
 
 The system SHALL provide fixed landscape and vertical target profiles with independent layout, per-profile enablement, validation, safe-area guides, and output status.

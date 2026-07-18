@@ -5,7 +5,8 @@ The system SHALL allow authorized management users to configure supported TTS be
 
 #### Scenario: Variant TTS config is saved
 - **WHEN** a management user enables Speaker.bot TTS for an alert variant and saves the rule
-- **THEN** the variant persists provider ID, enabled state, template text, and supported provider options
+- **THEN** the variant persists provider kind, enabled state, and template text
+- **AND** voice selection and safety controls remain owned by the registered Speaker.bot provider
 
 ### Requirement: Alert TTS Uses Normalized Event Data
 The system SHALL render alert TTS text from normalized event data rather than raw provider payloads.

@@ -2,9 +2,9 @@
 
 ## 1. Dependency Gate
 
-- [ ] 1.1 Fetch latest remote state and verify `expand-alert-configuration-ui` is present in `origin/main`.
-- [ ] 1.2 Confirm final alert variant editor structure and TTS extension points.
-- [ ] 1.3 Stop implementation if the expanded alert editor is absent from remote `main`.
+- [ ] 1.1 Complete Tasks 1-3 of `docs/superpowers/plans/2026-07-18-mvp-spec-gap-closure.md`.
+- [ ] 1.2 Confirm stable variation persistence and the final alert variant editor TTS extension points.
+- [ ] 1.3 Stop runtime implementation if those alert authoring prerequisites are incomplete.
 
 ## 2. Speaker.bot API Decision
 
@@ -21,8 +21,8 @@
 
 ## 4. Alert TTS Configuration
 
-- [ ] 4.1 Extend alert variant API/UI support for provider-specific TTS config.
-- [ ] 4.2 Add compact per-variant controls for enabling Speaker.bot TTS and editing template/options.
+- [ ] 4.1 Extend alert variant API/UI support for Speaker.bot enablement, provider kind, and template text.
+- [ ] 4.2 Add compact per-variant controls without alert-level voice or safety overrides.
 - [ ] 4.3 Ensure alert resolution renders TTS text from normalized event fields.
 - [ ] 4.4 Trigger Speaker.bot through the playback/TTS service without exposing provider details to the overlay client.
 

@@ -204,6 +204,7 @@ export const alertSetOverviewSchema = z.object({
 
 export const alertInventoryRowSchema = z.object({
   id: nonEmptyStringSchema,
+  parentAlertId: nonEmptyStringSchema.nullable().default(null),
   setId: nonEmptyStringSchema,
   providerKind: providerKindSchema,
   eventType: streamEventTypeSchema,
@@ -357,6 +358,11 @@ export const alertEditorDocumentSchema = z.object({
   name: nonEmptyStringSchema,
   enabled: z.boolean(),
   conditions: z.array(alertConditionSchema),
+  variantConditions: z.array(alertConditionSchema).default([]),
+  weight: positiveIntegerSchema.default(1),
+  priority: z.number().int().nullable().default(null),
+  cooldownSeconds: nonNegativeIntegerSchema.default(0),
+  rulePriority: z.number().int().default(0),
   durationMs: positiveIntegerSchema.max(120_000),
   layers: z.array(alertLayerSchema),
   targetProfiles: alertTargetProfileDocumentsSchema,
