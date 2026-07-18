@@ -1,12 +1,13 @@
 import type {
   ActionableManagementError,
+  Logger,
   ProviderActivationImpact,
   ProviderSetupInput,
   ProviderValidationResult,
   ProviderVoiceTestResult,
   SecretRef
 } from "@stream-jams/core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
 import {
   ProviderActivationBlockedError,
@@ -23,6 +24,7 @@ describe("ProviderManagementService", () => {
   let impacts: Map<string, ProviderActivationImpact>;
   let service: ProviderManagementService;
   let eventSourceSyncCount: number;
+  let logger: Pick<Logger, "error">;
 
   beforeEach(() => {
     database = createInMemoryStreamJamsDatabase();
@@ -32,6 +34,7 @@ describe("ProviderManagementService", () => {
     secrets = new InMemorySecrets();
     impacts = new Map();
     eventSourceSyncCount = 0;
+    logger = { error: vi.fn(async () => {}) };
     let id = 0;
     service = new ProviderManagementService({
       repository,
@@ -49,6 +52,7 @@ describe("ProviderManagementService", () => {
       },
       generateId: () => `provider-${++id}`,
       generateReferenceId: () => "provider-ref-1",
+      logger,
       now: () => new Date("2026-07-15T12:00:00.000Z")
     });
   });
@@ -160,6 +164,57 @@ describe("ProviderManagementService", () => {
     expect(savedSafety.defaultVoiceId).toBe("Brian");
     expect(voiceTest).toEqual({ delivered: true, error: null });
     expect(listed[0]?.usedByAlertCount).toBe(3);
+  });
+
+  it("records failed voice tests under the returned diagnostics reference", async () => {
+    service = new ProviderManagementService({
+      repository,
+      adapters: new Map([
+        [
+          "speakerbot",
+          {
+            ...successfulAdapter(null, [{ id: "Brian", label: "Brian" }]),
+            async testVoice() {
+              throw new Error("Speaker.bot requires a default voice before it can be tested.");
+            }
+          }
+        ]
+      ]),
+      secretStore: secrets,
+      getActivationImpact: async () => emptyImpact,
+      getUsedByAlertCount: async () => 0,
+      generateId: () => "provider-speakerbot",
+      generateReferenceId: () => "provider-ref-voice-test",
+      logger,
+      now: () => new Date("2026-07-15T12:00:00.000Z")
+    });
+    const registered = await service.registerProvider(speakerBotSetup());
+    if (registered.status !== "registered") {
+      throw new Error("Expected Speaker.bot registration");
+    }
+
+    const result = await service.testVoice(registered.provider.provider.id, "Stream Jams voice test");
+
+    expect(result).toMatchObject({
+      delivered: false,
+      error: {
+        cause: "Speaker.bot requires a default voice before it can be tested.",
+        referenceId: "provider-ref-voice-test"
+      }
+    });
+    expect(logger.error).toHaveBeenCalledWith(
+      "Speaker.bot requires a default voice before it can be tested.",
+      {
+        module: "providers",
+        source: "provider.management.failure",
+        correlationId: "provider-ref-voice-test",
+        processingId: null,
+        metadata: {
+          summary: "Voice test failed",
+          nextStep: "Check the provider connection, then retry the voice test."
+        }
+      }
+    );
   });
 });
 

@@ -403,12 +403,14 @@ export class DiagnosticsService {
         const referenceId = entry.correlationId === "" ? null : entry.correlationId;
         const correction = correctionForEvidence(`${entry.component} ${entry.event} ${entry.message}`, referenceId);
         const area = correctionArea(correction, "runtime");
+        const actionableSummary = readStringDetail(entry, "summary");
+        const actionableNextStep = readStringDetail(entry, "nextStep");
         return {
           id: `runtime-log:${entry.timestamp}:${entry.component}:${entry.event}:${index}`,
           area,
-          summary: entry.message,
-          cause: `${entry.component} reported ${entry.event}.`,
-          nextStep: nextStepForArea(area),
+          summary: actionableSummary ?? entry.message,
+          cause: actionableSummary === null ? `${entry.component} reported ${entry.event}.` : entry.message,
+          nextStep: actionableNextStep ?? nextStepForArea(area),
           severity: "error" as const,
           occurredAt: entry.timestamp,
           referenceId,
@@ -537,6 +539,11 @@ function correctionArea(
   if (target.route.includes("browser-sources")) return "outputs";
   if (target.route.startsWith("/manage/settings")) return "settings";
   return fallback;
+}
+
+function readStringDetail(entry: RuntimeLogEntry, name: string): string | null {
+  const value = entry.details?.[name];
+  return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
 function nextStepForArea(area: DiagnosticsProblemArea): string {

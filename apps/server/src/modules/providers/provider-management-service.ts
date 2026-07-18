@@ -10,6 +10,7 @@ import {
   registeredProviderDetailSchema,
   ttsProviderSafetySettingsSchema,
   type ActionableManagementError,
+  type Logger,
   type ProviderActivationImpact,
   type ProviderActivationResult,
   type ProviderCapability,
@@ -46,6 +47,7 @@ export interface ProviderManagementServiceOptions {
   readonly getUsedByAlertCount: (kind: ProviderKind) => Promise<number>;
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
+  readonly logger?: Pick<Logger, "error"> | undefined;
   readonly onEventSourceChanged?: (() => void | Promise<void>) | undefined;
   readonly now?: () => Date;
 }
@@ -91,6 +93,7 @@ export class ProviderManagementService {
   readonly #getUsedByAlertCount: ProviderManagementServiceOptions["getUsedByAlertCount"];
   readonly #generateId: () => string;
   readonly #generateReferenceId: () => string;
+  readonly #logger: Pick<Logger, "error"> | null;
   readonly #onEventSourceChanged: () => void | Promise<void>;
   readonly #now: () => Date;
 
@@ -102,6 +105,7 @@ export class ProviderManagementService {
     this.#getUsedByAlertCount = options.getUsedByAlertCount;
     this.#generateId = options.generateId;
     this.#generateReferenceId = options.generateReferenceId;
+    this.#logger = options.logger ?? null;
     this.#onEventSourceChanged = options.onEventSourceChanged ?? (() => {});
     this.#now = options.now ?? (() => new Date());
   }
@@ -294,7 +298,7 @@ export class ProviderManagementService {
     if (adapter?.testVoice === undefined) {
       return providerVoiceTestResultSchema.parse({
         delivered: false,
-        error: this.#managementError(
+        error: await this.#managementError(
           "Voice test is unavailable",
           "The selected provider does not expose a voice-test action.",
           "Validate the provider connection or choose a provider that supports voice tests."
@@ -307,7 +311,7 @@ export class ProviderManagementService {
     } catch (error) {
       return providerVoiceTestResultSchema.parse({
         delivered: false,
-        error: this.#managementError(
+        error: await this.#managementError(
           "Voice test failed",
           error instanceof Error ? error.message : "The provider returned an unknown voice-test error.",
           "Check the provider connection, then retry the voice test."
@@ -336,20 +340,20 @@ export class ProviderManagementService {
     return record;
   }
 
-  #failedValidation(summary: string, cause: string, nextStep: string): ProviderValidationResult {
+  async #failedValidation(summary: string, cause: string, nextStep: string): Promise<ProviderValidationResult> {
     return providerValidationResultSchema.parse({
       valid: false,
       connectionState: "error",
       intakeState: null,
       validatedAt: this.#now().toISOString(),
       availableVoices: [],
-      error: this.#managementError(summary, cause, nextStep)
+      error: await this.#managementError(summary, cause, nextStep)
     });
   }
 
-  #managementError(summary: string, cause: string, nextStep: string): ActionableManagementError {
+  async #managementError(summary: string, cause: string, nextStep: string): Promise<ActionableManagementError> {
     const referenceId = this.#generateReferenceId();
-    return {
+    const error: ActionableManagementError = {
       summary,
       cause,
       nextStep,
@@ -361,6 +365,14 @@ export class ProviderManagementService {
         route: `/manage/diagnostics?reference=${encodeURIComponent(referenceId)}`
       }
     };
+    await this.#logger?.error(cause, {
+      module: "providers",
+      source: "provider.management.failure",
+      correlationId: referenceId,
+      processingId: null,
+      metadata: { summary, nextStep }
+    });
+    return error;
   }
 }
 

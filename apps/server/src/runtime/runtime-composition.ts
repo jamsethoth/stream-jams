@@ -488,6 +488,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     generateId: () => `provider_${randomBytes(16).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
+    logger: runtimeLogger,
     onEventSourceChanged: syncEventSourceRuntime,
     now
   });

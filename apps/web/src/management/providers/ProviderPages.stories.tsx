@@ -113,6 +113,21 @@ export const ConfiguredTtsProvider: Story = {
   render: (args) => <TtsProvidersPage {...args} />
 };
 
+export const SpeakerBotNeedsVoiceAlias: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      listRegisteredProviders: async (capability) => capability === "tts" ? [activeSpeakerBot] : [],
+      getProvider: async () => ({
+        ...speakerBotDetail,
+        availableVoices: [],
+        ttsSafety: { ...speakerBotDetail.ttsSafety!, defaultVoiceId: null }
+      }),
+      getTtsProviderSafetySettings: async () => ({ ...speakerBotDetail.ttsSafety!, defaultVoiceId: null })
+    })
+  },
+  render: (args) => <TtsProvidersPage {...args} />
+};
+
 export const ValidationFailure: Story = {
   args: {
     managementApi: providerApi([], {

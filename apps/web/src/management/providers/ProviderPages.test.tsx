@@ -675,7 +675,11 @@ describe("provider pages", () => {
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
     expect(screen.getByText("4 alert uses")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "View 4 alert uses" })).not.toBeInTheDocument();
+    const testVoiceButton = screen.getByRole("button", { name: "Test voice" });
+    expect(testVoiceButton).toBeDisabled();
+    expect(screen.getByText("Save a default voice alias before testing Speaker.bot.")).toBeInTheDocument();
     await user.type(screen.getByLabelText("Default voice alias"), "EventVoice");
+    expect(testVoiceButton).toBeDisabled();
     await user.clear(screen.getByLabelText("Volume"));
     await user.type(screen.getByLabelText("Volume"), "0.6");
     await user.click(screen.getByRole("button", { name: "Save safety settings" }));
@@ -684,9 +688,10 @@ describe("provider pages", () => {
       defaultVoiceId: "EventVoice",
       volume: 0.6
     });
+    expect(testVoiceButton).toBeEnabled();
 
     expect(screen.getByText("Stream Jams voice test. Your text to speech provider is ready.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Test voice" }));
+    await user.click(testVoiceButton);
     expect(testProviderVoice).toHaveBeenCalledWith(activeSpeakerBot.id);
     expect(await screen.findByText("Voice test delivered.")).toBeInTheDocument();
   });

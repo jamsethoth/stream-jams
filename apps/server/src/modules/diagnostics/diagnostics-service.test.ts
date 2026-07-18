@@ -185,6 +185,32 @@ describe("DiagnosticsService", () => {
     expect(workspace.rawLogs).toContainEqual(expect.objectContaining({ referenceId: "correlation-1" }));
   });
 
+  it("preserves actionable management error guidance in diagnostics problems", async () => {
+    const runtimeLogSource = new RecordingRuntimeLogSource([{
+      timestamp: "2026-05-31T02:04:00.000Z",
+      level: "ERROR",
+      event: "provider.management.failure",
+      component: "providers",
+      message: "Speaker.bot requires a default voice before it can be tested.",
+      correlationId: "provider-ref-voice-test",
+      processingId: null,
+      details: {
+        summary: "Voice test failed",
+        nextStep: "Save a default voice alias, then retry the voice test."
+      }
+    }]);
+    const service = createService(new RecordingDiagnosticsRepository(), [], runtimeLogSource);
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.problems).toContainEqual(expect.objectContaining({
+      summary: "Voice test failed",
+      cause: "Speaker.bot requires a default voice before it can be tested.",
+      nextStep: "Save a default voice alias, then retry the voice test.",
+      referenceId: "provider-ref-voice-test"
+    }));
+  });
+
   it("keeps shared event-intake failures in raw logs instead of duplicating provider status", async () => {
     const runtimeLogSource = new RecordingRuntimeLogSource([{
       timestamp: "2026-05-31T02:04:00.000Z",

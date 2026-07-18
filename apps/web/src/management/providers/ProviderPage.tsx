@@ -461,6 +461,7 @@ export function ProviderPage({
               onSafetySubmit={saveSafety}
               onTestVoice={() => void testVoice()}
               safety={safety}
+              safetyDirty={safetyDirty}
             />
           )}
         </div>
@@ -557,7 +558,8 @@ function ProviderDetail({
   onSafetyChange,
   onSafetySubmit,
   onTestVoice,
-  safety
+  safety,
+  safetyDirty
 }: {
   readonly capability: ProviderCapability;
   readonly detail: RegisteredProviderDetail;
@@ -568,8 +570,11 @@ function ProviderDetail({
   readonly onSafetySubmit: (event: FormEvent<HTMLFormElement>) => void;
   readonly onTestVoice: () => void;
   readonly safety: TtsProviderSafetySettings | null;
+  readonly safetyDirty: boolean;
 }) {
   const provider = detail.provider;
+  const speakerBotVoiceMissing = provider.kind === "speakerbot" && (safety?.defaultVoiceId?.trim() ?? "") === "";
+  const voiceTestDisabled = speakerBotVoiceMissing || (provider.kind === "speakerbot" && safetyDirty);
   return (
     <section aria-labelledby="provider-detail-title" className="provider-page__detail">
       <div className="provider-page__section-heading">
@@ -670,7 +675,9 @@ function ProviderDetail({
           <section aria-labelledby="voice-test-title" className="provider-page__subsection">
             <h4 id="voice-test-title">Voice test</h4>
             <p>{safeVoiceTestText}</p>
-            <button onClick={onTestVoice} type="button">Test voice</button>
+            {speakerBotVoiceMissing ? <p>Save a default voice alias before testing Speaker.bot.</p> : null}
+            {!speakerBotVoiceMissing && provider.kind === "speakerbot" && safetyDirty ? <p>Save voice settings before testing Speaker.bot.</p> : null}
+            <button disabled={voiceTestDisabled} onClick={onTestVoice} type="button">Test voice</button>
           </section>
         </>
       ) : null}
