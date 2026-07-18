@@ -79,10 +79,7 @@ import {
 import { SqliteOverlayAccessKeyRepository } from "../modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "../modules/playback/playback-coordinator.js";
 import { ManagementUiService } from "../modules/providers/management-ui-service.js";
-import {
-  createProviderManagementAdapters,
-  type SpeakerBotSocket
-} from "../modules/providers/provider-management-adapters.js";
+import { createProviderManagementAdapters } from "../modules/providers/provider-management-adapters.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
 import { SqliteProviderRegistrationRepository } from "../modules/providers/sqlite-provider-registration-repository.js";
@@ -93,6 +90,10 @@ import {
   type RuntimeSecretStoreStatus
 } from "../modules/security/runtime-secret-store.js";
 import { createDefaultTtsProviderRegistry } from "../modules/tts/tts-provider-registry.js";
+import {
+  SpeakerBotClient,
+  type SpeakerBotSocket
+} from "../modules/tts/speakerbot-client.js";
 import { LocalMaintenanceService, createPlatformPathOpener } from "../modules/settings/local-maintenance-service.js";
 import { StreamerBotClient, type StreamerBotSocket } from "../modules/streamerbot/streamerbot-client.js";
 import { createNodeStreamerBotSocket } from "../modules/streamerbot/node-streamerbot-socket.js";
@@ -131,6 +132,7 @@ export interface RuntimeAppCompositionOptions {
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
   readonly twitchEventSubSocketFactory?: (url: string) => TwitchEventSubSocket;
   readonly streamerBotSocketFactory?: (url: string) => StreamerBotSocket;
+  readonly speakerBotSocketFactory?: (url: string) => SpeakerBotSocket;
   readonly now?: () => Date;
   readonly generateManagementSessionId?: () => string;
   readonly generateManagementCsrfToken?: () => string;
@@ -255,7 +257,27 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const moderationService = new DefaultModerationService();
-  const ttsProviderRegistry = createDefaultTtsProviderRegistry();
+  const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
+  const speakerBotSocketFactory = options.speakerBotSocketFactory ?? createNodeProviderWebSocket;
+  const ttsProviderRegistry = createDefaultTtsProviderRegistry({
+    speakerBot: {
+      client: new SpeakerBotClient({
+        socketFactory: speakerBotSocketFactory,
+        timeoutMs: 5_000
+      }),
+      async resolveActiveProvider() {
+        const active = await providerRegistrationRepository.findActive("tts");
+        return active === null
+          ? null
+          : {
+              provider: active.provider,
+              configuration: { ...active.configuration },
+              availableVoices: [...active.availableVoices],
+              ttsSafety: active.ttsSafety
+            };
+      }
+    }
+  });
   const ttsService = new DefaultTtsService({
     registry: ttsProviderRegistry,
     moderationService
@@ -328,14 +350,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ],
     assetRepository,
     findEditorDocument: (alertId) => alertEditorDocumentRepository.find(alertId),
-    overlayPlaybackSink: overlayGateway
+    overlayPlaybackSink: overlayGateway,
+    ttsService,
+    logger: runtimeLogger,
+    generateReferenceId: generateRuntimeReferenceId
   });
   const eventPipeline = new EventPipeline({
     playbackCoordinator,
     diagnosticsLogRepository,
     generateId: generateEventPipelineId
   });
-  const generateEventSourceReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
+  const generateEventSourceReferenceId = generateRuntimeReferenceId;
   const eventIngestionService = new EventIngestionService({
     sink: eventPipeline,
     generateReferenceId: generateEventSourceReferenceId,
@@ -428,7 +453,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       twitchOAuthService: twitchAuthService,
       twitchEventSubRuntimeService,
       streamerBotSocketFactory: options.streamerBotSocketFactory ?? createNodeStreamerBotSocket,
-      speakerBotSocketFactory: createNodeProviderWebSocket,
+      speakerBotSocketFactory,
       ttsService,
       now
     }),

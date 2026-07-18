@@ -1,5 +1,6 @@
 import type { TtsProvider, TtsProviderRegistry } from "@stream-jams/core";
 import { BrowserSpeechTtsProvider } from "./browser-speech-tts-provider.js";
+import { SpeakerBotTtsProvider, type SpeakerBotTtsProviderOptions } from "./speakerbot-tts-provider.js";
 
 export class StaticTtsProviderRegistry implements TtsProviderRegistry {
   readonly #providers: ReadonlyMap<string, TtsProvider>;
@@ -17,6 +18,10 @@ export class StaticTtsProviderRegistry implements TtsProviderRegistry {
   }
 }
 
-export function createDefaultTtsProviderRegistry(): TtsProviderRegistry {
-  return new StaticTtsProviderRegistry([new BrowserSpeechTtsProvider()]);
+export function createDefaultTtsProviderRegistry(
+  options: { readonly speakerBot?: SpeakerBotTtsProviderOptions | undefined } = {}
+): TtsProviderRegistry {
+  const providers: TtsProvider[] = [new BrowserSpeechTtsProvider()];
+  if (options.speakerBot !== undefined) providers.push(new SpeakerBotTtsProvider(options.speakerBot));
+  return new StaticTtsProviderRegistry(providers);
 }

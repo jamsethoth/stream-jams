@@ -32,6 +32,7 @@ import type {
 } from "../modules/security/os-secret-store.js";
 import { runtimeSecretStoreUnavailableMessage } from "../modules/security/runtime-secret-store.js";
 import type { StreamerBotSocket } from "../modules/streamerbot/streamerbot-client.js";
+import type { SpeakerBotSocket } from "../modules/tts/speakerbot-client.js";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
 
 const temporaryDirectories: string[] = [];
@@ -725,6 +726,113 @@ describe("runtime app composition smoke", () => {
     firstSocket.close();
   });
 
+  it("sends one Speaker.bot request for an alert enabled on both target profiles", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const speakerBotRequests: Record<string, unknown>[] = [];
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      speakerBotSocketFactory: (url) => new RecordingSpeakerBotSocket(url, speakerBotRequests),
+      now: () => new Date("2026-07-18T12:00:00.000Z")
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+
+    const registration = await composition.app.inject({
+      method: "POST",
+      url: "/management/providers",
+      headers: authHeaders,
+      payload: {
+        name: "Speaker.bot",
+        kind: "speakerbot",
+        configuration: { protocol: "ws", host: "127.0.0.1", port: 7680, endpoint: "/" }
+      }
+    });
+    expect(registration.statusCode, registration.body).toBe(201);
+    const providerId = (registration.json() as {
+      readonly provider: { readonly provider: { readonly id: string; readonly active: boolean } };
+    }).provider.provider.id;
+    expect(registration.json()).toMatchObject({ provider: { provider: { active: true } } });
+    const safety = await composition.app.inject({
+      method: "PUT",
+      url: `/management/providers/${providerId}/tts-safety`,
+      headers: authHeaders,
+      payload: {
+        defaultVoiceId: "EventVoice",
+        volume: 1,
+        minimumRate: 0.8,
+        maximumRate: 1.2,
+        maximumTextLength: 280
+      }
+    });
+    expect(safety.statusCode, safety.body).toBe(200);
+
+    await composition.app.inject({ method: "GET", url: "/management/home", headers: authHeaders });
+    const rules = (await composition.app.inject({
+      method: "GET",
+      url: "/alerts/rules",
+      headers: authHeaders
+    })).json() as AlertRule[];
+    const followRule = rules.find((rule) => rule.eventType === "follow")!;
+    const document = (await composition.app.inject({
+      method: "GET",
+      url: `/management/alerts/${followRule.id}/editor`,
+      headers: authHeaders
+    })).json() as AlertEditorDocument;
+    const ttsLayerId = `${followRule.id}-tts`;
+    const editedDocument: AlertEditorDocument = {
+      ...document,
+      enabled: true,
+      layers: [
+        ...document.layers,
+        {
+          id: ttsLayerId,
+          name: "Text to speech",
+          type: "tts",
+          visible: true,
+          enabled: true,
+          providerId: "speakerbot",
+          order: document.layers.length,
+          animation: document.layers[0]!.animation,
+          template: "Welcome {actor.displayName}"
+        }
+      ],
+      targetProfiles: document.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "ready"
+      })) as AlertEditorDocument["targetProfiles"]
+    };
+    const save = await composition.app.inject({
+      method: "PUT",
+      url: `/management/alerts/${followRule.id}/editor`,
+      headers: authHeaders,
+      payload: { document: editedDocument, confirmLiveImpact: true }
+    });
+    expect(save.statusCode, save.body).toBe(200);
+
+    const ingestion = await composition.eventIngestionService.ingestTwitchEventSubNotification(
+      followNotification("speakerbot-two-profiles")
+    );
+    expect(ingestion.status).toBe("accepted");
+    const speakRequests = speakerBotRequests.filter((request) => request.request === "Speak");
+    expect(speakRequests).toEqual([
+      expect.objectContaining({
+        request: "Speak",
+        voice: "EventVoice",
+        message: "Welcome Viewer",
+        badWordFilter: true
+      })
+    ]);
+  });
+
   it("uses the exact default Twitch Client ID or a trimmed override without a client secret", async () => {
     const defaultRoot = await createTemporaryDirectory();
     const defaultClient = new RecordingTwitchApiClient();
@@ -1339,6 +1447,44 @@ class ControlledStreamerBotSocket implements StreamerBotSocket {
       await listener({ data });
     }
   }
+}
+
+class RecordingSpeakerBotSocket implements SpeakerBotSocket {
+  readonly #listeners = {
+    open: [] as (() => void | Promise<void>)[],
+    message: [] as ((event: { readonly data: unknown }) => void | Promise<void>)[]
+  };
+
+  constructor(
+    readonly url: string,
+    private readonly requests: Record<string, unknown>[]
+  ) {
+    queueMicrotask(() => {
+      for (const listener of this.#listeners.open) void listener();
+    });
+  }
+
+  addEventListener(event: "open", listener: () => void | Promise<void>): void;
+  addEventListener(event: "message", listener: (event: { readonly data: unknown }) => void | Promise<void>): void;
+  addEventListener(
+    event: "close",
+    listener: (event: { readonly code?: number; readonly reason?: string }) => void | Promise<void>
+  ): void;
+  addEventListener(event: "error", listener: (event: unknown) => void | Promise<void>): void;
+  addEventListener(event: "open" | "message" | "close" | "error", listener: unknown): void {
+    if (event === "open" || event === "message") this.#listeners[event].push(listener as never);
+  }
+
+  send(data: string): void {
+    const request = JSON.parse(data) as Record<string, unknown>;
+    this.requests.push(request);
+    queueMicrotask(() => {
+      const response = JSON.stringify({ id: request.id, request: request.request, status: "ok" });
+      for (const listener of this.#listeners.message) void listener({ data: response });
+    });
+  }
+
+  close(): void {}
 }
 
 class ThrowingTwitchApiClient implements TwitchApiClient {

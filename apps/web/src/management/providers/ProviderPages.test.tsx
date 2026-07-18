@@ -651,7 +651,7 @@ describe("provider pages", () => {
   it("saves TTS safety settings and runs the fixed safe voice test", async () => {
     const user = userEvent.setup();
     const safety: TtsProviderSafetySettings = {
-      defaultVoiceId: "voice-1",
+      defaultVoiceId: null,
       volume: 0.8,
       minimumRate: 0.8,
       maximumRate: 1.2,
@@ -663,7 +663,7 @@ describe("provider pages", () => {
       listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
       getProvider: vi.fn(async () => ({
         ...detail(activeSpeakerBot),
-        availableVoices: [{ id: "voice-1", label: "Default voice" }],
+        availableVoices: [],
         ttsSafety: safety
       })),
       getTtsProviderSafetySettings: vi.fn(async () => safety),
@@ -675,10 +675,15 @@ describe("provider pages", () => {
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
     expect(screen.getByText("4 alert uses")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "View 4 alert uses" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Default voice alias"), "EventVoice");
     await user.clear(screen.getByLabelText("Volume"));
     await user.type(screen.getByLabelText("Volume"), "0.6");
     await user.click(screen.getByRole("button", { name: "Save safety settings" }));
-    expect(updateTtsSafety).toHaveBeenCalledWith(activeSpeakerBot.id, { ...safety, volume: 0.6 });
+    expect(updateTtsSafety).toHaveBeenCalledWith(activeSpeakerBot.id, {
+      ...safety,
+      defaultVoiceId: "EventVoice",
+      volume: 0.6
+    });
 
     expect(screen.getByText("Stream Jams voice test. Your text to speech provider is ready.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Test voice" }));

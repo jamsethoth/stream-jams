@@ -1,4 +1,4 @@
-import type { AlertEditorDocument, AlertSetDetail } from "@stream-jams/core";
+import type { AlertEditorDocument, AlertSetDetail, RegisteredProviderView } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../../stories/mock-apis.js";
@@ -176,10 +176,11 @@ export const OptionalPreviewMedia: Story = {
         layers: [
           ...document.layers,
           { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-alert-audio", volume: 0.7, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
-          { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, template: "Welcome {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+          { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, enabled: true, providerId: "speakerbot", template: "Welcome {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
         ]
       }),
-      getAlertSet: async () => alertSetDetail()
+      getAlertSet: async () => alertSetDetail(),
+      listRegisteredProviders: async (capability) => capability === "tts" ? [activeSpeakerBot] : []
     })
   },
   play: async ({ canvasElement }) => {
@@ -191,6 +192,38 @@ export const OptionalPreviewMedia: Story = {
     await expect(canvas.getByRole("checkbox", { name: "Preview TTS" })).toBeChecked();
     await expect(canvas.getByRole("checkbox", { name: "Send audio" })).toBeChecked();
     await expect(canvas.getByRole("checkbox", { name: "Send TTS" })).toBeChecked();
+  }
+};
+
+export const ActiveSpeakerBotTts: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ttsEditorDocument(true),
+      getAlertSet: async () => alertSetDetail(),
+      listRegisteredProviders: async (capability) => capability === "tts" ? [activeSpeakerBot] : []
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Studio Speaker.bot")).toBeVisible();
+    await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
+    await expect(canvas.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeChecked();
+  }
+};
+
+export const NoActiveTtsProvider: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ttsEditorDocument(false),
+      getAlertSet: async () => alertSetDetail(),
+      listRegisteredProviders: async () => []
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("An active TTS provider is required before this layer can be used live.")).toBeVisible();
+    await expect(canvas.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeDisabled();
+    await expect(canvas.getByRole("link", { name: "Set up a TTS provider" })).toHaveAttribute("href", "/manage/tts-providers");
   }
 };
 
@@ -330,6 +363,37 @@ function variationDocument(): AlertEditorDocument {
     ]
   };
 }
+
+function ttsEditorDocument(enabled: boolean): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    layers: [{
+      id: "layer-tts",
+      name: "Speech",
+      type: "tts",
+      visible: true,
+      order: 0,
+      enabled,
+      providerId: "browser-speech",
+      template: "Welcome {userName}",
+      animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" }
+    }],
+    targetProfiles: editorDocument().targetProfiles.map((profile) => ({ ...profile, layerLayouts: [] }))
+  };
+}
+
+const activeSpeakerBot: RegisteredProviderView = {
+  id: "provider-speakerbot",
+  name: "Studio Speaker.bot",
+  kind: "speakerbot",
+  capability: "tts",
+  active: true,
+  connectionState: "connected",
+  intakeState: null,
+  validatedAt: "2026-07-18T04:00:00.000Z",
+  error: null,
+  usedByAlertCount: 1
+};
 
 function alertSetDetail(): AlertSetDetail {
   return {

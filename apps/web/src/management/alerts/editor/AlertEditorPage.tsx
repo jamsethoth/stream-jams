@@ -6,6 +6,7 @@ import {
   type AlertLayer,
   type AlertSetDetail,
   type AssetMediaType,
+  type RegisteredProviderView,
   type TargetProfileId
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -43,6 +44,7 @@ export type AlertEditorPageApi = Pick<
   ManagementApi,
   | "getAlertEditorDocument"
   | "getAlertSet"
+  | "listRegisteredProviders"
   | "getAssetChangeImpact"
   | "listAssetLibraryItems"
   | "deleteAsset"
@@ -71,6 +73,9 @@ type SaveWarningState = {
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editor, setEditor] = useState<AlertEditorState | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
+  const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
+  const [ttsProvidersLoaded, setTtsProvidersLoaded] = useState(false);
+  const [ttsProviderError, setTtsProviderError] = useState<ActionableManagementError | null>(null);
   const [profileId, setProfileId] = useState<TargetProfileId>(props.targetProfileId === "vertical" ? "vertical" : "landscape");
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTab>("layers");
@@ -101,12 +106,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
+  const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
 
   useEffect(() => {
     let active = true;
     setEditor(null);
     setSetDetail(null);
     setError(null);
+    setTtsProviders([]);
+    setTtsProvidersLoaded(false);
+    setTtsProviderError(null);
     void props.managementApi.getAlertEditorDocument(props.alertId).then(async (document) => {
       const loadedSetDetail = await props.managementApi.getAlertSet(document.setId);
       if (!active) return;
@@ -121,6 +130,19 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSetDetail(loadedSetDetail);
     }).catch((cause: unknown) => {
       if (active) setError(actionableError("The alert editor could not be opened", cause, "Return to Alerts and choose the alert again."));
+    });
+    void props.managementApi.listRegisteredProviders("tts").then((providers) => {
+      if (!active) return;
+      setTtsProviders(providers);
+      setTtsProvidersLoaded(true);
+    }).catch((cause: unknown) => {
+      if (!active) return;
+      setTtsProviderError(actionableError(
+        "TTS providers could not be loaded",
+        cause,
+        "Open TTS providers to review the active connection, then reload the editor."
+      ));
+      setTtsProvidersLoaded(true);
     });
     return () => { active = false; };
   }, [props.alertId, props.managementApi, props.targetProfileId]);
@@ -148,7 +170,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
-    const submittedDocument = editor.document;
+    if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
+      setError(missingActiveTtsProviderError());
+      throw new Error("An active TTS provider is required before enabled TTS layers can be saved.");
+    }
+    const submittedDocument = applyActiveTtsProvider(editor.document, activeTtsProvider);
     setBusy(true);
     setError(null);
     try {
@@ -170,7 +196,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     } finally {
       setBusy(false);
     }
-  }, [editor, props.alertId, props.managementApi]);
+  }, [activeTtsProvider, editor, props.alertId, props.managementApi]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
     if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor).length === 0) return false;
@@ -339,7 +365,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         }
         speechSynthesis.cancel();
         currentDocument.layers.filter(
-          (layer): layer is Extract<AlertLayer, { type: "tts" }> => layer.visible && layer.type === "tts"
+          (layer): layer is Extract<AlertLayer, { type: "tts" }> => layer.visible && layer.type === "tts" && layer.enabled
         ).forEach((layer) => {
           speechSynthesis.speak(new SpeechSynthesisUtterance(renderTemplateValue(layer.template, payload)));
         });
@@ -351,11 +377,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   async function sendTest() {
     if (document === null || samplePayload === null || profile === null) return;
+    if (sendIncludeTts && hasEnabledTts(document) && activeTtsProvider === null) {
+      setError(missingActiveTtsProviderError());
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
       const result = await props.managementApi.sendAlertEditorTest(props.alertId, {
-        document,
+        document: applyActiveTtsProvider(document, activeTtsProvider),
         targetProfileId: profileId,
         samplePayload,
         includeAudio: sendIncludeAudio,
@@ -403,7 +433,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const id = nextLayerId(document, type);
     const layer = type === "text"
       ? { ...layerBase(id, "Text", type, document.layers.length), template: "{userName}" }
-      : { ...layerBase(id, "Text to speech", type, document.layers.length), template: "{userName}" };
+      : {
+          ...layerBase(id, "Text to speech", type, document.layers.length),
+          enabled: activeTtsProvider !== null,
+          providerId: activeTtsProvider?.kind ?? "browser-speech",
+          template: "{userName}"
+        };
     updateDocument((current) => addLayer(current, layer, type === "text" ? defaultGeometryByProfile() : {}));
     setSelectedLayerId(id);
     setTab("layers");
@@ -453,7 +488,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={props.onBack} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
   }
 
-  const canSend = profile.enabled && profile.reviewState === "ready" && samplePayload !== null && sampleError === null && documentConditionError === null && !busy;
+  const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
+  const canSend = profile.enabled && profile.reviewState === "ready" && samplePayload !== null && sampleError === null && documentConditionError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
   return (
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
@@ -472,7 +508,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           {preview ? <button className="button button--secondary" onClick={() => previewPlaying ? setPreviewPlaying(false) : previewLocally()} type="button">{previewPlaying ? "Pause preview" : "Replay preview"}</button> : null}
           {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => { setPreviewPlaying(false); setPreviewElapsedMs(Math.max(0, Math.min(document.durationMs, Number(event.currentTarget.value)))); }} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
-          <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || busy} onClick={() => void requestSave()} type="button">Save</button>
+          <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
         </div>
       </header>
 
@@ -582,6 +618,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           </div>
           {tab === "layers" ? (
             <LayerInspector
+              activeTtsProvider={activeTtsProvider}
               document={document}
               onAddAsset={(type) => setPicker({ layerId: null, type })}
               onAddSimple={addSimpleLayer}
@@ -590,6 +627,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               onSelect={setSelectedLayerId}
               profileId={profileId}
               selectedLayer={selectedLayer}
+              ttsProviderError={ttsProviderError}
+              ttsProvidersLoaded={ttsProvidersLoaded}
             />
           ) : tab === "alert" ? (
             <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
@@ -691,6 +730,7 @@ function affectedProfileLabels(editor: AlertEditorState): string[] {
 }
 
 function LayerInspector({
+  activeTtsProvider,
   document,
   onAddAsset,
   onAddSimple,
@@ -698,8 +738,11 @@ function LayerInspector({
   onChooseAsset,
   onSelect,
   profileId,
-  selectedLayer
+  selectedLayer,
+  ttsProviderError,
+  ttsProvidersLoaded
 }: {
+  readonly activeTtsProvider: RegisteredProviderView | null;
   readonly document: AlertEditorDocument;
   readonly onAddAsset: (type: "image" | "video" | "audio") => void;
   readonly onAddSimple: (type: "text" | "tts") => void;
@@ -708,6 +751,8 @@ function LayerInspector({
   readonly onSelect: (layerId: string) => void;
   readonly profileId: TargetProfileId;
   readonly selectedLayer: AlertLayer | null;
+  readonly ttsProviderError: ActionableManagementError | null;
+  readonly ttsProvidersLoaded: boolean;
 }) {
   const layout = selectedLayer === null ? undefined : document.targetProfiles.find((profile) => profile.id === profileId)?.layerLayouts.find((candidate) => candidate.layerId === selectedLayer.id);
   return (
@@ -725,7 +770,7 @@ function LayerInspector({
           {document.layers.map((layer) => (
             <div className={selectedLayer?.id === layer.id ? "is-selected" : undefined} key={layer.id}>
               <button onClick={() => onSelect(layer.id)} type="button"><span>{layer.name}</span><small>{layerTypeLabel(layer.type)}</small></button>
-              <button aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</button>
+              {layer.type === "tts" ? null : <button aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</button>}
             </div>
           ))}
         </div>
@@ -734,6 +779,43 @@ function LayerInspector({
         <section className="alert-editor-inspector__controls">
           <h3>{selectedLayer.name}</h3>
           <label><span>Layer name</span><input onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, name: value }))); }} value={selectedLayer.name} /></label>
+          {selectedLayer.type === "tts" ? (
+            <fieldset>
+              <legend>Live TTS</legend>
+              {activeTtsProvider !== null ? (
+                <div aria-label="Active TTS provider">
+                  <span>Active provider</span>
+                  <strong>{activeTtsProvider.name}</strong>
+                  <p>{formatTtsProviderKind(activeTtsProvider.kind)} is used for live TTS.</p>
+                </div>
+              ) : !ttsProvidersLoaded ? (
+                <p role="status">Loading active TTS provider...</p>
+              ) : (
+                <div>
+                  <p role="alert">{ttsProviderError === null
+                    ? "An active TTS provider is required before this layer can be used live."
+                    : `${ttsProviderError.summary}. ${ttsProviderError.nextStep}`}</p>
+                  <a href="/manage/tts-providers">Set up a TTS provider</a>
+                </div>
+              )}
+              <label>
+                <span>Use TTS for this alert</span>
+                <input
+                  aria-label="Enable TTS for this alert"
+                  checked={selectedLayer.enabled}
+                  disabled={!selectedLayer.enabled && activeTtsProvider === null}
+                  onChange={(event) => {
+                    const enabled = event.currentTarget.checked;
+                    if (enabled && activeTtsProvider === null) return;
+                    onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "tts"
+                      ? { ...layer, enabled, ...(enabled ? { providerId: activeTtsProvider!.kind } : {}) }
+                      : layer));
+                  }}
+                  type="checkbox"
+                />
+              </label>
+            </fieldset>
+          ) : null}
           {(selectedLayer.type === "text" || selectedLayer.type === "tts") ? (
             <>
               <label><span>{selectedLayer.type === "text" ? "Message template" : "TTS template"}</span><textarea aria-label={selectedLayer.type === "text" ? "Message template" : "TTS template"} onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === selectedLayer.type ? { ...layer, template: value } : layer)); }} value={selectedLayer.template} /></label>
@@ -1068,6 +1150,38 @@ function profileLabel(profileId: TargetProfileId): string {
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function hasEnabledTts(document: AlertEditorDocument): boolean {
+  return document.layers.some((layer) => layer.type === "tts" && layer.enabled);
+}
+
+function applyActiveTtsProvider(
+  document: AlertEditorDocument,
+  activeProvider: RegisteredProviderView | null
+): AlertEditorDocument {
+  if (activeProvider === null) return document;
+  return {
+    ...document,
+    layers: document.layers.map((layer) => layer.type === "tts" && layer.enabled
+      ? { ...layer, providerId: activeProvider.kind }
+      : layer)
+  };
+}
+
+function formatTtsProviderKind(kind: RegisteredProviderView["kind"]): string {
+  return kind === "speakerbot" ? "Speaker.bot" : kind === "browser-speech" ? "Browser Speech" : capitalize(kind);
+}
+
+function missingActiveTtsProviderError(): ActionableManagementError {
+  return {
+    ...actionableError(
+      "Enabled TTS has no active provider",
+      new Error("No active TTS provider is registered."),
+      "Open TTS providers, validate a provider, and set it active before saving or sending TTS."
+    ),
+    correction: { label: "Open TTS providers", route: "/manage/tts-providers" }
+  };
 }
 
 function actionableError(summary: string, cause: unknown, nextStep: string): ActionableManagementError {

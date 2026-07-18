@@ -123,8 +123,8 @@
 
 ## 13. Audited Speaker.bot Runtime Gap Closure
 
-- [ ] 13.1 Route configured live alert TTS through the active Speaker.bot provider while keeping voice and safety controls provider-owned.
-- [ ] 13.2 Keep editor Preview local-only and prevent duplicate Speaker.bot triggers across target profiles.
+- [x] 13.1 Route configured live alert TTS through the active Speaker.bot provider while keeping voice and safety controls provider-owned.
+- [x] 13.2 Keep editor Preview local-only and prevent duplicate Speaker.bot triggers across target profiles.
 
 ## 14. Completion Truth
 

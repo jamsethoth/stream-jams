@@ -544,6 +544,105 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(page.getByRole("button", { name: "Save" })).toBeHidden();
 });
 
+test("focused alert editor authors TTS against the active provider", async ({ page }) => {
+  await mockManagementShell(page);
+  let providers: unknown[] = [];
+  type EditorFixture = ReturnType<typeof alertEditorDocument>;
+  let document: Omit<EditorFixture, "layers"> & { layers: Array<Record<string, unknown>> } = alertEditorDocument();
+  const savedDocuments: unknown[] = [];
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: false,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+  const detail = {
+    overview,
+    inventory: [{
+      id: "alert-follow",
+      setId: "set-default",
+      providerKind: "twitch",
+      eventType: "follow",
+      parentAlertId: null,
+      name: "New follower",
+      kind: "default",
+      enabled: true,
+      reviewState: "ready",
+      targetProfileIds: ["landscape"],
+      previewText: "Thanks for following!"
+    }],
+    browserSources: []
+  };
+
+  await page.route("**/management/providers?capability=tts", (route) => route.fulfill({
+    contentType: "application/json",
+    json: providers
+  }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({
+    contentType: "application/json",
+    json: detail
+  }));
+  await page.route("**/management/alerts/alert-follow/editor", async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { readonly document: typeof document };
+      document = body.document;
+      savedDocuments.push(document);
+    }
+    await route.fulfill({ contentType: "application/json", json: document });
+  });
+
+  await page.goto("/manage/modules/alerts/editor/alert-follow?profile=landscape");
+  await page.getByRole("button", { name: "TTS" }).click();
+  await expect(page.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeDisabled();
+  await expect(page.getByRole("link", { name: "Set up a TTS provider" })).toHaveAttribute("href", "/manage/tts-providers");
+
+  providers = [{
+    id: "provider-speakerbot",
+    name: "Studio Speaker.bot",
+    kind: "speakerbot",
+    capability: "tts",
+    active: true,
+    connectionState: "connected",
+    intakeState: null,
+    validatedAt: "2026-07-18T04:00:00.000Z",
+    error: null,
+    usedByAlertCount: 1
+  }];
+  document = {
+    ...alertEditorDocument(),
+    layers: [{
+      id: "layer-tts",
+      name: "Speech",
+      type: "tts",
+      visible: true,
+      order: 0,
+      enabled: true,
+      providerId: "browser-speech",
+      template: "Welcome {actor.displayName}",
+      animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" }
+    }],
+    targetProfiles: alertEditorDocument().targetProfiles.map((profile) => ({ ...profile, layerLayouts: [] }))
+  };
+  await page.reload();
+
+  await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
+  await page.getByRole("textbox", { name: "TTS template" }).fill("Hello {actor.displayName}");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  expect(savedDocuments).toHaveLength(1);
+  expect(savedDocuments[0]).toMatchObject({
+    layers: [{ type: "tts", enabled: true, providerId: "speakerbot", template: "Hello {actor.displayName}" }]
+  });
+});
+
 function alertEditorDocument() {
   return {
     id: "alert-follow",

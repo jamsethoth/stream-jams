@@ -339,6 +339,38 @@ describe("management alert contracts and rules", () => {
     });
   });
 
+  it("persists TTS layer routing and upgrades legacy layers to Browser Speech", () => {
+    const layer = schema("alertLayerSchema");
+    const base = {
+      id: "layer-tts",
+      name: "Speech",
+      type: "tts",
+      visible: true,
+      order: 0,
+      template: "Welcome {userName}",
+      animation: {
+        mode: "preset",
+        entrance: "none",
+        exit: "none",
+        durationMs: 0,
+        delayMs: 0,
+        easing: "linear"
+      }
+    } as const;
+
+    expect(layer.parse(base)).toEqual({
+      ...base,
+      enabled: true,
+      providerId: "browser-speech"
+    });
+    expect(layer.parse({ ...base, enabled: false, providerId: "speakerbot" })).toEqual({
+      ...base,
+      enabled: false,
+      providerId: "speakerbot"
+    });
+    expect(layer.safeParse({ ...base, providerId: "" }).success).toBe(false);
+  });
+
   it("provides event variables and validates normal and edge-case built-in samples", () => {
     const sample = schema("alertSamplePayloadSchema");
     const variableCatalog = exportedFunction("getAlertTemplateVariableCatalog") as unknown as (

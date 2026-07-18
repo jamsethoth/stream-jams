@@ -29,6 +29,7 @@ export interface TtsProviderTestResult {
 export interface TtsService {
   listProviders(): Promise<readonly TtsProviderDescriptor[]>;
   testProvider(input: TtsProviderTestInput): Promise<TtsProviderTestResult>;
+  createPlaybackInstruction(input: TtsProviderTestInput): Promise<TtsProviderTestResult>;
 }
 
 export class UnknownTtsProviderError extends Error {
@@ -90,6 +91,10 @@ export class DefaultTtsService implements TtsService {
   }
 
   async testProvider(input: TtsProviderTestInput): Promise<TtsProviderTestResult> {
+    return this.createPlaybackInstruction(input);
+  }
+
+  async createPlaybackInstruction(input: TtsProviderTestInput): Promise<TtsProviderTestResult> {
     const provider = this.#registry.getProvider(input.providerId);
     if (provider === null) {
       throw new UnknownTtsProviderError(input.providerId);

@@ -89,6 +89,42 @@ describe("AlertEditorService", () => {
     );
   });
 
+  it("creates and persists alert TTS configuration from an editor layer", async () => {
+    const harness = createHarness();
+    const document = await harness.service.getDocument(rule.id);
+    const edited: AlertEditorDocument = {
+      ...document,
+      layers: [
+        ...document.layers,
+        {
+          id: "layer-speakerbot",
+          name: "Text to speech",
+          type: "tts",
+          visible: true,
+          order: document.layers.length,
+          animation: document.layers[0]!.animation,
+          enabled: true,
+          providerId: "speakerbot",
+          template: "Welcome {userName}"
+        }
+      ]
+    };
+
+    await harness.service.saveDocument(rule.id, edited);
+
+    expect(harness.rules.saveRule).toHaveBeenCalledWith(expect.objectContaining({
+      variants: [expect.objectContaining({
+        ttsConfig: {
+          enabled: true,
+          providerId: "speakerbot",
+          voiceId: null,
+          template: "Welcome {userName}",
+          minimumAmount: null
+        }
+      })]
+    }));
+  });
+
   it("loads defaults and variations as separate hydrated editor documents", async () => {
     const variationRule: AlertRule = {
       ...rule,

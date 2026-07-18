@@ -317,6 +317,8 @@ export const alertLayerSchema = z.discriminatedUnion("type", [
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("tts"),
+    enabled: z.boolean().default(true),
+    providerId: nonEmptyStringSchema.default("browser-speech"),
     template: z.string()
   }),
   alertLayerBaseSchema.extend({

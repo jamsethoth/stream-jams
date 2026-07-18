@@ -203,13 +203,14 @@ export class DefaultAlertResolver implements AlertResolver {
       return { ...base, audio: { assetId: layer.assetId, volume: layer.volume } };
     }
     if (layer.type === "tts") {
+      if (!layer.enabled) return null;
       return {
         ...base,
         tts: {
-          mode: "browser-speech",
+          mode: layer.providerId === "browser-speech" ? "browser-speech" : "remote-trigger",
           text: this.#ttsTemplateRenderer.render({ template: layer.template, values: createTemplateContext(match.event) }),
           audioAssetId: null,
-          providerPayload: null
+          providerPayload: { providerId: layer.providerId, layerId: layer.id }
         }
       };
     }
@@ -311,7 +312,7 @@ export class DefaultAlertResolver implements AlertResolver {
     }
 
     return {
-      mode: "browser-speech",
+      mode: config.providerId === "speakerbot" ? "remote-trigger" : "browser-speech",
       text: this.#ttsTemplateRenderer.render({
         template: config.template,
         values: createTemplateContext(match.event)

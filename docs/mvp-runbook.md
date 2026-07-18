@@ -84,6 +84,17 @@ Credential store is unavailable. Configure Windows Credential Manager, macOS Key
 
 On Linux, install and unlock a Secret Service-compatible keyring such as GNOME Keyring or KWallet through the desktop session before connecting Twitch. There is no plaintext fallback for real runtime tokens; in-memory or fake secret stores are only for automated tests.
 
+## Speaker.bot Connection
+
+1. In Speaker.bot, open `Settings > WebSocket Server`.
+2. Keep the local defaults `127.0.0.1`, port `7680`, and endpoint `/`. Enable `Auto Start`, then start the WebSocket server.
+3. In Stream Jams, open `TTS providers`, choose `Add TTS provider`, and select Speaker.bot.
+4. Enter the matching host, port, and endpoint, test the connection, then register and activate the provider.
+5. On the registered provider, enter the Speaker.bot voice alias to use by default and save the safety settings. Voice aliases are created under `Settings > Voice Aliases` in Speaker.bot.
+6. In an alert editor, add or select a TTS layer, enable it, and edit only its message template.
+
+Live alerts send one server-side Speaker.bot `Speak` request before the visual/audio instructions fan out to landscape and vertical overlays. Local editor Preview never calls Speaker.bot. If a live request fails, visual and audio playback continues and Diagnostics records one redacted error with a reference ID.
+
 ## Diagnostics Export
 
 1. Open `Diagnostics` in the management UI.

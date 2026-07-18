@@ -11,9 +11,11 @@ import {
   type AlertVariant,
   type AssetRepository,
   type NormalizedStreamEvent,
+  type Logger,
   type PlaybackQueue,
   type PlaybackQueueSnapshot,
-  type ResolvedAlert
+  type ResolvedAlert,
+  type TtsService
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import {
@@ -314,6 +316,126 @@ describe("PlaybackCoordinator", () => {
     ]);
   });
 
+  it("dispatches one remote TTS trigger before delivering two profile instructions", async () => {
+    const rule = createRule({
+      id: "rule-speakerbot",
+      variants: [createVariant({
+        ttsConfig: {
+          enabled: true,
+          providerId: "speakerbot",
+          voiceId: null,
+          template: "Welcome {actor.displayName}",
+          minimumAmount: null
+        }
+      })]
+    });
+    const baseDocument = createEditorDocument(rule);
+    const document: AlertEditorDocument = {
+      ...baseDocument,
+      layers: [{
+        id: "layer-tts",
+        name: "TTS",
+        type: "tts",
+        visible: true,
+        order: 0,
+        animation,
+        enabled: true,
+        providerId: "speakerbot",
+        template: "Welcome {actor.displayName}"
+      }],
+      targetProfiles: baseDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "ready" as const,
+        layerLayouts: []
+      }))
+    };
+    const dispatched: string[] = [];
+    const deliveredProfiles: Array<string | null | undefined> = [];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      additionalTargets: [
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" },
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "vertical" }
+      ],
+      findEditorDocument: async () => document,
+      ttsService: {
+        async createPlaybackInstruction(input) {
+          dispatched.push(`${input.providerId}:${input.text}:${String(input.metadata?.layerId)}`);
+          return {
+            instruction: { mode: "remote-trigger", text: input.text, audioAssetId: null, providerPayload: null },
+            moderationActions: []
+          };
+        }
+      },
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          deliveredProfiles.push(instruction.targetProfileId);
+          return { deliveredClientIds: [] };
+        }
+      }
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(result.status).toBe("queued");
+    expect(dispatched).toEqual(["speakerbot:Welcome Viewer:layer-tts"]);
+    expect(deliveredProfiles).toEqual([undefined, "landscape", "vertical"]);
+  });
+
+  it("logs one referenced remote TTS failure and continues overlay delivery", async () => {
+    const rule = createRule({
+      id: "rule-speakerbot-failure",
+      variants: [createVariant({
+        ttsConfig: {
+          enabled: true,
+          providerId: "speakerbot",
+          voiceId: null,
+          template: "Do not leak {actor.displayName}",
+          minimumAmount: null
+        }
+      })]
+    });
+    const errors: Array<{ readonly message: string; readonly context: Parameters<Logger["error"]>[1] }> = [];
+    let deliveryCount = 0;
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      ttsService: {
+        async createPlaybackInstruction() {
+          throw new Error("ws://127.0.0.1:7680/?token=secret failed");
+        }
+      },
+      logger: {
+        async error(message, context) {
+          errors.push({ message, context });
+        }
+      },
+      generateReferenceId: () => "ref-tts-failure",
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          deliveryCount += 1;
+          return { deliveredClientIds: [] };
+        }
+      }
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(result.status).toBe("queued");
+    expect(deliveryCount).toBe(1);
+    expect(errors).toEqual([{
+      message: "Speaker.bot TTS playback failed. Visual and audio alert playback continued.",
+      context: {
+        module: "tts",
+        source: "tts.remote-trigger.failed",
+        correlationId: "ref-tts-failure",
+        processingId: null,
+        metadata: { providerId: "speakerbot", sourceEventId: "event-cheer", ruleId: "rule-speakerbot-failure" }
+      }
+    }]);
+    expect(JSON.stringify(errors)).not.toContain("token=secret");
+  });
+
   it("loads variation editor documents for live profile playback", async () => {
     const baseRule = createRule({ id: "rule-variation-live" });
     const rule: AlertRule = {
@@ -449,6 +571,9 @@ function createCoordinator(
     readonly queue?: PlaybackQueue;
     readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
     readonly findEditorDocument?: (alertId: string) => Promise<AlertEditorDocument | null>;
+    readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
+    readonly logger?: Pick<Logger, "error">;
+    readonly generateReferenceId?: () => string;
     readonly clock?: MutableClock;
     readonly random?: () => number;
   } = {}
@@ -483,7 +608,10 @@ function createCoordinator(
     ...(options.additionalTargets === undefined ? {} : { additionalTargets: options.additionalTargets }),
     ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
     ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink }),
-    ...(options.findEditorDocument === undefined ? {} : { findEditorDocument: options.findEditorDocument })
+    ...(options.findEditorDocument === undefined ? {} : { findEditorDocument: options.findEditorDocument }),
+    ...(options.ttsService === undefined ? {} : { ttsService: options.ttsService }),
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
+    ...(options.generateReferenceId === undefined ? {} : { generateReferenceId: options.generateReferenceId })
   };
   return new PlaybackCoordinator(dependencies);
 }

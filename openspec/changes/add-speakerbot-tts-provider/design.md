@@ -27,7 +27,7 @@ Runtime implementation MUST follow Tasks 1-3 of `docs/superpowers/plans/2026-07-
 
 ## Assumptions
 
-- Speaker.bot is reachable locally through an HTTP, WebSocket, or documented local control API.
+- Speaker.bot is reachable through its documented local WebSocket API.
 - Provider connection settings are local configuration, not Vite client secrets.
 - Alert TTS text should use the same normalized event template data as visual alert text.
 
@@ -38,6 +38,10 @@ Runtime implementation MUST follow Tasks 1-3 of `docs/superpowers/plans/2026-07-
 - Keep provider test calls server-side and log redacted diagnostics for failures.
 - Add per-alert TTS controls to the alert variant editor after the alert UI expansion lands.
 - Keep voice selection and safety controls on the registered Speaker.bot provider. Alert documents store only enablement, provider kind, and template text; alert-level voice overrides remain backlog.
+- Use Speaker.bot's documented defaults: `127.0.0.1`, port `7680`, and endpoint `/`. The setup flow tells users to enable **Auto Start** because Speaker.bot leaves it disabled by default.
+- Send `Speak` requests with `id`, `request`, `voice`, `message`, and `badWordFilter`. The active provider's safety settings supply the voice alias; Stream Jams sets `badWordFilter` to `true`.
+- Validate setup by opening the configured WebSocket and closing it after connection. Do not send undocumented or state-changing requests during validation.
+- Reuse the server's injected WebSocket socket factory. No additional runtime dependency is required.
 
 ## Initial Implementation Plan
 

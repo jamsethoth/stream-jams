@@ -1,4 +1,4 @@
-import type { AlertEditorDocument, AlertSetDetail } from "@stream-jams/core";
+import type { AlertEditorDocument, AlertSetDetail, RegisteredProviderView } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,6 +31,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => document),
             getAlertSet: vi.fn(async () => alertSetDetail()),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -137,6 +138,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => setDetail),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -170,6 +172,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail()),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -207,6 +210,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail()),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -247,6 +251,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail()),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -281,6 +286,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -327,6 +333,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -372,6 +379,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -424,6 +432,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => raidDocument),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -476,7 +485,7 @@ describe("AlertEditorPage", () => {
       layers: [
         ...editorDocument().layers,
         { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-audio", volume: 0.5, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
-        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, template: "Hello {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, enabled: true, providerId: "speakerbot", template: "Hello {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
       ]
     };
     const sendAlertEditorTest = vi.fn();
@@ -488,6 +497,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => previewDocument),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -526,6 +536,104 @@ describe("AlertEditorPage", () => {
     expect(seek).toHaveValue("1200");
   });
 
+  it("shows the active TTS provider and persists its runtime provider id", async () => {
+    const user = userEvent.setup();
+    const ttsDocument: AlertEditorDocument = {
+      ...editorDocument(),
+      layers: [{
+        id: "layer-tts",
+        name: "Speech",
+        type: "tts",
+        visible: true,
+        order: 0,
+        enabled: true,
+        providerId: "browser-speech",
+        template: "Welcome {userName}",
+        animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" }
+      }],
+      targetProfiles: editorDocument().targetProfiles.map((profile) => ({ ...profile, layerLayouts: [] }))
+    };
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={ttsDocument.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => ttsDocument),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("Studio Speaker.bot")).toBeInTheDocument();
+    expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeInTheDocument();
+    const enabled = screen.getByRole("checkbox", { name: "Enable TTS for this alert" });
+    expect(enabled).toBeChecked();
+    await user.click(enabled);
+    expect(enabled).not.toBeChecked();
+    await user.click(enabled);
+    expect(enabled).toBeChecked();
+    fireEvent.change(screen.getByRole("textbox", { name: "TTS template" }), { target: { value: "Hello {userName}" } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      ttsDocument.id,
+      expect.objectContaining({
+        layers: [expect.objectContaining({
+          type: "tts",
+          enabled: true,
+          providerId: "speakerbot",
+          template: "Hello {userName}"
+        })]
+      }),
+      false
+    ));
+  });
+
+  it("requires an active provider before a new TTS layer can be enabled", async () => {
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("button", { name: "TTS" }));
+    expect(screen.queryByRole("button", { name: "Hide Text to speech" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Enable TTS for this alert" })).not.toBeChecked();
+    expect(screen.getByRole("link", { name: "Set up a TTS provider" })).toHaveAttribute("href", "/manage/tts-providers");
+    expect(screen.getByText("An active TTS provider is required before this layer can be used live.")).toBeInTheDocument();
+  });
+
   it("keeps editor actions unavailable until active-set status is known", async () => {
     let resolveSet: ((value: AlertSetDetail) => void) | undefined;
     const setDetail = new Promise<AlertSetDetail>((resolve) => {
@@ -540,6 +648,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => setDetail),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -579,6 +688,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet,
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -619,6 +729,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -659,6 +770,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => editorDocument()),
             getAlertSet: vi.fn(async () => alertSetDetail()),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -708,6 +820,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => variation),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -776,6 +889,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => variation),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -815,6 +929,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => document),
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -873,6 +988,7 @@ describe("AlertEditorPage", () => {
           managementApi={{
             getAlertEditorDocument,
             getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
             deleteAsset: vi.fn(),
@@ -915,6 +1031,19 @@ function NavigationProbe() {
   const navigation = useManagementNavigation();
   return <><button onClick={() => navigation.requestNavigation({ id: "modules-alerts" })} type="button">Leave editor</button>{navigation.guard}</>;
 }
+
+const activeSpeakerBot: RegisteredProviderView = {
+  id: "provider-speakerbot",
+  name: "Studio Speaker.bot",
+  kind: "speakerbot",
+  capability: "tts",
+  active: true,
+  connectionState: "connected",
+  intakeState: null,
+  validatedAt: "2026-07-18T04:00:00.000Z",
+  error: null,
+  usedByAlertCount: 1
+};
 
 const assetApi: AssetApi = {
   listAssets: vi.fn(async () => []),

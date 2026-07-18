@@ -13,7 +13,9 @@ import type {
   PlaybackQueueSnapshot,
   ResolvedAlert,
   OverlayInstruction,
-  EnqueuePlaybackItemInput
+  EnqueuePlaybackItemInput,
+  Logger,
+  TtsService
 } from "@stream-jams/core";
 
 export type PlaybackEnqueueStatus = "queued" | "duplicate" | "no-matches" | "cooldown";
@@ -59,6 +61,9 @@ export interface PlaybackCoordinatorDependencies {
   readonly assetRepository?: Pick<AssetRepository, "findById">;
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
   readonly findEditorDocument?: (alertId: string) => Promise<AlertEditorDocument | null>;
+  readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
+  readonly logger?: Pick<Logger, "error">;
+  readonly generateReferenceId?: () => string;
 }
 
 export class PlaybackCoordinator {
@@ -73,6 +78,9 @@ export class PlaybackCoordinator {
   readonly #assetRepository: Pick<AssetRepository, "findById"> | null;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
   readonly #findEditorDocument: ((alertId: string) => Promise<AlertEditorDocument | null>) | null;
+  readonly #ttsService: Pick<TtsService, "createPlaybackInstruction"> | null;
+  readonly #logger: Pick<Logger, "error"> | null;
+  readonly #generateReferenceId: (() => string) | null;
   #lastDeliveredCurrentItemId: string | null = null;
   #pendingClientsByInstructionId = new Map<string, Set<string> | null>();
 
@@ -88,6 +96,9 @@ export class PlaybackCoordinator {
     this.#assetRepository = dependencies.assetRepository ?? null;
     this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
     this.#findEditorDocument = dependencies.findEditorDocument ?? null;
+    this.#ttsService = dependencies.ttsService ?? null;
+    this.#logger = dependencies.logger ?? null;
+    this.#generateReferenceId = dependencies.generateReferenceId ?? null;
   }
 
   getSnapshot(): PlaybackQueueSnapshot {
@@ -132,6 +143,7 @@ export class PlaybackCoordinator {
         selectedVariants
       })
     );
+    await this.#dispatchRemoteTts(resolvedAlerts);
     const snapshot = this.#deliverCurrent(this.#queue.enqueue({
       sourceEvent: event,
       alerts: resolvedAlerts,
@@ -148,6 +160,74 @@ export class PlaybackCoordinator {
       matchedRuleIds: readyMatches.map((match) => match.rule.id),
       enqueuedAlertIds: resolvedAlerts.map((alert: ResolvedAlert) => alert.id)
     };
+  }
+
+  async #dispatchRemoteTts(alerts: readonly ResolvedAlert[]): Promise<void> {
+    const dispatched = new Set<string>();
+    const layerAwareDispatches = new Set(
+      alerts.flatMap((alert) => {
+        const tts = alert.overlayInstruction.tts;
+        if (tts === null || tts.mode !== "remote-trigger") return [];
+        const providerId = readProviderPayloadString(tts.providerPayload, "providerId");
+        const layerId = readProviderPayloadString(tts.providerPayload, "layerId");
+        return providerId === null || layerId === null
+          ? []
+          : [remoteTtsBaseKey(alert, providerId, tts.text)];
+      })
+    );
+    for (const alert of alerts) {
+      const tts = alert.overlayInstruction.tts;
+      if (tts?.mode !== "remote-trigger") continue;
+      const providerId = readProviderPayloadString(tts.providerPayload, "providerId");
+      if (providerId === null) continue;
+      const layerId = readProviderPayloadString(tts.providerPayload, "layerId");
+      const baseKey = remoteTtsBaseKey(alert, providerId, tts.text);
+      if (layerId === null && layerAwareDispatches.has(baseKey)) continue;
+      const key = `${baseKey}:${layerId ?? "legacy"}`;
+      if (dispatched.has(key)) continue;
+      dispatched.add(key);
+
+      if (this.#ttsService === null) {
+        throw new Error(`Remote TTS provider "${providerId}" is not configured in playback.`);
+      }
+      try {
+        await this.#ttsService.createPlaybackInstruction({
+          providerId,
+          text: tts.text,
+          metadata: {
+            sourceEventId: alert.sourceEventId,
+            ruleId: alert.ruleId,
+            variantId: alert.variantId,
+            ...(layerId === null ? {} : { layerId })
+          }
+        });
+      } catch {
+        await this.#recordRemoteTtsFailure(providerId, alert);
+      }
+    }
+  }
+
+  async #recordRemoteTtsFailure(providerId: string, alert: ResolvedAlert): Promise<void> {
+    if (this.#logger === null || this.#generateReferenceId === null) return;
+    const referenceId = this.#generateReferenceId();
+    try {
+      await this.#logger.error(
+        "Speaker.bot TTS playback failed. Visual and audio alert playback continued.",
+        {
+          module: "tts",
+          source: "tts.remote-trigger.failed",
+          correlationId: referenceId,
+          processingId: null,
+          metadata: {
+            providerId,
+            sourceEventId: alert.sourceEventId,
+            ruleId: alert.ruleId
+          }
+        }
+      );
+    } catch {
+      // Playback remains available when diagnostics storage itself is unavailable.
+    }
   }
 
   enqueueResolvedTest(input: EnqueuePlaybackItemInput): PlaybackQueueSnapshot {
@@ -320,4 +400,13 @@ export class PlaybackCoordinator {
       enqueuedAlertIds
     };
   }
+}
+
+function readProviderPayloadString(payload: Record<string, unknown> | null, key: string): string | null {
+  const value = payload?.[key];
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+function remoteTtsBaseKey(alert: ResolvedAlert, providerId: string, text: string): string {
+  return [alert.sourceEventId, alert.ruleId, alert.variantId, providerId, text].join(":");
 }

@@ -629,11 +629,24 @@ function ProviderDetail({
             <h4 id="tts-safety-title">Safety defaults</h4>
             <form className="provider-page__form" onSubmit={onSafetySubmit}>
               <label>
-                <span>Default voice</span>
-                <select value={safety.defaultVoiceId ?? ""} onChange={(event) => onSafetyChange({ ...safety, defaultVoiceId: event.currentTarget.value || null })}>
-                  <option value="">Provider default</option>
-                  {detail.availableVoices.map((voice) => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
-                </select>
+                <span>{detail.provider.kind === "speakerbot" ? "Default voice alias" : "Default voice"}</span>
+                {detail.provider.kind === "speakerbot" && detail.availableVoices.length === 0 ? (
+                  <input
+                    onChange={(event) => onSafetyChange({ ...safety, defaultVoiceId: event.currentTarget.value || null })}
+                    placeholder="EventVoice"
+                    required
+                    value={safety.defaultVoiceId ?? ""}
+                  />
+                ) : (
+                  <select
+                    required={detail.provider.kind === "speakerbot"}
+                    value={safety.defaultVoiceId ?? ""}
+                    onChange={(event) => onSafetyChange({ ...safety, defaultVoiceId: event.currentTarget.value || null })}
+                  >
+                    <option value="">{detail.provider.kind === "speakerbot" ? "Select voice alias" : "Provider default"}</option>
+                    {detail.availableVoices.map((voice) => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+                  </select>
+                )}
               </label>
               <label>
                 <span>Volume</span>

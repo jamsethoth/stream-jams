@@ -37,7 +37,7 @@ describe("DefaultAlertResolver", () => {
           textTemplate: "Thanks {actor.displayName} for {amount} bits",
           ttsConfig: {
             enabled: true,
-            providerId: "browser",
+            providerId: "browser-speech",
             voiceId: "voice-1",
             template: "Say thanks to {actor.displayName}",
             minimumAmount: 100
@@ -90,7 +90,7 @@ describe("DefaultAlertResolver", () => {
           text: "Say thanks to &lt;Viewer&gt;",
           audioAssetId: null,
           providerPayload: {
-            providerId: "browser",
+            providerId: "browser-speech",
             voiceId: "voice-1"
           }
         },
@@ -117,7 +117,7 @@ describe("DefaultAlertResolver", () => {
           textTemplate: "{metadata.rawProviderPayload.accessToken}:{metadata.giftCount}:{giftCount}",
           ttsConfig: {
             enabled: true,
-            providerId: "browser",
+            providerId: "browser-speech",
             voiceId: null,
             template: "{metadata.rawProviderPayload.accessToken}:{giftCount}",
             minimumAmount: null
@@ -143,7 +143,7 @@ describe("DefaultAlertResolver", () => {
           textTemplate: "{message} extra",
           ttsConfig: {
             enabled: true,
-            providerId: "browser",
+            providerId: "browser-speech",
             voiceId: null,
             template: "Read {message}",
             minimumAmount: null
@@ -247,7 +247,7 @@ describe("DefaultAlertResolver", () => {
         createVariant({
           ttsConfig: {
             enabled: true,
-            providerId: "browser",
+            providerId: "browser-speech",
             voiceId: null,
             template: "Small cheer from {actor.displayName}",
             minimumAmount: 100
@@ -296,7 +296,12 @@ describe("DefaultAlertResolver", () => {
       layout: { layerId: "layer-image", x: 40, y: 30, width: 320, height: 240, zIndex: 2 }
     });
     expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5 });
-    expect(resolved[3]?.overlayInstruction.tts?.text).toBe("Read Profile Viewer");
+    expect(resolved[3]?.overlayInstruction.tts).toEqual({
+      mode: "remote-trigger",
+      text: "Read Profile Viewer",
+      audioAssetId: null,
+      providerPayload: { providerId: "speakerbot", layerId: "layer-tts" }
+    });
     expect(resolved[4]?.overlayInstruction.shape).toEqual({
       fill: "#fff",
       layout: { layerId: "layer-shape", x: 0, y: 0, width: 100, height: 100, zIndex: 5 }
@@ -483,7 +488,7 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
       { id: "layer-text", name: "Text", type: "text", visible: true, order: 0, animation, template: "Welcome {actor.displayName}" },
       { id: "layer-image", name: "Image", type: "image", visible: true, order: 1, animation, assetId: "asset-image" },
       { id: "layer-audio", name: "Audio", type: "audio", visible: true, order: 2, animation, assetId: "asset-audio", volume: 0.5 },
-      { id: "layer-tts", name: "TTS", type: "tts", visible: true, order: 3, animation, template: "Read {actor.displayName}" },
+      { id: "layer-tts", name: "TTS", type: "tts", visible: true, order: 3, animation, enabled: true, providerId: "speakerbot", template: "Read {actor.displayName}" },
       { id: "layer-hidden", name: "Hidden", type: "text", visible: false, order: 4, animation, template: "Hidden" },
       { id: "layer-shape", name: "Shape", type: "shape", visible: true, order: 5, animation, fill: "#fff" }
     ],

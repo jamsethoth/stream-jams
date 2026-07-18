@@ -1,10 +1,8 @@
 import type { RegisteredProviderDetail, TtsService } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { StreamerBotSocket } from "../streamerbot/streamerbot-client.js";
-import {
-  createProviderManagementAdapters,
-  type SpeakerBotSocket
-} from "./provider-management-adapters.js";
+import type { SpeakerBotSocket } from "../tts/speakerbot-client.js";
+import { createProviderManagementAdapters } from "./provider-management-adapters.js";
 
 const now = new Date("2026-07-15T12:00:00.000Z");
 
@@ -72,15 +70,14 @@ describe("provider management adapters", () => {
     await rejection;
   });
 
-  it("uses Speaker.bot GetInfo for validation and Speak for voice tests", async () => {
+  it("validates Speaker.bot connectivity without an undocumented request and uses Speak for voice tests", async () => {
     const harness = createHarness();
     const adapter = harness.adapters.get("speakerbot");
     const validation = adapter?.validate(speakerBotInput());
     const validationSocket = harness.speakerBotSockets[0];
 
     await validationSocket?.emitOpen();
-    expect(validationSocket?.sent).toEqual([{ id: "speaker-request-1", request: "GetInfo" }]);
-    await validationSocket?.emitMessage({ id: "speaker-request-1", status: "ok", info: { version: "0.2.16" } });
+    expect(validationSocket?.sent).toEqual([]);
 
     await expect(validation).resolves.toMatchObject({
       valid: true,
@@ -97,13 +94,14 @@ describe("provider management adapters", () => {
     await voiceSocket?.emitOpen();
     expect(voiceSocket?.sent).toEqual([
       {
-        id: "speaker-request-2",
+        id: "speaker-request-1",
         request: "Speak",
         message: "Stream Jams voice test",
-        voice: "voice-1"
+        voice: "voice-1",
+        badWordFilter: true
       }
     ]);
-    await voiceSocket?.emitMessage({ id: "speaker-request-2", status: "ok" });
+    await voiceSocket?.emitMessage({ id: "speaker-request-1", status: "ok" });
 
     await expect(voiceTest).resolves.toEqual({ delivered: true, error: null });
     expect(harness.speakerBotUrls).toEqual([

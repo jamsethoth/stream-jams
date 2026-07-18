@@ -253,16 +253,16 @@
 - Editor TTS layers persist `providerId`, `enabled`, and `template`; voice resolves from the active provider's safety settings.
 - Playback dispatch deduplicates remote TTS by source event, rule, variant/layer, provider, and rendered text before sending profile-specific overlay instructions.
 
-- [ ] Update the OpenSpec design with the official WebSocket choice: default `127.0.0.1:7680/`, Auto Start guidance, and `Speak` request fields `id`, `request`, `voice`, `message`, and `badWordFilter`.
-- [ ] Write failing client tests for successful Speak, timeout, malformed/error response, close/error, and redacted failures.
-- [ ] Extract the tested client from `provider-management-adapters.ts`; keep the existing socket factory and add no WebSocket dependency.
-- [ ] Write failing provider tests for active Speaker.bot resolution, inactive/wrong-kind registration, default voice alias, and successful remote-trigger instruction.
-- [ ] Extend editor TTS controls with active provider and template only. Link to TTS Providers when none is active; keep per-alert voice override out of MVP.
-- [ ] Make the resolver emit `browser-speech` only for that provider and `remote-trigger` for Speaker.bot.
-- [ ] Dispatch each remote trigger once before profile-specific overlay delivery. On failure, continue visual/audio playback and write one referenced diagnostic.
-- [ ] Add a Playwright test configuring an alert TTS layer and a runtime smoke test proving one Speaker.bot Speak request for one event delivered to two profiles.
-- [ ] Run `corepack.cmd pnpm test -- apps/server/src/modules/tts apps/server/src/modules/playback/playback-coordinator.test.ts packages/core/src/tts packages/core/src/alerts/alert-resolver.test.ts apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx`; expect all selected tests to pass.
-- [ ] Commit as `feat: route alert TTS through Speaker.bot`.
+- [x] Update the OpenSpec design with the official WebSocket choice: default `127.0.0.1:7680/`, Auto Start guidance, and `Speak` request fields `id`, `request`, `voice`, `message`, and `badWordFilter`.
+- [x] Write failing client tests for successful Speak, timeout, malformed/error response, close/error, and redacted failures.
+- [x] Extract the tested client from `provider-management-adapters.ts`; keep the existing socket factory and add no WebSocket dependency.
+- [x] Write failing provider tests for active Speaker.bot resolution, inactive/wrong-kind registration, default voice alias, and successful remote-trigger instruction.
+- [x] Extend editor TTS controls with active provider and template only. Link to TTS Providers when none is active; keep per-alert voice override out of MVP.
+- [x] Make the resolver emit `browser-speech` only for that provider and `remote-trigger` for Speaker.bot.
+- [x] Dispatch each remote trigger once before profile-specific overlay delivery. On failure, continue visual/audio playback and write one referenced diagnostic.
+- [x] Add a Playwright test configuring an alert TTS layer and a runtime smoke test proving one Speaker.bot Speak request for one event delivered to two profiles.
+- [x] Run `corepack.cmd pnpm test -- apps/server/src/modules/tts apps/server/src/modules/playback/playback-coordinator.test.ts packages/core/src/tts packages/core/src/alerts/alert-resolver.test.ts apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx`; expect all selected tests to pass.
+- [x] Commit as `feat: route alert TTS through Speaker.bot`.
 
 **Primary protocol references:**
 - [Speaker.bot WebSocket configuration](https://speaker.bot/api)

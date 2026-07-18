@@ -287,7 +287,11 @@ function createDocumentFromRule(
     layers.push(layerBase(`${resolved.editorId}-audio`, "Audio", "audio", layers.length, { assetId: variant.audioAssetId, volume: 1 }));
   }
   if (variant.ttsConfig !== null) {
-    layers.push(layerBase(`${resolved.editorId}-tts`, "Text to speech", "tts", layers.length, { template: variant.ttsConfig.template }));
+    layers.push(layerBase(`${resolved.editorId}-tts`, "Text to speech", "tts", layers.length, {
+      enabled: variant.ttsConfig.enabled,
+      providerId: variant.ttsConfig.providerId,
+      template: variant.ttsConfig.template
+    }));
   }
 
   const enabledProfiles = new Set(metadata?.targetProfileIds ?? ["landscape"]);
@@ -475,10 +479,15 @@ function projectDocumentToRule(document: AlertEditorDocument, resolved: Resolved
         visualAssetId: visual?.assetId ?? null,
         audioAssetId: audio?.assetId ?? null,
         textTemplate: text?.template ?? "",
-        ttsConfig:
-          tts === undefined || currentVariant.ttsConfig === null
-            ? null
-            : { ...currentVariant.ttsConfig, enabled: true, template: tts.template },
+        ttsConfig: tts === undefined
+          ? null
+          : {
+              enabled: tts.enabled,
+              providerId: tts.providerId,
+              voiceId: null,
+              template: tts.template,
+              minimumAmount: null
+            },
         durationMs: document.durationMs,
         layout
       }
