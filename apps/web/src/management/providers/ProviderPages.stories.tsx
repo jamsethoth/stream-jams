@@ -121,7 +121,7 @@ export const TwitchAuthorizationUpdateRequired: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByText("Authorization update required");
+    await canvas.findByRole("heading", { name: "Authorization update required" });
     await userEvent.click(await canvas.findByRole("button", { name: "Reconnect Twitch" }));
     await canvas.findByRole("dialog", { name: "Reconnect Main Twitch" });
   }

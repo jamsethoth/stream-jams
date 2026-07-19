@@ -161,6 +161,202 @@ describe("runtime app composition smoke", () => {
     expect(log).not.toContain("must-not-be-logged");
   });
 
+  it("matches direct Twitch and Streamer.bot lifecycle and gift events while keeping intake running after malformed input", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const streamerBotSockets: ControlledStreamerBotSocket[] = [];
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      streamerBotSocketFactory: () => {
+        const socket = new ControlledStreamerBotSocket();
+        streamerBotSockets.push(socket);
+        return socket;
+      },
+      now: () => new Date("2026-07-18T02:00:00.000Z")
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    const registration = await composition.app.inject({
+      method: "POST",
+      url: "/management/providers",
+      headers: authHeaders,
+      payload: {
+        name: "Streamer.bot",
+        kind: "streamerbot",
+        configuration: { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+      }
+    });
+    const providerId = (registration.json() as { readonly provider: { readonly provider: { readonly id: string } } })
+      .provider.provider.id;
+
+    expect(registration.statusCode, registration.body).toBe(201);
+    const activation = await composition.app.inject({
+      method: "POST",
+      url: `/management/providers/${providerId}/activate`,
+      headers: authHeaders,
+      payload: { confirmWarnings: false }
+    });
+    expect(activation.statusCode, activation.body).toBe(200);
+    await waitFor(() => streamerBotSockets.length === 2);
+    await waitFor(() => composition.streamerBotRuntimeService.getStatus().state === "connected");
+    const sets = await composition.app.inject({ method: "GET", url: "/management/alert-sets", headers: authHeaders });
+    const setId = (sets.json() as readonly { readonly id: string }[])[0]!.id;
+    const streamOnlineAlert = await composition.app.inject({
+      method: "POST",
+      url: `/management/alert-sets/${setId}/alerts`,
+      headers: authHeaders,
+      payload: { eventType: "stream_online", name: "Stream online parity" }
+    });
+    const communityGiftAlert = await composition.app.inject({
+      method: "POST",
+      url: `/management/alert-sets/${setId}/alerts`,
+      headers: authHeaders,
+      payload: { eventType: "community_gift", name: "Community gift parity" }
+    });
+    const streamOnlineAlertId = (streamOnlineAlert.json() as { readonly id: string }).id;
+    const communityGiftAlertId = (communityGiftAlert.json() as { readonly id: string }).id;
+
+    expect(streamOnlineAlert.statusCode, streamOnlineAlert.body).toBe(201);
+    expect(communityGiftAlert.statusCode, communityGiftAlert.body).toBe(201);
+    expect((await composition.app.inject({
+      method: "PATCH",
+      url: `/management/alerts/${streamOnlineAlertId}/enabled`,
+      headers: authHeaders,
+      payload: { enabled: true }
+    })).statusCode).toBe(200);
+    expect((await composition.app.inject({
+      method: "PATCH",
+      url: `/management/alerts/${communityGiftAlertId}/enabled`,
+      headers: authHeaders,
+      payload: { enabled: true }
+    })).statusCode).toBe(200);
+
+    await streamerBotSockets[1]!.emitEvent({
+      timeStamp: "2026-07-18T01:59:00.000Z",
+      event: { source: "Twitch", type: "StreamOnline" },
+      data: {
+        id: "streamerbot-stream-online",
+        broadcaster: { id: "streamer-1", name: "Streamer" },
+        type: "live",
+        startedAt: "2026-07-18T01:59:00.000Z"
+      }
+    });
+    await expect(composition.eventIngestionService.ingestTwitchEventSubNotification({
+      metadata: {
+        message_id: "twitch-stream-online",
+        message_type: "notification",
+        message_timestamp: "2026-07-18T01:59:00.000Z",
+        subscription_type: "stream.online",
+        subscription_version: "1"
+      },
+      payload: {
+        subscription: { id: "subscription-stream-online", type: "stream.online", version: "1", condition: {} },
+        event: {
+          id: "twitch-stream-online",
+          broadcaster_user_id: "streamer-1",
+          broadcaster_user_name: "Streamer",
+          type: "live",
+          started_at: "2026-07-18T01:59:00.000Z"
+        }
+      }
+    })).resolves.toMatchObject({ status: "accepted", event: { type: "stream_online" } });
+
+    await streamerBotSockets[1]!.emitEvent({
+      timeStamp: "2026-07-18T02:00:00.000Z",
+      event: { source: "Twitch", type: "GiftBomb" },
+      data: { user: { id: "gifter-1", name: "Gifter" }, accessToken: "must-not-be-logged" }
+    });
+    const malformedStatus = composition.streamerBotRuntimeService.getStatus();
+    const logFiles = await readdir(join(testRoot, "data", "logs"));
+    const entries = (await readFile(join(testRoot, "data", "logs", logFiles[0] ?? "missing"), "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as { readonly correlationId: string; readonly details?: Record<string, unknown> });
+
+    expect(malformedStatus).toMatchObject({
+      state: "degraded",
+      referenceId: expect.any(String)
+    });
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({
+      correlationId: malformedStatus.referenceId,
+      details: {
+        referenceId: malformedStatus.referenceId,
+        upstreamSource: "Twitch",
+        upstreamType: "GiftBomb"
+      }
+    })]));
+    expect(JSON.stringify(entries)).not.toContain("must-not-be-logged");
+
+    const acceptedBefore = composition.eventIngestionService.getStatus().acceptedCount;
+    await streamerBotSockets[1]!.emitEvent({
+      timeStamp: "2026-07-18T02:01:00.000Z",
+      event: { source: "Twitch", type: "GiftBomb" },
+      data: {
+        id: "gift-bomb-after-malformed",
+        user: { id: "gifter-1", name: "Gifter" },
+        total: 5,
+        sub_tier: "1000",
+        cumulative_total: 20,
+        createdAt: "2026-07-18T02:01:00.000Z"
+      }
+    });
+    await expect(composition.eventIngestionService.ingestTwitchEventSubNotification({
+      metadata: {
+        message_id: "twitch-community-gift",
+        message_type: "notification",
+        message_timestamp: "2026-07-18T02:01:00.000Z",
+        subscription_type: "channel.subscription.gift",
+        subscription_version: "1"
+      },
+      payload: {
+        subscription: {
+          id: "subscription-community-gift",
+          type: "channel.subscription.gift",
+          version: "1",
+          condition: {}
+        },
+        event: {
+          user_id: "gifter-1",
+          user_name: "Gifter",
+          total: 5,
+          tier: "1000",
+          cumulative_total: 20,
+          is_anonymous: false
+        }
+      }
+    })).resolves.toMatchObject({ status: "accepted", event: { type: "community_gift" } });
+
+    await waitFor(() => composition.eventIngestionService.getStatus().acceptedCount === acceptedBefore + 2);
+    const diagnostics = await composition.app.inject({
+      method: "GET",
+      url: "/diagnostics?limit=20",
+      headers: authHeaders
+    });
+    const alertMatchLogs = (diagnostics.json() as {
+      readonly alertMatchLogs: readonly { readonly sourceEventId: string; readonly ruleId: string }[];
+    }).alertMatchLogs;
+
+    expect(alertMatchLogs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceEventId: "twitch-stream-online", ruleId: streamOnlineAlertId }),
+      expect.objectContaining({
+        sourceEventId: "streamerbot:twitch:StreamOnline:streamerbot-stream-online",
+        ruleId: streamOnlineAlertId
+      }),
+      expect.objectContaining({ sourceEventId: "twitch-community-gift", ruleId: communityGiftAlertId }),
+      expect.objectContaining({
+        sourceEventId: "streamerbot:twitch:GiftBomb:gift-bomb-after-malformed",
+        ruleId: communityGiftAlertId
+      })
+    ]));
+  });
+
   it("exposes synchronized Twitch and Streamer.bot event-source runtimes", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({

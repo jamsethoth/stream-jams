@@ -76,9 +76,11 @@ test("event source onboarding connects validates and registers Twitch", async ({
     await route.fulfill({
       contentType: "application/json",
       json: pollCount < 2
-        ? { connected: false, account: null }
+        ? { connected: false, authorizationState: "disconnected", missingScopes: [], account: null }
         : {
             connected: true,
+            authorizationState: "ready",
+            missingScopes: [],
             account: {
               accountId: "account-e2e",
               login: "jamsethoth",
@@ -112,10 +114,12 @@ test("event source onboarding connects validates and registers Twitch", async ({
       json: pollCount === 1
         ? { status: "pending" }
         : {
-            status: "connected",
-            connection: {
-              connected: true,
-              account: {
+          status: "connected",
+          connection: {
+            connected: true,
+            authorizationState: "ready",
+            missingScopes: [],
+            account: {
                 accountId: "account-e2e",
                 login: "jamsethoth",
                 displayName: "Jamsethoth",

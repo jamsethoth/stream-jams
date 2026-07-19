@@ -30,7 +30,7 @@
 
 ## 6. Integration And Release Verification
 
-- [ ] 6.1 Add pipeline and runtime-composition tests proving both providers match the same alerts and malformed supported events produce reference-linked diagnostics without stopping intake.
-- [ ] 6.2 Update product documentation to move the implemented event families into current scope while retaining deferred donation, creator-goal, and stream-intake automation boundaries.
-- [ ] 6.3 Run OpenSpec strict validation plus lint, typecheck, unit tests, build, Storybook gates, and applicable Playwright tests; fix all failures without weakening coverage.
-- [ ] 6.4 Rebuild production artifacts, restart affected local services, wait for health, and verify grouped alert creation, samples, authorization-update status, and live status refresh against the rebuilt app.
+- [x] 6.1 Add pipeline and runtime-composition tests proving both providers match the same alerts and malformed supported events produce reference-linked diagnostics without stopping intake.
+- [x] 6.2 Update product documentation to move the implemented event families into current scope while retaining deferred donation, creator-goal, and stream-intake automation boundaries.
+- [x] 6.3 Run OpenSpec strict validation plus lint, typecheck, unit tests, build, Storybook gates, and applicable Playwright tests; fix all failures without weakening coverage.
+- [x] 6.4 Rebuild production artifacts, restart affected local services, wait for health, and verify grouped alert creation, samples, authorization-update status, and live status refresh against the rebuilt app.

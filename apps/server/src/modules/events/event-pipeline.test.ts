@@ -76,6 +76,31 @@ describe("EventPipeline", () => {
     ]);
   });
 
+  it("matches equivalent Twitch and Streamer.bot lifecycle and community-gift events to the same canonical rules", async () => {
+    const diagnostics = new RecordingDiagnosticsRepository();
+    const playback = createPlaybackCoordinator({
+      rules: [createStreamOnlineRule(), createCommunityGiftRule()],
+      deliveredInstructions: []
+    });
+    const pipeline = createPipeline({ diagnostics, playback });
+
+    for (const event of [
+      createStreamOnlineEvent("twitch", "twitch-stream-online"),
+      createStreamOnlineEvent("streamerbot", "streamerbot-stream-online"),
+      createCommunityGiftEvent("twitch", "twitch-community-gift"),
+      createCommunityGiftEvent("streamerbot", "streamerbot-community-gift")
+    ]) {
+      await pipeline.handleEvent(event);
+    }
+
+    expect(diagnostics.alertMatchLogs.map((log) => [log.sourceEventId, log.ruleId])).toEqual([
+      ["twitch-stream-online", "rule-stream-online"],
+      ["streamerbot-stream-online", "rule-stream-online"],
+      ["twitch-community-gift", "rule-community-gift"],
+      ["streamerbot-community-gift", "rule-community-gift"]
+    ]);
+  });
+
   it("does not write playback records for no-match outcomes", async () => {
     const diagnostics = new RecordingDiagnosticsRepository();
     const playback = new RecordingPlaybackCoordinator({
@@ -298,6 +323,26 @@ function createFollowRule(): AlertRule {
   };
 }
 
+function createStreamOnlineRule(): AlertRule {
+  return {
+    ...createFollowRule(),
+    id: "rule-stream-online",
+    name: "Stream online rule",
+    eventType: "stream_online",
+    variants: [{ ...createFollowVariant(), id: "variant-stream-online" }]
+  };
+}
+
+function createCommunityGiftRule(): AlertRule {
+  return {
+    ...createFollowRule(),
+    id: "rule-community-gift",
+    name: "Community gift rule",
+    eventType: "community_gift",
+    variants: [{ ...createFollowVariant(), id: "variant-community-gift" }]
+  };
+}
+
 function createFollowVariant(): AlertVariant {
   return {
     id: "variant-follow",
@@ -343,6 +388,49 @@ function createFollowEvent(): NormalizedStreamEvent {
       displayName: "Viewer"
     },
     amount: null,
+    message: null,
+    metadata: {}
+  };
+}
+
+function createStreamOnlineEvent(
+  ingestProvider: "twitch" | "streamerbot",
+  id: string
+): NormalizedStreamEvent {
+  return {
+    id,
+    providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider,
+    type: "stream_online",
+    occurredAt: "2026-05-30T12:00:00.000Z",
+    actor: { id: "streamer-1", displayName: "Streamer" },
+    amount: null,
+    streamId: "stream-1",
+    streamType: "live",
+    startedAt: "2026-05-30T12:00:00.000Z",
+    endedAt: null,
+    message: null,
+    metadata: {}
+  };
+}
+
+function createCommunityGiftEvent(
+  ingestProvider: "twitch" | "streamerbot",
+  id: string
+): NormalizedStreamEvent {
+  return {
+    id,
+    providerId: "twitch",
+    sourcePlatform: "twitch",
+    ingestProvider,
+    type: "community_gift",
+    occurredAt: "2026-05-30T12:00:00.000Z",
+    actor: { id: "gifter-1", displayName: "Gifter" },
+    amount: 5,
+    tier: "1000",
+    cumulativeTotal: 20,
+    anonymous: false,
     message: null,
     metadata: {}
   };

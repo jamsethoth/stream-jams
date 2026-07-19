@@ -144,7 +144,7 @@ Twitch is the first event provider.
 
 Preferred integration path: Twitch EventSub over WebSocket. This avoids requiring a public webhook endpoint for a locally hosted app.
 
-The first Twitch milestone should start with a limited event set:
+The current Twitch scope includes:
 
 - Follow.
 - Subscription.
@@ -152,14 +152,18 @@ The first Twitch milestone should start with a limited event set:
 - Cheer/Bits.
 - Raid.
 - Channel point redemption.
-
-The event model and provider boundary should leave room for later Twitch events:
-
 - Gifted subscription.
 - Community gift.
 - Hype Train begin, progress, and end.
+- Poll begin, progress, and end.
+- Prediction begin, progress, lock, and end.
+- Stream online and offline.
+
+The following remain deferred:
+
+- [Third-party and charity donation events](future-features.md#third-party-and-charity-donation-events).
 - Creator goals.
-- Charity donations.
+- Stream-driven intake automation.
 
 Each event provider should normalize platform-specific payloads into internal event objects before alert matching.
 
