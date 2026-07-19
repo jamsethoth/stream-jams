@@ -408,6 +408,47 @@ describe("management alert contracts and rules", () => {
     );
   });
 
+  it("groups one template for every canonical event and exposes stable normalized fields", () => {
+    const templates = core.alertStarterTemplates as readonly {
+      readonly eventType: string;
+      readonly group: string;
+      readonly label: string;
+    }[];
+    const eventTypes = core.streamEventTypes as readonly string[];
+    const variableCatalog = exportedFunction("getAlertTemplateVariableCatalog") as unknown as (
+      eventType: string
+    ) => readonly { readonly key: string }[];
+
+    expect([...templates.map((template) => template.eventType)].sort()).toEqual([...eventTypes].sort());
+    expect(new Set(templates.map((template) => template.eventType)).size).toBe(eventTypes.length);
+    expect([...new Set(templates.map((template) => template.group))]).toEqual([
+      "Core", "Subscriptions", "Hype Train", "Polls", "Predictions", "Stream"
+    ]);
+    expect(templates.find((template) => template.eventType === "gift_subscription")).toMatchObject({
+      group: "Subscriptions",
+      label: "Gift subscription received"
+    });
+    expect(templates.find((template) => template.eventType === "community_gift")).toMatchObject({
+      group: "Subscriptions",
+      label: "Community gift received"
+    });
+    expect(variableCatalog("gift_subscription").map((variable) => variable.key)).toEqual(
+      expect.arrayContaining(["tier", "recipient.displayName"])
+    );
+    expect(variableCatalog("hype_train_progress").map((variable) => variable.key)).toEqual(
+      expect.arrayContaining(["level", "progress", "total"])
+    );
+    expect(variableCatalog("poll_end").map((variable) => variable.key)).toEqual(
+      expect.arrayContaining(["title", "totalVotes", "status"])
+    );
+    expect(variableCatalog("prediction_end").map((variable) => variable.key)).toEqual(
+      expect.arrayContaining(["title", "totalPoints", "totalUsers", "status"])
+    );
+    expect(variableCatalog("stream_online").map((variable) => variable.key)).toEqual(
+      expect.arrayContaining(["streamType"])
+    );
+  });
+
   it("permits activation with warnings but blocks invalid enabled profiles", () => {
     const evaluate = exportedFunction("evaluateAlertSetActivation");
 

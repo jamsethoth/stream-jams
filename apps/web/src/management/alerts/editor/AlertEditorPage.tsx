@@ -1022,6 +1022,51 @@ function conditionDefinitions(eventType: AlertEditorDocument["eventType"]): read
         { field: "tenureMonths", label: "Subscription months minimum", operator: "min", defaultValue: 2, minimum: 1 },
         ingestProvider
       ];
+    case "gift_subscription":
+      return [{ field: "tier", label: "Gift tier", operator: "equals", defaultValue: "1000", options: subscriptionTierOptions }, ingestProvider];
+    case "community_gift":
+      return [
+        { field: "tier", label: "Gift tier", operator: "equals", defaultValue: "1000", options: subscriptionTierOptions },
+        { field: "amount", label: "Gift count minimum", operator: "min", defaultValue: 5, minimum: 1 },
+        ingestProvider
+      ];
+    case "hype_train_start":
+    case "hype_train_progress":
+    case "hype_train_end":
+      return [
+        { field: "level", label: "Level minimum", operator: "min", defaultValue: 1, minimum: 1 },
+        { field: "progress", label: "Progress minimum", operator: "min", defaultValue: 100, minimum: 0 },
+        { field: "total", label: "Total minimum", operator: "min", defaultValue: 100, minimum: 0 },
+        ingestProvider
+      ];
+    case "poll_start":
+    case "poll_progress":
+      return [{ field: "totalVotes", label: "Total votes minimum", operator: "min", defaultValue: 10, minimum: 0 }, ingestProvider];
+    case "poll_end":
+      return [
+        { field: "totalVotes", label: "Total votes minimum", operator: "min", defaultValue: 10, minimum: 0 },
+        { field: "status", label: "Terminal status", operator: "equals", defaultValue: "completed", options: pollTerminalStatusOptions },
+        ingestProvider
+      ];
+    case "prediction_start":
+    case "prediction_progress":
+    case "prediction_lock":
+      return [
+        { field: "totalPoints", label: "Total points minimum", operator: "min", defaultValue: 1_000, minimum: 0 },
+        { field: "totalUsers", label: "Participant minimum", operator: "min", defaultValue: 10, minimum: 0 },
+        ingestProvider
+      ];
+    case "prediction_end":
+      return [
+        { field: "totalPoints", label: "Total points minimum", operator: "min", defaultValue: 1_000, minimum: 0 },
+        { field: "totalUsers", label: "Participant minimum", operator: "min", defaultValue: 10, minimum: 0 },
+        { field: "status", label: "Terminal status", operator: "equals", defaultValue: "resolved", options: predictionTerminalStatusOptions },
+        ingestProvider
+      ];
+    case "stream_online":
+      return [{ field: "streamType", label: "Stream type", operator: "equals", defaultValue: "live", options: streamTypeOptions }, ingestProvider];
+    case "stream_offline":
+      return [ingestProvider];
     default:
       return [ingestProvider];
   }
@@ -1032,6 +1077,23 @@ const subscriptionTierOptions = [
   { label: "Tier 1", value: "1000" },
   { label: "Tier 2", value: "2000" },
   { label: "Tier 3", value: "3000" }
+] as const;
+
+const pollTerminalStatusOptions = [
+  { label: "Completed", value: "completed" },
+  { label: "Archived", value: "archived" }
+] as const;
+
+const predictionTerminalStatusOptions = [
+  { label: "Resolved", value: "resolved" },
+  { label: "Canceled", value: "canceled" }
+] as const;
+
+const streamTypeOptions = [
+  { label: "Live", value: "live" },
+  { label: "Watch party", value: "watch_party" },
+  { label: "Premiere", value: "premiere" },
+  { label: "Rerun", value: "rerun" }
 ] as const;
 
 function replaceCondition(

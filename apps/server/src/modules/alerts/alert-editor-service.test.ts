@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type {
+import {
+  normalizedStreamEventSchema,
+  streamEventTypes,
+  validateAlertSamplePayload,
   AlertEditorDocument,
   AlertRule,
   AlertEditorTestRequest
@@ -61,6 +64,34 @@ describe("AlertEditorService", () => {
       expect.objectContaining({ id: "vertical", enabled: false, reviewState: "needs-review" })
     ]);
     expect(document.samplePayloads.map((sample) => sample.id)).toEqual(["normal", "edge"]);
+  });
+
+  it("builds valid normal and edge test events for every canonical event type", async () => {
+    for (const eventType of streamEventTypes) {
+      const eventRule: AlertRule = { ...rule, id: `alert-${eventType}`, eventType };
+      const harness = createHarnessWithRule(eventRule);
+      const document = await harness.service.getDocument(eventRule.id);
+
+      expect(document.samplePayloads.map((sample) => sample.id)).toEqual(["normal", "edge"]);
+      for (const sample of document.samplePayloads) {
+        expect(validateAlertSamplePayload(eventType, sample.payload)).toBeNull();
+        await harness.service.sendTest(document.id, {
+          document,
+          targetProfileId: "landscape",
+          samplePayload: sample.payload,
+          includeAudio: false,
+          includeTts: false
+        });
+        const request = harness.enqueueTest.mock.calls.at(-1) as unknown as readonly [{ readonly sourceEvent: unknown }] | undefined;
+        const sourceEvent = request?.[0].sourceEvent;
+        expect(sourceEvent).toMatchObject({
+          id: "reference",
+          occurredAt: "2026-07-15T12:00:00.000Z",
+          type: eventType
+        });
+        expect(normalizedStreamEventSchema.safeParse(sourceEvent).success).toBe(true);
+      }
+    }
   });
 
   it("saves one valid profile and updates the compatible alert rule projection", async () => {
@@ -513,7 +544,8 @@ function createHarnessWithRule(ruleFixture: AlertRule, storedDocument: AlertEdit
     hasConnectedOutput: async () => true,
     enqueueTest,
     generateId: () => "generated",
-    generateReferenceId: () => "reference"
+    generateReferenceId: () => "reference",
+    now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, enqueueTest };
 }

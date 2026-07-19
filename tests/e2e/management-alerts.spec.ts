@@ -227,9 +227,11 @@ test("management alerts reviews the starter set and safely manages its landscape
 
 });
 
-test("management alerts creates a disabled alert and opens its focused editor", async ({ page }) => {
+test("management alerts creates and tests a disabled community-gift alert", async ({ page }) => {
   await mockManagementShell(page);
   const createAlertRequests: unknown[] = [];
+  const testRequests: unknown[] = [];
+  let communityGiftCreated = false;
   const document = alertEditorDocument();
   const overview = {
     id: "set-default",
@@ -245,25 +247,48 @@ test("management alerts creates a disabled alert and opens its focused editor", 
     validationIssues: [],
     outputs: []
   };
-  const detail = {
+  const detail = () => ({
     overview,
-    inventory: [{
-      id: "alert-follow",
-      setId: "set-default",
-      providerKind: "twitch",
-      eventType: "follow",
-      name: "New follower",
-      kind: "default",
-      enabled: true,
-      reviewState: "ready",
-      targetProfileIds: ["landscape"],
-      previewText: "Thanks for following!"
-    }],
-    browserSources: []
-  };
+    inventory: [
+      {
+        id: "alert-follow",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "follow",
+        name: "New follower",
+        kind: "default",
+        enabled: true,
+        reviewState: "ready",
+        targetProfileIds: ["landscape"],
+        previewText: "Thanks for following!"
+      },
+      ...(communityGiftCreated ? [{
+        id: "alert-community-gift",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "community_gift",
+        name: "Community gift received",
+        kind: "default",
+        enabled: false,
+        reviewState: "needs-review",
+        targetProfileIds: ["landscape", "vertical"],
+        previewText: "StreamerFan gifted 5 Tier 1000 subscriptions!"
+      }] : [])
+    ],
+    browserSources: [{
+      id: "module:alerts:landscape:live",
+      targetProfileId: "landscape",
+      purpose: "live",
+      connectionState: "connected",
+      lastConnectedAt: "2026-07-15T05:00:00.000Z",
+      keyId: "key-landscape",
+      url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_landscape?profile=landscape",
+      copyableUrlStatus: "available"
+    }]
+  });
 
   await page.route("**/management/alert-sets", (route) => route.fulfill({ contentType: "application/json", json: [overview] }));
-  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({ contentType: "application/json", json: detail }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({ contentType: "application/json", json: detail() }));
   await page.route("**/management/alert-sets/set-default/alerts", async (route) => {
     const body = route.request().postDataJSON() as { readonly eventType: string; readonly name: string };
     createAlertRequests.push(body);
@@ -271,7 +296,7 @@ test("management alerts creates a disabled alert and opens its focused editor", 
       contentType: "application/json",
       status: 201,
       json: {
-        id: "alert-cheer",
+        id: "alert-community-gift",
         setId: "set-default",
         providerKind: "twitch",
         eventType: body.eventType,
@@ -280,33 +305,57 @@ test("management alerts creates a disabled alert and opens its focused editor", 
         enabled: false,
         reviewState: "needs-review",
         targetProfileIds: ["landscape", "vertical"],
-        previewText: "Thanks for the cheer, {actor.displayName}!"
+        previewText: "StreamerFan gifted 5 Tier 1000 subscriptions!"
       }
     });
+    communityGiftCreated = true;
   });
-  await page.route("**/management/alerts/alert-cheer/editor", (route) => route.fulfill({
+  await page.route("**/management/alerts/alert-community-gift/editor", (route) => route.fulfill({
     contentType: "application/json",
     json: {
       ...document,
-      id: "alert-cheer",
-      eventType: "cheer",
-      name: "New cheer",
+      id: "alert-community-gift",
+      eventType: "community_gift",
+      name: "Community gift received",
       enabled: false,
-      targetProfiles: document.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
+      targetProfiles: document.targetProfiles.map((profile) => profile.id === "landscape"
+        ? { ...profile, enabled: true, reviewState: "ready" }
+        : { ...profile, enabled: false, reviewState: "needs-review" }),
+      samplePayloads: [
+        { id: "normal", label: "Aggregate community gift", kind: "built-in", payload: { actor: { id: "sample-user", displayName: "StreamerFan" }, userName: "StreamerFan", amount: 5, tier: "1000", cumulativeTotal: 42, frequency: "Aggregate community gift" } },
+        { id: "edge", label: "Aggregate community gift edge", kind: "built-in", payload: { actor: { id: "sample-edge", displayName: "A-Very-Long-Display-Name-For-Layout-Review" }, userName: "A-Very-Long-Display-Name-For-Layout-Review", amount: 100, tier: "3000", cumulativeTotal: 9999, frequency: "Aggregate community gift" } }
+      ]
     }
   }));
+  await page.route("**/management/alerts/alert-community-gift/editor/test", async (route) => {
+    testRequests.push(route.request().postDataJSON());
+    await route.fulfill({ contentType: "application/json", json: { status: "queued", targetProfileId: "landscape", referenceId: "ref-community-gift", test: true } });
+  });
 
   await page.goto("/manage/modules/alerts");
   const selectedSet = page.getByRole("region", { name: "Default alert set" });
   await selectedSet.getByRole("button", { name: "Add alert" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add alert" });
-  await createDialog.getByLabel("Event type").selectOption("cheer");
-  await expect(createDialog.getByLabel("Alert name")).toHaveValue("New cheer");
+  await createDialog.getByLabel("Event type").selectOption("community_gift");
+  await expect(createDialog.getByLabel("Alert name")).toHaveValue("Community gift received");
   await createDialog.getByRole("button", { name: "Create alert" }).click();
 
-  await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-cheer\?.*profile=landscape/u);
+  await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-community-gift\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
-  expect(createAlertRequests).toEqual([{ eventType: "cheer", name: "New cheer" }]);
+  await page.getByRole("tab", { name: "Event" }).click();
+  await expect(page.getByRole("combobox", { name: "Sample payload" })).toHaveValue("normal");
+  await expect(page.getByRole("button", { name: "Add gift count minimum" })).toBeVisible();
+  await page.getByLabel("Alert inspector").getByRole("button", { name: "Send test" }).click();
+  await expect(page.getByText(/Queued on Landscape.*ref-community-gift/u)).toBeVisible();
+  expect(testRequests).toEqual([expect.objectContaining({
+    targetProfileId: "landscape",
+    samplePayload: expect.objectContaining({ amount: 5, tier: "1000" })
+  })]);
+  await page.getByRole("button", { name: "Back to alerts" }).click();
+  const createdRow = page.getByRole("row", { name: /Community gift received/u });
+  await expect(createdRow).toContainText("Disabled");
+  await expect(createdRow).toContainText("Needs review");
+  expect(createAlertRequests).toEqual([{ eventType: "community_gift", name: "Community gift received" }]);
 });
 
 test("alert variation can be created edited duplicated and selectively deleted", async ({ page }) => {

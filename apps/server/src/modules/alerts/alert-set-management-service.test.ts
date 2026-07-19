@@ -1,5 +1,6 @@
 import {
   DefaultAlertService,
+  streamEventTypes,
   type AlertCollection,
   type AlertEditorDocument,
   type AlertRepository,
@@ -40,6 +41,18 @@ describe("AlertSetManagementService", () => {
       expect.arrayContaining([expect.objectContaining({ code: "NO_ENABLED_ALERTS", severity: "blocker" })])
     );
     expect(detail.inventory).toHaveLength(4);
+    expect(detail.inventory.map((alert) => alert.eventType)).toEqual([
+      "follow", "subscription", "raid", "channel_point_redemption"
+    ]);
+    expect(detail.inventory.map((alert) => alert.name)).toEqual([
+      "New follower", "New subscriber", "New raid", "Custom reward"
+    ]);
+    expect(detail.inventory.map((alert) => alert.previewText)).toEqual([
+      "Thanks for following, {actor.displayName}!",
+      "Thanks for subscribing, {actor.displayName}!",
+      "Welcome raiders from {actor.displayName}!",
+      "{actor.displayName} redeemed a reward!"
+    ]);
     expect(detail.inventory.every((row) => !row.enabled && row.reviewState === "needs-review")).toBe(true);
     expect(detail.browserSources.map((output) => output.targetProfileId)).toEqual(["landscape", "vertical"]);
   });
@@ -83,6 +96,21 @@ describe("AlertSetManagementService", () => {
         expect.objectContaining({ id: "vertical", reviewState: "needs-review" })
       ]
     });
+  });
+
+  it("creates every canonical event without expanding the starter set", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+
+    for (const eventType of streamEventTypes) {
+      const created = await fixture.service.createAlert(starter!.id, {
+        eventType,
+        name: `Alert for ${eventType}`
+      });
+      expect(created).toMatchObject({ eventType, enabled: false, reviewState: "needs-review" });
+    }
+
+    expect((await fixture.service.getSet(starter!.id)).inventory).toHaveLength(streamEventTypes.length + 4);
   });
 
   it("keeps save and activation distinct and atomically replaces the active set", async () => {

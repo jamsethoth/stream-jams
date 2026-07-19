@@ -871,6 +871,54 @@ describe("AlertEditorPage", () => {
     ));
   });
 
+  it("offers only applicable normalized conditions for expanded event families", async () => {
+    const cases: readonly {
+      readonly eventType: AlertEditorDocument["eventType"];
+      readonly expected: readonly string[];
+      readonly absent?: string;
+    }[] = [
+      { eventType: "gift_subscription", expected: ["Add gift tier"] },
+      { eventType: "community_gift", expected: ["Add gift tier", "Add gift count minimum"] },
+      { eventType: "hype_train_progress", expected: ["Add level minimum", "Add progress minimum", "Add total minimum"] },
+      { eventType: "poll_end", expected: ["Add total votes minimum", "Add terminal status"] },
+      { eventType: "prediction_end", expected: ["Add total points minimum", "Add participant minimum", "Add terminal status"] },
+      { eventType: "stream_online", expected: ["Add stream type"] },
+      { eventType: "stream_offline", expected: ["Add ingest provider restriction"], absent: "Add stream type" }
+    ];
+
+    for (const { eventType, expected, absent } of cases) {
+      const user = userEvent.setup();
+      const document = { ...editorDocument(), id: `alert-${eventType}`, eventType };
+      const view = render(
+        <DirtyNavigationProvider>
+          <AlertEditorPage
+            alertId={document.id}
+            assetApi={assetApi}
+            managementApi={{
+              getAlertEditorDocument: vi.fn(async () => document),
+              getAlertSet: vi.fn(async () => alertSetDetail()),
+              listRegisteredProviders: vi.fn(async () => []),
+              getAssetChangeImpact: vi.fn(),
+              listAssetLibraryItems: vi.fn(async () => []),
+              deleteAsset: vi.fn(),
+              updateAssetMetadata: vi.fn(),
+              saveAlertEditorDocument: vi.fn(async (_alertId, saved) => saved),
+              sendAlertEditorTest: vi.fn()
+            }}
+            onBack={() => undefined}
+            onOpenAlert={() => undefined}
+          />
+        </DirtyNavigationProvider>
+      );
+
+      await user.click(await screen.findByRole("tab", { name: "Event" }));
+      const conditions = screen.getByRole("group", { name: "Rule conditions" });
+      for (const label of expected) expect(within(conditions).getByRole("button", { name: label })).toBeInTheDocument();
+      if (absent !== undefined) expect(within(conditions).queryByRole("button", { name: absent })).not.toBeInTheDocument();
+      view.unmount();
+    }
+  });
+
   it("blocks saving an invalid minimum condition and explains the correction", async () => {
     const user = userEvent.setup();
     const variation: AlertEditorDocument = {

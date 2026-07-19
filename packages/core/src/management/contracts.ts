@@ -258,16 +258,32 @@ export const managedAlertMutationInputSchema = z.object({
 });
 
 export const alertStarterTemplates = [
-  { eventType: "follow", label: "Follow", defaultName: "New follower", text: "Thanks for following, {actor.displayName}!" },
-  { eventType: "subscription", label: "Subscription", defaultName: "New subscriber", text: "Thanks for subscribing, {actor.displayName}!" },
-  { eventType: "resubscription", label: "Resubscription", defaultName: "Resubscription", text: "Thanks for resubscribing, {actor.displayName}!" },
-  { eventType: "cheer", label: "Cheer", defaultName: "New cheer", text: "Thanks for the cheer, {actor.displayName}!" },
-  { eventType: "raid", label: "Raid", defaultName: "New raid", text: "Welcome raiders from {actor.displayName}!" },
-  { eventType: "channel_point_redemption", label: "Channel point redemption", defaultName: "Custom reward", text: "{actor.displayName} redeemed a reward!" }
+  { eventType: "follow", group: "Core", label: "Follow", defaultName: "New follower", description: "One alert for each new follower.", text: "Thanks for following, {actor.displayName}!" },
+  { eventType: "subscription", group: "Subscriptions", label: "Subscription", defaultName: "New subscriber", description: "One alert for each new subscription.", text: "Thanks for subscribing, {actor.displayName}!" },
+  { eventType: "resubscription", group: "Subscriptions", label: "Resubscription", defaultName: "Resubscription", description: "One alert for each renewed subscription.", text: "Thanks for resubscribing, {actor.displayName}!" },
+  { eventType: "cheer", group: "Core", label: "Cheer", defaultName: "New cheer", description: "One alert for each Bits cheer.", text: "Thanks for the cheer, {actor.displayName}!" },
+  { eventType: "raid", group: "Core", label: "Raid", defaultName: "New raid", description: "One alert when another channel raids.", text: "Welcome raiders from {actor.displayName}!" },
+  { eventType: "channel_point_redemption", group: "Core", label: "Channel point redemption", defaultName: "Custom reward", description: "One alert for each completed reward redemption.", text: "{actor.displayName} redeemed a reward!" },
+  { eventType: "gift_subscription", group: "Subscriptions", label: "Gift subscription received", defaultName: "Gift subscription received", description: "One alert per recipient gift subscription.", text: "{recipient.displayName} received a Tier {tier} gift subscription!" },
+  { eventType: "community_gift", group: "Subscriptions", label: "Community gift received", defaultName: "Community gift received", description: "One alert for each aggregate community gift, not each recipient.", text: "{actor.displayName} gifted {amount} Tier {tier} subscriptions!" },
+  { eventType: "hype_train_start", group: "Hype Train", label: "Hype Train started", defaultName: "Hype Train started", description: "One alert when a Hype Train starts.", text: "Hype Train level {level} has started!" },
+  { eventType: "hype_train_progress", group: "Hype Train", label: "Hype Train progress", defaultName: "Hype Train progress", description: "One alert for Hype Train progress updates.", text: "Hype Train level {level}: {progress}/{total}!" },
+  { eventType: "hype_train_end", group: "Hype Train", label: "Hype Train ended", defaultName: "Hype Train ended", description: "One alert when a Hype Train ends.", text: "Hype Train ended at level {level}!" },
+  { eventType: "poll_start", group: "Polls", label: "Poll started", defaultName: "Poll started", description: "One alert when a poll starts.", text: "Poll started: {title}" },
+  { eventType: "poll_progress", group: "Polls", label: "Poll progress", defaultName: "Poll progress", description: "One alert for poll progress updates.", text: "{title}: {totalVotes} votes so far." },
+  { eventType: "poll_end", group: "Polls", label: "Poll ended", defaultName: "Poll ended", description: "One alert when a poll reaches a terminal status.", text: "Poll ended: {title} ({totalVotes} votes)." },
+  { eventType: "prediction_start", group: "Predictions", label: "Prediction started", defaultName: "Prediction started", description: "One alert when a prediction starts.", text: "Prediction started: {title}" },
+  { eventType: "prediction_progress", group: "Predictions", label: "Prediction progress", defaultName: "Prediction progress", description: "One alert for prediction progress updates.", text: "{title}: {totalPoints} points from {totalUsers} participants." },
+  { eventType: "prediction_lock", group: "Predictions", label: "Prediction locked", defaultName: "Prediction locked", description: "One alert when prediction entries lock.", text: "Prediction locked: {title}" },
+  { eventType: "prediction_end", group: "Predictions", label: "Prediction ended", defaultName: "Prediction ended", description: "One alert when a prediction reaches a terminal status.", text: "Prediction ended: {title}" },
+  { eventType: "stream_online", group: "Stream", label: "Stream online", defaultName: "Stream online", description: "One alert when the stream goes online.", text: "Stream is live{streamType}!" },
+  { eventType: "stream_offline", group: "Stream", label: "Stream offline", defaultName: "Stream offline", description: "One alert when the stream goes offline.", text: "Stream is offline." }
 ] as const satisfies readonly {
   readonly eventType: z.infer<typeof streamEventTypeSchema>;
+  readonly group: "Core" | "Subscriptions" | "Hype Train" | "Polls" | "Predictions" | "Stream";
   readonly label: string;
   readonly defaultName: string;
+  readonly description: string;
   readonly text: string;
 }[];
 
@@ -399,7 +415,26 @@ const commonTemplateVariables = [
   { key: "actor.displayName", label: "Actor display name", description: "Normalized display name for the event actor." }
 ] as const;
 
-const eventTemplateVariables: Partial<Record<AlertSampleEventType, readonly z.infer<typeof alertTemplateVariableSchema>[]>> = {
+const hypeTrainTemplateVariables = [
+  { key: "level", label: "Level", description: "Current Hype Train level." },
+  { key: "progress", label: "Progress", description: "Current Hype Train progress." },
+  { key: "total", label: "Total", description: "Current Hype Train total." }
+] as const;
+
+const pollTemplateVariables = [
+  { key: "title", label: "Poll title", description: "Poll title." },
+  { key: "totalVotes", label: "Total votes", description: "Total votes across poll choices." },
+  { key: "status", label: "Status", description: "Normalized poll lifecycle status." }
+] as const;
+
+const predictionTemplateVariables = [
+  { key: "title", label: "Prediction title", description: "Prediction title." },
+  { key: "totalPoints", label: "Total points", description: "Total prediction points." },
+  { key: "totalUsers", label: "Participants", description: "Total prediction participants." },
+  { key: "status", label: "Status", description: "Normalized prediction lifecycle status." }
+] as const;
+
+const eventTemplateVariables: Record<AlertSampleEventType, readonly z.infer<typeof alertTemplateVariableSchema>[]> = {
   follow: [],
   raid: [{ key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }],
   cheer: [{ key: "cheerAmount", label: "Bits", description: "Number of Bits cheered." }],
@@ -414,7 +449,28 @@ const eventTemplateVariables: Partial<Record<AlertSampleEventType, readonly z.in
   channel_point_redemption: [
     { key: "rewardTitle", label: "Reward title", description: "Channel Point reward title." },
     { key: "userInput", label: "User input", description: "Optional text entered with the redemption." }
-  ]
+  ],
+  gift_subscription: [
+    { key: "tier", label: "Tier", description: "Gift subscription tier." },
+    { key: "recipient.displayName", label: "Recipient", description: "Normalized recipient display name." }
+  ],
+  community_gift: [
+    { key: "amount", label: "Gift count", description: "Number of subscriptions in the aggregate community gift." },
+    { key: "tier", label: "Tier", description: "Community gift tier." },
+    { key: "cumulativeTotal", label: "Cumulative gifts", description: "Gifter cumulative community gift total when available." }
+  ],
+  hype_train_start: hypeTrainTemplateVariables,
+  hype_train_progress: hypeTrainTemplateVariables,
+  hype_train_end: hypeTrainTemplateVariables,
+  poll_start: pollTemplateVariables,
+  poll_progress: pollTemplateVariables,
+  poll_end: pollTemplateVariables,
+  prediction_start: predictionTemplateVariables,
+  prediction_progress: predictionTemplateVariables,
+  prediction_lock: predictionTemplateVariables,
+  prediction_end: predictionTemplateVariables,
+  stream_online: [{ key: "streamType", label: "Stream type", description: "Normalized stream type when available." }],
+  stream_offline: []
 };
 
 export function getAlertTemplateVariableCatalog(eventType: AlertSampleEventType) {
@@ -436,6 +492,37 @@ export function validateAlertSamplePayload(
       return typeof payload.tier === "string" && ["prime", "1000", "2000", "3000"].includes(payload.tier) && positiveNumber(payload.amount)
         ? null
         : "Subscription samples require a supported tier and positive month or quantity value.";
+    case "gift_subscription":
+      return typeof payload.tier === "string" && ["prime", "1000", "2000", "3000"].includes(payload.tier) && hasDisplayName(payload.recipient)
+        ? null
+        : "Gift subscription samples require a supported tier and recipient.";
+    case "community_gift":
+      return typeof payload.tier === "string" && ["prime", "1000", "2000", "3000"].includes(payload.tier) && positiveNumber(payload.amount)
+        ? null
+        : "Community gift samples require a supported tier and positive gift count.";
+    case "hype_train_start":
+    case "hype_train_progress":
+    case "hype_train_end":
+      return positiveNumber(payload.level) && nonNegativeNumber(payload.progress) && positiveNumber(payload.total)
+        ? null
+        : "Hype Train samples require a level, progress, and total.";
+    case "poll_start":
+    case "poll_progress":
+    case "poll_end":
+      return nonEmptyText(payload.title) && nonNegativeNumber(payload.totalVotes) && nonEmptyText(payload.status)
+        ? null
+        : "Poll samples require a title, vote total, and status.";
+    case "prediction_start":
+    case "prediction_progress":
+    case "prediction_lock":
+    case "prediction_end":
+      return nonEmptyText(payload.title) && nonNegativeNumber(payload.totalPoints) && nonNegativeNumber(payload.totalUsers) && nonEmptyText(payload.status)
+        ? null
+        : "Prediction samples require a title, point total, participant total, and status.";
+    case "stream_online":
+      return nonEmptyText(payload.streamType) ? null : "Stream online samples require a stream type.";
+    case "stream_offline":
+      return null;
     case "channel_point_redemption":
       return typeof payload.rewardTitle === "string" && payload.rewardTitle.trim() !== ""
         ? null
@@ -445,6 +532,18 @@ export function validateAlertSamplePayload(
     default:
       return null;
   }
+}
+
+function hasDisplayName(value: unknown): boolean {
+  return typeof value === "object" && value !== null && nonEmptyText((value as Record<string, unknown>).displayName);
+}
+
+function nonEmptyText(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+function nonNegativeNumber(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }
 
 export const alertEditorDocumentSchema = z.object({

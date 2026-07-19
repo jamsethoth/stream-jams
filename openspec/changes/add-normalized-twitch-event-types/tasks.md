@@ -24,9 +24,9 @@
 
 ## 5. Alert Creation And Testing UX
 
-- [ ] 5.1 Add failing core/server tests for grouped templates, unchanged starter sets, normalized template variables, built-in samples, and test-event construction.
-- [ ] 5.2 Implement grouped new-alert definitions, normal/edge samples, exhaustive test-event construction, and applicable normalized condition definitions.
-- [ ] 5.3 Update the alert creation UI, editor conditions, stories, component tests, and Playwright coverage for every event group and gift-frequency explanation.
+- [x] 5.1 Add failing core/server tests for grouped templates, unchanged starter sets, normalized template variables, built-in samples, and test-event construction.
+- [x] 5.2 Implement grouped new-alert definitions, normal/edge samples, exhaustive test-event construction, and applicable normalized condition definitions.
+- [x] 5.3 Update the alert creation UI, editor conditions, stories, component tests, and Playwright coverage for every event group and gift-frequency explanation.
 
 ## 6. Integration And Release Verification
 

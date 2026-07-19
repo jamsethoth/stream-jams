@@ -921,6 +921,7 @@ function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType
   readonly open: boolean;
 }) {
   const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
+  const groups = [...new Set(alertStarterTemplates.map((candidate) => candidate.group))];
   return (
     <ModalSurface labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
       <form className="alert-sets-page__modal" onSubmit={onSubmit}>
@@ -932,7 +933,11 @@ function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType
         <label>
           <span>Event type</span>
           <select autoFocus onChange={(event) => onEventType(event.currentTarget.value as AlertCreateInput["eventType"])} value={eventType}>
-            {alertStarterTemplates.map((candidate) => <option key={candidate.eventType} value={candidate.eventType}>{candidate.label}</option>)}
+            {groups.map((group) => (
+              <optgroup key={group} label={group}>
+                {alertStarterTemplates.filter((candidate) => candidate.group === group).map((candidate) => <option key={candidate.eventType} value={candidate.eventType}>{candidate.label}</option>)}
+              </optgroup>
+            ))}
           </select>
         </label>
         <label>
@@ -942,6 +947,7 @@ function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType
         <div className="alert-sets-page__template-preview">
           <span>Starter message</span>
           <p>{template.text}</p>
+          <small>{template.description}</small>
         </div>
         <div className="management-modal__actions">
           <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>

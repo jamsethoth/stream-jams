@@ -1,4 +1,4 @@
-import type { AlertCreateInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue } from "@stream-jams/core";
+import type { AlertCreateInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, StreamEventType } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -97,6 +97,23 @@ export const CreateAlert: Story = {
     await expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create alert" }));
     await waitFor(() => expect(args.onEditAlert).toHaveBeenCalledWith(expect.objectContaining({ id: "alert-cheer" })));
+  }
+};
+
+export const GroupedEventPicker: Story = {
+  args: {
+    managementApi: { ...api([activeSet], detail(activeSet)), createAlert },
+    onEditAlert: fn()
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
+    const dialog = await canvas.findByRole("dialog", { name: "Add alert" });
+    for (const group of ["Core", "Subscriptions", "Hype Train", "Polls", "Predictions", "Stream"]) {
+      await expect(dialog.querySelector(`optgroup[label="${group}"]`)).not.toBeNull();
+    }
+    await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "community_gift");
+    await expect(within(dialog).getByText("One alert for each aggregate community gift, not each recipient.")).toBeVisible();
   }
 };
 
@@ -316,7 +333,7 @@ function overview(id: string, name: string, active: boolean): AlertSetOverview {
 function alert(
   id: string,
   name: string,
-  eventType: AlertCreateInput["eventType"],
+  eventType: StreamEventType,
   setId: string,
   enabled: boolean,
   reviewState: "ready" | "needs-review"

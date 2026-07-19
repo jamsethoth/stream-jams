@@ -1,4 +1,4 @@
-import type { AlertEditorDocument, AlertSetActivationImpact, AlertSetDetail, AlertSetOverview } from "@stream-jams/core";
+import type { AlertEditorDocument, AlertSetActivationImpact, AlertSetDetail, AlertSetOverview, StreamEventType } from "@stream-jams/core";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -148,6 +148,29 @@ describe("AlertSetsPage", () => {
       name: "New cheer"
     }));
     expect(onEditAlert).toHaveBeenCalledWith(created);
+  });
+
+  it("groups the canonical event picker and selects an event from each group", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi()} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    const picker = within(dialog).getByLabelText("Event type");
+    const selections: readonly [string, StreamEventType, string][] = [
+      ["Core", "cheer", "New cheer"],
+      ["Subscriptions", "community_gift", "Community gift received"],
+      ["Hype Train", "hype_train_progress", "Hype Train progress"],
+      ["Polls", "poll_end", "Poll ended"],
+      ["Predictions", "prediction_end", "Prediction ended"],
+      ["Stream", "stream_online", "Stream online"]
+    ];
+
+    for (const [group, eventType, defaultName] of selections) {
+      expect(dialog.querySelector(`optgroup[label="${group}"] option[value="${eventType}"]`)).not.toBeNull();
+      await user.selectOptions(picker, eventType);
+      expect(within(dialog).getByLabelText("Alert name")).toHaveValue(defaultName);
+    }
   });
 
   it("nests variations under their default and supports create and duplicate commands", async () => {
@@ -461,7 +484,7 @@ function overview(): AlertSetOverview {
   };
 }
 
-function alert(id: string, name: string, eventType: "follow" | "raid" | "subscription" | "channel_point_redemption") {
+function alert(id: string, name: string, eventType: StreamEventType) {
   return {
     id,
     setId: "set-default",

@@ -4,6 +4,7 @@ import {
   alertEditorTestRequestSchema,
   getAlertTemplateVariableCatalog,
   getAlertEditorAffectedProfileIds,
+  normalizedStreamEventSchema,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
@@ -516,14 +517,75 @@ function createBuiltInSamples(eventType: AlertEditorDocument["eventType"]) {
     actor: { id: "sample-edge", displayName: "A-Very-Long-Display-Name-For-Layout-Review" },
     userName: "A-Very-Long-Display-Name-For-Layout-Review"
   };
-  const eventValues = eventType === "raid" ? { amount: 125, raidViewers: 125 }
-    : eventType === "cheer" ? { amount: 500, cheerAmount: 500 }
-    : eventType === "subscription" || eventType === "resubscription" ? { amount: 1, tier: "1000" }
-    : eventType === "channel_point_redemption" ? { rewardTitle: "Highlight my message", userInput: "Sample message" }
-    : {};
+  switch (eventType) {
+    case "follow": return builtInSamples(common, edge);
+    case "subscription": return builtInSamples({ ...common, amount: 1, tier: "1000" }, { ...edge, amount: 12, tier: "3000" });
+    case "resubscription": return builtInSamples({ ...common, amount: 6, tier: "1000", streakMonths: 6 }, { ...edge, amount: 48, tier: "3000", streakMonths: 48 });
+    case "cheer": return builtInSamples({ ...common, amount: 500, cheerAmount: 500 }, { ...edge, amount: 25_000, cheerAmount: 25_000 });
+    case "raid": return builtInSamples({ ...common, amount: 125, raidViewers: 125 }, { ...edge, amount: 5_000, raidViewers: 5_000 });
+    case "channel_point_redemption": return builtInSamples(
+      { ...common, rewardTitle: "Highlight my message", userInput: "Sample message" },
+      { ...edge, rewardTitle: "A very long reward title for layout review", userInput: "A long sample redemption message for layout review." }
+    );
+    case "gift_subscription": return builtInSamples(
+      { ...common, tier: "1000", recipient: { id: "recipient-normal", displayName: "GiftRecipient" }, frequency: "Per recipient gift subscription" },
+      { ...edge, tier: "3000", recipient: { id: "recipient-edge", displayName: "A-Very-Long-Gift-Recipient-Name" }, frequency: "Per recipient gift subscription" },
+      "Per-recipient gift subscription"
+    );
+    case "community_gift": return builtInSamples(
+      { ...common, amount: 5, tier: "1000", cumulativeTotal: 42, frequency: "Aggregate community gift" },
+      { ...edge, amount: 100, tier: "3000", cumulativeTotal: 9_999, frequency: "Aggregate community gift" },
+      "Aggregate community gift"
+    );
+    case "hype_train_start": return builtInSamples(
+      { ...common, trainId: "sample-train", level: 1, progress: 50, goal: 100, total: 50 },
+      { ...edge, trainId: "sample-train-edge", level: 10, progress: 9_999, goal: 10_000, total: 9_999 }
+    );
+    case "hype_train_progress": return builtInSamples(
+      { ...common, trainId: "sample-train", level: 2, progress: 250, goal: 500, total: 250 },
+      { ...edge, trainId: "sample-train-edge", level: 10, progress: 9_999, goal: 10_000, total: 9_999 }
+    );
+    case "hype_train_end": return builtInSamples(
+      { ...common, trainId: "sample-train", level: 3, progress: 500, goal: 500, total: 500 },
+      { ...edge, trainId: "sample-train-edge", level: 10, progress: 10_000, goal: 10_000, total: 10_000 }
+    );
+    case "poll_start": return builtInSamples(
+      { ...common, pollId: "sample-poll", title: "What should we play next?", totalVotes: 0, status: "active" },
+      { ...edge, pollId: "sample-poll-edge", title: "A very long poll title for layout review", totalVotes: 9_999, status: "active" }
+    );
+    case "poll_progress": return builtInSamples(
+      { ...common, pollId: "sample-poll", title: "What should we play next?", totalVotes: 250, status: "active" },
+      { ...edge, pollId: "sample-poll-edge", title: "A very long poll title for layout review", totalVotes: 9_999, status: "active" }
+    );
+    case "poll_end": return builtInSamples(
+      { ...common, pollId: "sample-poll", title: "What should we play next?", totalVotes: 500, status: "completed" },
+      { ...edge, pollId: "sample-poll-edge", title: "A very long poll title for layout review", totalVotes: 9_999, status: "archived" }
+    );
+    case "prediction_start": return builtInSamples(
+      { ...common, predictionId: "sample-prediction", title: "Will we win?", totalPoints: 0, totalUsers: 0, status: "active" },
+      { ...edge, predictionId: "sample-prediction-edge", title: "A very long prediction title for layout review", totalPoints: 1_000_000, totalUsers: 9_999, status: "active" }
+    );
+    case "prediction_progress": return builtInSamples(
+      { ...common, predictionId: "sample-prediction", title: "Will we win?", totalPoints: 12_000, totalUsers: 120, status: "active" },
+      { ...edge, predictionId: "sample-prediction-edge", title: "A very long prediction title for layout review", totalPoints: 1_000_000, totalUsers: 9_999, status: "active" }
+    );
+    case "prediction_lock": return builtInSamples(
+      { ...common, predictionId: "sample-prediction", title: "Will we win?", totalPoints: 12_000, totalUsers: 120, status: "locked" },
+      { ...edge, predictionId: "sample-prediction-edge", title: "A very long prediction title for layout review", totalPoints: 1_000_000, totalUsers: 9_999, status: "locked" }
+    );
+    case "prediction_end": return builtInSamples(
+      { ...common, predictionId: "sample-prediction", title: "Will we win?", totalPoints: 12_000, totalUsers: 120, status: "resolved" },
+      { ...edge, predictionId: "sample-prediction-edge", title: "A very long prediction title for layout review", totalPoints: 1_000_000, totalUsers: 9_999, status: "canceled" }
+    );
+    case "stream_online": return builtInSamples({ ...common, streamId: "sample-stream", streamType: "live" }, { ...edge, streamId: "sample-stream-edge", streamType: "watch_party" });
+    case "stream_offline": return builtInSamples({ ...common, streamId: "sample-stream", streamType: "live" }, { ...edge, streamId: "sample-stream-edge", streamType: "watch_party" });
+  }
+}
+
+function builtInSamples(normal: Record<string, unknown>, edge: Record<string, unknown>, label = "Example") {
   return [
-    { id: "normal", label: "Normal example", kind: "built-in" as const, payload: { ...common, ...eventValues } },
-    { id: "edge", label: "Long-content example", kind: "built-in" as const, payload: { ...edge, ...eventValues } }
+    { id: "normal", label: `Normal ${label}`, kind: "built-in" as const, payload: normal },
+    { id: "edge", label: `Edge ${label}`, kind: "built-in" as const, payload: edge }
   ];
 }
 
@@ -536,39 +598,88 @@ function createTestEvent(
   const actorValue = payload.actor;
   const actorRecord = typeof actorValue === "object" && actorValue !== null ? actorValue as Record<string, unknown> : {};
   const displayName = String(actorRecord.displayName ?? payload.userName ?? "Sample user");
-  const amount = typeof payload.amount === "number" ? payload.amount : 1;
+  const amount = positiveNumber(payload.amount) ? payload.amount : 1;
+  const occurredAt = now.toISOString();
   const base = {
     id: referenceId,
     providerId: "twitch" as const,
     sourcePlatform: "twitch" as const,
     ingestProvider: document.providerKind === "streamerbot" ? "streamerbot" as const : "twitch" as const,
-    occurredAt: now.toISOString(),
+    occurredAt,
     actor: { id: actorRecord.id === undefined ? null : String(actorRecord.id), displayName },
     message: typeof payload.message === "string" ? payload.message : null,
     metadata: { ...payload, test: true, referenceId }
   };
-  switch (document.eventType) {
-    case "follow": return { ...base, type: "follow", amount: null };
-    case "subscription": return { ...base, type: "subscription", amount, tier: readTier(payload.tier) };
-    case "resubscription": return { ...base, type: "resubscription", amount, tier: readTier(payload.tier), streakMonths: amount };
-    case "cheer": return { ...base, type: "cheer", amount };
-    case "raid": return { ...base, type: "raid", amount };
-    case "channel_point_redemption":
-      return {
-        ...base,
-        type: "channel_point_redemption",
-        amount: null,
-        rewardId: String(payload.rewardId ?? "sample-reward"),
-        rewardTitle: String(payload.rewardTitle ?? "Sample reward"),
-        userInput: typeof payload.userInput === "string" ? payload.userInput : null
-      };
-    default:
-      throw new Error(`Test events are not yet defined for ${document.eventType}.`);
-  }
+  const total = nonNegativeNumber(payload.total) ? payload.total : 100;
+  const totalVotes = nonNegativeNumber(payload.totalVotes) ? payload.totalVotes : 0;
+  const totalPoints = nonNegativeNumber(payload.totalPoints) ? payload.totalPoints : 0;
+  const totalUsers = nonNegativeNumber(payload.totalUsers) ? payload.totalUsers : 0;
+  const event = (() => {
+    switch (document.eventType) {
+      case "follow": return { ...base, type: "follow" as const, amount: null };
+      case "subscription": return { ...base, type: "subscription" as const, amount, tier: readTier(payload.tier) };
+      case "resubscription": return { ...base, type: "resubscription" as const, amount, tier: readTier(payload.tier), streakMonths: nonNegativeNumber(payload.streakMonths) ? payload.streakMonths : amount };
+      case "cheer": return { ...base, type: "cheer" as const, amount: positiveNumber(payload.cheerAmount) ? payload.cheerAmount : amount };
+      case "raid": return { ...base, type: "raid" as const, amount: positiveNumber(payload.raidViewers) ? payload.raidViewers : amount };
+      case "channel_point_redemption": return { ...base, type: "channel_point_redemption" as const, amount: null, rewardId: text(payload.rewardId, "sample-reward"), rewardTitle: text(payload.rewardTitle, "Sample reward"), userInput: nullableText(payload.userInput) };
+      case "gift_subscription": return { ...base, type: "gift_subscription" as const, amount: 1 as const, tier: readTier(payload.tier), recipient: actor(payload.recipient, "GiftRecipient"), gifter: nullableActor(payload.gifter) };
+      case "community_gift": return { ...base, type: "community_gift" as const, amount, tier: readTier(payload.tier), cumulativeTotal: nonNegativeNumber(payload.cumulativeTotal) ? payload.cumulativeTotal : null, anonymous: payload.anonymous === true };
+      case "hype_train_start":
+      case "hype_train_progress":
+      case "hype_train_end": return { ...base, type: document.eventType, amount: total, trainId: text(payload.trainId, "sample-train"), level: nullableNumber(payload.level), progress: nullableNumber(payload.progress), goal: nullableNumber(payload.goal), total, startedAt: nullableDate(payload.startedAt, occurredAt), expiresAt: nullableDate(payload.expiresAt, occurredAt), endedAt: document.eventType === "hype_train_end" ? nullableDate(payload.endedAt, occurredAt) : null, cooldownEndsAt: null };
+      case "poll_start":
+      case "poll_progress":
+      case "poll_end": return { ...base, type: document.eventType, amount: totalVotes, pollId: text(payload.pollId, "sample-poll"), title: text(payload.title, "Sample poll"), choices: [{ id: "choice-1", title: "Option one", totalVotes }], totalVotes, startedAt: text(payload.startedAt, occurredAt), endsAt: text(payload.endsAt, occurredAt), status: text(payload.status, document.eventType === "poll_end" ? "completed" : "active") };
+      case "prediction_start":
+      case "prediction_progress":
+      case "prediction_lock":
+      case "prediction_end": return { ...base, type: document.eventType, amount: totalPoints, predictionId: text(payload.predictionId, "sample-prediction"), title: text(payload.title, "Sample prediction"), outcomes: [{ id: "outcome-1", title: "Option one", totalUsers, totalPoints }], totalUsers, totalPoints, startedAt: text(payload.startedAt, occurredAt), locksAt: document.eventType === "prediction_lock" ? nullableDate(payload.locksAt, occurredAt) : null, endedAt: document.eventType === "prediction_end" ? nullableDate(payload.endedAt, occurredAt) : null, status: text(payload.status, document.eventType === "prediction_end" ? "resolved" : document.eventType === "prediction_lock" ? "locked" : "active"), winningOutcomeId: document.eventType === "prediction_end" ? "outcome-1" : null };
+      case "stream_online": return { ...base, type: "stream_online" as const, amount: null, streamId: nullableText(payload.streamId), streamType: nullableText(payload.streamType), startedAt: nullableDate(payload.startedAt, occurredAt), endedAt: null };
+      case "stream_offline": return { ...base, type: "stream_offline" as const, amount: null, streamId: nullableText(payload.streamId), streamType: nullableText(payload.streamType), startedAt: null, endedAt: nullableDate(payload.endedAt, occurredAt) };
+    }
+  })();
+  return normalizedStreamEventSchema.parse(event);
 }
 
 function readTier(value: unknown): "1000" | "2000" | "3000" | "prime" {
   return value === "2000" || value === "3000" || value === "prime" ? value : "1000";
+}
+
+function actor(value: unknown, fallbackDisplayName: string) {
+  const record = recordValue(value);
+  return { id: nullableText(record.id), displayName: text(record.displayName, fallbackDisplayName) };
+}
+
+function nullableActor(value: unknown) {
+  return value === null || value === undefined ? null : actor(value, "Sample gifter");
+}
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+}
+
+function text(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() !== "" ? value : fallback;
+}
+
+function nullableText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
+}
+
+function positiveNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+function nonNegativeNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+function nullableNumber(value: unknown): number | null {
+  return nonNegativeNumber(value) ? value : null;
+}
+
+function nullableDate(value: unknown, fallback: string): string | null {
+  return value === null ? null : text(value, fallback);
 }
 
 function createTemplateContext(payload: Record<string, unknown>, event: NormalizedStreamEvent): Record<string, unknown> {
