@@ -18,3 +18,11 @@ The management UI SHALL let a user hide a revealed browser-source URL without re
 - **WHEN** a browser-source URL is currently revealed and the user activates Hide
 - **THEN** the same URL is immediately masked
 - **AND** no server mutation or route-key regeneration occurs
+
+### Requirement: Browser-Source Summary Shows Only Applicable Setup States
+The collapsed browser-source summary SHALL omit setup warnings whose count is zero.
+
+#### Scenario: Every browser-source URL is available
+- **WHEN** every target profile has an available browser-source URL
+- **THEN** the collapsed summary shows the ready count
+- **AND** it does not show a zero-value `needs setup` warning

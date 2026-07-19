@@ -107,6 +107,29 @@ describe("AlertSetsPage", () => {
     expect(within(selectedSet).getByText("4 alerts need review")).toBeInTheDocument();
   });
 
+  it("omits the setup warning when every browser-source URL is ready", async () => {
+    const source = detail();
+    const vertical = source.browserSources[1]!;
+    const readyDetail: AlertSetDetail = {
+      ...source,
+      browserSources: [
+        source.browserSources[0]!,
+        {
+          ...vertical,
+          keyId: "key-vertical",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_vertical?profile=vertical",
+          copyableUrlStatus: "available"
+        }
+      ]
+    };
+
+    render(<AlertSetsPage managementApi={alertSetsApi({ getAlertSet: vi.fn(async () => readyDetail) })} onEditAlert={vi.fn()} />);
+
+    const browserSources = await screen.findByRole("region", { name: "Browser sources" });
+    expect(within(browserSources).getByText("2 ready")).toBeInTheDocument();
+    expect(within(browserSources).queryByText(/needs setup/u)).not.toBeInTheDocument();
+  });
+
   it("expands browser sources when targeted by the route hash", async () => {
     window.history.replaceState(null, "", "#browser-sources");
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });

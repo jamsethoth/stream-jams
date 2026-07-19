@@ -78,6 +78,24 @@ describe("HomePanel", () => {
     expect(screen.getByText("ref-home-17")).toBeInTheDocument();
   });
 
+  it("omits zero blocker and warning facts for a clean active set", async () => {
+    const cleanSummary: HomeSetupSummary = {
+      ...configuredSummary,
+      activeAlertSet: {
+        ...configuredSummary.activeAlertSet!,
+        targetProfiles: configuredSummary.activeAlertSet!.targetProfiles.map((profile) => ({ ...profile, warningCount: 0 })),
+        validationIssues: []
+      },
+      actionableProblems: []
+    };
+
+    render(<HomePanel managementApi={{ getHomeSetupSummary: vi.fn(async () => cleanSummary) }} />);
+
+    expect(await screen.findByText("Default")).toBeInTheDocument();
+    expect(screen.queryByText("Blockers")).not.toBeInTheDocument();
+    expect(screen.queryByText("Warnings")).not.toBeInTheDocument();
+  });
+
   it("turns load failure into a visible next step", async () => {
     render(
       <HomePanel

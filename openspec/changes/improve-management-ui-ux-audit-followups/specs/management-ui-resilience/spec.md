@@ -62,3 +62,18 @@ The management UI SHALL derive document language and direction at runtime and SH
 #### Scenario: Right-to-left or user-generated text is rendered
 - **WHEN** the browser locale is right-to-left or overlay text determines its own direction
 - **THEN** the document or text boundary exposes the corresponding direction without changing stored content
+
+### Requirement: Status Summaries Exclude Zero-Value Problem Noise
+The management UI SHALL omit zero-value blocker and warning facts and SHALL replace zero-only impact counts with a concise outcome.
+
+#### Scenario: Active alert set has no validation issues
+- **WHEN** the Home summary contains zero blockers and zero warnings
+- **THEN** neither problem fact is rendered
+
+#### Scenario: Provider activation affects no active alerts
+- **WHEN** activation impact contains zero matching and zero unmatched alerts
+- **THEN** the UI states that no active alerts are affected instead of rendering both zero counts
+
+#### Scenario: Provider activation has a mixed impact
+- **WHEN** either matching or unmatched alert count is zero
+- **THEN** the zero-valued count is omitted while the nonzero impact remains visible

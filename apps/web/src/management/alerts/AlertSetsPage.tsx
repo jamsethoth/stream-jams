@@ -870,8 +870,8 @@ function BrowserSources({
           <p>One live URL per target profile.</p>
         </div>
         <div aria-label="Browser source summary" className="alert-sets-page__browser-source-summary">
-          <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--ready">{readyCount} ready</span>
-          <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--warning">{needsSetupCount} needs setup</span>
+          {readyCount > 0 ? <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--ready">{readyCount} ready</span> : null}
+          {needsSetupCount > 0 ? <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--warning">{needsSetupCount} needs setup</span> : null}
           {refreshError === null ? null : <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--error">Status refresh failed</span>}
         </div>
       </div>

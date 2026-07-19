@@ -107,8 +107,8 @@ export function HomePanel({ managementApi }: HomePanelProps) {
               <p>{formatCount(activeSet.enabledAlertCount, { one: "enabled alert", other: "enabled alerts" })}</p>
             </div>
             <dl className="provider-page__facts">
-              <div><dt>Blockers</dt><dd>{blockers}</dd></div>
-              <div><dt>Warnings</dt><dd>{formatCount(warnings, { one: "warning", other: "warnings" })}</dd></div>
+              {blockers > 0 ? <div><dt>Blockers</dt><dd>{blockers}</dd></div> : null}
+              {warnings > 0 ? <div><dt>Warnings</dt><dd>{formatCount(warnings, { one: "warning", other: "warnings" })}</dd></div> : null}
               <div>
                 <dt>Active profiles</dt>
                 <dd>{activeProfiles.length === 0 ? "None" : activeProfiles.map((profile) => formatState(profile.id)).join(", ")}</dd>

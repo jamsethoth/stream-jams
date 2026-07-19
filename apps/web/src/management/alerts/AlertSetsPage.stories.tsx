@@ -33,6 +33,32 @@ export const ActiveSet: Story = {
   }
 };
 
+export const AllBrowserSourcesReady: Story = {
+  args: {
+    managementApi: (() => {
+      const source = detail(activeSet);
+      const vertical = source.browserSources[1]!;
+      return api([activeSet], {
+        ...source,
+        browserSources: [
+          source.browserSources[0]!,
+          {
+            ...vertical,
+            keyId: "key-live-vertical",
+            url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_story_vertical?profile=vertical",
+            copyableUrlStatus: "available"
+          }
+        ]
+      });
+    })()
+  },
+  play: async ({ canvasElement }) => {
+    const browserSources = await within(canvasElement).findByRole("region", { name: "Browser sources" });
+    await expect(within(browserSources).getByText("2 ready")).toBeVisible();
+    await expect(within(browserSources).queryByText(/needs setup/u)).not.toBeInTheDocument();
+  }
+};
+
 export const BrowserSourceSetup: Story = {
   args: { managementApi: api([activeSet], detail(activeSet)) },
   play: async ({ canvasElement }) => {

@@ -523,7 +523,7 @@ export function ProviderPage({
                     : `${pendingAction?.provider.name ?? "This event source"} will become the active event source. Saved configuration will not be deleted.`
                   : "This provider will handle text-to-speech output. The current active provider will become inactive."}
               </p>
-              <p>{formatCount(pendingAction?.impact.matchedAlertCount ?? 0, { one: "matching alert", other: "matching alerts" })}, {formatCount(pendingAction?.impact.unmatchedAlertCount ?? 0, { one: "unmatched alert", other: "unmatched alerts" })}.</p>
+              <p>{formatActivationImpactSummary(pendingAction?.impact.matchedAlertCount ?? 0, pendingAction?.impact.unmatchedAlertCount ?? 0)}.</p>
               <div className="provider-page__errors">
                 {[...(pendingAction?.impact.blockers ?? []), ...(pendingAction?.impact.warnings ?? [])].map((item, index) => (
                   <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />
@@ -622,7 +622,7 @@ function ProviderDetail({
           <h4 id="activation-impact-title">Activation impact</h4>
           {impact === null ? <p role="status">Checking alert impact...</p> : (
             <>
-              <p>{formatCount(impact.matchedAlertCount, { one: "matching alert", other: "matching alerts" })}, {formatCount(impact.unmatchedAlertCount, { one: "unmatched alert", other: "unmatched alerts" })}</p>
+              <p>{formatActivationImpactSummary(impact.matchedAlertCount, impact.unmatchedAlertCount)}</p>
               <div className="provider-page__errors">
                 {[...impact.blockers, ...impact.warnings].map((item, index) => (
                   <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />
@@ -1108,6 +1108,13 @@ function ProviderSetupWizard({
 
 function formatTwitchAccount(status: Extract<TwitchConnectionStatusView, { readonly connected: true }>): string {
   return `${status.account.displayName} (@${status.account.login})`;
+}
+
+function formatActivationImpactSummary(matchedAlertCount: number, unmatchedAlertCount: number): string {
+  if (matchedAlertCount === 0 && unmatchedAlertCount === 0) return "No active alerts are affected";
+  if (matchedAlertCount === 0) return formatCount(unmatchedAlertCount, { one: "unmatched alert", other: "unmatched alerts" });
+  if (unmatchedAlertCount === 0) return formatCount(matchedAlertCount, { one: "matching alert", other: "matching alerts" });
+  return `${formatCount(matchedAlertCount, { one: "matching alert", other: "matching alerts" })}, ${formatCount(unmatchedAlertCount, { one: "unmatched alert", other: "unmatched alerts" })}`;
 }
 
 function providerSetupDescription(kind: ProviderKind): string {
