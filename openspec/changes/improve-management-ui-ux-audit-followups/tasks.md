@@ -1,9 +1,9 @@
 ## 1. Baseline And Navigation Safety
 
 - [ ] 1.1 Correct the provider recovery test to await asynchronously loaded detail and verify the focused baseline test passes.
-- [ ] 1.2 Add shell-level regression tests for guarded internal management anchors, modified clicks, external links, and new-window targets.
-- [ ] 1.3 Intercept eligible `/manage` anchors at the shell boundary and route them through existing dirty-navigation handling.
-- [ ] 1.4 Remove the duplicate current-route behavior for the Modules group and keep Alerts as the single current destination.
+- [x] 1.2 Add shell-level regression tests for guarded internal management anchors, modified clicks, external links, and new-window targets.
+- [x] 1.3 Intercept eligible `/manage` anchors at the shell boundary and route them through existing dirty-navigation handling.
+- [x] 1.4 Remove the duplicate current-route behavior for the Modules group and keep Alerts as the single current destination.
 
 ## 2. Safe Loading And Error Presentation
 

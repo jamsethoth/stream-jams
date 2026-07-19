@@ -1,5 +1,5 @@
 import type { AssetRecord } from "./assets/asset-api.js";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AssetLibraryItem, DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,11 +24,12 @@ describe("ManagementApp", () => {
     expect(screen.queryByRole("navigation", { name: "Legacy tools" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Module setup" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("link", { name: "Modules" }));
+    expect(screen.queryByRole("link", { name: "Modules" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Alerts" }));
 
     expect(window.location.pathname).toBe("/manage/modules/alerts");
-    expect(screen.getByRole("link", { name: "Modules" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page")).toHaveLength(1);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
   });
 
@@ -113,6 +114,51 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/manage/assets");
     await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(window.location.pathname).toBe("/manage");
+  });
+
+  it("guards unsaved asset metadata when following an internal usage link", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    vi.mocked(managementApi.listAssetLibraryItems).mockResolvedValue([assetLibraryItemWithUsage]);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    const details = await screen.findByRole("region", { name: "Follower burst details" });
+    const displayName = within(details).getByLabelText("Display name");
+    await user.clear(displayName);
+    await user.type(displayName, "Updated follower burst");
+    await user.click(within(details).getByRole("link", { name: "Follower alert" }));
+
+    expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toHaveTextContent(
+      "Asset details have unsaved changes."
+    );
+    expect(window.location.pathname).toBe("/manage/assets");
+  });
+
+  it.each([
+    ["modified click", { ctrlKey: true }, {}],
+    ["new window", {}, { target: "_blank" }],
+    ["download", {}, { download: "asset.txt" }],
+    ["external origin", {}, { href: "https://example.com/manage" }]
+  ])("preserves native behavior for a raw internal link: %s", async (_label, eventInit, attributes) => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    vi.mocked(managementApi.listAssetLibraryItems).mockResolvedValue([assetLibraryItemWithUsage]);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    const details = await screen.findByRole("region", { name: "Follower burst details" });
+    const displayName = within(details).getByLabelText("Display name");
+    await user.clear(displayName);
+    await user.type(displayName, "Updated follower burst");
+    const link = within(details).getByRole("link", { name: "Follower alert" });
+    Object.entries(attributes).forEach(([name, value]) => link.setAttribute(name, value));
+    link.addEventListener("click", (event) => event.preventDefault());
+
+    fireEvent.click(link, eventInit);
+
+    expect(screen.queryByRole("dialog", { name: "Leave with unsaved changes?" })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/manage/assets");
   });
 
   it("prefills diagnostics from route context", async () => {
@@ -614,6 +660,22 @@ const assetLibraryItem: AssetLibraryItem = {
   createdAt: "2026-07-15T08:00:00.000Z",
   updatedAt: "2026-07-15T08:00:00.000Z",
   usage: { assetId: "asset-image", totalUsageCount: 0, usages: [] }
+};
+
+const assetLibraryItemWithUsage: AssetLibraryItem = {
+  ...assetLibraryItem,
+  usage: {
+    assetId: assetLibraryItem.id,
+    totalUsageCount: 1,
+    usages: [{
+      setId: "set-default",
+      setName: "General Alerts",
+      eventType: "follow",
+      alertId: "alert-follow",
+      alertName: "Follower alert",
+      targetProfileIds: ["landscape"]
+    }]
+  }
 };
 
 function diagnosticsWorkspace(): DiagnosticsWorkspaceView {

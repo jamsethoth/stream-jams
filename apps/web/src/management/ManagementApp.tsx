@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type MouseEvent } from "react";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
@@ -12,7 +12,11 @@ import { DirtyNavigationProvider, useManagementNavigation } from "./navigation/d
 import { ManagementNavigation } from "./navigation/ManagementNavigation.js";
 import { EventSourcesPage } from "./providers/EventSourcesPage.js";
 import { TtsProvidersPage } from "./providers/TtsProvidersPage.js";
-import { getManagementRouteDefinition, type ManagementRoute } from "./routing/management-route.js";
+import {
+  getManagementRouteDefinition,
+  parseManagementRoute,
+  type ManagementRoute
+} from "./routing/management-route.js";
 import { SettingsPanel } from "./settings/SettingsPanel.js";
 
 export interface ManagementAppProps {
@@ -38,8 +42,43 @@ function ManagementAppContent({ assetApi, managementApi }: ResolvedManagementApp
   const navigation = useManagementNavigation();
   const definition = getManagementRouteDefinition(navigation.route);
 
+  function handleInternalLinkClick(event: MouseEvent<HTMLDivElement>) {
+    if (
+      event.defaultPrevented
+      || event.button !== 0
+      || event.metaKey
+      || event.ctrlKey
+      || event.shiftKey
+      || event.altKey
+      || !(event.target instanceof Element)
+    ) {
+      return;
+    }
+
+    const anchor = event.target.closest("a");
+    if (!(anchor instanceof HTMLAnchorElement) || anchor.hasAttribute("download")) {
+      return;
+    }
+
+    const target = anchor.getAttribute("target");
+    if (target !== null && target !== "" && target !== "_self") {
+      return;
+    }
+
+    const destination = new URL(anchor.href, window.location.href);
+    if (
+      destination.origin !== window.location.origin
+      || (destination.pathname !== "/manage" && !destination.pathname.startsWith("/manage/"))
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    navigation.requestNavigation(parseManagementRoute(`${destination.pathname}${destination.search}${destination.hash}`));
+  }
+
   return (
-    <div className="app-shell">
+    <div className="app-shell" onClickCapture={handleInternalLinkClick}>
       {navigation.route.id === "alert-editor" ? null : <ManagementNavigation activeRoute={navigation.route} onNavigate={navigation.requestNavigation} />}
       <main className={navigation.route.id === "alert-editor" ? "management-main management-main--focused" : "management-main"}>
         {navigation.route.id === "alert-editor" ? null : <PageHeader

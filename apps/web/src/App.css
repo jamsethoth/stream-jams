@@ -633,6 +633,17 @@ a:focus-visible {
   color: var(--color-text);
 }
 
+.management-sidebar .management-nav__group {
+  color: var(--color-text-muted);
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 18px;
+  padding: 10px 13px 4px;
+  text-transform: uppercase;
+}
+
 .management-sidebar .management-nav__children {
   margin: 2px 0 6px 14px;
 }
@@ -1179,15 +1190,33 @@ a:focus-visible {
     border-bottom-color: var(--color-accent);
   }
 
-  .management-sidebar .management-nav ul.management-nav__children,
+  .management-sidebar .management-nav__group,
   .management-sidebar__footer {
     display: none;
+  }
+
+  .management-sidebar .management-nav ul.management-nav__children {
+    display: block;
+    margin: 0;
   }
 }
 
 @media (max-width: 640px) {
   :root {
     --space-page: 16px;
+  }
+
+  .management-sidebar .management-nav > ul {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  .management-sidebar .management-nav > ul > li {
+    flex: 1 1 auto;
+  }
+
+  .management-sidebar .management-nav a {
+    text-align: center;
   }
 
   .management-page-header__row,

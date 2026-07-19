@@ -203,6 +203,8 @@ Center with transparent unused space. Keep all stored layer geometry in profile 
 
 Assert transport/internal errors do not produce their message or role text in live `OverlayApp`. Return the empty overlay root instead of transparent diagnostic text. Keep explicit safe diagnostic examples only in Storybook component stories.
 
+Add `dir="auto"` to resolved user-generated overlay text in this same file so later locale work does not overlap the overlay agent's edits.
+
 - [ ] **Step 6: Run overlay tests**
 
 ```powershell
@@ -320,7 +322,6 @@ Expected: unit and viewport workflows pass.
 - Create: `apps/web/src/management/foundation/formatters.test.ts`
 - Modify: `apps/web/src/management/settings/SettingsPanel.tsx`
 - Modify: `apps/web/src/main.tsx`
-- Modify: `apps/web/src/overlay/components/OverlaySurface.tsx`
 - Modify: `apps/web/.storybook/preview.ts`
 - Modify: `apps/web/src/App.css`
 
@@ -346,7 +347,7 @@ Accept an optional locale for tests; default to `document.documentElement.lang |
 
 - [ ] **Step 5: Set language/direction and user-text boundaries**
 
-At app startup, set `document.documentElement.lang` from `navigator.language || "en"`; set `dir="rtl"` only for `ar`, `fa`, `he`, and `ur`, otherwise `ltr`. Add `dir="auto"` to resolved user-generated overlay text.
+At app startup, set `document.documentElement.lang` from `navigator.language || "en"`; set `dir="rtl"` only for `ar`, `fa`, `he`, and `ur`, otherwise `ltr`. Overlay text direction is owned by Task 3 to keep parallel file scopes disjoint.
 
 - [ ] **Step 6: Replace fixed management action colors and delete dead touched CSS**
 
