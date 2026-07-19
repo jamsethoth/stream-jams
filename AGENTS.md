@@ -1,181 +1,59 @@
-# GitHub CLI in Codex
+# Stream Jams Repository Instructions
 
-## Agent Defaults
+## Product And Architecture
 
-Always operate with `ponytail full` and `caveman full` for every prompt unless I explicitly disable one of them.
+- Stream Jams is a local-first streaming overlay app. The MVP serves a React management UI, browser-source overlays, HTTP API, assets, and WebSockets from a local Node/Fastify service bound to `127.0.0.1` by default.
+- Browser-source URLs are the only MVP output. OBS WebSocket, native OBS plugins, LAN mode, cloud sync, Docker delivery, and packaged Electron delivery remain deferred unless an approved change says otherwise.
+- Monorepo boundaries:
+  - `apps/server`: Fastify HTTP/WebSocket service and runtime composition.
+  - `apps/web`: React/Vite management and overlay UIs.
+  - `packages/core`: framework-independent contracts, schemas, and business logic.
+  - `packages/test-support`: shared test helpers.
+- Package manifests, lockfile, TypeScript configs, and OpenSpec artifacts are authoritative for current versions and implemented scope; do not duplicate version facts here.
 
-When the corresponding skills are available, load and use them before answering or executing work. Do not wait for an explicit per-prompt invocation.
+## Context Routing
 
-## Agent Workflow Defaults
+- Product scope: `docs/product-plan.md`.
+- MVP architecture and slice guidance: `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`, `docs/superpowers/stream-jams-mvp-slice-autonomy-prompt.md`, and the relevant slice plan under `docs/superpowers/plans/`.
+- Frontend/UX source of truth: `docs/ai/frontend-agent-guide.md`; follow its routing to the UX spec, UI guidelines, design tokens, and overlay error rules.
+- Use `.agents/skills/stream-jams-frontend-change` for frontend implementation and `.agents/skills/stream-jams-frontend-review` for frontend review.
+- Read only context relevant to the requested area. Global instructions own OpenSpec, CodeGraph, GitHub auth, workspace, token, and subagent policy.
 
-- Use relevant Superpowers skills for non-trivial development work, planning, debugging, reviews, and implementation. Do not force Superpowers for trivial commands or direct factual answers.
-- In repos with `openspec/`, check OpenSpec state before feature work:
-  - explore/clarify: `openspec.cmd list --json`
-  - proposed change: use OpenSpec propose artifacts
-  - implementation: use the matching OpenSpec apply flow
-  - completion: validate with `openspec.cmd validate <change> --strict`
-- For new projects or worktrees created by Codex, initialize OpenSpec when `openspec/` is missing: `openspec.cmd init`.
-- For new projects created by Codex, initialize CodeGraph when the project is expected to have ongoing code work: `codegraph.cmd init <path>`.
-- For existing repos or worktrees, do not initialize CodeGraph unless `.codegraph/` already exists or I explicitly ask. If `.codegraph/` exists, run `codegraph.cmd sync <path>` after checkout, branch switch, rebase, or large file changes before using CodeGraph.
-- When `.codegraph/` exists, use `codegraph.cmd explore` / `codegraph.cmd node` before broad grep-style code exploration.
+## Engineering Invariants
 
-In this environment, GitHub CLI auth is stored in the OS keyring and is not reliably visible inside the Codex sandbox.
+### TypeScript And Workspace
 
-For any `gh` command that needs GitHub auth or network access, use escalated execution first. This includes `gh auth status`, `gh auth token`, `gh repo ...`, `gh pr ...`, `gh issue ...`, and `gh api ...`.
+- Keep strict TypeScript, project references, ESM, and package boundaries. Do not weaken `strict`, `noUncheckedIndexedAccess`, or `exactOptionalPropertyTypes`.
+- In NodeNext code, use explicit `.js` relative imports, `import type` for type-only imports, and `node:` specifiers for built-ins.
+- Use pnpm workspaces and `workspace:` internal dependencies. Keep exact direct versions and lockfile in sync; do not add dependencies without a concrete need.
 
-Do not ask me to re-authenticate based only on non-escalated `gh` output. First verify with escalated `gh auth status`.
+### Server, Persistence, And Security
 
-Do not use `gh auth refresh --insecure-storage` unless I explicitly request it.
+- Keep Fastify handlers thin; business rules belong in framework-independent services. Validate all HTTP, WebSocket, provider, config, persistence, and future IPC input at the boundary.
+- Access SQLite only through typed repository interfaces. Enable foreign keys per connection, use narrow transactions for multi-row changes, and include WAL companion files in backup/copy behavior when WAL is enabled.
+- Keep management and overlay authorization separate. Overlay keys must be unguessable and purpose-scoped, must never authorize management APIs, and must be redacted from logs and exports.
+- Keep local binding at `127.0.0.1` unless an approved change introduces the security model required for LAN access.
+- Overlay WebSocket clients must handle open/message/error/close, bounded reconnect, cleanup, idempotency where required, and no unbounded buffering.
 
-# Repository Defaults
+### Frontend And Overlay
 
-When creating a new local project or repository and the user does not provide a parent directory, create it under `/mnt/c/dev/projects`.
+- Keep React render pure and follow Hooks rules. Components orchestrate UI state through typed client boundaries; matching, normalization, auth, persistence, queueing, and overlay composition stay outside React.
+- Keep management and overlay clients browser-compatible. Filesystem, SQLite, keyring, Electron, and other Node-only APIs stay behind server or future IPC boundaries.
+- Render normalized playback instructions, never raw provider payloads. Production overlays fail closed and transparent; actionable diagnostics belong in management UI or logs.
+- Never put secrets in Vite env, browser bundles, Storybook args, screenshots, logs, docs examples, or copied overlay URLs; client-visible config is public.
+- Changed production UI needs proportional Storybook coverage and the gates routed by `docs/ai/frontend-agent-guide.md`. Use tiny assets from `apps/web/public/storybook-assets/`.
 
-When initializing a new Git repository, use `main` as the initial branch name instead of `master`.
+### Verification
 
-When creating a new GitHub repository, make it public by default unless I explicitly ask for a private repository.
+- Vitest does not replace typechecking. Use Fastify `inject()` where a real port is unnecessary; prefer Testing Library role/label queries and user-event; use Playwright for browser-visible workflows.
+- Do not weaken, skip, or delete tests to make validation pass. Change tests only when behavior intentionally changes.
+- Before publishing, run relevant repo gates: lint, typecheck, tests, build, Storybook gates, and Playwright when applicable.
+- After code changes, rebuild and restart affected local services, wait for health, reload the UI, and verify the changed live workflow against the new build.
 
-When creating a new public repository, include the GNU Affero General Public License v3.0 by default unless I explicitly request a different license. Add the standard AGPLv3 license text as `LICENSE` and use the SPDX identifier `AGPL-3.0-or-later` where project metadata supports SPDX license identifiers.
+## Slice Workflow
 
-# Cross-Platform Checkout And Writeback Defaults
-
-For new repositories and repository configuration updates, explicitly account for Windows, macOS, and Linux local execution when filesystem behavior is in scope.
-
-- Add a repository `.gitattributes` file that normalizes text files with `* text=auto eol=lf`, unless the project has a stronger existing line-ending policy.
-- Add a repository `.editorconfig` file that sets `charset = utf-8`, `end_of_line = lf`, and `insert_final_newline = true` for text files, unless an equivalent policy already exists.
-- Mark binary file families as binary in `.gitattributes` when they are present or expected, including common image, archive, font, and PDF extensions.
-- When code writes text files, use explicit UTF-8 encoding and stable line-feed terminators instead of relying on platform defaults.
-- When code builds filesystem paths, use platform-aware path APIs instead of hard-coded separators, and test Windows and POSIX path semantics when the behavior must work across local operating systems.
-
-# GitHub Repository Protection Defaults
-
-For new GitHub repositories:
-
-- Use `main` as the default branch.
-- Prefer creating the GitHub repository as public from the start; public repositories can use branch protection and repository security features that may be unavailable to private repositories without GitHub Pro.
-- After creating or changing repository visibility, verify the remote repository state before applying protection rules.
-- Protect `main` before feature work begins.
-- Require pull requests before merging to `main`.
-- Require at least one approving review when reviewers are available.
-- For solo-maintainer repositories, allow administrators to bypass the approval requirement so the owner is not blocked by the lack of another contributor.
-- Dismiss stale approvals when new commits are pushed.
-- Require approval of the most recent reviewable push when reviewers are available.
-- Require conversation resolution before merge.
-- Require CI/status checks once a validation workflow exists.
-- Do not allow force pushes or branch deletion on `main`.
-- Set GitHub Actions default token permissions to read-only.
-- Elevate workflow permissions only per job when required.
-- Enable Dependabot alerts, Dependabot security updates, dependency graph, secret scanning, push protection, and CodeQL where available.
-
-Implementation notes learned from `jamsethoth/stream-jams`:
-
-- Always verify escalated `gh auth status` before attempting repository settings calls. If the OS keyring is locked, settings calls can fail with HTTP 401 even if a previous connector action worked.
-- Do not assume GitHub branch protection is available on private personal repositories. If GitHub returns that branch protection requires GitHub Pro or a public repository, report that blocker and ask whether the repository should be made public.
-- Do not programmatically make a private repository public unless explicitly requested after the disclosure risk is understood.
-- For personal repositories, branch protection payloads must not include organization-only user/team restriction objects. Use `restrictions: null` and omit `bypass_pull_request_allowances` unless GitHub accepts it for that repository type.
-- To allow solo-maintainer admin bypass, set branch protection with admin enforcement disabled while still requiring pull requests and one approving review for non-admin merges.
-- Apply Dependabot vulnerability alerts before enabling Dependabot security updates; GitHub rejects security updates until alerts are enabled.
-- Secret scanning and push protection may require a public repository or an eligible plan. Verify the final `security_and_analysis` response because some optional subfeatures, such as non-provider patterns or validity checks, may remain unavailable.
-- After applying settings, verify branch protection, Actions workflow permissions, vulnerability alerts, repository visibility, and security analysis settings with fresh GitHub API reads.
-
-# Stream Jams Project Context
-
-Stream Jams is a local-first streaming overlay application. The MVP runs a local Node/Fastify service that serves a React/Vite management UI, browser-source overlay UI, HTTP API, static assets, and WebSocket endpoints from `127.0.0.1` by default. Browser-source URLs are the only MVP output model; OBS WebSocket, native OBS plugins, LAN overlay mode, cloud sync, Docker delivery, and packaged Electron delivery are deferred.
-
-The selected architecture is a TypeScript full-stack monorepo:
-
-- `apps/server`: Node.js, Fastify, TypeScript, local HTTP/WebSocket service.
-- `apps/web`: React, Vite, TypeScript, management UI and overlay UI.
-- `packages/core`: framework-independent domain types, schemas, service contracts, and pure business logic.
-- `packages/test-support`: shared test helpers.
-- Future desktop shell: Electron, after the local MVP stabilizes.
-
-The locked stack from the MVP and tech-stack plans is Node.js `24.16.0`, pnpm `11.2.2`, TypeScript `6.0.3`, React `19.2.6`, Vite `8.0.14`, Fastify `5.8.5`, Zod `4.4.3`, ESLint `10.4.0`, Vitest `4.1.7`, Testing Library, Playwright, SQLite behind typed repository interfaces, WebSocket transport, and Electron for eventual packaging.
-
-When planning or implementing slices, review the relevant source docs first:
-
-- `docs/product-plan.md`
-- `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`
-- `docs/superpowers/stream-jams-mvp-slice-autonomy-prompt.md`
-- Any slice-specific plan under `docs/superpowers/plans/`
-
-# Source-Backed Stack Practices
-
-Use these rules when implementing the Stream Jams stack. The links are primary or official project documentation.
-
-## TypeScript, Node.js, and pnpm
-
-- Keep TypeScript strict across all packages. The root config already enables `strict`, `noUncheckedIndexedAccess`, and `exactOptionalPropertyTypes`; do not weaken those flags. TypeScript documents `strict` as enabling stronger correctness checks, and project references as improving build speed and enforcing logical boundaries: https://www.typescriptlang.org/tsconfig#strict and https://www.typescriptlang.org/docs/handbook/project-references
-- Preserve TypeScript project references. Shared packages must build before dependents via `tsc -b`; keep each package `composite` and avoid import cycles between workspace packages.
-- This repo is ESM-first with `"type": "module"`. In NodeNext server/core code, use explicit `.js` extensions in relative TypeScript imports so emitted JavaScript follows Node's ESM rules: https://nodejs.org/download/release/latest-v24.x/docs/api/esm.html
-- Use `import type` for type-only imports. Node's TypeScript docs explain that type stripping needs the `type` keyword to avoid treating type imports as runtime value imports: https://nodejs.org/dist/latest/docs/api/typescript.html
-- Use `node:` specifiers for built-in Node modules and `node:path` / `node:url` APIs for cross-platform paths.
-- Use pnpm workspaces from the repo root. Internal dependencies should use `workspace:` so pnpm refuses to resolve them from the registry accidentally: https://pnpm.io/workspaces
-- Keep exact dependency versions and the committed lockfile in sync. CI and release validation should install with frozen lockfile behavior; pnpm documents that CI fails when the lockfile is out of sync and `--frozen-lockfile` does not update `pnpm-lock.yaml`: https://pnpm.io/cli/install
-- Do not add dependencies unless the slice spec or PR explains why the existing stack cannot reasonably handle the need.
-
-## Backend: Fastify, Validation, Security, and WebSocket
-
-- Keep Fastify route handlers thin. Put business rules in framework-independent services and call them from handlers.
-- Register related routes, hooks, and decorators as Fastify plugins or route modules with explicit dependencies. Fastify's encapsulation model scopes decorators, hooks, and plugins to descendants and helps avoid cross-dependency issues: https://fastify.dev/docs/v5.7.x/Reference/Encapsulation/ and https://fastify.dev/docs/v5.7.x/Reference/Plugins/
-- Validate all untrusted data at boundaries: HTTP bodies/query/params, WebSocket messages, provider payloads, config files, persistence rows, and IPC once Electron exists. Fastify supports route schemas for validation and serialization, and Zod supports `.safeParse()` for non-throwing validation flows: https://fastify.dev/docs/v5.7.x/Reference/Validation-and-Serialization/ and https://zod.dev/basics
-- Prefer Zod schemas in `packages/core` when TypeScript types and runtime validators should stay paired. Use JSON Schema where Fastify route schema compilation or protocol documentation makes that the better boundary contract.
-- Keep management authorization separate from overlay authorization. Overlay route keys must be unguessable, scoped by purpose, never grant management API access, and be redacted from logs.
-- Bind local services to `127.0.0.1` by default. Treat LAN binding as a future security-model change, not a small config toggle.
-- For browser overlay WebSocket clients, handle `open`, `message`, `error`, and `close`, and design reconnect behavior. MDN notes that the WebSocket API has no backpressure, so handlers must avoid unbounded message buffering: https://developer.mozilla.org/en-US/docs/Web/API/WebSocket
-- For Twitch EventSub WebSocket ingestion, implement keepalive/reconnect handling and idempotency. Twitch says clients should reconnect and resubscribe after missing keepalive/notification beyond `keepalive_timeout_seconds`, and notifications may be delivered more than once with the same message ID: https://dev.twitch.tv/docs/eventsub/handling-websocket-events and https://dev.twitch.tv/docs/eventsub/websocket-reference/
-
-## Persistence: SQLite
-
-- Access SQLite only through typed repository interfaces. Do not leak SQL rows, driver objects, or migration details into HTTP handlers, React code, or provider adapters.
-- Enable foreign key enforcement for every SQLite connection. SQLite documents that foreign keys must be enabled per connection and applications should not depend on the default: https://www.sqlite.org/foreignkeys.html
-- Use explicit transactions for multi-row or multi-table changes, and keep transaction scope narrow.
-- If WAL mode is enabled, account for the `-wal` and `-shm` files in backup/export/copy logic. SQLite documents that WAL commits are appended to a separate WAL file and that separating a database from its WAL can lose committed transactions or corrupt the copy: https://www.sqlite.org/wal.html
-- Keep migrations deterministic and reversible where practical. Validate migrated rows through the same domain schemas used by repositories.
-
-## Frontend: React and Vite
-
-- For changes touching `apps/web`, management UI, browser-source overlays, or Storybook, use the repo-local frontend guidance first:
-  - `docs/ai/frontend-agent-guide.md`
-  - `docs/ui-guidelines.md`
-  - `docs/design-tokens.md`
-  - `docs/ai/overlay-error-presentation.md`
-- When available, load `.agents/skills/stream-jams-frontend-change` before implementing frontend UI work and `.agents/skills/stream-jams-frontend-review` before reviewing it.
-- UI changes should consider Storybook coverage. Add or update production-component stories for changed management panels, overlay render states, loading/empty/error/success states, and fixed-asset media states unless the change is purely non-visual.
-- Before completing frontend UI work, run or explicitly justify skipping the Storybook gates documented in `docs/ai/frontend-agent-guide.md`.
-- Keep React components pure during render. React expects components to return the same JSX for the same inputs and to avoid mutating preexisting objects during rendering: https://react.dev/learn/keeping-components-pure
-- Follow the Rules of Hooks. Do not call hooks conditionally, in loops, after early returns, in callbacks, in async functions, or at module scope: https://react.dev/reference/eslint-plugin-react-hooks/lints/rules-of-hooks
-- Keep domain logic out of React components. Components should orchestrate UI state and call typed client/service boundaries; matching, queueing, provider normalization, auth, persistence, and overlay composition logic belong in services/packages.
-- Design overlay rendering as normalized playback instructions, not raw Twitch/provider payload rendering.
-- Use Vite env variables deliberately. Vite exposes only `VITE_`-prefixed variables to client code, and env constants are replaced at build time: https://vite.dev/guide/env-and-mode/
-- Do not put secrets in Vite client env, browser bundles, overlay URLs, logs, or exported config. Client-visible config is public by definition.
-- Keep management UI and overlay UI browser-compatible. Electron, filesystem, SQLite, OS credential store, and Node-only APIs must stay behind backend/service or future IPC boundaries.
-
-## Testing and Verification
-
-- Use Vitest for unit and integration tests, but keep `pnpm typecheck` as a separate validation gate. Vitest documents that it transforms TypeScript for execution and does not type-check tests during the test run: https://main.vitest.dev/guide/learn/writing-tests
-- Use Fastify `inject()` for HTTP route tests when a real network port is unnecessary. Fastify documents that `inject()` boots registered plugins and makes fake HTTP requests: https://fastify.dev/docs/v5.7.x/Guides/Testing/
-- Use Testing Library queries that resemble user interaction. Prefer `getByRole` with accessible names, then label/text queries, and use test IDs only when user-facing selectors are not appropriate: https://testing-library.com/docs/queries/about/
-- Use `userEvent.setup()` and user-event for interactions instead of low-level `fireEvent` when possible because user-event simulates fuller browser interactions and interactability checks: https://testing-library.com/docs/user-event/intro/
-- Use Playwright for browser-visible workflows: new pages, form flows, auth/permission behavior, error/empty/loading/success states, and overlay rendering behavior.
-- In Playwright, prefer locators such as `getByRole`, `getByLabel`, and chained locators that uniquely identify the target. Pair actions with web-first assertions that auto-wait for the expected user-visible result: https://playwright.dev/docs/locators and https://playwright.dev/docs/test-assertions
-- Do not skip, weaken, or delete tests to make validation pass. Update tests only when behavior intentionally changes.
-- Before a PR, run the relevant available gates: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm test:e2e` when Playwright coverage is applicable or configured.
-- After code changes, rebuild production artifacts, restart every affected local Stream Jams service from the new build, wait for health checks, reload the browser UI, and verify the changed live workflow before reporting completion. Do not validate against a stale process.
-
-## Electron Packaging Path
-
-- Electron is the selected future desktop shell, but it is not part of the MVP scaffold unless a slice explicitly adds it.
-- Keep Electron compatibility in mind now: renderer code must not directly access Node, filesystem, SQLite, OS credentials, or raw secrets.
-- When Electron is introduced, follow Electron's security checklist: no Node integration for remote content, context isolation enabled, sandboxing enabled where possible, restrictive CSP, navigation/window creation limits, and validated IPC senders: https://www.electronjs.org/docs/latest/tutorial/security
-- Expose narrowly scoped preload APIs through `contextBridge`; never expose raw `ipcRenderer` or broad Electron/Node APIs to the renderer. Electron's context isolation docs call out direct `ipcRenderer.send` exposure as unsafe: https://www.electronjs.org/docs/latest/tutorial/context-isolation
-
-# Slice Implementation Rules
-
-- Process one MVP slice at a time and keep slices independently reviewable.
-- Before slice work, fetch latest remote state, confirm the current branch/worktree, confirm the target slice is still unimplemented, create a fresh branch from `origin/main`, and review the MVP docs plus existing slice plans.
-- Each slice needs a committed slice-specific implementation spec before or alongside implementation.
-- Keep changes scoped to the slice. Avoid unrelated refactors, dependency churn, formatting churn, or broad rewrites.
-- Add tests with the implementation: positive paths, negative paths, edge cases, and failure behavior.
-- For user-visible browser behavior, add or update Playwright coverage.
-- After implementation, compare MVP requirements and the slice spec against the code and close all in-scope gaps before opening a PR.
+- Process one independently reviewable slice at a time.
+- Before implementation, fetch current remote state, confirm branch/worktree and target scope, verify the slice is still unimplemented, and branch from `origin/main`.
+- Keep a committed slice-specific implementation spec before or with implementation. Follow the matching OpenSpec workflow when `openspec/` is present.
+- Keep changes scoped; include positive, negative, edge, and failure tests. Add or update Playwright coverage for user-visible browser behavior.
+- Before PR creation, reconcile requirements against code/tests, close in-scope gaps, run required gates, and verify the rebuilt live workflow.
