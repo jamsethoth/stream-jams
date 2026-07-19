@@ -32,7 +32,7 @@ function formatCause(cause: string | null): string | null {
       const path = "path" in issue && Array.isArray(issue.path) ? issue.path.map(String).join(".") : "";
       return [`${path === "" ? "" : `${path}: `}${issue.message}`];
     });
-    return messages.length === 0 ? cause : messages.join(" ");
+    return messages.length === 0 ? null : messages.join(" ");
   } catch {
     return cause;
   }

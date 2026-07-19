@@ -319,6 +319,28 @@ describe("AlertSetsPage", () => {
     expect(getAlertSet).toHaveBeenCalledWith(seasonal.id);
   });
 
+  it("ignores an older route load that resolves after the current set", async () => {
+    const first = { ...overview(), id: "set-first", name: "First", active: false, starter: false };
+    const second = { ...overview(), id: "set-second", name: "Second", active: false, starter: false };
+    const firstDetail = deferred<AlertSetDetail>();
+    const getAlertSet = vi.fn((setId: string) => setId === first.id
+      ? firstDetail.promise
+      : Promise.resolve({ ...detail(), overview: second }));
+    const api = alertSetsApi({ listAlertSets: vi.fn(async () => [first, second]), getAlertSet });
+
+    const { rerender } = render(<AlertSetsPage initialSetId={first.id} managementApi={api} onEditAlert={vi.fn()} />);
+    await waitFor(() => expect(getAlertSet).toHaveBeenCalledWith(first.id));
+
+    rerender(<AlertSetsPage initialSetId={second.id} managementApi={api} onEditAlert={vi.fn()} />);
+    const secondRegion = await screen.findByRole("region", { name: "Second alert set" });
+    expect(within(secondRegion).getByRole("button", { name: "Collapse Second" })).toBeInTheDocument();
+
+    await act(async () => firstDetail.resolve({ ...detail(), overview: first }));
+
+    expect(within(screen.getByRole("region", { name: "Second alert set" })).getByRole("button", { name: "Collapse Second" })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "First alert set" })).getByRole("button", { name: "Expand First" })).toBeInTheDocument();
+  });
+
   it("requires typed confirmation before regenerating a connected browser source", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();
@@ -596,4 +618,12 @@ function editorDocument(): AlertEditorDocument {
     ],
     samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: { userName: "James" } }]
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }

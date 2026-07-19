@@ -64,6 +64,25 @@ describe("management UI foundation", () => {
     expect(screen.getByText("{not valid JSON}")).toBeInTheDocument();
   });
 
+  it("omits valid structured causes that have no safe issue messages", () => {
+    const error: ActionableManagementError = {
+      summary: "Server settings were not saved",
+      cause: '[{"code":"invalid_value"}]',
+      nextStep: "Retry the request.",
+      severity: "error",
+      occurredAt: null,
+      referenceId: null,
+      correction: null
+    };
+    const { container, rerender } = render(<ManagementErrorBanner error={error} />);
+
+    expect(container).not.toHaveTextContent("invalid_value");
+
+    rerender(<ManagementErrorBanner error={{ ...error, cause: '{"stack":"internal details"}' }} />);
+    expect(container).not.toHaveTextContent("internal details");
+    expect(container).toHaveTextContent("Retry the request.");
+  });
+
   it("keeps a route key masked until explicitly revealed and reports copy success", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => undefined);

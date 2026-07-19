@@ -233,6 +233,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
     }
   }
 
+  if (!hasLoadedItems.current && loading) return <p className="management-empty" role="status">Loading asset library...</p>;
   if (initialLoadFailed && error !== null) return <section aria-label="Asset library" className="asset-library"><ManagementErrorBanner error={error} /><button onClick={() => void loadItems()} type="button">Retry loading assets</button></section>;
 
   return (

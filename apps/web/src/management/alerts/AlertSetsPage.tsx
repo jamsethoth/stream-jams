@@ -100,8 +100,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
   const browserSourceRefreshFailed = useRef(false);
+  const effectLoadGeneration = useRef(0);
 
-  useEffect(() => { void loadAlertSets(initialSetId, true); }, [initialSetId, managementApi]);
+  useEffect(() => {
+    const generation = ++effectLoadGeneration.current;
+    void loadAlertSets(initialSetId, true, generation);
+    return () => { effectLoadGeneration.current += 1; };
+  }, [initialSetId, managementApi]);
 
   useEffect(() => {
     if (selectedSetId === null) return;
@@ -185,30 +190,33 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
-  async function loadAlertSets(preferredSetId: string | null | undefined, handleFailure = false) {
+  async function loadAlertSets(preferredSetId: string | null | undefined, handleFailure = false, effectGeneration: number | null = null) {
+    const isStale = () => effectGeneration !== null && effectGeneration !== effectLoadGeneration.current;
     setLoading(true);
     setError(null);
     try {
       const loadedSets = await managementApi.listAlertSets();
-      setSets(loadedSets);
       const selected = loadedSets.find((candidate) => candidate.id === preferredSetId)
         ?? loadedSets.find((candidate) => candidate.active)
         ?? loadedSets[0]
         ?? null;
+      const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
+      if (isStale()) return;
+      setSets(loadedSets);
       setSelectedSetId(selected?.id ?? null);
       setExpandedSetId(selected?.id ?? null);
-      const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
       setDetail(loadedDetail);
       setBrowserSourceStatusUpdatedAt(loadedDetail === null ? null : new Date().toISOString());
       browserSourceRefreshFailed.current = false;
       setBrowserSourceRefreshError(null);
       setInitialLoadFailed(false);
     } catch (cause) {
+      if (isStale()) return;
       setInitialLoadFailed(detail === null);
       setError(toActionableError("Alert sets could not be loaded", cause, "Refresh the page and try again."));
       if (!handleFailure) throw cause;
     } finally {
-      setLoading(false);
+      if (!isStale()) setLoading(false);
     }
   }
 
