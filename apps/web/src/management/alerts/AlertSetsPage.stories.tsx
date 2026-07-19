@@ -33,6 +33,47 @@ export const ActiveSet: Story = {
   }
 };
 
+export const BrowserSourceSetup: Story = {
+  args: { managementApi: api([activeSet], detail(activeSet)) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
+    const source = canvas.getByRole("article", { name: "Landscape browser source" });
+    await expect(within(source).getByText("1920 x 1080")).toBeVisible();
+    await expect(within(source).getByText(/Add a Browser source in OBS at 1920 x 1080/u)).toBeVisible();
+    await userEvent.click(within(source).getByRole("button", { name: "Reveal Landscape URL" }));
+    await expect(within(source).getByRole("button", { name: "Hide Landscape URL" })).toBeVisible();
+  }
+};
+
+export const NarrowRtlExpandedCopy: Story = {
+  args: {
+    managementApi: (() => {
+      const longSet = { ...activeSet, name: "Everyday celebrations and community milestones" };
+      const longDetail = detail(longSet);
+      return api([longSet], {
+        ...longDetail,
+        inventory: longDetail.inventory.map((item) => ({ ...item, name: "A very long localized follower celebration title" }))
+      });
+    })()
+  },
+  globals: { locale: "ar" },
+  parameters: {
+    viewport: {
+      defaultViewport: "narrowPhone",
+      options: {
+        narrowPhone: { name: "Narrow phone 390 x 844", styles: { width: "390px", height: "844px" } }
+      }
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(document.documentElement).toHaveAttribute("dir", "rtl");
+    await expect(await canvas.findByRole("button", { name: /Edit A very long localized/u })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: /Test A very long localized/u })).toBeVisible();
+  }
+};
+
 export const InitialLoadFailure: Story = {
   args: {
     managementApi: {
@@ -132,6 +173,7 @@ export const DefaultWithVariations: Story = {
     const canvas = within(canvasElement);
     const variation = await canvas.findByRole("row", { name: /Large raid/u });
     await expect(variation).toHaveClass("alert-sets-page__variation-row");
+    await userEvent.click(canvas.getByText("More", { selector: "summary[aria-label='More actions for New raid']" }));
     await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
   }
 };

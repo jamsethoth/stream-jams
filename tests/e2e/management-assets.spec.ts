@@ -3,6 +3,7 @@ import { mockManagementShell } from "./e2e-helpers.js";
 
 test("asset library filters, edits, previews impact, and keeps invalid uploads in context", async ({ page }) => {
   await mockManagementShell(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   const commands: Array<{ readonly command: string; readonly body?: unknown }> = [];
   let displayName = "Follower burst";
 
@@ -72,9 +73,12 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Assets" }).click();
-  await expect(page.getByRole("cell", { name: "Follower burst" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Follower burst", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "New follower" })).toHaveAttribute("href", "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape");
+  await expect(page.getByText("Filters", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
+  await page.getByText("Filters", { exact: true }).click();
   await page.getByLabel("Usage").selectOption("unused");
   await page.getByLabel("Type").selectOption("audio");
   await expect(page.getByRole("button", { name: "Short chime", exact: true })).toBeVisible();

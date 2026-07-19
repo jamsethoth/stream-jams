@@ -25,16 +25,24 @@ describe("AlertSetsPage", () => {
     expect(within(landscapeSource).getByText("Ready")).toBeInTheDocument();
     expect(within(landscapeSource).getByText("Profile enabled")).toBeInTheDocument();
     expect(within(landscapeSource).getByText("Listening now")).toBeInTheDocument();
+    expect(within(landscapeSource).getByText("1920 x 1080")).toBeInTheDocument();
+    expect(within(landscapeSource).getByText(/Add a Browser source in OBS at 1920 x 1080/)).toBeInTheDocument();
     const verticalSource = screen.getByRole("article", { name: "Vertical browser source" });
     expect(within(verticalSource).getByText("Needs setup")).toBeInTheDocument();
     expect(within(verticalSource).getByText("Profile disabled")).toBeInTheDocument();
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
+    expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
     expect(screen.getByText("4 need review")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
     expect(screen.getByRole("textbox", { name: "Landscape browser source" })).toHaveValue(
       "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_landscape?profile=landscape"
     );
+    await user.click(screen.getByRole("button", { name: "Hide Landscape URL" }));
+    expect(screen.queryByRole("textbox", { name: "Landscape browser source" })).not.toBeInTheDocument();
+    expect(landscapeSource.querySelector(".alert-sets-page__source-masked")).toBeInTheDocument();
+    expect(api.createOverlayOutputKey).not.toHaveBeenCalled();
+    expect(api.regenerateOverlayOutputKey).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Enable New follower" }));
     expect(api.setManagedAlertEnabled).toHaveBeenCalledWith("alert-follow", true);
     await user.click(screen.getByRole("button", { name: "Mark starter review done" }));
@@ -220,6 +228,7 @@ describe("AlertSetsPage", () => {
     expect(rows.map((row) => row.textContent).join("|")).toMatch(/New follower.*VIP follower.*New raid/u);
     expect(screen.getByRole("row", { name: /VIP follower/u })).toHaveClass("alert-sets-page__variation-row");
 
+    await user.click(screen.getByText("More", { selector: "summary[aria-label='More actions for New follower']" }));
     await user.click(screen.getByRole("button", { name: "Add variation to New follower" }));
     const dialog = screen.getByRole("dialog", { name: "Add variation to New follower" });
     await user.clear(within(dialog).getByLabelText("Variation name"));

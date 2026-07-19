@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
+import { formatCount as formatLocalizedCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi } from "../management-api.js";
 import "./alert-sets-page.css";
 
@@ -62,6 +63,11 @@ interface AlertMutationDialogState {
   readonly action: "reset" | "delete";
   readonly alert: AlertInventoryRow;
 }
+
+const targetProfileDimensions: Record<TargetProfileId, Readonly<{ width: number; height: number }>> = {
+  landscape: { width: 1920, height: 1080 },
+  vertical: { width: 1080, height: 1920 }
+};
 
 export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
@@ -544,7 +550,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
               requiresTypedConfirmation: source.connectionState !== "never-connected" || source.lastConnectedAt !== null
             });
           }}
-          onReveal={(source) => setRevealedSourceIds((current) => new Set([...current, source.id]))}
+          onToggleReveal={(source) => setRevealedSourceIds((current) => {
+            const next = new Set(current);
+            if (next.has(source.id)) next.delete(source.id);
+            else next.add(source.id);
+            return next;
+          })}
           onToggle={() => setBrowserSourcesExpanded((current) => !current)}
           profiles={detail.overview.targetProfiles}
           refreshError={browserSourceRefreshError}
@@ -762,26 +773,26 @@ function AlertInventory({
               return (
                 <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
                   <th scope="row"><span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"}</small></th>
-                  <td><span>{formatEventType(alert.eventType)}</span><small>{formatProvider(alert.providerKind)} catalog</small></td>
-                  <td>{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
-                  <td><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
-                  <td>
+                  <td data-label="Event"><span>{formatEventType(alert.eventType)}</span><small>{formatProvider(alert.providerKind)} catalog</small></td>
+                  <td data-label="Profiles">{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
+                  <td data-label="State"><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
+                  <td data-label="Validation">
                     <span className="alert-sets-page__alert-validation">
                       {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, "blocker")}</span> : null}
                       {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, "warning")}</span> : null}
                       {alert.reviewState === "needs-review" ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">Needs review</span> : blockerCount === 0 && warningCount === 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--ready">Ready</span> : null}
                     </span>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                       <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" onClick={() => onEdit(alert)} type="button">Edit</button>
-                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Preview</button>
                       <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
-                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                       <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
                       <details className="alert-sets-page__action-menu">
                         <summary aria-label={`More actions for ${alert.name}`}>More</summary>
                         <div role="group" aria-label={`Additional actions for ${alert.name}`}>
+                          <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Preview</button>
+                          {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                           <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
                           <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
                           <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
@@ -813,7 +824,7 @@ function BrowserSources({
   onCopy,
   onCreate,
   onRegenerate,
-  onReveal,
+  onToggleReveal,
   onToggle,
   profiles,
   refreshError,
@@ -826,7 +837,7 @@ function BrowserSources({
   readonly onCopy: (source: AlertBrowserSourceView) => void;
   readonly onCreate: (source: AlertBrowserSourceView) => void;
   readonly onRegenerate: (source: AlertBrowserSourceView) => void;
-  readonly onReveal: (source: AlertBrowserSourceView) => void;
+  readonly onToggleReveal: (source: AlertBrowserSourceView) => void;
   readonly onToggle: () => void;
   readonly profiles: AlertSetOverview["targetProfiles"];
   readonly refreshError: ActionableManagementError | null;
@@ -866,13 +877,14 @@ function BrowserSources({
         <div className="alert-sets-page__browser-source-details" id="browser-source-details">
           <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
             {refreshError === null
-              ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${new Date(statusUpdatedAt).toLocaleTimeString()}`
-              : statusUpdatedAt === null ? "Connection status stale." : `Connection status stale. Last updated ${new Date(statusUpdatedAt).toLocaleTimeString()}`}
+              ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${formatDateTime(statusUpdatedAt)}`
+              : statusUpdatedAt === null ? "Connection status stale." : `Connection status stale. Last updated ${formatDateTime(statusUpdatedAt)}`}
           </p>
           {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
           <div className="alert-sets-page__source-list">
             {sources.map((source) => {
               const label = formatProfile(source.targetProfileId);
+              const dimensions = targetProfileDimensions[source.targetProfileId];
               const revealed = revealedSourceIds.has(source.id);
               const profileEnabled = profiles.find((profile) => profile.id === source.targetProfileId)?.enabled === true;
               const ready = source.copyableUrlStatus === "available";
@@ -880,15 +892,17 @@ function BrowserSources({
                 ? "Listening now"
                 : source.lastConnectedAt === null
                   ? "Not listening. No connection recorded."
-                  : `Not listening. Last seen ${new Date(source.lastConnectedAt).toLocaleString()}`;
+                  : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
               return (
                 <article aria-label={`${label} browser source`} className="alert-sets-page__source" key={source.id}>
                   <div className="alert-sets-page__source-heading"><div><strong>{label}</strong><span>{profileEnabled ? "Profile enabled" : "Profile disabled"}</span></div><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
                   <p className="alert-sets-page__source-telemetry">{listenerStatus}</p>
+                  <p className="alert-sets-page__source-dimensions"><strong>{dimensions.width} x {dimensions.height}</strong></p>
+                  <p className="alert-sets-page__source-guidance">Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</p>
                   {source.url === null ? <p className="alert-sets-page__source-missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code className="alert-sets-page__source-masked">{maskRouteKey(source.url)}</code>}
                   <div className="alert-sets-page__row-actions">
                     {source.copyableUrlStatus === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</button> : null}
-                    {source.url === null ? null : <><button aria-label={`Reveal ${label} URL`} className="button button--secondary" disabled={revealed} onClick={() => onReveal(source)} type="button">Reveal</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
+                    {source.url === null ? null : <><button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} className="button button--secondary" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
                     {source.copyableUrlStatus !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}
                   </div>
                 </article>
@@ -1066,7 +1080,7 @@ function formatProvider(value: string): string {
 }
 
 function formatCount(value: number, noun: string): string {
-  return `${value} ${noun}${value === 1 ? "" : "s"}`;
+  return formatLocalizedCount(value, { one: noun, other: `${noun}s` });
 }
 
 function formatProfile(value: "landscape" | "vertical"): string {

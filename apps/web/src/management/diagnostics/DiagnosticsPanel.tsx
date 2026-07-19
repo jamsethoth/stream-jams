@@ -7,6 +7,7 @@ import type {
   DiagnosticsWorkspaceView
 } from "@stream-jams/core";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
+import { formatDateTime } from "../foundation/formatters.js";
 import type { DiagnosticsDebugExportView, DiagnosticsExportView, ManagementApi } from "../management-api.js";
 import "./diagnostics-workspace.css";
 
@@ -412,4 +413,3 @@ function logTone(level: DiagnosticsRawLogView["level"]): StatusBadgeTone {
 
 function capitalize(value: string): string { return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`; }
 function formatTime(value: string): string { return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }); }
-function formatDateTime(value: string): string { return new Date(value).toLocaleString(); }

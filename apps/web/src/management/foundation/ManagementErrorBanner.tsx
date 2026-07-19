@@ -1,4 +1,5 @@
 import type { ActionableManagementError } from "@stream-jams/core";
+import { formatDateTime } from "./formatters.js";
 
 export function ManagementErrorBanner({ error }: { readonly error: ActionableManagementError }) {
   const cause = formatCause(error.cause);
@@ -10,7 +11,7 @@ export function ManagementErrorBanner({ error }: { readonly error: ActionableMan
         <p><span className="management-error-banner__label">Next step:</span> {error.nextStep}</p>
       </div>
       <div className="management-error-banner__meta">
-        {error.occurredAt === null ? null : <time dateTime={error.occurredAt}>{new Date(error.occurredAt).toLocaleString()}</time>}
+        {error.occurredAt === null ? null : <time dateTime={error.occurredAt}>{formatDateTime(error.occurredAt)}</time>}
         {error.referenceId === null ? null : <code>{error.referenceId}</code>}
         {error.correction === null ? null : <a href={error.correction.route}>{error.correction.label}</a>}
       </div>

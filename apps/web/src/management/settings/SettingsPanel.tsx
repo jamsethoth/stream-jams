@@ -9,6 +9,7 @@ import {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { formatBytes, formatCount, formatHours } from "../foundation/formatters.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
 import type { ManagementApi, ServerConfigView } from "../management-api.js";
@@ -278,7 +279,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
         </div>
         {summary === null ? null : (
           <div className="settings-page__backup-summary">
-            <strong>{summary.configurationRecordCount} configuration records · {summary.assetCount} assets · {formatBytes(summary.totalAssetBytes)}</strong>
+            <strong>{formatCount(summary.configurationRecordCount, { one: "configuration record", other: "configuration records" })} · {formatCount(summary.assetCount, { one: "asset", other: "assets" })} · {formatBytes(summary.totalAssetBytes)}</strong>
             <span>Excluded: {summary.secretExclusions.join(", ")}</span>
           </div>
         )}
@@ -308,10 +309,10 @@ function RestoreImpact({ impact }: { readonly impact: NonNullable<ConfigurationR
     <section aria-label="Restore impact" className="settings-page__impact">
       <h4>Restore impact</h4>
       <ul>
-        <li>{countLabel(impact.alertSets, "alert set")}</li>
-        <li>{countLabel(impact.providers, "provider")}</li>
-        <li>{countLabel(impact.assets, "asset")}</li>
-        <li>{countLabel(impact.browserOutputs, "browser output")}</li>
+        <li>{formatCount(impact.alertSets, { one: "alert set", other: "alert sets" })}</li>
+        <li>{formatCount(impact.providers, { one: "provider", other: "providers" })}</li>
+        <li>{formatCount(impact.assets, { one: "asset", other: "assets" })}</li>
+        <li>{formatCount(impact.browserOutputs, { one: "browser output", other: "browser outputs" })}</li>
       </ul>
     </section>
   );
@@ -358,18 +359,4 @@ function actionable(summary: string, cause: unknown, nextStep: string): Actionab
 function readReferenceId(cause: unknown): string | null {
   if (!(cause instanceof Error)) return null;
   return /\b(?:ref|err)_[A-Za-z0-9_-]+\b/u.exec(cause.message)?.[0] ?? null;
-}
-
-function formatHours(hours: number): string {
-  return hours % 24 === 0 ? `${hours / 24} days` : `${hours} hours`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function countLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }

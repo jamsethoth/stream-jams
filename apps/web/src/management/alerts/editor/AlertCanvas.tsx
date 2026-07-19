@@ -147,10 +147,16 @@ export function AlertCanvas(props: AlertCanvasProps) {
               return (
                 <div
                   aria-label={`${layer.name} layer`}
+                  aria-pressed={props.selectedLayerId === layer.id}
                   className={`alert-canvas__layer${props.selectedLayerId === layer.id ? " alert-canvas__layer--selected" : ""}`}
                   key={`${layer.id}:${props.preview ? props.previewRunId ?? 0 : "edit"}`}
                   onClick={() => props.onSelectLayer(layer.id)}
                   onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      props.onSelectLayer(layer.id);
+                      return;
+                    }
                     if (!event.key.startsWith("Arrow")) return;
                     event.preventDefault();
                     const step = event.shiftKey ? 10 : 1;

@@ -10,6 +10,7 @@ import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
+import { formatBytes, formatCount, formatDate } from "../foundation/formatters.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AssetPicker } from "./AssetPicker.js";
 import { AssetPreview } from "./AssetPreview.js";
@@ -54,6 +55,8 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [setFilter, setSetFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [tagFilters, setTagFilters] = useState<readonly string[]>([]);
+  const [compactFilters, setCompactFilters] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -62,6 +65,15 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [deleteItem, setDeleteItem] = useState<AssetLibraryItem | null>(null);
   const hasLoadedItems = useRef(false);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(max-width: 700px)");
+    if (media === undefined) return;
+    const update = () => setCompactFilters(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -249,17 +261,19 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
       {error === null ? null : <ManagementErrorBanner error={error} />}
       {success === null ? null : <p className="asset-library__success" role="status">{success}</p>}
 
-      <div className="asset-library__filters" aria-label="Asset filters">
-        <label className="asset-library__search"><span>Search assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
-        <FilterSelect label="Type" onChange={setMediaType} value={mediaType} options={["all", "image", "gif", "video", "audio"]} />
-        <FilterSelect label="Usage" onChange={setUsageFilter} value={usageFilter} options={["all", "used", "unused"]} />
-        <FilterSelect label="Health" onChange={setHealthFilter} value={healthFilter} options={["all", "available", "missing", "broken"]} />
-        <FilterSelect label="Module" onChange={setModuleFilter} value={moduleFilter} options={["all", "alerts"]} />
-        <label><span>Set</span><select onChange={(event) => setSetFilter(event.currentTarget.value)} value={setFilter}><option value="all">All</option>{setOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-        <label><span>Event</span><select onChange={(event) => setEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All</option>{eventOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-      </div>
-
-      {allTags.length === 0 ? null : <fieldset className="asset-library__tag-filters"><legend>Tags (match all)</legend>{allTags.map((tag) => <label key={tag}><input checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} type="checkbox" />{tag}</label>)}</fieldset>}
+      <details className="asset-library__filter-disclosure" onToggle={(event) => { if (compactFilters) setFiltersExpanded(event.currentTarget.open); }} open={!compactFilters || filtersExpanded}>
+        <summary>Filters</summary>
+        <div className="asset-library__filters" aria-label="Asset filters">
+          <label className="asset-library__search"><span>Search assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
+          <FilterSelect label="Type" onChange={setMediaType} value={mediaType} options={["all", "image", "gif", "video", "audio"]} />
+          <FilterSelect label="Usage" onChange={setUsageFilter} value={usageFilter} options={["all", "used", "unused"]} />
+          <FilterSelect label="Health" onChange={setHealthFilter} value={healthFilter} options={["all", "available", "missing", "broken"]} />
+          <FilterSelect label="Module" onChange={setModuleFilter} value={moduleFilter} options={["all", "alerts"]} />
+          <label><span>Set</span><select onChange={(event) => setSetFilter(event.currentTarget.value)} value={setFilter}><option value="all">All</option>{setOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          <label><span>Event</span><select onChange={(event) => setEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All</option>{eventOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        </div>
+        {allTags.length === 0 ? null : <fieldset className="asset-library__tag-filters"><legend>Tags (match all)</legend>{allTags.map((tag) => <label key={tag}><input checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} type="checkbox" />{tag}</label>)}</fieldset>}
+      </details>
 
       {loading ? <p className="management-empty">Loading asset library...</p> : null}
       {!loading && items.length === 0 ? <div className="management-empty"><strong>No assets imported yet.</strong><p>Add media here or from an alert layer without leaving that editing flow.</p></div> : null}
@@ -270,9 +284,9 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
           <table className="asset-library__table">
             <thead><tr><th><span className="asset-library__sr-only">Preview</span></th><th>Name</th><th>Type</th><th>Usage</th><th>Health</th><th>Updated</th></tr></thead>
             <tbody>{filtered.map((item) => <tr aria-selected={item.id === selectedId} key={item.id} onClick={() => requestAssetSelection(item.id)}>
-              <td><AssetPreview assetApi={assetApi} compact item={item} /></td>
-              <td><button className="asset-library__row-action" onClick={(event) => { event.stopPropagation(); requestAssetSelection(item.id); }} type="button">{item.displayName}</button><small>{item.originalFileName}</small></td>
-              <td>{formatLabel(item.mediaType)}</td><td>{item.usage.totalUsageCount}</td><td><StatusBadge label={formatLabel(item.health)} tone={healthTone(item.health)} /></td><td>{formatDate(item.updatedAt)}</td>
+              <td data-label="Preview"><AssetPreview assetApi={assetApi} compact item={item} /></td>
+              <td data-label="Name"><button className="asset-library__row-action" onClick={(event) => { event.stopPropagation(); requestAssetSelection(item.id); }} type="button">{item.displayName}</button><small>{item.originalFileName}</small></td>
+              <td data-label="Type">{formatLabel(item.mediaType)}</td><td data-label="Usage">{formatCount(item.usage.totalUsageCount, { one: "use", other: "uses" })}</td><td data-label="Health"><StatusBadge label={formatLabel(item.health)} tone={healthTone(item.health)} /></td><td data-label="Updated">{formatDate(item.updatedAt)}</td>
             </tr>)}</tbody>
           </table>
         </div>
@@ -282,7 +296,8 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
           <dl className="asset-library__facts"><div><dt>Type</dt><dd>{formatLabel(selected.mediaType)}</dd></div><div><dt>Size</dt><dd>{formatBytes(selected.sizeBytes)}</dd></div><div><dt>Dimensions</dt><dd>{selected.width === null || selected.height === null ? "Not available" : `${selected.width} x ${selected.height}`}</dd></div><div><dt>Duration</dt><dd>{selected.durationMs === null ? "Not available" : formatDuration(selected.durationMs)}</dd></div><div><dt>Created</dt><dd>{formatDate(selected.createdAt)}</dd></div><div><dt>Updated</dt><dd>{formatDate(selected.updatedAt)}</dd></div></dl>
           <form className="asset-library__metadata" onSubmit={saveMetadata}><label><span>Display name</span><input maxLength={160} onChange={(event) => setDisplayName(event.currentTarget.value)} required value={displayName} /></label><label><span>Tags</span><input aria-describedby="asset-tag-help" onChange={(event) => setTags(event.currentTarget.value)} value={tags} /></label><small id="asset-tag-help">Comma-separated; tags are matched without case.</small><button disabled={busy || displayName.trim() === ""} type="submit">Save asset details</button></form>
           <section className="asset-library__usage" aria-labelledby="asset-usage-title"><div><h4 id="asset-usage-title">Used by</h4><span>{selected.usage.totalUsageCount} {selected.usage.totalUsageCount === 1 ? "alert context" : "alert contexts"}</span></div>{selected.usage.usages.length === 0 ? <p>Not currently linked to an alert.</p> : <ul>{selected.usage.usages.map((usage) => <li key={`${usage.setId ?? "unassigned"}-${usage.alertId}`}><a href={usageHref(usage)}>{usage.alertName}</a><span>{usage.setName ?? "Unassigned set"} / {formatLabel(usage.eventType)} / {usage.targetProfileIds.length === 0 ? "No profiles" : usage.targetProfileIds.map(formatLabel).join(", ")}</span></li>)}</ul>}</section>
-          <div className="asset-library__actions"><button className="button button--secondary" onClick={() => setReplacement({ item: selected, file: null, impact: null })} type="button">Replace file</button><button className="button button--danger-quiet" disabled={selected.usage.totalUsageCount > 0} onClick={() => setDeleteItem(selected)} title={selected.usage.totalUsageCount > 0 ? "Remove alert usages before deleting this asset." : undefined} type="button">Delete asset</button></div>
+          <div className="asset-library__actions"><button className="button button--secondary" onClick={() => setReplacement({ item: selected, file: null, impact: null })} type="button">Replace file</button><button aria-describedby={selected.usage.totalUsageCount > 0 ? `asset-delete-help-${selected.id}` : undefined} className="button button--danger-quiet" disabled={selected.usage.totalUsageCount > 0} onClick={() => setDeleteItem(selected)} type="button">Delete asset</button></div>
+          {selected.usage.totalUsageCount > 0 ? <p className="asset-library__delete-help" id={`asset-delete-help-${selected.id}`}>Remove {formatCount(selected.usage.totalUsageCount, { one: "alert use", other: "alert uses" })} before deleting this asset.</p> : null}
         </div>}
       </div> : null}
 
@@ -334,6 +349,4 @@ function usageHref(usage: AssetLibraryItem["usage"]["usages"][number]): string {
 
 function healthTone(health: AssetLibraryItem["health"]): "positive" | "warning" | "negative" { return health === "available" ? "positive" : health === "missing" ? "warning" : "negative"; }
 function formatLabel(value: string): string { return value.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" "); }
-function formatDate(value: string): string { return new Date(value).toLocaleDateString(); }
 function formatDuration(value: number): string { return `${(value / 1000).toFixed(1)} s`; }
-function formatBytes(value: number): string { return value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KiB` : `${(value / 1024 / 1024).toFixed(1)} MiB`; }

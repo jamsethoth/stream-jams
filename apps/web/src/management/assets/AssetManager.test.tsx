@@ -16,6 +16,7 @@ describe("AssetManager", () => {
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
 
     await screen.findByRole("button", { name: "Follower burst" });
+    expect(screen.getByText("Filters", { selector: "summary" }).closest("details")).toHaveAttribute("open");
     expect(screen.getByText("seasonal")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /New follower/ })).toHaveAttribute(
       "href",
@@ -169,7 +170,10 @@ describe("AssetManager", () => {
     const fixture = createFixture();
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
     await screen.findByRole("button", { name: "Follower burst" });
-    expect(screen.getByRole("button", { name: "Delete asset" })).toBeDisabled();
+    const blockedDelete = screen.getByRole("button", { name: "Delete asset" });
+    expect(blockedDelete).toBeDisabled();
+    expect(blockedDelete).toHaveAccessibleDescription("Remove 1 alert use before deleting this asset.");
+    expect(screen.getByText("Remove 1 alert use before deleting this asset.")).toBeVisible();
 
     await userEvent.click(screen.getByRole("row", { name: /Raid chime/ }));
     await userEvent.click(screen.getByRole("button", { name: "Delete asset" }));

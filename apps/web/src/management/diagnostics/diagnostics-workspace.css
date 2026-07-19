@@ -172,6 +172,8 @@
 }
 
 @media (max-width: 640px) {
+  .diagnostics-workspace__header { display: contents; }
+  .diagnostics-workspace__actions { order: 5; }
   .diagnostics-workspace__tabs { overflow-x: auto; }
   .diagnostics-workspace__tabs button { flex: 1 0 auto; justify-content: center; }
   .diagnostics-workspace__actions button,

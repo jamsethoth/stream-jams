@@ -28,18 +28,18 @@
 
 ## 5. Responsive Primary Workflows And Browser-Source Setup
 
-- [ ] 5.1 Add Playwright assertions at 390px, 820px, and 1920px for navigation discovery, primary table actions, and focused-editor workspace use.
-- [ ] 5.2 Wrap narrow navigation destinations and keep identity, status, and primary actions visible in readiness, provider, alert, and asset inventories.
-- [ ] 5.3 Collapse narrow Asset filters with a native details/summary control while preserving desktop filters.
-- [ ] 5.4 Show target-profile dimensions and manual browser-source guidance, and toggle revealed URLs between Reveal and Hide.
+- [x] 5.1 Add Playwright assertions at 390px, 820px, and 1920px for navigation discovery, primary table actions, and focused-editor workspace use.
+- [x] 5.2 Wrap narrow navigation destinations and keep identity, status, and primary actions visible in readiness, provider, alert, and asset inventories.
+- [x] 5.3 Collapse narrow Asset filters with a native details/summary control while preserving desktop filters.
+- [x] 5.4 Show target-profile dimensions and manual browser-source guidance, and toggle revealed URLs between Reveal and Hide.
 
 ## 6. Accessibility, Locale, And Styling Consistency
 
-- [ ] 6.1 Add keyboard tests and implement native asset-choice selection plus Enter/Space canvas-layer selection.
-- [ ] 6.2 Add visible referenced help for disabled in-use asset deletion.
+- [x] 6.1 Add keyboard tests and implement native asset-choice selection plus Enter/Space canvas-layer selection.
+- [x] 6.2 Add visible referenced help for disabled in-use asset deletion.
 - [x] 6.3 Add shared `Intl` formatters and tests for singular/plural duration, usage, date, number, and binary-byte output.
-- [ ] 6.4 Set runtime document language/direction, add `dir="auto"` to user-generated overlay text, and add RTL/expanded-copy stories.
-- [ ] 6.5 Replace hard-coded management action colors with semantic tokens and remove dead pre-refactor CSS touched by this change.
+- [x] 6.4 Set runtime document language/direction, add `dir="auto"` to user-generated overlay text, and add RTL/expanded-copy stories.
+- [x] 6.5 Replace hard-coded management action colors with semantic tokens and remove dead pre-refactor CSS touched by this change.
 
 ## 7. Integrated Verification
 

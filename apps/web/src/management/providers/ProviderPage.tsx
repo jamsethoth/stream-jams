@@ -15,6 +15,7 @@ import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
+import { formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import "./provider-pages.css";
@@ -394,7 +395,7 @@ export function ProviderPage({
                     key={provider.id}
                     onClick={() => requestProviderSelection(provider.id)}
                   >
-                    <th scope="row">
+                    <th data-label="Provider" scope="row">
                       <button
                         aria-label={`Select ${provider.name}`}
                         aria-pressed={provider.id === selectedProviderId}
@@ -412,18 +413,18 @@ export function ProviderPage({
                     </th>
                     {capability === "event-source" ? (
                       <>
-                        <td><StatusBadge label={provider.active ? "In use" : "Not in use"} tone={provider.active ? "positive" : "neutral"} /></td>
-                        <td><StatusBadge label={formatLiveStatus(eventSourceLiveStatus(provider))} tone={liveStatusTone(eventSourceLiveStatus(provider))} /></td>
+                        <td data-label="Usage"><StatusBadge label={provider.active ? "In use" : "Not in use"} tone={provider.active ? "positive" : "neutral"} /></td>
+                        <td data-label="Live status"><StatusBadge label={formatLiveStatus(eventSourceLiveStatus(provider))} tone={liveStatusTone(eventSourceLiveStatus(provider))} /></td>
                       </>
                     ) : (
                       <>
-                        <td><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></td>
-                        <td>{provider.usedByAlertCount}</td>
-                        <td><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
+                        <td data-label="Connection"><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></td>
+                        <td data-label="Used by alerts">{provider.usedByAlertCount}</td>
+                        <td data-label="Runtime"><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
                       </>
                     )}
                     {capability === "event-source" ? (
-                      <td>
+                      <td data-label="Actions">
                         <button
                           aria-label={`${provider.active ? "Deactivate" : "Activate"} ${provider.name}`}
                           className="provider-page__secondary-action"
@@ -609,7 +610,7 @@ function ProviderDetail({
             )}
           </>
         ) : <div><dt>Connection</dt><dd>{formatState(provider.connectionState)}</dd></div>}
-        <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : new Date(provider.validatedAt).toLocaleString()}</dd></div>
+        <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : formatDateTime(provider.validatedAt)}</dd></div>
         <div>
           <dt>Used by alerts</dt>
           <dd>{provider.usedByAlertCount} alert {provider.usedByAlertCount === 1 ? "use" : "uses"}</dd>
@@ -1019,7 +1020,7 @@ function ProviderSetupWizard({
                         <div className="provider-page__twitch-code" role="status">
                           <span>Code</span>
                           <code>{twitchAuthorization.userCode}</code>
-                          <span>Expires {new Date(twitchAuthorization.expiresAt).toLocaleTimeString()}</span>
+                          <span>Expires {formatDateTime(twitchAuthorization.expiresAt)}</span>
                         </div>
                         {requestError === null ? <p role="status">Waiting for Twitch authorization...</p> : null}
                       </>

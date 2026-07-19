@@ -13,9 +13,11 @@ describe("AssetPicker", () => {
     const onSelect = vi.fn();
     render(<AssetPicker {...fixture()} compatibleMediaTypes={["image", "gif"]} onCancel={vi.fn()} onSelect={onSelect} open />);
 
-    expect(await screen.findByRole("option", { name: /Follower burst/ })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: /Raid chime/ })).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole("option", { name: /Follower burst/ }));
+    const followerAsset = await screen.findByRole("button", { name: /Follower burst/ });
+    expect(followerAsset).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Raid chime/ })).not.toBeInTheDocument();
+    await userEvent.click(followerAsset);
     await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
     expect(onSelect).toHaveBeenCalledWith("asset-image");
   });
@@ -71,7 +73,7 @@ describe("AssetPicker", () => {
       />
     );
 
-    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: /Follower burst/ })).toHaveAttribute("aria-pressed", "true");
     rerender(
       <AssetPicker
         {...values}
@@ -87,8 +89,8 @@ describe("AssetPicker", () => {
     await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
     expect(onSelect).not.toHaveBeenCalled();
     await act(async () => nextItems.resolve([imageItem, audioItem]));
-    const audioOption = await screen.findByRole("option", { name: /Raid chime/ });
-    expect(audioOption).toHaveAttribute("aria-selected", "true");
+    const audioOption = await screen.findByRole("button", { name: /Raid chime/ });
+    expect(audioOption).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
     expect(onSelect).toHaveBeenCalledWith("asset-audio");
   });
@@ -102,7 +104,7 @@ describe("AssetPicker", () => {
     const { rerender } = render(
       <AssetPicker {...values} compatibleMediaTypes={["image"]} onCancel={vi.fn()} onSelect={vi.fn()} open selectedAssetId="asset-image" />
     );
-    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: /Follower burst/ })).toHaveAttribute("aria-pressed", "true");
 
     rerender(
       <AssetPicker {...values} compatibleMediaTypes={["image"]} onCancel={vi.fn()} onSelect={vi.fn()} open selectedAssetId={null} />
@@ -110,7 +112,7 @@ describe("AssetPicker", () => {
 
     expect(screen.getByRole("button", { name: "Use selected asset" })).toBeDisabled();
     await act(async () => nextItems.resolve([imageItem, audioItem]));
-    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: /Follower burst/ })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("disables stale selection synchronously when the picker reopens", async () => {
@@ -127,14 +129,14 @@ describe("AssetPicker", () => {
       selectedAssetId: "asset-image"
     };
     const { rerender } = render(<AssetPicker {...props} open />);
-    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: /Follower burst/ })).toHaveAttribute("aria-pressed", "true");
 
     rerender(<AssetPicker {...props} open={false} />);
     rerender(<AssetPicker {...props} open />);
 
     expect(screen.getByRole("button", { name: "Use selected asset" })).toBeDisabled();
     await act(async () => nextItems.resolve([imageItem, audioItem]));
-    expect(await screen.findByRole("option", { name: /Follower burst/ })).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByRole("button", { name: /Follower burst/ })).toHaveAttribute("aria-pressed", "true");
   });
 });
 
