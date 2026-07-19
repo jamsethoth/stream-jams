@@ -59,7 +59,8 @@ describe("SettingsPanel", () => {
 
     await user.click(await screen.findByRole("button", { name: "Open data folder" }));
     expect(managementApi.openDataFolder).toHaveBeenCalledOnce();
-    expect(await screen.findByRole("status")).toHaveTextContent("Data folder opened");
+    expect(await screen.findByRole("status")).toHaveClass("management-toast--success");
+    expect(screen.getByRole("status")).toHaveTextContent("Data folder opened");
 
     await user.click(screen.getByRole("button", { name: "Clear old logs now" }));
     expect(managementApi.clearOldLogs).toHaveBeenCalledOnce();
@@ -128,7 +129,8 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel managementApi={managementApi} />);
     await user.click(await screen.findByRole("button", { name: "Export backup" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Backup exported");
+    expect(await screen.findByRole("status")).toHaveClass("management-toast--success");
+    expect(screen.getByRole("status")).toHaveTextContent("Backup exported");
     expect(managementApi.exportConfigurationBackup).toHaveBeenCalledOnce();
     expect(createObjectURL).toHaveBeenCalledOnce();
     expect(click).toHaveBeenCalledOnce();
@@ -183,6 +185,7 @@ describe("SettingsPanel", () => {
       confirmation: "RESTORE",
       regenerateRouteKeys: true
     }));
+    expect((await screen.findByText("Configuration restored.")).closest(".management-toast")).toHaveClass("management-toast--warning");
     expect(await screen.findByText("Update browser-source URLs")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Reveal Landscape live browser-source URL" }));
     expect(screen.getByLabelText("Landscape live browser-source URL")).toHaveTextContent("http://127.0.0.1:39187/overlay/new-key");

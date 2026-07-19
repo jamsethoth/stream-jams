@@ -635,6 +635,92 @@ a:focus-visible {
   font-weight: 700;
 }
 
+.management-toast {
+  align-items: flex-start;
+  bottom: 24px;
+  box-sizing: border-box;
+  color: var(--color-text);
+  display: flex;
+  filter: drop-shadow(0 8px 18px rgb(0 0 0 / 22%));
+  gap: 16px;
+  justify-content: space-between;
+  max-width: calc(100vw - 48px);
+  overflow-wrap: anywhere;
+  padding: 13px 14px;
+  position: fixed;
+  right: 24px;
+  width: min(480px, calc(100vw - 48px));
+  z-index: 900;
+}
+
+.management-toast--success {
+  background: var(--color-positive-soft);
+  border: 1px solid var(--color-positive);
+}
+
+.management-toast--warning {
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-warning);
+}
+
+.management-toast--failure {
+  background: var(--color-negative-soft);
+  border: 1px solid var(--color-negative);
+}
+
+.management-toast__content {
+  min-width: 0;
+}
+
+.management-toast__content p {
+  color: var(--color-text);
+  margin: 5px 0 0;
+}
+
+.management-toast > .button {
+  flex-shrink: 0;
+}
+
+.management-toast--actionable {
+  display: block;
+  padding: 0;
+}
+
+.management-toast--actionable .management-error-banner {
+  background: transparent;
+  border: 0;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.management-toast .management-error-banner__meta {
+  align-items: flex-start;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.management-toast code,
+.management-toast time,
+.management-toast a {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.management-toast__actions {
+  align-items: center;
+  border-top: 1px solid var(--color-border-strong);
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 10px 14px;
+}
+
+.management-toast__actions a {
+  color: var(--color-info);
+  font-weight: 700;
+}
+
 .management-masked-value {
   align-items: center;
   display: grid;
@@ -652,12 +738,6 @@ a:focus-visible {
 .management-masked-value__actions {
   display: flex;
   gap: 6px;
-}
-
-.management-copy-feedback {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  grid-column: 1 / -1;
 }
 
 .theme-switcher {
@@ -713,13 +793,6 @@ a:focus-visible {
 .theme-switcher__segments input:focus-visible + span {
   outline: 3px solid var(--color-focus);
   outline-offset: 2px;
-}
-
-.theme-switcher__error {
-  color: var(--color-negative);
-  display: block;
-  font-size: 11px;
-  margin-top: 7px;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -807,6 +880,14 @@ a:focus-visible {
   .management-error-banner__meta {
     align-items: flex-start;
     min-width: 0;
+  }
+
+  .management-toast {
+    bottom: 16px;
+    left: 16px;
+    max-width: none;
+    right: 16px;
+    width: auto;
   }
 
   .management-modal__actions > .button {

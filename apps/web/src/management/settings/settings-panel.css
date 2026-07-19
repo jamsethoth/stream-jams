@@ -3,7 +3,6 @@
 .settings-page__header h2, .settings-page__section h3, .settings-page__completion h3 { margin: 0; }
 .settings-page__header p, .settings-page__section-heading p { margin: 4px 0 0; color: var(--color-text-muted); }
 .settings-page__version { white-space: nowrap; color: var(--color-text-muted); font-size: 0.875rem; }
-.settings-page__notice { margin: 0; padding: 12px 16px; border-left: 3px solid var(--color-positive); background: var(--color-surface-subtle); }
 .settings-page__section, .settings-page__completion { display: grid; gap: 16px; padding-block: 4px 24px; border-bottom: 1px solid var(--color-border); }
 .settings-page__section:last-of-type { border-bottom: 0; }
 .settings-page__form { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(140px, 220px) auto; align-items: end; gap: 12px; }

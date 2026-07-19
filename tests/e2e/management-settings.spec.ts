@@ -38,8 +38,8 @@ test("settings opens local data and clears retained logs with visible results", 
 
   await page.goto("/manage/settings");
   await page.getByRole("button", { name: "Open data folder" }).click();
-  await expect(page.getByRole("status")).toContainText("Data folder opened");
+  await expect(page.locator(".management-toast--success")).toContainText("Data folder opened");
   await page.getByRole("button", { name: "Clear old logs now" }).click();
-  await expect(page.getByRole("status")).toContainText("2 old log files cleared");
+  await expect(page.locator(".management-toast--success")).toContainText("2 old log files cleared");
   expect(requests).toEqual(["POST", "POST"]);
 });

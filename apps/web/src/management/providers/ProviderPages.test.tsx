@@ -220,7 +220,8 @@ describe("provider pages", () => {
     expect(within(dialog).queryByRole("button", { name: "Register event source" })).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Reconnect Twitch" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Main Twitch reconnected. Live status is updating.");
+    expect(await screen.findByRole("status")).toHaveClass("management-toast--success");
+    expect(screen.getByRole("status")).toHaveTextContent("Main Twitch reconnected. Live status is updating.");
     expect(api.registerProvider).not.toHaveBeenCalled();
     expect(listRegisteredProviders).toHaveBeenCalledTimes(2);
   });
@@ -446,7 +447,7 @@ describe("provider pages", () => {
     expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Register event source" }));
     expect(api.validateProvider).toHaveBeenCalledWith({ name: "Twitch", kind: "twitch", configuration: {} });
-    expect(await screen.findByText("Main Twitch registered and active.")).toBeInTheDocument();
+    expect((await screen.findByText("Main Twitch registered and active.")).closest(".management-toast")).toHaveClass("management-toast--success");
     open.mockRestore();
   });
 
@@ -804,7 +805,7 @@ describe("provider pages", () => {
     expect(screen.getByText("Stream Jams voice test. Your text to speech provider is ready.")).toBeInTheDocument();
     await user.click(testVoiceButton);
     expect(testProviderVoice).toHaveBeenCalledWith(activeSpeakerBot.id);
-    expect(await screen.findByText("Voice test delivered.")).toBeInTheDocument();
+    expect((await screen.findByText("Voice test delivered.")).closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
   it("requires an explicit choice before discarding TTS safety to select another provider", async () => {

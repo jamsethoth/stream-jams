@@ -109,7 +109,7 @@ describe("AlertEditorPage", () => {
       "alert-follow",
       expect.objectContaining({ targetProfileId: "landscape", includeAudio: true, includeTts: true })
     ));
-    expect(await screen.findByText(/Queued on Landscape.*ref-editor-test/)).toBeInTheDocument();
+    expect((await screen.findByText(/Queued on Landscape.*ref-editor-test/)).closest(".management-toast")).toHaveClass("management-toast--success");
 
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
@@ -190,7 +190,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     const firstError = await screen.findByRole("alert");
-    expect(firstError.closest(".alert-editor-page__action-error")).not.toBeNull();
+    expect(firstError.closest(".management-toast")).toHaveClass("management-toast--failure");
     expect(firstError).toHaveTextContent("err_editor_save");
     expect(reportAlertEditorError).toHaveBeenCalledWith("alert-follow", expect.objectContaining({
       setId: "set-default",

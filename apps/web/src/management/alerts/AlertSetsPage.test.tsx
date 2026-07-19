@@ -173,7 +173,7 @@ describe("AlertSetsPage", () => {
       includeTts: true
     }));
     expect(getAlertEditorDocument).toHaveBeenCalledWith("alert-follow");
-    expect(screen.getByText("New follower test queued for Vertical. Reference ref-inline-test.")).toBeInTheDocument();
+    expect(screen.getByText("New follower test queued for Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
   it("creates an alert in the expanded set and opens it in the focused editor", async () => {

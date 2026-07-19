@@ -70,7 +70,7 @@
 
 ## 10. Application-Wide Transient Feedback
 
-- [ ] 10.1 Add failing foundation tests for green success, yellow warning, red failure, four-second success/warning expiry, eight-second failure expiry, manual dismissal, accessible roles, and contained long error metadata.
-- [ ] 10.2 Implement one dependency-free shared management toast surface using existing actionable error content, semantic tokens, page-local state, and responsive wrapping; add production-component Storybook states.
-- [ ] 10.3 Replace inline transient success, failure, copy, test, save, export, and state notices across Alerts, Assets, Providers, Diagnostics, Settings, theme selection, and masked-value copying while retaining blocking load, stale refresh, validation, wizard, modal, and decision messages inline.
-- [ ] 10.4 Run focused tests, lint, typecheck, full tests, Storybook build/tests, Playwright, strict OpenSpec validation, then rebuild/restart and live-verify toast layout and timing at narrow, tablet, and desktop widths.
+- [x] 10.1 Add failing foundation tests for green success, yellow warning, red failure, four-second success/warning expiry, eight-second failure expiry, manual dismissal, accessible roles, and contained long error metadata.
+- [x] 10.2 Implement one dependency-free shared management toast surface using existing actionable error content, semantic tokens, page-local state, and responsive wrapping; add production-component Storybook states.
+- [x] 10.3 Replace inline transient success, failure, copy, test, save, export, and state notices across Alerts, Assets, Providers, Diagnostics, Settings, theme selection, and masked-value copying while retaining blocking load, stale refresh, validation, wizard, modal, and decision messages inline.
+- [x] 10.4 Run focused tests, lint, typecheck, full tests, Storybook build/tests, Playwright, strict OpenSpec validation, then rebuild/restart and live-verify toast layout and timing at narrow, tablet, and desktop widths.

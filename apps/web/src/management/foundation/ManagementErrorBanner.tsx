@@ -1,10 +1,13 @@
 import type { ActionableManagementError } from "@stream-jams/core";
 import { formatDateTime } from "./formatters.js";
 
-export function ManagementErrorBanner({ error }: { readonly error: ActionableManagementError }) {
+export function ManagementErrorBanner({ error, role = "alert" }: {
+  readonly error: ActionableManagementError;
+  readonly role?: "alert" | "status" | undefined;
+}) {
   const cause = formatCause(error.cause);
   return (
-    <section className={`management-error-banner management-error-banner--${error.severity}`} role="alert">
+    <section className={`management-error-banner management-error-banner--${error.severity}`} role={role}>
       <div>
         <strong>{error.summary}</strong>
         {cause === null ? null : <p>{cause}</p>}

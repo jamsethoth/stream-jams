@@ -40,13 +40,6 @@
   margin-bottom: 0;
 }
 
-.alert-sets-page__notice {
-  background: var(--color-positive-soft);
-  border-left: 3px solid var(--color-positive);
-  margin-bottom: 0;
-  padding: 10px 12px;
-}
-
 .alert-sets-page__browser-source-band {
   background: var(--color-surface-subtle);
   border-block: 1px solid var(--color-border);

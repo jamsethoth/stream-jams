@@ -74,7 +74,7 @@ describe("DiagnosticsPanel", () => {
     const copied = String(writeText.mock.calls[0]?.[0]);
     expect(copied).toContain("[REDACTED]");
     expect(copied).not.toContain("oauth-secret");
-    expect(await screen.findByText("Sanitized event copied")).toBeInTheDocument();
+    expect((await screen.findByText("Sanitized event copied")).closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
   it("opens a referenced historical failure in raw logs when it is no longer an active problem", async () => {
@@ -119,6 +119,7 @@ describe("DiagnosticsPanel", () => {
     await user.click(screen.getByRole("button", { name: "Copy error JSON" }));
 
     expect(await screen.findByText("Error JSON could not be copied")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveClass("management-toast--failure");
     expect(screen.getByRole("alert")).toHaveTextContent("Allow clipboard access, then retry");
   });
 

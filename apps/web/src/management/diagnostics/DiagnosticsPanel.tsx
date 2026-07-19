@@ -7,6 +7,7 @@ import type {
   DiagnosticsWorkspaceView
 } from "@stream-jams/core";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
+import { ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { DiagnosticsDebugExportView, DiagnosticsExportView, ManagementApi } from "../management-api.js";
 import "./diagnostics-workspace.css";
@@ -33,7 +34,8 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
+  const [loadNotice, setLoadNotice] = useState<InlineNotice | null>(null);
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -88,12 +90,14 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
   async function loadWorkspace(): Promise<void> {
     setLoading(true);
     setNotice(null);
+    setLoadNotice(null);
     try {
       const result = await managementApi.getDiagnosticsWorkspace();
       if (mounted.current) setWorkspace(result);
     } catch (error) {
       if (mounted.current) {
-        setNotice(failureNotice("Diagnostics could not be loaded", error, "Check that the local service is running, then retry."));
+        const failure = failureNotice("Diagnostics could not be loaded", error, "Check that the local service is running, then retry.");
+        setLoadNotice({ title: failure.message, detail: failure.detail ?? "" });
       }
     } finally {
       if (mounted.current) setLoading(false);
@@ -110,7 +114,7 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
     try {
       if (navigator.clipboard === undefined) throw new Error("Clipboard access is unavailable in this browser.");
       await navigator.clipboard.writeText(value);
-      setNotice({ tone: "positive", title: `${label} copied`, detail: "The copied content is sanitized and safe to share." });
+      setNotice({ tone: "success", message: `${label} copied`, detail: "The copied content is sanitized and safe to share." });
     } catch (error) {
       setNotice(failureNotice(`${label} could not be copied`, error, "Allow clipboard access, then retry."));
     }
@@ -126,8 +130,8 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
       downloadSupportBundle(result);
       if (mounted.current) {
         setNotice({
-          tone: "positive",
-          title: "Sanitized support bundle ready",
+          tone: "success",
+          message: "Sanitized support bundle ready",
           detail: includeRecentLogs
             ? "The bundle includes bounded recent logs and excludes secrets."
             : "The bundle excludes recent raw logs and secrets."
@@ -162,7 +166,8 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
         </div>
       </header>
 
-      {notice === null ? null : <NoticeBanner notice={notice} />}
+      {loadNotice === null ? null : <NoticeBanner notice={loadNotice} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       <div aria-label="Diagnostics views" className="diagnostics-workspace__tabs" role="tablist">
         <TabButton active={activeTab === "problems"} count={workspace?.problems.length ?? 0} label="Problems" onClick={() => selectTab("problems")} tab="problems" />
@@ -324,14 +329,14 @@ function EvidenceList({ occurredAt, referenceId }: { readonly occurredAt: string
   return <dl className="diagnostics-workspace__facts">{occurredAt === null ? null : <div><dt>Occurred</dt><dd><time dateTime={occurredAt}>{formatDateTime(occurredAt)}</time></dd></div>}<div><dt>Reference ID</dt><dd>{referenceId ?? "Not available"}</dd></div></dl>;
 }
 
-interface Notice { readonly tone: "positive" | "negative"; readonly title: string; readonly detail: string }
+interface InlineNotice { readonly title: string; readonly detail: string }
 
-function NoticeBanner({ notice }: { readonly notice: Notice }) {
-  return <div aria-live="polite" className={`diagnostics-workspace__notice diagnostics-workspace__notice--${notice.tone}`} role={notice.tone === "negative" ? "alert" : "status"}><strong>{notice.title}</strong><span>{notice.detail}</span></div>;
+function NoticeBanner({ notice }: { readonly notice: InlineNotice }) {
+  return <div className="diagnostics-workspace__notice diagnostics-workspace__notice--negative" role="alert"><strong>{notice.title}</strong><span>{notice.detail}</span></div>;
 }
 
-function failureNotice(title: string, error: unknown, nextStep: string): Notice {
-  return { tone: "negative", title, detail: `${error instanceof Error ? error.message : "An unexpected error occurred."} ${nextStep}` };
+function failureNotice(title: string, error: unknown, nextStep: string): ManagementToastNotice {
+  return { tone: "failure", message: title, detail: `${error instanceof Error ? error.message : "An unexpected error occurred."} ${nextStep}` };
 }
 
 function sanitizedLogBundle(log: DiagnosticsRawLogView) {

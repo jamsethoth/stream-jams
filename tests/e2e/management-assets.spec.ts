@@ -91,7 +91,7 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
   await page.getByLabel("Display name").fill("Winter follower");
   await page.getByLabel("Tags").fill("winter, follow");
   await page.getByRole("button", { name: "Save asset details" }).click();
-  await expect(page.getByText("Asset details saved.")).toBeVisible();
+  await expect(page.locator(".management-toast--success")).toContainText("Asset details saved.");
 
   await page.getByRole("button", { name: "Replace file" }).click();
   await page.getByLabel("Replacement file").setInputFiles({ name: "replacement.png", mimeType: "image/png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) });
@@ -99,7 +99,7 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
   const replacement = page.getByRole("dialog", { name: "Replace Winter follower?" });
   await expect(replacement.getByText("1 alert usage will update everywhere.")).toBeVisible();
   await replacement.getByRole("button", { name: "Replace everywhere" }).click();
-  await expect(page.getByText("Asset replaced everywhere it is used.")).toBeVisible();
+  await expect(page.locator(".management-toast--success")).toContainText("Asset replaced everywhere it is used.");
 
   await page.getByRole("button", { name: "Add asset" }).click();
   await page.getByRole("tab", { name: "Upload new" }).click();

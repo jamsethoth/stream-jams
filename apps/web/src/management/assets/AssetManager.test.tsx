@@ -147,6 +147,7 @@ describe("AssetManager", () => {
     await user.click(within(screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 
     await waitFor(() => expect(fixture.metadataUpdates).toEqual([{ displayName: "Saved follower", tags: ["seasonal", "follow"] }]));
+    expect((await screen.findByText("Asset details saved.")).closest(".management-toast")).toHaveClass("management-toast--success");
     expect(await screen.findByRole("region", { name: "Raid chime details" })).toBeInTheDocument();
   });
 

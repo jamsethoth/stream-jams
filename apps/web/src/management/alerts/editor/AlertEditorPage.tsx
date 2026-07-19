@@ -15,6 +15,7 @@ import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../../foundation/ManagementToast.js";
 import { ModalSurface } from "../../foundation/ModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
@@ -103,7 +104,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const previewFrameRef = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [saveWarning, setSaveWarning] = useState<SaveWarningState | null>(null);
   const [copyDesignOpen, setCopyDesignOpen] = useState(false);
@@ -160,6 +161,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }, [props.alertId, props.managementApi, props.targetProfileId]);
 
   const showActionError = useCallback((nextError: ReportableActionError) => {
+    setNotice(null);
     setError(nextError);
     const report = props.managementApi.reportAlertEditorError;
     if (report === undefined) return;
@@ -189,12 +191,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     };
   }, [editor, previewPlaying, previewRunId]);
 
-  useEffect(() => {
-    if (error === null || editor === null) return;
-    const timeout = window.setTimeout(() => setError((current) => current === error ? null : current), 8_000);
-    return () => window.clearTimeout(timeout);
-  }, [editor, error]);
-
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
@@ -204,6 +200,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const submittedDocument = applyActiveTtsProvider(editor.document, activeTtsProvider);
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const saved = await props.managementApi.saveAlertEditorDocument(
         props.alertId,
@@ -216,7 +213,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           ? markEditorSaved({ ...current, document: saved })
           : { ...current, savedDocument: saved };
       });
-      setNotice("Alert saved.");
+      setNotice({ tone: "success", message: "Alert saved." });
     } catch (cause) {
       showActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
       throw cause;
@@ -244,7 +241,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
     setError(null);
-    setNotice("Unsaved changes reverted.");
+    setNotice({ tone: "success", message: "Unsaved changes reverted." });
   }, []);
 
   const saveForNavigation = useCallback(async () => {
@@ -339,7 +336,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     if (request === null) return;
     updateDocument((current) => copyProfileLayout(current, request.sourceId, request.targetId));
     setProfileCopy(null);
-    setNotice(`${profileLabel(request.sourceId)} layout copied to ${profileLabel(request.targetId)}. Review the generated layout before enabling it.`);
+    setNotice({ tone: "warning", message: `${profileLabel(request.sourceId)} layout copied to ${profileLabel(request.targetId)}.`, detail: "Review the generated layout before enabling it." });
   }
 
   function chooseSample(nextSampleId: string) {
@@ -368,7 +365,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setPreviewPlaying(true);
     setPreviewElapsedMs(0);
     setPreviewRunId((current) => current + 1);
-    setNotice("Local preview is running.");
+    setNotice({ tone: "success", message: "Local preview is running." });
     void playPreviewMedia(document, samplePayload);
   }
 
@@ -412,6 +409,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     }
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const result = await props.managementApi.sendAlertEditorTest(props.alertId, {
         document: applyActiveTtsProvider(document, activeTtsProvider),
@@ -420,7 +418,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         includeAudio: sendIncludeAudio,
         includeTts: sendIncludeTts
       });
-      setNotice(`Queued on ${profileLabel(profileId)}. Reference ${result.referenceId}.`);
+      setNotice({ tone: "success", message: `Queued on ${profileLabel(profileId)}. Reference ${result.referenceId}.` });
     } catch (cause) {
       showActionError(actionableError("The alert test was not sent", cause, `Connect and review the ${profileLabel(profileId)} output, then try again.`));
     } finally {
@@ -532,12 +530,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     if (copyDesignSourceId === "") return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const source = await props.managementApi.getAlertEditorDocument(copyDesignSourceId);
       updateDocument((target) => copyAlertDesign(source, target));
       setSelectedLayerId(source.layers[0]?.id ?? null);
       setCopyDesignOpen(false);
-      setNotice("Design copied. Review the result, then Save to keep it.");
+      setNotice({ tone: "warning", message: "Design copied.", detail: "Review the result, then Save to keep it." });
     } catch (cause) {
       showActionError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source."));
     } finally {
@@ -581,18 +580,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         <p>Open this alert on a screen wider than 700px to edit layers and layouts.</p>
       </section>
 
-      {error === null ? null : (
-        <div className="alert-editor-page__action-error">
-          <ManagementErrorBanner error={error} />
-          <div className="alert-editor-page__action-error-actions">
-            {error.referenceId === null ? null : (
-              <a href={`/manage/diagnostics?reference=${encodeURIComponent(error.referenceId)}`}>Open diagnostics</a>
-            )}
-            <button className="button button--secondary" onClick={() => setError(null)} type="button">Dismiss error</button>
-          </div>
-        </div>
-      )}
-      {notice === null ? null : <p className="alert-editor-page__notice" role="status">{notice}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event condition needs correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
       {validationIssues.length === 0 ? null : (
         <section aria-label="Validation issues" className="alert-editor-page__validation">

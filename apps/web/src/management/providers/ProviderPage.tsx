@@ -12,6 +12,7 @@ import type {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
@@ -87,7 +88,7 @@ export function ProviderPage({
   const [pageError, setPageError] = useState<ActionableManagementError | null>(null);
   const [refreshError, setRefreshError] = useState<ActionableManagementError | null>(null);
   const [operationError, setOperationError] = useState<ActionableManagementError | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [setupOpen, setSetupOpen] = useState(openSetupOnLoad);
   const [reconnectProvider, setReconnectProvider] = useState<RegisteredProviderView | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingProviderAction | null>(null);
@@ -229,6 +230,7 @@ export function ProviderPage({
   async function requestActivation(provider: RegisteredProviderView) {
     setActionLoadingProviderId(provider.id);
     setOperationError(null);
+    setNotice(null);
     try {
       const nextImpact = await managementApi.getProviderActivationImpact(provider.id);
       setPendingAction({ kind: "activate", provider, impact: nextImpact });
@@ -241,12 +243,14 @@ export function ProviderPage({
 
   function requestDeactivation(provider: RegisteredProviderView) {
     setOperationError(null);
+    setNotice(null);
     setPendingAction({ kind: "deactivate", provider, impact: null });
   }
 
   async function confirmProviderAction() {
     if (pendingAction === null) return;
     setActionBusy(true);
+    setNotice(null);
     try {
       if (pendingAction.kind === "activate") {
         await managementApi.activateProvider(pendingAction.provider.id, true);
@@ -255,7 +259,7 @@ export function ProviderPage({
       }
       await loadProviders(pendingAction.provider.id);
       setOperationError(null);
-      setNotice(`${pendingAction.provider.name} is ${pendingAction.kind === "activate" ? "active" : "inactive"}.`);
+      setNotice({ tone: "success", message: `${pendingAction.provider.name} is ${pendingAction.kind === "activate" ? "active" : "inactive"}.` });
       setPendingAction(null);
     } catch (error) {
       const activating = pendingAction.kind === "activate";
@@ -276,12 +280,13 @@ export function ProviderPage({
     if (selectedProvider === null || safety === null) {
       return false;
     }
+    setNotice(null);
     try {
       const saved = await managementApi.updateTtsSafety(selectedProvider.id, safety);
       setSafety(saved);
       setSavedSafety(saved);
       setOperationError(null);
-      setNotice("TTS safety settings saved.");
+      setNotice({ tone: "success", message: "TTS safety settings saved." });
       return true;
     } catch (error) {
       setOperationError(actionableError(error, "Unable to save TTS safety settings", "Review each safety value, then retry the save."));
@@ -340,6 +345,7 @@ export function ProviderPage({
     if (selectedProvider === null) {
       return;
     }
+    setNotice(null);
     try {
       const result = await managementApi.testProviderVoice(selectedProvider.id);
       if (!result.delivered) {
@@ -347,7 +353,7 @@ export function ProviderPage({
         return;
       }
       setOperationError(null);
-      setNotice("Voice test delivered.");
+      setNotice({ tone: "success", message: "Voice test delivered." });
     } catch (error) {
       setOperationError(actionableError(error, "Unable to test provider voice", "Confirm the provider is connected and its output is available, then retry."));
     }
@@ -361,8 +367,8 @@ export function ProviderPage({
 
       {pageError === null ? null : <ManagementErrorBanner error={pageError} />}
       {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
-      {operationError === null ? null : <ManagementErrorBanner error={operationError} />}
-      {notice === null ? null : <p className="provider-page__notice" role="status">{notice}</p>}
+      {operationError === null ? null : <ManagementErrorToast error={operationError} onDismiss={() => setOperationError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       {loading ? <p className="provider-page__empty" role="status">Loading providers...</p> : null}
       {!loading && pageError === null && providers.length === 0 ? <p className="provider-page__empty">{copy.empty}</p> : null}
@@ -487,15 +493,21 @@ export function ProviderPage({
         onReconnected={async (providerId, providerName) => {
           await loadProviders(providerId);
           setReconnectProvider(null);
-          setNotice(`${providerName} reconnected. Live status is updating.`);
+          setOperationError(null);
+          setNotice({ tone: "success", message: `${providerName} reconnected. Live status is updating.` });
         }}
         onRegistered={async (providerId, providerName, active) => {
           await loadProviders(providerId);
           setSetupOpen(false);
           setReconnectProvider(null);
+          setOperationError(null);
           setNotice(active
-            ? `${providerName} registered and active.`
-            : `${providerName} registered but inactive. Set it active when you are ready to switch ${capability === "event-source" ? "event intake" : "text-to-speech output"}.`);
+            ? { tone: "success", message: `${providerName} registered and active.` }
+            : {
+                tone: "warning",
+                message: `${providerName} registered but inactive.`,
+                detail: `Set it active when you are ready to switch ${capability === "event-source" ? "event intake" : "text-to-speech output"}.`
+              });
         }}
         open={setupOpen || reconnectProvider !== null}
         reconnectProvider={reconnectProvider}

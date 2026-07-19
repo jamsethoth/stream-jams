@@ -12,6 +12,7 @@ import {
 } from "@stream-jams/core";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
@@ -78,7 +79,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
@@ -183,6 +184,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setSelectedSetId(setId);
     setLoading(true);
     setError(null);
+    setNotice(null);
     browserSourceRefreshFailed.current = false;
     setBrowserSourceRefreshError(null);
     try {
@@ -200,6 +202,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     const isStale = () => effectGeneration !== null && effectGeneration !== effectLoadGeneration.current;
     setLoading(true);
     setError(null);
+    setNotice(null);
     try {
       const loadedSets = await managementApi.listAlertSets();
       const selected = loadedSets.find((candidate) => candidate.id === preferredSetId)
@@ -241,6 +244,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (name === "" || nameDialog === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const result = nameDialog.action === "create"
         ? await managementApi.createAlertSet({ name })
@@ -248,7 +252,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
           ? await managementApi.renameAlertSet(nameDialog.set?.id ?? "", { name })
           : await managementApi.duplicateAlertSet(nameDialog.set?.id ?? "", { name });
       await refresh(result.id);
-      setNotice(nameDialog.action === "create" ? "Alert set created." : nameDialog.action === "rename" ? "Alert set renamed." : "Alert set duplicated.");
+      setNotice({
+        tone: nameDialog.action === "duplicate" ? "warning" : "success",
+        message: nameDialog.action === "create" ? "Alert set created." : nameDialog.action === "rename" ? "Alert set renamed." : "Alert set duplicated."
+      });
       setNameDialog(null);
     } catch (cause) {
       setError(toActionableError("The alert set was not saved", cause, "Check the name and try again."));
@@ -309,7 +316,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       const created = await managementApi.createAlertVariation(variationParent.id, { name: variationName.trim() });
       await refresh(created.setId);
       setVariationParent(null);
-      setNotice(`${created.name} created disabled and marked Needs review.`);
+      setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
       setVariationError(toActionableError(
         "The variation was not created",
@@ -324,10 +331,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function duplicateAlert(alert: AlertInventoryRow) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const created = await managementApi.duplicateManagedAlert(alert.id);
       await refresh(created.setId);
-      setNotice(`${created.name} duplicated disabled and marked Needs review.`);
+      setNotice({ tone: "warning", message: `${created.name} duplicated disabled and marked Needs review.` });
     } catch (cause) {
       setError(toActionableError("The alert was not duplicated", cause, "Review the alert and try again."));
     } finally {
@@ -340,6 +348,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     const { action, alert } = alertMutation;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       if (action === "reset") {
         await managementApi.resetManagedAlert(alert.id, true);
@@ -347,7 +356,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         await managementApi.deleteManagedAlert(alert.id, true);
       }
       await refresh(alert.setId);
-      setNotice(action === "reset" ? `${alert.name} reset to its event default and marked Needs review.` : `${alert.name} deleted.`);
+      setNotice({
+        tone: action === "reset" ? "warning" : "success",
+        message: action === "reset" ? `${alert.name} reset to its event default and marked Needs review.` : `${alert.name} deleted.`
+      });
       setAlertMutation(null);
     } catch (cause) {
       setError(toActionableError(
@@ -363,6 +375,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function prepareActivation(set: AlertSetOverview) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       setActivationSet(set);
       setActivationImpact(await managementApi.getAlertSetActivationImpact(set.id));
@@ -378,10 +391,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (activationSet === null || activationImpact === null || activationImpact.blockers.length > 0) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.activateAlertSet(activationSet.id, activationImpact.warnings.length > 0);
       await refresh(activationSet.id);
-      setNotice(`${activationSet.name} is now active.`);
+      setNotice({ tone: "success", message: `${activationSet.name} is now active.` });
       setActivationSet(null);
       setActivationImpact(null);
     } catch (cause) {
@@ -395,11 +409,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (detail === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const overview = await managementApi.markStarterAlertSetReviewComplete(detail.overview.id);
       setDetail({ ...detail, overview });
       replaceOverview(overview);
-      setNotice("Starter review marked complete. Alerts remain disabled until you enable them.");
+      setNotice({ tone: "warning", message: "Starter review marked complete.", detail: "Alerts remain disabled until you enable them." });
     } catch (cause) {
       setError(toActionableError("Starter review was not updated", cause, "Try the action again."));
     } finally {
@@ -410,11 +425,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function toggleAlert(alert: AlertInventoryRow) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const updated = await managementApi.setManagedAlertEnabled(alert.id, !alert.enabled);
       setDetail(updated);
       replaceOverview(updated.overview);
-      setNotice(`${alert.name} ${alert.enabled ? "disabled" : "enabled"}.`);
+      setNotice({ tone: "success", message: `${alert.name} ${alert.enabled ? "disabled" : "enabled"}.` });
     } catch (cause) {
       setError(toActionableError("The alert was not updated", cause, "Review its validation state and try again."));
     } finally {
@@ -442,6 +458,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setTestingAlertId(alert.id);
     setTestMenuAlertId(null);
     setError(null);
+    setNotice(null);
     try {
       const document = await managementApi.getAlertEditorDocument(alert.id);
       const sample = document.samplePayloads.find((candidate) => candidate.kind === "built-in");
@@ -453,7 +470,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         includeAudio: true,
         includeTts: true
       });
-      setNotice(`${alert.name} test queued for ${formatProfile(result.targetProfileId)}. Reference ${result.referenceId}.`);
+      setNotice({ tone: "success", message: `${alert.name} test queued for ${formatProfile(result.targetProfileId)}. Reference ${result.referenceId}.` });
     } catch (cause) {
       setError(toActionableError(
         "The alert test was not sent",
@@ -468,10 +485,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function createBrowserSource(source: AlertBrowserSourceView) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.createOverlayOutputKey(outputRequest(source));
       await refresh(detail?.overview.id ?? null);
-      setNotice(`${formatProfile(source.targetProfileId)} URL created.`);
+      setNotice({ tone: "success", message: `${formatProfile(source.targetProfileId)} URL created.` });
     } catch (cause) {
       setError(toActionableError("The browser-source URL was not created", cause, "Check Diagnostics, then try again."));
     } finally {
@@ -483,10 +501,15 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (regenerateDialog === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.regenerateOverlayOutputKey(outputRequest(regenerateDialog.source));
       await refresh(detail?.overview.id ?? null);
-      setNotice(`${formatProfile(regenerateDialog.source.targetProfileId)} URL regenerated. Update every browser source that used the old URL.`);
+      setNotice({
+        tone: "warning",
+        message: `${formatProfile(regenerateDialog.source.targetProfileId)} URL regenerated.`,
+        detail: "Update every browser source that used the old URL."
+      });
       setRegenerateDialog(null);
       setRegenerateConfirmation("");
     } catch (cause) {
@@ -498,10 +521,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
 
   async function copyBrowserSource(source: AlertBrowserSourceView) {
     if (source.url === null) return;
+    setError(null);
+    setNotice(null);
     try {
       if (navigator.clipboard === undefined) throw new Error("Clipboard access is unavailable in this browser.");
       await navigator.clipboard.writeText(source.url);
-      setNotice(`${formatProfile(source.targetProfileId)} URL copied.`);
+      setNotice({ tone: "success", message: `${formatProfile(source.targetProfileId)} URL copied.` });
     } catch (cause) {
       setError(toActionableError("The browser-source URL was not copied", cause, "Reveal the URL and copy it manually."));
     }
@@ -511,10 +536,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (deleteSet === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.deleteAlertSet(deleteSet.id);
       await refresh(null);
-      setNotice(`${deleteSet.name} deleted.`);
+      setNotice({ tone: "success", message: `${deleteSet.name} deleted.` });
       setDeleteSet(null);
     } catch (cause) {
       setError(toActionableError("The alert set was not deleted", cause, "Activate another set first, then retry."));
@@ -534,8 +560,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
 
   return (
     <div className="alert-sets-page">
-      {error === null ? null : <ManagementErrorBanner error={error} />}
-      {notice === null ? null : <p className="alert-sets-page__notice" role="status">{notice}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       {detail === null ? null : (
         <BrowserSources

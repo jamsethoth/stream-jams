@@ -70,7 +70,11 @@ export const CopiedVerticalLayout: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
     await userEvent.click(canvas.getByRole("button", { name: "Copy layout from Landscape" }));
-    await expect(canvas.getByText("Landscape layout copied to Vertical. Review the generated layout before enabling it.")).toBeVisible();
+    const warning = canvas.getByText("Landscape layout copied to Vertical.").closest(".management-toast");
+    await expect(warning).not.toBeNull();
+    await expect(warning).toHaveClass("management-toast--warning");
+    await expect(warning).toHaveTextContent("Landscape layout copied to Vertical.");
+    await expect(warning).toHaveTextContent("Review the generated layout before enabling it.");
     await expect(canvas.getAllByText("Needs review")).not.toHaveLength(0);
   }
 };

@@ -9,6 +9,7 @@ import {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { formatBytes, formatCount, formatHours } from "../foundation/formatters.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
@@ -40,7 +41,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [maintenanceBusy, setMaintenanceBusy] = useState<"open-data-folder" | "clear-old-logs" | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
   const loadSettings = useCallback(async () => {
@@ -98,9 +99,10 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await saveServer();
-      setNotice("Server settings saved. Restart Stream Jams if the port changed.");
+      setNotice({ tone: "warning", message: "Server settings saved.", detail: "Restart Stream Jams if the port changed." });
     } catch (cause) {
       setError(actionable("Server settings were not saved", cause, "Check the port and try again."));
     } finally {
@@ -115,7 +117,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     try {
       const exported = await managementApi.exportConfigurationBackup();
       downloadArchive(exported);
-      setNotice(`Backup exported with ${formatCount(exported.manifest.configurationRecordCount, { one: "configuration record", other: "configuration records" })} and ${formatCount(exported.manifest.assetCount, { one: "asset", other: "assets" })}.`);
+      setNotice({ tone: "success", message: `Backup exported with ${formatCount(exported.manifest.configurationRecordCount, { one: "configuration record", other: "configuration records" })} and ${formatCount(exported.manifest.assetCount, { one: "asset", other: "assets" })}.` });
     } catch (cause) {
       setError(actionable("Backup was not exported", cause, "Check Diagnostics and storage health, then try again."));
     } finally {
@@ -176,7 +178,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
       setArchiveName(null);
       setPreflight(null);
       setConfirmation("");
-      setNotice("Configuration restored. Complete the follow-up actions before going live.");
+      setNotice({ tone: "warning", message: "Configuration restored.", detail: "Complete the follow-up actions before going live." });
       setSummary(await managementApi.getConfigurationBackupSummary());
     } catch (cause) {
       setError(actionable("Configuration was not restored", cause, "Resolve the reported failure, validate the backup again, and retry."));
@@ -191,7 +193,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     setNotice(null);
     try {
       const result = await managementApi.openDataFolder();
-      setNotice(`Data folder opened: ${result.dataDirectory}`);
+      setNotice({ tone: "success", message: `Data folder opened: ${result.dataDirectory}` });
     } catch (cause) {
       setError(actionable(
         "Data folder was not opened",
@@ -209,11 +211,12 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     setNotice(null);
     try {
       const result = await managementApi.clearOldLogs();
-      setNotice(
-        result.deletedCount === 0
+      setNotice({
+        tone: "success",
+        message: result.deletedCount === 0
           ? "No expired log files needed clearing."
           : `${formatCount(result.deletedCount, { one: "old log file", other: "old log files" })} cleared.`
-      );
+      });
     } catch (cause) {
       setError(actionable(
         "Old logs were not cleared",
@@ -234,8 +237,8 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
         {summary === null ? null : <span className="settings-page__version">Stream Jams {summary.appVersion} · Schema {summary.schemaVersion}</span>}
       </header>
 
-      {error === null ? null : <ManagementErrorBanner error={error} />}
-      {notice === null ? null : <p className="settings-page__notice" role="status">{notice}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       <section aria-labelledby="appearance-heading" className="settings-page__section">
         <div className="settings-page__section-heading"><div><h3 id="appearance-heading">Appearance</h3><p>Choose how the management interface is displayed on this device.</p></div></div>

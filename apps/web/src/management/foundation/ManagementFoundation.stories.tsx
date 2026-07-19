@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { DestructiveConfirmationDialog } from "./DestructiveConfirmationDialog.js";
 import { DirtyNavigationDialog } from "./DirtyNavigationDialog.js";
 import { ManagementErrorBanner } from "./ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast } from "./ManagementToast.js";
 import { MaskedValue } from "./MaskedValue.js";
 
 const exampleError: ActionableManagementError = {
@@ -25,6 +26,22 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const ErrorBanner: Story = {};
+
+export const SuccessToast: Story = {
+  render: () => <ManagementToast notice={{ tone: "success", message: "Alert saved." }} onDismiss={() => undefined} />
+};
+
+export const WarningToast: Story = {
+  render: () => <ManagementToast notice={{ tone: "warning", message: "Layout copied. Review it before enabling live output." }} onDismiss={() => undefined} />
+};
+
+export const FailureToastLongMetadata: Story = {
+  render: () => <ManagementErrorToast error={{
+    ...exampleError,
+    occurredAt: "2026-07-19T22:45:00.000Z",
+    referenceId: `err_${"long-reference-".repeat(12)}`
+  }} onDismiss={() => undefined} />
+};
 
 export const DestructiveConfirmation: Story = {
   render: () => (

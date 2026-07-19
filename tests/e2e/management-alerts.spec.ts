@@ -200,11 +200,18 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(sourceCard.getByRole("textbox", { name: "Landscape browser source" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Enable New follower" }).click();
-  await expect(page.getByText("New follower enabled.")).toBeVisible();
+  await expect(page.locator(".management-toast--success")).toContainText("New follower enabled.");
   await page.getByRole("button", { name: "Mark starter review done" }).click();
-  await expect(page.getByText("Starter review marked complete. Alerts remain disabled until you enable them.")).toBeVisible();
+  const reviewWarning = page.locator(".management-toast--warning");
+  await expect(reviewWarning).toContainText("Starter review marked complete.");
+  await expect(reviewWarning).toContainText("Alerts remain disabled until you enable them.");
   await page.getByRole("button", { name: "Test New follower" }).click();
-  await expect(page.getByText("New follower test queued for Landscape. Reference ref-inline-e2e.")).toBeVisible();
+  const successToast = page.locator(".management-toast--success");
+  await expect(successToast).toContainText("New follower test queued for Landscape. Reference ref-inline-e2e.");
+  const toastBounds = await successToast.boundingBox();
+  if (toastBounds === null) throw new Error("Expected the success toast to have visible bounds.");
+  expect(toastBounds.x).toBeGreaterThanOrEqual(0);
+  expect(toastBounds.x + toastBounds.width).toBeLessThanOrEqual(390);
   expect(testRequests).toHaveLength(1);
   expect(testRequests[0]).toMatchObject({
     targetProfileId: "landscape",
@@ -218,7 +225,8 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(dialog.getByRole("button", { name: "Regenerate URL" })).toBeDisabled();
   await dialog.getByLabel("Type REGENERATE to continue").fill("REGENERATE");
   await dialog.getByRole("button", { name: "Regenerate URL" }).click();
-  await expect(page.getByText(/Landscape URL regenerated/u)).toBeVisible();
+  await expect(page.locator(".management-toast--warning")).toContainText("Landscape URL regenerated.");
+  await expect(page.locator(".management-toast--warning")).toContainText("Update every browser source that used the old URL.");
 
   expect(commands).toEqual([
     { command: "enable", body: { enabled: true } },

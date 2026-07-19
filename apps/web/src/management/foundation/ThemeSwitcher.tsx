@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ManagementToast } from "./ManagementToast.js";
 
 export type ThemePreference = "system" | "dark" | "light";
 const storageKey = "stream-jams-theme";
@@ -24,24 +25,26 @@ export function ThemeSwitcher() {
   }
 
   return (
-    <fieldset className="theme-switcher">
-      <legend>Theme</legend>
-      <div className="theme-switcher__segments">
-        {(["system", "dark", "light"] as const).map((value) => (
-          <label key={value}>
-            <input
-              checked={preference === value}
-              name="theme-preference"
-              onChange={() => selectPreference(value)}
-              type="radio"
-              value={value}
-            />
-            <span>{value[0]?.toUpperCase()}{value.slice(1)}</span>
-          </label>
-        ))}
-      </div>
-      {error === null ? null : <span className="theme-switcher__error" role="alert">{error}</span>}
-    </fieldset>
+    <>
+      <fieldset className="theme-switcher">
+        <legend>Theme</legend>
+        <div className="theme-switcher__segments">
+          {(["system", "dark", "light"] as const).map((value) => (
+            <label key={value}>
+              <input
+                checked={preference === value}
+                name="theme-preference"
+                onChange={() => selectPreference(value)}
+                type="radio"
+                value={value}
+              />
+              <span>{value[0]?.toUpperCase()}{value.slice(1)}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {error === null ? null : <ManagementToast notice={{ tone: "failure", message: error }} onDismiss={() => setError(null)} />}
+    </>
   );
 }
 

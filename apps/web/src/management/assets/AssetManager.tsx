@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatBytes, formatCount, formatDate } from "../foundation/formatters.js";
@@ -46,7 +47,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [search, setSearch] = useState("");
   const [mediaType, setMediaType] = useState<"all" | AssetMediaType>("all");
   const [usageFilter, setUsageFilter] = useState<"all" | "used" | "unused">("all");
@@ -141,13 +142,14 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const persistMetadata = useCallback(async (): Promise<boolean> => {
     if (selected === null) return false;
     setBusy(true);
+    setNotice(null);
     try {
       const updated = await managementApi.updateAssetMetadata(selected.id, {
         displayName: displayName.trim(),
         tags: normalizedTags
       });
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setSuccess("Asset details saved.");
+      setNotice({ tone: "success", message: "Asset details saved." });
       setError(null);
       return true;
     } catch (saveError) {
@@ -197,6 +199,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
 
   async function reviewReplacement() {
     if (replacement?.file === null || replacement === null) return;
+    setNotice(null);
     const validation = await validateAssetFile(replacement.file);
     if (!validation.accepted || validation.mediaType === null) {
       setError(uploadError(validation.reason));
@@ -217,10 +220,11 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   async function confirmReplacement() {
     if (replacement?.file === null || replacement?.impact === null || replacement === null) return;
     setBusy(true);
+    setNotice(null);
     try {
       await assetApi.replaceAsset(replacement.item.id, replacement.file, true);
       setReplacement(null);
-      setSuccess("Asset replaced everywhere it is used.");
+      setNotice({ tone: "success", message: "Asset replaced everywhere it is used." });
       await loadItems();
     } catch (replaceError) {
       setError(actionableError(replaceError, "Asset file was not replaced", "Review the file format and affected usages, then retry."));
@@ -233,10 +237,11 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
     if (deleteItem === null) return;
     const assetId = deleteItem.id;
     setBusy(true);
+    setNotice(null);
     try {
       await managementApi.deleteAsset(assetId);
       setDeleteItem(null);
-      setSuccess("Unused asset deleted.");
+      setNotice({ tone: "success", message: "Unused asset deleted." });
       await loadItems();
     } catch (deleteError) {
       setError(actionableError(deleteError, "Asset was not deleted", "Refresh usage details and remove every alert reference before retrying."));
@@ -258,8 +263,8 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
         <button onClick={() => setPickerOpen(true)} type="button">Add asset</button>
       </div>
 
-      {error === null ? null : <ManagementErrorBanner error={error} />}
-      {success === null ? null : <p className="asset-library__success" role="status">{success}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       <details className="asset-library__filter-disclosure" onToggle={(event) => { if (compactFilters) setFiltersExpanded(event.currentTarget.open); }} open={!compactFilters || filtersExpanded}>
         <summary>Filters</summary>
