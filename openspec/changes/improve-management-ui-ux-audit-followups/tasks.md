@@ -43,7 +43,7 @@
 
 ## 7. Integrated Verification
 
-- [ ] 7.1 Update production-component Storybook stories for loading, failure, narrow, overlay-resize, reconnect, and fail-closed states.
-- [ ] 7.2 Run lint, typecheck, unit/integration tests, Storybook build/tests, and Playwright; fix in-scope failures without weakening coverage.
-- [ ] 7.3 Rebuild and restart the local app, live-verify all management routes plus Landscape and Vertical overlay behavior, and capture completion evidence.
-- [ ] 7.4 Run `openspec.cmd validate improve-management-ui-ux-audit-followups --strict` and reconcile every requirement against code and tests.
+- [x] 7.1 Update production-component Storybook stories for loading, failure, narrow, overlay-resize, reconnect, and fail-closed states.
+- [x] 7.2 Run lint, typecheck, unit/integration tests, Storybook build/tests, and Playwright; fix in-scope failures without weakening coverage.
+- [x] 7.3 Rebuild and restart the local app, live-verify all management routes plus Landscape and Vertical overlay behavior, and capture completion evidence.
+- [x] 7.4 Run `openspec.cmd validate improve-management-ui-ux-audit-followups --strict` and reconcile every requirement against code and tests.
