@@ -6,6 +6,10 @@ import type {
 import { describe, expect, it, vi } from "vitest";
 import { createServerApp } from "../../app.js";
 import { ConfigurationRestoreBlockedError } from "../../modules/backup/configuration-backup-service.js";
+import {
+  createLocalManagementRateLimitPreHandler,
+  LocalManagementRateLimiter
+} from "../middleware/local-management-rate-limit.js";
 
 const archive: ConfigurationBackupArchive = {
   manifest: { format: "stream-jams-backup", archiveVersion: 1, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
@@ -75,6 +79,30 @@ describe("configuration backup routes", () => {
       },
       actionableError
     });
+    await app.close();
+  });
+
+  it("rate-limits backup export before file-system work", async () => {
+    const service = {
+      exportArchive: vi.fn(async () => archive),
+      preflight: vi.fn(async () => preflight),
+      restore: vi.fn(async () => result)
+    };
+    const app = createServerApp({
+      metadata: { appName: "stream-jams", version: "0.0.0" },
+      configurationBackupService: service,
+      managementAuthPreHandler: async () => undefined,
+      managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({
+        limiter: new LocalManagementRateLimiter({ maxRequests: 1, windowMs: 60_000 })
+      })
+    });
+
+    const first = await app.inject({ method: "GET", url: "/management/settings/backup" });
+    const second = await app.inject({ method: "GET", url: "/management/settings/backup" });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(429);
+    expect(service.exportArchive).toHaveBeenCalledOnce();
     await app.close();
   });
 });

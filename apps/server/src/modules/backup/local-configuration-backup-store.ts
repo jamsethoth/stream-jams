@@ -22,12 +22,20 @@ export class LocalConfigurationBackupStore {
     const timestamp = this.#now().toISOString().replace(/[.:]/gu, "-");
     const destination = join(this.#directory, `pre-restore-${timestamp}.streamjams-backup`);
     const temporary = join(this.#directory, `.${randomUUID()}.tmp`);
+    let temporaryCreated = false;
     try {
-      await writeFile(temporary, `${JSON.stringify(archive)}\n`, "utf8");
+      await writeFile(temporary, `${JSON.stringify(archive)}\n`, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600
+      });
+      temporaryCreated = true;
       await rename(temporary, destination);
       return destination;
     } catch (error) {
-      await rm(temporary, { force: true }).catch(() => undefined);
+      if (temporaryCreated) {
+        await rm(temporary, { force: true }).catch(() => undefined);
+      }
       throw error;
     }
   }
