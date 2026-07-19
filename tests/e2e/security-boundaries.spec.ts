@@ -51,6 +51,7 @@ test("revoked overlay keys cannot load a composition or leak the route key", asy
 
   const overlayRoot = page.getByTestId("overlay-root");
   await expect(overlayRoot).toBeAttached();
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(overlayRoot).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(page.locator(".overlay-error")).toHaveCount(0);
   expect(await overlayRoot.locator(":scope > *").count()).toBe(0);
