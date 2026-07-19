@@ -253,6 +253,39 @@ describe("provider pages", () => {
     expect(screen.getByText("Connected:")).toBeInTheDocument();
   });
 
+  it("shows authorization recovery for an inactive registered Twitch source", async () => {
+    const user = userEvent.setup();
+    const inactiveScopeDeficientTwitch = {
+      ...activeTwitch,
+      active: false,
+      intakeState: "inactive" as const,
+      liveStatus: "not-running" as const,
+      twitchAuthorization: {
+        authorizationState: "update-required" as const,
+        missingScopes: ["channel:read:hype_train", "channel:read:polls", "channel:read:predictions"],
+        account: {
+          accountId: "twitch-account",
+          login: "jamsethoth",
+          displayName: "Jamsethoth",
+          scopes: ["bits:read"],
+          connectedAt: "2026-07-17T12:00:00.000Z",
+          updatedAt: "2026-07-17T12:00:00.000Z"
+        }
+      }
+    };
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [inactiveScopeDeficientTwitch]),
+      getProvider: vi.fn(async () => detail(inactiveScopeDeficientTwitch))
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    expect(await screen.findByText("Authorization update required")).toBeInTheDocument();
+    expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Reconnect Twitch" }));
+    expect(screen.getByRole("dialog", { name: "Reconnect Main Twitch" })).toBeInTheDocument();
+  });
+
   it("refreshes event-source live status every five seconds while preserving selection", async () => {
     vi.useFakeTimers();
     const initialProviders = [

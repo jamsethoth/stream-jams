@@ -734,6 +734,9 @@ const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView
       return { connected: false, authorizationState: "disconnected", missingScopes: [], account: null };
     }
     if (input.authorizationState !== "ready" && input.authorizationState !== "update-required") throw new TypeError("Invalid Twitch connection status response");
+    if ((input.authorizationState === "ready") !== (input.missingScopes.length === 0)) {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
     if (!hasExactKeys(input.account, ["accountId", "login", "displayName", "scopes", "connectedAt", "updatedAt"])) {
       throw new TypeError("Invalid Twitch connection status response");
     }

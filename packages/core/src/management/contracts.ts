@@ -57,6 +57,33 @@ export const providerConnectionStateSchema = z.enum(["unconfigured", "validating
 export const providerIntakeStateSchema = z.enum(["active", "inactive", "error"]);
 export const providerLiveStatusSchema = z.enum(["not-running", "starting", "healthy", "reconnecting", "error"]);
 
+const twitchAuthorizationAccountSchema = z.object({
+  accountId: nonEmptyStringSchema,
+  login: nonEmptyStringSchema,
+  displayName: nonEmptyStringSchema,
+  scopes: z.array(nonEmptyStringSchema),
+  connectedAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema
+});
+
+const twitchAuthorizationSchema = z.union([
+  z.object({
+    authorizationState: z.literal("disconnected"),
+    missingScopes: z.array(nonEmptyStringSchema).length(0),
+    account: z.null()
+  }),
+  z.object({
+    authorizationState: z.literal("ready"),
+    missingScopes: z.array(nonEmptyStringSchema).length(0),
+    account: twitchAuthorizationAccountSchema
+  }),
+  z.object({
+    authorizationState: z.literal("update-required"),
+    missingScopes: z.array(nonEmptyStringSchema).min(1),
+    account: twitchAuthorizationAccountSchema
+  })
+]);
+
 const providerSetupBaseSchema = z.object({
   name: nonEmptyStringSchema
 });
@@ -108,6 +135,7 @@ export const registeredProviderViewSchema = z.object({
   connectionState: providerConnectionStateSchema,
   intakeState: providerIntakeStateSchema.nullable(),
   liveStatus: providerLiveStatusSchema.optional(),
+  twitchAuthorization: twitchAuthorizationSchema.optional(),
   validatedAt: isoDateTimeSchema.nullable(),
   error: actionableManagementErrorSchema.nullable(),
   usedByAlertCount: nonNegativeIntegerSchema

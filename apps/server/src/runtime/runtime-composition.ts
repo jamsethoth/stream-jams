@@ -691,6 +691,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const managementUiService = new ManagementUiService({
     providerService: providerManagementService,
     alertSetService: alertSetManagementService,
+    getTwitchAuthorization: () => twitchAuthService.getStatus(),
     getEventSourceRuntimeView(provider) {
       if (!provider.active) return { liveStatus: "not-running", error: null };
       if (provider.kind === "twitch") {

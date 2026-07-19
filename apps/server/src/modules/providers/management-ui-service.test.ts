@@ -93,6 +93,36 @@ describe("ManagementUiService", () => {
     });
   });
 
+  it("projects Twitch authorization readiness onto inactive source list and detail views", async () => {
+    const inactive = provider("twitch", "twitch", "event-source", false, "connected", "inactive", null);
+    const twitchAuthorization = {
+      connected: true as const,
+      authorizationState: "update-required" as const,
+      missingScopes: ["channel:read:polls"],
+      account: {
+        accountId: "account-1",
+        login: "jamsethoth",
+        displayName: "Jamsethoth",
+        scopes: ["user:read:chat"],
+        connectedAt: "2026-07-15T05:00:00.000Z",
+        updatedAt: "2026-07-15T05:00:00.000Z"
+      }
+    };
+    const service = createService([inactive], null, undefined, {}, async () => twitchAuthorization);
+    const projectedAuthorization = {
+      authorizationState: "update-required",
+      missingScopes: ["channel:read:polls"],
+      account: twitchAuthorization.account
+    };
+
+    await expect(service.listRegisteredProviders("event-source")).resolves.toEqual([
+      expect.objectContaining({ id: "twitch", liveStatus: "not-running", twitchAuthorization: projectedAuthorization })
+    ]);
+    await expect(service.getRegisteredProvider("twitch")).resolves.toMatchObject({
+      provider: expect.objectContaining({ twitchAuthorization: projectedAuthorization })
+    });
+  });
+
   it("keeps starter setup actionable until review is complete or a valid alert is enabled", async () => {
     const pending = createService([], alertSet("pending", 0));
     const enabled = createService([], alertSet("pending", 1));
@@ -140,7 +170,13 @@ function createService(
     readonly liveStatus: ProviderLiveStatus;
     readonly error: RegisteredProviderView["error"];
   }) | undefined = undefined,
-  alertSetOverrides: Partial<ManagementUiServiceOptions["alertSetService"]> = {}
+  alertSetOverrides: Partial<ManagementUiServiceOptions["alertSetService"]> = {},
+  getTwitchAuthorization: ManagementUiServiceOptions["getTwitchAuthorization"] = async () => ({
+    connected: false,
+    authorizationState: "disconnected",
+    missingScopes: [],
+    account: null
+  })
 ) {
   const runtimeView = getEventSourceRuntimeView ?? ((providerView: RegisteredProviderView) => ({
     liveStatus: !providerView.active
@@ -238,7 +274,8 @@ function createService(
       secretExclusions: ["Provider credentials", "Overlay route keys"],
       blockers: []
     }),
-    getEventSourceRuntimeView: runtimeView
+    getEventSourceRuntimeView: runtimeView,
+    getTwitchAuthorization
   };
   return new ManagementUiService(options);
 }

@@ -50,18 +50,28 @@ const twitchRuntimeError: ActionableManagementError = {
   cause: "Twitch API returned HTTP 401.",
   nextStep: "Reconnect Twitch, then confirm live status returns to Healthy."
 };
-const twitchAuthorizationUpdateError: ActionableManagementError = {
-  ...runtimeError,
-  summary: "Main Twitch live status error",
-  cause: "Twitch authorization update required. Reconnect Twitch to grant the added event permissions.",
-  nextStep: "Reconnect Twitch to grant the added event permissions.",
-  referenceId: "ref-twitch-scope-update",
-  correction: { label: "Open diagnostics", route: "/manage/diagnostics?reference=ref-twitch-scope-update" }
-};
 const updateRequiredTwitchStatus: TwitchConnectionStatusView = {
   ...connectedTwitchStatus,
   authorizationState: "update-required",
   missingScopes: ["channel:read:hype_train", "channel:read:polls", "channel:read:predictions"]
+};
+const inactiveTwitchAuthorizationUpdate: RegisteredProviderView = {
+  ...activeTwitch,
+  active: false,
+  intakeState: "inactive",
+  liveStatus: "not-running",
+  twitchAuthorization: {
+    authorizationState: "update-required",
+    missingScopes: ["channel:read:hype_train", "channel:read:polls", "channel:read:predictions"],
+    account: {
+      accountId: "provider-story",
+      login: "storyaccount",
+      displayName: "Story account",
+      scopes: ["user:read:chat"],
+      connectedAt: "2026-07-15T05:00:00.000Z",
+      updatedAt: "2026-07-15T05:00:00.000Z"
+    }
+  }
 };
 const invalidValidation: ProviderValidationResult = {
   valid: false,
@@ -93,15 +103,27 @@ export const ConfiguredEventSources: Story = {
 };
 
 export const TwitchReady: Story = {
-  args: { managementApi: providerApi([activeTwitch], { getTwitchStatus: async () => connectedTwitchStatus }) }
+  args: { managementApi: providerApi([], { getTwitchStatus: async () => connectedTwitchStatus }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add event source" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Continue" }));
+    await canvas.findByText("Story account (@storyaccount)");
+  }
 };
 
 export const TwitchAuthorizationUpdateRequired: Story = {
   args: {
     managementApi: providerApi(
-      [{ ...activeTwitch, liveStatus: "error", error: twitchAuthorizationUpdateError }],
+      [inactiveTwitchAuthorizationUpdate],
       { getTwitchStatus: async () => updateRequiredTwitchStatus }
     )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByText("Authorization update required");
+    await userEvent.click(await canvas.findByRole("button", { name: "Reconnect Twitch" }));
+    await canvas.findByRole("dialog", { name: "Reconnect Main Twitch" });
   }
 };
 

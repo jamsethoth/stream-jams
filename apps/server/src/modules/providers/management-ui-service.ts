@@ -34,6 +34,7 @@ import {
 } from "@stream-jams/core";
 import type { ProviderManagementService } from "./provider-management-service.js";
 import type { AlertSetManagementService } from "../alerts/alert-set-management-service.js";
+import type { TwitchConnectionStatus } from "../twitch/twitch-account-repository.js";
 
 type HomeReadinessItem = HomeSetupSummary["readiness"][number];
 
@@ -74,6 +75,7 @@ export interface ManagementUiServiceOptions {
   readonly providerService: ProviderService;
   readonly alertSetService: AlertSetService;
   readonly getEventSourceRuntimeView: (provider: RegisteredProviderView) => EventSourceRuntimeView;
+  readonly getTwitchAuthorization: () => Promise<TwitchConnectionStatus>;
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
   readonly saveAlertEditorDocument: (
@@ -138,14 +140,14 @@ export class ManagementUiService {
   async listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]> {
     const providers = await this.#options.providerService.listProviders(capability);
     return capability === "event-source"
-      ? providers.map((provider) => this.#withLiveStatus(provider))
+      ? Promise.all(providers.map((provider) => this.#withLiveStatus(provider)))
       : providers;
   }
 
   async getRegisteredProvider(providerId: string): Promise<RegisteredProviderDetail> {
     const detail = await this.#options.providerService.getProvider(providerId);
     return detail.provider.capability === "event-source"
-      ? { ...detail, provider: this.#withLiveStatus(detail.provider) }
+      ? { ...detail, provider: await this.#withLiveStatus(detail.provider) }
       : detail;
   }
 
@@ -298,10 +300,36 @@ export class ManagementUiService {
       : clearOldLogs();
   }
 
-  #withLiveStatus(provider: RegisteredProviderView): RegisteredProviderView {
+  async #withLiveStatus(provider: RegisteredProviderView): Promise<RegisteredProviderView> {
     const runtime = this.#options.getEventSourceRuntimeView(provider);
-    return { ...provider, liveStatus: runtime.liveStatus, error: runtime.error ?? provider.error };
+    const twitchAuthorizationStatus = provider.kind === "twitch"
+      ? await this.#options.getTwitchAuthorization()
+      : undefined;
+    return {
+      ...provider,
+      ...(twitchAuthorizationStatus === undefined ? {} : { twitchAuthorization: toTwitchAuthorizationView(twitchAuthorizationStatus) }),
+      liveStatus: runtime.liveStatus,
+      error: runtime.error ?? provider.error
+    };
   }
+}
+
+function toTwitchAuthorizationView(status: TwitchConnectionStatus) {
+  if (!status.connected) {
+    return { authorizationState: "disconnected" as const, missingScopes: [], account: null };
+  }
+  return {
+    authorizationState: status.authorizationState,
+    missingScopes: [...status.missingScopes],
+    account: {
+      accountId: status.account.accountId,
+      login: status.account.login,
+      displayName: status.account.displayName,
+      scopes: [...status.account.scopes],
+      connectedAt: status.account.connectedAt,
+      updatedAt: status.account.updatedAt
+    }
+  };
 }
 
 function eventSourceReadiness(provider: RegisteredProviderView | null): HomeReadinessItem {

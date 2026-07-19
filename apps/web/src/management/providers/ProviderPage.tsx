@@ -411,6 +411,7 @@ export function ProviderPage({
                       >
                         <span>{provider.name}</span>
                         <small>{formatProviderKind(provider.kind)}</small>
+                        {provider.twitchAuthorization?.authorizationState === "update-required" ? <small>Authorization update required</small> : null}
                       </button>
                     </th>
                     {capability === "event-source" ? (
@@ -454,7 +455,10 @@ export function ProviderPage({
               detail={detail}
               impact={impact}
               onActivate={capability === "tts" && selectedProvider !== null ? () => void requestActivation(selectedProvider) : null}
-              onReconnect={capability === "event-source" && detail.provider.kind === "twitch" && eventSourceLiveStatus(detail.provider) === "error"
+              onReconnect={capability === "event-source" && detail.provider.kind === "twitch" && (
+                eventSourceLiveStatus(detail.provider) === "error"
+                || detail.provider.twitchAuthorization?.authorizationState === "update-required"
+              )
                 ? () => setReconnectProvider(detail.provider)
                 : null}
               onSafetyChange={setSafety}
@@ -588,6 +592,12 @@ function ProviderDetail({
         />
       </div>
       {provider.error === null ? null : <ManagementErrorBanner error={provider.error} />}
+      {provider.twitchAuthorization?.authorizationState === "update-required" ? (
+        <section aria-label="Twitch authorization status" className="provider-page__subsection">
+          <h4>Authorization update required</h4>
+          <p>Reconnect Twitch to enable Hype Trains, polls, and predictions.</p>
+        </section>
+      ) : null}
       {onReconnect === null ? null : (
         <div className="provider-page__connection-actions">
           <button onClick={onReconnect} type="button">Reconnect Twitch</button>
@@ -598,6 +608,9 @@ function ProviderDetail({
           <>
             <div><dt>Usage</dt><dd>{provider.active ? "In use" : "Not in use"}</dd></div>
             <div><dt>Live status</dt><dd>{formatLiveStatus(eventSourceLiveStatus(provider))}</dd></div>
+            {provider.twitchAuthorization?.account === undefined || provider.twitchAuthorization.account === null ? null : (
+              <div><dt>Twitch account</dt><dd>{provider.twitchAuthorization.account.displayName} (@{provider.twitchAuthorization.account.login})</dd></div>
+            )}
           </>
         ) : <div><dt>Connection</dt><dd>{formatState(provider.connectionState)}</dd></div>}
         <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : new Date(provider.validatedAt).toLocaleString()}</dd></div>

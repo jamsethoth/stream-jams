@@ -519,6 +519,23 @@ describe("createHttpManagementApi", () => {
     await expect(api.pollTwitchAuth({ authorizationId: "account-extra" })).rejects.toThrow("Invalid Twitch connection status response");
   });
 
+  it("rejects contradictory Twitch authorization readiness states", async () => {
+    const readyWithMissingScopes = { ...connectedTwitchStatus(), missingScopes: ["channel:read:polls"] };
+    const updateWithoutMissingScopes = { ...connectedTwitchStatus(), authorizationState: "update-required", missingScopes: [] };
+    const responses = [readyWithMissingScopes, updateWithoutMissingScopes];
+    let index = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/auth/status") return jsonResponse(responses[index++]!);
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getTwitchStatus()).rejects.toThrow("Invalid Twitch connection status response");
+    await expect(api.getTwitchStatus()).rejects.toThrow("Invalid Twitch connection status response");
+  });
+
   it("rejects Twitch activation URLs with non-default ports", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
