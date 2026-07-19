@@ -87,6 +87,9 @@ class TwitchProviderAdapter implements ProviderManagementAdapter {
     if (!oauthStatus.connected) {
       throw new Error("Twitch is not connected. Connect Twitch in Event Sources, then retry.");
     }
+    if (oauthStatus.authorizationState === "update-required") {
+      throw new Error(`Twitch authorization update required. Reconnect Twitch to enable ${formatMissingTwitchCapabilities(oauthStatus.missingScopes)}.`);
+    }
 
     const eventSubStatus = this.eventSubRuntimeService.getStatus();
     if (eventSubStatus.state === "error" || eventSubStatus.state === "degraded") {
@@ -97,6 +100,21 @@ class TwitchProviderAdapter implements ProviderManagementAdapter {
 
     return successfulValidation(this.now, eventSubStatus.state === "connected" ? "active" : "inactive");
   }
+}
+
+function formatMissingTwitchCapabilities(scopes: readonly string[]): string {
+  const names = scopes.flatMap((scope) => {
+    switch (scope) {
+      case "channel:read:hype_train": return ["Hype Trains"];
+      case "channel:read:polls": return ["polls"];
+      case "channel:read:predictions": return ["predictions"];
+      default: return [];
+    }
+  });
+  if (names.length === 0) return "the required event permissions";
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names[names.length - 1]}`;
 }
 
 class StreamerBotProviderAdapter implements ProviderManagementAdapter {

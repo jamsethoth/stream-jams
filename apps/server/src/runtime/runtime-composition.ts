@@ -874,10 +874,13 @@ function toEventSourceRuntimeError(
   const diagnosticsRoute = status.referenceId === null
     ? "/manage/diagnostics"
     : `/manage/diagnostics?reference=${encodeURIComponent(status.referenceId)}`;
+  const authorizationUpdateRequired = status.message === "Twitch authorization update required. Reconnect Twitch to grant the added event permissions.";
   return {
     summary: `${providerName} live status error`,
     cause: status.message ?? `${providerName} runtime reported an error.`,
-    nextStep: "Review the provider connection and reconnect it before retrying.",
+    nextStep: authorizationUpdateRequired
+      ? "Reconnect Twitch to grant the added event permissions."
+      : "Review the provider connection and reconnect it before retrying.",
     severity: "error",
     occurredAt: status.lastErrorAt,
     referenceId: status.referenceId,

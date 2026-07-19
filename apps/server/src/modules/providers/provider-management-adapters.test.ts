@@ -39,6 +39,14 @@ describe("provider management adapters", () => {
     );
   });
 
+  it("names the missing Twitch capabilities when authorization needs an update", async () => {
+    const harness = createHarness({ twitchConnected: true, twitchAuthorizationState: "update-required" });
+
+    await expect(harness.adapters.get("twitch")?.validate(twitchInput())).rejects.toThrow(
+      "Reconnect Twitch to enable Hype Trains, polls, and predictions."
+    );
+  });
+
   it("validates Streamer.bot from its Hello handshake without a redundant request", async () => {
     const harness = createHarness();
     const validation = harness.adapters.get("streamerbot")?.validate(streamerBotInput());
@@ -162,6 +170,7 @@ describe("provider management adapters", () => {
 
 interface HarnessOptions {
   readonly twitchConnected?: boolean;
+  readonly twitchAuthorizationState?: "ready" | "update-required";
   readonly twitchEventSubState?: "idle" | "connecting" | "connected" | "reconnecting" | "degraded" | "error";
   readonly ttsService?: Pick<TtsService, "listProviders" | "testProvider">;
 }
@@ -177,9 +186,13 @@ function createHarness(options: HarnessOptions = {}) {
     twitchOAuthService: {
       async getStatus() {
         return options.twitchConnected === false
-          ? { connected: false as const, account: null }
+          ? { connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null }
           : {
               connected: true as const,
+              authorizationState: options.twitchAuthorizationState ?? "ready",
+              missingScopes: options.twitchAuthorizationState === "update-required"
+                ? ["channel:read:hype_train", "channel:read:polls", "channel:read:predictions"]
+                : [],
               account: {
                 accountId: "account-1",
                 login: "jam",

@@ -15,6 +15,8 @@ const activeTwitch = provider("provider-twitch", "Main Twitch", "twitch", true, 
 const inactiveStreamerBot = provider("provider-streamerbot", "Studio Streamer.bot", "streamerbot", false, "connected", "inactive", "not-running");
 const connectedTwitchStatus: TwitchConnectionStatusView = {
   connected: true,
+  authorizationState: "ready",
+  missingScopes: [],
   account: {
     accountId: "provider-story",
     login: "storyaccount",
@@ -48,6 +50,19 @@ const twitchRuntimeError: ActionableManagementError = {
   cause: "Twitch API returned HTTP 401.",
   nextStep: "Reconnect Twitch, then confirm live status returns to Healthy."
 };
+const twitchAuthorizationUpdateError: ActionableManagementError = {
+  ...runtimeError,
+  summary: "Main Twitch live status error",
+  cause: "Twitch authorization update required. Reconnect Twitch to grant the added event permissions.",
+  nextStep: "Reconnect Twitch to grant the added event permissions.",
+  referenceId: "ref-twitch-scope-update",
+  correction: { label: "Open diagnostics", route: "/manage/diagnostics?reference=ref-twitch-scope-update" }
+};
+const updateRequiredTwitchStatus: TwitchConnectionStatusView = {
+  ...connectedTwitchStatus,
+  authorizationState: "update-required",
+  missingScopes: ["channel:read:hype_train", "channel:read:polls", "channel:read:predictions"]
+};
 const invalidValidation: ProviderValidationResult = {
   valid: false,
   connectionState: "error",
@@ -75,6 +90,31 @@ type Story = StoryObj<typeof meta>;
 
 export const ConfiguredEventSources: Story = {
   args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) }
+};
+
+export const TwitchReady: Story = {
+  args: { managementApi: providerApi([activeTwitch], { getTwitchStatus: async () => connectedTwitchStatus }) }
+};
+
+export const TwitchAuthorizationUpdateRequired: Story = {
+  args: {
+    managementApi: providerApi(
+      [{ ...activeTwitch, liveStatus: "error", error: twitchAuthorizationUpdateError }],
+      { getTwitchStatus: async () => updateRequiredTwitchStatus }
+    )
+  }
+};
+
+export const TwitchReconnecting: Story = {
+  args: {
+    managementApi: providerApi([{ ...activeTwitch, liveStatus: "reconnecting" }], { getTwitchStatus: async () => connectedTwitchStatus })
+  }
+};
+
+export const TwitchReconnectFailed: Story = {
+  args: {
+    managementApi: providerApi([{ ...activeTwitch, liveStatus: "error", error: twitchRuntimeError }], { getTwitchStatus: async () => connectedTwitchStatus })
+  }
 };
 
 export const EventSourceRuntimeFailure: Story = {

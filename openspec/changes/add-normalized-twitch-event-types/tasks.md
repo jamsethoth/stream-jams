@@ -18,9 +18,9 @@
 
 ## 4. Twitch Authorization Readiness
 
-- [ ] 4.1 Add failing OAuth, runtime, provider-adapter, management API, and UI tests for expanded scopes and saved grants that need authorization updates.
-- [ ] 4.2 Add the required OAuth scopes and server-side missing-scope readiness contract while preserving saved accounts and tokens.
-- [ ] 4.3 Expose `Authorization update required`, missing capability copy, diagnostics linkage, and the existing reconnect action in Event Sources.
+- [x] 4.1 Add failing OAuth, runtime, provider-adapter, management API, and UI tests for expanded scopes and saved grants that need authorization updates.
+- [x] 4.2 Add the required OAuth scopes and server-side missing-scope readiness contract while preserving saved accounts and tokens.
+- [x] 4.3 Expose `Authorization update required`, missing capability copy, diagnostics linkage, and the existing reconnect action in Event Sources.
 
 ## 5. Alert Creation And Testing UX
 

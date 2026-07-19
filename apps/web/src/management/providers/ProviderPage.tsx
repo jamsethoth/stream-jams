@@ -990,12 +990,18 @@ function ProviderSetupWizard({
                 {!twitchStatusLoading && twitchStatus?.connected === true ? (
                   <p><strong>Connected:</strong> {formatTwitchAccount(twitchStatus)}</p>
                 ) : null}
+                {twitchStatus?.connected === true && twitchStatus.authorizationState === "update-required" ? (
+                  <div className="provider-page__connection-actions">
+                    <strong>Authorization update required</strong>
+                    <p>Reconnect Twitch to enable Hype Trains, polls, and predictions.</p>
+                  </div>
+                ) : null}
                 {!twitchStatusLoading && twitchStatus?.connected === false ? <p>No Twitch account connected</p> : null}
-                {!reconnecting && twitchStatus?.connected === true ? null : (
+                {reconnecting || twitchStatus?.connected !== true || twitchStatus.authorizationState !== "ready" ? (
                   <div className="provider-page__connection-actions">
                     {twitchAuthorization === null || requestError !== null ? (
                       <button disabled={busy} onClick={() => void startTwitchConnection()} type="button">
-                        {twitchAuthorization === null ? reconnecting ? "Reconnect Twitch" : "Connect Twitch" : "Try again"}
+                        {twitchAuthorization === null ? reconnecting || twitchStatus?.authorizationState === "update-required" ? "Reconnect Twitch" : "Connect Twitch" : "Try again"}
                       </button>
                     ) : null}
                     {twitchAuthorization === null ? null : (
@@ -1010,7 +1016,7 @@ function ProviderSetupWizard({
                       </>
                     )}
                   </div>
-                )}
+                ) : null}
               </section>
             ) : null}
             {websocket ? (

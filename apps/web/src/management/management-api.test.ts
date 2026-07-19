@@ -365,6 +365,8 @@ describe("createHttpManagementApi", () => {
   it("loads Twitch status and runtime-validates Device Code start and poll responses", async () => {
     const status = {
       connected: true as const,
+      authorizationState: "ready" as const,
+      missingScopes: [],
       account: {
         accountId: "account-1",
         login: "jamsethoth",
@@ -855,6 +857,8 @@ function deviceAuthorizationStart() {
 function connectedTwitchStatus() {
   return {
     connected: true as const,
+    authorizationState: "ready" as const,
+    missingScopes: [],
     account: {
       accountId: "account-1",
       login: "jamsethoth",

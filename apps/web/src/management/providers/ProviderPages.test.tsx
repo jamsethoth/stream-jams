@@ -180,6 +180,8 @@ describe("provider pages", () => {
     const healthyTwitch = { ...activeTwitch, liveStatus: "healthy" as const, error: null };
     const connected = {
       connected: true as const,
+      authorizationState: "ready" as const,
+      missingScopes: [],
       account: {
         accountId: "twitch-account",
         login: "jamsethoth",
@@ -221,6 +223,34 @@ describe("provider pages", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("Main Twitch reconnected. Live status is updating.");
     expect(api.registerProvider).not.toHaveBeenCalled();
     expect(listRegisteredProviders).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows authorization recovery for a connected Twitch account that needs added event permissions", async () => {
+    const user = userEvent.setup();
+    const api = providerApi({
+      getTwitchStatus: vi.fn(async () => ({
+        connected: true as const,
+        authorizationState: "update-required" as const,
+        missingScopes: ["channel:read:hype_train", "channel:read:polls", "channel:read:predictions"],
+        account: {
+          accountId: "twitch-account",
+          login: "jamsethoth",
+          displayName: "Jamsethoth",
+          scopes: ["bits:read"],
+          connectedAt: "2026-07-17T12:00:00.000Z",
+          updatedAt: "2026-07-17T12:00:00.000Z"
+        }
+      }))
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+    await user.click(screen.getByRole("button", { name: "Add event source" }));
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByText("Authorization update required")).toBeInTheDocument();
+    expect(screen.getByText("Reconnect Twitch to enable Hype Trains, polls, and predictions.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect Twitch" })).toBeInTheDocument();
+    expect(screen.getByText("Connected:")).toBeInTheDocument();
   });
 
   it("refreshes event-source live status every five seconds while preserving selection", async () => {
@@ -318,6 +348,8 @@ describe("provider pages", () => {
     const user = userEvent.setup();
     const connected = {
       connected: true as const,
+      authorizationState: "ready" as const,
+      missingScopes: [],
       account: {
         accountId: "twitch-account",
         login: "jamsethoth",
@@ -332,7 +364,7 @@ describe("provider pages", () => {
     const api = providerApi({
       getTwitchStatus: vi
         .fn<ProviderPageApi["getTwitchStatus"]>()
-        .mockResolvedValueOnce({ connected: false, account: null })
+        .mockResolvedValueOnce({ connected: false, authorizationState: "disconnected", missingScopes: [], account: null })
         .mockResolvedValue(connected),
       startTwitchAuth: vi.fn(async () => ({
         authorizationId: "auth-test",
@@ -821,7 +853,7 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
     })),
     updateTtsSafety: vi.fn(async (_providerId, input) => input),
     testProviderVoice: vi.fn(async () => ({ delivered: true, error: null })),
-    getTwitchStatus: vi.fn(async () => ({ connected: false as const, account: null })),
+    getTwitchStatus: vi.fn(async () => ({ connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null })),
     startTwitchAuth: vi.fn(async () => ({
       authorizationId: "auth-test",
       verificationUri: "https://www.twitch.tv/activate",

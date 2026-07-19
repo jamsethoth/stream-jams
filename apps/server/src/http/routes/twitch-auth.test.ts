@@ -345,10 +345,17 @@ function createCodedError(code: string, message: string): Error & { readonly cod
   return Object.assign(new Error(message), { code });
 }
 
-const disconnectedStatus: TwitchConnectionStatus = { connected: false, account: null };
+const disconnectedStatus: TwitchConnectionStatus = {
+  connected: false,
+  authorizationState: "disconnected",
+  missingScopes: [],
+  account: null
+};
 
 const connectedStatus: TwitchConnectionStatus = {
   connected: true,
+  authorizationState: "ready",
+  missingScopes: [],
   account: {
     accountId: "141981764",
     login: "streamer",

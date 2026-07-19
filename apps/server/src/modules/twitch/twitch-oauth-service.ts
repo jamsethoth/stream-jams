@@ -18,6 +18,9 @@ export const defaultTwitchClientId = "r6jy78npqxcqe68xpsctkcecti6ba3";
 
 export const defaultTwitchOAuthScopes = [
   "bits:read",
+  "channel:read:hype_train",
+  "channel:read:polls",
+  "channel:read:predictions",
   "channel:read:redemptions",
   "channel:read:subscriptions",
   "moderator:read:followers"
@@ -110,7 +113,7 @@ export class TwitchOAuthService {
   }
 
   async getStatus(): Promise<TwitchConnectionStatus> {
-    return toTwitchConnectionStatus(await this.#repository.findConnectedAccount());
+    return this.#connectionStatus(await this.#repository.findConnectedAccount());
   }
 
   async createConnectionStart(): Promise<TwitchConnectionStartResult> {
@@ -201,7 +204,7 @@ export class TwitchOAuthService {
     this.#assertConfigured();
     const currentAccount = await this.#repository.findConnectedAccount();
     if (currentAccount === null) {
-      return { connection: toTwitchConnectionStatus(null), refreshed: false };
+      return { connection: this.#connectionStatus(null), refreshed: false };
     }
 
     const accessToken = await this.#readSecret(createTwitchTokenSecretRef(currentAccount.accountId, "access_token"));
@@ -215,7 +218,7 @@ export class TwitchOAuthService {
       if (validatedToken.userId !== currentAccount.accountId) {
         throw new TwitchOAuthProviderError("Twitch token account did not match connected account");
       }
-      return { connection: toTwitchConnectionStatus(currentAccount), refreshed: false };
+      return { connection: this.#connectionStatus(currentAccount), refreshed: false };
     } catch (error) {
       if (!(error instanceof TwitchApiHttpError) || error.status !== 401) {
         throw error;
@@ -234,7 +237,7 @@ export class TwitchOAuthService {
     this.#assertConfigured();
     const currentAccount = await this.#repository.findConnectedAccount();
     if (currentAccount === null) {
-      return toTwitchConnectionStatus(null);
+      return this.#connectionStatus(null);
     }
 
     const refreshToken = await this.#readSecret(createTwitchTokenSecretRef(currentAccount.accountId, "refresh_token"));
@@ -256,13 +259,13 @@ export class TwitchOAuthService {
   async disconnect(): Promise<TwitchConnectionStatus> {
     const account = await this.#repository.findConnectedAccount();
     if (account === null) {
-      return toTwitchConnectionStatus(null);
+      return this.#connectionStatus(null);
     }
 
     await this.#deleteSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
     await this.#deleteSecret(createTwitchTokenSecretRef(account.accountId, "refresh_token"));
     await this.#repository.deleteAccount(account.accountId);
-    const status = toTwitchConnectionStatus(null);
+    const status = this.#connectionStatus(null);
     await this.#notifyConnectionChanged(status);
     return status;
   }
@@ -335,7 +338,7 @@ export class TwitchOAuthService {
       await this.#deleteSecret(createTwitchTokenSecretRef(previousAccount.accountId, "refresh_token"));
     }
 
-    const status = toTwitchConnectionStatus(savedAccount);
+    const status = this.#connectionStatus(savedAccount);
     if (notifyConnectionChanged) {
       await this.#notifyConnectionChanged(status);
     }
@@ -344,6 +347,13 @@ export class TwitchOAuthService {
 
   async #notifyConnectionChanged(status: TwitchConnectionStatus): Promise<void> {
     await this.#onConnectionChanged?.(status);
+  }
+
+  #connectionStatus(account: TwitchAccount | null): TwitchConnectionStatus {
+    return toTwitchConnectionStatus(
+      account,
+      account === null ? [] : missingTwitchScopes(account.scopes, this.#scopes)
+    );
   }
 
   async #writeSecret(ref: SecretRef, value: string): Promise<void> {
@@ -385,6 +395,14 @@ export function createTwitchTokenSecretRef(accountId: string, name: TwitchTokenS
     accountId,
     name
   };
+}
+
+export function missingTwitchScopes(
+  granted: readonly string[],
+  required: readonly string[] = defaultTwitchOAuthScopes
+): readonly string[] {
+  const grantedSet = new Set(granted);
+  return required.filter((scope) => !grantedSet.has(scope));
 }
 
 function assertValidatedTokenMatchesClient(validatedToken: TwitchValidatedToken, clientId: string): void {

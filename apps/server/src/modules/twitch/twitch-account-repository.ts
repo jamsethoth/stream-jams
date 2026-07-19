@@ -16,13 +16,19 @@ export interface TwitchConnectedAccountView {
   readonly updatedAt: string;
 }
 
+export type TwitchAuthorizationState = "disconnected" | "ready" | "update-required";
+
 export type TwitchConnectionStatus =
   | {
       readonly connected: false;
+      readonly authorizationState: "disconnected";
+      readonly missingScopes: readonly string[];
       readonly account: null;
     }
   | {
       readonly connected: true;
+      readonly authorizationState: "ready" | "update-required";
+      readonly missingScopes: readonly string[];
       readonly account: TwitchConnectedAccountView;
     };
 
@@ -32,14 +38,21 @@ export interface TwitchAccountRepository {
   deleteAccount(accountId: string): Promise<void>;
 }
 
-export function toTwitchConnectionStatus(account: TwitchAccount | null): TwitchConnectionStatus {
+export function toTwitchConnectionStatus(
+  account: TwitchAccount | null,
+  missingScopes: readonly string[] = []
+): TwitchConnectionStatus {
   return account === null
     ? {
         connected: false,
+        authorizationState: "disconnected",
+        missingScopes: [],
         account: null
       }
     : {
         connected: true,
+        authorizationState: missingScopes.length === 0 ? "ready" : "update-required",
+        missingScopes,
         account: {
           accountId: account.accountId,
           login: account.login,

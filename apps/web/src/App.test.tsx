@@ -32,7 +32,7 @@ function createManagementApi(): ManagementApi {
       return { readiness: [], activeAlertSet: null, actionableProblems: [] };
     },
     async getTwitchStatus() {
-      return { connected: false as const, account: null };
+      return { connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null };
     },
     async startTwitchAuth() {
       throw new Error("not called");

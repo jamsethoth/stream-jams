@@ -1079,7 +1079,21 @@ describe("runtime app composition smoke", () => {
 
     expect(start.statusCode).toBe(200);
     expect(poll.statusCode).toBe(200);
-    expect(poll.json()).toMatchObject({ status: "connected" });
+    expect(start.json()).toMatchObject({
+      scopes: [
+        "bits:read",
+        "channel:read:hype_train",
+        "channel:read:polls",
+        "channel:read:predictions",
+        "channel:read:redemptions",
+        "channel:read:subscriptions",
+        "moderator:read:followers"
+      ]
+    });
+    expect(poll.json()).toMatchObject({
+      status: "connected",
+      connection: { authorizationState: "ready", missingScopes: [] }
+    });
     expect(credentials.values.get("stream-jams:twitch:access_token:141981764")).toBe("access-token-1");
     expect(credentials.values.get("stream-jams:twitch:refresh_token:141981764")).toBe("refresh-token-1");
     expect(JSON.stringify(diagnosticsExport.json())).not.toContain("access-token-1");
@@ -1284,7 +1298,7 @@ class RecordingTwitchApiClient implements TwitchApiClient {
         accessToken: "access-token-1",
         refreshToken: "refresh-token-1",
         expiresIn: 14_400,
-        scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
+        scopes: ["bits:read", "channel:read:hype_train", "channel:read:polls", "channel:read:predictions", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
         tokenType: "bearer" as const
       }
     };
@@ -1296,7 +1310,7 @@ class RecordingTwitchApiClient implements TwitchApiClient {
       accessToken: "access-token-2",
       refreshToken: "refresh-token-2",
       expiresIn: 14_400,
-      scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
+      scopes: ["bits:read", "channel:read:hype_train", "channel:read:polls", "channel:read:predictions", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
       tokenType: "bearer"
     };
   }
@@ -1306,7 +1320,7 @@ class RecordingTwitchApiClient implements TwitchApiClient {
     return {
       clientId: "test-client",
       login: "streamer",
-      scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
+      scopes: ["bits:read", "channel:read:hype_train", "channel:read:polls", "channel:read:predictions", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"],
       userId: "141981764",
       expiresIn: 14_000
     };
@@ -1426,7 +1440,15 @@ class ControlledStreamerBotSocket implements StreamerBotSocket {
           id: request.id,
           request: request.request,
           status: "ok",
-          events: { Twitch: ["Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption"] }
+          events: {
+            Twitch: [
+              "Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption", "GiftSub", "GiftBomb",
+              "HypeTrainStart", "HypeTrainUpdate", "HypeTrainEnd",
+              "PollCreated", "PollUpdated", "PollCompleted", "PollArchived", "PollTerminated",
+              "PredictionCreated", "PredictionUpdated", "PredictionLocked", "PredictionCompleted", "PredictionCanceled",
+              "StreamOnline", "StreamOffline"
+            ]
+          }
         }
       : { id: request.id, request: request.request, status: "ok" };
     queueMicrotask(() => void this.#emit(response));

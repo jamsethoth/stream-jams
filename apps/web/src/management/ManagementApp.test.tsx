@@ -300,7 +300,7 @@ function createManagementApi(): ManagementApi {
       activeAlertSet: null,
       actionableProblems: []
     })),
-    getTwitchStatus: vi.fn(async () => ({ connected: false as const, account: null })),
+    getTwitchStatus: vi.fn(async () => ({ connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null })),
     startTwitchAuth: vi.fn(async () => {
       throw new Error("not called");
     }),

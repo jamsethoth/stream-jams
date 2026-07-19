@@ -20,13 +20,22 @@ import {
 describe("TwitchOAuthService", () => {
   it("starts device authorization with sorted default scopes and keeps deviceCode server-side", async () => {
     const { apiClient, service } = createService();
+    const expectedScopes = [
+      "bits:read",
+      "channel:read:hype_train",
+      "channel:read:polls",
+      "channel:read:predictions",
+      "channel:read:redemptions",
+      "channel:read:subscriptions",
+      "moderator:read:followers"
+    ];
 
     const authorization = await service.createConnectionStart();
 
     expect(apiClient.startRequests).toEqual([
       {
         clientId: "client-id",
-        scopes: [...defaultTwitchOAuthScopes].sort()
+        scopes: expectedScopes
       }
     ]);
     expect(authorization).toEqual({
@@ -35,9 +44,38 @@ describe("TwitchOAuthService", () => {
       userCode: "ABCD-EFGH",
       expiresAt: "2026-05-30T12:10:00.000Z",
       intervalSeconds: 5,
-      scopes: [...defaultTwitchOAuthScopes].sort()
+      scopes: expectedScopes
     });
     expect(authorization).not.toHaveProperty("deviceCode");
+  });
+
+  it("keeps saved Twitch credentials connected when the grant needs updated scopes", async () => {
+    const { repository, service } = createService();
+    await repository.saveAccount({
+      accountId: "141981764",
+      login: "streamer",
+      displayName: "Streamer",
+      scopes: ["bits:read"],
+      connectedAt: "2026-05-30T12:00:00.000Z",
+      updatedAt: "2026-05-30T12:00:00.000Z"
+    });
+
+    await expect(service.getStatus()).resolves.toMatchObject({
+      connected: true,
+      authorizationState: "update-required",
+      missingScopes: [
+        "channel:read:hype_train",
+        "channel:read:polls",
+        "channel:read:predictions",
+        "channel:read:redemptions",
+        "channel:read:subscriptions",
+        "moderator:read:followers"
+      ],
+      account: {
+        accountId: "141981764",
+        scopes: ["bits:read"]
+      }
+    });
   });
 
   it("uses injected authorization IDs", async () => {

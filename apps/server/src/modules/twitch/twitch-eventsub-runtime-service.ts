@@ -3,7 +3,11 @@ import type { SecretStore } from "@stream-jams/core";
 import type { EventIngestionStatus } from "../events/event-ingestion-service.js";
 import { runtimeSecretStoreUnavailableMessage } from "../security/runtime-secret-store.js";
 import type { TwitchAccountRepository } from "./twitch-account-repository.js";
-import { createTwitchTokenSecretRef } from "./twitch-oauth-service.js";
+import {
+  createTwitchTokenSecretRef,
+  defaultTwitchOAuthScopes,
+  missingTwitchScopes
+} from "./twitch-oauth-service.js";
 import type {
   TwitchEventSubClient,
   TwitchEventSubConnectionState,
@@ -94,6 +98,12 @@ export class TwitchEventSubRuntimeService {
     if (account === null) {
       this.#eventSubClient.disconnect();
       await this.#recordRuntimeError("Twitch account connection is unavailable");
+      return this.getStatus();
+    }
+
+    if (missingTwitchScopes(account.scopes, defaultTwitchOAuthScopes).length > 0) {
+      this.#eventSubClient.disconnect();
+      await this.#recordRuntimeError("Twitch authorization update required. Reconnect Twitch to grant the added event permissions.");
       return this.getStatus();
     }
 

@@ -57,7 +57,15 @@ describe("TwitchEventSubRuntimeService", () => {
         clientId: "client-id",
         account: {
           accountId: "141981764",
-          scopes: ["bits:read"]
+          scopes: [
+            "bits:read",
+            "channel:read:hype_train",
+            "channel:read:polls",
+            "channel:read:predictions",
+            "channel:read:redemptions",
+            "channel:read:subscriptions",
+            "moderator:read:followers"
+          ]
         }
       }
     ]);
@@ -93,6 +101,35 @@ describe("TwitchEventSubRuntimeService", () => {
     expect(diagnostics).toEqual([{
       message: "Twitch authorization could not be validated or refreshed",
       referenceId: "ref-twitch-auth"
+    }]);
+  });
+
+  it("blocks EventSub and records a reference-linked error when the saved grant is missing required scopes", async () => {
+    const secretStore = new InMemorySecretStore();
+    const eventSubClient = new RecordingEventSubClient();
+    const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
+    await secretStore.setSecret(createTwitchTokenSecretRef("141981764", "access_token"), "access-token-1");
+    const service = new TwitchEventSubRuntimeService({
+      accountRepository: new InMemoryTwitchAccountRepository({ ...connectedAccount, scopes: ["bits:read"] }),
+      clientId: "client-id",
+      eventSubClient,
+      ingestionService: new StaticIngestionStatusService(),
+      generateReferenceId: () => "ref-twitch-scopes",
+      onDiagnostic(entry) {
+        diagnostics.push(entry);
+      },
+      secretStore
+    });
+
+    await expect(service.connectStoredAccount()).resolves.toMatchObject({
+      state: "error",
+      message: "Twitch authorization update required. Reconnect Twitch to grant the added event permissions.",
+      referenceId: "ref-twitch-scopes"
+    });
+    expect(eventSubClient.connectInputs).toEqual([]);
+    expect(diagnostics).toEqual([{
+      message: "Twitch authorization update required. Reconnect Twitch to grant the added event permissions.",
+      referenceId: "ref-twitch-scopes"
     }]);
   });
 
@@ -190,7 +227,15 @@ const connectedAccount: TwitchAccount = {
   accountId: "141981764",
   login: "streamer",
   displayName: "Streamer",
-  scopes: ["bits:read"],
+  scopes: [
+    "bits:read",
+    "channel:read:hype_train",
+    "channel:read:polls",
+    "channel:read:predictions",
+    "channel:read:redemptions",
+    "channel:read:subscriptions",
+    "moderator:read:followers"
+  ],
   connectedAt: "2026-05-31T11:00:00.000Z",
   updatedAt: "2026-05-31T11:00:00.000Z"
 };

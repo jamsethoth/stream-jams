@@ -202,8 +202,8 @@ export interface TwitchConnectedAccountView {
 }
 
 export type TwitchConnectionStatusView =
-  | { readonly connected: false; readonly account: null }
-  | { readonly connected: true; readonly account: TwitchConnectedAccountView };
+  | { readonly connected: false; readonly authorizationState: "disconnected"; readonly missingScopes: readonly string[]; readonly account: null }
+  | { readonly connected: true; readonly authorizationState: "ready" | "update-required"; readonly missingScopes: readonly string[]; readonly account: TwitchConnectedAccountView };
 
 export interface TwitchAuthStartResultView {
   readonly authorizationId: string;
@@ -726,13 +726,14 @@ interface RuntimeContract<T> {
 
 const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView> = {
   parse(input) {
-    if (!hasExactKeys(input, ["connected", "account"]) || typeof input.connected !== "boolean") {
+    if (!hasExactKeys(input, ["connected", "authorizationState", "missingScopes", "account"]) || typeof input.connected !== "boolean" || !isStringArray(input.missingScopes)) {
       throw new TypeError("Invalid Twitch connection status response");
     }
     if (!input.connected) {
-      if (input.account !== null) throw new TypeError("Invalid Twitch connection status response");
-      return { connected: false, account: null };
+      if (input.account !== null || input.authorizationState !== "disconnected" || input.missingScopes.length !== 0) throw new TypeError("Invalid Twitch connection status response");
+      return { connected: false, authorizationState: "disconnected", missingScopes: [], account: null };
     }
+    if (input.authorizationState !== "ready" && input.authorizationState !== "update-required") throw new TypeError("Invalid Twitch connection status response");
     if (!hasExactKeys(input.account, ["accountId", "login", "displayName", "scopes", "connectedAt", "updatedAt"])) {
       throw new TypeError("Invalid Twitch connection status response");
     }
@@ -749,6 +750,8 @@ const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView
     }
     return {
       connected: true,
+      authorizationState: input.authorizationState,
+      missingScopes: [...input.missingScopes],
       account: {
         accountId: account.accountId,
         login: account.login,
