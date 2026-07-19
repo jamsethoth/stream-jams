@@ -177,13 +177,8 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
       if (socket === nextSocket) reconnectDelayMs = 1_000;
     });
     nextSocket.addEventListener("message", (event) => {
-      const instruction = parsePlaybackInstructionMessage(event.data);
-      if (instruction !== null) {
-        options.onMessage({
-          type: "playback",
-          instruction
-        });
-      }
+      const message = parseOverlaySocketMessage(event.data);
+      if (message !== null) options.onMessage(message);
     });
     nextSocket.addEventListener("error", () =>
       options.onMessage({
@@ -191,12 +186,20 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
         message: "Overlay transport connection failed"
       })
     );
-    nextSocket.addEventListener("close", () => {
+    nextSocket.addEventListener("close", (event) => {
       if (disposed || socket !== nextSocket) {
         return;
       }
 
       socket = null;
+      options.onMessage({
+        type: "error",
+        message: "Overlay transport connection closed"
+      });
+      if (event.code === 1008) {
+        return;
+      }
+
       const delayMs = reconnectDelayMs;
       reconnectDelayMs = Math.min(reconnectDelayMs * 2, 10_000);
       reconnectTimer = window.setTimeout(() => {
@@ -243,7 +246,7 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
   };
 }
 
-function parsePlaybackInstructionMessage(data: unknown): OverlayInstruction | null {
+function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
   if (typeof data !== "string") {
     return null;
   }
@@ -262,9 +265,17 @@ function parsePlaybackInstructionMessage(data: unknown): OverlayInstruction | nu
   const candidate = parsed as {
     readonly type?: unknown;
     readonly instruction?: unknown;
+    readonly message?: unknown;
   };
-  return candidate.type === "overlay.playback" && typeof candidate.instruction === "object" && candidate.instruction !== null
-    ? (candidate.instruction as OverlayInstruction)
+  if (candidate.type === "overlay.playback" && typeof candidate.instruction === "object" && candidate.instruction !== null) {
+    return {
+      type: "playback",
+      instruction: candidate.instruction as OverlayInstruction
+    };
+  }
+
+  return candidate.type === "overlay.error" && typeof candidate.message === "string"
+    ? { type: "error", message: candidate.message }
     : null;
 }
 

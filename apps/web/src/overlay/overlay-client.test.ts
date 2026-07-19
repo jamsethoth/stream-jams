@@ -141,9 +141,38 @@ describe("overlay-client", () => {
     vi.advanceTimersByTime(30_000);
     expect(FakeWebSocket.instances).toHaveLength(2);
   });
+
+  it("forwards a gateway overlay error through the existing client error state", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+
+    FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({
+      type: "overlay.error",
+      code: "OVERLAY_ROUTE_KEY_UNAUTHORIZED",
+      message: "Overlay route key is not authorized for this output"
+    }));
+
+    expect(onMessage).toHaveBeenCalledWith({
+      type: "error",
+      message: "Overlay route key is not authorized for this output"
+    });
+  });
+
+  it("treats a policy close as a terminal transport failure", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+
+    FakeWebSocket.instances[0]!.emitClose(1008);
+    expect(onMessage).toHaveBeenCalledWith({
+      type: "error",
+      message: "Overlay transport connection closed"
+    });
+    vi.advanceTimersByTime(30_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
 });
 
-function connectClient() {
+function connectClient(onMessage = vi.fn()) {
   return connectOverlayClient({
     route: parseOverlayRoute("/overlay/modules/alerts/live/ovl_reconnect?profile=landscape")!,
     fetcher: vi.fn().mockResolvedValue({
@@ -157,7 +186,7 @@ function connectClient() {
       })
     }) as unknown as typeof fetch,
     WebSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
-    onMessage: vi.fn()
+    onMessage
   });
 }
 
@@ -181,6 +210,15 @@ class FakeWebSocket {
   emit(type: "open" | "close"): void {
     this.readyState = type === "open" ? WebSocket.OPEN : WebSocket.CLOSED;
     for (const listener of this.#listeners.get(type) ?? []) listener(new Event(type));
+  }
+
+  emitClose(code: number): void {
+    this.readyState = WebSocket.CLOSED;
+    for (const listener of this.#listeners.get("close") ?? []) listener({ code } as CloseEvent);
+  }
+
+  emitMessage(data: string): void {
+    for (const listener of this.#listeners.get("message") ?? []) listener({ data } as MessageEvent);
   }
 
   send(message: string): void {
