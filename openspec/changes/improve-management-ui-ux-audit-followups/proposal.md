@@ -15,7 +15,7 @@ The merged management UI is coherent but the post-merge UX audit found paths tha
 - Remove duplicate route headings, hard-coded management colors, and dead pre-refactor CSS touched by this work.
 - Add focused unit, Storybook, and Playwright coverage for failure, keyboard, reconnect, scaling, and responsive states.
 - Keep alert-editor action failures out of the workspace layout, auto-dismiss them after eight seconds, and retain their reference IDs in Diagnostics.
-- Present transient management action success, failure, and state feedback through one non-reflowing toast pattern across Alerts, Assets, Providers, Diagnostics, and Settings while keeping blocking and corrective messages inline.
+- Present transient management action success, failure, warning, and state feedback through one non-reflowing green, red, or yellow toast pattern across Alerts, Assets, Providers, Diagnostics, and Settings while keeping blocking and corrective messages inline.
 - Present one user-facing actor name variable whose live value matches preview while retaining legacy template compatibility.
 - Replace the generic alert-template picker with the approved event-specific aliases and one shared preview, test, and live template context.
 

@@ -92,18 +92,26 @@ The management UI SHALL present post-load alert-editor action failures without c
 - **THEN** the blocking failure remains inline and persistent with a route back to Alerts
 
 ### Requirement: Transient Management Feedback Uses One Non-Reflowing Toast Pattern
-The management UI SHALL present transient action success, failure, and state feedback through one shared toast pattern without changing page or editor layout.
+The management UI SHALL present transient action success, failure, warning, and state feedback through one shared toast pattern without changing page or editor layout.
 
 #### Scenario: Management action succeeds or changes transient state
 - **WHEN** a user completes an action that currently reports saved, copied, queued, tested, exported, restored, opened, enabled, disabled, created, duplicated, deleted, replaced, reverted, or preview state
 - **THEN** the result appears in a fixed viewport toast instead of inline page flow
-- **AND** positive or informational feedback automatically disappears after four seconds
+- **AND** success uses the positive green tone
+- **AND** a completed action requiring review or corrective follow-up uses the warning yellow tone
+- **AND** success or warning feedback automatically disappears after four seconds
 
 #### Scenario: Management action fails after usable content has loaded
 - **WHEN** a save, copy, test, export, mutation, or other nonblocking command fails
 - **THEN** the actionable failure appears in the same fixed viewport toast region
+- **AND** it uses the negative red tone
 - **AND** it can be dismissed immediately and automatically disappears after eight seconds
 - **AND** available timestamp, reference ID, correction, and Diagnostics actions remain entirely inside the toast at supported widths
+
+#### Scenario: Toast tone communicates meaning accessibly
+- **WHEN** a success, warning, or failure toast is shown
+- **THEN** its text identifies the outcome in addition to the green, yellow, or red tone
+- **AND** assistive technology receives a polite status for success or warning and an alert for failure
 
 #### Scenario: Feedback requires correction or represents blocked page state
 - **WHEN** a failure blocks initial loading, marks runtime data stale, belongs to a field or wizard, or requires a confirmation decision

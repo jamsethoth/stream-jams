@@ -32,8 +32,9 @@ Do not build landing-page or marketing layouts for product work.
 
 ## Transient Feedback
 
-- Use the shared fixed management toast for transient action success, failure, and state feedback; do not insert these messages into page flow.
-- Positive and informational toasts expire after four seconds. Failure toasts remain dismissible and expire after eight seconds.
+- Use the shared fixed management toast for transient action success, failure, warning, and state feedback; do not insert these messages into page flow.
+- Use green for success, red for failure, and yellow for warning. Treat completed actions requiring review or corrective follow-up as warnings, and state every outcome in text so color is never the only signal.
+- Success and warning toasts expire after four seconds. Failure toasts remain dismissible and expire after eight seconds.
 - Keep toast content, timestamps, reference IDs, correction links, and dismissal controls inside the viewport and allow long values or localized copy to wrap.
 - Keep blocking load failures, stale-runtime refresh failures, field validation, wizard failures, destructive confirmation content, and warnings requiring a decision inline with the affected workflow.
 
