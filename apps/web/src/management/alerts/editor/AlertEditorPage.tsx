@@ -82,7 +82,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTab>("layers");
   const [search, setSearch] = useState("");
-  const [canvasViews, setCanvasViews] = useState<Record<TargetProfileId, CanvasViewState>>(() => initialCanvasViews());
+  const [canvasViews, setCanvasViews] = useState<Partial<Record<TargetProfileId, CanvasViewState>>>({});
   const [fitRequestId, setFitRequestId] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
@@ -131,7 +131,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       if (!active) return;
       setEditor(createEditorState(document));
       setProfileId(props.targetProfileId === "vertical" ? "vertical" : "landscape");
-      setCanvasViews(initialCanvasViews());
+      setCanvasViews({});
       setSelectedLayerId(document.layers[0]?.id ?? null);
       const firstSample = document.samplePayloads[0] ?? null;
       setSampleId(firstSample?.id ?? null);
@@ -254,7 +254,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const document = editor?.document ?? null;
   const selectedLayer = document?.layers.find((layer) => layer.id === selectedLayerId) ?? null;
   const profile = document?.targetProfiles.find((candidate) => candidate.id === profileId) ?? null;
-  const canvasView = canvasViews[profileId];
+  const storedCanvasView = canvasViews[profileId];
+  const canvasView = storedCanvasView ?? DEFAULT_CANVAS_VIEW;
   const documentConditionError = document === null ? null : alertDocumentConditionError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
   const visibleAlerts = useMemo(() => {
@@ -649,7 +650,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             selectedLayerId={selectedLayerId}
             showGrid={showGrid}
             showSafeArea={showSafeArea}
-            viewState={canvasView}
+            {...(storedCanvasView === undefined ? {} : { viewState: storedCanvasView })}
           />
         </main>
 
@@ -1196,12 +1197,7 @@ function alertDocumentConditionError(document: AlertEditorDocument): string | nu
   return null;
 }
 
-function initialCanvasViews(): Record<TargetProfileId, CanvasViewState> {
-  return {
-    landscape: { zoom: 100, scrollLeft: 0, scrollTop: 0 },
-    vertical: { zoom: 100, scrollLeft: 0, scrollTop: 0 }
-  };
-}
+const DEFAULT_CANVAS_VIEW: CanvasViewState = { zoom: 100, scrollLeft: 0, scrollTop: 0 };
 
 function profileLayoutChanged(
   savedDocument: AlertEditorDocument,

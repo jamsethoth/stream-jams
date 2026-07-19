@@ -8,6 +8,7 @@ import { AlertEditorPage } from "./AlertEditorPage.js";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -381,7 +382,9 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
   });
 
-  it("remembers canvas zoom by profile and confirms before replacing an edited target layout", async () => {
+  it("fits each canvas by default, remembers profile zoom, and confirms before replacing an edited target layout", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1_000);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(700);
     const user = userEvent.setup();
     render(
       <DirtyNavigationProvider>
@@ -406,10 +409,11 @@ describe("AlertEditorPage", () => {
     );
 
     await screen.findByRole("region", { name: "Landscape alert canvas" });
+    await waitFor(() => expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("49%"));
     await user.click(screen.getByRole("button", { name: "Zoom in" }));
-    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("125%");
+    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("74%");
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
-    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("100%");
+    await waitFor(() => expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("33%"));
 
     const xPosition = screen.getByLabelText("X");
     await user.clear(xPosition);
@@ -423,7 +427,7 @@ describe("AlertEditorPage", () => {
 
     await user.click(screen.getByRole("button", { name: /Landscape/ }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).getByRole("button", { name: "Discard and switch" }));
-    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("125%");
+    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("74%");
   });
 
   it("edits preset animation timing and easing", async () => {

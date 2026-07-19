@@ -59,14 +59,14 @@ export function AlertCanvas(props: AlertCanvasProps) {
 
   useEffect(() => {
     const requestId = props.fitRequestId ?? 0;
-    if (requestId === 0 || requestId === processedFitRequestRef.current) return;
+    if (props.viewState !== undefined && (requestId === 0 || requestId === processedFitRequestRef.current)) return;
     processedFitRequestRef.current = requestId;
     const viewport = viewportRef.current;
     if (viewport === null || props.onViewStateChange === undefined) return;
     const horizontalZoom = (Math.max(1, viewport.clientWidth - 56) / dimensions.width) * 100;
     const verticalZoom = (Math.max(1, viewport.clientHeight - 56) / dimensions.height) * 100;
     props.onViewStateChange({ zoom: Math.max(10, Math.min(150, Math.floor(Math.min(horizontalZoom, verticalZoom)))), scrollLeft: 0, scrollTop: 0 });
-  }, [dimensions.height, dimensions.width, props.fitRequestId, props.onViewStateChange]);
+  }, [dimensions.height, dimensions.width, props.fitRequestId, props.onViewStateChange, props.viewState]);
 
   function beginOperation(event: ReactPointerEvent<HTMLElement>, layerId: string, mode: "move" | "resize") {
     const layout = layouts.get(layerId);

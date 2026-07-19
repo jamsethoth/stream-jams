@@ -1,6 +1,6 @@
 import type { AlertEditorDocument, AlertSetDetail, RegisteredProviderView } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../../stories/mock-apis.js";
 import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
 import { AlertEditorPage } from "./AlertEditorPage.js";
@@ -35,6 +35,7 @@ export const ReadyLandscape: Story = {
     await expect(await canvas.findByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
       "AlertsEveryday alertsNew follower"
     );
+    await waitFor(() => expect(canvas.getByRole("status", { name: "Canvas zoom" })).not.toHaveTextContent("100%"));
   }
 };
 
