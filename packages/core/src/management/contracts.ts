@@ -258,14 +258,14 @@ export const managedAlertMutationInputSchema = z.object({
 });
 
 export const alertStarterTemplates = [
-  { eventType: "follow", group: "Core", label: "Follow", defaultName: "New follower", description: "One alert for each new follower.", text: "Thanks for following, {actor.displayName}!" },
-  { eventType: "subscription", group: "Subscriptions", label: "Subscription", defaultName: "New subscriber", description: "One alert for each new subscription.", text: "Thanks for subscribing, {actor.displayName}!" },
-  { eventType: "resubscription", group: "Subscriptions", label: "Resubscription", defaultName: "Resubscription", description: "One alert for each renewed subscription.", text: "Thanks for resubscribing, {actor.displayName}!" },
-  { eventType: "cheer", group: "Core", label: "Cheer", defaultName: "New cheer", description: "One alert for each Bits cheer.", text: "Thanks for the cheer, {actor.displayName}!" },
-  { eventType: "raid", group: "Core", label: "Raid", defaultName: "New raid", description: "One alert when another channel raids.", text: "Welcome raiders from {actor.displayName}!" },
-  { eventType: "channel_point_redemption", group: "Core", label: "Channel point redemption", defaultName: "Custom reward", description: "One alert for each completed reward redemption.", text: "{actor.displayName} redeemed a reward!" },
-  { eventType: "gift_subscription", group: "Subscriptions", label: "Gift subscription received", defaultName: "Gift subscription received", description: "One alert per recipient gift subscription.", text: "{recipient.displayName} received a Tier {tier} gift subscription!" },
-  { eventType: "community_gift", group: "Subscriptions", label: "Community gift received", defaultName: "Community gift received", description: "One alert for each aggregate community gift, not each recipient.", text: "{actor.displayName} gifted {amount} Tier {tier} subscriptions!" },
+  { eventType: "follow", group: "Core", label: "Follow", defaultName: "New follower", description: "One alert for each new follower.", text: "Thanks for following, {userName}!" },
+  { eventType: "subscription", group: "Subscriptions", label: "Subscription", defaultName: "New subscriber", description: "One alert for each new subscription.", text: "Thanks for subscribing, {userName}!" },
+  { eventType: "resubscription", group: "Subscriptions", label: "Resubscription", defaultName: "Resubscription", description: "One alert for each renewed subscription.", text: "Thanks for resubscribing, {userName}!" },
+  { eventType: "cheer", group: "Core", label: "Cheer", defaultName: "New cheer", description: "One alert for each Bits cheer.", text: "Thanks for the cheer, {userName}!" },
+  { eventType: "raid", group: "Core", label: "Raid", defaultName: "New raid", description: "One alert when another channel raids.", text: "Welcome raiders from {userName}!" },
+  { eventType: "channel_point_redemption", group: "Core", label: "Channel point redemption", defaultName: "Custom reward", description: "One alert for each completed reward redemption.", text: "{userName} redeemed {rewardTitle}!" },
+  { eventType: "gift_subscription", group: "Subscriptions", label: "Gift subscription received", defaultName: "Gift subscription received", description: "One alert per recipient gift subscription.", text: "{recipientName} received a Tier {tier} gift subscription!" },
+  { eventType: "community_gift", group: "Subscriptions", label: "Community gift received", defaultName: "Community gift received", description: "One alert for each aggregate community gift, not each recipient.", text: "{gifterName} gifted {giftCount} Tier {tier} subscriptions!" },
   { eventType: "hype_train_start", group: "Hype Train", label: "Hype Train started", defaultName: "Hype Train started", description: "One alert when a Hype Train starts.", text: "Hype Train level {level} has started!" },
   { eventType: "hype_train_progress", group: "Hype Train", label: "Hype Train progress", defaultName: "Hype Train progress", description: "One alert for Hype Train progress updates.", text: "Hype Train level {level}: {progress}/{total}!" },
   { eventType: "hype_train_end", group: "Hype Train", label: "Hype Train ended", defaultName: "Hype Train ended", description: "One alert when a Hype Train ends.", text: "Hype Train ended at level {level}!" },
@@ -417,6 +417,7 @@ const commonTemplateVariables = [
 const hypeTrainTemplateVariables = [
   { key: "level", label: "Level", description: "Current Hype Train level." },
   { key: "progress", label: "Progress", description: "Current Hype Train progress." },
+  { key: "goal", label: "Goal", description: "Contribution goal for the current Hype Train level." },
   { key: "total", label: "Total", description: "Current Hype Train total." }
 ] as const;
 
@@ -428,35 +429,48 @@ const pollTemplateVariables = [
 
 const predictionTemplateVariables = [
   { key: "title", label: "Prediction title", description: "Prediction title." },
-  { key: "totalPoints", label: "Total points", description: "Total prediction points." },
   { key: "totalUsers", label: "Participants", description: "Total prediction participants." },
+  { key: "totalPoints", label: "Total points", description: "Total prediction points." },
   { key: "status", label: "Status", description: "Normalized prediction lifecycle status." }
 ] as const;
 
 const eventTemplateVariables: Record<AlertSampleEventType, readonly z.infer<typeof alertTemplateVariableSchema>[]> = {
-  follow: [],
-  raid: [{ key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }],
-  cheer: [{ key: "cheerAmount", label: "Bits", description: "Number of Bits cheered." }],
+  follow: commonTemplateVariables,
+  raid: [
+    ...commonTemplateVariables,
+    { key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }
+  ],
+  cheer: [
+    ...commonTemplateVariables,
+    { key: "cheerAmount", label: "Bits", description: "Number of Bits cheered." },
+    { key: "message", label: "Message", description: "Optional message sent with the cheer." }
+  ],
   subscription: [
-    { key: "amount", label: "Quantity", description: "Subscription quantity or month value." },
+    ...commonTemplateVariables,
     { key: "tier", label: "Tier", description: "Subscription tier." }
   ],
   resubscription: [
-    { key: "amount", label: "Months", description: "Resubscription month value." },
-    { key: "tier", label: "Tier", description: "Subscription tier." }
+    ...commonTemplateVariables,
+    { key: "totalMonths", label: "Total months", description: "Total number of subscribed months." },
+    { key: "streakMonths", label: "Current streak", description: "Current subscription streak in months when available." },
+    { key: "tier", label: "Tier", description: "Subscription tier." },
+    { key: "message", label: "Message", description: "Optional resubscription message." }
   ],
   channel_point_redemption: [
+    ...commonTemplateVariables,
     { key: "rewardTitle", label: "Reward title", description: "Channel Point reward title." },
     { key: "userInput", label: "User input", description: "Optional text entered with the redemption." }
   ],
   gift_subscription: [
-    { key: "tier", label: "Tier", description: "Gift subscription tier." },
-    { key: "recipient.displayName", label: "Recipient", description: "Normalized recipient display name." }
+    { key: "recipientName", label: "Recipient name", description: "Display name of the gift recipient." },
+    { key: "gifterName", label: "Gifter name", description: "Display name of the gifter when available." },
+    { key: "tier", label: "Tier", description: "Gift subscription tier." }
   ],
   community_gift: [
-    { key: "amount", label: "Gift count", description: "Number of subscriptions in the aggregate community gift." },
+    { key: "gifterName", label: "Gifter name", description: "Display name of the community-gift sender." },
+    { key: "giftCount", label: "Gift count", description: "Number of subscriptions in the aggregate community gift." },
     { key: "tier", label: "Tier", description: "Community gift tier." },
-    { key: "cumulativeTotal", label: "Cumulative gifts", description: "Gifter cumulative community gift total when available." }
+    { key: "cumulativeGifts", label: "Cumulative gifts", description: "Gifter cumulative community gift total when available." }
   ],
   hype_train_start: hypeTrainTemplateVariables,
   hype_train_progress: hypeTrainTemplateVariables,
@@ -473,7 +487,7 @@ const eventTemplateVariables: Record<AlertSampleEventType, readonly z.infer<type
 };
 
 export function getAlertTemplateVariableCatalog(eventType: AlertSampleEventType) {
-  return [...commonTemplateVariables, ...(eventTemplateVariables[eventType] ?? [])];
+  return [...(eventTemplateVariables[eventType] ?? [])];
 }
 
 export function validateAlertSamplePayload(

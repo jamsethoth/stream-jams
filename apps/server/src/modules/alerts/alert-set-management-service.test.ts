@@ -48,10 +48,10 @@ describe("AlertSetManagementService", () => {
       "New follower", "New subscriber", "New raid", "Custom reward"
     ]);
     expect(detail.inventory.map((alert) => alert.previewText)).toEqual([
-      "Thanks for following, {actor.displayName}!",
-      "Thanks for subscribing, {actor.displayName}!",
-      "Welcome raiders from {actor.displayName}!",
-      "{actor.displayName} redeemed a reward!"
+      "Thanks for following, {userName}!",
+      "Thanks for subscribing, {userName}!",
+      "Welcome raiders from {userName}!",
+      "{userName} redeemed {rewardTitle}!"
     ]);
     expect(detail.inventory.every((row) => !row.enabled && row.reviewState === "needs-review")).toBe(true);
     expect(detail.browserSources.map((output) => output.targetProfileId)).toEqual(["landscape", "vertical"]);
@@ -86,7 +86,7 @@ describe("AlertSetManagementService", () => {
       enabled: false,
       reviewState: "needs-review",
       targetProfileIds: ["landscape", "vertical"],
-      previewText: "Thanks for the cheer, {actor.displayName}!"
+      previewText: "Thanks for the cheer, {userName}!"
     });
     const persisted = await fixture.service.getSet(starter!.id);
     expect(persisted.inventory).toContainEqual(created);

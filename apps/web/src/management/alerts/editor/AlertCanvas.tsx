@@ -1,4 +1,4 @@
-import type { AlertEditorDocument, AlertLayer, TargetProfileId } from "@stream-jams/core";
+import { createAlertTemplateContext, type AlertEditorDocument, type AlertLayer, type TargetProfileId } from "@stream-jams/core";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
@@ -49,6 +49,10 @@ export function AlertCanvas(props: AlertCanvasProps) {
   const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
   const viewState = props.viewState ?? { zoom: props.zoom ?? 100, scrollLeft: 0, scrollTop: 0 };
   const background = props.background ?? { mode: "checkerboard", color: "#1a1e23" };
+  const templateContext = createAlertTemplateContext({
+    eventType: props.document.eventType,
+    samplePayload: props.samplePayload
+  });
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -180,7 +184,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   )}
                   tabIndex={0}
                 >
-                  <CanvasLayer assetApi={props.assetApi} layer={layer} samplePayload={props.samplePayload} />
+                  <CanvasLayer assetApi={props.assetApi} layer={layer} templateContext={templateContext} />
                   <span
                     aria-hidden="true"
                     className="alert-canvas__resize-handle"
@@ -208,14 +212,14 @@ export function AlertCanvas(props: AlertCanvasProps) {
 function CanvasLayer({
   assetApi,
   layer,
-  samplePayload
+  templateContext
 }: {
   readonly assetApi: AssetApi;
   readonly layer: AlertLayer;
-  readonly samplePayload: Record<string, unknown>;
+  readonly templateContext: Record<string, unknown>;
 }) {
   if (layer.type === "text") {
-    return <span className="alert-canvas__text">{renderTemplate(layer.template, samplePayload)}</span>;
+    return <span className="alert-canvas__text">{renderTemplate(layer.template, templateContext)}</span>;
   }
   if (layer.type === "image" || layer.type === "video") {
     return <CanvasAsset assetApi={assetApi} assetId={layer.assetId} kind={layer.type} />;

@@ -58,3 +58,12 @@
 - [x] 8.5 Add failing live-render tests for `{userName}`, then expose only `User name` while retaining hidden `{actor.displayName}` compatibility.
 - [x] 8.6 Write a comprehensive normalized-event variable inventory and proposed event-specific editor catalog for product review without exposing unapproved variables.
 - [x] 8.7 Run frontend and server validation, strict OpenSpec validation, rebuild/restart, and live-verify error layout, dismissal, expiry, and Diagnostics lookup.
+
+## 9. Approved Alert Template Catalog
+
+- [x] 9.1 Add failing exact-catalog tests for every normalized alert event type.
+- [x] 9.2 Add failing context tests for approved aliases, nullable values, hidden compatibility keys, and exclusion of arbitrary sample fields.
+- [x] 9.3 Implement the event-specific insertion catalog without exposing IDs, raw timestamps, metadata, arrays, or superseded aliases.
+- [x] 9.4 Use one core template-context builder for local preview, server test send, and live playback.
+- [x] 9.5 Update production-component Storybook coverage for an event-specific catalog and its rendered preview.
+- [x] 9.6 Run focused and full frontend/server validation, strict OpenSpec validation, rebuild/restart, and live-verify the picker and preview.

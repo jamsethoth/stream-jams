@@ -30,3 +30,20 @@ The alert editor SHALL present only variables relevant to the selected normalize
 - **THEN** the editor writes `{userName}`
 - **AND** live playback resolves it from the normalized event actor display name
 - **AND** legacy saved `{actor.displayName}` templates continue to render without appearing as a second user-facing actor-name choice
+
+#### Scenario: Event-specific variables are offered
+- **WHEN** the editor loads an alert event type
+- **THEN** its variable picker contains only the approved aliases that describe useful data for that event
+- **AND** gift alerts distinguish recipient and gifter names
+- **AND** broadcaster/system events do not show `User name`
+- **AND** generic amounts, internal IDs, raw timestamps, arbitrary metadata, choices, and outcomes are not offered
+
+#### Scenario: Template context is consistent
+- **WHEN** an approved variable is rendered in local preview, server test send, or live playback
+- **THEN** every path resolves it through the same normalized template-context mapping
+- **AND** a nullable value renders as empty text
+
+#### Scenario: Saved template uses a compatibility key
+- **WHEN** a saved template contains a previously supported key that is no longer offered for insertion
+- **THEN** preview, test, and live playback continue to resolve that key
+- **AND** the compatibility key does not appear in the variable picker

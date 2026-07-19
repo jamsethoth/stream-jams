@@ -1,11 +1,11 @@
 import type { AlertMatch } from "./alert-matcher.js";
-import type { CheerEvent } from "../events/types.js";
+import type { CheerEvent, CommunityGiftEvent, GiftSubscriptionEvent, NormalizedStreamEvent } from "../events/types.js";
 import type { AlertEditorDocument } from "../management/contracts.js";
 import type { AlertRule, AlertVariant } from "./types.js";
 import { describe, expect, it } from "vitest";
 import { DefaultModerationService } from "../moderation/moderation-service.js";
 import { resolvedAlertSchema } from "../playback/schemas.js";
-import { AlertVariantSelectionError, DefaultAlertResolver } from "./alert-resolver.js";
+import { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alert-resolver.js";
 
 describe("DefaultAlertResolver", () => {
   it("resolves priority-ordered matches into overlay instructions without raw event payloads", () => {
@@ -142,6 +142,66 @@ describe("DefaultAlertResolver", () => {
     const [resolved] = createResolver().resolveMatches({ matches: [createMatch(rule, event)], target });
 
     expect(resolved?.overlayInstruction.text?.text).toBe("Viewer|Viewer");
+  });
+
+  it("maps approved aliases consistently from normalized events and editor samples", () => {
+    const normalized = createCommunityGiftEvent();
+    const sample = {
+      eventType: "community_gift" as const,
+      samplePayload: {
+        actor: { id: "gifter-1", displayName: "Generous viewer" },
+        amount: 5,
+        tier: "1000",
+        cumulativeTotal: 42,
+        metadata: { rawProviderPayload: { token: "secret" }, retained: "safe" },
+        debugOnly: "must-not-be-copied"
+      }
+    };
+
+    expect(createAlertTemplateContext(normalized)).toMatchObject({
+      gifterName: "Generous viewer",
+      giftCount: 5,
+      tier: "1000",
+      cumulativeGifts: 42,
+      amount: 5,
+      cumulativeTotal: 42
+    });
+    const sampleContext = createAlertTemplateContext(sample);
+    expect(sampleContext).toMatchObject({
+      gifterName: "Generous viewer",
+      giftCount: 5,
+      tier: "1000",
+      cumulativeGifts: 42,
+      amount: 5,
+      cumulativeTotal: 42,
+      metadata: { retained: "safe" }
+    });
+    expect(sampleContext).not.toHaveProperty("debugOnly");
+    expect(sampleContext).not.toHaveProperty("metadata.rawProviderPayload");
+
+    const cases = [
+      ["resubscription", { actor: { displayName: "Member" }, amount: 14, streakMonths: null, tier: "2000", message: "Hello" }, { userName: "Member", totalMonths: 14, streakMonths: null, tier: "2000", message: "Hello" }],
+      ["hype_train_progress", { level: 4, progress: 75, goal: 100, total: 375 }, { level: 4, progress: 75, goal: 100, total: 375 }],
+      ["poll_end", { title: "Next game?", totalVotes: 28, status: "completed" }, { title: "Next game?", totalVotes: 28, status: "completed" }],
+      ["prediction_end", { title: "Will we win?", totalUsers: 12, totalPoints: 4500, status: "resolved" }, { title: "Will we win?", totalUsers: 12, totalPoints: 4500, status: "resolved" }],
+      ["stream_online", { streamType: "live" }, { streamType: "live" }]
+    ] as const;
+
+    for (const [eventType, samplePayload, expected] of cases) {
+      expect(createAlertTemplateContext({ eventType, samplePayload })).toMatchObject(expected);
+    }
+  });
+
+  it("renders gift aliases, empty nullable values, and hidden saved-template keys live", () => {
+    const event = createGiftSubscriptionEvent();
+    const rule = createRule({
+      eventType: "gift_subscription",
+      variants: [createVariant({ textTemplate: "{recipientName}|{gifterName}|{recipient.displayName}|{amount}" })]
+    });
+
+    const [resolved] = createResolver().resolveMatches({ matches: [createMatch(rule, event)], target });
+
+    expect(resolved?.overlayInstruction.text?.text).toBe("Gift recipient||Gift recipient|1");
   });
 
   it("moderates rendered and TTS text before playback instructions leave the resolver", () => {
@@ -421,10 +481,35 @@ function createResolver(options: { readonly randomValues?: readonly number[]; re
   });
 }
 
-function createMatch(rule: AlertRule, event: CheerEvent): AlertMatch {
+function createMatch(rule: AlertRule, event: NormalizedStreamEvent): AlertMatch {
   return {
     rule,
     event
+  };
+}
+
+function createCommunityGiftEvent(): CommunityGiftEvent {
+  return {
+    ...createCheerEvent(),
+    type: "community_gift",
+    actor: { id: "gifter-1", displayName: "Generous viewer" },
+    amount: 5,
+    tier: "1000",
+    cumulativeTotal: 42,
+    anonymous: false
+  };
+}
+
+function createGiftSubscriptionEvent(): GiftSubscriptionEvent {
+  const recipient = { id: "recipient-1", displayName: "Gift recipient" };
+  return {
+    ...createCheerEvent(),
+    type: "gift_subscription",
+    actor: recipient,
+    amount: 1,
+    tier: "prime",
+    recipient,
+    gifter: null
   };
 }
 

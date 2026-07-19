@@ -189,7 +189,7 @@ export const EdgeCaseSample: Story = {
 };
 
 export const CommunityGiftSamplesAndConditions: Story = {
-  tags: ["task-5-expanded-event"],
+  tags: ["task-5-expanded-event", "task-9-template-catalog"],
   args: {
     alertId: "alert-community-gift",
     managementApi: createStoryManagementApi({
@@ -199,6 +199,13 @@ export const CommunityGiftSamplesAndConditions: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: "Insert {gifterName}" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Insert {giftCount}" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Insert {tier}" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Insert {cumulativeGifts}" })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: "Insert {userName}" })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: "Insert {amount}" })).not.toBeInTheDocument();
+    await expect(await canvas.findByText("Community gift gifted 5 subscriptions (42 total)!")).toBeVisible();
     await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
     const sample = canvas.getByRole("combobox", { name: "Sample payload" });
     await expect(sample).toHaveValue("normal");
@@ -386,8 +393,7 @@ function editorDocument(): AlertEditorDocument {
     rulePriority: 0,
     durationMs: 5_000,
     templateVariables: [
-      { key: "userName", label: "User name", description: "Display name for the event actor." },
-      { key: "actor.displayName", label: "Actor display name", description: "Normalized display name for the event actor." }
+      { key: "userName", label: "User name", description: "Display name for the event actor." }
     ],
     layers: [
       { id: "layer-text", name: "Message", type: "text", visible: true, order: 0, template: "Thanks, {userName}!", animation: preset("fade") },
@@ -432,7 +438,7 @@ function variationDocument(): AlertEditorDocument {
     weight: 2,
     priority: 5,
     templateVariables: [
-      ...(editorDocument().templateVariables ?? []),
+      { key: "userName", label: "User name", description: "Display name for the event actor." },
       { key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }
     ],
     samplePayloads: [
@@ -449,13 +455,13 @@ function communityGiftDocument(): AlertEditorDocument {
     eventType: "community_gift",
     name: "Community gift received",
     templateVariables: [
-      ...(editorDocument().templateVariables ?? []),
-      { key: "tier", label: "Gift tier", description: "Subscription tier for the community gift." },
-      { key: "amount", label: "Gift count", description: "Number of subscriptions in the community gift." },
-      { key: "cumulativeTotal", label: "Cumulative total", description: "Gift subscriptions from the gifter during the stream." }
+      { key: "gifterName", label: "Gifter name", description: "Display name of the community-gift sender." },
+      { key: "giftCount", label: "Gift count", description: "Number of subscriptions in the aggregate community gift." },
+      { key: "tier", label: "Tier", description: "Community gift tier." },
+      { key: "cumulativeGifts", label: "Cumulative gifts", description: "Gifter cumulative community gift total when available." }
     ],
     layers: editorDocument().layers.map((layer) => layer.type === "text"
-      ? { ...layer, template: "{userName} gifted {amount} subscriptions!" }
+      ? { ...layer, template: "{gifterName} gifted {giftCount} subscriptions ({cumulativeGifts} total)!" }
       : layer),
     samplePayloads: [
       {

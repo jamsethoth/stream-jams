@@ -16,6 +16,7 @@ The merged management UI is coherent but the post-merge UX audit found paths tha
 - Add focused unit, Storybook, and Playwright coverage for failure, keyboard, reconnect, scaling, and responsive states.
 - Keep alert-editor action failures out of the workspace layout, auto-dismiss them after eight seconds, and retain their reference IDs in Diagnostics.
 - Present one user-facing actor name variable whose live value matches preview while retaining legacy template compatibility.
+- Replace the generic alert-template picker with the approved event-specific aliases and one shared preview, test, and live template context.
 
 ## Capabilities
 

@@ -612,7 +612,7 @@ describe("AlertEditorPage", () => {
       layers: [
         ...editorDocument().layers,
         { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-audio", volume: 0.5, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
-        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, enabled: true, providerId: "speakerbot", template: "Hello {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, enabled: true, providerId: "speakerbot", template: "Hello {actor.displayName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
       ]
     };
     const sendAlertEditorTest = vi.fn();
@@ -657,6 +657,7 @@ describe("AlertEditorPage", () => {
 
     await waitFor(() => expect(getAssetFile).toHaveBeenCalledWith("asset-audio"));
     expect(speak).toHaveBeenCalledOnce();
+    expect(speak.mock.calls[0]?.[0]).toMatchObject({ text: "Hello James" });
     expect(sendAlertEditorTest).not.toHaveBeenCalled();
     const seek = screen.getByRole("slider", { name: "Preview position" });
     fireEvent.change(seek, { target: { value: "1200" } });

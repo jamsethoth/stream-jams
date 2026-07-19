@@ -382,6 +382,45 @@ describe("AlertEditorService", () => {
     expect(harness.enqueueTest).toHaveBeenCalledTimes(1);
   });
 
+  it("renders approved event aliases through the same normalized context used by live playback", async () => {
+    const communityRule: AlertRule = {
+      ...rule,
+      id: "alert-community-gift",
+      eventType: "community_gift"
+    };
+    const harness = createHarnessWithRule(communityRule);
+    const document = await harness.service.getDocument(communityRule.id);
+    const candidate: AlertEditorDocument = {
+      ...document,
+      layers: document.layers.map((layer) => layer.type === "text"
+        ? { ...layer, template: "{gifterName} gifted {giftCount}; {cumulativeGifts} total." }
+        : layer)
+    };
+
+    await harness.service.sendTest(communityRule.id, {
+      document: candidate,
+      targetProfileId: "landscape",
+      samplePayload: {
+        actor: { id: "gifter-1", displayName: "Generous viewer" },
+        amount: 5,
+        tier: "1000",
+        cumulativeTotal: 42
+      },
+      includeAudio: false,
+      includeTts: false
+    });
+
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      alerts: expect.arrayContaining([
+        expect.objectContaining({
+          overlayInstruction: expect.objectContaining({
+            text: expect.objectContaining({ text: "Generous viewer gifted 5; 42 total." })
+          })
+        })
+      ])
+    }));
+  });
+
   it("uses the stored media type when testing a Video/GIF layer", async () => {
     const harness = createHarness(false, async (assetId) => assetId === "asset-gif" ? "gif" : null);
     const document = await harness.service.getDocument(rule.id);

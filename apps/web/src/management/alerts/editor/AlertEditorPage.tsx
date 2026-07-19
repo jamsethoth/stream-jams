@@ -1,4 +1,5 @@
 import {
+  createAlertTemplateContext,
   getAlertEditorAffectedProfileIds,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -373,6 +374,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   async function playPreviewMedia(currentDocument: AlertEditorDocument, payload: Record<string, unknown>) {
     try {
+      const templateContext = createAlertTemplateContext({ eventType: currentDocument.eventType, samplePayload: payload });
       if (previewIncludeAudio) {
         const audioLayers = currentDocument.layers.filter(
           (layer): layer is Extract<AlertLayer, { type: "audio" }> => layer.visible && layer.type === "audio"
@@ -394,7 +396,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         currentDocument.layers.filter(
           (layer): layer is Extract<AlertLayer, { type: "tts" }> => layer.visible && layer.type === "tts" && layer.enabled
         ).forEach((layer) => {
-          speechSynthesis.speak(new SpeechSynthesisUtterance(renderTemplateValue(layer.template, payload)));
+          speechSynthesis.speak(new SpeechSynthesisUtterance(renderTemplateValue(layer.template, templateContext)));
         });
       }
     } catch (cause) {
@@ -458,13 +460,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   function addSimpleLayer(type: "text" | "tts") {
     if (document === null) return;
     const id = nextLayerId(document, type);
+    const defaultVariable = document.templateVariables?.[0]?.key;
+    const defaultTemplate = defaultVariable === undefined ? "" : `{${defaultVariable}}`;
     const layer = type === "text"
-      ? { ...layerBase(id, "Text", type, document.layers.length), template: "{userName}" }
+      ? { ...layerBase(id, "Text", type, document.layers.length), template: defaultTemplate }
       : {
           ...layerBase(id, "Text to speech", type, document.layers.length),
           enabled: activeTtsProvider !== null,
           providerId: activeTtsProvider?.kind ?? "browser-speech",
-          template: "{userName}"
+          template: defaultTemplate
         };
     updateDocument((current) => addLayer(current, layer, type === "text" ? defaultGeometryByProfile() : {}));
     setSelectedLayerId(id);

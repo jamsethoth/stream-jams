@@ -101,6 +101,48 @@ describe("AlertCanvas", () => {
     expect(container.querySelector(".alert-canvas__surface")).toHaveStyle({ backgroundColor: "#00ff00" });
   });
 
+  it("renders approved aliases from the event-specific sample context", () => {
+    const textDocument: AlertEditorDocument = {
+      ...editorDocument,
+      eventType: "community_gift",
+      layers: [{
+        id: "layer-text",
+        name: "Message",
+        type: "text",
+        visible: true,
+        order: 0,
+        template: "{gifterName} gifted {giftCount}; {cumulativeGifts} total.",
+        animation: editorDocument.layers[0]!.animation
+      }],
+      targetProfiles: editorDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        layerLayouts: profile.id === "landscape"
+          ? [{ layerId: "layer-text", x: 100, y: 100, width: 800, height: 160, zIndex: 1 }]
+          : []
+      }))
+    };
+
+    render(
+      <AlertCanvas
+        assetApi={assetApi}
+        document={textDocument}
+        onGeometryChange={vi.fn()}
+        onSelectLayer={vi.fn()}
+        preview={false}
+        profileId="landscape"
+        samplePayload={{
+          actor: { id: "gifter-1", displayName: "Generous viewer" },
+          amount: 5,
+          tier: "1000",
+          cumulativeTotal: 42
+        }}
+        selectedLayerId={null}
+      />
+    );
+
+    expect(screen.getByText("Generous viewer gifted 5; 42 total.")).toBeInTheDocument();
+  });
+
   it("selects a focused layer with Enter or Space and exposes pressed state", async () => {
     const user = userEvent.setup();
     const onSelectLayer = vi.fn();

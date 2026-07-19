@@ -43,7 +43,11 @@ Alternative rejected: generic async state machine/context, because four existing
 
 Loaded alert-editor action failures use the same actionable error content in a fixed bottom-right surface. They can be dismissed immediately and expire after eight seconds, so feedback does not resize or scroll the authoring workspace. Initial editor-load failures remain persistent and inline because no usable workspace exists behind them. Client-only failures receive a local reference ID and are written through the authenticated management diagnostics boundary; backend failures use their public error ID as the runtime-log correlation ID.
 
-The editor exposes `User name` as the single actor-name variable. Live template context maps `{userName}` to the normalized actor display name and keeps `{actor.displayName}` available only for saved-template compatibility. Other variables remain event-specific; a normalized-event inventory is reviewed before broadening the catalog.
+The editor exposes actor-name variables only when the selected event has a useful actor. Follow, subscription, resubscription, cheer, raid, and channel-point alerts expose `User name`; gift alerts expose `Recipient name` and `Gifter name`; community gifts expose `Gifter name`. Broadcaster/system events such as hype trains, polls, predictions, and stream status do not show an irrelevant actor choice.
+
+The picker uses concise event-specific aliases: `totalMonths`, `cheerAmount`, `raidViewers`, `rewardTitle`, `userInput`, `recipientName`, `gifterName`, `giftCount`, `cumulativeGifts`, hype-train totals, poll totals, prediction totals, and `streamType`. Generic amounts, internal IDs, raw timestamps, arbitrary metadata, and collection-valued choices or outcomes remain out of the picker. Nullable values render as empty text.
+
+One core template-context builder maps both normalized live events and editor sample payloads to the same aliases. Local preview, server test send, and live resolution all use it. Previously supported keys such as `{actor.displayName}`, `{recipient.displayName}`, `{amount}`, `{tenure}`, `{tenureMonths}`, and `{cumulativeTotal}` remain renderable for saved-template compatibility but are not offered for new insertion.
 
 ### Use native responsive behavior before new components
 
@@ -74,6 +78,7 @@ Each profile row shows its required width and height plus short browser-source s
 - [Scaling changes noncanonical browser-source output] -> Preserve canonical dimensions exactly at 1:1 and add Landscape/Vertical viewport tests.
 - [Shell click interception can break native link behavior] -> Intercept only same-origin, unmodified, left-button `/manage` navigation.
 - [Locale foundation does not translate existing copy] -> Limit this change to document metadata and shared formatting; add pseudolocale/RTL stories to expose remaining embedded copy.
+- [Existing templates use superseded variable names] -> Keep previously supported keys in the shared context while removing them from the insertion catalog.
 - [Parallel agents share one worktree] -> Assign disjoint file families and run integrated validation after all slices land.
 
 ## Migration Plan

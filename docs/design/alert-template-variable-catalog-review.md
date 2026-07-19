@@ -2,17 +2,11 @@
 
 ## Review Status
 
-This is a product-review draft. Only the already approved actor-name correction is implemented:
-
-- Editor shows `User name` and inserts `{userName}`.
-- Live playback resolves `{userName}` from normalized `actor.displayName`.
-- Existing `{actor.displayName}` templates remain supported but the internal path is hidden from the variable picker.
-
-No other proposed picker variables or aliases in this document are implemented yet.
+Approved and implemented. The editor uses the event-specific catalogs below, all rendering paths share one template-context builder, and saved compatibility keys remain renderable without appearing in the picker.
 
 ## Catalog Rules
 
-Recommended rules:
+Approved rules:
 
 1. Show only values useful for the selected event type.
 2. Use user-facing names and stable aliases; do not expose normalized object structure such as `actor.displayName`.
@@ -37,13 +31,13 @@ Recommended rules:
 | `amount` | `number \| null` | Event-dependent primary quantity | Hide generic key when a clearer event alias exists |
 | `metadata` | `Record<string, unknown>` | Sanitized transport and diagnostic metadata | Hide from picker; shape is not a stable authoring contract |
 
-## Complete Event Input And Proposed Picker
+## Complete Event Input And Approved Picker
 
 ### Follow
 
 Normalized event-specific input: `amount: null`.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -53,7 +47,7 @@ Proposed picker:
 
 Normalized event-specific input: `amount: number` (currently always `1`), `tier: "1000" \| "2000" \| "3000" \| "prime"`.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -66,7 +60,7 @@ Do not show `Quantity`; normalized `amount` is currently fixed at `1` and adds n
 
 Normalized event-specific input: `amount: number` (cumulative months), `tier`, `streakMonths: number | null`, plus optional common `message`.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -82,7 +76,7 @@ Keep existing `{amount}`, `{tenure}`, and `{tenureMonths}` aliases hidden for co
 
 Normalized event-specific input: `amount: number` (Bits), plus optional common `message`. Anonymous cheers normalize `actor.displayName` to `Anonymous`.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -94,7 +88,7 @@ Proposed picker:
 
 Normalized event-specific input: `amount: number` (viewer count).
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -105,7 +99,7 @@ Proposed picker:
 
 Normalized event-specific input: `amount: null`, `rewardId: string`, `rewardTitle: string`, `userInput: string | null`.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -119,7 +113,7 @@ Hide `rewardId`; it is useful for matching rules, not viewer-facing text.
 
 Normalized event-specific input: `amount: 1`, `tier`, `recipient: { id, displayName }`, `gifter: { id, displayName } | null`. The base actor is the recipient.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -133,7 +127,7 @@ Do not show generic `User name` for this event because it obscures whether the v
 
 Normalized event-specific input: `amount: number` (gift count), `tier`, `cumulativeTotal: number | null`, `anonymous: boolean`. The base actor is the gifter or `Anonymous`.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -148,7 +142,7 @@ The `anonymous` boolean need not be inserted into messages because `Gifter name`
 
 All three phases normalize: `amount: number | null`, `trainId: string`, `level: number | null`, `progress: number | null`, `goal: number | null`, `total: number | null`, `startedAt: string | null`, `expiresAt: string | null`, `endedAt: string | null`, `cooldownEndsAt: string | null`.
 
-Proposed picker for all three phases:
+Approved picker for all three phases:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -163,7 +157,7 @@ Do not show `User name`; normalized actor is the broadcaster, not the contributi
 
 All three phases normalize: `amount: number` (total votes), `pollId: string`, `title: string`, `choices: readonly { id, title, totalVotes }[]`, `totalVotes: number`, `startedAt: string`, `endsAt: string`, `status: string`.
 
-Proposed picker for all three phases:
+Approved picker for all three phases:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -177,7 +171,7 @@ Do not show `User name`; actor is the broadcaster. Hide `pollId`, raw timestamps
 
 All four phases normalize: `amount: number` (total points), `predictionId: string`, `title: string`, `outcomes: readonly { id, title, totalUsers, totalPoints }[]`, `totalUsers: number`, `totalPoints: number`, `startedAt: string`, `locksAt: string | null`, `endedAt: string | null`, `status: string`, `winningOutcomeId: string | null`.
 
-Proposed picker for all four phases:
+Approved picker for all four phases:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -192,7 +186,7 @@ Do not show `User name`; actor is the broadcaster. Hide IDs, timestamps, generic
 
 Normalized event-specific input: `amount: null`, `streamId: string | null`, `streamType: string | null`, `startedAt: string | null`, `endedAt: null`.
 
-Proposed picker:
+Approved picker:
 
 | Label | Key | Source |
 | --- | --- | --- |
@@ -204,26 +198,15 @@ Do not show `User name`; actor is the broadcaster. Hide `streamId` and raw times
 
 Normalized event-specific input: `amount: null`, `streamId: string | null`, `streamType: string | null`, `startedAt: null`, `endedAt: string | null`.
 
-Proposed picker: no variables. A fixed message is sufficient with current normalized data. Add a locale-formatted `Ended at` variable only if a real design needs it.
+Approved picker: no variables. A fixed message is sufficient with current normalized data. Add a locale-formatted `Ended at` variable only if a real design needs it.
 
-## Current Preview/Live Gaps
+## Rendering Contract
 
-Current preview context spreads the selected sample payload, but live context is deliberately constructed from the normalized event. Before this review, that made several variables appear valid in preview while resolving empty live.
+Local canvas preview, local TTS preview, server test send, and live playback now use the same core context mapping. The mapping exposes the approved aliases, sanitizes metadata, renders nullable values as empty text, and does not copy arbitrary sample fields into the top-level template context.
 
-After the approved actor-name fix, live context supports these stable keys:
+Previously shipped keys such as `actor.displayName`, `recipient.displayName`, `amount`, `tenure`, `tenureMonths`, and `cumulativeTotal` remain available to saved templates but are hidden from the insertion picker.
 
-- `userName` and hidden `actor.displayName`.
-- Base `id`, `providerId`, `occurredAt`, `type`, `message`, `amount`, and sanitized `metadata`.
-- `tier` for subscription events.
-- `streakMonths` plus hidden `tenure` and `tenureMonths` aliases.
-- `cheerAmount`, `raidViewers`, `rewardId`, `rewardTitle`, `channelPointReward`, and `userInput`.
-- `giftCount` only when supplied through sanitized metadata.
-
-The current editor picker also offers recipient, community-gift, Hype Train, poll, prediction, and stream variables that live context does not yet copy. Those choices should be corrected only after this proposed catalog and naming are approved.
-
-## Decisions Requested
-
-Recommended approval package:
+## Approved Decisions
 
 1. Accept user-facing aliases `totalMonths`, `recipientName`, `gifterName`, `giftCount`, and `cumulativeGifts`.
 2. Hide generic `amount`, internal IDs, raw timestamps, arbitrary metadata, and raw arrays from the picker.
