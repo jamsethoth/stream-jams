@@ -148,10 +148,9 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
   }
 
   return (
-    <section aria-labelledby="diagnostics-workspace-title" className="diagnostics-workspace">
+    <section aria-label="Diagnostics workspace" className="diagnostics-workspace">
       <header className="diagnostics-workspace__header">
         <div>
-          <h2 id="diagnostics-workspace-title">Diagnostics workspace</h2>
           <p>Failures remain visible with plain-language next steps, reference IDs, and sanitized evidence.</p>
         </div>
         <div className="diagnostics-workspace__actions">

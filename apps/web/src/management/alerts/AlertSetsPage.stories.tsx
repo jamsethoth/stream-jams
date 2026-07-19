@@ -33,6 +33,15 @@ export const ActiveSet: Story = {
   }
 };
 
+export const InitialLoadFailure: Story = {
+  args: {
+    managementApi: {
+      ...api([activeSet], detail(activeSet)),
+      listAlertSets: async () => { throw new Error("The local service is unavailable."); }
+    }
+  }
+};
+
 export const InactiveSelectedSet: Story = {
   args: { managementApi: api([activeSet, inactiveSet], detailById()) },
   play: async ({ canvasElement }) => {

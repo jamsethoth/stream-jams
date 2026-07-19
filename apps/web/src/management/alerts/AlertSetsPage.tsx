@@ -69,6 +69,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [expandedSetId, setExpandedSetId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AlertSetDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -100,35 +101,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
   const browserSourceRefreshFailed = useRef(false);
 
-  useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const loadedSets = await managementApi.listAlertSets();
-        if (!active) return;
-        setSets(loadedSets);
-        const selected = loadedSets.find((candidate) => candidate.id === initialSetId)
-          ?? loadedSets.find((candidate) => candidate.active)
-          ?? loadedSets[0]
-          ?? null;
-        setSelectedSetId(selected?.id ?? null);
-        setExpandedSetId(selected?.id ?? null);
-        const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
-        if (!active) return;
-        setDetail(loadedDetail);
-        setBrowserSourceStatusUpdatedAt(loadedDetail === null ? null : new Date().toISOString());
-        browserSourceRefreshFailed.current = false;
-        setBrowserSourceRefreshError(null);
-      } catch (cause) {
-        if (active) setError(toActionableError("Alert sets could not be loaded", cause, "Refresh the page and try again."));
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [initialSetId, managementApi]);
+  useEffect(() => { void loadAlertSets(initialSetId, true); }, [initialSetId, managementApi]);
 
   useEffect(() => {
     if (selectedSetId === null) return;
@@ -212,20 +185,35 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
+  async function loadAlertSets(preferredSetId: string | null | undefined, handleFailure = false) {
+    setLoading(true);
+    setError(null);
+    try {
+      const loadedSets = await managementApi.listAlertSets();
+      setSets(loadedSets);
+      const selected = loadedSets.find((candidate) => candidate.id === preferredSetId)
+        ?? loadedSets.find((candidate) => candidate.active)
+        ?? loadedSets[0]
+        ?? null;
+      setSelectedSetId(selected?.id ?? null);
+      setExpandedSetId(selected?.id ?? null);
+      const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
+      setDetail(loadedDetail);
+      setBrowserSourceStatusUpdatedAt(loadedDetail === null ? null : new Date().toISOString());
+      browserSourceRefreshFailed.current = false;
+      setBrowserSourceRefreshError(null);
+      setInitialLoadFailed(false);
+    } catch (cause) {
+      setInitialLoadFailed(detail === null);
+      setError(toActionableError("Alert sets could not be loaded", cause, "Refresh the page and try again."));
+      if (!handleFailure) throw cause;
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function refresh(preferredSetId = selectedSetId) {
-    const refreshedSets = await managementApi.listAlertSets();
-    setSets(refreshedSets);
-    const selected = refreshedSets.find((candidate) => candidate.id === preferredSetId)
-      ?? refreshedSets.find((candidate) => candidate.active)
-      ?? refreshedSets[0]
-      ?? null;
-    setSelectedSetId(selected?.id ?? null);
-    setExpandedSetId(selected?.id ?? null);
-    const refreshedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
-    setDetail(refreshedDetail);
-    setBrowserSourceStatusUpdatedAt(refreshedDetail === null ? null : new Date().toISOString());
-    browserSourceRefreshFailed.current = false;
-    setBrowserSourceRefreshError(null);
+    await loadAlertSets(preferredSetId);
   }
 
   function openNameDialog(action: NameAction, set: AlertSetOverview | null) {
@@ -528,6 +516,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   if (loading && detail === null) {
     return <p className="management-empty" role="status">Loading alert sets...</p>;
   }
+  if (initialLoadFailed && error !== null) return <section aria-label="Alert sets" className="alert-sets-page"><ManagementErrorBanner error={error} /><button onClick={() => void loadAlertSets(initialSetId, true)} type="button">Retry loading alert sets</button></section>;
 
   return (
     <div className="alert-sets-page">

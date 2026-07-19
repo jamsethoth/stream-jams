@@ -31,6 +31,26 @@ describe("SettingsPanel", () => {
     expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
   });
 
+  it("shows only retry when the initial settings load fails", async () => {
+    const user = userEvent.setup();
+    const getServerConfig = vi.fn()
+      .mockRejectedValueOnce(new Error("Local service unavailable"))
+      .mockResolvedValue({ host: "127.0.0.1", port: 39187 });
+    const managementApi = createManagementApi({ getServerConfig });
+
+    render(<SettingsPanel managementApi={managementApi} />);
+
+    expect(await screen.findByText("Settings could not be loaded")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry loading settings" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Save server settings" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export backup" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No backup selected.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Retry loading settings" }));
+    expect(await screen.findByRole("button", { name: "Save server settings" })).toBeInTheDocument();
+    expect(getServerConfig).toHaveBeenCalledTimes(2);
+  });
+
   it("opens the data folder and clears retained logs with visible completion", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();

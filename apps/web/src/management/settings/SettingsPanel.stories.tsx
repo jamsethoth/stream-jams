@@ -20,6 +20,14 @@ type Story = StoryObj<typeof meta>;
 
 export const Overview: Story = {};
 
+export const InitialLoadFailure: Story = {
+  args: {
+    managementApi: createSettingsStoryApi({
+      getServerConfig: async () => { throw new Error("The local service is unavailable."); }
+    })
+  }
+};
+
 export const ExportReady: Story = {
   args: {
     managementApi: createSettingsStoryApi({ exportConfigurationBackup: fn(async () => storyBackupArchive()) })

@@ -41,6 +41,27 @@ describe("AlertSetsPage", () => {
     expect(api.markStarterAlertSetReviewComplete).toHaveBeenCalledWith("set-default");
   });
 
+  it("shows only retry when the initial alert-set load fails", async () => {
+    const reportError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const listAlertSets = vi.fn()
+      .mockRejectedValueOnce(new Error("Local service unavailable"))
+      .mockResolvedValue([overview()]);
+    const api = alertSetsApi({ listAlertSets });
+
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("Alert sets could not be loaded")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry loading alert sets" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create set" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No alert sets")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Retry loading alert sets" }));
+    expect(await screen.findByRole("button", { name: "Create set" })).toBeInTheDocument();
+    expect(listAlertSets).toHaveBeenCalledTimes(2);
+    reportError.mockRestore();
+  });
+
   it("keeps browser sources outside alert-set management and collapses its details by default", async () => {
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={alertSetsApi()} onEditAlert={vi.fn()} />);

@@ -355,10 +355,6 @@ export function ProviderPage({
   return (
     <div className="provider-page">
       <div className="provider-page__toolbar">
-        <div>
-          <h2>{copy.title}</h2>
-          <p>Register providers, validate connections, and choose which provider is active.</p>
-        </div>
         <button onClick={() => { setReconnectProvider(null); setSetupOpen(true); }} type="button">{copy.add}</button>
       </div>
 

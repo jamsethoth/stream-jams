@@ -15,6 +15,15 @@ export const EmptyLibrary: Story = {
   args: { assetApi: createStoryAssetApi(), managementApi: createStoryManagementApi({ listAssetLibraryItems: async () => [] }) }
 };
 
+export const InitialLoadFailure: Story = {
+  args: {
+    assetApi: createStoryAssetApi(),
+    managementApi: createStoryManagementApi({
+      listAssetLibraryItems: async () => { throw new Error("The local service is unavailable."); }
+    })
+  }
+};
+
 export const FilteredToUnusedAudio: Story = {
   args: { assetApi: createStoryAssetApi(), managementApi: createStoryManagementApi() },
   play: async ({ canvasElement }) => {

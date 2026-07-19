@@ -32,6 +32,38 @@ describe("management UI foundation", () => {
     );
   });
 
+  it("summarizes serialized validation issues without exposing their schema codes", () => {
+    render(<ManagementErrorBanner error={{
+      summary: "Server settings were not saved",
+      cause: '[{"code":"invalid_value","path":["port"],"message":"Port must be between 1 and 65535."}]',
+      nextStep: "Correct the port and try again.",
+      severity: "error",
+      occurredAt: "2026-07-15T02:00:00.000Z",
+      referenceId: "ref-settings-17",
+      correction: { label: "Open settings", route: "/manage/settings" }
+    }} />);
+
+    const alert = screen.getByText("Server settings were not saved").closest("[role='alert']");
+    expect(alert).toHaveTextContent("port: Port must be between 1 and 65535.");
+    expect(alert).not.toHaveTextContent("invalid_value");
+    expect(screen.getByText("Correct the port and try again.")).toBeInTheDocument();
+    expect(screen.getByText("ref-settings-17")).toBeInTheDocument();
+  });
+
+  it("keeps a malformed structured cause as safe text", () => {
+    render(<ManagementErrorBanner error={{
+      summary: "Server settings were not saved",
+      cause: "{not valid JSON}",
+      nextStep: "Retry the request.",
+      severity: "error",
+      occurredAt: null,
+      referenceId: null,
+      correction: null
+    }} />);
+
+    expect(screen.getByText("{not valid JSON}")).toBeInTheDocument();
+  });
+
   it("keeps a route key masked until explicitly revealed and reports copy success", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => undefined);

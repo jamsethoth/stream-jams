@@ -281,7 +281,7 @@ describe("provider pages", () => {
     render(<EventSourcesPage managementApi={api} />);
 
     expect(await screen.findByText("Authorization update required")).toBeInTheDocument();
-    expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
+    expect(await screen.findByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reconnect Twitch" }));
     expect(screen.getByRole("dialog", { name: "Reconnect Main Twitch" })).toBeInTheDocument();
   });

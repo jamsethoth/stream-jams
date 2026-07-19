@@ -1,12 +1,15 @@
 import type { AssetChangeImpact, AssetLibraryItem, AssetMetadataUpdateInput } from "@stream-jams/core";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetManager, type AssetLibraryManagementApi } from "./AssetManager.js";
 import type { AssetApi, AssetRecord } from "./asset-api.js";
 
 describe("AssetManager", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it("shows searchable assets, preview details, tags, and contextual usage links", async () => {
     const fixture = createFixture();
@@ -22,6 +25,26 @@ describe("AssetManager", () => {
     await userEvent.type(screen.getByRole("searchbox", { name: "Search assets" }), "chime");
     expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
+  });
+
+  it("shows only retry when the initial asset-library load fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const listAssetLibraryItems = vi.fn()
+      .mockRejectedValueOnce(new Error("Local service unavailable"))
+      .mockResolvedValue([imageItem, audioItem]);
+    const fixture = createFixture({ listAssetLibraryItems });
+
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+
+    expect(await screen.findByText("Asset library could not be loaded")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry loading assets" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Add asset" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No assets imported yet.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Retry loading assets" }));
+    expect(await screen.findByRole("button", { name: "Follower burst" })).toBeInTheDocument();
+    expect(listAssetLibraryItems).toHaveBeenCalledTimes(2);
   });
 
   it("combines unused and multi-tag filters with AND behavior", async () => {
@@ -128,7 +151,7 @@ describe("AssetManager", () => {
   });
 });
 
-function createFixture() {
+function createFixture(overrides: Partial<AssetLibraryManagementApi> = {}) {
   let items: readonly AssetLibraryItem[] = [imageItem, audioItem];
   const metadataUpdates: AssetMetadataUpdateInput[] = [];
   const replacements: Array<{ assetId: string; file: File; confirmed: boolean }> = [];
@@ -148,7 +171,8 @@ function createFixture() {
     async deleteAsset(assetId) {
       deleted.push(assetId);
       items = items.filter((item) => item.id !== assetId);
-    }
+    },
+    ...overrides
   };
   const assetApi: AssetApi = {
     async listAssets() { return []; },

@@ -36,30 +36,32 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   const [restoreResult, setRestoreResult] = useState<ConfigurationRestoreResult | null>(null);
   const [confirmation, setConfirmation] = useState("");
   const [loading, setLoading] = useState(true);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [maintenanceBusy, setMaintenanceBusy] = useState<"open-data-folder" | "clear-old-logs" | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary()])
+  const loadSettings = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    await Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary()])
       .then(([serverConfig, backupSummary]) => {
-        if (!active) return;
         setSavedConfig(serverConfig);
         setConfigDraft(serverConfig);
         setSummary(backupSummary);
+        setInitialLoadFailed(false);
       })
       .catch((cause: unknown) => {
-        if (active) setError(actionable("Settings could not be loaded", cause, "Refresh the page and try again."));
+        setInitialLoadFailed(true);
+        setError(actionable("Settings could not be loaded", cause, "Refresh the page and try again."));
       })
       .finally(() => {
-        if (active) setLoading(false);
+        setLoading(false);
       });
-    return () => {
-      active = false;
-    };
   }, [managementApi]);
+
+  useEffect(() => { void loadSettings(); }, [loadSettings]);
 
   useEffect(() => {
     if (loading || window.location.hash !== "#backup-restore") return;
@@ -223,11 +225,11 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   }
 
   if (loading) return <p className="management-empty" role="status">Loading settings...</p>;
+  if (initialLoadFailed && error !== null) return <section aria-label="Settings" className="settings-page"><ManagementErrorBanner error={error} /><button onClick={() => void loadSettings()} type="button">Retry loading settings</button></section>;
 
   return (
-    <section aria-labelledby="settings-title" className="settings-page">
+    <section aria-label="Settings" className="settings-page">
       <header className="settings-page__header">
-        <div><h2 id="settings-title">Settings</h2><p>Local application preferences, storage, diagnostics retention, and configuration recovery.</p></div>
         {summary === null ? null : <span className="settings-page__version">Stream Jams {summary.appVersion} · Schema {summary.schemaVersion}</span>}
       </header>
 

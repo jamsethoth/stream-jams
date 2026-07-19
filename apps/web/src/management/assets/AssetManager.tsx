@@ -4,7 +4,7 @@ import {
   type AssetLibraryItem,
   type AssetMediaType
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
@@ -42,6 +42,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [items, setItems] = useState<readonly AssetLibraryItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -60,6 +61,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [deleteItem, setDeleteItem] = useState<AssetLibraryItem | null>(null);
+  const hasLoadedItems = useRef(false);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -67,8 +69,11 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
       const loaded = await managementApi.listAssetLibraryItems();
       setItems(loaded);
       setSelectedId((current) => loaded.some((item) => item.id === current) ? current : (loaded[0]?.id ?? null));
+      hasLoadedItems.current = true;
+      setInitialLoadFailed(false);
       setError(null);
     } catch (loadError) {
+      if (!hasLoadedItems.current) setInitialLoadFailed(true);
       setError(actionableError(loadError, "Asset library could not be loaded", "Retry. If the problem continues, open Diagnostics and search the reference ID."));
     } finally {
       setLoading(false);
@@ -227,6 +232,8 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
       setBusy(false);
     }
   }
+
+  if (initialLoadFailed && error !== null) return <section aria-label="Asset library" className="asset-library"><ManagementErrorBanner error={error} /><button onClick={() => void loadItems()} type="button">Retry loading assets</button></section>;
 
   return (
     <div className="asset-library" aria-labelledby="asset-library-title">
