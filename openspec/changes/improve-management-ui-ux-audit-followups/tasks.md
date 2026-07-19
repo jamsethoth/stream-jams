@@ -1,30 +1,30 @@
 ## 1. Baseline And Navigation Safety
 
-- [ ] 1.1 Correct the provider recovery test to await asynchronously loaded detail and verify the focused baseline test passes.
+- [x] 1.1 Correct the provider recovery test to await asynchronously loaded detail and verify the focused baseline test passes.
 - [x] 1.2 Add shell-level regression tests for guarded internal management anchors, modified clicks, external links, and new-window targets.
 - [x] 1.3 Intercept eligible `/manage` anchors at the shell boundary and route them through existing dirty-navigation handling.
 - [x] 1.4 Remove the duplicate current-route behavior for the Modules group and keep Alerts as the single current destination.
 
 ## 2. Safe Loading And Error Presentation
 
-- [ ] 2.1 Add failing tests and stories for initial Settings, Alerts, and Assets load failures.
-- [ ] 2.2 Render retry-only failure states without editable defaults, false empty messages, or creation/mutation actions.
-- [ ] 2.3 Add error-banner tests for structured validation failures and render concise operator-safe cause text.
-- [ ] 2.4 Remove duplicate provider, Settings, and Diagnostics page headings while retaining page-specific actions and metadata.
+- [x] 2.1 Add failing tests and stories for initial Settings, Alerts, and Assets load failures.
+- [x] 2.2 Render retry-only failure states without editable defaults, false empty messages, or creation/mutation actions.
+- [x] 2.3 Add error-banner tests for structured validation failures and render concise operator-safe cause text.
+- [x] 2.4 Remove duplicate provider, Settings, and Diagnostics page headings while retaining page-specific actions and metadata.
 
 ## 3. Overlay Browser Resilience
 
-- [ ] 3.1 Add fake-WebSocket/fake-timer tests for reconnect backoff, reset after open, and cleanup after disposal.
-- [ ] 3.2 Implement one bounded overlay reconnect loop without changing route-key authorization or playback messages.
-- [ ] 3.3 Add profile viewport tests for Landscape 1920x1080 and Vertical 1080x1920 at canonical and noncanonical sizes.
-- [ ] 3.4 Scale and center the fixed profile canvas and make production transport/internal failures render an empty transparent tree.
+- [x] 3.1 Add fake-WebSocket/fake-timer tests for reconnect backoff, reset after open, and cleanup after disposal.
+- [x] 3.2 Implement one bounded overlay reconnect loop without changing route-key authorization or playback messages.
+- [x] 3.3 Add profile viewport tests for Landscape 1920x1080 and Vertical 1080x1920 at canonical and noncanonical sizes.
+- [x] 3.4 Scale and center the fixed profile canvas and make production transport/internal failures render an empty transparent tree.
 
 ## 4. Focused Alert Editor
 
-- [ ] 4.1 Add tests for loaded-set breadcrumb context, authoritative Back routing, and standard keyboard tab behavior.
-- [ ] 4.2 Render compact focused-editor context from loaded set/document data and derive Back from the loaded set ID.
-- [ ] 4.3 Remove the normal route-content width cap for focused routes and use viewport-height, independently scrolling editor regions.
-- [ ] 4.4 Move the inspector to a full-width workspace row from 701px through 980px and preserve the existing mobile guard at 700px.
+- [x] 4.1 Add tests for loaded-set breadcrumb context, authoritative Back routing, and standard keyboard tab behavior.
+- [x] 4.2 Render compact focused-editor context from loaded set/document data and derive Back from the loaded set ID.
+- [x] 4.3 Remove the normal route-content width cap for focused routes and use viewport-height, independently scrolling editor regions.
+- [x] 4.4 Move the inspector to a full-width workspace row from 701px through 980px and preserve the existing mobile guard at 700px.
 
 ## 5. Responsive Primary Workflows And Browser-Source Setup
 
@@ -37,7 +37,7 @@
 
 - [ ] 6.1 Add keyboard tests and implement native asset-choice selection plus Enter/Space canvas-layer selection.
 - [ ] 6.2 Add visible referenced help for disabled in-use asset deletion.
-- [ ] 6.3 Add shared `Intl` formatters and tests for singular/plural duration, usage, date, number, and binary-byte output.
+- [x] 6.3 Add shared `Intl` formatters and tests for singular/plural duration, usage, date, number, and binary-byte output.
 - [ ] 6.4 Set runtime document language/direction, add `dir="auto"` to user-generated overlay text, and add RTL/expanded-copy stories.
 - [ ] 6.5 Replace hard-coded management action colors with semantic tokens and remove dead pre-refactor CSS touched by this change.
 

@@ -9,9 +9,10 @@ import {
   type RegisteredProviderView,
   type TargetProfileId
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
+import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
 import { ModalSurface } from "../../foundation/ModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
@@ -57,7 +58,7 @@ export interface AlertEditorPageProps {
   readonly alertId: string;
   readonly assetApi: AssetApi;
   readonly managementApi: AlertEditorPageApi;
-  readonly onBack: () => void;
+  readonly onBack: (setId: string | undefined) => void;
   readonly onOpenAlert: (alertId: string, profileId: TargetProfileId) => void;
   readonly targetProfileId?: string | undefined;
 }
@@ -106,6 +107,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
+  const tabRefs = useRef<Record<InspectorTab, HTMLButtonElement | null>>({
+    layers: null,
+    alert: null,
+    event: null
+  });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
 
   useEffect(() => {
@@ -465,6 +471,38 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setPicker(null);
   }
 
+  function handleInspectorTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: InspectorTab) {
+    const tabs: readonly InspectorTab[] = ["layers", "alert", "event"];
+    const currentIndex = tabs.indexOf(currentTab);
+    let nextTab: InspectorTab | undefined;
+
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        nextTab = tabs[(currentIndex + 1) % tabs.length];
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        nextTab = tabs[(currentIndex - 1 + tabs.length) % tabs.length];
+        break;
+      case "Home":
+        nextTab = tabs[0];
+        break;
+      case "End":
+        nextTab = tabs[tabs.length - 1];
+        break;
+      default:
+        return;
+    }
+
+    if (nextTab === undefined) {
+      return;
+    }
+    event.preventDefault();
+    setTab(nextTab);
+    tabRefs.current[nextTab]?.focus();
+  }
+
   async function applyCopiedDesign() {
     if (copyDesignSourceId === "") return;
     setBusy(true);
@@ -485,7 +523,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   if (document === null || editor === null || profile === null) {
     return error === null
       ? <p className="management-empty" role="status">Loading alert editor...</p>
-      : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={props.onBack} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
+      : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={() => props.onBack(undefined)} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
   }
 
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
@@ -494,7 +532,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
         <div>
-          <button className="alert-editor-page__back" onClick={props.onBack} type="button">Back to alerts</button>
+          <button className="alert-editor-page__back" onClick={() => props.onBack(document.setId)} type="button">Back to alerts</button>
+          <Breadcrumbs items={["Alerts", setDetail?.overview.name ?? "Alert set", document.name]} />
           <div className="alert-editor-page__title-row">
             <h2>{document.name}</h2>
             <StatusBadge label={isEditorDirty(editor) ? "Unsaved" : "Saved"} tone={isEditorDirty(editor) ? "warning" : "positive"} />
@@ -613,58 +652,78 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         <aside className="alert-editor-page__inspector" aria-label="Alert inspector">
           <div className="alert-editor-page__tabs" role="tablist" aria-label="Inspector sections">
             {(["layers", "alert", "event"] as const).map((value) => (
-              <button aria-selected={tab === value} key={value} onClick={() => setTab(value)} role="tab" type="button">{capitalize(value)}</button>
+              <button
+                aria-controls={`alert-editor-panel-${value}`}
+                aria-selected={tab === value}
+                id={`alert-editor-tab-${value}`}
+                key={value}
+                onClick={() => setTab(value)}
+                onKeyDown={(event) => handleInspectorTabKeyDown(event, value)}
+                ref={(element) => { tabRefs.current[value] = element; }}
+                role="tab"
+                tabIndex={tab === value ? 0 : -1}
+                type="button"
+              >
+                {capitalize(value)}
+              </button>
             ))}
           </div>
-          {tab === "layers" ? (
-            <LayerInspector
-              activeTtsProvider={activeTtsProvider}
-              document={document}
-              onAddAsset={(type) => setPicker({ layerId: null, type })}
-              onAddSimple={addSimpleLayer}
-              onChange={updateDocument}
-              onChooseAsset={(layer) => setPicker({ layerId: layer.id, type: layer.type as "image" | "video" | "audio" })}
-              onSelect={setSelectedLayerId}
-              profileId={profileId}
-              selectedLayer={selectedLayer}
-              ttsProviderError={ttsProviderError}
-              ttsProvidersLoaded={ttsProvidersLoaded}
-            />
-          ) : tab === "alert" ? (
-            <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
-              setCopyDesignSourceId(visibleAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
-              setCopyDesignOpen(true);
-            }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
-          ) : (
-            <EventInspector
-              document={document}
-              previewIncludeAudio={previewIncludeAudio}
-              previewIncludeTts={previewIncludeTts}
-              sendIncludeAudio={sendIncludeAudio}
-              sendIncludeTts={sendIncludeTts}
-              onPreviewIncludeAudio={setPreviewIncludeAudio}
-              onPreviewIncludeTts={setPreviewIncludeTts}
-              onSendIncludeAudio={setSendIncludeAudio}
-              onSendIncludeTts={setSendIncludeTts}
-              onChange={updateDocument}
-              onPreview={previewLocally}
-              onResetSample={() => sampleId === null ? undefined : chooseSample(sampleId)}
-              onSample={chooseSample}
-              onSampleDraft={(value) => {
-                setSampleDraft(value);
-                const parsed = parseSample(value);
-                setSampleError(parsed === null ? "Sample payload must be a valid JSON object." : validateAlertSamplePayload(document.eventType, parsed));
-                setPreview(false);
-                setPreviewPlaying(false);
-                setPreviewElapsedMs(0);
-              }}
-              onSend={() => void sendTest()}
-              sampleDraft={sampleDraft}
-              sampleError={sampleError}
-              sampleId={sampleId}
-              sendDisabled={!canSend}
-            />
-          )}
+          <div
+            aria-labelledby={`alert-editor-tab-${tab}`}
+            id={`alert-editor-panel-${tab}`}
+            role="tabpanel"
+            tabIndex={0}
+          >
+            {tab === "layers" ? (
+              <LayerInspector
+                activeTtsProvider={activeTtsProvider}
+                document={document}
+                onAddAsset={(type) => setPicker({ layerId: null, type })}
+                onAddSimple={addSimpleLayer}
+                onChange={updateDocument}
+                onChooseAsset={(layer) => setPicker({ layerId: layer.id, type: layer.type as "image" | "video" | "audio" })}
+                onSelect={setSelectedLayerId}
+                profileId={profileId}
+                selectedLayer={selectedLayer}
+                ttsProviderError={ttsProviderError}
+                ttsProvidersLoaded={ttsProvidersLoaded}
+              />
+            ) : tab === "alert" ? (
+              <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
+                setCopyDesignSourceId(visibleAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
+                setCopyDesignOpen(true);
+              }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
+            ) : (
+              <EventInspector
+                document={document}
+                previewIncludeAudio={previewIncludeAudio}
+                previewIncludeTts={previewIncludeTts}
+                sendIncludeAudio={sendIncludeAudio}
+                sendIncludeTts={sendIncludeTts}
+                onPreviewIncludeAudio={setPreviewIncludeAudio}
+                onPreviewIncludeTts={setPreviewIncludeTts}
+                onSendIncludeAudio={setSendIncludeAudio}
+                onSendIncludeTts={setSendIncludeTts}
+                onChange={updateDocument}
+                onPreview={previewLocally}
+                onResetSample={() => sampleId === null ? undefined : chooseSample(sampleId)}
+                onSample={chooseSample}
+                onSampleDraft={(value) => {
+                  setSampleDraft(value);
+                  const parsed = parseSample(value);
+                  setSampleError(parsed === null ? "Sample payload must be a valid JSON object." : validateAlertSamplePayload(document.eventType, parsed));
+                  setPreview(false);
+                  setPreviewPlaying(false);
+                  setPreviewElapsedMs(0);
+                }}
+                onSend={() => void sendTest()}
+                sampleDraft={sampleDraft}
+                sampleError={sampleError}
+                sampleId={sampleId}
+                sendDisabled={!canSend}
+              />
+            )}
+          </div>
         </aside>
       </div>
 

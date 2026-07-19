@@ -684,6 +684,8 @@ a:focus-visible {
 
 .management-main--focused {
   grid-column: 1 / -1;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .management-diagnostic-context {
@@ -699,6 +701,11 @@ a:focus-visible {
 .management-route-content {
   margin: 0 auto;
   max-width: 1280px;
+}
+
+.management-route-content--focused {
+  height: 100%;
+  max-width: none;
 }
 
 .management-page-header {

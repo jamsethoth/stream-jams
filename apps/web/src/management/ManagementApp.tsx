@@ -92,7 +92,10 @@ function ManagementAppContent({ assetApi, managementApi }: ResolvedManagementApp
             Opened from Diagnostics. Reference <code>{navigation.route.diagnosticReferenceId}</code>. Review the highlighted configuration and validation state.
           </p>
         )}
-        <section aria-label={`${definition.title} content`} className="management-route-content">
+        <section
+          aria-label={`${definition.title} content`}
+          className={navigation.route.id === "alert-editor" ? "management-route-content management-route-content--focused" : "management-route-content"}
+        >
           <RouteContent assetApi={assetApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} />
         </section>
       </main>
@@ -122,7 +125,10 @@ function RouteContent({
           alertId={route.alertId}
           assetApi={assetApi}
           managementApi={managementApi}
-          onBack={() => onNavigate({ id: "modules-alerts", ...(route.setId === undefined ? {} : { setId: route.setId }) })}
+          onBack={(loadedSetId) => {
+            const setId = loadedSetId ?? route.setId;
+            onNavigate({ id: "modules-alerts", ...(setId === undefined ? {} : { setId }) });
+          }}
           onOpenAlert={(alertId, targetProfileId) => onNavigate({ id: "alert-editor", alertId, ...(route.setId === undefined ? {} : { setId: route.setId }), targetProfileId })}
           targetProfileId={route.targetProfileId}
         />

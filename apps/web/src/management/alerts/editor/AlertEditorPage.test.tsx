@@ -23,6 +23,7 @@ describe("AlertEditorPage", () => {
       test: true as const
     }));
     const onOpenAlert = vi.fn();
+    const onBack = vi.fn();
     render(
       <DirtyNavigationProvider>
         <AlertEditorPage
@@ -39,7 +40,7 @@ describe("AlertEditorPage", () => {
             saveAlertEditorDocument,
             sendAlertEditorTest
           }}
-          onBack={() => undefined}
+          onBack={onBack}
           onOpenAlert={onOpenAlert}
           targetProfileId="landscape"
         />
@@ -47,6 +48,28 @@ describe("AlertEditorPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "New follower" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
+      "AlertsEveryday alertsNew follower"
+    );
+    await user.click(screen.getByRole("button", { name: "Back to alerts" }));
+    expect(onBack).toHaveBeenCalledWith("set-default");
+
+    const layersTab = screen.getByRole("tab", { name: "Layers" });
+    const alertTab = screen.getByRole("tab", { name: "Alert" });
+    const eventTab = screen.getByRole("tab", { name: "Event" });
+    layersTab.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(alertTab).toHaveAttribute("aria-selected", "true");
+    expect(alertTab).toHaveAttribute("tabindex", "0");
+    await user.keyboard("{End}");
+    expect(eventTab).toHaveAttribute("aria-selected", "true");
+    await user.keyboard("{Home}");
+    expect(layersTab).toHaveAttribute("aria-selected", "true");
+    expect(layersTab).toHaveAttribute("tabindex", "0");
+    expect(alertTab).toHaveAttribute("tabindex", "-1");
+    expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
     expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Landscape/ })).toHaveAttribute("aria-pressed", "true");
 

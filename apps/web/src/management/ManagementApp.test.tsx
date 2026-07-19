@@ -208,8 +208,8 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "TTS providers" }));
     const ttsPanel = screen.getByRole("region", { name: "TTS providers content" });
-    expect(await within(ttsPanel).findByRole("heading", { name: "TTS providers" })).toBeInTheDocument();
     expect((await within(ttsPanel).findAllByText("Browser Speech")).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("heading", { name: "TTS providers" })).toHaveLength(1);
     expect(within(ttsPanel).getByRole("heading", { name: "Safety defaults" })).toBeInTheDocument();
     expect(within(ttsPanel).getByLabelText("Default voice")).toBeInTheDocument();
 
@@ -226,7 +226,8 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "Diagnostics" }));
     const diagnosticsPanel = screen.getByRole("region", { name: "Diagnostics content" });
-    expect(await within(diagnosticsPanel).findByRole("heading", { name: "Diagnostics workspace" })).toBeInTheDocument();
+    expect(await within(diagnosticsPanel).findByText(/Failures remain visible with plain-language next steps/)).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Diagnostics" })).toHaveLength(1);
     expect(within(diagnosticsPanel).getByRole("button", { name: /Event source disconnected/ })).toBeInTheDocument();
     await user.type(within(diagnosticsPanel).getByPlaceholderText("Reference ID or message"), "ref-provider-1");
     expect(within(diagnosticsPanel).getByRole("link", { name: "Open event sources" })).toHaveAttribute(
@@ -251,8 +252,8 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
-    expect(await within(twitchPanel).findByRole("heading", { name: "Event sources" })).toBeInTheDocument();
     expect((await within(twitchPanel).findAllByText("Main Twitch")).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("heading", { name: "Event sources" })).toHaveLength(1);
     expect(within(twitchPanel).getByRole("columnheader", { name: "Usage" })).toBeInTheDocument();
     expect(within(twitchPanel).getByRole("columnheader", { name: "Live status" })).toBeInTheDocument();
 

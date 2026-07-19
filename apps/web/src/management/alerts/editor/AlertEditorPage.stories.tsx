@@ -29,7 +29,25 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const ReadyLandscape: Story = {};
+export const ReadyLandscape: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
+      "AlertsEveryday alertsNew follower"
+    );
+  }
+};
+
+export const TabletWorkspace: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: "editorTablet",
+      options: {
+        editorTablet: { name: "Editor tablet 820 x 1000", styles: { width: "820px", height: "1000px" } }
+      }
+    }
+  }
+};
 
 export const VerticalNeedsReview: Story = {
   args: { targetProfileId: "vertical" },
