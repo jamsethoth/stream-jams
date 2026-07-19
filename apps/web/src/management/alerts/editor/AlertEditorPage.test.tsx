@@ -919,6 +919,41 @@ describe("AlertEditorPage", () => {
     }
   });
 
+  it("allows terminated as a poll-end terminal status", async () => {
+    const user = userEvent.setup();
+    const document = { ...editorDocument(), id: "alert-poll-end", eventType: "poll_end" as const };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertSet: vi.fn(async () => alertSetDetail()),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, saved) => saved),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add terminal status" }));
+    const status = within(conditions).getByRole("combobox", { name: "Rule conditions Terminal status" });
+    await user.selectOptions(status, "terminated");
+
+    expect(status).toHaveValue("terminated");
+    expect(within(status).getByRole("option", { name: "Terminated" })).toHaveValue("terminated");
+  });
+
   it("blocks saving an invalid minimum condition and explains the correction", async () => {
     const user = userEvent.setup();
     const variation: AlertEditorDocument = {

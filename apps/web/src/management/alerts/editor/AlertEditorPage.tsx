@@ -1081,7 +1081,8 @@ const subscriptionTierOptions = [
 
 const pollTerminalStatusOptions = [
   { label: "Completed", value: "completed" },
-  { label: "Archived", value: "archived" }
+  { label: "Archived", value: "archived" },
+  { label: "Terminated", value: "terminated" }
 ] as const;
 
 const predictionTerminalStatusOptions = [

@@ -276,7 +276,7 @@ export const alertStarterTemplates = [
   { eventType: "prediction_progress", group: "Predictions", label: "Prediction progress", defaultName: "Prediction progress", description: "One alert for prediction progress updates.", text: "{title}: {totalPoints} points from {totalUsers} participants." },
   { eventType: "prediction_lock", group: "Predictions", label: "Prediction locked", defaultName: "Prediction locked", description: "One alert when prediction entries lock.", text: "Prediction locked: {title}" },
   { eventType: "prediction_end", group: "Predictions", label: "Prediction ended", defaultName: "Prediction ended", description: "One alert when a prediction reaches a terminal status.", text: "Prediction ended: {title}" },
-  { eventType: "stream_online", group: "Stream", label: "Stream online", defaultName: "Stream online", description: "One alert when the stream goes online.", text: "Stream is live{streamType}!" },
+  { eventType: "stream_online", group: "Stream", label: "Stream online", defaultName: "Stream online", description: "One alert when the stream goes online.", text: "Stream is live." },
   { eventType: "stream_offline", group: "Stream", label: "Stream offline", defaultName: "Stream offline", description: "One alert when the stream goes offline.", text: "Stream is offline." }
 ] as const satisfies readonly {
   readonly eventType: z.infer<typeof streamEventTypeSchema>;

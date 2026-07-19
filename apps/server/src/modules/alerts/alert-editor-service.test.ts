@@ -75,10 +75,18 @@ describe("AlertEditorService", () => {
       expect(document.samplePayloads.map((sample) => sample.id)).toEqual(["normal", "edge"]);
       for (const sample of document.samplePayloads) {
         expect(validateAlertSamplePayload(eventType, sample.payload)).toBeNull();
+        if (eventType === "gift_subscription") {
+          expect(sample.payload).toEqual(expect.objectContaining({
+            actor: sample.payload.recipient,
+            gifter: sample.payload.gifter
+          }));
+        }
         await harness.service.sendTest(document.id, {
           document,
           targetProfileId: "landscape",
-          samplePayload: sample.payload,
+          samplePayload: eventType === "gift_subscription"
+            ? { ...sample.payload, actor: { id: "incorrect-actor", displayName: "Incorrect actor" } }
+            : sample.payload,
           includeAudio: false,
           includeTts: false
         });
@@ -89,6 +97,13 @@ describe("AlertEditorService", () => {
           occurredAt: "2026-07-15T12:00:00.000Z",
           type: eventType
         });
+        if (eventType === "gift_subscription") {
+          expect(sourceEvent).toEqual(expect.objectContaining({
+            actor: sample.payload.recipient,
+            recipient: sample.payload.recipient,
+            gifter: sample.payload.gifter
+          }));
+        }
         expect(normalizedStreamEventSchema.safeParse(sourceEvent).success).toBe(true);
       }
     }

@@ -136,6 +136,32 @@ export const EdgeCaseSample: Story = {
   }
 };
 
+export const CommunityGiftSamplesAndConditions: Story = {
+  tags: ["task-5-expanded-event"],
+  args: {
+    alertId: "alert-community-gift",
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => communityGiftDocument(),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const sample = canvas.getByRole("combobox", { name: "Sample payload" });
+    await expect(sample).toHaveValue("normal");
+    await expect((canvas.getByRole("textbox", { name: "Session payload (JSON)" }) as HTMLTextAreaElement).value).toContain("Community gift");
+    await userEvent.selectOptions(sample, "edge");
+    await expect((canvas.getByRole("textbox", { name: "Session payload (JSON)" }) as HTMLTextAreaElement).value).toContain("25");
+
+    const conditions = within(canvas.getByRole("group", { name: "Rule conditions" }));
+    await userEvent.click(conditions.getByRole("button", { name: "Add gift tier" }));
+    await expect(conditions.getByRole("combobox", { name: "Rule conditions Gift tier" })).toHaveValue("1000");
+    await userEvent.click(conditions.getByRole("button", { name: "Add gift count minimum" }));
+    await expect(conditions.getByRole("spinbutton", { name: "Rule conditions Gift count minimum" })).toHaveValue(5);
+  }
+};
+
 export const PausedPreview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -360,6 +386,38 @@ function variationDocument(): AlertEditorDocument {
     samplePayloads: [
       { id: "normal", label: "Normal raid", kind: "built-in", payload: { userName: "Raider", raidViewers: 25, amount: 25 } },
       { id: "edge", label: "Large raid", kind: "built-in", payload: { userName: "A-Very-Long-Raider-Name", raidViewers: 5_000, amount: 5_000 } }
+    ]
+  };
+}
+
+function communityGiftDocument(): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    id: "alert-community-gift",
+    eventType: "community_gift",
+    name: "Community gift received",
+    templateVariables: [
+      ...(editorDocument().templateVariables ?? []),
+      { key: "tier", label: "Gift tier", description: "Subscription tier for the community gift." },
+      { key: "amount", label: "Gift count", description: "Number of subscriptions in the community gift." },
+      { key: "cumulativeTotal", label: "Cumulative total", description: "Gift subscriptions from the gifter during the stream." }
+    ],
+    layers: editorDocument().layers.map((layer) => layer.type === "text"
+      ? { ...layer, template: "{userName} gifted {amount} subscriptions!" }
+      : layer),
+    samplePayloads: [
+      {
+        id: "normal",
+        label: "Normal aggregate community gift",
+        kind: "built-in",
+        payload: { actor: { id: "gifter-normal", displayName: "Community gift" }, userName: "Community gift", tier: "1000", amount: 5, cumulativeTotal: 42, frequency: "Aggregate community gift" }
+      },
+      {
+        id: "edge",
+        label: "Edge aggregate community gift",
+        kind: "built-in",
+        payload: { actor: { id: "gifter-edge", displayName: "A-Very-Long-Community-Gifter-Name" }, userName: "A-Very-Long-Community-Gifter-Name", tier: "3000", amount: 25, cumulativeTotal: 250, frequency: "Aggregate community gift" }
+      }
     ]
   };
 }

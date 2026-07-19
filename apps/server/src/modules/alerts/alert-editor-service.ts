@@ -528,8 +528,22 @@ function createBuiltInSamples(eventType: AlertEditorDocument["eventType"]) {
       { ...edge, rewardTitle: "A very long reward title for layout review", userInput: "A long sample redemption message for layout review." }
     );
     case "gift_subscription": return builtInSamples(
-      { ...common, tier: "1000", recipient: { id: "recipient-normal", displayName: "GiftRecipient" }, frequency: "Per recipient gift subscription" },
-      { ...edge, tier: "3000", recipient: { id: "recipient-edge", displayName: "A-Very-Long-Gift-Recipient-Name" }, frequency: "Per recipient gift subscription" },
+      {
+        actor: { id: "recipient-normal", displayName: "GiftRecipient" },
+        userName: "GiftRecipient",
+        tier: "1000",
+        recipient: { id: "recipient-normal", displayName: "GiftRecipient" },
+        gifter: common.actor,
+        frequency: "Per recipient gift subscription"
+      },
+      {
+        actor: { id: "recipient-edge", displayName: "A-Very-Long-Gift-Recipient-Name" },
+        userName: "A-Very-Long-Gift-Recipient-Name",
+        tier: "3000",
+        recipient: { id: "recipient-edge", displayName: "A-Very-Long-Gift-Recipient-Name" },
+        gifter: edge.actor,
+        frequency: "Per recipient gift subscription"
+      },
       "Per-recipient gift subscription"
     );
     case "community_gift": return builtInSamples(
@@ -622,7 +636,19 @@ function createTestEvent(
       case "cheer": return { ...base, type: "cheer" as const, amount: positiveNumber(payload.cheerAmount) ? payload.cheerAmount : amount };
       case "raid": return { ...base, type: "raid" as const, amount: positiveNumber(payload.raidViewers) ? payload.raidViewers : amount };
       case "channel_point_redemption": return { ...base, type: "channel_point_redemption" as const, amount: null, rewardId: text(payload.rewardId, "sample-reward"), rewardTitle: text(payload.rewardTitle, "Sample reward"), userInput: nullableText(payload.userInput) };
-      case "gift_subscription": return { ...base, type: "gift_subscription" as const, amount: 1 as const, tier: readTier(payload.tier), recipient: actor(payload.recipient, "GiftRecipient"), gifter: nullableActor(payload.gifter) };
+      case "gift_subscription": {
+        const recipient = actor(payload.recipient, "GiftRecipient");
+        return {
+          ...base,
+          type: "gift_subscription" as const,
+          actor: recipient,
+          userName: recipient.displayName,
+          amount: 1 as const,
+          tier: readTier(payload.tier),
+          recipient,
+          gifter: nullableActor(payload.gifter)
+        };
+      }
       case "community_gift": return { ...base, type: "community_gift" as const, amount, tier: readTier(payload.tier), cumulativeTotal: nonNegativeNumber(payload.cumulativeTotal) ? payload.cumulativeTotal : null, anonymous: payload.anonymous === true };
       case "hype_train_start":
       case "hype_train_progress":

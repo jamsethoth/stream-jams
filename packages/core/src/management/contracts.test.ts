@@ -449,6 +449,13 @@ describe("management alert contracts and rules", () => {
     );
   });
 
+  it("uses a stream-online starter text that is valid without a stream type", () => {
+    const streamOnline = core.alertStarterTemplates.find((template) => template.eventType === "stream_online");
+
+    expect(streamOnline?.text).toBe("Stream is live.");
+    expect(streamOnline?.text).not.toContain("{streamType}");
+  });
+
   it("permits activation with warnings but blocks invalid enabled profiles", () => {
     const evaluate = exportedFunction("evaluateAlertSetActivation");
 
