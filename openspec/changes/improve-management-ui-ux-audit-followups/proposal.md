@@ -15,6 +15,7 @@ The merged management UI is coherent but the post-merge UX audit found paths tha
 - Remove duplicate route headings, hard-coded management colors, and dead pre-refactor CSS touched by this work.
 - Add focused unit, Storybook, and Playwright coverage for failure, keyboard, reconnect, scaling, and responsive states.
 - Keep alert-editor action failures out of the workspace layout, auto-dismiss them after eight seconds, and retain their reference IDs in Diagnostics.
+- Present transient management action success, failure, and state feedback through one non-reflowing toast pattern across Alerts, Assets, Providers, Diagnostics, and Settings while keeping blocking and corrective messages inline.
 - Present one user-facing actor name variable whose live value matches preview while retaining legacy template compatibility.
 - Replace the generic alert-template picker with the approved event-specific aliases and one shared preview, test, and live template context.
 
@@ -34,5 +35,5 @@ The merged management UI is coherent but the post-merge UX audit found paths tha
 
 - Affects `apps/web` management routing, foundation components, providers, Alerts, Assets, Diagnostics, Settings, overlay transport/rendering, CSS, stories, and browser tests.
 - Updates the Fastify-served web shell only to derive document language and direction from the frontend locale contract.
-- Reuses existing typed management APIs, route-key authorization, design tokens, modal foundation, and Diagnostics tab behavior.
+- Reuses existing typed management APIs, route-key authorization, design tokens, modal foundation, actionable error content, and Diagnostics tab behavior.
 - Adds no runtime dependencies and does not add a router, component library, i18n package, resizable-pane framework, OBS integration, or mobile canvas authoring.

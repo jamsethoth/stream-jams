@@ -137,6 +137,8 @@ Every user-facing failure should include:
 
 Diagnostics must be searchable by reference ID.
 
+Transient action success, failure, and state feedback uses one fixed viewport toast pattern so messages do not resize the active workspace. Positive and informational toasts expire after four seconds. Failure toasts are dismissible, expire after eight seconds, and keep available timestamp, reference ID, correction, and Diagnostics actions within the toast at every supported width. Blocking initial-load failures, stale-runtime refresh failures, field validation, wizard failures, and warnings or confirmations requiring a decision remain inline until resolved.
+
 ### Confirmation Pattern
 
 Use one app-wide destructive confirmation pattern.

@@ -90,3 +90,26 @@ The management UI SHALL present post-load alert-editor action failures without c
 #### Scenario: Alert editor fails to load
 - **WHEN** the initial alert document or set cannot be loaded
 - **THEN** the blocking failure remains inline and persistent with a route back to Alerts
+
+### Requirement: Transient Management Feedback Uses One Non-Reflowing Toast Pattern
+The management UI SHALL present transient action success, failure, and state feedback through one shared toast pattern without changing page or editor layout.
+
+#### Scenario: Management action succeeds or changes transient state
+- **WHEN** a user completes an action that currently reports saved, copied, queued, tested, exported, restored, opened, enabled, disabled, created, duplicated, deleted, replaced, reverted, or preview state
+- **THEN** the result appears in a fixed viewport toast instead of inline page flow
+- **AND** positive or informational feedback automatically disappears after four seconds
+
+#### Scenario: Management action fails after usable content has loaded
+- **WHEN** a save, copy, test, export, mutation, or other nonblocking command fails
+- **THEN** the actionable failure appears in the same fixed viewport toast region
+- **AND** it can be dismissed immediately and automatically disappears after eight seconds
+- **AND** available timestamp, reference ID, correction, and Diagnostics actions remain entirely inside the toast at supported widths
+
+#### Scenario: Feedback requires correction or represents blocked page state
+- **WHEN** a failure blocks initial loading, marks runtime data stale, belongs to a field or wizard, or requires a confirmation decision
+- **THEN** the message remains inline with the affected content until the state is resolved
+
+#### Scenario: Toast content exceeds its preferred width
+- **WHEN** a timestamp, reference ID, translated string, or action label is wider than the available toast content area
+- **THEN** the content wraps within the toast
+- **AND** the toast remains inset within the viewport without horizontal overflow
