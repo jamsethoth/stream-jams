@@ -624,8 +624,8 @@ describe("provider pages", () => {
   it("selects an event source by row and confirms activation from its inline action", async () => {
     const user = userEvent.setup();
     const impact: ProviderActivationImpact = {
-      matchedAlertCount: 3,
-      unmatchedAlertCount: 2,
+      matchedAlertCount: 1,
+      unmatchedAlertCount: 1,
       blockers: [],
       warnings: [warning]
     };
@@ -656,10 +656,11 @@ describe("provider pages", () => {
     await user.click(row);
 
     expect(await screen.findByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
-    expect(await screen.findByText(/2 unmatched alerts/)).toBeInTheDocument();
+    expect(await screen.findByText("1 matching alert, 1 unmatched alert")).toBeInTheDocument();
     expect(screen.getByText("ref-impact-9")).toBeInTheDocument();
     await user.click(activateButton);
     const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
+    expect(dialog).toHaveTextContent("1 matching alert, 1 unmatched alert.");
     expect(dialog).toHaveTextContent("Two enabled alerts do not match Streamer.bot events.");
     expect(activateProvider).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Activate event source" }));

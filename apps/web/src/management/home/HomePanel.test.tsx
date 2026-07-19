@@ -36,7 +36,7 @@ const configuredSummary: HomeSetupSummary = {
     active: true,
     starter: true,
     starterReviewState: "complete",
-    enabledAlertCount: 3,
+    enabledAlertCount: 1,
     targetProfiles: [
       { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 1 },
       { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
@@ -72,7 +72,7 @@ describe("HomePanel", () => {
       "/manage/event-sources?provider=twitch-main"
     );
     expect(screen.getByText("Default")).toBeInTheDocument();
-    expect(screen.getByText("3 enabled alerts")).toBeInTheDocument();
+    expect(screen.getByText("1 enabled alert")).toBeInTheDocument();
     expect(screen.getByText("1 warning")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Reconnect Twitch, then test the event source.");
     expect(screen.getByText("ref-home-17")).toBeInTheDocument();

@@ -523,7 +523,7 @@ export function ProviderPage({
                     : `${pendingAction?.provider.name ?? "This event source"} will become the active event source. Saved configuration will not be deleted.`
                   : "This provider will handle text-to-speech output. The current active provider will become inactive."}
               </p>
-              <p>{pendingAction?.impact.matchedAlertCount ?? 0} matching alerts, {pendingAction?.impact.unmatchedAlertCount ?? 0} unmatched alerts.</p>
+              <p>{formatCount(pendingAction?.impact.matchedAlertCount ?? 0, { one: "matching alert", other: "matching alerts" })}, {formatCount(pendingAction?.impact.unmatchedAlertCount ?? 0, { one: "unmatched alert", other: "unmatched alerts" })}.</p>
               <div className="provider-page__errors">
                 {[...(pendingAction?.impact.blockers ?? []), ...(pendingAction?.impact.warnings ?? [])].map((item, index) => (
                   <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />
@@ -622,7 +622,7 @@ function ProviderDetail({
           <h4 id="activation-impact-title">Activation impact</h4>
           {impact === null ? <p role="status">Checking alert impact...</p> : (
             <>
-              <p>{impact.matchedAlertCount} matching alerts, {impact.unmatchedAlertCount} unmatched alerts</p>
+              <p>{formatCount(impact.matchedAlertCount, { one: "matching alert", other: "matching alerts" })}, {formatCount(impact.unmatchedAlertCount, { one: "unmatched alert", other: "unmatched alerts" })}</p>
               <div className="provider-page__errors">
                 {[...impact.blockers, ...impact.warnings].map((item, index) => (
                   <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />

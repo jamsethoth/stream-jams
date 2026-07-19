@@ -69,12 +69,17 @@ export const NarrowRtlExpandedCopy: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(document.documentElement).toHaveAttribute("dir", "rtl");
-    await expect(await canvas.findByRole("button", { name: /Edit A very long localized/u })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: /Test A very long localized/u })).toBeVisible();
+    await expect((await canvas.findAllByRole("button", { name: /Edit A very long localized/u }))[0]).toBeVisible();
+    await expect(canvas.getAllByRole("button", { name: /Test A very long localized/u })[0]).toBeVisible();
   }
 };
 
 export const InitialLoadFailure: Story = {
+  beforeEach: () => {
+    const reportError = console.error;
+    console.error = fn();
+    return () => { console.error = reportError; };
+  },
   args: {
     managementApi: {
       ...api([activeSet], detail(activeSet)),

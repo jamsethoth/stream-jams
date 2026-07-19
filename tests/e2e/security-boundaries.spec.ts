@@ -49,7 +49,12 @@ test("revoked overlay keys cannot load a composition or leak the route key", asy
 
   await page.goto("/overlay/modules/alerts/live/revoked_key");
 
-  await expect(page.locator(".overlay-error")).toHaveText("Overlay composition request failed with 403");
+  const overlayRoot = page.getByTestId("overlay-root");
+  await expect(overlayRoot).toBeAttached();
+  await expect(overlayRoot).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await expect(page.locator(".overlay-error")).toHaveCount(0);
+  expect(await overlayRoot.locator(":scope > *").count()).toBe(0);
+  await expect(overlayRoot).toHaveText("");
   expect(await page.locator("body").innerText()).not.toContain("revoked_key");
   await expect(page.getByText("Live alert rendered")).toHaveCount(0);
 });

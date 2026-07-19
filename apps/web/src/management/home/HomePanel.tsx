@@ -104,7 +104,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
           <div className="home-panel__active-set">
             <div>
               <h3>{activeSet.name}</h3>
-              <p>{activeSet.enabledAlertCount} enabled alerts</p>
+              <p>{formatCount(activeSet.enabledAlertCount, { one: "enabled alert", other: "enabled alerts" })}</p>
             </div>
             <dl className="provider-page__facts">
               <div><dt>Blockers</dt><dd>{blockers}</dd></div>

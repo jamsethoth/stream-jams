@@ -18,6 +18,7 @@ export interface ManagementRoute {
   readonly setup?: "add";
   readonly diagnosticReferenceId?: string;
   readonly referenceId?: string;
+  readonly fragment?: string;
 }
 
 export interface ManagementRouteDefinition extends ManagementRoute {
@@ -106,7 +107,10 @@ routesByPath.set("/", routeDefinitions.home);
 routesByPath.set("/home", routeDefinitions.home);
 
 export function parseManagementRoute(pathname: string): ManagementRoute {
-  const [pathAndQuery = "/"] = pathname.split("#", 1);
+  const fragmentIndex = pathname.indexOf("#");
+  const pathAndQuery = fragmentIndex === -1 ? pathname : pathname.slice(0, fragmentIndex);
+  const fragmentValue = fragmentIndex === -1 ? "" : pathname.slice(fragmentIndex + 1);
+  const fragment = fragmentValue === "" ? undefined : fragmentValue;
   const queryIndex = pathAndQuery.indexOf("?");
   const pathWithoutQuery = queryIndex === -1 ? pathAndQuery : pathAndQuery.slice(0, queryIndex);
   const normalizedPath = normalizePath(pathWithoutQuery);
@@ -129,7 +133,8 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
       ...(setId === undefined ? {} : { setId }),
       ...(eventType === undefined ? {} : { eventType }),
       ...(targetProfileId === undefined ? {} : { targetProfileId }),
-      ...(diagnosticReferenceId === undefined ? {} : { diagnosticReferenceId })
+      ...(diagnosticReferenceId === undefined ? {} : { diagnosticReferenceId }),
+      ...(fragment === undefined ? {} : { fragment })
     };
   }
 
@@ -148,7 +153,8 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
       ...(setId === undefined ? {} : { setId })
     } : {}),
     ...(id === "diagnostics" && referenceId !== undefined ? { referenceId } : {}),
-    ...(diagnosticReferenceId === undefined ? {} : { diagnosticReferenceId })
+    ...(diagnosticReferenceId === undefined ? {} : { diagnosticReferenceId }),
+    ...(fragment === undefined ? {} : { fragment })
   };
 }
 
@@ -165,7 +171,8 @@ export function formatManagementRoute(routeValue: ManagementRoute): string {
   const path = routeValue.id === "alert-editor" && routeValue.alertId !== undefined
     ? routeDefinitions[routeValue.id].path.replace(":alertId", encodeURIComponent(routeValue.alertId))
     : routeDefinitions[routeValue.id].path;
-  return query === "" ? path : `${path}?${query}`;
+  const pathAndQuery = query === "" ? path : `${path}?${query}`;
+  return routeValue.fragment === undefined ? pathAndQuery : `${pathAndQuery}#${routeValue.fragment}`;
 }
 
 export function getManagementRouteDefinition(routeValue: ManagementRoute): ManagementRouteDefinition {
