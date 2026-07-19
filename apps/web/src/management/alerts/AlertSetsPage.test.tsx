@@ -32,7 +32,7 @@ describe("AlertSetsPage", () => {
     expect(within(verticalSource).getByText("Profile disabled")).toBeInTheDocument();
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
     expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
-    expect(screen.getByText("4 need review")).toBeInTheDocument();
+    expect(screen.getByText("4 alerts need review")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
     expect(screen.getByRole("textbox", { name: "Landscape browser source" })).toHaveValue(
@@ -95,7 +95,7 @@ describe("AlertSetsPage", () => {
     expect(within(selectedSet).getByRole("button", { name: "Delete Default" })).toBeDisabled();
     expect(within(selectedSet).getByRole("button", { name: "Edit New follower" })).toBeInTheDocument();
     expect(within(selectedSet).getByText("1 blocker")).toBeInTheDocument();
-    expect(within(selectedSet).getByText("4 need review")).toBeInTheDocument();
+    expect(within(selectedSet).getByText("4 alerts need review")).toBeInTheDocument();
     expect(screen.queryByText("Active set")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Validation" })).not.toBeInTheDocument();
 
@@ -104,7 +104,7 @@ describe("AlertSetsPage", () => {
     expect(within(selectedSet).queryByRole("button", { name: "Edit New follower" })).not.toBeInTheDocument();
     expect(within(selectedSet).getByRole("button", { name: "Expand Default" })).toHaveAttribute("aria-expanded", "false");
     expect(within(selectedSet).getByText("1 blocker")).toBeInTheDocument();
-    expect(within(selectedSet).getByText("4 need review")).toBeInTheDocument();
+    expect(within(selectedSet).getByText("4 alerts need review")).toBeInTheDocument();
   });
 
   it("expands browser sources when targeted by the route hash", async () => {
@@ -228,8 +228,7 @@ describe("AlertSetsPage", () => {
     expect(rows.map((row) => row.textContent).join("|")).toMatch(/New follower.*VIP follower.*New raid/u);
     expect(screen.getByRole("row", { name: /VIP follower/u })).toHaveClass("alert-sets-page__variation-row");
 
-    await user.click(screen.getByText("More", { selector: "summary[aria-label='More actions for New follower']" }));
-    await user.click(screen.getByRole("button", { name: "Add variation to New follower" }));
+    await user.click(screen.getAllByRole("button", { name: "Add variation to New follower" })[0]!);
     const dialog = screen.getByRole("dialog", { name: "Add variation to New follower" });
     await user.clear(within(dialog).getByLabelText("Variation name"));
     await user.type(within(dialog).getByLabelText("Variation name"), "Large follower");

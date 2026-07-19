@@ -115,7 +115,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     try {
       const exported = await managementApi.exportConfigurationBackup();
       downloadArchive(exported);
-      setNotice(`Backup exported with ${exported.manifest.configurationRecordCount} configuration records and ${exported.manifest.assetCount} assets.`);
+      setNotice(`Backup exported with ${formatCount(exported.manifest.configurationRecordCount, { one: "configuration record", other: "configuration records" })} and ${formatCount(exported.manifest.assetCount, { one: "asset", other: "assets" })}.`);
     } catch (cause) {
       setError(actionable("Backup was not exported", cause, "Check Diagnostics and storage health, then try again."));
     } finally {
@@ -212,7 +212,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
       setNotice(
         result.deletedCount === 0
           ? "No expired log files needed clearing."
-          : `${result.deletedCount} old log file${result.deletedCount === 1 ? "" : "s"} cleared.`
+          : `${formatCount(result.deletedCount, { one: "old log file", other: "old log files" })} cleared.`
       );
     } catch (cause) {
       setError(actionable(

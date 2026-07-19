@@ -21,6 +21,7 @@
   --color-negative-hover: #941c25;
   --color-negative-soft: #fae7e9;
   --color-focus: #0a74c9;
+  --color-on-action: #ffffff;
   --shadow-modal: 0 18px 48px rgba(16, 24, 32, 0.24);
   --space-page: 28px;
 }
@@ -48,6 +49,7 @@
   --color-negative-hover: #ffa4aa;
   --color-negative-soft: #4b2529;
   --color-focus: #6ab9f4;
+  --color-on-action: #15191e;
   --shadow-modal: 0 18px 54px rgba(0, 0, 0, 0.48);
 }
 
@@ -75,6 +77,7 @@
     --color-negative-hover: #ffa4aa;
     --color-negative-soft: #4b2529;
     --color-focus: #6ab9f4;
+    --color-on-action: #15191e;
     --shadow-modal: 0 18px 54px rgba(0, 0, 0, 0.48);
   }
 }
@@ -555,7 +558,7 @@ a:focus-visible {
 
 .button--primary {
   background: var(--color-accent);
-  color: #ffffff;
+  color: var(--color-on-action);
 }
 
 .button--primary:hover {
@@ -570,7 +573,7 @@ a:focus-visible {
 
 .button--danger {
   background: var(--color-negative);
-  color: #ffffff;
+  color: var(--color-on-action);
 }
 
 .button--danger:hover {

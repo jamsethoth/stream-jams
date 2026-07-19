@@ -2,6 +2,7 @@ import type { ActionableManagementError, HomeSetupSummary } from "@stream-jams/c
 import { useEffect, useState } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
+import { formatCount } from "../foundation/formatters.js";
 import type { ManagementApi } from "../management-api.js";
 import "../providers/provider-pages.css";
 
@@ -107,7 +108,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
             </div>
             <dl className="provider-page__facts">
               <div><dt>Blockers</dt><dd>{blockers}</dd></div>
-              <div><dt>Warnings</dt><dd>{warnings === 1 ? "1 warning" : `${warnings} warnings`}</dd></div>
+              <div><dt>Warnings</dt><dd>{formatCount(warnings, { one: "warning", other: "warnings" })}</dd></div>
               <div>
                 <dt>Active profiles</dt>
                 <dd>{activeProfiles.length === 0 ? "None" : activeProfiles.map((profile) => formatState(profile.id)).join(", ")}</dd>

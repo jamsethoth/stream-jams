@@ -73,5 +73,6 @@
   .asset-library__table td { border: 0; min-width: 0; padding: 0; }
   .asset-library__table td:first-child { grid-row: 1 / span 2; }
   .asset-library__table td:nth-child(n + 3) { display: none; }
+  .asset-library__table td:nth-child(5) { display: block; }
   .asset-library__row-action { overflow-wrap: anywhere; }
 }

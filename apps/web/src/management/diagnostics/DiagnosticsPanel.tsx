@@ -7,7 +7,7 @@ import type {
   DiagnosticsWorkspaceView
 } from "@stream-jams/core";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
-import { formatDateTime } from "../foundation/formatters.js";
+import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { DiagnosticsDebugExportView, DiagnosticsExportView, ManagementApi } from "../management-api.js";
 import "./diagnostics-workspace.css";
 
@@ -265,7 +265,7 @@ function ProblemsView(props: {
 function EventsView(props: { readonly events: readonly DiagnosticsEventView[]; readonly selected: DiagnosticsEventView | null; readonly onSelect: (id: string) => void }) {
   return <><section aria-label="Received events" className="diagnostics-workspace__list-pane"><h3>Received events</h3>
     {props.events.length === 0 ? <EmptyState title="No matching events" detail="Change the session filters or wait for a connected event source." /> : <div className="management-table-wrap"><table className="management-table diagnostics-event-table"><thead><tr><th>Time</th><th>Source</th><th>Event</th><th>Matched</th><th>Result</th></tr></thead><tbody>
-      {props.events.map((event) => <tr aria-selected={props.selected?.id === event.id} key={event.id}><td><time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time></td><td>{event.providerKind}</td><td><button className="diagnostics-event-table__select" onClick={() => props.onSelect(event.id)} type="button">{event.eventType}</button></td><td>{event.alertIds.length === 0 ? "No alert" : `${event.alertIds.length} alert${event.alertIds.length === 1 ? "" : "s"}`}</td><td><StatusBadge label={event.playbackStatus ?? event.outcome} tone={outcomeTone(event.outcome)} /></td></tr>)}
+      {props.events.map((event) => <tr aria-selected={props.selected?.id === event.id} key={event.id}><td><time dateTime={event.occurredAt}>{formatTime(event.occurredAt)}</time></td><td>{event.providerKind}</td><td><button className="diagnostics-event-table__select" onClick={() => props.onSelect(event.id)} type="button">{event.eventType}</button></td><td>{event.alertIds.length === 0 ? "No alert" : formatCount(event.alertIds.length, { one: "alert", other: "alerts" })}</td><td><StatusBadge label={event.playbackStatus ?? event.outcome} tone={outcomeTone(event.outcome)} /></td></tr>)}
     </tbody></table></div>}
   </section><DetailPane label="Event detail">{props.selected === null ? <EmptyState title="No event selected" detail="Select an event to inspect its sanitized payload and matching result." /> : <>
     <StatusBadge label={props.selected.playbackStatus ?? props.selected.outcome} tone={outcomeTone(props.selected.outcome)} /><h3>{props.selected.eventType}</h3>

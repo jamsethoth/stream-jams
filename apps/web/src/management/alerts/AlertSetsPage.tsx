@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
-import { formatCount as formatLocalizedCount, formatDateTime } from "../foundation/formatters.js";
+import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi } from "../management-api.js";
 import "./alert-sets-page.css";
 
@@ -682,8 +682,8 @@ function ValidationRollup({ detail, set }: { readonly detail: AlertSetDetail | n
     ? set.targetProfiles.filter((profile) => profile.reviewState === "needs-review").length
     : detail.inventory.filter((alert) => alert.reviewState === "needs-review").length;
   const needsReviewLabel = detail === null
-    ? `${needsReviewCount} profile${needsReviewCount === 1 ? " needs" : "s need"} review`
-    : `${needsReviewCount} need review`;
+    ? formatCount(needsReviewCount, { one: "profile needs review", other: "profiles need review" })
+    : formatCount(needsReviewCount, { one: "alert needs review", other: "alerts need review" });
 
   if (blockerCount === 0 && warningCount === 0 && needsReviewCount === 0) {
     return <span className="alert-sets-page__validation-rollup alert-sets-page__validation-rollup--ready">Ready</span>;
@@ -691,8 +691,8 @@ function ValidationRollup({ detail, set }: { readonly detail: AlertSetDetail | n
 
   return (
     <span aria-label="Validation summary" className="alert-sets-page__validation-rollup">
-      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, "blocker")}</span> : null}
-      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, "warning")}</span> : null}
+      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, { one: "blocker", other: "blockers" })}</span> : null}
+      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, { one: "warning", other: "warnings" })}</span> : null}
       {needsReviewCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">{needsReviewLabel}</span> : null}
     </span>
   );
@@ -778,21 +778,23 @@ function AlertInventory({
                   <td data-label="State"><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
                   <td data-label="Validation">
                     <span className="alert-sets-page__alert-validation">
-                      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, "blocker")}</span> : null}
-                      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, "warning")}</span> : null}
+                      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, { one: "blocker", other: "blockers" })}</span> : null}
+                      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, { one: "warning", other: "warnings" })}</span> : null}
                       {alert.reviewState === "needs-review" ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">Needs review</span> : blockerCount === 0 && warningCount === 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--ready">Ready</span> : null}
                     </span>
                   </td>
                   <td data-label="Actions">
                     <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                       <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" onClick={() => onEdit(alert)} type="button">Edit</button>
+                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" onClick={() => onPreview(alert)} type="button">Preview</button>
                       <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
+                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                       <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
                       <details className="alert-sets-page__action-menu">
                         <summary aria-label={`More actions for ${alert.name}`}>More</summary>
                         <div role="group" aria-label={`Additional actions for ${alert.name}`}>
-                          <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Preview</button>
-                          {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                          <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" onClick={() => onPreview(alert)} type="button">Preview</button>
+                          {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                           <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
                           <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
                           <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
@@ -1077,10 +1079,6 @@ function formatEventType(value: string): string {
 
 function formatProvider(value: string): string {
   return value === "streamerbot" ? "Streamer.bot" : value === "speakerbot" ? "Speaker.bot" : value === "browser-speech" ? "Browser Speech" : "Twitch";
-}
-
-function formatCount(value: number, noun: string): string {
-  return formatLocalizedCount(value, { one: noun, other: `${noun}s` });
 }
 
 function formatProfile(value: "landscape" | "vertical"): string {

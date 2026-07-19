@@ -173,7 +173,6 @@ export const DefaultWithVariations: Story = {
     const canvas = within(canvasElement);
     const variation = await canvas.findByRole("row", { name: /Large raid/u });
     await expect(variation).toHaveClass("alert-sets-page__variation-row");
-    await userEvent.click(canvas.getByText("More", { selector: "summary[aria-label='More actions for New raid']" }));
     await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
   }
 };

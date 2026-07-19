@@ -15,6 +15,7 @@ describe("AssetPicker", () => {
 
     const followerAsset = await screen.findByRole("button", { name: /Follower burst/ });
     expect(followerAsset).toHaveAttribute("aria-pressed", "true");
+    expect(followerAsset).toHaveAccessibleName("Follower burst, image, 1 use");
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Raid chime/ })).not.toBeInTheDocument();
     await userEvent.click(followerAsset);

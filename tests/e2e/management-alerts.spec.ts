@@ -188,7 +188,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(alertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();
   await expect(alertRow.getByRole("button", { name: "Test New follower" })).toBeVisible();
   await expect(alertRow.getByRole("button", { name: "Enable New follower" })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   listening = false;
   await expect(sourceCard.getByText(/Not listening\. Last seen/u)).toBeVisible({ timeout: 7_000 });
   await page.getByRole("button", { name: "Reveal Landscape URL" }).click();
@@ -468,7 +468,6 @@ test("alert variation can be created edited duplicated and selectively deleted",
   });
 
   await page.goto("/manage/modules/alerts");
-  await page.getByRole("row", { name: /New raid/u }).getByText("More", { exact: true }).click();
   await page.getByRole("button", { name: "Add variation to New raid" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add variation to New raid" });
   await createDialog.getByLabel("Variation name").fill("Large raid");
@@ -573,12 +572,15 @@ test("focused alert editor saves layouts and separates preview from test deliver
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Alerts" }).click();
+  const tabletAlertRow = page.getByRole("row", { name: /New follower/u });
+  await expect(tabletAlertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole("button", { name: "Edit New follower" }).click();
 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-follow\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Fit" })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.setViewportSize({ width: 1920, height: 1080 });
   const focusedContent = await page.locator(".management-route-content--focused").boundingBox();
   expect(focusedContent?.width).toBeGreaterThan(1280);

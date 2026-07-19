@@ -74,6 +74,7 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
   await page.goto("/manage");
   await page.getByRole("link", { name: "Assets" }).click();
   await expect(page.getByRole("button", { name: "Follower burst", exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Follower burst/u }).getByText("Available")).toBeVisible();
   await expect(page.getByRole("link", { name: "New follower" })).toHaveAttribute("href", "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape");
   await expect(page.getByText("Filters", { exact: true })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

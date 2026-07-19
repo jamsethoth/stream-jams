@@ -4,6 +4,7 @@ import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiagnosticsDebugExportView, DiagnosticsExportView } from "../management-api.js";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.js";
+import { formatDateTime } from "../foundation/formatters.js";
 
 afterEach(() => {
   cleanup();
@@ -50,7 +51,7 @@ describe("DiagnosticsPanel", () => {
     expect(within(detail).getByRole("heading", { name: "subscription" })).toBeInTheDocument();
     expect(within(detail).getByText("Alert rendering failed.")).toBeInTheDocument();
     expect(within(detail).getByText("Live")).toBeInTheDocument();
-    expect(within(detail).getByText(new Date("2026-07-15T22:28:07.000Z").toLocaleString())).toBeInTheDocument();
+    expect(within(detail).getByText(formatDateTime("2026-07-15T22:28:07.000Z"))).toBeInTheDocument();
     expect(within(detail).getAllByText(/viewer42/)).toHaveLength(2);
     expect(within(detail).getByRole("link", { name: "Open alert" })).toHaveAttribute(
       "href",

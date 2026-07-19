@@ -15,7 +15,7 @@ import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
-import { formatDateTime } from "../foundation/formatters.js";
+import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import "./provider-pages.css";
@@ -511,7 +511,7 @@ export function ProviderPage({
               <p>Live event intake will stop for {pendingAction.provider.name}. Provider settings and alert mappings will remain saved, and the provider connection can remain connected.</p>
               <p>Activate this or another event source to resume intake.</p>
               <p>
-                {pendingAction.provider.usedByAlertCount} {pendingAction.provider.usedByAlertCount === 1 ? "alert uses" : "alerts use"} this provider type.
+                {formatCount(pendingAction.provider.usedByAlertCount, { one: "alert uses", other: "alerts use" })} this provider type.
               </p>
             </>
           ) : (
@@ -613,7 +613,7 @@ function ProviderDetail({
         <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : formatDateTime(provider.validatedAt)}</dd></div>
         <div>
           <dt>Used by alerts</dt>
-          <dd>{provider.usedByAlertCount} alert {provider.usedByAlertCount === 1 ? "use" : "uses"}</dd>
+          <dd>{formatCount(provider.usedByAlertCount, { one: "alert use", other: "alert uses" })}</dd>
         </div>
       </dl>
 
