@@ -87,7 +87,75 @@ describe("OverlaySurface", () => {
       })
     );
   });
+
+  it.each([
+    ["Landscape canonical", "landscape", 1_920, 1_080, 1_920, 1_080, 1],
+    ["Landscape noncanonical", "landscape", 960, 1_080, 1_920, 1_080, 0.5],
+    ["Vertical canonical", "vertical", 1_080, 1_920, 1_080, 1_920, 1],
+    ["Vertical noncanonical", "vertical", 1_080, 1_080, 1_080, 1_920, 0.5625]
+  ] as const)(
+    "scales and centers the %s fixed profile without changing profile-pixel geometry",
+    (_name, profileId, viewportWidth, viewportHeight, profileWidth, profileHeight, scale) => {
+      setViewport(viewportWidth, viewportHeight);
+      render(
+        <OverlaySurface
+          composition={composition({
+            ...instruction(),
+            targetProfileId: profileId,
+            shape: {
+              fill: "#123456",
+              layout: { x: 120, y: 80, width: 320, height: 240, zIndex: 5 }
+            }
+          }, profileId)}
+          resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+        />
+      );
+
+      expect(screen.getByTestId("overlay-root")).toHaveStyle({
+        background: "transparent",
+        height: "100vh",
+        width: "100vw"
+      });
+      expect(screen.getByTestId("overlay-profile-canvas")).toHaveStyle({
+        height: `${profileHeight}px`,
+        left: "50%",
+        position: "absolute",
+        top: "50%",
+        transform: `translate(-50%, -50%) scale(${scale})`,
+        transformOrigin: "center",
+        width: `${profileWidth}px`
+      });
+      expect(screen.getByTestId("overlay-shape-instruction-1")).toHaveStyle({
+        height: "240px",
+        left: "120px",
+        top: "80px",
+        width: "320px"
+      });
+    }
+  );
+
+  it("lets user-generated text determine its own direction", () => {
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          text: {
+            text: "مرحبا Viewer",
+            layout: { x: 120, y: 80, width: 320, height: 240, zIndex: 5 }
+          }
+        })}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    expect(screen.getByText("مرحبا Viewer")).toHaveAttribute("dir", "auto");
+  });
 });
+
+function setViewport(width: number, height: number): void {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+}
 
 function instruction(): OverlayInstruction {
   return {
@@ -105,12 +173,15 @@ function instruction(): OverlayInstruction {
   };
 }
 
-function composition(value: OverlayInstruction): OverlayComposition {
+function composition(
+  value: OverlayInstruction,
+  targetProfileId: "landscape" | "vertical" = "landscape"
+): OverlayComposition {
   return {
     overlayId: "overlay-1",
     purpose: "live",
     scope: "module",
-    targetProfileId: "landscape",
+    targetProfileId,
     modules: [{ moduleId: "alerts", enabled: true, instructions: [value] }]
   };
 }

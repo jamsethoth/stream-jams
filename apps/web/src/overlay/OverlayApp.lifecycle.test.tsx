@@ -128,4 +128,52 @@ describe("OverlayApp playback lifecycle", () => {
     expect(clientHarness.reportFailed).toHaveBeenCalledWith("instruction-failed", "Image playback failed");
     expect(screen.queryByTestId("overlay-visual-instruction-failed")).not.toBeInTheDocument();
   });
+
+  it("clears live output without rendering transport or internal diagnostics", () => {
+    render(<OverlayApp />);
+
+    act(() => {
+      clientHarness.onMessage?.({
+        type: "composition",
+        composition: {
+          overlayId: "default",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "landscape",
+          modules: [{
+            moduleId: "alerts",
+            enabled: true,
+            instructions: [{
+              id: "instruction-before-failure",
+              overlayId: "default",
+              moduleId: "alerts",
+              purpose: "live",
+              scope: "module",
+              targetProfileId: "landscape",
+              visual: null,
+              audio: null,
+              text: {
+                text: "Visible before failure",
+                layout: { x: 10, y: 20, width: 300, height: 80, zIndex: 1 }
+              },
+              tts: null,
+              durationMs: 5_000
+            }]
+          }]
+        }
+      });
+    });
+    expect(screen.getByText("Visible before failure")).toBeInTheDocument();
+
+    act(() => {
+      clientHarness.onMessage?.({
+        type: "error",
+        message: "Internal overlay failure ref-overlay-secret"
+      });
+    });
+
+    expect(screen.getByTestId("overlay-root")).toBeEmptyDOMElement();
+    expect(document.body).not.toHaveTextContent("Internal overlay failure");
+    expect(document.body).not.toHaveTextContent("ref-overlay-secret");
+  });
 });

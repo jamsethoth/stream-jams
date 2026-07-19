@@ -65,9 +65,10 @@ describe("OverlaySurface", () => {
       width: "320px",
       zIndex: "6"
     });
+    expect(text).toHaveAttribute("dir", "auto");
     expect(screen.getByTestId("overlay-root")).toHaveStyle({
       background: "transparent",
-      minHeight: "100vh",
+      height: "100vh",
       width: "100vw"
     });
     expect(onPlaybackEvent).toHaveBeenCalledWith({

@@ -152,8 +152,61 @@ export function createOverlayPlaybackReporter(socket: OverlaySocketLike): Overla
 export function connectOverlayClient(options: OverlayClientOptions): OverlayClientConnection {
   const fetcher = options.fetcher ?? fetch;
   const WebSocketCtor = options.WebSocketCtor ?? WebSocket;
-  const socket = new WebSocketCtor(createOverlayWebSocketUrl(window.location.origin, options.route));
-  const reporter = createOverlayPlaybackReporter(socket);
+  const webSocketUrl = createOverlayWebSocketUrl(window.location.origin, options.route);
+  let disposed = false;
+  let reconnectDelayMs = 1_000;
+  let reconnectTimer: number | null = null;
+  let socket: WebSocket | null = null;
+  const reporter = createOverlayPlaybackReporter({
+    get readyState() {
+      return socket?.readyState ?? WebSocket.CLOSED;
+    },
+    send(message: string) {
+      socket?.send(message);
+    }
+  });
+
+  const openSocket = () => {
+    if (disposed) {
+      return;
+    }
+
+    const nextSocket = new WebSocketCtor(webSocketUrl);
+    socket = nextSocket;
+    nextSocket.addEventListener("open", () => {
+      if (socket === nextSocket) reconnectDelayMs = 1_000;
+    });
+    nextSocket.addEventListener("message", (event) => {
+      const instruction = parsePlaybackInstructionMessage(event.data);
+      if (instruction !== null) {
+        options.onMessage({
+          type: "playback",
+          instruction
+        });
+      }
+    });
+    nextSocket.addEventListener("error", () =>
+      options.onMessage({
+        type: "error",
+        message: "Overlay transport connection failed"
+      })
+    );
+    nextSocket.addEventListener("close", () => {
+      if (disposed || socket !== nextSocket) {
+        return;
+      }
+
+      socket = null;
+      const delayMs = reconnectDelayMs;
+      reconnectDelayMs = Math.min(reconnectDelayMs * 2, 10_000);
+      reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        openSocket();
+      }, delayMs);
+    });
+  };
+
+  openSocket();
 
   void fetcher(options.route.compositionPath)
     .then(async (response) => {
@@ -176,26 +229,16 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
       })
     );
 
-  socket.addEventListener("message", (event) => {
-    const instruction = parsePlaybackInstructionMessage(event.data);
-    if (instruction !== null) {
-      options.onMessage({
-        type: "playback",
-        instruction
-      });
-    }
-  });
-  socket.addEventListener("error", () =>
-    options.onMessage({
-      type: "error",
-      message: "Overlay transport connection failed"
-    })
-  );
-
   return {
     reporter,
     close() {
-      socket.close();
+      disposed = true;
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      socket?.close();
+      socket = null;
     }
   };
 }

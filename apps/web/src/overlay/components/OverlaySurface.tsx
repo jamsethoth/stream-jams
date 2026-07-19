@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { targetProfileDefinitions } from "@stream-jams/core";
 import type {
   OverlayComposition,
   OverlayElementLayout,
@@ -20,27 +21,54 @@ export interface OverlaySurfaceProps {
 
 export const overlayRootStyle: CSSProperties = {
   background: "transparent",
-  minHeight: "100vh",
+  height: "100vh",
   overflow: "hidden",
   position: "relative",
   width: "100vw"
 };
 
 export function OverlaySurface({ composition, onPlaybackEvent, resolveAssetUrl }: OverlaySurfaceProps) {
+  const [viewport, setViewport] = useState(() => ({
+    height: window.innerHeight,
+    width: window.innerWidth
+  }));
+  useEffect(() => {
+    const updateViewport = () => setViewport({ height: window.innerHeight, width: window.innerWidth });
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+  const profile = targetProfileDefinitions.find((candidate) => candidate.id === composition.targetProfileId);
+  const instructions = composition.modules
+    .filter((moduleSnapshot) => moduleSnapshot.enabled)
+    .flatMap((moduleSnapshot) =>
+      moduleSnapshot.instructions.map((instruction) => (
+        <OverlayInstructionLayer
+          instruction={instruction}
+          key={instruction.id}
+          onPlaybackEvent={onPlaybackEvent}
+          resolveAssetUrl={resolveAssetUrl}
+        />
+      ))
+    );
+
   return (
     <div className="overlay-root" data-testid="overlay-root" style={overlayRootStyle}>
-      {composition.modules
-        .filter((moduleSnapshot) => moduleSnapshot.enabled)
-        .flatMap((moduleSnapshot) =>
-          moduleSnapshot.instructions.map((instruction) => (
-            <OverlayInstructionLayer
-              instruction={instruction}
-              key={instruction.id}
-              onPlaybackEvent={onPlaybackEvent}
-              resolveAssetUrl={resolveAssetUrl}
-            />
-          ))
-        )}
+      {profile === undefined ? instructions : (
+        <div
+          data-testid="overlay-profile-canvas"
+          style={{
+            height: `${profile.height}px`,
+            left: "50%",
+            position: "absolute",
+            top: "50%",
+            transform: `translate(-50%, -50%) scale(${Math.min(viewport.width / profile.width, viewport.height / profile.height)})`,
+            transformOrigin: "center",
+            width: `${profile.width}px`
+          }}
+        >
+          {instructions}
+        </div>
+      )}
     </div>
   );
 }
@@ -133,6 +161,7 @@ function OverlayInstructionLayer({
         <div
           className="overlay-text"
           data-testid={`overlay-text-${instruction.id}`}
+          dir="auto"
           style={elementStyle(instruction.text.layout, instruction.animation, instruction.durationMs)}
         >
           {instruction.text.text}
