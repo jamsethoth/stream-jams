@@ -94,6 +94,113 @@ describe("normalizeStreamerBotEvent", () => {
     }
   });
 
+  it("normalizes expanded Twitch event fixtures with canonical payload parity", () => {
+    const hypeTrain = fixture("twitch-hype-train.json");
+    const poll = fixture("twitch-poll.json");
+    const prediction = fixture("twitch-prediction.json");
+    const stream = fixture("twitch-stream.json");
+    const cases = [
+      {
+        envelope: fixture("twitch-gift-sub.json"),
+        expected: {
+          id: "streamerbot:twitch:GiftSub:gift-sub-1",
+          type: "gift_subscription",
+          actor: { id: "recipient-1", displayName: "Recipient" },
+          amount: 1,
+          tier: "1000",
+          recipient: { id: "recipient-1", displayName: "Recipient" },
+          gifter: { id: "gifter-1", displayName: "Gifter" }
+        }
+      },
+      {
+        envelope: fixture("twitch-gift-bomb.json"),
+        expected: {
+          id: "streamerbot:twitch:GiftBomb:gift-bomb-1",
+          type: "community_gift",
+          actor: { id: "gifter-1", displayName: "Gifter" },
+          amount: 5,
+          tier: "2000",
+          cumulativeTotal: 24,
+          anonymous: false
+        }
+      },
+      ...(["HypeTrainStart", "HypeTrainUpdate", "HypeTrainEnd"] as const).map((type) => ({
+        envelope: { ...hypeTrain, event: { ...hypeTrain.event, type } },
+        expected: {
+          type: type === "HypeTrainStart" ? "hype_train_start" : type === "HypeTrainUpdate" ? "hype_train_progress" : "hype_train_end",
+          actor: { id: "broadcaster-1", displayName: "Broadcaster" },
+          amount: 175,
+          trainId: "train-1",
+          level: 2,
+          progress: 75,
+          goal: 100,
+          total: 175,
+          startedAt: "2026-07-17T12:00:00.000Z",
+          expiresAt: "2026-07-17T12:05:00.000Z",
+          endedAt: "2026-07-17T12:05:00.000Z",
+          cooldownEndsAt: "2026-07-17T13:05:00.000Z"
+        }
+      })),
+      ...(["PollCreated", "PollUpdated", "PollCompleted", "PollArchived", "PollTerminated"] as const).map((type) => ({
+        envelope: { ...poll, event: { ...poll.event, type } },
+        expected: {
+          type: type === "PollCreated" ? "poll_start" : type === "PollUpdated" ? "poll_progress" : "poll_end",
+          actor: { id: "broadcaster-1", displayName: "Broadcaster" },
+          amount: 17,
+          pollId: "poll-1",
+          title: "Which game?",
+          choices: [
+            { id: "choice-1", title: "Game One", totalVotes: 10 },
+            { id: "choice-2", title: "Game Two", totalVotes: 7 }
+          ],
+          totalVotes: 17,
+          startedAt: "2026-07-17T12:00:00.000Z",
+          endsAt: "2026-07-17T12:05:00.000Z",
+          status: type === "PollCompleted" ? "completed" : type === "PollArchived" ? "archived" : type === "PollTerminated" ? "terminated" : "active"
+        }
+      })),
+      ...(["PredictionCreated", "PredictionUpdated", "PredictionLocked", "PredictionCompleted", "PredictionCanceled"] as const).map((type) => ({
+        envelope: { ...prediction, event: { ...prediction.event, type } },
+        expected: {
+          type: type === "PredictionCreated" ? "prediction_start" : type === "PredictionUpdated" ? "prediction_progress" : type === "PredictionLocked" ? "prediction_lock" : "prediction_end",
+          actor: { id: "broadcaster-1", displayName: "Broadcaster" },
+          amount: 1200,
+          predictionId: "prediction-1",
+          title: "Will it happen?",
+          outcomes: [
+            { id: "outcome-1", title: "Yes", totalUsers: 12, totalPoints: 800 },
+            { id: "outcome-2", title: "No", totalUsers: 6, totalPoints: 400 }
+          ],
+          totalUsers: 18,
+          totalPoints: 1200,
+          startedAt: "2026-07-17T12:00:00.000Z",
+          locksAt: type === "PredictionLocked" ? "2026-07-17T12:03:00.000Z" : type === "PredictionCompleted" || type === "PredictionCanceled" ? null : "2026-07-17T12:03:00.000Z",
+          endedAt: type === "PredictionCompleted" || type === "PredictionCanceled" ? "2026-07-17T12:05:00.000Z" : null,
+          status: type === "PredictionCompleted" ? "resolved" : type === "PredictionCanceled" ? "canceled" : type === "PredictionLocked" ? "locked" : "active",
+          winningOutcomeId: type === "PredictionCompleted" ? "outcome-1" : null
+        }
+      })),
+      ...(["StreamOnline", "StreamOffline"] as const).map((type) => ({
+        envelope: { ...stream, event: { ...stream.event, type } },
+        expected: {
+          type: type === "StreamOnline" ? "stream_online" : "stream_offline",
+          actor: { id: "broadcaster-1", displayName: "Broadcaster" },
+          amount: null,
+          streamId: type === "StreamOnline" ? "stream-1" : null,
+          streamType: type === "StreamOnline" ? "live" : null,
+          startedAt: type === "StreamOnline" ? "2026-07-17T12:00:00.000Z" : null,
+          endedAt: type === "StreamOffline" ? "2026-07-17T12:05:00.000Z" : null
+        }
+      }))
+    ];
+
+    for (const testCase of cases) {
+      const event = normalized(normalizeStreamerBotEvent(testCase.envelope));
+      expect(normalizedStreamEventSchema.safeParse(event).success).toBe(true);
+      expect(event).toMatchObject(testCase.expected);
+    }
+  });
+
   it("uses deterministic fallback IDs when no upstream event ID exists", () => {
     const follow = fixture("twitch-follow.json");
     const first = normalized(normalizeStreamerBotEvent(follow));
@@ -139,6 +246,10 @@ describe("normalizeStreamerBotEvent", () => {
       event: { source: "OBS", type: "SceneChanged" },
       data: { sceneName: "Live" }
     })).toEqual({ status: "unsupported", source: "OBS", type: "SceneChanged" });
+    expect(normalizeStreamerBotEvent({
+      ...fixture("twitch-hype-train.json"),
+      event: { source: "Twitch", type: "HypeTrainLevelUp" }
+    })).toEqual({ status: "unsupported", source: "Twitch", type: "HypeTrainLevelUp" });
   });
 
   it("rejects malformed supported payloads with a safe typed error", () => {

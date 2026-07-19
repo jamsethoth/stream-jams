@@ -15,7 +15,7 @@ import {
 describe("StreamerBotRuntimeService", () => {
   it("connects the active registration, resolves its secret, and preserves the discovered category key", async () => {
     const client = new FakeClient({
-      tWiTcH: ["Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption", "ChatMessage"]
+      tWiTcH: [...supportedEvents, "ChatMessage"]
     });
     const secretReads: SecretRef[] = [];
     const service = runtime({
@@ -39,33 +39,48 @@ describe("StreamerBotRuntimeService", () => {
     }]);
     expect(client.subscriptions).toEqual([{
       sourceKey: "tWiTcH",
-      eventTypes: ["Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption"]
+      eventTypes: supportedEvents
     }]);
     expect(service.getStatus()).toMatchObject({
       state: "connected",
       activeProviderId: "provider-streamerbot",
-      subscribedEventTypes: ["Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption"],
+      subscribedEventTypes: supportedEvents,
       missingEventTypes: [],
       message: null
     });
   });
 
   it("subscribes to available supported events and reports missing types as degraded", async () => {
-    const client = new FakeClient({ twitch: ["Follow", "Raid"] });
+    const client = new FakeClient({ twitch: ["Follow", "GiftSub", "PollCompleted"] });
     const service = runtime({ client, active: registration() });
 
     await service.syncActiveRegistration();
 
     expect(client.subscriptions).toEqual([{
       sourceKey: "twitch",
-      eventTypes: ["Follow", "Raid"]
+      eventTypes: ["Follow", "GiftSub", "PollCompleted"]
     }]);
     expect(service.getStatus()).toMatchObject({
       state: "degraded",
-      subscribedEventTypes: ["Follow", "Raid"],
-      missingEventTypes: ["Sub", "ReSub", "Cheer", "RewardRedemption"],
-      message: "Streamer.bot is missing supported Twitch events: Sub, ReSub, Cheer, RewardRedemption"
+      subscribedEventTypes: ["Follow", "GiftSub", "PollCompleted"],
+      missingEventTypes: supportedEvents.filter((eventType) => !["Follow", "GiftSub", "PollCompleted"].includes(eventType)),
+      message: `Streamer.bot is missing supported Twitch events: ${supportedEvents.filter((eventType) => !["Follow", "GiftSub", "PollCompleted"].includes(eventType)).join(", ")}`
     });
+  });
+
+  it("resubscribes the expanded discovered catalog after a reconnect", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents });
+    const service = runtime({ client, active: registration() });
+
+    await service.syncActiveRegistration();
+    client.setStatus(status("idle"));
+    await service.syncActiveRegistration();
+
+    expect(client.subscriptions).toEqual([
+      { sourceKey: "Twitch", eventTypes: supportedEvents },
+      { sourceKey: "Twitch", eventTypes: supportedEvents }
+    ]);
+    expect(client.subscriptions.flatMap((selection) => selection.eventTypes)).not.toContain("HypeTrainLevelUp");
   });
 
   it("normalizes supported events and records unsupported events without forwarding raw payloads", async () => {
@@ -376,7 +391,14 @@ function status(state: StreamerBotClientStatus["state"]): StreamerBotClientStatu
   };
 }
 
-const supportedEvents = ["Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption"] as const;
+const supportedEvents = [
+  "Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption",
+  "GiftSub", "GiftBomb",
+  "HypeTrainStart", "HypeTrainUpdate", "HypeTrainEnd",
+  "PollCreated", "PollUpdated", "PollCompleted", "PollArchived", "PollTerminated",
+  "PredictionCreated", "PredictionUpdated", "PredictionLocked", "PredictionCompleted", "PredictionCanceled",
+  "StreamOnline", "StreamOffline"
+] as const;
 
 function validRaidEnvelope(): StreamerBotEventEnvelope {
   return {

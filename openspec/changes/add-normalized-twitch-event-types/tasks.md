@@ -12,9 +12,9 @@
 
 ## 3. Streamer.bot Twitch Parity
 
-- [ ] 3.1 Add representative Streamer.bot fixtures and failing tests for every expanded canonical mapping and terminal variant.
-- [ ] 3.2 Implement explicit Streamer.bot normalizers with the same canonical fields and existing deterministic ID/provenance behavior.
-- [ ] 3.3 Expand runtime subscription discovery, partial-availability diagnostics, reconnect restoration, and tests for the supported Twitch event names.
+- [x] 3.1 Add representative Streamer.bot fixtures and failing tests for every expanded canonical mapping and terminal variant.
+- [x] 3.2 Implement explicit Streamer.bot normalizers with the same canonical fields and existing deterministic ID/provenance behavior.
+- [x] 3.3 Expand runtime subscription discovery, partial-availability diagnostics, reconnect restoration, and tests for the supported Twitch event names.
 
 ## 4. Twitch Authorization Readiness
 

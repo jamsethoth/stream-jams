@@ -1,0 +1,11 @@
+{
+  "timeStamp": "2026-07-17T12:05:00.000Z",
+  "event": { "source": "Twitch", "type": "StreamOnline" },
+  "data": {
+    "broadcaster": { "id": "broadcaster-1", "login": "broadcaster", "name": "Broadcaster" },
+    "id": "stream-1",
+    "type": "live",
+    "startedAt": "2026-07-17T12:00:00.000Z",
+    "endedAt": "2026-07-17T12:05:00.000Z"
+  }
+}

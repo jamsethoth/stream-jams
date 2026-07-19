@@ -20,7 +20,14 @@ import {
   StreamerBotEventNormalizationError
 } from "./streamerbot-event-normalizer.js";
 
-const supportedTwitchEventTypes = ["Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption"] as const;
+const supportedTwitchEventTypes = [
+  "Follow", "Sub", "ReSub", "Cheer", "Raid", "RewardRedemption",
+  "GiftSub", "GiftBomb",
+  "HypeTrainStart", "HypeTrainUpdate", "HypeTrainEnd",
+  "PollCreated", "PollUpdated", "PollCompleted", "PollArchived", "PollTerminated",
+  "PredictionCreated", "PredictionUpdated", "PredictionLocked", "PredictionCompleted", "PredictionCanceled",
+  "StreamOnline", "StreamOffline"
+] as const;
 
 export interface StreamerBotRuntimeClient {
   connect(input: StreamerBotConnectionInput): void;

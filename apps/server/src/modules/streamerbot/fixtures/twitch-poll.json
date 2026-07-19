@@ -1,0 +1,16 @@
+{
+  "timeStamp": "2026-07-17T12:05:00.000Z",
+  "event": { "source": "Twitch", "type": "PollUpdated" },
+  "data": {
+    "broadcaster": { "id": "broadcaster-1", "login": "broadcaster", "name": "Broadcaster" },
+    "id": "poll-1",
+    "title": "Which game?",
+    "choices": [
+      { "id": "choice-1", "title": "Game One", "totalVotes": 10 },
+      { "id": "choice-2", "title": "Game Two", "totalVotes": 7 }
+    ],
+    "startedAt": "2026-07-17T12:00:00.000Z",
+    "endsAt": "2026-07-17T12:05:00.000Z",
+    "endedAt": "2026-07-17T12:05:00.000Z"
+  }
+}

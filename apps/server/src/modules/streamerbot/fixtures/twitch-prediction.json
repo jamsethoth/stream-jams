@@ -1,0 +1,18 @@
+{
+  "timeStamp": "2026-07-17T12:05:00.000Z",
+  "event": { "source": "Twitch", "type": "PredictionUpdated" },
+  "data": {
+    "broadcaster": { "id": "broadcaster-1", "login": "broadcaster", "name": "Broadcaster" },
+    "id": "prediction-1",
+    "title": "Will it happen?",
+    "outcomes": [
+      { "id": "outcome-1", "title": "Yes", "totalUsers": 12, "totalPoints": 800 },
+      { "id": "outcome-2", "title": "No", "totalUsers": 6, "totalPoints": 400 }
+    ],
+    "startedAt": "2026-07-17T12:00:00.000Z",
+    "locksAt": "2026-07-17T12:03:00.000Z",
+    "lockedAt": "2026-07-17T12:03:00.000Z",
+    "endedAt": "2026-07-17T12:05:00.000Z",
+    "winningOutcomeId": "outcome-1"
+  }
+}
