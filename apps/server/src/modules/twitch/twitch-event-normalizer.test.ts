@@ -249,35 +249,96 @@ describe("normalizeTwitchEventSubNotification", () => {
           cooldownEndsAt: phase === "end" ? "2026-05-30T13:05:00.000Z" : null
         }
       })),
-      ...(["begin", "progress", "end"] as const).map((phase) => ({
-        input: notification(`msg-poll-${phase}`, `channel.poll.${phase}`, "1", pollEvent(phase === "end" ? "completed" : "active")),
+      {
+        input: notification("msg-poll-begin", "channel.poll.begin", "1", pollBeginEvent()),
         expected: {
-          type: `poll_${phase === "begin" ? "start" : phase}`,
+          type: "poll_start",
+          actor: { id: "broadcaster-1", displayName: "Streamer" },
+          amount: 0,
+          pollId: "poll-1",
+          totalVotes: 0,
+          status: "active"
+        }
+      },
+      {
+        input: notification("msg-poll-progress", "channel.poll.progress", "1", pollProgressEvent()),
+        expected: {
+          type: "poll_progress",
           actor: { id: "broadcaster-1", displayName: "Streamer" },
           amount: 12,
           pollId: "poll-1",
           totalVotes: 12,
-          status: phase === "end" ? "completed" : "active"
+          status: "active"
         }
-      })),
-      ...(["begin", "progress", "lock", "end"] as const).map((phase) => ({
-        input: notification(
-          `msg-prediction-${phase}`,
-          `channel.prediction.${phase}`,
-          "1",
-          predictionEvent(phase === "end" ? "resolved" : phase === "lock" ? "locked" : "active")
-        ),
+      },
+      {
+        input: notification("msg-poll-end", "channel.poll.end", "1", pollEndEvent()),
         expected: {
-          type: `prediction_${phase === "begin" ? "start" : phase}`,
+          type: "poll_end",
+          actor: { id: "broadcaster-1", displayName: "Streamer" },
+          amount: 12,
+          pollId: "poll-1",
+          totalVotes: 12,
+          endsAt: "2026-05-30T12:05:00.000Z",
+          status: "completed"
+        }
+      },
+      {
+        input: notification("msg-prediction-begin", "channel.prediction.begin", "1", predictionBeginEvent()),
+        expected: {
+          type: "prediction_start",
+          actor: { id: "broadcaster-1", displayName: "Streamer" },
+          amount: 0,
+          predictionId: "prediction-1",
+          totalUsers: 0,
+          totalPoints: 0,
+          locksAt: "2026-05-30T12:05:00.000Z",
+          status: "active",
+          winningOutcomeId: null
+        }
+      },
+      {
+        input: notification("msg-prediction-progress", "channel.prediction.progress", "1", predictionProgressEvent()),
+        expected: {
+          type: "prediction_progress",
           actor: { id: "broadcaster-1", displayName: "Streamer" },
           amount: 1000,
           predictionId: "prediction-1",
           totalUsers: 10,
           totalPoints: 1000,
-          status: phase === "end" ? "resolved" : phase === "lock" ? "locked" : "active",
-          winningOutcomeId: phase === "end" ? "outcome-1" : null
+          locksAt: "2026-05-30T12:05:00.000Z",
+          status: "active",
+          winningOutcomeId: null
         }
-      })),
+      },
+      {
+        input: notification("msg-prediction-lock", "channel.prediction.lock", "1", predictionLockEvent()),
+        expected: {
+          type: "prediction_lock",
+          actor: { id: "broadcaster-1", displayName: "Streamer" },
+          amount: 1000,
+          predictionId: "prediction-1",
+          totalUsers: 10,
+          totalPoints: 1000,
+          locksAt: "2026-05-30T12:05:00.000Z",
+          status: "locked",
+          winningOutcomeId: null
+        }
+      },
+      {
+        input: notification("msg-prediction-end", "channel.prediction.end", "1", predictionEndEvent()),
+        expected: {
+          type: "prediction_end",
+          actor: { id: "broadcaster-1", displayName: "Streamer" },
+          amount: 1000,
+          predictionId: "prediction-1",
+          totalUsers: 10,
+          totalPoints: 1000,
+          endedAt: "2026-05-30T12:05:00.000Z",
+          status: "resolved",
+          winningOutcomeId: "outcome-1"
+        }
+      },
       {
         input: notification("msg-stream-online", "stream.online", "1", {
           ...broadcasterEvent(),
@@ -317,12 +378,32 @@ describe("normalizeTwitchEventSubNotification", () => {
 
   it("rejects malformed poll choices and prediction outcomes", () => {
     expect(() => normalizeTwitchEventSubNotification(notification("msg-poll", "channel.poll.progress", "1", {
-      ...pollEvent("active"),
+      ...pollProgressEvent(),
       choices: [{ id: "choice-1", votes: 12 }]
     }))).toThrow(TwitchEventNormalizationError);
     expect(() => normalizeTwitchEventSubNotification(notification("msg-prediction", "channel.prediction.progress", "1", {
-      ...predictionEvent("active"),
+      ...predictionProgressEvent(),
       outcomes: [{ id: "outcome-1", users: 10, channel_points: 1000 }]
+    }))).toThrow(TwitchEventNormalizationError);
+    expect(() => normalizeTwitchEventSubNotification(notification("msg-poll-end", "channel.poll.end", "1", {
+      ...pollEndEvent(),
+      status: undefined
+    }))).toThrow(TwitchEventNormalizationError);
+    expect(() => normalizeTwitchEventSubNotification(notification("msg-prediction-end", "channel.prediction.end", "1", {
+      ...predictionEndEvent(),
+      status: undefined
+    }))).toThrow(TwitchEventNormalizationError);
+    expect(() => normalizeTwitchEventSubNotification(notification("msg-prediction-end", "channel.prediction.end", "1", {
+      ...predictionEndEvent(),
+      winning_outcome_id: undefined
+    }))).toThrow(TwitchEventNormalizationError);
+    expect(() => normalizeTwitchEventSubNotification(notification("msg-poll-begin", "channel.poll.begin", "1", {
+      ...pollBeginEvent(),
+      status: null
+    }))).toThrow(TwitchEventNormalizationError);
+    expect(() => normalizeTwitchEventSubNotification(notification("msg-prediction-begin", "channel.prediction.begin", "1", {
+      ...predictionBeginEvent(),
+      outcomes: [{ id: "outcome-1", title: "Yes", users: null }]
     }))).toThrow(TwitchEventNormalizationError);
   });
 });
@@ -362,29 +443,89 @@ function hypeTrainEvent(phase: "begin" | "progress" | "end") {
   };
 }
 
-function pollEvent(status: string) {
+function pollBeginEvent() {
+  return {
+    ...broadcasterEvent(),
+    id: "poll-1",
+    title: "What should we play?",
+    choices: [{ id: "choice-1", title: "Game A" }],
+    started_at: "2026-05-30T12:00:00.000Z",
+    ends_at: "2026-05-30T12:05:00.000Z"
+  };
+}
+
+function pollProgressEvent() {
   return {
     ...broadcasterEvent(),
     id: "poll-1",
     title: "What should we play?",
     choices: [{ id: "choice-1", title: "Game A", votes: 12 }],
     started_at: "2026-05-30T12:00:00.000Z",
-    ends_at: "2026-05-30T12:05:00.000Z",
-    status
+    ends_at: "2026-05-30T12:05:00.000Z"
   };
 }
 
-function predictionEvent(status: string) {
+function pollEndEvent() {
+  return {
+    ...broadcasterEvent(),
+    id: "poll-1",
+    title: "What should we play?",
+    choices: [{ id: "choice-1", title: "Game A", votes: 12 }],
+    status: "completed",
+    started_at: "2026-05-30T12:00:00.000Z",
+    ended_at: "2026-05-30T12:05:00.000Z"
+  };
+}
+
+function predictionBeginEvent() {
+  return {
+    ...broadcasterEvent(),
+    id: "prediction-1",
+    title: "Will we win?",
+    outcomes: [{ id: "outcome-1", title: "Yes" }],
+    started_at: "2026-05-30T12:00:00.000Z",
+    locks_at: "2026-05-30T12:05:00.000Z"
+  };
+}
+
+function predictionProgressEvent() {
+  return {
+    ...broadcasterEvent(),
+    id: "prediction-1",
+    title: "Will we win?",
+    outcomes: [
+      { id: "outcome-1", title: "Yes", users: 10, channel_points: 1000 },
+      { id: "outcome-2", title: "No" }
+    ],
+    started_at: "2026-05-30T12:00:00.000Z",
+    locks_at: "2026-05-30T12:05:00.000Z"
+  };
+}
+
+function predictionLockEvent() {
+  return {
+    ...broadcasterEvent(),
+    id: "prediction-1",
+    title: "Will we win?",
+    outcomes: [
+      { id: "outcome-1", title: "Yes", users: 10, channel_points: 1000 },
+      { id: "outcome-2", title: "No" }
+    ],
+    started_at: "2026-05-30T12:00:00.000Z",
+    locked_at: "2026-05-30T12:05:00.000Z"
+  };
+}
+
+function predictionEndEvent() {
   return {
     ...broadcasterEvent(),
     id: "prediction-1",
     title: "Will we win?",
     outcomes: [{ id: "outcome-1", title: "Yes", users: 10, channel_points: 1000 }],
     started_at: "2026-05-30T12:00:00.000Z",
-    locks_at: "2026-05-30T12:05:00.000Z",
-    ended_at: status === "resolved" ? "2026-05-30T12:05:00.000Z" : null,
-    status,
-    winning_outcome_id: status === "resolved" ? "outcome-1" : null
+    ended_at: "2026-05-30T12:05:00.000Z",
+    status: "resolved",
+    winning_outcome_id: "outcome-1"
   };
 }
 

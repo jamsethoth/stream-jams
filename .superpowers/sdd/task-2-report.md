@@ -66,3 +66,30 @@ Result: 3 test files and 27 tests passed; `tsc -b tsconfig.json` passed.
 ## Concerns
 
 OAuth default scopes intentionally remain unchanged for checkpoint 4. Accounts without the new scopes continue to omit their scope-gated subscriptions until that checkpoint is implemented.
+
+## Review Follow-Up
+
+### Changed Files
+
+- `apps/server/src/modules/twitch/twitch-event-normalizer.ts`: parse documented poll and prediction lifecycle payload shapes by phase; default only fields Twitch omits, require terminal fields, map poll `ended_at` and prediction `locked_at`.
+- `apps/server/src/modules/twitch/twitch-event-normalizer.test.ts`: replace synthetic poll and prediction phase helpers with documented per-phase fixtures and add strict terminal-field rejection coverage.
+- `.superpowers/sdd/task-2-report.md`: append this review follow-up.
+
+### Validation
+
+Red runs verified the old parser rejected documented poll-begin omissions and accepted omitted terminal fields that must be present.
+
+```powershell
+corepack.cmd pnpm vitest run apps/server/src/modules/twitch/twitch-event-normalizer.test.ts apps/server/src/modules/twitch/twitch-eventsub-client.test.ts apps/server/src/modules/events/event-ingestion-service.test.ts
+corepack.cmd pnpm typecheck
+```
+
+Result: 3 test files and 27 tests passed; `tsc -b tsconfig.json` passed.
+
+### Self-Review
+
+- Poll begin defaults missing vote totals and status to zero and `active`; progress defaults only missing status; end requires vote totals, status, and `ended_at`.
+- Prediction begin defaults omitted totals and status; progress and lock default omitted outcome totals; lock maps required `locked_at`; end requires totals, terminal status, `ended_at`, and nullable `winning_outcome_id`.
+- Defaults apply only to absent keys; explicit `null` status or counters remain invalid.
+- Existing direct EventSub mappings, subscription definitions, OAuth defaults, and UI files remain unchanged.
+- `git diff --check` passed.

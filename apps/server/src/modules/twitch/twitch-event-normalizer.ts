@@ -248,7 +248,11 @@ function normalizePoll(
   const event = message.payload.event;
   const choices = requiredArray(event.choices).map((choice) => {
     const value = requiredRecord(choice);
-    return { id: requiredString(value.id), title: requiredString(value.title), totalVotes: nonNegativeInteger(value.votes) };
+    return {
+      id: requiredString(value.id),
+      title: requiredString(value.title),
+      totalVotes: phase === "start" ? optionalNonNegativeInteger(value.votes) ?? 0 : nonNegativeInteger(value.votes)
+    };
   });
   const totalVotes = choices.reduce((total, choice) => total + choice.totalVotes, 0);
   return {
@@ -260,8 +264,8 @@ function normalizePoll(
     choices,
     totalVotes,
     startedAt: requiredString(event.started_at),
-    endsAt: requiredString(event.ends_at),
-    status: requiredString(event.status)
+    endsAt: phase === "end" ? requiredString(event.ended_at) : requiredString(event.ends_at),
+    status: phase === "end" ? requiredString(event.status) : defaultString(event.status, "active")
   } as PollStartEvent | PollProgressEvent | PollEndEvent;
 }
 
@@ -275,8 +279,8 @@ function normalizePrediction(
     return {
       id: requiredString(value.id),
       title: requiredString(value.title),
-      totalUsers: nonNegativeInteger(value.users),
-      totalPoints: nonNegativeInteger(value.channel_points)
+      totalUsers: phase === "end" ? nonNegativeInteger(value.users) : optionalNonNegativeInteger(value.users) ?? 0,
+      totalPoints: phase === "end" ? nonNegativeInteger(value.channel_points) : optionalNonNegativeInteger(value.channel_points) ?? 0
     };
   });
   const totalUsers = outcomes.reduce((total, outcome) => total + outcome.totalUsers, 0);
@@ -291,10 +295,10 @@ function normalizePrediction(
     totalUsers,
     totalPoints,
     startedAt: requiredString(event.started_at),
-    locksAt: nullableString(event.locks_at),
-    endedAt: nullableString(event.ended_at),
-    status: requiredString(event.status),
-    winningOutcomeId: nullableString(event.winning_outcome_id)
+    locksAt: phase === "lock" ? requiredString(event.locked_at) : phase === "end" ? null : requiredString(event.locks_at),
+    endedAt: phase === "end" ? requiredString(event.ended_at) : nullableString(event.ended_at),
+    status: phase === "end" ? requiredString(event.status) : defaultString(event.status, phase === "lock" ? "locked" : "active"),
+    winningOutcomeId: phase === "end" ? requiredNullableString(event.winning_outcome_id) : null
   } as PredictionStartEvent | PredictionProgressEvent | PredictionLockEvent | PredictionEndEvent;
 }
 
@@ -468,6 +472,14 @@ function nullableString(value: unknown): string | null {
   return value;
 }
 
+function defaultString(value: unknown, defaultValue: string): string {
+  return value === undefined ? defaultValue : requiredString(value);
+}
+
+function requiredNullableString(value: unknown): string | null {
+  return value === null ? null : requiredString(value);
+}
+
 function positiveInteger(value: unknown): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
     throw new TwitchEventNormalizationError();
@@ -486,6 +498,10 @@ function nonNegativeInteger(value: unknown): number {
 
 function nullableNonNegativeInteger(value: unknown): number | null {
   return value === null || value === undefined ? null : nonNegativeInteger(value);
+}
+
+function optionalNonNegativeInteger(value: unknown): number | null {
+  return value === undefined ? null : nonNegativeInteger(value);
 }
 
 function requiredArray(value: unknown): readonly unknown[] {
