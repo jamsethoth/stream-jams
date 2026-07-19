@@ -862,7 +862,7 @@ function toProviderLiveStatus(state: TwitchEventSubRuntimeState): ProviderLiveSt
   }
 }
 
-function toEventSourceRuntimeError(
+export function toEventSourceRuntimeError(
   providerName: string,
   status: {
     readonly state: TwitchEventSubRuntimeState;
@@ -872,9 +872,6 @@ function toEventSourceRuntimeError(
   }
 ): ActionableManagementError | null {
   if (toProviderLiveStatus(status.state) !== "error") return null;
-  const diagnosticsRoute = status.referenceId === null
-    ? "/manage/diagnostics"
-    : `/manage/diagnostics?reference=${encodeURIComponent(status.referenceId)}`;
   const authorizationUpdateRequired = status.message === "Twitch authorization update required. Reconnect Twitch to grant the added event permissions.";
   return {
     summary: `${providerName} live status error`,
@@ -885,7 +882,9 @@ function toEventSourceRuntimeError(
     severity: "error",
     occurredAt: status.lastErrorAt,
     referenceId: status.referenceId,
-    correction: { label: "Open diagnostics", route: diagnosticsRoute }
+    correction: status.referenceId === null
+      ? null
+      : { label: "Open diagnostics", route: `/manage/diagnostics?reference=${encodeURIComponent(status.referenceId)}` }
   };
 }
 
