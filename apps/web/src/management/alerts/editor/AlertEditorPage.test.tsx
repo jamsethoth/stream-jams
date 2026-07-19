@@ -61,12 +61,18 @@ describe("AlertEditorPage", () => {
     await user.keyboard("{ArrowRight}");
     expect(alertTab).toHaveAttribute("aria-selected", "true");
     expect(alertTab).toHaveAttribute("tabindex", "0");
+    expect(alertTab).toHaveFocus();
     await user.keyboard("{End}");
     expect(eventTab).toHaveAttribute("aria-selected", "true");
+    expect(eventTab).toHaveFocus();
     await user.keyboard("{Home}");
     expect(layersTab).toHaveAttribute("aria-selected", "true");
     expect(layersTab).toHaveAttribute("tabindex", "0");
     expect(alertTab).toHaveAttribute("tabindex", "-1");
+    expect(layersTab).toHaveFocus();
+    for (const inspectorTab of [layersTab, alertTab, eventTab]) {
+      expect(globalThis.document.getElementById(inspectorTab.getAttribute("aria-controls")!)).not.toBeNull();
+    }
     expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
@@ -110,6 +116,35 @@ describe("AlertEditorPage", () => {
     await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "raid");
     await user.click(screen.getByRole("button", { name: /New raid/ }));
     expect(onOpenAlert).toHaveBeenCalledWith("alert-raid", "vertical");
+  });
+
+  it("uses the loaded document set when set-detail loading fails", async () => {
+    const onBack = vi.fn();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => { throw new Error("set detail unavailable"); }),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={onBack}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Back to alerts" }));
+    expect(onBack).toHaveBeenCalledWith("set-default");
   });
 
   it("shows alert and set validation details with correction steps in the editor", async () => {

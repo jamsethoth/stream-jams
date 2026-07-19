@@ -796,6 +796,10 @@
     grid-column: 1 / -1;
     min-height: 0;
   }
+
+  .alert-canvas__viewport {
+    min-height: 0;
+  }
 }
 
 @media (max-width: 700px) {

@@ -74,6 +74,7 @@ type SaveWarningState = {
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editor, setEditor] = useState<AlertEditorState | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
+  const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
   const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
   const [ttsProvidersLoaded, setTtsProvidersLoaded] = useState(false);
   const [ttsProviderError, setTtsProviderError] = useState<ActionableManagementError | null>(null);
@@ -118,11 +119,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     let active = true;
     setEditor(null);
     setSetDetail(null);
+    setLoadedSetId(undefined);
     setError(null);
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
     void props.managementApi.getAlertEditorDocument(props.alertId).then(async (document) => {
+      if (!active) return;
+      setLoadedSetId(document.setId);
       const loadedSetDetail = await props.managementApi.getAlertSet(document.setId);
       if (!active) return;
       setEditor(createEditorState(document));
@@ -523,7 +527,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   if (document === null || editor === null || profile === null) {
     return error === null
       ? <p className="management-empty" role="status">Loading alert editor...</p>
-      : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={() => props.onBack(undefined)} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
+      : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={() => props.onBack(loadedSetId)} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
   }
 
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
@@ -724,6 +728,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               />
             )}
           </div>
+          {(["layers", "alert", "event"] as const).filter((value) => value !== tab).map((value) => (
+            <div
+              aria-labelledby={`alert-editor-tab-${value}`}
+              hidden
+              id={`alert-editor-panel-${value}`}
+              key={value}
+              role="tabpanel"
+            />
+          ))}
         </aside>
       </div>
 

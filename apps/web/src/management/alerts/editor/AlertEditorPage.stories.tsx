@@ -39,11 +39,16 @@ export const ReadyLandscape: Story = {
 };
 
 export const TabletWorkspace: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Fit" })).toBeVisible();
+  },
   parameters: {
     viewport: {
       defaultViewport: "editorTablet",
       options: {
-        editorTablet: { name: "Editor tablet 820 x 1000", styles: { width: "820px", height: "1000px" } }
+        editorTablet: { name: "Editor tablet 820 x 768", styles: { width: "820px", height: "768px" } }
       }
     }
   }
