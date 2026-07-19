@@ -1,5 +1,6 @@
 import type { NormalizedStreamEvent } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
+import { normalizeStreamerBotEvent } from "../streamerbot/streamerbot-event-normalizer.js";
 import { EventIngestionService } from "./event-ingestion-service.js";
 
 describe("EventIngestionService", () => {
@@ -145,9 +146,71 @@ describe("EventIngestionService", () => {
     service.getStatus();
     service.getStatus();
     expect(diagnostics).toEqual([{
+      code: "EVENT_INGESTION_FAILED",
       message: "Twitch EventSub notification was invalid",
-      referenceId: "ref-ingestion-1"
+      referenceId: "ref-ingestion-1",
+      ingestProvider: "twitch",
+      source: "EventSub"
     }]);
+  });
+
+  it("rejects malformed direct Twitch and Streamer.bot outputs before the sink and continues intake", async () => {
+    const events: NormalizedStreamEvent[] = [];
+    const diagnostics: unknown[] = [];
+    const service = new EventIngestionService({
+      sink: { handleEvent(event) { events.push(event); } },
+      generateReferenceId: (() => {
+        let sequence = 0;
+        return () => `ref-schema-${++sequence}`;
+      })(),
+      onDiagnostic(entry) {
+        diagnostics.push(entry);
+      }
+    });
+    const streamerBot = normalizeStreamerBotEvent({
+      timeStamp: "not-a-date",
+      event: { source: "Twitch", type: "Raid" },
+      data: {
+        user: { id: "raider-1", name: "Raider" },
+        viewers: 42,
+        createdAt: "not-a-date"
+      }
+    });
+
+    await expect(service.ingestTwitchEventSubNotification(streamOnlineNotification("bad-twitch", "not-a-date"))).resolves.toEqual({
+      status: "rejected",
+      message: "Normalized stream event failed schema validation",
+      referenceId: "ref-schema-1"
+    });
+    expect(streamerBot.status).toBe("normalized");
+    if (streamerBot.status !== "normalized") throw new Error("Expected normalized Streamer.bot event");
+    await expect(service.ingestNormalizedEvent(streamerBot.event)).resolves.toEqual({
+      status: "rejected",
+      message: "Normalized stream event failed schema validation",
+      referenceId: "ref-schema-2"
+    });
+    await expect(service.ingestTwitchEventSubNotification(followNotification("after-rejection"))).resolves.toMatchObject({
+      status: "accepted",
+      event: { id: "after-rejection", type: "follow" }
+    });
+
+    expect(events).toEqual([expect.objectContaining({ id: "after-rejection", type: "follow" })]);
+    expect(diagnostics).toEqual([
+      expect.objectContaining({
+        code: "NORMALIZED_STREAM_EVENT_SCHEMA_INVALID",
+        referenceId: "ref-schema-1",
+        ingestProvider: "twitch",
+        source: "EventSub",
+        subscriptionType: "stream.online"
+      }),
+      expect.objectContaining({
+        code: "NORMALIZED_STREAM_EVENT_SCHEMA_INVALID",
+        referenceId: "ref-schema-2",
+        ingestProvider: "streamerbot",
+        source: "Twitch",
+        upstreamType: "Raid"
+      })
+    ]);
   });
 
   it("allows a failed event delivery to be retried with the same event ID", async () => {
@@ -226,6 +289,33 @@ function followNotification(messageId: string) {
         broadcaster_user_login: "streamer",
         broadcaster_user_name: "Streamer",
         followed_at: "2026-05-30T12:00:00.000Z"
+      }
+    }
+  };
+}
+
+function streamOnlineNotification(messageId: string, startedAt: string) {
+  return {
+    metadata: {
+      message_id: messageId,
+      message_type: "notification",
+      message_timestamp: "2026-05-30T12:00:00.000Z",
+      subscription_type: "stream.online",
+      subscription_version: "1"
+    },
+    payload: {
+      subscription: {
+        id: "subscription-stream.online",
+        type: "stream.online",
+        version: "1",
+        condition: {}
+      },
+      event: {
+        broadcaster_user_id: "broadcaster-1",
+        broadcaster_user_name: "Streamer",
+        id: "stream-1",
+        type: "live",
+        started_at: startedAt
       }
     }
   };

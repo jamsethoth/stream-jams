@@ -77,7 +77,7 @@ export function normalizeTwitchEventSubNotification(input: unknown): NormalizedS
     case "channel.follow":
       return normalizeFollow(message);
     case "channel.subscribe":
-      return message.payload.event.is_gift === true ? normalizeGiftSubscription(message) : normalizeSubscription(message);
+      return requiredBoolean(message.payload.event.is_gift) ? normalizeGiftSubscription(message) : normalizeSubscription(message);
     case "channel.subscription.message":
       return normalizeResubscription(message);
     case "channel.cheer":
@@ -125,6 +125,21 @@ export function getTwitchEventSubMessageId(input: unknown): string | null {
     : null;
 }
 
+export function getTwitchEventSubDiagnosticContext(input: unknown): {
+  readonly ingestProvider: "twitch";
+  readonly source: "EventSub";
+  readonly subscriptionType?: TwitchEventSubNotificationType | undefined;
+} {
+  const subscriptionType = isRecord(input) && isRecord(input.metadata) && isNotificationType(input.metadata.subscription_type)
+    ? input.metadata.subscription_type
+    : undefined;
+  return {
+    ingestProvider: "twitch",
+    source: "EventSub",
+    ...(subscriptionType === undefined ? {} : { subscriptionType })
+  };
+}
+
 function normalizeFollow(message: TwitchEventSubNotificationMessage): FollowEvent {
   const event = message.payload.event;
   return {
@@ -159,7 +174,7 @@ function normalizeGiftSubscription(message: TwitchEventSubNotificationMessage): 
 
 function normalizeCommunityGift(message: TwitchEventSubNotificationMessage): CommunityGiftEvent {
   const event = message.payload.event;
-  const anonymous = event.is_anonymous === true;
+  const anonymous = requiredBoolean(event.is_anonymous);
   const gifter = anonymous ? { id: null, displayName: "Anonymous" } : actor(event.user_id, event.user_name);
   return {
     ...baseEvent(message, gifter.id, gifter.displayName),
@@ -482,6 +497,14 @@ function requiredNullableString(value: unknown): string | null {
 
 function positiveInteger(value: unknown): number {
   if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new TwitchEventNormalizationError();
+  }
+
+  return value;
+}
+
+function requiredBoolean(value: unknown): boolean {
+  if (typeof value !== "boolean") {
     throw new TwitchEventNormalizationError();
   }
 

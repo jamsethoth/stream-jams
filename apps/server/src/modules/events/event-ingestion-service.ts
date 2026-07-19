@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
-import type { NormalizedStreamEvent } from "@stream-jams/core";
+import { normalizedStreamEventSchema, type NormalizedStreamEvent } from "@stream-jams/core";
 import {
+  getTwitchEventSubDiagnosticContext,
   getTwitchEventSubMessageId,
   normalizeTwitchEventSubNotification,
   TwitchEventNormalizationError
@@ -23,8 +24,13 @@ export interface EventIngestionStatus {
 }
 
 export interface EventIngestionDiagnostic {
+  readonly code: "EVENT_INGESTION_FAILED" | "NORMALIZED_STREAM_EVENT_SCHEMA_INVALID";
   readonly message: string;
   readonly referenceId: string;
+  readonly ingestProvider?: "twitch" | "streamerbot" | undefined;
+  readonly source?: string | undefined;
+  readonly subscriptionType?: string | undefined;
+  readonly upstreamType?: string | undefined;
 }
 
 export interface EventSink {
@@ -70,7 +76,7 @@ export class EventIngestionService {
     return this.#status;
   }
 
-  async ingestNormalizedEvent(event: NormalizedStreamEvent): Promise<EventIngestionResult> {
+  async ingestNormalizedEvent(event: unknown): Promise<EventIngestionResult> {
     return this.#deliverNormalizedEvent(event, {
       duplicateMessage: "Duplicate normalized stream event ignored",
       failureMessage: "Normalized stream event ingestion failed"
@@ -101,28 +107,43 @@ export class EventIngestionService {
     } catch (error) {
       const messageText =
         error instanceof TwitchEventNormalizationError ? error.message : "Twitch EventSub ingestion failed";
-      return this.#reject(messageText);
+      return this.#reject({
+        code: "EVENT_INGESTION_FAILED",
+        message: messageText,
+        ...getTwitchEventSubDiagnosticContext(message)
+      });
     }
   }
 
   async #deliverNormalizedEvent(
-    event: NormalizedStreamEvent,
+    event: unknown,
     messages: { readonly duplicateMessage: string; readonly failureMessage: string }
   ): Promise<EventIngestionResult> {
-    if (this.#seenMessageIds.has(event.id) || this.#inFlightMessageIds.has(event.id)) {
+    const parsed = normalizedStreamEventSchema.safeParse(event);
+    if (!parsed.success) {
+      return this.#reject({
+        code: "NORMALIZED_STREAM_EVENT_SCHEMA_INVALID",
+        message: "Normalized stream event failed schema validation",
+        ...getNormalizedEventDiagnosticContext(event)
+      });
+    }
+
+    const normalizedEvent = parsed.data;
+    const diagnosticContext = getNormalizedEventDiagnosticContext(normalizedEvent);
+    if (this.#seenMessageIds.has(normalizedEvent.id) || this.#inFlightMessageIds.has(normalizedEvent.id)) {
       this.#status = {
         ...this.#status,
         state: this.#status.state === "idle" ? "ready" : this.#status.state,
         duplicateCount: this.#status.duplicateCount + 1,
         message: messages.duplicateMessage
       };
-      return { status: "duplicate", messageId: event.id };
+      return { status: "duplicate", messageId: normalizedEvent.id };
     }
 
-    this.#inFlightMessageIds.add(event.id);
+    this.#inFlightMessageIds.add(normalizedEvent.id);
     try {
-      await this.#sink.handleEvent(event);
-      this.#rememberMessageId(event.id);
+      await this.#sink.handleEvent(normalizedEvent);
+      this.#rememberMessageId(normalizedEvent.id);
       this.#status = {
         state: "ready",
         acceptedCount: this.#status.acceptedCount + 1,
@@ -133,16 +154,17 @@ export class EventIngestionService {
         message: null,
         referenceId: null
       };
-      return { status: "accepted", event };
+      return { status: "accepted", event: normalizedEvent };
     } catch {
-      return this.#reject(messages.failureMessage);
+      return this.#reject({ code: "EVENT_INGESTION_FAILED", message: messages.failureMessage, ...diagnosticContext });
     } finally {
-      this.#inFlightMessageIds.delete(event.id);
+      this.#inFlightMessageIds.delete(normalizedEvent.id);
     }
   }
 
-  async #reject(message: string): Promise<EventIngestionResult> {
+  async #reject(diagnostic: Omit<EventIngestionDiagnostic, "referenceId">): Promise<EventIngestionResult> {
     const referenceId = this.#generateReferenceId();
+    const { message } = diagnostic;
     this.#status = {
       ...this.#status,
       state: "degraded",
@@ -152,7 +174,7 @@ export class EventIngestionService {
       referenceId
     };
     try {
-      await this.#onDiagnostic({ message, referenceId });
+      await this.#onDiagnostic({ ...diagnostic, referenceId });
     } catch {
       this.#status = { ...this.#status, message: "Event ingestion diagnostics logging failed" };
     }
@@ -170,6 +192,31 @@ export class EventIngestionService {
       this.#seenMessageIds.delete(oldest);
     }
   }
+}
+
+function getNormalizedEventDiagnosticContext(event: unknown): Omit<EventIngestionDiagnostic, "code" | "message" | "referenceId"> {
+  if (!isRecord(event) || (event.ingestProvider !== "twitch" && event.ingestProvider !== "streamerbot")) {
+    return {};
+  }
+
+  const metadata = isRecord(event.metadata) ? event.metadata : {};
+  if (event.ingestProvider === "twitch") {
+    return {
+      ingestProvider: "twitch",
+      source: "EventSub",
+      ...(typeof metadata.twitchEventSubType === "string" ? { subscriptionType: metadata.twitchEventSubType } : {})
+    };
+  }
+
+  return {
+    ingestProvider: "streamerbot",
+    ...(typeof metadata.upstreamSource === "string" ? { source: metadata.upstreamSource } : {}),
+    ...(typeof metadata.upstreamType === "string" ? { upstreamType: metadata.upstreamType } : {})
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function generateReferenceId(): string {

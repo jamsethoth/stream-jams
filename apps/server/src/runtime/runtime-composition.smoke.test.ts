@@ -140,7 +140,10 @@ describe("runtime app composition smoke", () => {
     runtimeCompositions.push(composition);
 
     await composition.eventIngestionService.ingestTwitchEventSubNotification({
-      metadata: { message_id: "malformed-message" },
+      metadata: {
+        message_id: "malformed-message",
+        subscription_type: "channel.subscribe"
+      },
       secret: "must-not-be-logged"
     });
     const status = composition.eventIngestionService.getStatus();
@@ -148,14 +151,24 @@ describe("runtime app composition smoke", () => {
     const log = await readFile(join(testRoot, "data", "logs", logFiles[0] ?? "missing"), "utf8");
     const entry = JSON.parse(log.trim()) as {
       readonly correlationId: string;
-      readonly details: { readonly referenceId: string };
+      readonly details: {
+        readonly referenceId: string;
+        readonly ingestProvider: string;
+        readonly source: string;
+        readonly subscriptionType: string;
+      };
       readonly message: string;
     };
 
     expect(status.referenceId).toMatch(/^ref_/);
     expect(entry).toMatchObject({
       correlationId: status.referenceId,
-      details: { referenceId: status.referenceId },
+      details: {
+        referenceId: status.referenceId,
+        ingestProvider: "twitch",
+        source: "EventSub",
+        subscriptionType: "channel.subscribe"
+      },
       message: "Twitch EventSub notification was invalid"
     });
     expect(log).not.toContain("must-not-be-logged");

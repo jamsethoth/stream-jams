@@ -376,6 +376,39 @@ describe("normalizeTwitchEventSubNotification", () => {
     }
   });
 
+  it("requires boolean gift discriminators instead of changing subscription semantics", () => {
+    const subscribe = (isGift: unknown) => notification("msg-subscribe", "channel.subscribe", "1", {
+      ...subscriptionEvent({ is_gift: isGift })
+    });
+    const communityGift = (isAnonymous: unknown) => notification("msg-community-gift", "channel.subscription.gift", "1", {
+      ...broadcasterEvent(),
+      user_id: "gifter-1",
+      user_name: "Gifter",
+      total: 5,
+      tier: "1000",
+      cumulative_total: 20,
+      is_anonymous: isAnonymous
+    });
+
+    expect(normalizeTwitchEventSubNotification(subscribe(false))).toMatchObject({ type: "subscription" });
+    expect(normalizeTwitchEventSubNotification(subscribe(true))).toMatchObject({ type: "gift_subscription" });
+    expect(normalizeTwitchEventSubNotification(communityGift(false))).toMatchObject({
+      type: "community_gift",
+      anonymous: false,
+      actor: { id: "gifter-1", displayName: "Gifter" }
+    });
+    expect(normalizeTwitchEventSubNotification(communityGift(true))).toMatchObject({
+      type: "community_gift",
+      anonymous: true,
+      actor: { id: null, displayName: "Anonymous" }
+    });
+
+    for (const invalid of [undefined, "true"]) {
+      expect(() => normalizeTwitchEventSubNotification(subscribe(invalid))).toThrow(TwitchEventNormalizationError);
+      expect(() => normalizeTwitchEventSubNotification(communityGift(invalid))).toThrow(TwitchEventNormalizationError);
+    }
+  });
+
   it("rejects malformed poll choices and prediction outcomes", () => {
     expect(() => normalizeTwitchEventSubNotification(notification("msg-poll", "channel.poll.progress", "1", {
       ...pollProgressEvent(),

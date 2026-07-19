@@ -921,12 +921,19 @@ async function writeEventSourceFailureDiagnostic(
   source: string,
   entry: EventIngestionDiagnostic | TwitchEventSubDiagnostic | TwitchEventSubRuntimeDiagnostic
 ): Promise<void> {
+  const diagnosticContext = "code" in entry ? {
+    code: entry.code,
+    ...(entry.ingestProvider === undefined ? {} : { ingestProvider: entry.ingestProvider }),
+    ...(entry.source === undefined ? {} : { source: entry.source }),
+    ...(entry.subscriptionType === undefined ? {} : { subscriptionType: entry.subscriptionType }),
+    ...(entry.upstreamType === undefined ? {} : { upstreamType: entry.upstreamType })
+  } : {};
   await logger.error(entry.message, {
     module,
     source,
     correlationId: entry.referenceId,
     processingId: null,
-    metadata: { referenceId: entry.referenceId }
+    metadata: { referenceId: entry.referenceId, ...diagnosticContext }
   });
 }
 
