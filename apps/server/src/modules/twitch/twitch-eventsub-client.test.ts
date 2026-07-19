@@ -8,11 +8,14 @@ import {
 } from "./twitch-eventsub-client.js";
 
 describe("buildTwitchEventSubSubscriptionRequests", () => {
-  it("builds MVP EventSub WebSocket subscriptions from granted scopes", () => {
+  it("builds documented EventSub WebSocket subscriptions from granted scopes", () => {
     const requests = buildTwitchEventSubSubscriptionRequests({
       account: {
         accountId: "141981764",
-        scopes: ["bits:read", "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"]
+        scopes: [
+          "bits:read", "channel:read:hype_train", "channel:read:polls", "channel:read:predictions",
+          "channel:read:redemptions", "channel:read:subscriptions", "moderator:read:followers"
+        ]
       },
       sessionId: "session-1"
     });
@@ -23,7 +26,20 @@ describe("buildTwitchEventSubSubscriptionRequests", () => {
       "channel.subscription.message",
       "channel.cheer",
       "channel.raid",
-      "channel.channel_points_custom_reward_redemption.add"
+      "channel.channel_points_custom_reward_redemption.add",
+      "channel.subscription.gift",
+      "channel.hype_train.begin",
+      "channel.hype_train.progress",
+      "channel.hype_train.end",
+      "channel.poll.begin",
+      "channel.poll.progress",
+      "channel.poll.end",
+      "channel.prediction.begin",
+      "channel.prediction.progress",
+      "channel.prediction.lock",
+      "channel.prediction.end",
+      "stream.online",
+      "stream.offline"
     ]);
     expect(requests[0]).toEqual({
       type: "channel.follow",
@@ -37,6 +53,35 @@ describe("buildTwitchEventSubSubscriptionRequests", () => {
         session_id: "session-1"
       }
     });
+  });
+
+  it("uses documented versions, scopes, and broadcaster conditions for expanded subscriptions", () => {
+    const expected = {
+      "channel.subscription.gift": ["1", "channel:read:subscriptions"],
+      "channel.hype_train.begin": ["2", "channel:read:hype_train"],
+      "channel.hype_train.progress": ["2", "channel:read:hype_train"],
+      "channel.hype_train.end": ["2", "channel:read:hype_train"],
+      "channel.poll.begin": ["1", "channel:read:polls"],
+      "channel.poll.progress": ["1", "channel:read:polls"],
+      "channel.poll.end": ["1", "channel:read:polls"],
+      "channel.prediction.begin": ["1", "channel:read:predictions"],
+      "channel.prediction.progress": ["1", "channel:read:predictions"],
+      "channel.prediction.lock": ["1", "channel:read:predictions"],
+      "channel.prediction.end": ["1", "channel:read:predictions"],
+      "stream.online": ["1", null],
+      "stream.offline": ["1", null]
+    } as const;
+    for (const [type, [version, requiredScope]] of Object.entries(expected)) {
+      const requests = buildTwitchEventSubSubscriptionRequests({
+        account: { accountId: "141981764", scopes: requiredScope === null ? [] : [requiredScope] },
+        sessionId: "session-1"
+      });
+      expect(requests).toContainEqual(expect.objectContaining({
+        type,
+        version,
+        condition: { broadcaster_user_id: "141981764" }
+      }));
+    }
   });
 
   it("omits scope-gated subscriptions when account scopes are absent", () => {
@@ -54,6 +99,28 @@ describe("buildTwitchEventSubSubscriptionRequests", () => {
         version: "1",
         condition: {
           to_broadcaster_user_id: "141981764"
+        },
+        transport: {
+          method: "websocket",
+          session_id: "session-1"
+        }
+      },
+      {
+        type: "stream.online",
+        version: "1",
+        condition: {
+          broadcaster_user_id: "141981764"
+        },
+        transport: {
+          method: "websocket",
+          session_id: "session-1"
+        }
+      },
+      {
+        type: "stream.offline",
+        version: "1",
+        condition: {
+          broadcaster_user_id: "141981764"
         },
         transport: {
           method: "websocket",
@@ -149,7 +216,10 @@ describe("TwitchEventSubClient", () => {
         "channel.subscription.message",
         "channel.cheer",
         "channel.raid",
-        "channel.channel_points_custom_reward_redemption.add"
+        "channel.channel_points_custom_reward_redemption.add",
+        "channel.subscription.gift",
+        "stream.online",
+        "stream.offline"
       ]
     });
   });
@@ -201,7 +271,7 @@ describe("TwitchEventSubClient", () => {
       "wss://eventsub.wss.twitch.tv/ws?reconnect=1"
     ]);
     await harness.sockets[1]?.emitMessage(sessionWelcome("session-2"));
-    expect(harness.apiClient.requests).toHaveLength(6);
+    expect(harness.apiClient.requests).toHaveLength(9);
 
     await harness.sockets[1]?.emitMessage(revocation());
     expect(harness.client.getStatus()).toMatchObject({

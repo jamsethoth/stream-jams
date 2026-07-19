@@ -1,9 +1,23 @@
 import type {
   CheerEvent,
+  CommunityGiftEvent,
   FollowEvent,
+  GiftSubscriptionEvent,
+  HypeTrainEndEvent,
+  HypeTrainProgressEvent,
+  HypeTrainStartEvent,
   NormalizedStreamEvent,
+  PollEndEvent,
+  PollProgressEvent,
+  PollStartEvent,
+  PredictionEndEvent,
+  PredictionLockEvent,
+  PredictionProgressEvent,
+  PredictionStartEvent,
   RaidEvent,
   ResubscriptionEvent,
+  StreamOfflineEvent,
+  StreamOnlineEvent,
   SubscriptionEvent,
   ChannelPointRedemptionEvent
 } from "@stream-jams/core";
@@ -14,7 +28,20 @@ export type TwitchEventSubNotificationType =
   | "channel.subscription.message"
   | "channel.cheer"
   | "channel.raid"
-  | "channel.channel_points_custom_reward_redemption.add";
+  | "channel.channel_points_custom_reward_redemption.add"
+  | "channel.subscription.gift"
+  | "channel.hype_train.begin"
+  | "channel.hype_train.progress"
+  | "channel.hype_train.end"
+  | "channel.poll.begin"
+  | "channel.poll.progress"
+  | "channel.poll.end"
+  | "channel.prediction.begin"
+  | "channel.prediction.progress"
+  | "channel.prediction.lock"
+  | "channel.prediction.end"
+  | "stream.online"
+  | "stream.offline";
 
 export interface TwitchEventSubNotificationMessage {
   readonly metadata: {
@@ -50,7 +77,7 @@ export function normalizeTwitchEventSubNotification(input: unknown): NormalizedS
     case "channel.follow":
       return normalizeFollow(message);
     case "channel.subscribe":
-      return normalizeSubscription(message);
+      return message.payload.event.is_gift === true ? normalizeGiftSubscription(message) : normalizeSubscription(message);
     case "channel.subscription.message":
       return normalizeResubscription(message);
     case "channel.cheer":
@@ -59,6 +86,32 @@ export function normalizeTwitchEventSubNotification(input: unknown): NormalizedS
       return normalizeRaid(message);
     case "channel.channel_points_custom_reward_redemption.add":
       return normalizeChannelPointRedemption(message);
+    case "channel.subscription.gift":
+      return normalizeCommunityGift(message);
+    case "channel.hype_train.begin":
+      return normalizeHypeTrain(message, "start");
+    case "channel.hype_train.progress":
+      return normalizeHypeTrain(message, "progress");
+    case "channel.hype_train.end":
+      return normalizeHypeTrain(message, "end");
+    case "channel.poll.begin":
+      return normalizePoll(message, "start");
+    case "channel.poll.progress":
+      return normalizePoll(message, "progress");
+    case "channel.poll.end":
+      return normalizePoll(message, "end");
+    case "channel.prediction.begin":
+      return normalizePrediction(message, "start");
+    case "channel.prediction.progress":
+      return normalizePrediction(message, "progress");
+    case "channel.prediction.lock":
+      return normalizePrediction(message, "lock");
+    case "channel.prediction.end":
+      return normalizePrediction(message, "end");
+    case "stream.online":
+      return normalizeStreamOnline(message);
+    case "stream.offline":
+      return normalizeStreamOffline(message);
   }
 }
 
@@ -88,6 +141,33 @@ function normalizeSubscription(message: TwitchEventSubNotificationMessage): Subs
     type: "subscription",
     amount: 1,
     tier: normalizeTier(event.tier)
+  };
+}
+
+function normalizeGiftSubscription(message: TwitchEventSubNotificationMessage): GiftSubscriptionEvent {
+  const event = message.payload.event;
+  const recipient = actor(event.user_id, event.user_name);
+  return {
+    ...baseEvent(message, recipient.id, recipient.displayName),
+    type: "gift_subscription",
+    amount: 1,
+    tier: normalizeTier(event.tier),
+    recipient,
+    gifter: optionalActor(event.gifter_user_id, event.gifter_user_name)
+  };
+}
+
+function normalizeCommunityGift(message: TwitchEventSubNotificationMessage): CommunityGiftEvent {
+  const event = message.payload.event;
+  const anonymous = event.is_anonymous === true;
+  const gifter = anonymous ? { id: null, displayName: "Anonymous" } : actor(event.user_id, event.user_name);
+  return {
+    ...baseEvent(message, gifter.id, gifter.displayName),
+    type: "community_gift",
+    amount: positiveInteger(event.total),
+    tier: normalizeTier(event.tier),
+    cumulativeTotal: nullableNonNegativeInteger(event.cumulative_total),
+    anonymous
   };
 }
 
@@ -137,6 +217,110 @@ function normalizeChannelPointRedemption(message: TwitchEventSubNotificationMess
     rewardId: requiredString(reward.id),
     rewardTitle: requiredString(reward.title),
     userInput: nullableString(event.user_input)
+  };
+}
+
+function normalizeHypeTrain(
+  message: TwitchEventSubNotificationMessage,
+  phase: "start" | "progress" | "end"
+): HypeTrainStartEvent | HypeTrainProgressEvent | HypeTrainEndEvent {
+  const event = message.payload.event;
+  return {
+    ...baseEvent(message, ...broadcasterActor(event)),
+    type: `hype_train_${phase}`,
+    amount: nullableNonNegativeInteger(event.total),
+    trainId: requiredString(event.id),
+    level: nullableNonNegativeInteger(event.level),
+    progress: nullableNonNegativeInteger(event.progress),
+    goal: nullableNonNegativeInteger(event.goal),
+    total: nullableNonNegativeInteger(event.total),
+    startedAt: nullableString(event.started_at),
+    expiresAt: nullableString(event.expires_at),
+    endedAt: nullableString(event.ended_at),
+    cooldownEndsAt: nullableString(event.cooldown_ends_at)
+  } as HypeTrainStartEvent | HypeTrainProgressEvent | HypeTrainEndEvent;
+}
+
+function normalizePoll(
+  message: TwitchEventSubNotificationMessage,
+  phase: "start" | "progress" | "end"
+): PollStartEvent | PollProgressEvent | PollEndEvent {
+  const event = message.payload.event;
+  const choices = requiredArray(event.choices).map((choice) => {
+    const value = requiredRecord(choice);
+    return { id: requiredString(value.id), title: requiredString(value.title), totalVotes: nonNegativeInteger(value.votes) };
+  });
+  const totalVotes = choices.reduce((total, choice) => total + choice.totalVotes, 0);
+  return {
+    ...baseEvent(message, ...broadcasterActor(event)),
+    type: `poll_${phase}`,
+    amount: totalVotes,
+    pollId: requiredString(event.id),
+    title: requiredString(event.title),
+    choices,
+    totalVotes,
+    startedAt: requiredString(event.started_at),
+    endsAt: requiredString(event.ends_at),
+    status: requiredString(event.status)
+  } as PollStartEvent | PollProgressEvent | PollEndEvent;
+}
+
+function normalizePrediction(
+  message: TwitchEventSubNotificationMessage,
+  phase: "start" | "progress" | "lock" | "end"
+): PredictionStartEvent | PredictionProgressEvent | PredictionLockEvent | PredictionEndEvent {
+  const event = message.payload.event;
+  const outcomes = requiredArray(event.outcomes).map((outcome) => {
+    const value = requiredRecord(outcome);
+    return {
+      id: requiredString(value.id),
+      title: requiredString(value.title),
+      totalUsers: nonNegativeInteger(value.users),
+      totalPoints: nonNegativeInteger(value.channel_points)
+    };
+  });
+  const totalUsers = outcomes.reduce((total, outcome) => total + outcome.totalUsers, 0);
+  const totalPoints = outcomes.reduce((total, outcome) => total + outcome.totalPoints, 0);
+  return {
+    ...baseEvent(message, ...broadcasterActor(event)),
+    type: `prediction_${phase}`,
+    amount: totalPoints,
+    predictionId: requiredString(event.id),
+    title: requiredString(event.title),
+    outcomes,
+    totalUsers,
+    totalPoints,
+    startedAt: requiredString(event.started_at),
+    locksAt: nullableString(event.locks_at),
+    endedAt: nullableString(event.ended_at),
+    status: requiredString(event.status),
+    winningOutcomeId: nullableString(event.winning_outcome_id)
+  } as PredictionStartEvent | PredictionProgressEvent | PredictionLockEvent | PredictionEndEvent;
+}
+
+function normalizeStreamOnline(message: TwitchEventSubNotificationMessage): StreamOnlineEvent {
+  const event = message.payload.event;
+  return {
+    ...baseEvent(message, ...broadcasterActor(event)),
+    type: "stream_online",
+    amount: null,
+    streamId: nullableString(event.id),
+    streamType: nullableString(event.type),
+    startedAt: nullableString(event.started_at),
+    endedAt: null
+  };
+}
+
+function normalizeStreamOffline(message: TwitchEventSubNotificationMessage): StreamOfflineEvent {
+  const event = message.payload.event;
+  return {
+    ...baseEvent(message, ...broadcasterActor(event)),
+    type: "stream_offline",
+    amount: null,
+    streamId: null,
+    streamType: null,
+    startedAt: null,
+    endedAt: message.metadata.message_timestamp
   };
 }
 
@@ -217,7 +401,20 @@ function isNotificationType(value: unknown): value is TwitchEventSubNotification
     value === "channel.subscription.message" ||
     value === "channel.cheer" ||
     value === "channel.raid" ||
-    value === "channel.channel_points_custom_reward_redemption.add"
+    value === "channel.channel_points_custom_reward_redemption.add" ||
+    value === "channel.subscription.gift" ||
+    value === "channel.hype_train.begin" ||
+    value === "channel.hype_train.progress" ||
+    value === "channel.hype_train.end" ||
+    value === "channel.poll.begin" ||
+    value === "channel.poll.progress" ||
+    value === "channel.poll.end" ||
+    value === "channel.prediction.begin" ||
+    value === "channel.prediction.progress" ||
+    value === "channel.prediction.lock" ||
+    value === "channel.prediction.end" ||
+    value === "stream.online" ||
+    value === "stream.offline"
   );
 }
 
@@ -277,6 +474,43 @@ function positiveInteger(value: unknown): number {
   }
 
   return value;
+}
+
+function nonNegativeInteger(value: unknown): number {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new TwitchEventNormalizationError();
+  }
+
+  return value;
+}
+
+function nullableNonNegativeInteger(value: unknown): number | null {
+  return value === null || value === undefined ? null : nonNegativeInteger(value);
+}
+
+function requiredArray(value: unknown): readonly unknown[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new TwitchEventNormalizationError();
+  }
+
+  return value;
+}
+
+function actor(id: unknown, displayName: unknown): { readonly id: string; readonly displayName: string } {
+  return { id: requiredString(id), displayName: requiredString(displayName) };
+}
+
+function optionalActor(id: unknown, displayName: unknown): { readonly id: string; readonly displayName: string } | null {
+  if (id === null || id === undefined) {
+    if (displayName === null || displayName === undefined) return null;
+    throw new TwitchEventNormalizationError();
+  }
+
+  return actor(id, displayName);
+}
+
+function broadcasterActor(event: Record<string, unknown>): [string, string] {
+  return [requiredString(event.broadcaster_user_id), requiredString(event.broadcaster_user_name)];
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

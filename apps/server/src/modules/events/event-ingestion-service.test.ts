@@ -3,6 +3,33 @@ import { describe, expect, it } from "vitest";
 import { EventIngestionService } from "./event-ingestion-service.js";
 
 describe("EventIngestionService", () => {
+  it("ingests expanded direct Twitch events through the existing normalized path", async () => {
+    const events: NormalizedStreamEvent[] = [];
+    const service = new EventIngestionService({ sink: { handleEvent(event) { events.push(event); } } });
+    const event: NormalizedStreamEvent = {
+      id: "message-poll-end",
+      providerId: "twitch",
+      sourcePlatform: "twitch",
+      ingestProvider: "twitch",
+      type: "poll_end",
+      occurredAt: "2026-05-30T12:05:00.000Z",
+      actor: { id: "broadcaster-1", displayName: "Streamer" },
+      amount: 12,
+      pollId: "poll-1",
+      title: "What should we play?",
+      choices: [{ id: "choice-1", title: "Game A", totalVotes: 12 }],
+      totalVotes: 12,
+      startedAt: "2026-05-30T12:00:00.000Z",
+      endsAt: "2026-05-30T12:05:00.000Z",
+      status: "completed",
+      message: null,
+      metadata: { twitchEventSubType: "channel.poll.end", twitchEventSubVersion: "1" }
+    };
+
+    await expect(service.ingestNormalizedEvent(event)).resolves.toEqual({ status: "accepted", event });
+    expect(events).toEqual([event]);
+  });
+
   it("forwards pre-normalized events once per deterministic event ID", async () => {
     const events: NormalizedStreamEvent[] = [];
     const service = new EventIngestionService({

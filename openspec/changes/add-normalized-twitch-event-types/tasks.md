@@ -6,9 +6,9 @@
 
 ## 2. Direct Twitch EventSub
 
-- [ ] 2.1 Add table-driven Twitch normalizer tests for gifts, Hype Trains, polls, predictions, streams, terminal statuses, and malformed payloads.
-- [ ] 2.2 Implement direct Twitch normalization, including gift-versus-subscription branching and stable normalized IDs/fields.
-- [ ] 2.3 Expand EventSub subscription definitions and tests with the documented event versions, scopes, and conditions.
+- [x] 2.1 Add table-driven Twitch normalizer tests for gifts, Hype Trains, polls, predictions, streams, terminal statuses, and malformed payloads.
+- [x] 2.2 Implement direct Twitch normalization, including gift-versus-subscription branching and stable normalized IDs/fields.
+- [x] 2.3 Expand EventSub subscription definitions and tests with the documented event versions, scopes, and conditions.
 
 ## 3. Streamer.bot Twitch Parity
 

@@ -693,6 +693,48 @@ const subscriptionDefinitions = [
     condition: (accountId: string) => ({
       broadcaster_user_id: accountId
     })
+  },
+  {
+    type: "channel.subscription.gift",
+    version: "1",
+    requiredScope: "channel:read:subscriptions",
+    condition: (accountId: string) => ({
+      broadcaster_user_id: accountId
+    })
+  },
+  ...(["begin", "progress", "end"] as const).map((phase) => ({
+    type: `channel.hype_train.${phase}`,
+    version: "2",
+    requiredScope: "channel:read:hype_train",
+    condition: (accountId: string) => ({ broadcaster_user_id: accountId })
+  })),
+  ...(["begin", "progress", "end"] as const).map((phase) => ({
+    type: `channel.poll.${phase}`,
+    version: "1",
+    requiredScope: "channel:read:polls",
+    condition: (accountId: string) => ({ broadcaster_user_id: accountId })
+  })),
+  ...(["begin", "progress", "lock", "end"] as const).map((phase) => ({
+    type: `channel.prediction.${phase}`,
+    version: "1",
+    requiredScope: "channel:read:predictions",
+    condition: (accountId: string) => ({ broadcaster_user_id: accountId })
+  })),
+  {
+    type: "stream.online",
+    version: "1",
+    requiredScope: null,
+    condition: (accountId: string) => ({
+      broadcaster_user_id: accountId
+    })
+  },
+  {
+    type: "stream.offline",
+    version: "1",
+    requiredScope: null,
+    condition: (accountId: string) => ({
+      broadcaster_user_id: accountId
+    })
   }
 ] as const;
 
