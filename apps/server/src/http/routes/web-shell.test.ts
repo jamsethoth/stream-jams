@@ -27,7 +27,27 @@ describe("web shell routes", () => {
         appName: "stream-jams",
         version: "1.2.3"
       },
-      webBuildDirectory
+      webBuildDirectory,
+      assetRepository: {
+        async list() {
+          return [];
+        },
+        async findById() {
+          return null;
+        }
+      },
+      mediaImportPipeline: {
+        async importMedia() {
+          throw new Error("Unused asset import dependency");
+        }
+      },
+      assetStore: {
+        async read() {
+          throw new Error("Unused asset store dependency");
+        }
+      },
+      managementAuthPreHandler: async (_request, reply) => reply.status(401).send(),
+      managementRateLimitPreHandler: async () => undefined
     });
 
     const root = await app.inject({
@@ -37,6 +57,22 @@ describe("web shell routes", () => {
     const management = await app.inject({
       method: "GET",
       url: "/manage"
+    });
+    const nestedManagement = await app.inject({
+      method: "GET",
+      url: "/manage/modules/alerts"
+    });
+    const assetApi = await app.inject({
+      method: "GET",
+      url: "/assets"
+    });
+    const legacyManagement = await app.inject({
+      method: "GET",
+      url: "/event-sources"
+    });
+    const removedLegacyPage = await app.inject({
+      method: "GET",
+      url: "/legacy/playback"
     });
     const script = await app.inject({
       method: "GET",
@@ -55,6 +91,13 @@ describe("web shell routes", () => {
     expect(management.body).toContain('<link rel="stylesheet" crossorigin href="/assets/index-test.css">');
     expect(management.body).toContain('<script type="module" crossorigin src="/assets/index-test.js"></script>');
     expect(management.body).not.toContain("/src/main.tsx");
+    expect(nestedManagement.statusCode).toBe(200);
+    expect(nestedManagement.headers["content-type"]).toContain("text/html");
+    expect(nestedManagement.body).toBe(management.body);
+    expect(assetApi.statusCode).toBe(401);
+    expect(legacyManagement.statusCode).toBe(404);
+    expect(removedLegacyPage.statusCode).toBe(302);
+    expect(removedLegacyPage.headers.location).toBe("/manage");
     expect(script.statusCode).toBe(200);
     expect(script.body).toBe("console.log('built app');");
     expect(source.statusCode).toBe(404);

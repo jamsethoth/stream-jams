@@ -13,6 +13,7 @@ describe("overlay-client", () => {
       moduleId: "alerts",
       purpose: "test",
       scope: "module",
+      targetProfileId: null,
       rawKey: "ovl_moduleKey",
       compositionPath: "/overlay/modules/alerts/test/ovl_moduleKey/composition",
       webSocketPath: "/overlay/ws/modules/alerts/test/ovl_moduleKey"
@@ -22,10 +23,26 @@ describe("overlay-client", () => {
       moduleId: null,
       purpose: "live",
       scope: "unified",
+      targetProfileId: null,
       rawKey: "ovl_unifiedKey",
       compositionPath: "/overlay/unified/live/ovl_unifiedKey/composition",
       webSocketPath: "/overlay/ws/unified/live/ovl_unifiedKey"
     });
+  });
+
+  it("carries a fixed target profile through composition, WebSocket, and asset requests", () => {
+    const route = parseOverlayRoute("/overlay/modules/alerts/live/ovl_profile?profile=vertical");
+
+    expect(route).toMatchObject({
+      targetProfileId: "vertical",
+      compositionPath: "/overlay/modules/alerts/live/ovl_profile/composition?profile=vertical",
+      webSocketPath: "/overlay/ws/modules/alerts/live/ovl_profile?profile=vertical"
+    });
+    expect(createOverlayAssetUrl(route!, "asset image")).toBe(
+      "/overlay/modules/alerts/live/ovl_profile/assets/asset%20image?profile=vertical"
+    );
+    expect(parseOverlayRoute("/overlay/modules/alerts/live/ovl_profile?profile=square")).toBeNull();
+    expect(parseOverlayRoute("/overlay/unified/live/ovl_key?profile=vertical")).toBeNull();
   });
 
   it("rejects invalid overlay routes before opening transport", () => {

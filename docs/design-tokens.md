@@ -1,27 +1,30 @@
 # Design Tokens
 
-This file documents the current visual constants used by `apps/web/src/App.css`. It is a guardrail for agents and reviewers, not a token extraction refactor.
+This file documents the management theme contract in `apps/web/src/App.css`. Agents must use these custom properties for new management UI instead of adding fixed theme colors.
 
 ## Color
 
-| Token | Current value | Use |
+| CSS custom property | Light value | Use |
 | --- | --- | --- |
-| Page background | `#f7f8fa` | Management app background |
-| Surface | `#ffffff` | Management panels, cards, imports |
-| Primary text | `#20242c` | Main text and selected nav |
-| Secondary text | `#5f6673` | Descriptions and panel subtitles |
-| Label text | `#3d4654` | Form labels and small headings |
-| Table heading text | `#4a5361` | Uppercase table headings |
-| Border | `#d9dee8` | Top-level management borders |
-| Soft border | `#e4e8ef` | Table rows and internal dividers |
-| Input border | `#c8ced8` | Inputs, dashed empty states, previews |
-| Primary action | `#166c5f` | Save/copy/action buttons and selected nav underline |
-| Disabled action | `#a7b2bd` | Disabled buttons |
-| Diagnostic background | `#eef7f3` | Success/info diagnostic surface |
-| Diagnostic border | `#cde6dc` | Diagnostic border |
-| Diagnostic text | `#24564d` | Diagnostic text |
+| `--color-canvas` | `#f4f6f8` | Management app background |
+| `--color-surface` | `#ffffff` | Inputs, sidebar, and base surfaces |
+| `--color-surface-subtle` | `#edf1f4` | Selected, grouped, and code surfaces |
+| `--color-surface-raised` | `#ffffff` | Dialogs and temporary raised UI |
+| `--color-text` | `#161a20` | Primary text |
+| `--color-text-muted` | `#596370` | Descriptions, labels, and metadata |
+| `--color-border` | `#c9d0d8` | Standard borders and dividers |
+| `--color-border-strong` | `#8e99a6` | Emphasized controls and dialog borders |
+| `--color-accent` | `#087a6a` | Primary actions and selected navigation |
+| `--color-accent-soft` | `#dcefeb` | Selected navigation background |
+| `--color-info` / `--color-info-soft` | `#1f5f99` / `#e5f0fa` | Informational status and errors |
+| `--color-positive` / `--color-positive-soft` | `#237a45` / `#e1f2e7` | Connected, ready, and successful states |
+| `--color-warning` / `--color-warning-soft` | `#8a5a00` / `#fff1cf` | Review and warning states |
+| `--color-negative` / `--color-negative-soft` | `#b4232d` / `#fae7e9` | Failure and destructive actions |
+| `--color-focus` | `#0a74c9` | Keyboard focus outline |
 | Overlay text | `#ffffff` | Browser-source text output |
 | Overlay text shadow | `rgba(0, 0, 0, 0.72)` | Text legibility over stream content |
+
+Dark values are defined under `:root[data-theme="dark"]`. System mode uses the same dark values through `prefers-color-scheme`; Light always overrides system preference.
 
 ## Spacing
 
@@ -64,16 +67,4 @@ This file documents the current visual constants used by `apps/web/src/App.css`.
 
 ## CSS Custom Property Decision
 
-The current default is to document the existing CSS values and leave extraction to a future refactor.
-
-Current CSS documentation:
-
-- Pros: no production CSS churn, easy review, no regression risk from renaming or inheritance changes, enough context for agents.
-- Cons: values can drift from this file if CSS changes without doc updates, no runtime theming, harder to reuse outside `App.css`.
-
-Extracting CSS custom properties:
-
-- Pros: single source of truth in CSS, easier future theming, clearer reuse across management and overlay surfaces.
-- Cons: touches many selectors, increases regression surface, needs visual review, and can obscure whether a slice intended behavior or pure token movement.
-
-Decision: keep documentation-only tokens for this guardrails change. Revisit extraction when a UI redesign, theming, or component-library change needs it.
+Decision: the management refactor uses CSS custom properties as the runtime theme source of truth. New management components must consume semantic tokens. Overlay rendering may retain fixed transparent-canvas colors where the output contract requires them.

@@ -1,0 +1,12 @@
+{
+  "timeStamp": "2026-07-17T12:01:30.000Z",
+  "event": { "source": "Twitch", "type": "GiftBomb" },
+  "data": {
+    "messageId": "gift-bomb-1",
+    "createdAt": "2026-07-17T12:01:30.000Z",
+    "user": { "id": "gifter-1", "login": "gifter", "name": "Gifter" },
+    "total": 5,
+    "cumulative_total": 24,
+    "sub_tier": "Tier 2"
+  }
+}

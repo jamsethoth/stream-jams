@@ -1,115 +1,265 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { DiagnosticsDebugExportView, DiagnosticsExportView } from "../management-api.js";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.js";
-import type { DiagnosticsDebugExportView, DiagnosticsExportView, DiagnosticsView } from "../management-api.js";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 describe("DiagnosticsPanel", () => {
-  it("shows empty states for diagnostics sections without records", async () => {
+  it("groups active problems and searches by reference ID without hiding correction context", async () => {
+    const user = userEvent.setup();
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+
+    expect(await screen.findByRole("heading", { name: "Error · Providers" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Error · Outputs" })).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("Reference ID or message"), "ref-output-1");
+
+    expect(screen.getByRole("button", { name: /Send test blocked/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Event source disconnected/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open browser sources" })).toHaveAttribute(
+      "href",
+      "/manage/modules/alerts?diagnostic=ref-output-1#browser-sources"
+    );
+  });
+
+  it("shows an explicit healthy state when there are no problems", async () => {
+    render(<DiagnosticsPanel managementApi={managementApi({ ...workspace(), problems: [] })} />);
+
+    expect(await screen.findByText("No active problems")).toBeInTheDocument();
+    expect(screen.getByText(/have not reported a failure/)).toBeInTheDocument();
+  });
+
+  it("filters normalized events and shows selected event detail with its correction link", async () => {
+    const user = userEvent.setup();
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+
+    const problemsTab = screen.getByRole("tab", { name: /Problems/ });
+    problemsTab.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
+    await user.selectOptions(screen.getByLabelText("Outcome"), "failed");
+    await user.click(screen.getByRole("button", { name: "subscription" }));
+    const detail = screen.getByLabelText("Event detail");
+
+    expect(within(detail).getByRole("heading", { name: "subscription" })).toBeInTheDocument();
+    expect(within(detail).getByText("Alert rendering failed.")).toBeInTheDocument();
+    expect(within(detail).getByText("Live")).toBeInTheDocument();
+    expect(within(detail).getByText(new Date("2026-07-15T22:28:07.000Z").toLocaleString())).toBeInTheDocument();
+    expect(within(detail).getAllByText(/viewer42/)).toHaveLength(2);
+    expect(within(detail).getByRole("link", { name: "Open alert" })).toHaveAttribute(
+      "href",
+      "/manage/modules/alerts/editor/alert-sub?diagnostic=ref-event-2"
+    );
+  });
+
+  it("copies only the sanitized raw-log bundle", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+
+    await user.click(screen.getByRole("tab", { name: /Raw logs/ }));
+    await user.click(screen.getByRole("button", { name: /ref-runtime-2/ }));
+    await user.click(screen.getByRole("button", { name: "Copy sanitized event" }));
+
+    expect(writeText).toHaveBeenCalledOnce();
+    const copied = String(writeText.mock.calls[0]?.[0]);
+    expect(copied).toContain("[REDACTED]");
+    expect(copied).not.toContain("oauth-secret");
+    expect(await screen.findByText("Sanitized event copied")).toBeInTheDocument();
+  });
+
+  it("opens a referenced historical failure in raw logs when it is no longer an active problem", async () => {
     render(
       <DiagnosticsPanel
-        managementApi={{
-          getDiagnostics: vi.fn(async () => emptyDiagnostics()),
-          exportDiagnostics: vi.fn(async () => emptyExport()),
-          exportDebugDiagnostics: vi.fn(async () => emptyDebugExport())
-        }}
+        initialReferenceId="ref-runtime-1"
+        managementApi={managementApi({ ...workspace(), problems: [] })}
       />
     );
 
-    expect(await screen.findByText("No event ingestion logs.")).toBeInTheDocument();
-    expect(screen.getByText("No alert match logs.")).toBeInTheDocument();
-    expect(screen.getByText("No playback logs.")).toBeInTheDocument();
-    expect(screen.getByText("No provider errors.")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Raw log detail")).toHaveTextContent("ref-runtime-1");
+    expect(screen.getByRole("tab", { name: /Raw logs/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Copy sanitized event" })).toBeInTheDocument();
   });
 
-  it("shows load and export errors", async () => {
+  it("copies the selected sanitized problem as formatted JSON", async () => {
     const user = userEvent.setup();
-    const managementApi = {
-      getDiagnostics: vi.fn(async () => {
-        throw new Error("Unable to load diagnostics.");
-      }),
-      exportDiagnostics: vi.fn(async () => {
-        throw new Error("Unable to export diagnostics.");
-      }),
-      exportDebugDiagnostics: vi.fn(async () => emptyDebugExport())
-    };
-    render(<DiagnosticsPanel managementApi={managementApi} />);
+    const writeText = vi.fn<(value: string) => Promise<void>>().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+    await screen.findByRole("heading", { name: "Open problems" });
 
-    expect(await screen.findByText("Unable to load diagnostics.")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Export diagnostics" }));
+    await user.click(screen.getByRole("button", { name: "Copy error JSON" }));
 
-    expect(await screen.findByText("Unable to export diagnostics.")).toBeInTheDocument();
-  });
-
-  it("submits a sanitized fallback limit when the filter is empty", async () => {
-    const user = userEvent.setup();
-    const managementApi = {
-      getDiagnostics: vi.fn(async () => emptyDiagnostics()),
-      exportDiagnostics: vi.fn(async () => emptyExport()),
-      exportDebugDiagnostics: vi.fn(async () => emptyDebugExport())
-    };
-    render(<DiagnosticsPanel managementApi={managementApi} />);
-
-    await screen.findByText("No event ingestion logs.");
-    const panel = screen.getByRole("heading", { name: "Diagnostics" }).closest("section");
-    expect(panel).not.toBeNull();
-    await user.clear(within(panel!).getByLabelText("Diagnostics limit"));
-    await user.click(within(panel!).getByRole("button", { name: "Reload diagnostics" }));
-
-    expect(managementApi.getDiagnostics).toHaveBeenLastCalledWith({ limit: 50 });
-  });
-
-  it("requests a bounded debug export with recent runtime logs", async () => {
-    const user = userEvent.setup();
-    const managementApi = {
-      getDiagnostics: vi.fn(async () => emptyDiagnostics()),
-      exportDiagnostics: vi.fn(async () => emptyExport()),
-      exportDebugDiagnostics: vi.fn(async () => emptyDebugExport())
-    };
-    render(<DiagnosticsPanel managementApi={managementApi} />);
-
-    await screen.findByText("No event ingestion logs.");
-    await user.click(screen.getByRole("button", { name: "Export with recent logs" }));
-
-    expect(managementApi.exportDebugDiagnostics).toHaveBeenCalledWith({
-      limit: 50,
-      runtimeLogLimit: 200,
-      sinceHours: 2
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(workspace().problems[0], null, 2));
+    const copied = String(writeText.mock.calls[0]?.[0]);
+    expect(JSON.parse(copied)).toMatchObject({
+      referenceId: "ref-provider-1",
+      correction: { route: "/manage/event-sources?diagnostic=ref-provider-1" }
     });
-    expect(await screen.findByText(/with 0 recent runtime log entries/)).toBeInTheDocument();
+    expect(copied).not.toContain("oauth-secret");
+    expect(await screen.findByText("Error JSON copied")).toBeInTheDocument();
+  });
+
+  it("shows a human-readable failure when error JSON cannot be copied", async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn<(value: string) => Promise<void>>().mockRejectedValue(new Error("Clipboard denied"));
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<DiagnosticsPanel managementApi={managementApi()} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+
+    await user.click(screen.getByRole("button", { name: "Copy error JSON" }));
+
+    expect(await screen.findByText("Error JSON could not be copied")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Allow clipboard access, then retry");
+  });
+
+  it("shows human-readable export failure recovery and preserves the backend reference ID", async () => {
+    const user = userEvent.setup();
+    const api = managementApi();
+    api.exportDiagnostics = vi.fn(async () => {
+      throw new Error("The diagnostics archive could not be written. (DIAGNOSTICS_EXPORT_FAILED, ref-export-1)");
+    });
+    render(<DiagnosticsPanel managementApi={api} />);
+    await screen.findByRole("heading", { name: "Open problems" });
+
+    await user.click(screen.getByRole("button", { name: "Export support bundle" }));
+
+    expect(await screen.findByText("Support bundle could not be generated")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("ref-export-1");
+    expect(screen.getByRole("alert")).toHaveTextContent("Retry once");
+  });
+
+  it("reports a browser download failure instead of announcing false success", async () => {
+    const user = userEvent.setup();
+    const createObjectUrl = URL.createObjectURL;
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: undefined });
+    try {
+      render(<DiagnosticsPanel managementApi={managementApi()} />);
+      await screen.findByRole("heading", { name: "Open problems" });
+
+      await user.click(screen.getByRole("button", { name: "Export support bundle" }));
+
+      expect(await screen.findByText("Support bundle could not be generated")).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent("cannot create the diagnostics download");
+    } finally {
+      Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
+    }
   });
 });
 
-function emptyDiagnostics(): DiagnosticsView {
+function managementApi(data: DiagnosticsWorkspaceView = workspace()) {
   return {
-    eventLogs: [],
-    alertMatchLogs: [],
-    playbackLogs: [],
-    providerErrors: [],
-    runtimeLogging: null
+    getDiagnosticsWorkspace: vi.fn(async () => data),
+    exportDiagnostics: vi.fn(async () => basicExport()),
+    exportDebugDiagnostics: vi.fn(async () => debugExport())
   };
 }
 
-function emptyExport(): DiagnosticsExportView {
+function workspace(): DiagnosticsWorkspaceView {
   return {
-    generatedAt: "2026-05-31T02:05:00.000Z",
-    debugExport: false,
-    rawEventLogs: [],
-    ...emptyDiagnostics()
+    problems: [
+      {
+        id: "problem-provider",
+        area: "providers",
+        summary: "Event source disconnected",
+        cause: "Twitch WebSocket closed unexpectedly.",
+        nextStep: "Reconnect the active event source.",
+        severity: "error",
+        occurredAt: "2026-07-15T22:42:18.000Z",
+        referenceId: "ref-provider-1",
+        correction: { label: "Open event sources", route: "/manage/event-sources?diagnostic=ref-provider-1" }
+      },
+      {
+        id: "problem-output",
+        area: "outputs",
+        summary: "Send test blocked",
+        cause: "No browser-source client is connected.",
+        nextStep: "Reconnect the browser-source output.",
+        severity: "error",
+        occurredAt: "2026-07-15T22:41:18.000Z",
+        referenceId: "ref-output-1",
+        correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-output-1#browser-sources" }
+      }
+    ],
+    events: [
+      {
+        id: "event-1",
+        providerId: "twitch",
+        providerKind: "twitch",
+        eventType: "follow",
+        occurredAt: "2026-07-15T22:42:13.000Z",
+        outcome: "processed",
+        test: false,
+        referenceId: "ref-event-1",
+        processingId: "processing-1",
+        actorDisplayName: "Follower",
+        alertIds: ["alert-follow"],
+        matchedRuleIds: ["rule-follow"],
+        playbackStatus: "completed",
+        errorMessage: null,
+        sanitizedPayload: { userName: "Follower" },
+        correction: { label: "Open alert", route: "/manage/modules/alerts/editor/alert-follow?diagnostic=ref-event-1" }
+      },
+      {
+        id: "event-2",
+        providerId: "twitch",
+        providerKind: "twitch",
+        eventType: "subscription",
+        occurredAt: "2026-07-15T22:28:07.000Z",
+        outcome: "failed",
+        test: false,
+        referenceId: "ref-event-2",
+        processingId: "processing-2",
+        actorDisplayName: "viewer42",
+        alertIds: ["alert-sub"],
+        matchedRuleIds: ["rule-sub"],
+        playbackStatus: "failed",
+        errorMessage: "Alert rendering failed.",
+        sanitizedPayload: { userName: "viewer42", authorization: "[REDACTED]" },
+        correction: { label: "Open alert", route: "/manage/modules/alerts/editor/alert-sub?diagnostic=ref-event-2" }
+      }
+    ],
+    rawLogs: [
+      {
+        id: "log-1",
+        timestamp: "2026-07-15T22:42:18.000Z",
+        level: "ERROR",
+        component: "twitch",
+        event: "provider.disconnected",
+        referenceId: "ref-runtime-1",
+        processingId: null,
+        message: "Twitch EventSub socket closed.",
+        data: { authorization: "[REDACTED]" },
+        correction: { label: "Open event sources", route: "/manage/event-sources?diagnostic=ref-runtime-1" }
+      },
+      {
+        id: "log-2",
+        timestamp: "2026-07-15T22:31:44.000Z",
+        level: "ERROR",
+        component: "overlay",
+        event: "test.blocked",
+        referenceId: "ref-runtime-2",
+        processingId: "processing-2",
+        message: "Send test blocked because no client is connected.",
+        data: { routeKey: "[REDACTED]" },
+        correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-runtime-2#browser-sources" }
+      }
+    ]
   };
 }
 
-function emptyDebugExport(): DiagnosticsDebugExportView {
-  return {
-    generatedAt: "2026-05-31T02:05:00.000Z",
-    debugExport: true,
-    rawEventLogs: [],
-    runtimeLogEntries: [],
-    runtimeLogTruncated: false,
-    ...emptyDiagnostics()
-  };
+function basicExport(): DiagnosticsExportView {
+  return { generatedAt: "2026-07-15T22:45:00.000Z", debugExport: false, rawEventLogs: [], eventLogs: [], alertMatchLogs: [], playbackLogs: [], providerErrors: [], runtimeLogging: null };
+}
+
+function debugExport(): DiagnosticsDebugExportView {
+  return { ...basicExport(), debugExport: true, runtimeLogEntries: [], runtimeLogTruncated: false };
 }

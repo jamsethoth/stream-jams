@@ -1,16 +1,19 @@
 import { z } from "zod";
 import {
   nonEmptyStringSchema,
+  nonNegativeIntegerSchema,
   overlayElementLayoutSchema,
   overlayPurposeSchema,
   overlayScopeSchema,
+  overlayTargetProfileIdSchema,
   positiveIntegerSchema
 } from "../shared/schemas.js";
 
 export const moduleOutputRequestSchema = z.object({
   moduleId: nonEmptyStringSchema,
   overlayId: nonEmptyStringSchema,
-  purpose: overlayPurposeSchema
+  purpose: overlayPurposeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional()
 });
 
 export const unifiedOutputRequestSchema = z.object({
@@ -35,15 +38,32 @@ export const overlayTextInstructionSchema = z.object({
   layout: overlayElementLayoutSchema
 });
 
+export const overlayShapeInstructionSchema = z.object({
+  fill: nonEmptyStringSchema,
+  layout: overlayElementLayoutSchema
+});
+
+export const overlayPresetAnimationInstructionSchema = z.object({
+  mode: z.literal("preset"),
+  entrance: nonEmptyStringSchema,
+  exit: nonEmptyStringSchema,
+  durationMs: nonNegativeIntegerSchema,
+  delayMs: nonNegativeIntegerSchema,
+  easing: nonEmptyStringSchema
+});
+
 export const overlayInstructionSchema = z.object({
   id: nonEmptyStringSchema,
   overlayId: nonEmptyStringSchema,
   moduleId: nonEmptyStringSchema,
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional(),
   visual: overlayVisualInstructionSchema.nullable(),
   audio: overlayAudioInstructionSchema.nullable(),
   text: overlayTextInstructionSchema.nullable(),
+  shape: overlayShapeInstructionSchema.nullable().optional(),
+  animation: overlayPresetAnimationInstructionSchema.nullable().optional(),
   tts: z.unknown().nullable(),
   durationMs: positiveIntegerSchema.max(120_000)
 });
@@ -58,5 +78,6 @@ export const overlayCompositionSchema = z.object({
   overlayId: nonEmptyStringSchema,
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
+  targetProfileId: overlayTargetProfileIdSchema.nullable().optional(),
   modules: z.array(overlayModuleSnapshotSchema)
 });

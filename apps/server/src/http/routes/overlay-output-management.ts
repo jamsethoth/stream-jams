@@ -1,4 +1,9 @@
-import type { CreateOverlayKeyInput, OverlayPurpose, OverlayScope } from "@stream-jams/core";
+import type {
+  CreateOverlayKeyInput,
+  OverlayPurpose,
+  OverlayScope,
+  OverlayTargetProfileId
+} from "@stream-jams/core";
 import type { FastifyInstance, FastifyRequest, preHandlerHookHandler } from "fastify";
 import {
   UnknownOverlayOutputError,
@@ -63,7 +68,7 @@ export function registerOverlayOutputManagementRoutes(
     return reply.status(204).send();
   });
 
-  app.get("/management/overlay-clients", { preHandler }, async () => dependencies.overlayGateway.clients);
+  app.get("/management/overlay-clients", { preHandler }, async () => dependencies.overlayGateway.clientStates);
 }
 
 function parseOutputInput(body: unknown): CreateOverlayKeyInput | null {
@@ -76,10 +81,12 @@ function parseOutputInput(body: unknown): CreateOverlayKeyInput | null {
     readonly scope?: unknown;
     readonly moduleId?: unknown;
     readonly purpose?: unknown;
+    readonly targetProfileId?: unknown;
   };
   const scope = parseScope(candidate.scope);
   const purpose = parsePurpose(candidate.purpose);
-  if (scope === null || purpose === null) {
+  const targetProfile = parseTargetProfile(candidate.targetProfileId);
+  if (scope === null || purpose === null || !targetProfile.valid || (scope === "unified" && targetProfile.value !== null)) {
     return null;
   }
 
@@ -87,7 +94,8 @@ function parseOutputInput(body: unknown): CreateOverlayKeyInput | null {
     overlayId: typeof candidate.overlayId === "string" && candidate.overlayId.trim() !== "" ? candidate.overlayId : "default",
     scope,
     purpose,
-    moduleId: scope === "module" && typeof candidate.moduleId === "string" ? candidate.moduleId : null
+    moduleId: scope === "module" && typeof candidate.moduleId === "string" ? candidate.moduleId : null,
+    targetProfileId: targetProfile.value
   };
 }
 
@@ -97,6 +105,19 @@ function parseScope(value: unknown): OverlayScope | null {
 
 function parsePurpose(value: unknown): OverlayPurpose | null {
   return value === "live" || value === "test" ? value : null;
+}
+
+function parseTargetProfile(value: unknown): {
+  readonly valid: boolean;
+  readonly value: OverlayTargetProfileId | null;
+} {
+  if (value === undefined || value === null) {
+    return { valid: true, value: null };
+  }
+
+  return value === "landscape" || value === "vertical"
+    ? { valid: true, value }
+    : { valid: false, value: null };
 }
 
 function originFor(request: FastifyRequest): string {

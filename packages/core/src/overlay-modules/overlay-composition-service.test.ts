@@ -37,6 +37,7 @@ function createInstruction(input: {
   moduleId: string;
   purpose: "live" | "test";
   scope: "module" | "unified";
+  targetProfileId?: "landscape" | "vertical" | null;
 }): OverlayInstruction {
   return {
     id: `${input.scope}-${input.purpose}-instruction`,
@@ -44,6 +45,7 @@ function createInstruction(input: {
     moduleId: input.moduleId,
     purpose: input.purpose,
     scope: input.scope,
+    ...(input.targetProfileId === undefined ? {} : { targetProfileId: input.targetProfileId }),
     visual: null,
     audio: null,
     text: null,
@@ -93,6 +95,31 @@ describe("overlay composition service", () => {
     });
     expect(overlayCompositionSchema.safeParse(composition).success).toBe(true);
     expect(runtime.requests).toEqual([{ ...request, scope: "module" }]);
+  });
+
+  it("carries the target profile through module composition and runtime requests", async () => {
+    const runtime = new RecordingRuntime();
+    const { compositionService } = createCompositionService(runtime);
+
+    const composition = await compositionService.resolveModuleOutput({
+      moduleId: "alerts",
+      overlayId: "overlay-main",
+      purpose: "live",
+      targetProfileId: "vertical"
+    });
+
+    expect(composition).toMatchObject({
+      targetProfileId: "vertical"
+    });
+    expect(runtime.requests).toEqual([
+      {
+        moduleId: "alerts",
+        overlayId: "overlay-main",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "vertical"
+      }
+    ]);
   });
 
   it("excludes disabled modules from module-specific overlay output", async () => {

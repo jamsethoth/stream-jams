@@ -150,6 +150,40 @@ describe("DefaultTtsService", () => {
     expect(result.moderationActions.map((action) => action.type)).toEqual(["url-stripped", "blocked-term-replaced"]);
   });
 
+  it("uses the same moderated provider path for live playback", async () => {
+    let receivedInput: TtsProviderPlaybackInput | null = null;
+    const service = createService({
+      providers: [
+        createProvider({
+          id: "speakerbot",
+          async createPlaybackInstruction(input) {
+            receivedInput = input;
+            return {
+              mode: "remote-trigger",
+              text: input.text,
+              audioAssetId: null,
+              providerPayload: { providerId: input.providerId }
+            };
+          }
+        })
+      ]
+    });
+
+    const result = await service.createPlaybackInstruction({
+      providerId: "speakerbot",
+      text: "Welcome Viewer",
+      metadata: { layerId: "layer-tts" }
+    });
+
+    expect(receivedInput).toMatchObject({
+      providerId: "speakerbot",
+      text: "Welcome Viewer",
+      voiceId: null,
+      metadata: { layerId: "layer-tts" }
+    });
+    expect(result.instruction.mode).toBe("remote-trigger");
+  });
+
   it("wraps provider failures without exposing provider internals to callers", async () => {
     const service = createService({
       providers: [

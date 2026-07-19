@@ -118,6 +118,95 @@ describe("OverlayGateway", () => {
     );
   });
 
+  it("delivers playback only to the matching target profile", async () => {
+    const gateway = createGateway({
+      allowed: [
+        {
+          overlayId: "default",
+          moduleId: "alerts",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "landscape",
+          rawKey: "ovl_landscape"
+        },
+        {
+          overlayId: "default",
+          moduleId: "alerts",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "vertical",
+          rawKey: "ovl_vertical"
+        }
+      ]
+    });
+    const landscapeSocket = new RecordingSocket();
+    const verticalSocket = new RecordingSocket();
+    await gateway.registerClient(landscapeSocket, {
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "landscape",
+      rawKey: "ovl_landscape"
+    });
+    await gateway.registerClient(verticalSocket, {
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "vertical",
+      rawKey: "ovl_vertical"
+    });
+
+    const result = gateway.deliverPlaybackInstruction(
+      createInstruction({ purpose: "live", scope: "module", targetProfileId: "vertical" })
+    );
+
+    expect(result).toEqual({ deliveredClientIds: ["client-2"], skippedClientIds: ["client-1"] });
+  });
+
+  it("retains the latest disconnected client state per output for regeneration impact", async () => {
+    let now = new Date("2026-07-15T10:00:00.000Z");
+    const disconnectedClientIds: string[] = [];
+    const gateway = createGateway({
+      allowed: [
+        {
+          overlayId: "default",
+          moduleId: "alerts",
+          purpose: "live",
+          scope: "module",
+          targetProfileId: "vertical",
+          rawKey: "ovl_vertical"
+        }
+      ],
+      clock: () => now,
+      onClientDisconnected: (clientId) => disconnectedClientIds.push(clientId)
+    });
+    await gateway.registerClient(new RecordingSocket(), {
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "vertical",
+      rawKey: "ovl_vertical"
+    });
+    now = new Date("2026-07-15T10:05:00.000Z");
+
+    gateway.unregisterClient("client-1");
+
+    expect(gateway.clients).toEqual([]);
+    expect(disconnectedClientIds).toEqual(["client-1"]);
+    expect(gateway.clientStates).toEqual([
+      expect.objectContaining({
+        id: "client-1",
+        targetProfileId: "vertical",
+        connectionState: "disconnected",
+        connectedAt: "2026-07-15T10:00:00.000Z",
+        disconnectedAt: "2026-07-15T10:05:00.000Z"
+      })
+    ]);
+  });
+
   it("closes unauthorized clients without registering them", async () => {
     const gateway = createGateway({
       allowed: [
@@ -250,12 +339,15 @@ interface AllowedRoute {
   readonly moduleId: string | null;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: "landscape" | "vertical" | null;
   readonly rawKey: string;
 }
 
 function createGateway(options: {
   readonly allowed: readonly AllowedRoute[];
+  readonly onClientDisconnected?: ConstructorParameters<typeof OverlayGateway>[0]["onClientDisconnected"];
   readonly onPlaybackReport?: ConstructorParameters<typeof OverlayGateway>[0]["onPlaybackReport"];
+  readonly clock?: () => Date;
 }): OverlayGateway {
   let clientNumber = 0;
   return new OverlayGateway({
@@ -264,17 +356,24 @@ function createGateway(options: {
       clientNumber += 1;
       return `client-${clientNumber}`;
     },
+    ...(options.clock === undefined ? {} : { clock: options.clock }),
+    ...(options.onClientDisconnected === undefined ? {} : { onClientDisconnected: options.onClientDisconnected }),
     ...(options.onPlaybackReport === undefined ? {} : { onPlaybackReport: options.onPlaybackReport })
   });
 }
 
-function createInstruction(input: { readonly purpose: OverlayPurpose; readonly scope: OverlayScope }): OverlayInstruction {
+function createInstruction(input: {
+  readonly purpose: OverlayPurpose;
+  readonly scope: OverlayScope;
+  readonly targetProfileId?: "landscape" | "vertical" | null;
+}): OverlayInstruction {
   return {
     id: "instruction-1",
     overlayId: "default",
     moduleId: "alerts",
     purpose: input.purpose,
     scope: input.scope,
+    ...(input.targetProfileId === undefined ? {} : { targetProfileId: input.targetProfileId }),
     visual: {
       assetId: "asset-image",
       mediaType: "image",
@@ -335,6 +434,13 @@ class StubOverlayAccessService implements Pick<OverlayAccessService, "verifyRout
       };
     }
 
+    if ((keyMatch.targetProfileId ?? null) !== (request.targetProfileId ?? null)) {
+      return {
+        authorized: false,
+        reason: "profile-mismatch"
+      };
+    }
+
     return {
       authorized: true,
       record: {
@@ -343,6 +449,7 @@ class StubOverlayAccessService implements Pick<OverlayAccessService, "verifyRout
         moduleId: request.moduleId,
         purpose: request.purpose,
         scope: request.scope,
+        targetProfileId: request.targetProfileId ?? null,
         keyHash: "sha256:hash",
         routeKeySecretRef: null,
         createdAt: "2026-05-30T12:00:00.000Z",

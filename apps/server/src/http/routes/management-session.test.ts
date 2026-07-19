@@ -26,6 +26,25 @@ describe("management session routes", () => {
     expect(response.body).not.toContain("ovl_");
   });
 
+  it("reports unsupported request media types as actionable client errors", async () => {
+    const app = createAppWithManagementSessions();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/auth/management/sessions",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      payload: "unexpected=true"
+    });
+
+    expect(response.statusCode).toBe(415);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "UNSUPPORTED_MEDIA_TYPE",
+        message: "Use application/json for requests with a body, or omit Content-Type for empty requests."
+      }
+    });
+  });
+
   it("rate limits repeated session issuance before creating additional sessions", async () => {
     const app = createAppWithManagementSessions({ maxManagementRequests: 1 });
 

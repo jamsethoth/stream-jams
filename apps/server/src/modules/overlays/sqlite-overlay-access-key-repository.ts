@@ -4,7 +4,8 @@ import type {
   OverlayAccessKeyCreateRecordInput,
   OverlayAccessKeyRepository,
   OverlayPurpose,
-  OverlayScope
+  OverlayScope,
+  OverlayTargetProfileId
 } from "@stream-jams/core";
 
 interface OverlayAccessKeyRow {
@@ -13,6 +14,7 @@ interface OverlayAccessKeyRow {
   readonly module_id: unknown;
   readonly purpose: unknown;
   readonly scope: unknown;
+  readonly target_profile_id: unknown;
   readonly key_hash: unknown;
   readonly route_key_secret_ref_json: unknown;
   readonly created_at: unknown;
@@ -29,8 +31,8 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
   async create(input: OverlayAccessKeyCreateRecordInput): Promise<OverlayAccessKey> {
     this.#connection
       .prepare(
-        `INSERT INTO overlay_keys (id, overlay_id, module_id, purpose, scope, key_hash, route_key_secret_ref_json, created_at, revoked_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)`
+        `INSERT INTO overlay_keys (id, overlay_id, module_id, purpose, scope, target_profile_id, key_hash, route_key_secret_ref_json, created_at, revoked_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
       )
       .run(
         input.id,
@@ -38,6 +40,7 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
         input.moduleId,
         input.purpose,
         input.scope,
+        input.targetProfileId ?? null,
         input.keyHash,
         input.routeKeySecretRef === null ? null : JSON.stringify(input.routeKeySecretRef),
         input.createdAt
@@ -45,6 +48,7 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
 
     return {
       ...input,
+      targetProfileId: input.targetProfileId ?? null,
       revokedAt: null
     };
   }
@@ -52,7 +56,7 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
   async findById(keyId: string): Promise<OverlayAccessKey | null> {
     const row = this.#connection
       .prepare(
-        `SELECT id, overlay_id, module_id, purpose, scope, key_hash, route_key_secret_ref_json, created_at, revoked_at
+        `SELECT id, overlay_id, module_id, purpose, scope, target_profile_id, key_hash, route_key_secret_ref_json, created_at, revoked_at
          FROM overlay_keys
          WHERE id = ?`
       )
@@ -64,7 +68,7 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
   async findCandidates(overlayId: string): Promise<readonly OverlayAccessKey[]> {
     return this.#connection
       .prepare(
-        `SELECT id, overlay_id, module_id, purpose, scope, key_hash, route_key_secret_ref_json, created_at, revoked_at
+        `SELECT id, overlay_id, module_id, purpose, scope, target_profile_id, key_hash, route_key_secret_ref_json, created_at, revoked_at
          FROM overlay_keys
          WHERE overlay_id = ?
          ORDER BY created_at, id`
@@ -78,18 +82,20 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
     readonly moduleId: string | null;
     readonly purpose: OverlayPurpose;
     readonly scope: OverlayScope;
+    readonly targetProfileId?: OverlayTargetProfileId | null;
   }): Promise<readonly OverlayAccessKey[]> {
     return this.#connection
       .prepare(
-        `SELECT id, overlay_id, module_id, purpose, scope, key_hash, route_key_secret_ref_json, created_at, revoked_at
+        `SELECT id, overlay_id, module_id, purpose, scope, target_profile_id, key_hash, route_key_secret_ref_json, created_at, revoked_at
          FROM overlay_keys
          WHERE overlay_id = ?
            AND module_id IS ?
            AND purpose = ?
            AND scope = ?
+           AND target_profile_id IS ?
          ORDER BY created_at, id`
       )
-      .all(input.overlayId, input.moduleId, input.purpose, input.scope)
+      .all(input.overlayId, input.moduleId, input.purpose, input.scope, input.targetProfileId ?? null)
       .map((row) => mapOverlayAccessKeyRow(row as unknown as OverlayAccessKeyRow));
   }
 
@@ -101,6 +107,7 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
              module_id = ?,
              purpose = ?,
              scope = ?,
+             target_profile_id = ?,
              key_hash = ?,
              route_key_secret_ref_json = ?,
              created_at = ?,
@@ -112,6 +119,7 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
         record.moduleId,
         record.purpose,
         record.scope,
+        record.targetProfileId ?? null,
         record.keyHash,
         record.routeKeySecretRef === null ? null : JSON.stringify(record.routeKeySecretRef),
         record.createdAt,
@@ -134,6 +142,7 @@ function mapOverlayAccessKeyRow(row: OverlayAccessKeyRow): OverlayAccessKey {
     moduleId: row.module_id === null ? null : String(row.module_id),
     purpose: row.purpose as OverlayPurpose,
     scope: row.scope as OverlayScope,
+    targetProfileId: row.target_profile_id === null ? null : (String(row.target_profile_id) as OverlayTargetProfileId),
     keyHash: String(row.key_hash),
     routeKeySecretRef: parseSecretRef(row.route_key_secret_ref_json),
     createdAt: String(row.created_at),

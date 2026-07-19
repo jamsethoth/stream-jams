@@ -1,4 +1,10 @@
-import type { ModuleOutputRequest, OverlayComposition, OverlayScope, UnifiedOutputRequest } from "../overlays/types.js";
+import type {
+  ModuleOutputRequest,
+  OverlayComposition,
+  OverlayScope,
+  OverlayTargetProfileId,
+  UnifiedOutputRequest
+} from "../overlays/types.js";
 import type { OverlayModuleConfigService } from "./module-config-service.js";
 import type { OverlayModuleSnapshot } from "./types.js";
 
@@ -7,6 +13,7 @@ export interface OverlayModuleSnapshotRequest {
   readonly overlayId: string;
   readonly purpose: "live" | "test";
   readonly scope: OverlayScope;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
 }
 
 export interface OverlayModuleRuntime {
@@ -49,6 +56,7 @@ export class DefaultOverlayCompositionService implements OverlayCompositionServi
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "module",
+      ...(request.targetProfileId === undefined ? {} : { targetProfileId: request.targetProfileId }),
       modules: snapshot === null ? [] : [snapshot]
     };
   }
@@ -103,7 +111,8 @@ function validateSnapshotForRequest(snapshot: OverlayModuleSnapshot, request: Ov
       instruction.moduleId !== request.moduleId ||
       instruction.overlayId !== request.overlayId ||
       instruction.purpose !== request.purpose ||
-      instruction.scope !== request.scope
+      instruction.scope !== request.scope ||
+      (instruction.targetProfileId ?? null) !== (request.targetProfileId ?? null)
     ) {
       throw new InvalidOverlayModuleSnapshotError(request.moduleId, instruction.moduleId);
     }

@@ -69,6 +69,45 @@ describe("overlay routes", () => {
     ]);
   });
 
+  it("authorizes and composes module output for the requested target profile", async () => {
+    const overlayAccessService = createAccessService(["ovl_vertical"]);
+    const created = await overlayAccessService.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "vertical"
+    });
+    const compositionService = new RecordingOverlayCompositionService();
+    const app = createServerApp({
+      metadata: { appName: "stream-jams", version: "1.2.3" },
+      overlayAccessService,
+      overlayCompositionService: compositionService,
+      overlayModuleRegistry: createRegistry(["alerts"]),
+      webShellRenderer: createTestWebShellRenderer()
+    });
+
+    const vertical = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${created.rawKey}/composition?profile=vertical`
+    });
+    const landscape = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${created.rawKey}/composition?profile=landscape`
+    });
+
+    expect(vertical.statusCode).toBe(200);
+    expect(compositionService.moduleRequests).toEqual([
+      {
+        moduleId: "alerts",
+        overlayId: "default",
+        purpose: "live",
+        targetProfileId: "vertical"
+      }
+    ]);
+    expect(landscape.statusCode).toBe(401);
+  });
+
   it("serves a unified test composition through a unified route key", async () => {
     const overlayAccessService = createAccessService(["ovl_unifiedTest"]);
     const created = await overlayAccessService.createKey({
@@ -303,6 +342,7 @@ class RecordingOverlayCompositionService implements OverlayCompositionService {
       overlayId: request.overlayId,
       purpose: request.purpose,
       scope: "module",
+      ...(request.targetProfileId === undefined ? {} : { targetProfileId: request.targetProfileId }),
       modules: [
         {
           moduleId: request.moduleId,

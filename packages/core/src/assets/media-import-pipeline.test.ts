@@ -1,7 +1,7 @@
 import type { AssetRepository } from "./repository.js";
 import type { AssetRecord } from "./types.js";
 import type { AssetStorageWrite, MediaAssetStore } from "./media-import-pipeline.js";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DefaultMediaImportPipeline,
   InvalidMediaImportError,
@@ -13,12 +13,13 @@ describe("DefaultMediaImportPipeline", () => {
   it("validates, stores, and persists accepted media imports", async () => {
     const repository = new RecordingAssetRepository();
     const store = new RecordingMediaAssetStore();
+    const generateId = vi.fn(() => "asset_1");
     const pipeline = new DefaultMediaImportPipeline({
       validator: new DefaultAssetValidator(),
       repository,
       store,
       transcoder: new NoopMediaTranscodingStage(),
-      generateId: () => "asset_1",
+      generateId,
       calculateChecksum: () => "sha256:abc123"
     });
     const bytes = pngBytes;
@@ -48,6 +49,36 @@ describe("DefaultMediaImportPipeline", () => {
       }
     ]);
     expect(repository.records).toHaveLength(1);
+    expect(generateId).toHaveBeenCalledOnce();
+  });
+
+  it("uses a supplied asset ID without generating a replacement ID", async () => {
+    const repository = new RecordingAssetRepository();
+    const store = new RecordingMediaAssetStore();
+    const generateId = vi.fn(() => "generated_asset");
+    const pipeline = new DefaultMediaImportPipeline({
+      validator: new DefaultAssetValidator(),
+      repository,
+      store,
+      transcoder: new NoopMediaTranscodingStage(),
+      generateId,
+      calculateChecksum: () => "sha256:abc123"
+    });
+
+    await expect(
+      pipeline.importMedia({
+        assetId: "existing_asset",
+        originalFileName: "Replacement.PNG",
+        mimeType: "image/png",
+        bytes: pngBytes
+      })
+    ).resolves.toMatchObject({
+      id: "existing_asset",
+      storagePath: "image/existing_asset-sha256_abc123.png"
+    });
+    expect(store.writes[0]?.assetId).toBe("existing_asset");
+    expect(store.writes[0]?.storageVersion).toBe("sha256:abc123");
+    expect(generateId).not.toHaveBeenCalled();
   });
 
   it("rejects invalid media before storage or repository writes", async () => {
@@ -120,7 +151,9 @@ class RecordingMediaAssetStore implements MediaAssetStore {
   async write(input: AssetStorageWrite): Promise<{ readonly storagePath: string }> {
     this.writes.push(input);
     return {
-      storagePath: `${input.mediaType}/${input.assetId}${input.normalizedExtension}`
+      storagePath: `${input.mediaType}/${input.assetId}${
+        input.storageVersion === undefined ? "" : `-${input.storageVersion.replace(/[^A-Za-z0-9_-]/g, "_")}`
+      }${input.normalizedExtension}`
     };
   }
 }

@@ -1,8 +1,13 @@
+import { randomBytes } from "node:crypto";
 import type { SecretStore } from "@stream-jams/core";
 import type { EventIngestionStatus } from "../events/event-ingestion-service.js";
 import { runtimeSecretStoreUnavailableMessage } from "../security/runtime-secret-store.js";
 import type { TwitchAccountRepository } from "./twitch-account-repository.js";
-import { createTwitchTokenSecretRef } from "./twitch-oauth-service.js";
+import {
+  createTwitchTokenSecretRef,
+  defaultTwitchOAuthScopes,
+  missingTwitchScopes
+} from "./twitch-oauth-service.js";
 import type {
   TwitchEventSubClient,
   TwitchEventSubConnectionState,
@@ -30,6 +35,12 @@ export interface TwitchEventSubRuntimeStatus {
   readonly lastEventAt: string | null;
   readonly lastErrorAt: string | null;
   readonly message: string | null;
+  readonly referenceId: string | null;
+}
+
+export interface TwitchEventSubRuntimeDiagnostic {
+  readonly message: string;
+  readonly referenceId: string;
 }
 
 export interface TwitchEventSubRuntimeServiceOptions {
@@ -39,11 +50,15 @@ export interface TwitchEventSubRuntimeServiceOptions {
   readonly ingestionService: { getStatus(): EventIngestionStatus };
   readonly now?: (() => Date) | undefined;
   readonly secretStore: Pick<SecretStore, "getSecret">;
+  readonly generateReferenceId?: (() => string) | undefined;
+  readonly onDiagnostic?: ((entry: TwitchEventSubRuntimeDiagnostic) => void | Promise<void>) | undefined;
+  readonly validateConnectedAccount?: (() => void | Promise<void>) | undefined;
 }
 
 interface RuntimeSyncError {
   readonly message: string;
   readonly occurredAt: string;
+  readonly referenceId: string;
 }
 
 export class TwitchEventSubRuntimeService {
@@ -53,6 +68,9 @@ export class TwitchEventSubRuntimeService {
   readonly #ingestionService: { getStatus(): EventIngestionStatus };
   readonly #now: () => Date;
   readonly #secretStore: Pick<SecretStore, "getSecret">;
+  readonly #generateReferenceId: () => string;
+  readonly #onDiagnostic: NonNullable<TwitchEventSubRuntimeServiceOptions["onDiagnostic"]>;
+  readonly #validateConnectedAccount: NonNullable<TwitchEventSubRuntimeServiceOptions["validateConnectedAccount"]>;
   #runtimeError: RuntimeSyncError | null = null;
 
   constructor(options: TwitchEventSubRuntimeServiceOptions) {
@@ -62,21 +80,36 @@ export class TwitchEventSubRuntimeService {
     this.#ingestionService = options.ingestionService;
     this.#now = options.now ?? (() => new Date());
     this.#secretStore = options.secretStore;
+    this.#generateReferenceId = options.generateReferenceId ?? generateReferenceId;
+    this.#onDiagnostic = options.onDiagnostic ?? (() => {});
+    this.#validateConnectedAccount = options.validateConnectedAccount ?? (() => {});
   }
 
   async connectStoredAccount(): Promise<TwitchEventSubRuntimeStatus> {
+    try {
+      await this.#validateConnectedAccount();
+    } catch {
+      this.#eventSubClient.disconnect();
+      await this.#recordRuntimeError("Twitch authorization could not be validated or refreshed");
+      return this.getStatus();
+    }
+
     const account = await this.#accountRepository.findConnectedAccount();
     if (account === null) {
-      this.disconnect();
+      this.#eventSubClient.disconnect();
+      await this.#recordRuntimeError("Twitch account connection is unavailable");
+      return this.getStatus();
+    }
+
+    if (missingTwitchScopes(account.scopes, defaultTwitchOAuthScopes).length > 0) {
+      this.#eventSubClient.disconnect();
+      await this.#recordRuntimeError("Twitch authorization update required. Reconnect Twitch to grant the added event permissions.");
       return this.getStatus();
     }
 
     if (this.#clientId.trim() === "") {
       this.#eventSubClient.disconnect();
-      this.#runtimeError = {
-        message: "Twitch EventSub client ID is not configured",
-        occurredAt: this.#now().toISOString()
-      };
+      await this.#recordRuntimeError("Twitch EventSub client ID is not configured");
       return this.getStatus();
     }
 
@@ -85,19 +118,13 @@ export class TwitchEventSubRuntimeService {
       accessToken = await this.#secretStore.getSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
     } catch {
       this.#eventSubClient.disconnect();
-      this.#runtimeError = {
-        message: runtimeSecretStoreUnavailableMessage,
-        occurredAt: this.#now().toISOString()
-      };
+      await this.#recordRuntimeError(runtimeSecretStoreUnavailableMessage);
       return this.getStatus();
     }
 
     if (accessToken === null) {
       this.#eventSubClient.disconnect();
-      this.#runtimeError = {
-        message: "Twitch EventSub access token is unavailable",
-        occurredAt: this.#now().toISOString()
-      };
+      await this.#recordRuntimeError("Twitch EventSub access token is unavailable");
       return this.getStatus();
     }
 
@@ -113,10 +140,7 @@ export class TwitchEventSubRuntimeService {
       this.#runtimeError = null;
     } catch {
       this.#eventSubClient.disconnect();
-      this.#runtimeError = {
-        message: "Twitch EventSub WebSocket could not be started",
-        occurredAt: this.#now().toISOString()
-      };
+      await this.#recordRuntimeError("Twitch EventSub WebSocket could not be started");
     }
 
     return this.getStatus();
@@ -127,9 +151,16 @@ export class TwitchEventSubRuntimeService {
     this.#eventSubClient.disconnect();
   }
 
+  async reportAuthorizationFailure(): Promise<TwitchEventSubRuntimeStatus> {
+    this.#eventSubClient.disconnect();
+    await this.#recordRuntimeError("Twitch authorization could not be validated or refreshed");
+    return this.getStatus();
+  }
+
   getStatus(): TwitchEventSubRuntimeStatus {
     const connectionStatus = this.#eventSubClient.getStatus();
     const ingestionStatus = this.#ingestionService.getStatus();
+    const includeIngestionIssue = connectionStatus.state === "connected";
     return {
       state: resolveRuntimeState(connectionStatus, ingestionStatus, this.#runtimeError),
       connectionState: connectionStatus.state,
@@ -141,10 +172,38 @@ export class TwitchEventSubRuntimeService {
       duplicateCount: ingestionStatus.duplicateCount,
       rejectedCount: ingestionStatus.rejectedCount,
       lastEventAt: ingestionStatus.lastEventAt,
-      lastErrorAt: this.#runtimeError?.occurredAt ?? connectionStatus.lastErrorAt ?? ingestionStatus.lastErrorAt,
-      message: this.#runtimeError?.message ?? connectionStatus.message ?? ingestionStatus.message
+      lastErrorAt: this.#runtimeError?.occurredAt
+        ?? connectionStatus.lastErrorAt
+        ?? (includeIngestionIssue ? ingestionStatus.lastErrorAt : null),
+      message: this.#runtimeError?.message
+        ?? connectionStatus.message
+        ?? (includeIngestionIssue ? ingestionStatus.message : null),
+      referenceId: this.#runtimeError?.referenceId
+        ?? connectionStatus.referenceId
+        ?? (includeIngestionIssue ? ingestionStatus.referenceId : null)
     };
   }
+
+  async #recordRuntimeError(message: string): Promise<void> {
+    const referenceId = this.#generateReferenceId();
+    this.#runtimeError = {
+      message,
+      occurredAt: this.#now().toISOString(),
+      referenceId
+    };
+    try {
+      await this.#onDiagnostic({ message, referenceId });
+    } catch {
+      this.#runtimeError = {
+        ...this.#runtimeError,
+        message: "Twitch EventSub diagnostics logging failed"
+      };
+    }
+  }
+}
+
+function generateReferenceId(): string {
+  return `ref_${randomBytes(12).toString("base64url")}`;
 }
 
 function resolveRuntimeState(
@@ -168,5 +227,5 @@ function resolveRuntimeState(
     return connectionStatus.state;
   }
 
-  return ingestionStatus.state === "degraded" ? "degraded" : "idle";
+  return "idle";
 }

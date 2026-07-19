@@ -20,6 +20,7 @@ const temporaryDirectories: string[] = [];
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const pngBytes = Buffer.concat([pngSignature, Buffer.from([1, 2, 3])]);
 const invalidBytes = Buffer.from("not a png", "utf8");
+const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]);
 
 describe("asset routes", () => {
   afterEach(async () => {
@@ -156,6 +157,56 @@ describe("asset routes", () => {
     await expect(repository.list()).resolves.toEqual([]);
   });
 
+  it("preserves asset identity and requires impact confirmation for in-use replacement", async () => {
+    const { app, authHeaders } = await createAppWithAssets({ replacementRequiresConfirmation: true });
+    await app.inject({
+      method: "POST",
+      url: "/assets/import",
+      headers: {
+        ...authHeaders,
+        "content-type": "application/octet-stream",
+        "x-stream-jams-file-name": "Alert.PNG",
+        "x-stream-jams-mime-type": "image/png"
+      },
+      payload: pngBytes
+    });
+
+    const blocked = await app.inject({
+      method: "POST",
+      url: "/assets/asset_1/replace",
+      headers: {
+        ...authHeaders,
+        "content-type": "application/octet-stream",
+        "x-stream-jams-file-name": "Replacement.PNG",
+        "x-stream-jams-mime-type": "image/png"
+      },
+      payload: replacementPngBytes
+    });
+    expect(blocked.statusCode).toBe(409);
+    expect(blocked.json()).toMatchObject({
+      error: { code: "ASSET_REPLACEMENT_CONFIRMATION_REQUIRED" },
+      impact: { assetId: "asset_1", requiresConfirmation: true }
+    });
+
+    const replaced = await app.inject({
+      method: "POST",
+      url: "/assets/asset_1/replace",
+      headers: {
+        ...authHeaders,
+        "content-type": "application/octet-stream",
+        "x-stream-jams-file-name": "Replacement.PNG",
+        "x-stream-jams-mime-type": "image/png",
+        "x-stream-jams-confirm-impact": "true"
+      },
+      payload: replacementPngBytes
+    });
+    expect(replaced.statusCode).toBe(200);
+    expect(replaced.json()).toMatchObject({ id: "asset_1", originalFileName: "Replacement.PNG" });
+
+    const file = await app.inject({ method: "GET", url: "/assets/asset_1/file", headers: authHeaders });
+    expect(file.rawPayload).toEqual(replacementPngBytes);
+  });
+
   it("rejects missing management sessions before listing assets", async () => {
     const { app, repository } = await createAppWithAssets();
 
@@ -235,7 +286,8 @@ describe("asset routes", () => {
       overlayId: "default",
       moduleId: "alerts",
       purpose: "live",
-      scope: "module"
+      scope: "module",
+      targetProfileId: "landscape"
     });
     const revokedKey = await overlayAccessService.createKey({
       overlayId: "default",
@@ -267,7 +319,11 @@ describe("asset routes", () => {
 
     const valid = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_1`
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_1?profile=landscape`
+    });
+    const wrongProfile = await app.inject({
+      method: "GET",
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_1?profile=vertical`
     });
     const invalidKey = await app.inject({
       method: "GET",
@@ -283,11 +339,11 @@ describe("asset routes", () => {
     });
     const missing = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/missing`
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/missing?profile=landscape`
     });
     const badStoragePath = await app.inject({
       method: "GET",
-      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_bad_overlay_path`
+      url: `/overlay/modules/alerts/live/${moduleKey.rawKey}/assets/asset_bad_overlay_path?profile=landscape`
     });
 
     expect(valid.statusCode).toBe(200);
@@ -296,6 +352,7 @@ describe("asset routes", () => {
     expect(valid.headers["x-content-type-options"]).toBe("nosniff");
     expect(valid.rawPayload).toEqual(pngBytes);
     expect(invalidKey.statusCode).toBe(401);
+    expect(wrongProfile.statusCode).toBe(401);
     expect(revoked.statusCode).toBe(401);
     expect(wrongScope.statusCode).toBe(401);
     expect(missing.statusCode).toBe(404);
@@ -310,7 +367,10 @@ describe("asset routes", () => {
   });
 });
 
-async function createAppWithAssets(options: { readonly overlayAccessService?: LocalOverlayAccessService } = {}) {
+async function createAppWithAssets(options: {
+  readonly overlayAccessService?: LocalOverlayAccessService;
+  readonly replacementRequiresConfirmation?: boolean;
+} = {}) {
   const assetDirectory = await createTemporaryAssetDirectory();
   const repository = new InMemoryAssetRepository();
   const store = new LocalAssetStore({ assetDirectory });
@@ -341,6 +401,37 @@ async function createAppWithAssets(options: { readonly overlayAccessService?: Lo
     assetRepository: repository,
     mediaImportPipeline: pipeline,
     assetStore: store,
+    assetLibraryService: {
+      async registerAsset() {
+        return {} as never;
+      },
+      async getChangeImpact(assetId) {
+        const requiresConfirmation = options.replacementRequiresConfirmation ?? false;
+        return {
+          assetId,
+          usage: {
+            assetId,
+            totalUsageCount: requiresConfirmation ? 1 : 0,
+            usages: requiresConfirmation
+              ? [{
+                  setId: "set-default",
+                  setName: "Default",
+                  eventType: "follow" as const,
+                  alertId: "alert-follow",
+                  alertName: "New follower",
+                  targetProfileIds: ["landscape" as const]
+                }]
+              : []
+          },
+          canDelete: !requiresConfirmation,
+          requiresConfirmation,
+          warnings: requiresConfirmation ? ["1 alert usage will update everywhere."] : []
+        };
+      },
+      async completeReplacement() {
+        return {} as never;
+      }
+    },
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     ...(options.overlayAccessService === undefined ? {} : { overlayAccessService: options.overlayAccessService })

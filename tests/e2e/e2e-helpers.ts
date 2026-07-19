@@ -52,7 +52,7 @@ export async function mockManagementShell(page: Page): Promise<void> {
   await page.route("**/auth/management/sessions", async (route) => {
     await route.fulfill({
       contentType: "application/json",
-      json: { id: "mgmt_e2e" }
+      json: { id: "mgmt_e2e", csrfToken: "csrf_e2e" }
     });
   });
   await page.route("**/playback", async (route) => {
@@ -171,6 +171,7 @@ export function textInstruction(input: {
   readonly text: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly durationMs?: number | undefined;
   readonly moduleId?: string | undefined;
   readonly overlayId?: string | undefined;
 }): OverlayInstruction {
@@ -193,7 +194,7 @@ export function textInstruction(input: {
       }
     },
     tts: null,
-    durationMs: 4000
+    durationMs: input.durationMs ?? 4000
   };
 }
 

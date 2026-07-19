@@ -105,6 +105,9 @@ describe("createServerApp", () => {
             throw new Error("not called");
           },
           async deleteRule() {},
+          async createVariant() {
+            throw new Error("not called");
+          },
           async saveVariant() {
             throw new Error("not called");
           },
@@ -247,10 +250,10 @@ describe("createServerApp", () => {
           async getStatus() {
             throw new Error("not called");
           },
-          createConnectionStart() {
+          async createConnectionStart() {
             throw new Error("not called");
           },
-          async completeCallback() {
+          async pollConnection() {
             throw new Error("not called");
           },
           async refreshConnectedAccount() {

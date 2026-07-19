@@ -1,8 +1,74 @@
 import { describe, expect, it } from "vitest";
-import { DefaultTwitchApiClient, TwitchApiResponseError } from "./twitch-api-client.js";
+import {
+  DefaultTwitchApiClient,
+  TwitchApiHttpError,
+  TwitchApiResponseError
+} from "./twitch-api-client.js";
+
+const deviceAuthorizationRequest = {
+  clientId: "client-id",
+  scopes: ["bits:read", "moderator:read:followers"]
+} as const;
+
+const deviceTokenRequest = {
+  ...deviceAuthorizationRequest,
+  deviceCode: "device-code"
+} as const;
 
 describe("DefaultTwitchApiClient", () => {
-  it("exchanges authorization codes and refresh tokens with form-encoded token requests", async () => {
+  it("starts device authorization with the requested scopes", async () => {
+    const fetcher = createRecordingFetch([
+      jsonResponse({
+        device_code: "device-code",
+        user_code: "ABCD-EFGH",
+        verification_uri: "https://www.twitch.tv/activate",
+        expires_in: 1_800,
+        interval: 5
+      })
+    ]);
+    const client = createClient(fetcher.fetch);
+
+    await expect(client.startDeviceAuthorization(deviceAuthorizationRequest)).resolves.toEqual({
+      deviceCode: "device-code",
+      userCode: "ABCD-EFGH",
+      verificationUri: "https://www.twitch.tv/activate",
+      expiresIn: 1_800,
+      interval: 5
+    });
+
+    expect(fetcher.requests).toHaveLength(1);
+    expect(fetcher.requests[0]?.url).toBe("https://id.twitch.tv/oauth2/device");
+    expect(fetcher.requests[0]?.init.method).toBe("POST");
+    expect(String(fetcher.requests[0]?.init.body)).toBe(
+      "client_id=client-id&scopes=bits%3Aread+moderator%3Aread%3Afollowers"
+    );
+  });
+
+  it("maps known device authorization polling responses", async () => {
+    const fetcher = createRecordingFetch([
+      jsonResponse({ message: "authorization_pending" }, { status: 400 }),
+      jsonResponse({ message: "access_denied" }, { status: 400 }),
+      jsonResponse({ message: "invalid device code" }, { status: 400 })
+    ]);
+    const client = createClient(fetcher.fetch);
+
+    await expect(client.pollDeviceAuthorization(deviceTokenRequest)).resolves.toEqual({ status: "pending" });
+    await expect(client.pollDeviceAuthorization(deviceTokenRequest)).resolves.toEqual({ status: "denied" });
+    await expect(client.pollDeviceAuthorization(deviceTokenRequest)).resolves.toEqual({ status: "expired" });
+
+    expect(fetcher.requests.map((request) => request.url)).toEqual([
+      "https://id.twitch.tv/oauth2/token",
+      "https://id.twitch.tv/oauth2/token",
+      "https://id.twitch.tv/oauth2/token"
+    ]);
+    expect(fetcher.requests.map((request) => String(request.init.body))).toEqual([
+      "client_id=client-id&scopes=bits%3Aread+moderator%3Aread%3Afollowers&device_code=device-code&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code",
+      "client_id=client-id&scopes=bits%3Aread+moderator%3Aread%3Afollowers&device_code=device-code&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code",
+      "client_id=client-id&scopes=bits%3Aread+moderator%3Aread%3Afollowers&device_code=device-code&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code"
+    ]);
+  });
+
+  it("returns a token grant when device authorization succeeds", async () => {
     const fetcher = createRecordingFetch([
       jsonResponse({
         access_token: "access-token-1",
@@ -10,7 +76,24 @@ describe("DefaultTwitchApiClient", () => {
         expires_in: 14_400,
         scope: ["bits:read"],
         token_type: "bearer"
-      }),
+      })
+    ]);
+    const client = createClient(fetcher.fetch);
+
+    await expect(client.pollDeviceAuthorization(deviceTokenRequest)).resolves.toEqual({
+      status: "granted",
+      grant: {
+        accessToken: "access-token-1",
+        refreshToken: "refresh-token-1",
+        expiresIn: 14_400,
+        scopes: ["bits:read"],
+        tokenType: "bearer"
+      }
+    });
+  });
+
+  it("refreshes user tokens without a client secret", async () => {
+    const fetcher = createRecordingFetch([
       jsonResponse({
         access_token: "access-token-2",
         refresh_token: "refresh-token-2",
@@ -22,21 +105,8 @@ describe("DefaultTwitchApiClient", () => {
     const client = createClient(fetcher.fetch);
 
     await expect(
-      client.exchangeAuthorizationCode({
-        clientId: "client-id",
-        clientSecret: "client-secret",
-        code: "oauth-code",
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      })
-    ).resolves.toMatchObject({
-      accessToken: "access-token-1",
-      refreshToken: "refresh-token-1",
-      scopes: ["bits:read"]
-    });
-    await expect(
       client.refreshUserToken({
         clientId: "client-id",
-        clientSecret: "client-secret",
         refreshToken: "refresh-token-1"
       })
     ).resolves.toMatchObject({
@@ -45,16 +115,91 @@ describe("DefaultTwitchApiClient", () => {
       scopes: ["channel:read:subscriptions"]
     });
 
-    expect(fetcher.requests.map((request) => request.url)).toEqual([
-      "https://id.twitch.tv/oauth2/token",
-      "https://id.twitch.tv/oauth2/token"
-    ]);
+    expect(fetcher.requests[0]?.url).toBe("https://id.twitch.tv/oauth2/token");
     expect(String(fetcher.requests[0]?.init.body)).toBe(
-      "client_id=client-id&client_secret=client-secret&code=oauth-code&grant_type=authorization_code&redirect_uri=http%3A%2F%2F127.0.0.1%3A39187%2Ftwitch%2Fauth%2Fcallback"
+      "client_id=client-id&grant_type=refresh_token&refresh_token=refresh-token-1"
     );
-    expect(String(fetcher.requests[1]?.init.body)).toBe(
-      "client_id=client-id&client_secret=client-secret&grant_type=refresh_token&refresh_token=refresh-token-1"
-    );
+  });
+
+  it("rejects malformed device authorization success bodies", async () => {
+    const malformedBodies = [
+      {
+        device_code: "device-code",
+        user_code: "ABCD-EFGH",
+        verification_uri: "https://www.twitch.tv/activate",
+        expires_in: 0,
+        interval: 5
+      },
+      {
+        device_code: "device-code",
+        user_code: "ABCD-EFGH",
+        verification_uri: "https://www.twitch.tv/activate",
+        expires_in: 1_800,
+        interval: 0
+      },
+      {
+        device_code: "",
+        user_code: "ABCD-EFGH",
+        verification_uri: "https://www.twitch.tv/activate",
+        expires_in: 1_800,
+        interval: 5
+      },
+      {
+        device_code: "device-code",
+        user_code: "",
+        verification_uri: "https://www.twitch.tv/activate",
+        expires_in: 1_800,
+        interval: 5
+      },
+      {
+        device_code: "device-code",
+        user_code: "ABCD-EFGH",
+        verification_uri: "",
+        expires_in: 1_800,
+        interval: 5
+      },
+      {
+        device_code: "device-code",
+        user_code: "ABCD-EFGH",
+        verification_uri: "http://www.twitch.tv/activate",
+        expires_in: 1_800,
+        interval: 5
+      },
+      {
+        device_code: "device-code",
+        user_code: "ABCD-EFGH",
+        verification_uri: "https://twitch.tv/activate",
+        expires_in: 1_800,
+        interval: 5
+      }
+    ];
+    const fetcher = createRecordingFetch(malformedBodies.map((body) => jsonResponse(body)));
+    const client = createClient(fetcher.fetch);
+
+    for (let index = 0; index < malformedBodies.length; index += 1) {
+      await expect(client.startDeviceAuthorization(deviceAuthorizationRequest)).rejects.toBeInstanceOf(
+        TwitchApiResponseError
+      );
+    }
+  });
+
+  it("rejects malformed token and device polling error bodies without exposing token values", async () => {
+    const fetcher = createRecordingFetch([
+      jsonResponse({
+        access_token: "access-token-secret",
+        refresh_token: "refresh-token-secret",
+        token_type: "bearer"
+      }),
+      jsonResponse({ message: 123 }, { status: 400 }),
+      new Response("not JSON", { status: 400 })
+    ]);
+    const client = createClient(fetcher.fetch);
+
+    const malformedTokenGrant = client.pollDeviceAuthorization(deviceTokenRequest);
+    await expect(malformedTokenGrant).rejects.toBeInstanceOf(TwitchApiResponseError);
+    await expect(malformedTokenGrant).rejects.not.toThrow(/access-token-secret|refresh-token-secret/);
+    await expect(client.pollDeviceAuthorization(deviceTokenRequest)).rejects.toBeInstanceOf(TwitchApiHttpError);
+    await expect(client.pollDeviceAuthorization(deviceTokenRequest)).rejects.toBeInstanceOf(TwitchApiResponseError);
   });
 
   it("validates tokens and reads the current Helix user with Twitch auth headers", async () => {
@@ -98,34 +243,6 @@ describe("DefaultTwitchApiClient", () => {
       authorization: "Bearer access-token",
       "client-id": "client-id"
     });
-  });
-
-  it("rejects malformed Twitch responses without exposing token values", async () => {
-    const fetcher = createRecordingFetch([
-      jsonResponse({
-        access_token: "access-token",
-        refresh_token: "refresh-token",
-        token_type: "bearer"
-      })
-    ]);
-    const client = createClient(fetcher.fetch);
-
-    await expect(
-      client.exchangeAuthorizationCode({
-        clientId: "client-id",
-        clientSecret: "client-secret",
-        code: "oauth-code",
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      })
-    ).rejects.toBeInstanceOf(TwitchApiResponseError);
-    await expect(
-      client.exchangeAuthorizationCode({
-        clientId: "client-id",
-        clientSecret: "client-secret",
-        code: "oauth-code",
-        redirectUri: "http://127.0.0.1:39187/twitch/auth/callback"
-      })
-    ).rejects.not.toThrow(/access-token|refresh-token/);
   });
 });
 

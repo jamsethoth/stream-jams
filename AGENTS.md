@@ -161,6 +161,7 @@ Use these rules when implementing the Stream Jams stack. The links are primary o
 - In Playwright, prefer locators such as `getByRole`, `getByLabel`, and chained locators that uniquely identify the target. Pair actions with web-first assertions that auto-wait for the expected user-visible result: https://playwright.dev/docs/locators and https://playwright.dev/docs/test-assertions
 - Do not skip, weaken, or delete tests to make validation pass. Update tests only when behavior intentionally changes.
 - Before a PR, run the relevant available gates: `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and `pnpm test:e2e` when Playwright coverage is applicable or configured.
+- After code changes, rebuild production artifacts, restart every affected local Stream Jams service from the new build, wait for health checks, reload the browser UI, and verify the changed live workflow before reporting completion. Do not validate against a stale process.
 
 ## Electron Packaging Path
 

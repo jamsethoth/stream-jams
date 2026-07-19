@@ -1,14 +1,20 @@
 import type { OverlayModuleSnapshot } from "../overlay-modules/types.js";
 import type { SecretRef } from "../security/types.js";
-import type { OverlayElementLayout, OverlayPurpose, OverlayScope } from "../shared/schemas.js";
+import type {
+  OverlayElementLayout,
+  OverlayPurpose,
+  OverlayScope,
+  OverlayTargetProfileId
+} from "../shared/schemas.js";
 import type { TtsPlaybackInstruction } from "../tts/types.js";
 
-export type { OverlayElementLayout, OverlayPurpose, OverlayScope };
+export type { OverlayElementLayout, OverlayPurpose, OverlayScope, OverlayTargetProfileId };
 
 export interface ModuleOutputRequest {
   readonly moduleId: string;
   readonly overlayId: string;
   readonly purpose: OverlayPurpose;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
 }
 
 export interface UnifiedOutputRequest {
@@ -20,6 +26,7 @@ export interface UnifiedOutputRequest {
 export interface OverlayOutputDescriptor {
   readonly overlayId: string;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
   readonly moduleId: string | null;
   readonly purpose: OverlayPurpose;
 }
@@ -47,7 +54,9 @@ export interface OverlayRouteKeySecret {
 
 export interface OverlayClientView extends OverlayOutputDescriptor {
   readonly id: string;
+  readonly connectionState: "connected" | "disconnected";
   readonly connectedAt: string;
+  readonly disconnectedAt: string | null;
   readonly lastSeenAt: string;
   readonly userAgent: string | null;
 }
@@ -56,6 +65,7 @@ export interface OverlayComposition {
   readonly overlayId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
   readonly modules: readonly OverlayModuleSnapshot[];
 }
 
@@ -63,16 +73,24 @@ export function moduleOverlayPath(input: {
   readonly moduleId: string;
   readonly purpose: OverlayPurpose;
   readonly overlayKey: string;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
 }): string {
-  return `/overlay/modules/${encodeURIComponent(input.moduleId)}/${input.purpose}/${encodeURIComponent(input.overlayKey)}`;
+  return withTargetProfile(
+    `/overlay/modules/${encodeURIComponent(input.moduleId)}/${input.purpose}/${encodeURIComponent(input.overlayKey)}`,
+    input.targetProfileId
+  );
 }
 
 export function moduleOverlayWebSocketPath(input: {
   readonly moduleId: string;
   readonly purpose: OverlayPurpose;
   readonly overlayKey: string;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
 }): string {
-  return `/overlay/ws/modules/${encodeURIComponent(input.moduleId)}/${input.purpose}/${encodeURIComponent(input.overlayKey)}`;
+  return withTargetProfile(
+    `/overlay/ws/modules/${encodeURIComponent(input.moduleId)}/${input.purpose}/${encodeURIComponent(input.overlayKey)}`,
+    input.targetProfileId
+  );
 }
 
 export function unifiedOverlayPath(input: { readonly purpose: OverlayPurpose; readonly overlayKey: string }): string {
@@ -99,15 +117,38 @@ export interface OverlayTextInstruction {
   readonly layout: OverlayElementLayout;
 }
 
+export interface OverlayShapeInstruction {
+  readonly fill: string;
+  readonly layout: OverlayElementLayout;
+}
+
+export interface OverlayPresetAnimationInstruction {
+  readonly mode: "preset";
+  readonly entrance: string;
+  readonly exit: string;
+  readonly durationMs: number;
+  readonly delayMs: number;
+  readonly easing: string;
+}
+
 export interface OverlayInstruction {
   readonly id: string;
   readonly overlayId: string;
   readonly moduleId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
   readonly visual: OverlayVisualInstruction | null;
   readonly audio: OverlayAudioInstruction | null;
   readonly text: OverlayTextInstruction | null;
+  readonly shape?: OverlayShapeInstruction | null;
+  readonly animation?: OverlayPresetAnimationInstruction | null;
   readonly tts: TtsPlaybackInstruction | null;
   readonly durationMs: number;
+}
+
+function withTargetProfile(path: string, targetProfileId: OverlayTargetProfileId | null | undefined): string {
+  return targetProfileId === null || targetProfileId === undefined
+    ? path
+    : `${path}?profile=${encodeURIComponent(targetProfileId)}`;
 }

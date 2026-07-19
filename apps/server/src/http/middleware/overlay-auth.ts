@@ -1,4 +1,8 @@
-import type { OverlayAccessService, OverlayRouteAccessRequest } from "@stream-jams/core";
+import type {
+  OverlayAccessService,
+  OverlayRouteAccessRequest,
+  OverlayTargetProfileId
+} from "@stream-jams/core";
 import type { FastifyRequest, preHandlerHookHandler } from "fastify";
 import { sendHttpError } from "../errors.js";
 
@@ -26,4 +30,26 @@ export function createOverlayAuthPreHandler(options: OverlayAuthPreHandlerOption
       });
     }
   };
+}
+
+export type OverlayTargetProfileQuery =
+  | { readonly valid: true; readonly targetProfileId: OverlayTargetProfileId | null }
+  | { readonly valid: false };
+
+export function parseOverlayTargetProfileQuery(
+  query: unknown,
+  allowTargetProfile: boolean
+): OverlayTargetProfileQuery {
+  if (typeof query !== "object" || query === null || !("profile" in query)) {
+    return { valid: true, targetProfileId: null };
+  }
+
+  if (!allowTargetProfile) {
+    return { valid: false };
+  }
+
+  const profile = (query as { readonly profile?: unknown }).profile;
+  return profile === "landscape" || profile === "vertical"
+    ? { valid: true, targetProfileId: profile }
+    : { valid: false };
 }

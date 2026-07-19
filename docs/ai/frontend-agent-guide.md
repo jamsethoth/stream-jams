@@ -14,9 +14,10 @@ Do not treat this as a marketing site. Build the actual management or overlay wo
 ## Before Editing
 
 1. Check the active OpenSpec change when one exists.
-2. Read `docs/product-plan.md`, `docs/ui-guidelines.md`, `docs/design-tokens.md`, and this guide.
-3. For UI changes, inspect the current component and API boundaries before adding abstractions.
-4. If `.codegraph/` is usable, sync and query it before broad text search. If CodeGraph reports no usable index, continue with normal tools.
+2. Read `docs/product-plan.md`, `docs/design/ui-refactor-mvp-ux-spec.md`, `docs/ui-guidelines.md`, `docs/design-tokens.md`, and this guide.
+3. For management UI, overlay UI, integrations, assets, diagnostics, alert-module, or alert-editor changes, identify the applicable MVP UX spec sections and whether the requested behavior is MVP or backlog before editing.
+4. For UI changes, inspect the current component and API boundaries before adding abstractions.
+5. If `.codegraph/` is usable, sync and query it before broad text search. If CodeGraph reports no usable index, continue with normal tools.
 
 ## Implementation Rules
 
@@ -26,6 +27,18 @@ Do not treat this as a marketing site. Build the actual management or overlay wo
 - Use `import type` for type-only imports and keep relative TypeScript imports ESM-compatible.
 - Preserve strict TypeScript. Do not weaken `strict`, `noUncheckedIndexedAccess`, or `exactOptionalPropertyTypes`.
 - Prefer the existing CSS and component patterns before introducing a new UI dependency.
+- Do not silently fail. User-visible failures need human-readable next steps and a log/reference ID when one is available.
+- Keep live-runtime changes explicit, especially actions that affect active alert consumption, active alert sets, overlay routes, or provider selection.
+
+## PR UX Contract
+
+Every browser-visible PR must include a short UX note covering:
+
+- Applicable sections reviewed from `docs/design/ui-refactor-mvp-ux-spec.md`.
+- MVP/backlog boundary for the changed behavior.
+- Failure, empty, loading, and success states touched by the change.
+- Accessibility and keyboard behavior considered.
+- Storybook and Playwright coverage added, updated, or explicitly skipped with reason.
 
 ## Storybook Rules
 

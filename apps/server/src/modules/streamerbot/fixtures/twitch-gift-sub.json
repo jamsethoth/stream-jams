@@ -1,0 +1,11 @@
+{
+  "timeStamp": "2026-07-17T12:01:00.000Z",
+  "event": { "source": "Twitch", "type": "GiftSub" },
+  "data": {
+    "messageId": "gift-sub-1",
+    "createdAt": "2026-07-17T12:01:00.000Z",
+    "recipient": { "id": "recipient-1", "login": "recipient", "name": "Recipient" },
+    "user": { "id": "gifter-1", "login": "gifter", "name": "Gifter" },
+    "subTier": "Tier 1"
+  }
+}

@@ -1,0 +1,727 @@
+# UI Refactor Decision Log
+
+This living document records UX and UI decisions for the Stream Jams management UI refactor.
+It is not the final implementation spec. Update it as decisions change, then promote the settled version into a formal spec and implementation plan.
+
+## Product Surface Split
+
+- The management UI is an offline setup and configuration console.
+- Live monitoring and moderation should be a separate operator UI.
+- The operator UI is design-artifact scope only for this refactor; it is not part of the first implementation.
+- Create a low/mid fidelity `Concept - Live Operator Console` Penpot board.
+- Live operator concept should show active intake health, playback queue, recent events, moderation controls, and a clear future/not-implemented label.
+- Group live operator controls by workflow area (`Intake`, `Playback`, `Events`, `Audio`, `Attention`) rather than by risk level.
+- Use destructive styling, confirmation, and audit/log reference IDs for risky live actions such as clearing the queue, disabling alerts, stopping intake, or similar runtime-impacting controls.
+- Include direct operator actions only for stream-time needs: pause intake, resume intake, replay alert, skip current alert, clear queue, and mute TTS.
+- Configuration-heavy actions should deep-link to the management UI instead of duplicating setup flows in the live operator console.
+- Event history should default to normalized app events such as follow, raid, subscription, alert queued, alert played, and TTS muted.
+- Raw provider payloads and debug metadata should be available from a per-event technical details drawer, not shown as the default live-operator view.
+- Operator raw event details should link to Diagnostics rather than making raw logs part of the default operator view.
+- Live operator layout should prioritize `Now playing` and `Queue` in the center, `Intake health` as a top status strip, and `Recent events` as a side rail.
+- Raw event history should not dominate the live operator layout.
+- Live operator console should be a separate route from management, such as `/operator`, but use the same local app session.
+- Operator route should be optimized for second-monitor use: no editing flows, no sidebar-heavy management shell, and direct links back to management for configuration fixes.
+- Management UI should link to `Open operator console`.
+- Runtime safety state that protects stream output, such as intake paused and TTS muted, should persist across app restart and show strong status after restart.
+- Queue-clearing is an immediate runtime action with an audit record; queue contents only persist if the backend playback queue is explicitly designed as durable.
+- Live actions should provide short recovery affordances only when recovery is reliable.
+- `Clear queue` may show `Undo` only if the queue snapshot can be restored safely.
+- Irreversible or externally visible actions should use confirmation instead of offering fake undo.
+- `Pause intake` and `Mute TTS` should be toggles with visible persisted state.
+- `Attention` should show only actionable stream-time problems, such as intake disconnected, active alert set incompatible, overlay route stale, TTS provider down, or queue blocked.
+- Info/debug noise belongs in Diagnostics, not the live operator attention panel.
+- Each attention item needs severity, a short human message, next action, and a deep link or log/reference ID.
+- Implementation should be split into dependency-ordered changes rather than one large PR.
+- Likely change sequence:
+  - Alert domain model refactor.
+  - Alert management API refactor.
+  - Management shell information architecture refactor.
+  - Alert set management UI.
+  - Alert canvas editor.
+  - Alert output management UI.
+  - Live operator UI design artifacts only.
+- Create Penpot concept boards before the formal implementation spec.
+- Initial concept boards should be low/mid fidelity, not polished final visuals:
+  - App shell and Home.
+  - Alert set overview.
+  - Focused alert editor for landscape.
+  - Focused alert editor for vertical.
+  - Event sources page.
+  - Assets table.
+  - Live operator console as a future/design-only artifact.
+
+## Navigation And Information Architecture
+
+- Use a sidebar-first app shell.
+- Top-level navigation:
+  - `Home`
+  - `Event sources`
+  - `TTS providers`
+  - `Modules`
+    - `Alerts`
+  - `Assets`
+  - `Diagnostics`
+  - `Settings`
+- Do not nest `Event sources` or `TTS providers` under a generic `Configuration` item.
+- `Modules` is a module catalog/list, not a module instance manager.
+- `Alerts` is currently the only module, but the structure should allow future module types.
+- `Overlays` should not be a primary nav item. Browser-source URLs and route-key actions belong inside the module that owns the output.
+- Browser-source URLs are separate per module and target profile, such as Alerts landscape and Alerts vertical.
+- Do not rely on one browser-source URL adapting by viewport for the MVP.
+- Sidebar shows stable product areas.
+- Breadcrumbs appear on nested pages and focused editor surfaces.
+- Breadcrumbs should be clickable back to parent surfaces.
+- Focused editor breadcrumb includes `Modules / Alerts / Set / Provider / Event / Alert`.
+- Avoid breadcrumbs on Home and top-level pages unless needed.
+
+## Visual Foundation
+
+- Use a hybrid visual personality:
+  - Management shell is operational: dense, quiet, utility-first, and optimized for repeated setup/configuration work.
+  - Alert editor is creator-studio style: visual, preview-heavy, and optimized for alert design.
+  - Home, integrations, assets, diagnostics, and settings stay restrained and scannable.
+  - Canvas/editor surfaces can use richer visual treatment where it helps creative work.
+- Build a custom Stream Jams design system informed by Carbon and Material rather than copying either system literally.
+- Use Carbon guidance for information architecture, forms, tables, status, shell behavior, and density.
+- Use Material 3 and modern component practice for general interaction polish where appropriate.
+- The alert editor can diverge into a more creator-studio visual language while preserving shared tokens and accessibility rules.
+- Use local Stream Jams components backed by accessible primitives where helpful.
+- Prefer Radix/shadcn-style open components for dialogs, menus, tabs, popovers, selects, sliders, tooltips, sheets, switches, and similar interaction primitives.
+- Keep styling and token ownership in the repo.
+- Build canvas/editor-specific controls custom where standard primitives do not fit.
+- Do not adopt MUI or Carbon React as the primary component library unless a specific component proves worth the visual/API lock-in.
+- Do not adopt Tailwind at the start of the refactor.
+- Use design tokens and CSS variables as the required styling foundation.
+- Reevaluate Tailwind later as a tech-stack consideration if shadcn adoption becomes broad enough to justify the styling-model change.
+- Support both dark and light modes in the redesign.
+- Theme preference options:
+  - System.
+  - Dark.
+  - Light.
+- Default to system preference and allow manual override.
+- Use comfortable operational density by default.
+- Tables and alert trees can be denser than forms.
+- Canvas inspector should be compact enough to avoid excessive scrolling.
+- Backlog:
+  - Global `Comfortable` / `Compact` density preference.
+- Palette should use neutral operational surfaces and reserve saturated color for status, active module, canvas selection, and creator accents.
+- Avoid a one-note palette dominated by a single hue family.
+- Use a clean UI sans font stack for the management shell.
+- Use tabular/numeric styling for status counts, timings, dimensions, and other scan-heavy values.
+- Do not use a decorative brand font for management UI chrome.
+- Alert preview content can use user-selected alert fonts separately from the app UI font.
+- Accessibility baseline:
+  - Meet WCAG 2.2 AA contrast for app UI.
+  - All management and editor controls must be keyboard usable.
+  - Canvas positioning and sizing must have inspector/form alternatives for exact edits.
+  - Status cannot rely on color alone; include label and/or icon.
+  - Reduced-motion mode disables nonessential UI animation and editor preview autoplay unless manually triggered.
+- Responsive scope:
+  - Management configuration UI supports desktop and tablet widths.
+  - Mobile management UI should remain readable for status and simple edits.
+  - Canvas editor is desktop-required for MVP.
+  - Narrow mobile should show a clear state explaining that the editor requires a larger screen.
+  - Live operator UI may consider mobile later, but is not implemented in this refactor.
+- Auto-save is limited to UI preferences and low-risk view state.
+- Good auto-save candidates include theme, density, sidebar collapsed state, table filters/sort/visible columns, editor zoom/pan/grid visibility, selected target profile, and dismissed noncritical tips.
+- Domain state requires explicit save or confirmation.
+- Do not auto-save provider connection settings, active provider selection, alert set activation, alert editor changes, asset replacement/delete, route-key regeneration, or anything that changes live runtime behavior.
+- Warn before navigation would discard dirty domain forms or editor changes.
+- Search and filtering:
+  - Assets require search and filters.
+  - Alert Sets page inventory supports filters by provider, event, status, and profile readiness.
+  - Event Sources and TTS Providers do not need heavy filters initially because the lists should stay small.
+  - Diagnostics requires filters by severity, source, time, and reference ID/search.
+  - Editor left alert tree requires search in the MVP.
+- Empty states should provide one clear primary action and avoid competing setup paths.
+
+## Home
+
+- `Home` replaces `Dashboard`.
+- Home should show service/app integration readiness and next setup actions.
+- Home next actions should be navigable, context-preserving links to the exact screen or setup flow needed to resolve the item.
+- Next-action links should use stable IDs where deep links are needed, such as alert editor routes or filtered asset usage views.
+- Home checklist items should deep-link to provider wizard, Alerts with selected default set, or Browser sources output section as appropriate.
+- First-run Home should show a setup checklist for service/app connections, reviewing the starter alert set, and opening/copying overlay output details when available.
+- Home setup/readiness tasks should be limited to event sources, TTS providers, starter alert review, and output URLs.
+- Home should show active alert set name, blocker/warning counts, enabled alert count, and active target profiles.
+- Home should show only top active actionable problems, with links to Diagnostics or correction screens.
+- Home should not show raw logs.
+- First-run Home assumes default alert set is auto-created and points user to review it.
+- Setup checklist completion should be derived from real app state, not manual checkboxes.
+- Provider setup checklist items complete only when the provider validates.
+- Starter alert set review completes when the default set has at least one enabled valid alert or the user explicitly marks starter review done.
+- Manual dismiss is allowed for tips, not readiness or setup tasks.
+- Integration readiness cards should not be whole-card links.
+- Provider name/status area links to provider detail; explicit buttons handle actions such as test, edit, connect, or set active.
+- Home can show compact diagnostics/errors only when user attention is needed.
+- Home must not become a live stream dashboard or moderation queue.
+
+## Integrations And Readiness
+
+- Readiness is tracked only for service/app integrations, not general app completion.
+- Readiness applies to external boundaries such as Twitch, Streamer.bot, and Speaker.bot.
+- OBS/browser-source verification is not readiness in the MVP because current product scope uses manually copied browser-source URLs.
+- If OBS WebSocket support is added later, OBS can become an integration with readiness states.
+- Provider setup uses one wizard per setup flow, not one wizard per page.
+- Provider setup wizards must complete before registering a provider in the MVP.
+- Provider setup wizard finishes only after required fields or auth validate.
+- Failed provider setup validation stays in the wizard with human-readable error and next step.
+- Provider setup errors should include retry action and reference ID linking to Diagnostics.
+- Exiting an incomplete provider setup discards the setup state.
+- Draft or resumable provider setup is backlog.
+- Successful provider setup automatically sets the provider active when no active provider exists for that capability.
+- If an active provider already exists, a new provider is registered inactive and the user can choose `Activate`.
+- Providers are grouped by capability:
+  - `Event sources`: Twitch, Streamer.bot events, future event providers.
+  - `TTS providers`: Speaker.bot and future TTS providers.
+- Any number of providers can be registered per capability.
+- At most one provider per capability can be active in the MVP; event sources may intentionally have none active.
+- `Save provider` stores settings; `Activate` and `Deactivate` change runtime behavior after explicit impact confirmation.
+- Deactivating an event source stops routing its events and live runtime but preserves its registration, setup, and last validation result.
+- `Test connection` validates a provider without activating it.
+- `Test connection` updates test result/status only and never sets the provider active.
+- Active providers receive alerts automatically on app start for now.
+- Event-source UI should avoid hardcoding one-active-provider language so it can evolve to multiple active providers later.
+- Partial provider setup is not persisted in MVP, so registered-provider tables do not need a setup-readiness column.
+- Event-source rows show `Usage` as `In use` or `Not in use`.
+- Event-source rows show transient `Live status` as `Starting`, `Healthy`, `Reconnecting`, or `Error` while in use; inactive sources show `Not running`.
+- Last validation and known setup errors remain in provider details rather than duplicating runtime health in the table.
+- Event-source live status refreshes every five seconds while the page is open without changing the selected provider.
+- Failed live-status refresh keeps the last known state visible and shows an actionable refresh error.
+- Provider runtimes and the event-ingestion pipeline generate a reference ID at each distinct live failure source, record one redacted diagnostic entry with the same ID, and expose it through provider status.
+- Repeated status reads reuse the reference ID for the same failure occurrence; recovery or a later occurrence receives a new ID.
+- Selecting an event source with `Error` live status shows the current runtime cause, next step, occurrence time, and reference ID in the right detail panel.
+- Runtime error detail includes an `Open diagnostics` link filtered by reference ID.
+- The event-source table remains compact and does not repeat the full runtime error inline.
+- TTS provider setup should include `Test voice` before completion when the provider supports it.
+- TTS provider page should show provider `Connection` and `Used by alerts` count/link.
+- TTS provider owns provider-wide safety controls for speech output.
+- TTS provider page owns default voice, volume/rate limits, max length, and future filtering controls.
+- Alert editor owns per-alert TTS template/content, but provider-level TTS safety behavior belongs in TTS provider configuration.
+- MVP uses provider default voice only.
+- Alert-level TTS voice override is backlog and can exist only when the provider allows it.
+- Default `Test voice` uses fixed safe sample text.
+- Custom TTS test text is optional and local to the test.
+- Empty Event Sources state should show `Add event source` and explain active intake.
+- Empty TTS Providers state should show `Add TTS provider` and explain TTS alerts can run without speech until configured.
+- Backlog:
+  - Manual live-intake toggle.
+  - Auto-enable intake on stream start and auto-disable on stream end.
+  - Multiple active providers per capability, lowest priority and unlikely.
+  - Provider-specific routing for alert rules if multi-provider support ever becomes needed.
+
+## Provider Activation Impact Checks
+
+- Alert rules match canonical event type plus explicit conditions, not an ingestion provider kind or specific registered provider.
+- Provider kind remains authoring metadata for event catalogs, sample payloads, and editor organization.
+- Example: a canonical `Raid` alert can be authored from the Twitch catalog and receive either direct Twitch EventSub or Streamer.bot-ingested Twitch raids.
+- When setting a provider active, check the active alert set:
+  - Event-source changes keep alerts matched when the source supplies the same canonical event types.
+  - An explicit `ingestProvider` condition can intentionally restrict a rule and should be reflected in impact counts.
+  - Missing canonical event support should produce specific unmatched counts and warnings when provider capability discovery is available.
+- TTS provider activation should similarly check active alerts that use TTS.
+
+## Assets
+
+- `Assets` is a global asset library, not a required detour during alert creation.
+- The primary assets view should be a table/list with thumbnails.
+- Asset management UI must include asset preview.
+- Desktop asset preview/details should appear in a right-side panel beside the table.
+- Narrow widths can fall back to an expandable row or stacked detail section.
+- Asset management UI must include filters for common review jobs, such as type, usage, status, missing/broken, unused, and module/set/event linkage.
+- Asset management UI must show where each asset is linked, with links back to the relevant module/set/event/alert usage.
+- Module workflows, such as alert creation, should allow inline asset upload/select.
+- Alert editor should open an asset picker drawer or dialog without leaving the edit flow.
+- Asset picker should support selecting existing assets or uploading a new asset, then returning to the same layer flow.
+- Asset picker should include search and context-aware type filters, such as image filters for image layers.
+- Asset picker rows should show compact usage count/link, not full usage details.
+- Inline uploads from module workflows create global assets and link by asset ID.
+- Inline upload flow should let the user set asset display name before final add.
+- Inline upload flow should allow optional user-defined tags.
+- Asset tags should be freeform, case-insensitive, trimmed, and de-duplicated.
+- Asset tag input should suggest existing tags while allowing new tags.
+- Asset tags should be editable after upload and usable for search/filtering.
+- Asset picker and Assets page should support filtering by tags.
+- Multi-tag filtering should use AND behavior by default.
+- Asset upload should validate file type and size before upload completes.
+- Unsupported uploads should show inline error with allowed types/size and next step.
+- Selecting a different asset for an existing layer changes that layer reference only.
+- Global asset file replacement stays in the Assets page/details flow.
+- Broken asset layers should show local warning and `Choose replacement` action opening the asset picker.
+- Empty Assets state should show import action and explain assets can also be added inline from alert editor.
+- The `Assets` page should allow users to review all assets in use, update an asset, and have that update apply everywhere the asset is referenced.
+- Asset usage links should open the alert editor with set/event/alert/profile context selected.
+- Asset details should show type, size, dimensions or duration where applicable, created/updated timestamps, and file health.
+- Modules should reference assets by asset ID rather than copied file paths.
+- Deleting an in-use asset should be blocked or require explicit reassignment.
+- Replacing an in-use asset should show affected alert usages before applying the change.
+- Confirmed replacement updates the same asset ID everywhere it is referenced.
+- Confirmed replacement should refresh preview, file size/type/duration/dimensions, and compatibility warnings.
+- Replacing an unused asset can apply directly.
+- Asset edits support cancel before save and explicit replace confirmation in the MVP.
+- Asset version history and restore are backlog.
+- Do not automatically delete unused assets.
+- Assets page should provide an `Unused` filter and manual delete action.
+- Audio asset rows should show an icon or waveform placeholder plus play control.
+- Image and video asset rows should show thumbnails.
+- Deleting unused assets still requires confirmation because assets are user data.
+
+## Alerts Module
+
+- `Modules > Alerts` defaults to the active alert set overview.
+- A `Default` alert set should be created automatically so users do not see an empty Sets state.
+- First-run experience should not be a global wizard.
+- Home next actions guide setup instead.
+- Provider setup uses focused wizards.
+- Alert creation should offer built-in example templates.
+- Built-in templates should include starter examples for both landscape and vertical profiles.
+- Template chooser should show thumbnail or short preview for landscape and vertical when available.
+- Template chooser shows event-specific templates first, then generic templates compatible with selected event variables.
+- Applying a template to an existing alert requires confirmation when the alert already has content.
+- Applying a template to an empty alert can apply directly.
+- Template-created or template-applied alerts remain disabled and `Needs review` until explicitly enabled/reviewed.
+- User-created templates and `Save as template` are backlog.
+- Minimal starter examples include Follow, Raid, Subscriber/Cheer where supported, and Custom event.
+- A starter `Default` alert set should be auto-created from built-in example templates.
+- Auto-created examples should avoid live surprises; live enablement still depends on provider setup, active set validation, and explicit activation rules.
+- Starter example alerts are disabled by default until reviewed and enabled by the user.
+- Starter alert set review should happen in the real Alerts management surface, not a separate onboarding wizard.
+- Home checklist links to `Modules > Alerts > Sets` with `Default` selected.
+- Starter alerts show disabled and `Needs review` until reviewed.
+- Starter alert rows should offer inline actions for `Preview`, `Edit`, `Enable`, and `Mark starter review done`.
+- `Mark starter review done` is a set-level action, not a per-alert action.
+- Marking starter review done hides first-run checklist pressure but does not enable alerts.
+- Individual starter alerts still require explicit `Enable`.
+- Alert-set management uses one full-width expandable list; it does not reserve a separate selected-set overview panel.
+- The active set is expanded by default, and expanding another set reveals its alert inventory in place.
+- Alert-set actions such as activate, rename, duplicate, delete, and starter-review completion stay inline on the set row.
+- The selected set's alerts appear directly beneath its expanded row with search and filters.
+- Alert rows expose `Edit`, `Preview`, `Test`, and `Enable`/`Disable` inline.
+- Inline `Test` uses the saved alert document and built-in sample payload through the same delivery API as the focused editor. When multiple target profiles are available, the user chooses one before delivery.
+- Browser sources use a compact, collapsible module-level section above and outside alert-set management rather than a separate large panel or alert-set card. It is collapsed by default, retains readiness and refresh-failure rollups, and expands when deep-linked.
+- `Modules > Alerts` uses tabs for related views inside the module:
+  - `Sets`
+  - `Editor`
+  - `Settings`
+- `Sets` contains sibling Browser sources and Alert sets sections: Browser sources owns module output management, while Alert sets owns the expandable hierarchy, activation, inventory, and validation rollups.
+- Alert set table rows show status such as active, inactive, has blockers, or has warnings.
+- Alert rows and editor nodes can show multiple status badges when multiple states apply.
+- Use composable badges such as `Enabled`, `Disabled`, `Needs review`, `Invalid`, `Warning`, and `Live` instead of one combined status.
+- Status and validation badges should be actionable where practical, filtering or jumping to affected items.
+- Collapsed set rows retain blocker, warning, and needs-review counts so validation state remains visible without opening a detail panel.
+- Alert rows show alert-specific validation counts inline; detailed messages, correction steps, and reference IDs appear in the focused editor for that alert and selected profile.
+- Set-wide validation messages also appear in the focused editor because they can affect the current alert's ability to activate with its set.
+- Inactive valid set row action is `Activate`, not `Enable`.
+- Inactive set with blockers should show `Review blockers`.
+- Inactive set with warnings can show `Activate...` and open a confirmation showing warnings.
+- Activation blockers prevent `Activate set`.
+- Activation warnings allow activation with confirmation.
+- Active set row action should be `Open` or `Edit`, not a disabled activate action.
+- Activation confirmation should explain that the selected set replaces the current active set for live alerts.
+- Alert inventory on the Sets page shows only alerts for the expanded selected set.
+- Cross-set global alert inventory is backlog unless a strong management need appears.
+- `Editor` is a full workspace with persistent alert tree/list, canvas, inspector, and preview/test/save controls.
+- Set overview and alert inventory rows should deep-link into `Editor` with the selected set/provider/event/variation.
+- `Editor` saves one selected alert/variation at a time in the MVP.
+- `Save` persists all unsaved changes for the selected alert, including shared settings and any touched target-profile layouts.
+- `Save` button label should stay concise, with nearby dirty summary such as `Unsaved: content, landscape layout`.
+- Dirty indicators should show which target profiles have unsaved changes.
+- Show dirty state for the current selection and warn before navigation would discard unsaved changes.
+- Dirty-state navigation guard should offer `Save and leave`, `Discard`, and `Cancel`.
+- Editor toolbar includes `Revert changes` for current unsaved alert edits.
+- `Revert changes` is disabled when there are no unsaved changes.
+- `Revert changes` applies immediately without a confirmation modal, provided undo can restore the reverted edits.
+- If undo cannot restore reverted edits, use a confirmation modal instead.
+- Version history and restoring older saved versions are backlog.
+- `Editor` opens in focused editor mode that hides or collapses the main app sidebar while keeping breadcrumb/header context.
+- Focused editor mode keeps its own alert tree/list visible so users can switch between alerts quickly.
+- Editor alert tree shows only the selected alert set.
+- Editor alert tree should show compact badges or counts for invalid, warning, and needs-review items.
+- Editor provides a set switcher, but does not show all sets in one tree.
+- Switching sets with unsaved changes uses the same save/discard/cancel guard.
+- Switching alerts with unsaved changes prompts: save and switch, discard and switch, or cancel.
+- A selected alert uses one focused editor route with a target-profile segmented control, not separate editor routes per profile.
+- Target-profile options are `Landscape 16:9` and `Vertical 9:16`.
+- Switching target profile swaps the canvas layout for the same alert.
+- Shared content and settings remain shared across profiles; geometry and profile enablement are profile-specific.
+- Profile-specific warnings, such as missing or unreviewed vertical layout, appear near the target-profile control.
+- Switching target profiles with unsaved changes prompts: save and switch profile, discard and switch profile, or cancel.
+- Editor shows lightweight live validation for the current alert.
+- Authoritative set validation runs after save and before activation.
+- Focused editor uses a distinct route, such as `/manage/modules/alerts/editor/:alertId`.
+- Deep links from set tables and browser back/forward behavior should work predictably.
+- Editor and management routes should use stable IDs internally, with human-readable names shown in breadcrumbs and page text.
+- Avoid routing by editable set/event/variation names.
+- Backlog:
+  - Save-all or multi-alert draft editing.
+- `Modules > Alerts` should include an `Output` or `Browser sources` section on the Sets page, not a separate tab in the MVP.
+- The output section should show landscape and vertical URLs, copy actions, route-key regeneration, selected-set profile state, and secondary listener telemetry.
+- Output readiness should be `Ready` or `Needs setup` from route-key URL availability; current listeners must not determine configuration readiness.
+- Listener telemetry should refresh every five seconds, retain the last known state on failure, and visibly become stale with an actionable error.
+- Copying output URL should show immediate success or failure feedback.
+- Copy failures should include a next step and log/reference ID when applicable.
+- Output URL display masks route keys by default.
+- Output URL actions include `Reveal` and `Copy`.
+- Revealed route keys are temporary for the current session or view and should not persist.
+- Route-key regeneration is per module and target profile.
+- A separate Output tab is backlog if output management grows to include OBS integration, connected-client history, route-key audit, or advanced profiles.
+- `Settings` tab is limited to module-level defaults.
+- Alert module settings can include default duration, default target-profile enablement, default volume, safe area, and grid behavior.
+- Provider/event rules stay in Sets or Editor.
+- Browser-source output stays on the Sets page.
+- No global live controls belong in Alert module settings for the MVP.
+- One active alert set is allowed in the MVP.
+- Alert set activation is separate from saving:
+  - `Save` persists set and alert edits.
+  - `Activate set` changes live behavior.
+- Direct delete of the active alert set is blocked.
+- User must activate another set before deleting the previously active set.
+- If only one alert set exists, delete is disabled and user can reset or recreate defaults instead.
+- Deleting an individual alert from the active set is allowed with clear warning that save affects live alerts.
+- Soft delete and undo for deleted alerts are backlog unless the backend model makes them cheap.
+- Editing the active alert set and saving affects live alerts, with clear warning.
+- Saving active-set edits should warn only when changes affect enabled or live outputs.
+- Active-set save warning should name affected target profiles and event types, such as `Will affect live Landscape alerts for Twitch Follow`.
+- Active-set editor should show a persistent non-blocking `Editing active alert set` banner.
+- Editing inactive sets is safe preparation work.
+- Inactive-set editor should show subtle status text such as `Inactive set: changes will not affect live alerts until activated`.
+- UI implementation should be backed by the refactored backend model and APIs, not front-end-only mock state.
+- Implementation should be sliced backend model/API first, then management UI shell, then focused editor.
+- Backlog:
+  - Draft/publish model for active alert set edits.
+  - Multiple active sets with warnings for conflicting or duplicate source events.
+
+## Alert Sets, Event Types, And Variations
+
+- Alert set represents a seasonal, campaign, or default collection of alerts.
+- Alert set names must be unique app-wide, case-insensitive.
+- Stable IDs still drive routes and internal references.
+- Canvas editor structure:
+  - `Set`
+    - `Provider kind`
+      - `Event type`
+        - `Variations`
+- Event type has a default design.
+- Variation is a conditional alert under an event type.
+- Variation starts from the event default, then can diverge.
+- Users can rename alerts and variations.
+- Alert and variation names only need to be unique within their parent event type.
+- Generated default names should be plain and editable, such as `Default follow`, `Large raid`, or `Subscriber tier 2`.
+- Search and list results should show hierarchy context, such as `Summer Set / Twitch / Raid / Large raid`.
+- Provider catalog and event type labels are system-defined and not renamed; provider catalog context does not bind runtime eligibility.
+- Registered provider instances can have user-facing nicknames on integration pages.
+- Event types with no configured alerts stay visible in the editor tree with an `Add alert` action.
+- Empty event type `Add alert` opens a template chooser scoped to that provider catalog and event type.
+- Event type has default target-profile enablement.
+- Variation can either use event default profile enablement or override it.
+- MVP variation conditions use simple event-specific fields, not a generic condition builder.
+- Example conditions:
+  - Raid viewer count greater than or equal to a threshold.
+  - Subscription tier or month threshold.
+  - Cheer bits greater than or equal to a threshold.
+  - Follow usually has no condition beyond the default alert.
+- MVP actions:
+  - `Create variation from default`
+  - `Duplicate variation`
+  - `Duplicate alert within the same event type and set`
+  - `Reset to event default`
+  - `Copy design from...`
+- Duplicated alerts and alert sets should be disabled and marked `Needs review` by default.
+- User must explicitly enable duplicated alerts or activate duplicated sets after review.
+- `Copy design from...` copies content/layout only by default: layers, assets, typography, animation, and profile layouts.
+- `Copy design from...` does not copy trigger conditions, enabled status, provider/event type, or route/output settings by default.
+- Advanced copy options for conditions/settings are backlog.
+- Avoid a deep inheritance engine in the MVP.
+- Backlog, high priority:
+  - Bulk operations such as apply design to selected, enable/disable selected, move/copy to set, and copy settings across events.
+- Backlog:
+  - Generic AND/OR condition builder.
+  - Priority rules.
+  - Conflict simulation.
+  - Provider-specific advanced payload fields.
+- UX must leave room for bulk operations now:
+  - Lists/tables should allow future multi-select.
+  - Rows should show enabled state, trigger, condition, design source, and last modified.
+  - Contextual overflow menus should have a place for future bulk and copy actions.
+
+## Alert Canvas Editor
+
+- MVP alert editor is canvas-first.
+- The canvas is not a blank design-tool clone; templates/presets should prevent blank-canvas burden.
+- Center: alert preview canvas.
+- Left: set/provider/event/variation navigation.
+- Right: inspector for selected alert, layer list, selected layer, and alert settings.
+- Layer list belongs in the right inspector, not the left alert tree.
+- Inspector uses internal tabs:
+  - `Layers`: layer list and selected layer controls.
+  - `Alert`: alert name, enabled target profiles, output actions, and duration defaults.
+  - `Event`: condition fields, sample data, and template variables.
+- Selected-layer fields appear only under the `Layers` tab.
+- When no layer is selected, `Layers` tab shows layer list and `Add layer`; selected-layer form appears only after layer selection.
+- `Add layer` menu is type-first with Text, Image, Video/GIF, Audio, TTS, and Shape if enabled.
+- New text layers should start with visible default text such as `{userName}` when useful for the event type, or `New text`.
+- Layer ordering supports explicit move forward/backward controls.
+- Drag reorder in the layer list is allowed if implementation is cheap.
+- TTS text fields should include a variable picker scoped to event type.
+- Editor preview should show resolved TTS text from the selected sample payload.
+- Top or bottom: preview/test controls.
+- Support free positioning and resizing of text and media layers.
+- Include snap/grid and reset-to-template.
+- Canvas safe-area guides should be visible per target profile and toggleable.
+- Layers outside safe area should not block saving.
+- Inspector position and size fields use target-profile pixels in the MVP: `x`, `y`, `width`, and `height`.
+- Percent or responsive units are backlog.
+- MVP snapping supports grid, canvas edges, and center lines.
+- Snapping to other layer bounds is backlog.
+- Snapping toggle/off control is backlog.
+- Canvas zoom controls should include fit-to-view, 100%, zoom in/out, and zoom percentage display.
+- Canvas preview background should communicate transparency with checkerboard or neutral background.
+- Canvas preview should support a toggleable test background color.
+- Inspector handles exact values, asset selection, typography, animation, duration, and conditions.
+- MVP editor supports single-layer selection only.
+- Multi-select layers are backlog.
+- MVP layer list supports visibility toggles.
+- Layer lock toggles are backlog.
+- Saved layer visibility affects live output.
+- Temporary preview-only layer isolation is backlog.
+- Undo/redo is supported in the MVP for the current alert editor session:
+  - Move or resize layer.
+  - Add or delete layer.
+  - Inspector field changes.
+  - Target-profile enable toggles.
+- Undo/redo does not span saved states or different alerts in the MVP.
+- MVP keyboard shortcuts:
+  - Delete selected layer.
+  - Arrow moves selected layer by 1px.
+  - Shift+arrow moves selected layer by 10px.
+  - Ctrl/Cmd+Z undo.
+  - Ctrl/Cmd+Y or Ctrl/Cmd+Shift+Z redo.
+  - Esc deselect.
+  - Ctrl/Cmd+D duplicate layer.
+- MVP animation is preset-based:
+  - Entrance animation.
+  - Exit animation.
+  - Duration.
+  - Delay.
+  - Easing preset.
+- Alert testing model:
+  - `Preview` plays the current design with sample data inside the editor.
+  - `Send test to overlay` sends through the actual playback/overlay path.
+  - Starter alerts include built-in sample payloads per event type for preview and testing.
+  - Sample payloads are separate from real provider events and must never be treated as live data.
+  - Sample payloads are editable only in editor/test context.
+  - Built-in sample payloads should allow preview before Twitch or Streamer.bot is connected.
+  - Sample data selector is scoped to event type, such as small raid, large raid, or long username.
+  - Sample selector lives in the `Event` inspector tab.
+  - Preview/test toolbar should show the currently selected sample.
+  - Built-in samples should include normal and edge cases, such as long username and high-value raid, cheer, or subscription cases where relevant.
+  - Custom sample edits are local to the current editor session.
+  - Persisted custom sample library is backlog.
+  - Invalid sample fields show inline validation and disable preview/send-test until fixed or reset.
+  - `Reset sample` restores the selected built-in sample defaults.
+  - Editor should keep a short in-session preview/test history for the current editor session.
+  - Preview/test history should show recent sample payloads and send-test attempts with success or error state.
+  - Preview/test history is not persisted in the MVP.
+  - Persisted test and event history belongs in Diagnostics if needed later.
+  - Test UI must make the active target profile clear.
+  - `Preview` is always available inside the editor.
+  - `Send test to overlay` requires a connected browser-source client for the selected target profile.
+  - If no browser-source client is connected, `Send test to overlay` should be disabled or blocked with clear next steps to copy/open the output URL and retry.
+  - Avoid reporting a test as successfully sent when there is no connected output to receive it.
+  - `Send test to overlay` should use the same normalized alert playback pipeline as real provider events after selecting the test target.
+  - Editor `Send test` targets the selected alert and selected target profile by default.
+  - Test events should be marked as test events in logs and history.
+  - Full provider-event simulation through all enabled matching alert flows is backlog or Diagnostics scope, not the editor default.
+  - Editor `Preview` plays visual animation in the canvas.
+  - Editor `Preview` mutes audio and TTS by default.
+  - Preview controls should include optional `Play audio` and `Play TTS` controls.
+  - Editor `Send test` includes audio and TTS by default when the selected alert uses them.
+  - Test controls should include `Include audio` and `Include TTS` toggles.
+  - Test audio/TTS toggle state is remembered only for the current editor session.
+  - Toolbar quick action is `Preview`.
+  - `Send test` is a secondary action that opens a target menu: landscape output, vertical output, or both enabled outputs.
+  - Global editor toolbar owns `Preview` and `Send test` actions.
+  - Canvas-local controls handle replay, pause, and seek for current preview only.
+  - MVP preview controls should support replay, pause/play, and simple scrub/seek when implementation cost is reasonable.
+  - Preview scrub/seek should be designed so future timeline and keyframe editing can extend it without replacing the whole control model.
+  - MVP does not include timeline tracks or keyframe editing.
+  - Do not duplicate send-test actions inside the canvas preview controls.
+  - Avoid one-click sending to live browser-source outputs by accident.
+- MVP layer types:
+  - Text.
+  - Image.
+  - Video/GIF.
+  - Audio as a non-visual layer.
+  - TTS as a non-visual layer.
+  - Shape only if needed for simple backgrounds or badges.
+- No arbitrary custom HTML/CSS/JS in the MVP.
+- The data model and editor structure must remain flexible enough for future layer/composition features without committing to implementing them now.
+- Backlog:
+  - Groups.
+  - Masks.
+  - Custom HTML/CSS/JS.
+  - Particle effects.
+  - Nested compositions.
+  - Arbitrary CSS.
+  - Timeline/keyframe animation, to be explored for feasibility before committing.
+
+## Target Profiles
+
+- MVP supports two fixed target profiles:
+  - `Landscape 16:9` at `1920x1080`
+  - `Vertical 9:16` at `1080x1920`
+- Alert rules and content are shared across target profiles.
+- Layout positions and sizes are stored per target profile.
+- Layout geometry is independent per profile.
+- Users can explicitly copy layout from landscape to vertical or from vertical to landscape.
+- No automatic cross-profile geometry sync in the MVP.
+- Editor should remember zoom/pan per target profile for the current session.
+- Copying layout between target profiles requires confirmation when the target profile already has edits.
+- Copying layout into an empty or unreviewed target profile can apply directly.
+- Copying layout marks the target profile `Needs review`.
+- Each alert can be enabled or disabled per target profile.
+- Disabled target profiles can still be opened and edited, with clear `Disabled for live output` status.
+- Enabling a target profile runs validation.
+- Enabling a target profile blocks only hard failures; warnings require confirmation.
+- Users can copy/duplicate an alert.
+- Templates should generate both target profiles.
+- Newly generated vertical layouts should default to disabled and `Needs review`.
+- Users must explicitly enable vertical output for an alert/profile after review.
+- Missing profile layout should be explicit in the UI.
+- `Needs review` clears only through an explicit `Mark reviewed` action after inspecting the alert or target profile.
+- `Activate set` requires at least one valid target profile, not all profiles.
+- Activation should warn clearly when any target profile is incomplete.
+- Disabled target profiles do not create activation blockers, but should still show as disabled and not live.
+- Target profile validation should prove the alert can run without broken output, not judge whether it looks like a typical alert.
+- Hidden visual layers do not satisfy visual-output validation.
+- Audio and TTS do not use visual hidden-state; they are enabled or disabled through their own layer or alert settings.
+- Blocking validation:
+  - Required asset reference is missing or unreadable.
+  - Text template uses variables unavailable for that event type.
+  - Visual layer duration is missing or invalid.
+  - Layer geometry is invalid, such as negative size, NaN, or impossible transform.
+  - Alert has no output action at all: no visual, no sound, no TTS, and no queue action.
+  - TTS is the only output action for an enabled profile and no valid active TTS provider exists.
+- Warning-only validation:
+  - No visible visual layer.
+  - Layer extends outside canvas bounds.
+  - Profile has not been reviewed since creation from template.
+  - Text may overflow.
+  - Sound is missing.
+  - TTS provider is inactive or missing, but the alert still has visual or audio fallback output.
+  - Resolved sample TTS text exceeds provider/default length threshold.
+- Backlog, low priority:
+  - Custom canvas profiles.
+
+## Diagnostics
+
+- Use one `Diagnostics` page with tabs or sections.
+- Likely sections:
+  - `Health`
+  - `Events`
+  - `Playback`
+  - `Logs`
+- Do not split diagnostics into multiple sidebar destinations unless it grows too large.
+- No failure should be silent in the UI.
+- User-visible failures should include a human-readable summary, known cause, next step, severity, timestamp when useful, and log/reference ID for debugging.
+- Failure messages should deep-link to the associated correction surface when applicable.
+- Management UI should use inline errors for form/setup problems and page-level banners for broader system issues.
+- Operator UI should use persistent status strips for live-impacting state and short toasts only for completed actions.
+- Diagnostics remains the source of full detail for failures, warnings, and raw logs.
+- Diagnostics should provide context actions only when safe and deterministic.
+- Diagnostics repair actions are secondary to correction links into the relevant configuration UI.
+- Diagnostics should include a sortable, filterable raw log of all events received from connected event sources for debugging.
+- Diagnostics page should use tabs: `Problems`, `Events`, and `Raw logs`.
+- `Problems` is the default Diagnostics tab.
+- `Problems` groups active issues by severity, then area: Integrations, Alerts, Assets, Output, and System.
+- `Events` lists normalized events with type, source, time, status, affected alert/output, and reference ID.
+- `Raw logs` is visible as a normal tab but labeled as advanced/debug content.
+- `Raw logs` should show redacted formatted JSON/event payloads while preserving source payload shape.
+- Do not hide raw logs behind a separate setting or unlock.
+- Raw logs must redact secrets, tokens, route keys, and personal auth fields before display or export.
+- Default raw-log copy action is `Copy sanitized event`.
+- Avoid storing unredacted sensitive payloads unless a specific backend debug requirement justifies it.
+- Diagnostics should include `Export diagnostics bundle` in the MVP.
+- Diagnostics bundle includes sanitized config summary, recent problems, recent events, raw-log excerpts, app version, and reference IDs.
+- Diagnostics bundle must exclude secrets, route keys, tokens, and personal auth fields.
+- Diagnostics filters and sort should persist for the current session only.
+- Any user-facing error should include a reference ID when available.
+- Diagnostics should support search by reference ID.
+- Selected Diagnostics problems include `Copy error JSON`, which copies the sanitized problem fields as formatted JSON with visible clipboard success or failure feedback.
+- Active Diagnostics problems are not dismissible while still true.
+- Resolved historical Diagnostics entries can be cleared or filtered from the view while remaining in logs according to retention.
+- Tips and noncritical noise can be dismissed.
+
+## Settings And Backup
+
+- Settings should include complete user config export and import.
+- Complete export/import should include user configuration and assets.
+- MVP import should be `Restore from backup`, replacing current config and assets after validation and confirmation.
+- Merge import is backlog.
+- Restore should generate new overlay route keys by default.
+- Restore should warn the user to update OBS/browser-source URLs after route keys change.
+- Preserving route keys during restore is backlog because route keys behave like access secrets.
+- Provider credentials, tokens, and secrets should not be included in MVP backups.
+- Backup can include provider configuration metadata needed to reconnect.
+- Restored providers that need credentials should show `Needs reconnect` with direct reconnect actions.
+- Backup export should produce one `.streamjams-backup` archive file.
+- Backup archive should contain manifest, app/schema version, config JSON, asset files, and checksums.
+- Import flow should inspect the archive before restore and show a summary.
+- Import summary includes created date, app/schema version, counts of alert sets/assets/providers, schema compatibility warnings, and credentials that need reconnect.
+- Restore action stays disabled until backup validation completes.
+- Restore should create a local safety backup of current config and assets before replacing them.
+- Restore should show where the safety backup was stored.
+- If safety backup creation fails, restore should stop unless the user explicitly overrides.
+- Export is allowed while event intake or overlay playback is active.
+- Restore is blocked while live event intake or overlay playback is active.
+- Restore-blocked state should prompt the user to pause intake and clear or finish playback before retrying.
+- Settings should show the current app data folder.
+- Settings should provide `Open data folder`.
+- Moving the app data folder is backlog.
+- Settings should show the current log retention policy.
+- Settings should provide `Clear old logs now`.
+- Configurable retention by days or size is backlog until storage behavior is real and measured.
+- Settings should show app version/build and schema version.
+- For MVP local dev/no packaged app, Settings shows version/build only.
+- Release notes, update checks, and updater actions are backlog for packaged app delivery.
+- Settings owns full user preferences.
+- Shell may expose a quick theme toggle if implementation is cheap.
+- Density controls stay in Settings or backlog, not primary app chrome.
+- User config export/import is distinct from Diagnostics export.
+- Global command/search palette is backlog.
+- MVP should rely on visible navigation, page filters, and deep links first.
+- Diagnostics export is sanitized support/debug data and must not be importable as user config.
+- Backlog:
+  - Backup/sync integration with user-selected cloud storage providers such as Google Drive, OneDrive, and iCloud.
+
+## Destructive Actions
+
+- Destructive actions should share one app-wide confirmation pattern.
+- Confirmation should show action name, affected scope, consequences, and recovery path if one exists.
+- Typed confirmation is reserved for high-risk actions such as restoring backup, deleting an in-use asset, or regenerating route keys.
+- Lower-risk deletes can use normal confirmation.
+- Route-key regeneration requires typed confirmation when the key is currently in use or has recent overlay connections.
+- Route-key regeneration can use normal confirmation if no client has ever connected.
+
+## Design Source References
+
+- Carbon UI shell left panel: https://carbondesignsystem.com/components/UI-shell-left-panel/usage/
+- Carbon Forms: https://carbondesignsystem.com/patterns/forms-pattern/
+- Carbon Progress Indicator: https://carbondesignsystem.com/components/progress-indicator/usage/
+- Carbon Status Indicators: https://carbondesignsystem.com/patterns/status-indicator-pattern/
+- Radix Primitives: https://www.radix-ui.com/primitives
+- shadcn/ui introduction: https://ui.shadcn.com/docs
+- Material UI overview: https://mui.com/material-ui/getting-started/
+- Carbon React tutorial overview: https://carbondesignsystem.com/developing/react-tutorial/overview/
+- PatternFly Wizard guidelines: https://www.patternfly.org/components/wizard/design-guidelines/
+- Shopify Polaris Resource index layout: https://polaris-react.shopify.com/patterns/resource-index-layout
+- StreamElements overlay getting started: https://docs.streamelements.com/overlays/getting-started
+- StreamElements overlay editor shortcuts: https://docs.streamelements.com/overlays/overlay-editor-shortcuts
+- StreamElements widget structure: https://docs.streamelements.com/overlays/widget-structure
+- Streamlabs alert setup: https://streamlabs.com/content-hub/post/setting-up-your-streamlabs-alerts
+- OBS browser source: https://obsproject.com/kb/browser-source
+
+## Open Questions
+
+- None recorded at this checkpoint.

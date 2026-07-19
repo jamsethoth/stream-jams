@@ -32,6 +32,13 @@ export interface StreamerBotClientStatus {
   readonly instance: Record<string, unknown> | null;
   readonly subscriptionSourceKeys: readonly string[];
   readonly pendingRequestCount: number;
+  readonly referenceId: string | null;
+}
+
+export interface StreamerBotClientDiagnostic {
+  readonly level: "warn" | "error";
+  readonly message: string;
+  readonly referenceId: string;
 }
 
 export interface StreamerBotSocket {
@@ -55,6 +62,8 @@ export interface StreamerBotClientOptions {
   readonly requestIdGenerator?: (() => string) | undefined;
   readonly requestTimeoutMs?: number | undefined;
   readonly backoffMs?: readonly number[] | undefined;
+  readonly generateReferenceId?: (() => string) | undefined;
+  readonly onDiagnostic?: ((entry: StreamerBotClientDiagnostic) => void | Promise<void>) | undefined;
 }
 
 interface PendingRequest {
@@ -109,6 +118,8 @@ export class StreamerBotClient {
   readonly #requestIdGenerator: () => string;
   readonly #requestTimeoutMs: number;
   readonly #backoffMs: readonly number[];
+  readonly #generateReferenceId: () => string;
+  readonly #onDiagnostic: NonNullable<StreamerBotClientOptions["onDiagnostic"]>;
   readonly #pending = new Map<string, PendingRequest>();
   readonly #subscriptions = new Map<string, Set<string>>();
   #connection: StreamerBotConnectionInput = {};
@@ -127,6 +138,8 @@ export class StreamerBotClient {
     this.#requestIdGenerator = options.requestIdGenerator ?? (() => randomUUID());
     this.#requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
     this.#backoffMs = options.backoffMs && options.backoffMs.length > 0 ? options.backoffMs : [1_000, 2_000, 5_000, 10_000];
+    this.#generateReferenceId = options.generateReferenceId ?? (() => `ref_${randomUUID()}`);
+    this.#onDiagnostic = options.onDiagnostic ?? (() => {});
   }
 
   connect(input: StreamerBotConnectionInput = {}): void {
@@ -357,11 +370,11 @@ export class StreamerBotClient {
     }
 
     const delayMs = this.#nextBackoffDelay();
-    this.#updateStatus({
-      state: "reconnecting",
-      message: "Streamer.bot connection closed",
-      lastErrorAt: this.#now().toISOString()
-    });
+    if (this.#status.state === "error" && this.#status.message === "Streamer.bot WebSocket error") {
+      this.#updateStatus({ state: "reconnecting" });
+    } else {
+      this.#recordIssue("reconnecting", "Streamer.bot connection closed", "error");
+    }
     this.#schedule(() => {
       if (!this.#stopped && this.#socket === null) {
         this.#openSocket(true);
@@ -386,7 +399,9 @@ export class StreamerBotClient {
       connectedAt: now,
       lastMessageAt: now,
       instance,
-      message: null
+      message: null,
+      lastErrorAt: null,
+      referenceId: null
     });
 
     if (restoreSubscriptions && this.#subscriptions.size > 0) {
@@ -518,18 +533,29 @@ export class StreamerBotClient {
   }
 
   #setDegraded(message: string): void {
-    this.#updateStatus({
-      state: "degraded",
-      message,
-      lastErrorAt: this.#now().toISOString()
-    });
+    this.#recordIssue("degraded", message, "warn");
   }
 
   #setError(message: string): void {
+    this.#recordIssue("error", message, "error");
+  }
+
+  #recordIssue(
+    state: Extract<StreamerBotConnectionState, "reconnecting" | "degraded" | "error">,
+    message: string,
+    level: StreamerBotClientDiagnostic["level"]
+  ): void {
+    const referenceId = this.#generateReferenceId();
     this.#updateStatus({
-      state: "error",
+      state,
       message,
-      lastErrorAt: this.#now().toISOString()
+      lastErrorAt: this.#now().toISOString(),
+      referenceId
+    });
+    void Promise.resolve(this.#onDiagnostic({ level, message, referenceId })).catch(() => {
+      if (this.#status.referenceId === referenceId) {
+        this.#updateStatus({ message: "Streamer.bot diagnostics logging failed" });
+      }
     });
   }
 
@@ -570,7 +596,8 @@ function idleStatus(): StreamerBotClientStatus {
     lastErrorAt: null,
     instance: null,
     subscriptionSourceKeys: [],
-    pendingRequestCount: 0
+    pendingRequestCount: 0,
+    referenceId: null
   };
 }
 

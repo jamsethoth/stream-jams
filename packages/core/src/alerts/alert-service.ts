@@ -60,6 +60,7 @@ export interface AlertService {
   updateRule(ruleId: string, input: UpdateAlertRuleInput): Promise<AlertRule>;
   setRuleEnabled(ruleId: string, enabled: boolean): Promise<AlertRule>;
   deleteRule(ruleId: string): Promise<void>;
+  createVariant(ruleId: string, input: CreateAlertVariantInput): Promise<AlertRule>;
   saveVariant(ruleId: string, variant: AlertVariant): Promise<AlertRule>;
   deleteVariant(ruleId: string, variantId: string): Promise<AlertRule>;
   getActivationState(): Promise<AlertActivationState>;
@@ -217,6 +218,22 @@ export class DefaultAlertService implements AlertService {
   async deleteRule(ruleId: string): Promise<void> {
     await this.#requireRule(ruleId);
     await this.#repository.deleteRule(ruleId);
+  }
+
+  async createVariant(ruleId: string, input: CreateAlertVariantInput): Promise<AlertRule> {
+    const rule = await this.#requireRule(ruleId);
+    const variant = alertVariantSchema.parse({
+      id: this.#generateId("variant"),
+      ...createAlertVariantInputSchema.parse(input)
+    });
+    const variants = [...rule.variants, variant];
+    assertUniqueVariantIds(variants);
+    await this.#requireVariantIdsAvailable(ruleId, variants);
+
+    return this.#repository.saveRule({
+      ...rule,
+      variants
+    });
   }
 
   async saveVariant(ruleId: string, variant: AlertVariant): Promise<AlertRule> {

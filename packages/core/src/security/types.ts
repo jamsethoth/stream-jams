@@ -1,4 +1,4 @@
-import type { OverlayPurpose, OverlayScope } from "../shared/schemas.js";
+import type { OverlayPurpose, OverlayScope, OverlayTargetProfileId } from "../shared/schemas.js";
 
 export interface SecretRef {
   readonly namespace: "twitch" | "streamerbot" | "tts" | "management" | "overlay";
@@ -12,6 +12,7 @@ export interface OverlayAccessKey {
   readonly moduleId: string | null;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
   readonly keyHash: string;
   readonly routeKeySecretRef: SecretRef | null;
   readonly createdAt: string;
@@ -31,4 +32,5 @@ export interface CreateOverlayKeyInput {
   readonly moduleId: string | null;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: OverlayTargetProfileId | null;
 }

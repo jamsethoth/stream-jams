@@ -1,20 +1,65 @@
+import {
+  alertInventoryRowSchema,
+  alertEditorDocumentSchema,
+  alertEditorTestResultSchema,
+  alertSetActivationImpactSchema,
+  alertSetActivationResultSchema,
+  alertSetDetailSchema,
+  alertSetOverviewSchema,
+  assetLibraryItemSchema,
+  assetChangeImpactSchema,
+  clearOldLogsResultSchema,
+  configurationBackupSummarySchema,
+  configurationBackupArchiveSchema,
+  configurationRestorePreflightSchema,
+  configurationRestoreResultSchema,
+  diagnosticsWorkspaceViewSchema,
+  homeSetupSummarySchema,
+  openDataFolderResultSchema,
+  providerActivationImpactSchema,
+  providerActivationResultSchema,
+  providerRegistrationAttemptSchema,
+  providerValidationResultSchema,
+  providerVoiceTestResultSchema,
+  registeredProviderDetailSchema,
+  registeredProviderViewSchema,
+  ttsProviderSafetySettingsSchema,
+  type AlertEditorDocument,
+  type AlertCreateInput,
+  type AlertEditorTestRequest,
+  type AlertEditorTestResult,
+  type AlertSetActivationImpact,
+  type AlertSetActivationResult,
+  type AlertSetDetail,
+  type AlertInventoryRow,
+  type AlertVariationCreateInput,
+  type AlertSetMutationInput,
+  type AlertSetOverview,
+  type AssetLibraryItem,
+  type AssetChangeImpact,
+  type AssetMediaType,
+  type AssetMetadataUpdateInput,
+  type ClearOldLogsResult,
+  type ConfigurationBackupSummary,
+  type ConfigurationBackupArchive,
+  type ConfigurationRestorePreflight,
+  type ConfigurationRestoreRequest,
+  type ConfigurationRestoreResult,
+  type DiagnosticsWorkspaceView,
+  type HomeSetupSummary,
+  type OpenDataFolderResult,
+  type ProviderActivationImpact,
+  type ProviderActivationResult,
+  type ProviderCapability,
+  type ProviderRegistrationAttempt,
+  type ProviderSetupInput,
+  type ProviderValidationResult,
+  type ProviderVoiceTestResult,
+  type RegisteredProviderDetail,
+  type RegisteredProviderView,
+  type TtsProviderSafetySettings
+} from "@stream-jams/core";
 import { createManagementHttpClient, type HttpManagementClientOptions } from "./management-http-client.js";
-
-export interface DashboardSummary {
-  readonly twitch: {
-    readonly connected: boolean;
-    readonly label: string;
-  };
-  readonly overlay: {
-    readonly connectedClientCount: number;
-    readonly label: string;
-  };
-  readonly queue: {
-    readonly label: string;
-    readonly queuedCount: number;
-  };
-  readonly recentErrors: readonly string[];
-}
 
 export interface ServerConfigView {
   readonly host: string;
@@ -32,35 +77,13 @@ export interface ModerationSettingsView {
   readonly ttsText: ModerationTargetSettingsView;
 }
 
-export interface ManagementModuleField {
-  readonly id: string;
-  readonly label: string;
-  readonly type: "text" | "number" | "boolean";
-  readonly required: boolean;
-}
-
-export interface ManagementModuleStep {
-  readonly id: string;
-  readonly title: string;
-  readonly fields: readonly ManagementModuleField[];
-}
-
-export interface ManagementModuleView {
-  readonly id: string;
-  readonly displayName: string;
-  readonly enabled: boolean;
-  readonly config: unknown;
-  readonly wizard: {
-    readonly steps: readonly ManagementModuleStep[];
-  };
-}
-
 export interface OverlayOutputUrl {
   readonly id: string;
   readonly label: string;
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
+  readonly targetProfileId?: "landscape" | "vertical" | null | undefined;
   readonly overlayId: string;
   readonly enabled: boolean;
   readonly keyId: string | null;
@@ -68,115 +91,18 @@ export interface OverlayOutputUrl {
   readonly copyableUrlStatus: "available" | "create-required" | "regenerate-required";
 }
 
-export interface OverlayClientView {
-  readonly id: string;
-  readonly overlayId: string;
-  readonly purpose: "live" | "test";
-  readonly scope: "module" | "unified";
-  readonly moduleId: string | null;
-  readonly connectedAt: string;
-  readonly lastSeenAt: string;
-  readonly userAgent: string | null;
-}
-
 export interface OverlayOutputKeyRequestView {
   readonly overlayId?: string | undefined;
   readonly purpose: "live" | "test";
   readonly scope: "module" | "unified";
   readonly moduleId: string | null;
+  readonly targetProfileId?: "landscape" | "vertical" | null | undefined;
 }
 
 export interface OverlayOutputKeyResultView {
   readonly output: OverlayOutputUrl;
   readonly keyId: string;
   readonly url: string;
-}
-
-export interface PlaybackItemView {
-  readonly id: string;
-  readonly label: string;
-  readonly status: "queued" | "playing" | "completed" | "skipped";
-}
-
-export interface PlaybackView {
-  readonly current: PlaybackItemView | null;
-  readonly queuedCount: number;
-  readonly paused: boolean;
-  readonly muted: boolean;
-  readonly doNotDisturb: boolean;
-  readonly recent: readonly PlaybackItemView[];
-}
-
-export type TtsPlaybackModeView = "audio-file" | "remote-trigger" | "browser-speech";
-
-export interface TtsProviderCapabilitiesView {
-  readonly supportsVoices: boolean;
-  readonly supportsRate: boolean;
-  readonly supportsPitch: boolean;
-  readonly supportsVolume: boolean;
-  readonly playbackMode: TtsPlaybackModeView;
-}
-
-export interface TtsVoiceView {
-  readonly id: string;
-  readonly label: string;
-}
-
-export interface TtsProviderView {
-  readonly id: string;
-  readonly label: string;
-  readonly capabilities: TtsProviderCapabilitiesView;
-  readonly voices: readonly TtsVoiceView[];
-}
-
-export interface TtsTestRequestView {
-  readonly providerId: string;
-  readonly text: string;
-  readonly voiceId?: string | null | undefined;
-  readonly rate?: number | null | undefined;
-  readonly pitch?: number | null | undefined;
-  readonly volume?: number | null | undefined;
-  readonly metadata?: Record<string, unknown> | undefined;
-}
-
-export interface TtsPlaybackInstructionView {
-  readonly mode: TtsPlaybackModeView;
-  readonly text: string;
-  readonly audioAssetId: string | null;
-  readonly providerPayload: Record<string, unknown> | null;
-}
-
-export interface TtsTestResultView {
-  readonly instruction: TtsPlaybackInstructionView;
-  readonly moderationActions: readonly { readonly type: string }[];
-}
-
-export interface TwitchConnectedAccountView {
-  readonly accountId: string;
-  readonly login: string;
-  readonly displayName: string;
-  readonly scopes: readonly string[];
-  readonly connectedAt: string;
-  readonly updatedAt: string;
-}
-
-export type TwitchConnectionStatusView =
-  | { readonly connected: false; readonly account: null }
-  | { readonly connected: true; readonly account: TwitchConnectedAccountView };
-
-export interface TwitchEventSubStatusView {
-  readonly state: "idle" | "connecting" | "connected" | "reconnecting" | "degraded" | "error";
-  readonly connectionState: "idle" | "connecting" | "connected" | "reconnecting" | "error";
-  readonly sessionId: string | null;
-  readonly connectedAt: string | null;
-  readonly lastMessageAt: string | null;
-  readonly subscriptionTypes: readonly string[];
-  readonly acceptedCount: number;
-  readonly duplicateCount: number;
-  readonly rejectedCount: number;
-  readonly lastEventAt: string | null;
-  readonly lastErrorAt: string | null;
-  readonly message: string | null;
 }
 
 export interface DiagnosticsEventLogView {
@@ -266,94 +192,120 @@ export interface DiagnosticsDebugExportRequestView extends DiagnosticsRequestVie
   readonly sinceHours?: number | undefined;
 }
 
-export interface TwitchAuthStartRequestView {
-  readonly redirectUri: string;
+export interface TwitchConnectedAccountView {
+  readonly accountId: string;
+  readonly login: string;
+  readonly displayName: string;
+  readonly scopes: readonly string[];
+  readonly connectedAt: string;
+  readonly updatedAt: string;
 }
 
+export type TwitchConnectionStatusView =
+  | { readonly connected: false; readonly authorizationState: "disconnected"; readonly missingScopes: readonly string[]; readonly account: null }
+  | { readonly connected: true; readonly authorizationState: "ready" | "update-required"; readonly missingScopes: readonly string[]; readonly account: TwitchConnectedAccountView };
+
 export interface TwitchAuthStartResultView {
-  readonly authorizationUrl: string;
-  readonly state: string;
+  readonly authorizationId: string;
+  readonly verificationUri: string;
+  readonly userCode: string;
+  readonly expiresAt: string;
+  readonly intervalSeconds: number;
   readonly scopes: readonly string[];
 }
 
+export type TwitchAuthPollResultView =
+  | { readonly status: "pending" }
+  | { readonly status: "connected"; readonly connection: Extract<TwitchConnectionStatusView, { readonly connected: true }> }
+  | { readonly status: "failed"; readonly code: "TWITCH_OAUTH_DENIED" | "TWITCH_OAUTH_EXPIRED"; readonly message: string };
+
 export interface ManagementApi {
-  getDashboard(): Promise<DashboardSummary>;
+  getHomeSetupSummary(): Promise<HomeSetupSummary>;
+  getTwitchStatus(): Promise<TwitchConnectionStatusView>;
+  startTwitchAuth(): Promise<TwitchAuthStartResultView>;
+  pollTwitchAuth(input: { readonly authorizationId: string }): Promise<TwitchAuthPollResultView>;
+  listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
+  validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult>;
+  registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
+  getProvider(providerId: string): Promise<RegisteredProviderDetail>;
+  activateProvider(providerId: string, confirmWarnings?: boolean): Promise<ProviderActivationResult>;
+  deactivateProvider(providerId: string): Promise<RegisteredProviderView>;
+  getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
+  getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings>;
+  updateTtsSafety(providerId: string, input: TtsProviderSafetySettings): Promise<TtsProviderSafetySettings>;
+  testProviderVoice(providerId: string): Promise<ProviderVoiceTestResult>;
+  listAlertSets(): Promise<readonly AlertSetOverview[]>;
+  getAlertSet(setId: string): Promise<AlertSetDetail>;
+  createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow>;
+  createAlertVariation(alertId: string, input: AlertVariationCreateInput): Promise<AlertInventoryRow>;
+  duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow>;
+  resetManagedAlert(alertId: string, confirmLiveImpact?: boolean): Promise<AlertInventoryRow>;
+  deleteManagedAlert(alertId: string, confirmLiveImpact?: boolean): Promise<void>;
+  renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
+  getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
+  activateAlertSet(setId: string, confirmWarnings?: boolean): Promise<AlertSetActivationResult>;
+  markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview>;
+  setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
+  deleteAlertSet(setId: string): Promise<void>;
+  getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
+  saveAlertEditorDocument(
+    alertId: string,
+    document: AlertEditorDocument,
+    confirmLiveImpact?: boolean
+  ): Promise<AlertEditorDocument>;
+  sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
+  listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
+  updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
+  getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
+  deleteAsset(assetId: string): Promise<void>;
+  getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
+  getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
+  exportConfigurationBackup(): Promise<ConfigurationBackupArchive>;
+  preflightConfigurationRestore(archive: ConfigurationBackupArchive): Promise<ConfigurationRestorePreflight>;
+  restoreConfiguration(input: ConfigurationRestoreRequest): Promise<ConfigurationRestoreResult>;
+  openDataFolder(): Promise<OpenDataFolderResult>;
+  clearOldLogs(): Promise<ClearOldLogsResult>;
   getServerConfig(): Promise<ServerConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
   getModerationSettings(): Promise<ModerationSettingsView>;
   updateModerationSettings(input: ModerationSettingsView): Promise<ModerationSettingsView>;
-  listModules(): Promise<readonly ManagementModuleView[]>;
-  setModuleEnabled(moduleId: string, enabled: boolean): Promise<unknown>;
-  saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }): Promise<unknown>;
-  listOverlayOutputs(): Promise<readonly OverlayOutputUrl[]>;
-  listOverlayClients(): Promise<readonly OverlayClientView[]>;
   createOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
   regenerateOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
-  revokeOverlayOutputKey(keyId: string): Promise<void>;
-  getPlayback(): Promise<PlaybackView>;
-  pausePlayback(): Promise<PlaybackView>;
-  resumePlayback(): Promise<PlaybackView>;
-  skipPlayback(): Promise<PlaybackView>;
-  replayRecent(itemId: string): Promise<PlaybackView>;
-  mutePlayback(): Promise<PlaybackView>;
-  unmutePlayback(): Promise<PlaybackView>;
-  setDoNotDisturb(enabled: boolean): Promise<PlaybackView>;
-  listTtsProviders(): Promise<readonly TtsProviderView[]>;
-  testTts(input: TtsTestRequestView): Promise<TtsTestResultView>;
-  getTwitchStatus(): Promise<TwitchConnectionStatusView>;
-  getTwitchEventSubStatus(): Promise<TwitchEventSubStatusView>;
-  getDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsView>;
   exportDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsExportView>;
   exportDebugDiagnostics(input?: DiagnosticsDebugExportRequestView): Promise<DiagnosticsDebugExportView>;
-  startTwitchAuth(input: TwitchAuthStartRequestView): Promise<TwitchAuthStartResultView>;
-  refreshTwitchAuth(): Promise<TwitchConnectionStatusView>;
-  disconnectTwitch(): Promise<TwitchConnectionStatusView>;
 }
 
 export type HttpManagementApiOptions = HttpManagementClientOptions;
 
-interface PlaybackQueueSnapshotResponse {
-  readonly current: PlaybackQueueItemResponse | null;
-  readonly queued: readonly PlaybackQueueItemResponse[];
-  readonly recent: readonly PlaybackQueueItemResponse[];
-  readonly paused: boolean;
-  readonly muted: boolean;
-  readonly doNotDisturb: boolean;
-}
-
-interface PlaybackQueueItemResponse {
-  readonly id: string;
-  readonly status: "queued" | "playing" | "completed" | "skipped";
-  readonly alerts: readonly {
-    readonly ruleId: string;
-    readonly variantId: string;
-    readonly overlayInstruction: {
-      readonly text: { readonly text: string } | null;
-    };
-  }[];
-}
-
-interface OverlayModuleDefinitionResponse {
-  readonly id: string;
-  readonly displayName: string;
-  readonly wizard: ManagementModuleView["wizard"];
-}
-
-interface OverlayModuleConfigResponse {
-  readonly moduleId: string;
-  readonly enabled: boolean;
-  readonly config: unknown;
-}
-
 export function createHttpManagementApi(options: HttpManagementApiOptions = {}): ManagementApi {
   const client = createManagementHttpClient(options);
 
-  async function getPlayback(): Promise<PlaybackView> {
-    return mapPlaybackSnapshot(await client.getJson<PlaybackQueueSnapshotResponse>("/playback", "Unable to load playback."));
+  async function getContract<T>(path: string, contract: RuntimeContract<T>, errorMessage: string): Promise<T> {
+    return contract.parse(await client.getJson<unknown>(path, errorMessage));
   }
 
-  async function postPlayback(path: string, body?: unknown): Promise<PlaybackView> {
-    return mapPlaybackSnapshot(await client.postJson<PlaybackQueueSnapshotResponse>(path, body, "Unable to update playback."));
+  async function postContract<T>(
+    path: string,
+    body: unknown | undefined,
+    contract: RuntimeContract<T>,
+    errorMessage: string
+  ): Promise<T> {
+    return contract.parse(await client.postJson<unknown>(path, body, errorMessage));
+  }
+
+  async function getContractList<T>(
+    path: string,
+    contract: RuntimeContract<T>,
+    errorMessage: string
+  ): Promise<readonly T[]> {
+    const response = await client.getJson<unknown>(path, errorMessage);
+    if (!Array.isArray(response)) {
+      throw new TypeError("Expected a management response array");
+    }
+
+    return response.map((item) => contract.parse(item));
   }
 
   async function postOverlayOutputKey(
@@ -367,28 +319,364 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
     return input.limit === undefined ? path : `${path}?limit=${encodeURIComponent(String(input.limit))}`;
   }
 
-  async function jsonList<T>(path: string): Promise<readonly T[]> {
-    return client.getJson<readonly T[]>(path, "Unable to load management data.");
-  }
-
   return {
-    async getDashboard() {
-      const [playback, overlayClients] = await Promise.all([getPlayback(), jsonList<OverlayClientView>("/management/overlay-clients")]);
-      return {
-        twitch: {
-          connected: false,
-          label: "Twitch disconnected"
-        },
-        overlay: {
-          connectedClientCount: overlayClients.length,
-          label: `${overlayClients.length} overlay clients`
-        },
-        queue: {
-          label: playback.paused ? "Queue paused" : playback.current === null ? "Queue idle" : "Queue playing",
-          queuedCount: playback.queuedCount
-        },
-        recentErrors: []
-      };
+    getHomeSetupSummary() {
+      return getContract("/management/home", homeSetupSummarySchema, "Unable to load Home setup summary.");
+    },
+
+    getTwitchStatus() {
+      return getContract(
+        "/twitch/auth/status",
+        twitchConnectionStatusContract,
+        "Unable to load Twitch connection status."
+      );
+    },
+
+    startTwitchAuth() {
+      return postContract(
+        "/twitch/auth/start",
+        undefined,
+        twitchAuthStartResultContract,
+        "Unable to start Twitch authorization."
+      );
+    },
+
+    pollTwitchAuth(input) {
+      return postContract(
+        "/twitch/auth/poll",
+        { authorizationId: input.authorizationId },
+        twitchAuthPollResultContract,
+        "Unable to continue Twitch authorization."
+      );
+    },
+
+    listRegisteredProviders(capability) {
+      return getContractList(
+        `/management/providers?capability=${encodeURIComponent(capability)}`,
+        registeredProviderViewSchema,
+        "Unable to load registered providers."
+      );
+    },
+
+    validateProvider(input) {
+      return postContract(
+        "/management/providers/validate",
+        input,
+        providerValidationResultSchema,
+        "Unable to validate provider setup."
+      );
+    },
+
+    registerProvider(input) {
+      return postContract(
+        "/management/providers",
+        input,
+        providerRegistrationAttemptSchema,
+        "Unable to register provider."
+      );
+    },
+
+    getProvider(providerId) {
+      return getContract(
+        `/management/providers/${encodeURIComponent(providerId)}`,
+        registeredProviderDetailSchema,
+        "Unable to load provider."
+      );
+    },
+
+    activateProvider(providerId, confirmWarnings = false) {
+      return postContract(
+        `/management/providers/${encodeURIComponent(providerId)}/activate`,
+        { confirmWarnings },
+        providerActivationResultSchema,
+        "Unable to activate provider."
+      );
+    },
+
+    deactivateProvider(providerId) {
+      return postContract(
+        `/management/providers/${encodeURIComponent(providerId)}/deactivate`,
+        undefined,
+        registeredProviderViewSchema,
+        "Unable to deactivate provider."
+      );
+    },
+
+    getProviderActivationImpact(providerId) {
+      return getContract(
+        `/management/providers/${encodeURIComponent(providerId)}/activation-impact`,
+        providerActivationImpactSchema,
+        "Unable to load provider activation impact."
+      );
+    },
+
+    getTtsProviderSafetySettings(providerId) {
+      return getContract(
+        `/management/providers/${encodeURIComponent(providerId)}/tts-safety`,
+        ttsProviderSafetySettingsSchema,
+        "Unable to load TTS provider safety settings."
+      );
+    },
+
+    async updateTtsSafety(providerId, input) {
+      return ttsProviderSafetySettingsSchema.parse(
+        await client.putJson<unknown>(
+          `/management/providers/${encodeURIComponent(providerId)}/tts-safety`,
+          input,
+          "Unable to update TTS provider safety settings."
+        )
+      );
+    },
+
+    testProviderVoice(providerId) {
+      return postContract(
+        `/management/providers/${encodeURIComponent(providerId)}/test-voice`,
+        undefined,
+        providerVoiceTestResultSchema,
+        "Unable to test provider voice."
+      );
+    },
+
+    listAlertSets() {
+      return getContractList("/management/alert-sets", alertSetOverviewSchema, "Unable to load alert sets.");
+    },
+
+    getAlertSet(setId) {
+      return getContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}`,
+        alertSetDetailSchema,
+        "Unable to load alert set."
+      );
+    },
+
+    async createAlertSet(input) {
+      return alertSetOverviewSchema.parse(
+        await client.postJson<unknown>("/management/alert-sets", input, "Unable to create alert set.")
+      );
+    },
+
+    async createAlert(setId, input) {
+      return alertInventoryRowSchema.parse(
+        await client.postJson<unknown>(
+          `/management/alert-sets/${encodeURIComponent(setId)}/alerts`,
+          input,
+          "Unable to create alert."
+        )
+      );
+    },
+
+    createAlertVariation(alertId, input) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/variations`,
+        input,
+        alertInventoryRowSchema,
+        "Unable to create alert variation."
+      );
+    },
+
+    duplicateManagedAlert(alertId) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/duplicate`,
+        undefined,
+        alertInventoryRowSchema,
+        "Unable to duplicate alert."
+      );
+    },
+
+    resetManagedAlert(alertId, confirmLiveImpact = false) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/reset`,
+        { confirmLiveImpact },
+        alertInventoryRowSchema,
+        "Unable to reset alert."
+      );
+    },
+
+    async deleteManagedAlert(alertId, confirmLiveImpact = false) {
+      await client.deleteRequest(
+        `/management/alerts/${encodeURIComponent(alertId)}`,
+        "Unable to delete alert.",
+        { confirmLiveImpact }
+      );
+    },
+
+    async renameAlertSet(setId, input) {
+      return alertSetOverviewSchema.parse(
+        await client.patchJson<unknown>(
+          `/management/alert-sets/${encodeURIComponent(setId)}`,
+          input,
+          "Unable to rename alert set."
+        )
+      );
+    },
+
+    duplicateAlertSet(setId, input) {
+      return postContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/duplicate`,
+        input,
+        alertSetOverviewSchema,
+        "Unable to duplicate alert set."
+      );
+    },
+
+    getAlertSetActivationImpact(setId) {
+      return getContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/activation-impact`,
+        alertSetActivationImpactSchema,
+        "Unable to load alert set activation impact."
+      );
+    },
+
+    activateAlertSet(setId, confirmWarnings = false) {
+      return postContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/activate`,
+        { confirmWarnings },
+        alertSetActivationResultSchema,
+        "Unable to activate alert set."
+      );
+    },
+
+    markStarterAlertSetReviewComplete(setId) {
+      return postContract(
+        `/management/alert-sets/${encodeURIComponent(setId)}/starter-review`,
+        undefined,
+        alertSetOverviewSchema,
+        "Unable to complete starter alert review."
+      );
+    },
+
+    async setManagedAlertEnabled(alertId, enabled) {
+      return alertSetDetailSchema.parse(
+        await client.patchJson<unknown>(
+          `/management/alerts/${encodeURIComponent(alertId)}/enabled`,
+          { enabled },
+          "Unable to update alert."
+        )
+      );
+    },
+
+    async deleteAlertSet(setId) {
+      await client.deleteRequest(`/management/alert-sets/${encodeURIComponent(setId)}`, "Unable to delete alert set.");
+    },
+
+    getAlertEditorDocument(alertId) {
+      return getContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/editor`,
+        alertEditorDocumentSchema,
+        "Unable to load alert editor document."
+      );
+    },
+
+    async saveAlertEditorDocument(alertId, document, confirmLiveImpact = false) {
+      return alertEditorDocumentSchema.parse(
+        await client.putJson<unknown>(
+          `/management/alerts/${encodeURIComponent(alertId)}/editor`,
+          { document, confirmLiveImpact },
+          "Unable to save alert editor changes."
+        )
+      );
+    },
+
+    sendAlertEditorTest(alertId, request) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/editor/test`,
+        request,
+        alertEditorTestResultSchema,
+        "Unable to send the alert test."
+      );
+    },
+
+    listAssetLibraryItems() {
+      return getContractList(
+        "/management/assets/library",
+        assetLibraryItemSchema,
+        "Unable to load asset library."
+      );
+    },
+
+    async updateAssetMetadata(assetId, input) {
+      return assetLibraryItemSchema.parse(
+        await client.patchJson<unknown>(
+          `/management/assets/${encodeURIComponent(assetId)}`,
+          input,
+          "Unable to update asset metadata."
+        )
+      );
+    },
+
+    getAssetChangeImpact(assetId, candidateMediaType) {
+      const query = candidateMediaType === undefined
+        ? ""
+        : `?candidateMediaType=${encodeURIComponent(candidateMediaType)}`;
+      return getContract(
+        `/management/assets/${encodeURIComponent(assetId)}/change-impact${query}`,
+        assetChangeImpactSchema,
+        "Unable to load asset change impact."
+      );
+    },
+
+    async deleteAsset(assetId) {
+      await client.deleteRequest(`/management/assets/${encodeURIComponent(assetId)}`, "Unable to delete asset.");
+    },
+
+    getDiagnosticsWorkspace() {
+      return getContract(
+        "/management/diagnostics/workspace",
+        diagnosticsWorkspaceViewSchema,
+        "Unable to load diagnostics workspace."
+      );
+    },
+
+    getConfigurationBackupSummary() {
+      return getContract(
+        "/management/settings/backup-summary",
+        configurationBackupSummarySchema,
+        "Unable to load backup summary."
+      );
+    },
+
+    exportConfigurationBackup() {
+      return getContract(
+        "/management/settings/backup",
+        configurationBackupArchiveSchema,
+        "Unable to export configuration backup."
+      );
+    },
+
+    preflightConfigurationRestore(archive) {
+      return postContract(
+        "/management/settings/backup/preflight",
+        archive,
+        configurationRestorePreflightSchema,
+        "Unable to validate configuration backup."
+      );
+    },
+
+    restoreConfiguration(input) {
+      return postContract(
+        "/management/settings/backup/restore",
+        input,
+        configurationRestoreResultSchema,
+        "Unable to restore configuration backup."
+      );
+    },
+
+    openDataFolder() {
+      return postContract(
+        "/management/settings/open-data-folder",
+        undefined,
+        openDataFolderResultSchema,
+        "Unable to open the local data folder."
+      );
+    },
+
+    clearOldLogs() {
+      return postContract(
+        "/management/settings/clear-old-logs",
+        undefined,
+        clearOldLogsResultSchema,
+        "Unable to clear old logs."
+      );
     },
 
     async getServerConfig() {
@@ -407,69 +695,12 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       return client.patchJson<ModerationSettingsView>("/moderation/settings", input, "Unable to update moderation settings.");
     },
 
-    async listModules() {
-      const modules = await client.getJson<readonly OverlayModuleDefinitionResponse[]>(
-        "/overlay-modules",
-        "Unable to load overlay modules."
-      );
-      return Promise.all(
-        modules.map(async (moduleDefinition): Promise<ManagementModuleView> => {
-          const config = await client.getJson<OverlayModuleConfigResponse>(
-            `/overlay-modules/${encodeURIComponent(moduleDefinition.id)}/config`,
-            "Unable to load overlay module config."
-          );
-          return {
-            id: moduleDefinition.id,
-            displayName: moduleDefinition.displayName,
-            enabled: config.enabled,
-            config: config.config,
-            wizard: moduleDefinition.wizard
-          };
-        })
-      );
-    },
-
-    async setModuleEnabled(moduleId: string, enabled: boolean) {
-      return client.patchJson<unknown>(
-        `/overlay-modules/${encodeURIComponent(moduleId)}/enabled`,
-        { enabled },
-        "Unable to update overlay module."
-      );
-    },
-
-    async saveModuleConfig(moduleId: string, input: { readonly enabled: boolean; readonly config: unknown }) {
-      return client.putJson<unknown>(
-        `/overlay-modules/${encodeURIComponent(moduleId)}/config`,
-        input,
-        "Unable to save overlay module config."
-      );
-    },
-
-    listOverlayOutputs() {
-      return jsonList<OverlayOutputUrl>("/management/overlay-outputs");
-    },
-
-    listOverlayClients() {
-      return jsonList<OverlayClientView>("/management/overlay-clients");
-    },
-
     async createOverlayOutputKey(input) {
       return postOverlayOutputKey("/management/overlay-outputs/keys", input);
     },
 
     async regenerateOverlayOutputKey(input) {
       return postOverlayOutputKey("/management/overlay-outputs/keys/regenerate", input);
-    },
-
-    async revokeOverlayOutputKey(keyId) {
-      await client.deleteRequest(
-        `/management/overlay-outputs/keys/${encodeURIComponent(keyId)}`,
-        "Unable to revoke overlay output key."
-      );
-    },
-
-    async getDiagnostics(input: DiagnosticsRequestView = {}) {
-      return client.getJson<DiagnosticsView>(withLimit("/diagnostics", input), "Unable to load diagnostics.");
     },
 
     async exportDiagnostics(input: DiagnosticsRequestView = {}) {
@@ -485,99 +716,161 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         input,
         "Unable to export diagnostics with recent runtime logs."
       );
-    },
-
-    async getTwitchStatus() {
-      return client.getJson<TwitchConnectionStatusView>("/twitch/auth/status", "Unable to load Twitch status.");
-    },
-
-    async getTwitchEventSubStatus() {
-      return client.getJson<TwitchEventSubStatusView>(
-        "/twitch/eventsub/status",
-        "Unable to load Twitch EventSub status."
-      );
-    },
-
-    async startTwitchAuth(input: TwitchAuthStartRequestView) {
-      return client.postJson<TwitchAuthStartResultView>(
-        "/twitch/auth/start",
-        input,
-        "Unable to start Twitch authorization."
-      );
-    },
-
-    async refreshTwitchAuth() {
-      return client.postJson<TwitchConnectionStatusView>(
-        "/twitch/auth/refresh",
-        undefined,
-        "Unable to refresh Twitch connection."
-      );
-    },
-
-    async disconnectTwitch() {
-      return client.postJson<TwitchConnectionStatusView>(
-        "/twitch/auth/disconnect",
-        undefined,
-        "Unable to disconnect Twitch."
-      );
-    },
-
-    async listTtsProviders() {
-      return client.getJson<readonly TtsProviderView[]>("/tts/providers", "Unable to load TTS providers.");
-    },
-
-    async testTts(input: TtsTestRequestView) {
-      return client.postJson<TtsTestResultView>("/tts/test", input, "Unable to run TTS test.");
-    },
-
-    getPlayback,
-
-    pausePlayback() {
-      return postPlayback("/playback/pause");
-    },
-
-    resumePlayback() {
-      return postPlayback("/playback/resume");
-    },
-
-    skipPlayback() {
-      return postPlayback("/playback/skip");
-    },
-
-    replayRecent(itemId: string) {
-      return postPlayback("/playback/replay", { itemId });
-    },
-
-    mutePlayback() {
-      return postPlayback("/playback/mute");
-    },
-
-    unmutePlayback() {
-      return postPlayback("/playback/unmute");
-    },
-
-    setDoNotDisturb(enabled: boolean) {
-      return postPlayback("/playback/do-not-disturb", { enabled });
     }
   };
 }
 
-function mapPlaybackSnapshot(snapshot: PlaybackQueueSnapshotResponse): PlaybackView {
-  return {
-    current: snapshot.current === null ? null : mapPlaybackItem(snapshot.current),
-    queuedCount: snapshot.queued.length,
-    paused: snapshot.paused,
-    muted: snapshot.muted,
-    doNotDisturb: snapshot.doNotDisturb,
-    recent: snapshot.recent.map(mapPlaybackItem)
-  };
+interface RuntimeContract<T> {
+  parse(input: unknown): T;
 }
 
-function mapPlaybackItem(item: PlaybackQueueItemResponse): PlaybackItemView {
-  const firstText = item.alerts[0]?.overlayInstruction.text?.text;
-  return {
-    id: item.id,
-    label: firstText ?? item.alerts[0]?.ruleId ?? item.id,
-    status: item.status
-  };
+const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView> = {
+  parse(input) {
+    if (!hasExactKeys(input, ["connected", "authorizationState", "missingScopes", "account"]) || typeof input.connected !== "boolean" || !isStringArray(input.missingScopes)) {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
+    if (!input.connected) {
+      if (input.account !== null || input.authorizationState !== "disconnected" || input.missingScopes.length !== 0) throw new TypeError("Invalid Twitch connection status response");
+      return { connected: false, authorizationState: "disconnected", missingScopes: [], account: null };
+    }
+    if (input.authorizationState !== "ready" && input.authorizationState !== "update-required") throw new TypeError("Invalid Twitch connection status response");
+    if ((input.authorizationState === "ready") !== (input.missingScopes.length === 0)) {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
+    if (!hasExactKeys(input.account, ["accountId", "login", "displayName", "scopes", "connectedAt", "updatedAt"])) {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
+    const account = input.account;
+    if (
+      !isNonEmptyString(account.accountId)
+      || !isNonEmptyString(account.login)
+      || !isNonEmptyString(account.displayName)
+      || !isStringArray(account.scopes)
+      || !isTimestamp(account.connectedAt)
+      || !isTimestamp(account.updatedAt)
+    ) {
+      throw new TypeError("Invalid Twitch connection status response");
+    }
+    return {
+      connected: true,
+      authorizationState: input.authorizationState,
+      missingScopes: [...input.missingScopes],
+      account: {
+        accountId: account.accountId,
+        login: account.login,
+        displayName: account.displayName,
+        scopes: [...account.scopes],
+        connectedAt: account.connectedAt,
+        updatedAt: account.updatedAt
+      }
+    };
+  }
+};
+
+const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> = {
+  parse(input) {
+    if (
+      !hasExactKeys(input, ["authorizationId", "verificationUri", "userCode", "expiresAt", "intervalSeconds", "scopes"])
+      || !isNonEmptyString(input.authorizationId)
+      || !isNonEmptyString(input.verificationUri)
+      || !isNonEmptyString(input.userCode)
+      || !isTimestamp(input.expiresAt)
+      || !isPositiveInteger(input.intervalSeconds)
+      || !isStringArray(input.scopes)
+    ) {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    let verificationUri: URL;
+    try {
+      verificationUri = new URL(input.verificationUri);
+    } catch {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    const deviceCodes = verificationUri.searchParams.getAll("device-code");
+    const publicFlags = verificationUri.searchParams.getAll("public");
+    const hasAllowedSearch = [...verificationUri.searchParams.keys()].every(
+      (key) => key === "device-code" || key === "public"
+    )
+      && deviceCodes.length <= 1
+      && (deviceCodes.length === 0 || deviceCodes[0] === input.userCode)
+      && publicFlags.length <= 1
+      && (publicFlags.length === 0 || publicFlags[0] === "true");
+    if (
+      verificationUri.protocol !== "https:"
+      || verificationUri.origin !== "https://www.twitch.tv"
+      || verificationUri.hostname !== "www.twitch.tv"
+      || verificationUri.port !== ""
+      || verificationUri.pathname !== "/activate"
+      || !hasAllowedSearch
+      || verificationUri.hash !== ""
+      || verificationUri.username !== ""
+      || verificationUri.password !== ""
+    ) {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    return {
+      authorizationId: input.authorizationId,
+      verificationUri: verificationUri.toString(),
+      userCode: input.userCode,
+      expiresAt: input.expiresAt,
+      intervalSeconds: input.intervalSeconds,
+      scopes: [...input.scopes]
+    };
+  }
+};
+
+const twitchAuthPollResultContract: RuntimeContract<TwitchAuthPollResultView> = {
+  parse(input) {
+    if (!isRecord(input) || !isNonEmptyString(input.status)) {
+      throw new TypeError("Invalid Twitch authorization response");
+    }
+    if (input.status === "pending") {
+      if (!hasExactKeys(input, ["status"])) throw new TypeError("Invalid Twitch authorization response");
+      return { status: "pending" };
+    }
+    if (input.status === "connected") {
+      if (!hasExactKeys(input, ["status", "connection"])) throw new TypeError("Invalid Twitch authorization response");
+      const connection = twitchConnectionStatusContract.parse(input.connection);
+      if (!connection.connected) throw new TypeError("Invalid Twitch authorization response");
+      return { status: "connected", connection };
+    }
+    if (
+      input.status === "failed"
+      && hasExactKeys(input, ["status", "code", "message"])
+      && (input.code === "TWITCH_OAUTH_DENIED" || input.code === "TWITCH_OAUTH_EXPIRED")
+      && isNonEmptyString(input.message)
+    ) {
+      return { status: "failed", code: input.code, message: input.message };
+    }
+    throw new TypeError("Invalid Twitch authorization response");
+  }
+};
+
+function isRecord(input: unknown): input is Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input);
+}
+
+function hasExactKeys(input: unknown, keys: readonly string[]): input is Record<string, unknown> {
+  return isRecord(input)
+    && Object.keys(input).length === keys.length
+    && keys.every((key) => Object.hasOwn(input, key));
+}
+
+function isNonEmptyString(input: unknown): input is string {
+  return typeof input === "string" && input.trim().length > 0;
+}
+
+function isStringArray(input: unknown): input is string[] {
+  return Array.isArray(input) && input.every((item) => typeof item === "string");
+}
+
+function isTimestamp(input: unknown): input is string {
+  return typeof input === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(input)
+    && !Number.isNaN(Date.parse(input))
+    && new Date(input).toISOString() === input;
+}
+
+function isPositiveInteger(input: unknown): input is number {
+  return typeof input === "number" && Number.isInteger(input) && input > 0;
 }

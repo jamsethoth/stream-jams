@@ -13,6 +13,8 @@ export interface AssetRecord {
 export interface AssetApi {
   listAssets(): Promise<readonly AssetRecord[]>;
   importAsset(file: File): Promise<AssetRecord>;
+  getAssetFile(assetId: string): Promise<Blob>;
+  replaceAsset(assetId: string, file: File, confirmImpact: boolean): Promise<AssetRecord>;
 }
 
 export interface HttpAssetApiOptions {
@@ -83,6 +85,35 @@ export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi 
       });
       if (!response.ok) {
         throw new Error(await readHttpError(response, "Unable to import asset."));
+      }
+
+      return (await response.json()) as AssetRecord;
+    },
+
+    async getAssetFile(assetId) {
+      const response = await fetcher(`/assets/${encodeURIComponent(assetId)}/file`, {
+        headers: await managementHeaders()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to load asset preview."));
+      }
+
+      return response.blob();
+    },
+
+    async replaceAsset(assetId, file, confirmImpact) {
+      const response = await fetcher(`/assets/${encodeURIComponent(assetId)}/replace`, {
+        method: "POST",
+        headers: await managementHeaders({
+          "content-type": "application/octet-stream",
+          "x-stream-jams-confirm-impact": String(confirmImpact),
+          "x-stream-jams-file-name": file.name,
+          "x-stream-jams-mime-type": file.type || "application/octet-stream"
+        }, true),
+        body: await file.arrayBuffer()
+      });
+      if (!response.ok) {
+        throw new Error(await readHttpError(response, "Unable to replace asset."));
       }
 
       return (await response.json()) as AssetRecord;

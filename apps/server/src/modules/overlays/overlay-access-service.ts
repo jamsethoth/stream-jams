@@ -30,6 +30,7 @@ export class InMemoryOverlayAccessKeyRepository implements OverlayAccessKeyRepos
   async create(input: OverlayAccessKeyCreateRecordInput): Promise<OverlayAccessKey> {
     const record: OverlayAccessKey = {
       ...input,
+      targetProfileId: input.targetProfileId ?? null,
       revokedAt: null
     };
     this.#records.set(record.id, record);
@@ -50,6 +51,7 @@ export class InMemoryOverlayAccessKeyRepository implements OverlayAccessKeyRepos
         record.overlayId === input.overlayId &&
         record.scope === input.scope &&
         record.moduleId === input.moduleId &&
+        (record.targetProfileId ?? null) === (input.targetProfileId ?? null) &&
         record.purpose === input.purpose
     );
   }
@@ -130,6 +132,13 @@ export class LocalOverlayAccessService implements OverlayAccessService {
         };
       }
 
+      if ((hashMatch.targetProfileId ?? null) !== (request.targetProfileId ?? null)) {
+        return {
+          authorized: false,
+          reason: "profile-mismatch" as const
+        };
+      }
+
       return {
         authorized: true,
         record: hashMatch
@@ -140,7 +149,8 @@ export class LocalOverlayAccessService implements OverlayAccessService {
       (candidate) =>
         candidate.scope === request.scope &&
         candidate.purpose === request.purpose &&
-        candidate.moduleId === request.moduleId
+        candidate.moduleId === request.moduleId &&
+        (candidate.targetProfileId ?? null) === (request.targetProfileId ?? null)
     );
 
     return {
@@ -181,6 +191,19 @@ function assertValidScopeInput(input: CreateOverlayKeyInput): void {
 
   if (input.scope === "unified" && input.moduleId !== null) {
     throw new Error("Unified overlay keys cannot include a module id");
+  }
+
+  if (input.scope === "unified" && input.targetProfileId !== null && input.targetProfileId !== undefined) {
+    throw new Error("Unified overlay keys cannot include a target profile");
+  }
+
+  if (
+    input.targetProfileId !== null &&
+    input.targetProfileId !== undefined &&
+    input.targetProfileId !== "landscape" &&
+    input.targetProfileId !== "vertical"
+  ) {
+    throw new Error("Overlay target profile must be landscape or vertical");
   }
 }
 

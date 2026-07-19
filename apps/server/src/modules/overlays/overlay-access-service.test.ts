@@ -116,6 +116,61 @@ describe("LocalOverlayAccessService", () => {
     ).resolves.toEqual({ authorized: false, reason: "key-mismatch" });
   });
 
+  it("scopes module keys independently by target profile while preserving legacy keys", async () => {
+    const repository = new InMemoryOverlayAccessKeyRepository();
+    const service = createService(repository, ["ovl_landscape", "ovl_vertical", "ovl_legacy"]);
+    const landscape = await service.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "landscape"
+    });
+    const vertical = await service.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: "vertical"
+    });
+    const legacy = await service.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module"
+    });
+
+    await expect(
+      service.verifyRouteAccess({
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "vertical",
+        rawKey: landscape.rawKey
+      })
+    ).resolves.toEqual({ authorized: false, reason: "profile-mismatch" });
+    await expect(
+      service.verifyRouteAccess({
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "vertical",
+        rawKey: vertical.rawKey
+      })
+    ).resolves.toEqual({ authorized: true, record: vertical.record });
+    await expect(
+      service.verifyRouteAccess({
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        rawKey: legacy.rawKey
+      })
+    ).resolves.toEqual({ authorized: true, record: legacy.record });
+  });
+
   it("denies revoked keys even when route metadata and raw key match", async () => {
     const repository = new InMemoryOverlayAccessKeyRepository();
     const service = createService(repository, ["ovl_revokedRawKey"]);

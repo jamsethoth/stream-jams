@@ -1,10 +1,13 @@
 import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { OverlaySurface } from "./OverlayApp.js";
+
+afterEach(() => vi.restoreAllMocks());
 
 describe("OverlaySurface", () => {
   it("renders image, gif, video, text, and audio instruction shapes with overlay layout", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const onPlaybackEvent = vi.fn();
 
     render(

@@ -1,4 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
   appConfigSchema,
@@ -65,7 +66,14 @@ export class FileConfigStore implements ConfigStore {
 
   async #writeConfig(config: AppConfig): Promise<void> {
     await mkdir(dirname(this.#configFilePath), { recursive: true });
-    await writeFile(this.#configFilePath, `${JSON.stringify(parseAppConfig(config), null, 2)}\n`, "utf8");
+    const temporaryPath = `${this.#configFilePath}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, `${JSON.stringify(parseAppConfig(config), null, 2)}\n`, "utf8");
+      await rename(temporaryPath, this.#configFilePath);
+    } catch (error) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw error;
+    }
   }
 }
 

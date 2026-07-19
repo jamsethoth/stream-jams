@@ -1,5 +1,7 @@
 # Slice 17: Twitch OAuth And Account Connection
 
+> **Superseded (2026-07-16):** This historical Authorization Code flow is retained as its original implementation record. Stream Jams now uses Twitch Device Code OAuth; see `docs/superpowers/plans/2026-07-16-twitch-device-code-oauth.md`. Do not use this plan for current client-secret or callback setup.
+
 **Goal:** Add a testable Twitch authorization-code connection flow that stores OAuth tokens only through `SecretStore`, persists non-secret account metadata in SQLite, and exposes management UI status, connect, refresh, and disconnect workflows.
 
 **Base requirements:** `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md` Slice 17.

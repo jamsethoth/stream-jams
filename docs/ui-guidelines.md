@@ -22,6 +22,24 @@ Do not build landing-page or marketing layouts for product work.
 - Preserve loading, empty, error, success, disabled, and destructive states when a workflow has them.
 - Keep Twitch, overlay, playback, diagnostics, assets, alerts, and settings states operationally distinct.
 
+## Status Freshness
+
+- Derive saved readiness and enablement from configuration, not transient runtime activity.
+- Runtime status indicators must update through push events or polling at least every five seconds while visible.
+- Show runtime evidence as secondary telemetry when it is not required to complete setup.
+- Retain the last known runtime state when refresh fails, label it stale, and show an actionable error with a reference ID when available.
+- Do not present a one-time snapshot as current status.
+
+## Dense Hierarchical Management
+
+- Prefer one expandable hierarchy when selecting a parent determines the child inventory; avoid a persistent summary panel that repeats the selected row.
+- Keep frequent parent and child actions inline, using compact controls that do not displace the inventory.
+- Put module-level operational metadata, such as browser-source URLs, in its own compact sibling section above the hierarchy when it applies to the whole module.
+- Let secondary module sections collapse by default, retain actionable status rollups while collapsed, and expand automatically when targeted by a correction or setup deep link.
+- Preserve blocker, warning, and review counts on collapsed parents so closing details does not hide actionable state.
+- Keep row-level validation concise. Show human-readable causes, correction steps, and reference IDs at the focused correction surface.
+- Quick tests must reuse the saved configuration and production test-delivery contract. Require an explicit target choice only when more than one valid target is available.
+
 ## Overlay UI
 
 - The overlay surface is fullscreen and transparent by default.

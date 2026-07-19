@@ -1,0 +1,16 @@
+{
+  "timeStamp": "2026-07-17T12:05:00.000Z",
+  "event": { "source": "Twitch", "type": "HypeTrainUpdate" },
+  "data": {
+    "broadcaster": { "id": "broadcaster-1", "login": "broadcaster", "name": "Broadcaster" },
+    "id": "train-1",
+    "level": 2,
+    "progress": 75,
+    "goal": 100,
+    "total": 175,
+    "startedAt": "2026-07-17T12:00:00.000Z",
+    "expiresAt": "2026-07-17T12:05:00.000Z",
+    "endedAt": "2026-07-17T12:05:00.000Z",
+    "cooldownEndsAt": "2026-07-17T13:05:00.000Z"
+  }
+}

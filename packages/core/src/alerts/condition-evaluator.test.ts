@@ -2,9 +2,14 @@ import type { AlertCondition } from "./types.js";
 import type {
   ChannelPointRedemptionEvent,
   CheerEvent,
+  CommunityGiftEvent,
+  HypeTrainProgressEvent,
   NormalizedStreamEvent,
+  PollProgressEvent,
+  PredictionEndEvent,
   RaidEvent,
   ResubscriptionEvent,
+  StreamOfflineEvent,
   SubscriptionEvent
 } from "../events/types.js";
 import { describe, expect, it } from "vitest";
@@ -51,11 +56,85 @@ describe("DefaultAlertConditionEvaluator", () => {
     expect(evaluate({ field: "tier", operator: "equals", value: "2000" }, createSubscriptionEvent())).toBe(true);
     expect(evaluate({ field: "tenure", operator: "min", value: 12 }, createResubscriptionEvent())).toBe(true);
     expect(evaluate({ field: "tenureMonths", operator: "range", value: [10, 14] }, createResubscriptionEvent())).toBe(true);
-    expect(evaluate({ field: "giftCount", operator: "min", value: 5 }, createCheerEvent({ metadata: { giftCount: 8 } }))).toBe(true);
     expect(evaluate({ field: "raidViewers", operator: "min", value: 25 }, createRaidEvent())).toBe(true);
     expect(evaluate({ field: "cheerAmount", operator: "max", value: 1000 }, createCheerEvent({ amount: 750 }))).toBe(true);
     expect(evaluate({ field: "channelPointReward", operator: "equals", value: "reward-1" }, createChannelPointEvent())).toBe(true);
     expect(evaluate({ field: "rewardTitle", operator: "includes", value: "Hydrate" }, createChannelPointEvent())).toBe(true);
+  });
+
+  it("evaluates canonical aliases without provider metadata", () => {
+    const communityGift: CommunityGiftEvent = {
+      ...createCheerEvent(),
+      type: "community_gift",
+      amount: 5,
+      tier: "1000",
+      cumulativeTotal: null,
+      anonymous: false,
+      metadata: {}
+    };
+    const hypeTrain: HypeTrainProgressEvent = {
+      ...createCheerEvent(),
+      type: "hype_train_progress",
+      amount: 500,
+      trainId: "train-1",
+      level: 2,
+      progress: 500,
+      goal: 1000,
+      total: 500,
+      startedAt: "2026-05-30T09:00:00.000Z",
+      expiresAt: "2026-05-30T09:05:00.000Z",
+      endedAt: null,
+      cooldownEndsAt: null,
+      metadata: {}
+    };
+    const poll: PollProgressEvent = {
+      ...createCheerEvent(),
+      type: "poll_progress",
+      amount: 12,
+      pollId: "poll-1",
+      title: "What should we play?",
+      choices: [{ id: "choice-1", title: "Game A", totalVotes: 12 }],
+      totalVotes: 12,
+      startedAt: "2026-05-30T09:00:00.000Z",
+      endsAt: "2026-05-30T09:05:00.000Z",
+      status: "active",
+      metadata: {}
+    };
+    const prediction: PredictionEndEvent = {
+      ...createCheerEvent({ ingestProvider: "streamerbot" }),
+      type: "prediction_end",
+      amount: 1000,
+      predictionId: "prediction-1",
+      title: "Will we win?",
+      outcomes: [{ id: "outcome-1", title: "Yes", totalUsers: 10, totalPoints: 1000 }],
+      totalUsers: 10,
+      totalPoints: 1000,
+      startedAt: "2026-05-30T09:00:00.000Z",
+      locksAt: "2026-05-30T09:05:00.000Z",
+      endedAt: "2026-05-30T09:05:00.000Z",
+      status: "resolved",
+      winningOutcomeId: "outcome-1",
+      metadata: {}
+    };
+    const stream: StreamOfflineEvent = {
+      ...createCheerEvent(),
+      type: "stream_offline",
+      amount: null,
+      streamId: "stream-1",
+      streamType: "live",
+      startedAt: "2026-05-30T09:00:00.000Z",
+      endedAt: "2026-05-30T10:00:00.000Z",
+      metadata: {}
+    };
+
+    expect(evaluate({ field: "giftCount", operator: "min", value: 5 }, communityGift)).toBe(true);
+    expect(evaluate({ field: "hypeTrainLevel", operator: "equals", value: 2 }, hypeTrain)).toBe(true);
+    expect(evaluate({ field: "hypeTrainProgress", operator: "range", value: [400, 600] }, hypeTrain)).toBe(true);
+    expect(evaluate({ field: "pollVotes", operator: "max", value: 12 }, poll)).toBe(true);
+    expect(evaluate({ field: "predictionPoints", operator: "min", value: 1000 }, prediction)).toBe(true);
+    expect(evaluate({ field: "terminalStatus", operator: "equals", value: "resolved" }, prediction)).toBe(true);
+    expect(evaluate({ field: "streamType", operator: "equals", value: "live" }, stream)).toBe(true);
+    expect(evaluate({ field: "ingestProvider", operator: "equals", value: "streamerbot" }, prediction)).toBe(true);
   });
 
   it("fails closed for missing fields, non-numeric comparisons, and non-matching values", () => {

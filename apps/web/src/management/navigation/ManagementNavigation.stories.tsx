@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { ManagementNavigation, type ManagementTabId } from "./ManagementNavigation.js";
+import { expect, within } from "storybook/test";
+import type { ManagementRoute } from "../routing/management-route.js";
+import { ManagementNavigation } from "./ManagementNavigation.js";
 
 const meta = {
   title: "Management/Navigation",
@@ -11,31 +13,30 @@ export default meta;
 
 type Story = StoryObj<typeof meta>;
 
-export const InteractiveTabs: Story = {
+export const Sidebar: Story = {
   args: {
-    activeTab: "dashboard",
-    onSelect: () => undefined
+    activeRoute: { id: "home" },
+    onNavigate: () => undefined
   },
   render(args) {
-    const [activeTab, setActiveTab] = useState<ManagementTabId>(args.activeTab);
-    const handleSelect = (tabId: ManagementTabId) => {
-      setActiveTab(tabId);
-      args.onSelect(tabId);
+    const [activeRoute, setActiveRoute] = useState<ManagementRoute>(args.activeRoute);
+    const handleNavigate = (route: ManagementRoute) => {
+      setActiveRoute(route);
+      args.onNavigate(route);
     };
 
-    return (
-      <>
-        <ManagementNavigation activeTab={activeTab} onSelect={handleSelect} />
-        <div aria-labelledby={`management-tab-${activeTab}`} id={`management-panel-${activeTab}`} role="tabpanel">
-          {activeTab} panel
-        </div>
-      </>
-    );
+    return <ManagementNavigation activeRoute={activeRoute} onNavigate={handleNavigate} />;
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("navigation", { name: "Primary" })).toBeVisible();
+    await expect(canvas.queryByRole("navigation", { name: "Legacy tools" })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
   },
   parameters: {
     docs: {
       description: {
-        story: "Use this to verify tab labels, selected state, and horizontal overflow behavior."
+        story: "Primary setup and configuration navigation with nested Alerts."
       }
     }
   }

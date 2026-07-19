@@ -1,0 +1,850 @@
+{
+  "artifact": "penpot-current-state",
+  "project": "stream-jams",
+  "schemaVersion": 1,
+  "baselineStatus": "historical-pre-refactor-capture",
+  "implementationAudit": "docs/design/ui-refactor-implementation-audit.md",
+  "screenshotManifestCreatedAt": "2026-06-21T22:31:29-04:00",
+  "penpotInventoryRefreshedAt": "2026-07-13T09:17:16.5319045-04:00",
+  "penpotVersion": "2.16.2",
+  "mcp": {
+    "mode": "local-plugin",
+    "pluginManifestUrl": "http://localhost:4400/manifest.json",
+    "serverUrl": "http://localhost:4401/mcp",
+    "status": "connected-readback-verified",
+    "selectionCount": null
+  },
+  "latestHighFidelityRepoArtifactRenderAt": "2026-07-13T10:33:57.9444267-04:00",
+  "latestHighFidelityPenpotSyncAttempt": {
+    "attemptedAt": "2026-07-14T13:51:24.1827263-04:00",
+    "status": "verified",
+    "reason": "Penpot readback confirmed 21 high-fidelity boards on 10 Redesign Concepts; no missing boards, no empty boards, and no wrong-sized boards."
+  },
+  "sourceAnchors": [
+    "docs/product-plan.md",
+    "apps/web/src/App.css",
+    "apps/web/src/management/ManagementApp.tsx",
+    "apps/web/src/management/navigation/ManagementNavigation.tsx",
+    "apps/web/src/overlay/OverlayApp.tsx",
+    "apps/web/src/overlay/components/OverlaySurface.tsx"
+  ],
+  "security": {
+    "redactedSecrets": [
+      "overlay route keys",
+      "bearer tokens",
+      "Twitch tokens",
+      "copied secret values"
+    ],
+    "redactedStateBoards": [
+      "Management UI - Overlay URL Generated Redacted"
+    ]
+  },
+  "coverage": {
+    "management": {
+      "required": 30,
+      "captured": 30,
+      "missing": []
+    },
+    "overlay": {
+      "required": 4,
+      "captured": 4,
+      "missing": []
+    },
+    "orphanCleanup": {
+      "status": "clean",
+      "note": "Only intentional baseline/reference/concept boards remain outside required captured-state lists."
+    }
+  },
+  "pages": [
+    {
+      "id": "511bd401-aa1d-80ff-8008-351e03897bb2",
+      "name": "00 Repo Baseline",
+      "purpose": "product scope, source anchors, and repo-state notes",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-35231cfb4bd2",
+          "name": "Repo Baseline - Current State",
+          "kind": "reference",
+          "width": 1440,
+          "height": 1080,
+          "childCount": 31,
+          "createdBy": ""
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-35231db228b2",
+      "name": "01 Management UI - Current",
+      "purpose": "current React/Vite management UI states",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-35240ee3b55d",
+          "name": "Management UI - Current Baseline",
+          "kind": "reference",
+          "width": 1440,
+          "height": 1180,
+          "childCount": 109,
+          "createdBy": "",
+          "uiState": "",
+          "screenshotFile": ""
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e522ad2",
+          "name": "Management UI - Dashboard selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "dashboard",
+          "screenshotFile": "management-dashboard.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e789670",
+          "name": "Management UI - Twitch selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "twitch",
+          "screenshotFile": "management-twitch.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e88cacc",
+          "name": "Management UI - Diagnostics selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "diagnostics",
+          "screenshotFile": "management-diagnostics.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6e9eb7eb",
+          "name": "Management UI - Modules selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "modules",
+          "screenshotFile": "management-modules.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6eafc219",
+          "name": "Management UI - Overlays selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlays",
+          "screenshotFile": "management-overlays.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ec0e7fd",
+          "name": "Management UI - Playback selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "playback",
+          "screenshotFile": "management-playback.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ed49936",
+          "name": "Management UI - TTS selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "tts",
+          "screenshotFile": "management-tts.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ee595e4",
+          "name": "Management UI - Settings selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "settings",
+          "screenshotFile": "management-settings.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6ef8afbf",
+          "name": "Management UI - Alerts selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1104,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "alerts",
+          "screenshotFile": "management-alerts.png"
+        },
+        {
+          "id": "ed40a10d-e99c-8065-8008-352e6f1131bb",
+          "name": "Management UI - Assets selected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "assets",
+          "screenshotFile": "management-assets.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247149f6ff",
+          "name": "Management UI - Mobile Dashboard selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-dashboard",
+          "screenshotFile": "management-mobile-dashboard.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247165827b",
+          "name": "Management UI - Mobile Twitch selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-twitch",
+          "screenshotFile": "management-mobile-twitch.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624718105d0",
+          "name": "Management UI - Mobile Diagnostics selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 1006,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-diagnostics",
+          "screenshotFile": "management-mobile-diagnostics.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624719f69d4",
+          "name": "Management UI - Mobile Modules selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-modules",
+          "screenshotFile": "management-mobile-modules.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362471b5a559",
+          "name": "Management UI - Mobile Overlays selected",
+          "kind": "captured-state",
+          "width": 467,
+          "height": 977,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-overlays",
+          "screenshotFile": "management-mobile-overlays.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362471d19dea",
+          "name": "Management UI - Mobile Playback selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-playback",
+          "screenshotFile": "management-mobile-playback.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362471ea31c8",
+          "name": "Management UI - Mobile TTS selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 1087,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-tts",
+          "screenshotFile": "management-mobile-tts.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472027c6a",
+          "name": "Management UI - Mobile Settings selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-settings",
+          "screenshotFile": "management-mobile-settings.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624721a1cd4",
+          "name": "Management UI - Mobile Alerts selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 1352,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-alerts",
+          "screenshotFile": "management-mobile-alerts.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247233ac4f",
+          "name": "Management UI - Mobile Assets selected",
+          "kind": "captured-state",
+          "width": 390,
+          "height": 900,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "mobile-assets",
+          "screenshotFile": "management-mobile-assets.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624724eb3e1",
+          "name": "Management UI - Seeded Dashboard",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "seeded-dashboard",
+          "screenshotFile": "management-seeded-dashboard.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-36247274101b",
+          "name": "Management UI - Seeded Alerts",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 2517,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "alerts-seeded",
+          "screenshotFile": "management-seeded-alerts.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472a16f2c",
+          "name": "Management UI - Seeded Assets",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "assets-seeded",
+          "screenshotFile": "management-seeded-assets.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472cdf32c",
+          "name": "Management UI - Overlay URL Generated Redacted",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-url-generated",
+          "screenshotFile": "management-overlay-url-generated-redacted.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-362472f92571",
+          "name": "Management UI - TTS Test Result",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1075,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "tts-test-result",
+          "screenshotFile": "management-tts-test-result.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624731f6972",
+          "name": "Management UI - Playback After Test Alert",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "playback-after-test-alert",
+          "screenshotFile": "management-playback-after-test-alert.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624734372bf",
+          "name": "Management UI - Diagnostics After Test Alert",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1035,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "diagnostics-after-test-alert",
+          "screenshotFile": "management-diagnostics-after-test-alert.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-373ac65b99c6",
+          "name": "Management UI - Twitch Connected",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "twitch-connected",
+          "screenshotFile": "management-twitch-connected-twitch-connected.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-373ac75ffb2d",
+          "name": "Management UI - Alerts Test Alert Queued",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 2576,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "alerts-test-alert-queued",
+          "screenshotFile": "management-alerts-test-alert-queued.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-373ac864e418",
+          "name": "Management UI - Assets Import Error",
+          "kind": "captured-state",
+          "width": 1440,
+          "height": 1000,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "assets-import-error",
+          "screenshotFile": "management-assets-import-error.png"
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-35231f1a4256",
+      "name": "02 Overlay - Current",
+      "purpose": "current browser-source overlay states",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-352416b5008b",
+          "name": "Overlay Surface - Current Baseline",
+          "kind": "reference",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 152,
+          "createdBy": "",
+          "uiState": "",
+          "screenshotFile": ""
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624abe07305",
+          "name": "Overlay - Empty Test Route",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-empty-test",
+          "screenshotFile": "overlay-empty-test-route.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624abf1384a",
+          "name": "Overlay - Empty Live Route",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-empty-live",
+          "screenshotFile": "overlay-empty-live-route.png"
+        },
+        {
+          "id": "81de44e1-5d08-8036-8008-3624ac019182",
+          "name": "Overlay - Live Alert",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-live-alert",
+          "screenshotFile": "overlay-live-alert.png"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-37434881db34",
+          "name": "Overlay - Invalid Route Error",
+          "kind": "captured-state",
+          "width": 1920,
+          "height": 1080,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-current-ui-capture",
+          "uiState": "overlay-invalid-route-error",
+          "screenshotFile": "overlay-invalid-route-error.png"
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-3523213300c7",
+      "name": "03 Tokens & Components",
+      "purpose": "extracted current visual primitives and reusable UI pieces",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-35241e9ea84d",
+          "name": "Tokens & Components - Current CSS",
+          "kind": "reference",
+          "width": 1440,
+          "height": 1240,
+          "childCount": 80,
+          "createdBy": ""
+        }
+      ]
+    },
+    {
+      "id": "31f6bc78-998e-805c-8008-352322e6e926",
+      "name": "10 Redesign Concepts",
+      "purpose": "future approved redesign concepts only",
+      "boards": [
+        {
+          "id": "31f6bc78-998e-805c-8008-352421b07a28",
+          "name": "Redesign Concepts - Reserved",
+          "kind": "reference",
+          "width": 1440,
+          "height": 900,
+          "childCount": 16,
+          "createdBy": ""
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea34025f2f",
+          "name": "Concept - App Shell and Home",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 61,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea35d3a554",
+          "name": "Concept - Event Sources",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 51,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea3755a2a7",
+          "name": "Concept - Assets Table",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 62,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea393e8f71",
+          "name": "Concept - Alert Sets Overview",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 74,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea3ba439b5",
+          "name": "Concept - Alert Editor Landscape",
+          "kind": "concept",
+          "width": 1600,
+          "height": 1000,
+          "childCount": 30,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39ea3c961a4f",
+          "name": "Concept - Alert Editor Vertical",
+          "kind": "concept",
+          "width": 1600,
+          "height": 1000,
+          "childCount": 34,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "6bc03bee-072b-80d0-8008-39f5b52aed65",
+          "name": "Concept - Live Operator Console",
+          "kind": "concept",
+          "width": 1440,
+          "height": 960,
+          "childCount": 82,
+          "createdBy": "codex-stream-jams-redesign-concepts"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-50ef8f08fcb3",
+          "name": "Hi-Fi - Home",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-home.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-50efbd1945dd",
+          "name": "Hi-Fi - Event Source Setup",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-event-source-setup.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-50efe29e0809",
+          "name": "Hi-Fi - Alert Sets Overview",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-sets-overview.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-522b9f437c97",
+          "name": "Hi-Fi - Alert Editor Landscape",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-editor-landscape.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-522bc4afe12c",
+          "name": "Hi-Fi - Alert Editor Vertical",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-editor-vertical.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "49f4edae-6251-8037-8008-522bea0d839d",
+          "name": "Hi-Fi - Alert Editor Send Test Blocked",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-alert-editor-send-test-blocked.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed0a119a3",
+          "name": "Hi-Fi - Assets Library",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-assets-library.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed1470619",
+          "name": "Hi-Fi - Asset Detail Usage",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-asset-detail-usage.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed1bb1bcf",
+          "name": "Hi-Fi - Asset Picker Upload",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-asset-picker-upload.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aed747ddbe",
+          "name": "Hi-Fi - Event Sources List Detail",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-event-sources-list-detail.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aeda6bb6fe",
+          "name": "Hi-Fi - TTS Provider Setup",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-tts-provider-setup.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aedd3e55ba",
+          "name": "Hi-Fi - TTS Provider Detail Safety",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-tts-provider-detail-safety.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aee16720c4",
+          "name": "Hi-Fi - Diagnostics Problems",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-diagnostics-problems.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aef6b0e4c9",
+          "name": "Hi-Fi - Diagnostics Events",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-diagnostics-events.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53aeff4be5db",
+          "name": "Hi-Fi - Diagnostics Raw Logs Failure Detail",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-diagnostics-raw-logs-failure-detail.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af0d709a71",
+          "name": "Hi-Fi - Settings Overview",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-settings-overview.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2a1b40a3",
+          "name": "Hi-Fi - Backup Export",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-backup-export.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2aa49ae8",
+          "name": "Hi-Fi - Restore Backup",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-restore-backup.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2b169efc",
+          "name": "Hi-Fi - Dirty Navigation Guard",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-dirty-navigation-guard.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2b92ec99",
+          "name": "Hi-Fi - Active Set Save Warning",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-active-set-save-warning.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "a22d6d3b-f591-809a-8008-53af2c0ba2e0",
+          "name": "Hi-Fi - Destructive Confirmation",
+          "kind": "concept",
+          "fidelity": "high",
+          "width": 1440,
+          "height": 960,
+          "childCount": 1,
+          "createdBy": "codex-stream-jams-hifi-concepts",
+          "sourceImage": "docs/design/hifi-concept-boards/hi-fi-destructive-confirmation.png",
+          "sourceSpec": "docs/design/ui-refactor-mvp-ux-spec.md"
+        },
+        {
+          "id": "bdc14993-8bb3-8027-8008-4a8fa6cb976e",
+          "name": "Reference Patterns",
+          "kind": "reference",
+          "width": 1760,
+          "height": 2480,
+          "childCount": 230,
+          "createdBy": "codex-stream-jams-reference-patterns",
+          "sourceDoc": "docs/design/ui-reference-patterns.md",
+          "referenceArtifactType": "schematic-pattern-diagrams",
+          "generatedDiagramCount": 164,
+          "screenshotCount": 0
+        }
+      ]
+    }
+  ],
+  "knownGaps": [
+    "PNG/SVG board exports are not committed yet. High-fidelity concept board source PNGs are stored under docs/design/hifi-concept-boards/; Reference Patterns is represented in Penpot with generated schematic diagrams instead of committed webpage screenshots.",
+    "Penpot remains the review baseline only; repo code and docs remain the product source of truth."
+  ]
+}

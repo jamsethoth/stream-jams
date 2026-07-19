@@ -9,6 +9,8 @@ interface ManagementSessionResponse {
   readonly csrfToken: string;
 }
 
+type ManagementSession = ManagementSessionResponse;
+
 interface JsonRequestOptions {
   readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   readonly body?: unknown;
@@ -21,7 +23,7 @@ export interface ManagementHttpClient {
   putJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
   patchJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
   deleteJson<T>(path: string, fallbackMessage: string): Promise<T>;
-  deleteRequest(path: string, fallbackMessage: string): Promise<void>;
+  deleteRequest(path: string, fallbackMessage: string, body?: unknown): Promise<void>;
 }
 
 export function createManagementHttpClient(options: HttpManagementClientOptions = {}): ManagementHttpClient {
@@ -29,7 +31,7 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
   let sessionId: string | null = null;
   let csrfToken: string | null = null;
 
-  async function getSession(): Promise<{ readonly id: string; readonly csrfToken: string }> {
+  async function getSession(): Promise<ManagementSession> {
     if (sessionId !== null && csrfToken !== null) {
       return {
         id: sessionId,
@@ -50,8 +52,26 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     return session;
   }
 
-  async function request(path: string, options: RequestInit, fallbackMessage: string): Promise<Response> {
-    const response = await fetcher(path, options);
+  function invalidateSession(session: ManagementSession): void {
+    if (sessionId === session.id) {
+      sessionId = null;
+      csrfToken = null;
+    }
+  }
+
+  async function requestWithSession(
+    path: string,
+    createOptions: (session: ManagementSession) => RequestInit,
+    fallbackMessage: string
+  ): Promise<Response> {
+    let session = await getSession();
+    let response = await fetcher(path, createOptions(session));
+    if (response.status === 401) {
+      invalidateSession(session);
+      session = await getSession();
+      response = await fetcher(path, createOptions(session));
+    }
+
     if (!response.ok) {
       throw new Error(await readHttpError(response, fallbackMessage));
     }
@@ -62,10 +82,9 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
   async function requestJson<T>(path: string, options: JsonRequestOptions): Promise<T> {
     const method = options.method ?? "GET";
     const hasBody = options.body !== undefined;
-    const session = await getSession();
-    const response = await request(
+    const response = await requestWithSession(
       path,
-      {
+      (session) => ({
         ...(method === "GET" ? {} : { method }),
         headers: {
           authorization: `Bearer ${session.id}`,
@@ -73,7 +92,7 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
           ...(hasBody ? { "content-type": "application/json" } : {})
         },
         ...(hasBody ? { body: JSON.stringify(options.body) } : {})
-      },
+      }),
       options.fallbackMessage
     );
 
@@ -96,17 +115,19 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     deleteJson<T>(path: string, fallbackMessage: string) {
       return requestJson<T>(path, { method: "DELETE", fallbackMessage });
     },
-    async deleteRequest(path: string, fallbackMessage: string) {
-      const session = await getSession();
-      await request(
+    async deleteRequest(path: string, fallbackMessage: string, body?: unknown) {
+      const hasBody = body !== undefined;
+      await requestWithSession(
         path,
-        {
+        (session) => ({
           method: "DELETE",
           headers: {
             authorization: `Bearer ${session.id}`,
-            "x-stream-jams-csrf": session.csrfToken
-          }
-        },
+            "x-stream-jams-csrf": session.csrfToken,
+            ...(hasBody ? { "content-type": "application/json" } : {})
+          },
+          ...(hasBody ? { body: JSON.stringify(body) } : {})
+        }),
         fallbackMessage
       );
     }

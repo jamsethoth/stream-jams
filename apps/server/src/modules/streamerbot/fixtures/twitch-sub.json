@@ -1,0 +1,20 @@
+{
+  "timeStamp": "2026-07-17T12:01:00.000Z",
+  "event": {
+    "source": "Twitch",
+    "type": "Sub"
+  },
+  "data": {
+    "user": {
+      "id": "user-sub",
+      "login": "subscriber",
+      "name": "Subscriber"
+    },
+    "messageId": "message-sub",
+    "createdAt": "2026-07-17T12:01:00.000Z",
+    "sub_tier": "1000",
+    "is_prime": false,
+    "duration_months": 1,
+    "isTest": false
+  }
+}

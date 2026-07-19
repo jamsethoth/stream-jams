@@ -5,12 +5,17 @@ import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/rou
 import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
 import { registerConfigRoutes, type ServerConfigRouteDependencies } from "./http/routes/config.js";
+import {
+  registerConfigurationBackupRoutes,
+  type ConfigurationBackupRouteDependencies
+} from "./http/routes/configuration-backup.js";
 import { registerDiagnosticsRoutes, type DiagnosticsRouteDependencies } from "./http/routes/diagnostics.js";
 import { registerHealthRoutes, type ServerAppMetadata } from "./http/routes/health.js";
 import {
   registerManagementSessionRoutes,
   type ManagementSessionRouteDependencies
 } from "./http/routes/management-session.js";
+import { registerManagementUiRoutes, type ManagementUiRouteDependencies } from "./http/routes/management-ui.js";
 import { registerModerationRoutes, type ModerationRouteDependencies } from "./http/routes/moderation.js";
 import {
   registerOverlayOutputManagementRoutes,
@@ -37,7 +42,9 @@ export interface ServerErrorLogEntry {
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
+    Partial<ConfigurationBackupRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
+    Partial<ManagementUiRouteDependencies>,
     Partial<ModerationRouteDependencies>,
     Partial<DiagnosticsRouteDependencies>,
     Partial<OverlayModuleRouteDependencies>,
@@ -83,6 +90,21 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
         ? {}
         : { managementOriginPreHandler: dependencies.managementOriginPreHandler })
     });
+  }
+
+  if (dependencies.managementUiQueryService !== undefined) {
+    if (!hasManagementUiRouteDependencies(dependencies)) {
+      throw new Error("Management UI routes require query service, management auth, and rate-limit hooks");
+    }
+
+    registerManagementUiRoutes(app, dependencies);
+  }
+
+  if (dependencies.configurationBackupService !== undefined) {
+    if (!hasConfigurationBackupRouteDependencies(dependencies)) {
+      throw new Error("Configuration backup routes require service, management auth, and rate-limit hooks");
+    }
+    registerConfigurationBackupRoutes(app, dependencies);
   }
 
   if (dependencies.moderationService !== undefined) {
@@ -202,6 +224,26 @@ function hasModerationRouteDependencies(
   );
 }
 
+function hasManagementUiRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & ManagementUiRouteDependencies {
+  return (
+    dependencies.managementUiQueryService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasConfigurationBackupRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & ConfigurationBackupRouteDependencies {
+  return (
+    dependencies.configurationBackupService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
 function registerServerErrorHandler(app: FastifyInstance, dependencies: ServerAppDependencies): void {
   const generateServerErrorId = dependencies.generateServerErrorId ?? (() => `err_${randomUUID()}`);
   const logServerError = dependencies.serverErrorLogger ?? defaultServerErrorLogger;
@@ -237,6 +279,14 @@ function toServerErrorResponse(error: unknown): { readonly statusCode: number; r
       statusCode: error.statusCode,
       code: error.code,
       message: error.safeMessage
+    };
+  }
+
+  if (error instanceof Error && "code" in error && error.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE") {
+    return {
+      statusCode: 415,
+      code: "UNSUPPORTED_MEDIA_TYPE",
+      message: "Use application/json for requests with a body, or omit Content-Type for empty requests."
     };
   }
 

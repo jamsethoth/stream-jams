@@ -16,7 +16,7 @@ import { OverlaySurface, overlayRootStyle, type OverlayPlaybackEvent } from "./c
 export { OverlaySurface } from "./components/OverlaySurface.js";
 
 export function OverlayApp() {
-  const route = useMemo(() => parseOverlayRoute(window.location.pathname), []);
+  const route = useMemo(() => parseOverlayRoute(`${window.location.pathname}${window.location.search}`), []);
   const [composition, setComposition] = useState<OverlayComposition | null>(null);
   const [error, setError] = useState<string | null>(route === null ? "Overlay route is unavailable" : null);
   const connectionRef = useRef<OverlayClientConnection | null>(null);
@@ -50,6 +50,10 @@ export function OverlayApp() {
   }, [route]);
 
   const onPlaybackEvent = useCallback((event: OverlayPlaybackEvent) => {
+    if (event.status === "completed" || event.status === "failed") {
+      setComposition((current) => removeInstruction(current, event.instructionId));
+    }
+
     const reporter = connectionRef.current?.reporter;
     if (reporter === undefined) {
       return;
@@ -90,6 +94,7 @@ function appendInstruction(
       overlayId: route.overlayId,
       purpose: route.purpose,
       scope: route.scope,
+      targetProfileId: route.targetProfileId,
       modules: []
     } satisfies OverlayComposition);
   const modules = currentComposition.modules.map((moduleSnapshot): OverlayModuleSnapshot => {
@@ -117,6 +122,28 @@ function appendInstruction(
   };
 }
 
+function removeInstruction(composition: OverlayComposition | null, instructionId: string): OverlayComposition | null {
+  if (composition === null) {
+    return null;
+  }
+
+  let changed = false;
+  const modules = composition.modules.map((moduleSnapshot): OverlayModuleSnapshot => {
+    const instructions = moduleSnapshot.instructions.filter((instruction) => instruction.id !== instructionId);
+    if (instructions.length === moduleSnapshot.instructions.length) {
+      return moduleSnapshot;
+    }
+
+    changed = true;
+    return {
+      ...moduleSnapshot,
+      instructions
+    };
+  });
+
+  return changed ? { ...composition, modules } : composition;
+}
+
 function instructionMatchesRoute(
   route: NonNullable<ReturnType<typeof parseOverlayRoute>>,
   instruction: OverlayInstruction
@@ -124,7 +151,8 @@ function instructionMatchesRoute(
   if (
     route.overlayId !== instruction.overlayId ||
     route.purpose !== instruction.purpose ||
-    route.scope !== instruction.scope
+    route.scope !== instruction.scope ||
+    route.targetProfileId !== (instruction.targetProfileId ?? null)
   ) {
     return false;
   }

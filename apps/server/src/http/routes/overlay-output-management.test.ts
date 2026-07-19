@@ -18,7 +18,7 @@ import { createManagementAuthPreHandler } from "../middleware/management-auth.js
 
 describe("overlay output management routes", () => {
   it("creates, lists, regenerates, and revokes copyable URLs for management clients", async () => {
-    const { app, authHeaders } = await createApp(["ovl_first", "ovl_second"]);
+    const { app, authHeaders, overlayGateway } = await createApp(["ovl_first", "ovl_second"]);
 
     const missingAuth = await app.inject({
       method: "GET",
@@ -31,7 +31,8 @@ describe("overlay output management routes", () => {
       payload: {
         scope: "module",
         moduleId: "alerts",
-        purpose: "live"
+        purpose: "live",
+        targetProfileId: "landscape"
       }
     });
     const listed = await app.inject({
@@ -47,6 +48,18 @@ describe("overlay output management routes", () => {
         host: "localhost:80"
       }
     });
+    await overlayGateway.registerClient(
+      { send() {}, close() {} },
+      {
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape",
+        rawKey: "ovl_first"
+      }
+    );
+    overlayGateway.unregisterClient("client-1");
     const regenerated = await app.inject({
       method: "POST",
       url: "/management/overlay-outputs/keys/regenerate",
@@ -54,7 +67,8 @@ describe("overlay output management routes", () => {
       payload: {
         scope: "module",
         moduleId: "alerts",
-        purpose: "live"
+        purpose: "live",
+        targetProfileId: "landscape"
       }
     });
     const clients = await app.inject({
@@ -73,23 +87,31 @@ describe("overlay output management routes", () => {
     expect(created.statusCode).toBe(200);
     expect(created.json()).toMatchObject({
       keyId: "key-1",
-      url: "http://localhost:80/overlay/modules/alerts/live/ovl_first"
+      url: "http://localhost:80/overlay/modules/alerts/live/ovl_first?profile=landscape"
     });
     expect(listed.json()).toContainEqual(
       expect.objectContaining({
-        id: "module:alerts:live",
+        id: "module:alerts:landscape:live",
+        targetProfileId: "landscape",
         keyId: "key-1",
         copyableUrlStatus: "available",
-        url: "http://localhost:80/overlay/modules/alerts/live/ovl_first"
+        url: "http://localhost:80/overlay/modules/alerts/live/ovl_first?profile=landscape"
       })
     );
     expect(listed.body).not.toContain("route-key");
     expect(regenerated.json()).toMatchObject({
       keyId: "key-2",
-      url: "http://localhost:80/overlay/modules/alerts/live/ovl_second"
+      url: "http://localhost:80/overlay/modules/alerts/live/ovl_second?profile=landscape"
     });
     expect(clients.statusCode).toBe(200);
-    expect(clients.json()).toEqual([]);
+    expect(clients.json()).toEqual([
+      expect.objectContaining({
+        id: "client-1",
+        targetProfileId: "landscape",
+        connectionState: "disconnected",
+        disconnectedAt: "2026-06-16T12:00:00.000Z"
+      })
+    ]);
     expect(revoked.statusCode).toBe(204);
   });
 });
@@ -129,6 +151,12 @@ async function createApp(rawKeys: string[]) {
   });
   const session = await managementSessionService.createSession();
 
+  const overlayGateway = new OverlayGateway({
+    overlayAccessService,
+    generateClientId: () => "client-1",
+    clock: () => new Date("2026-06-16T12:00:00.000Z")
+  });
+
   return {
     app: createServerApp({
       metadata: {
@@ -142,11 +170,7 @@ async function createApp(rawKeys: string[]) {
         overlayModuleConfigService: moduleConfigService,
         secretStore
       }),
-      overlayGateway: new OverlayGateway({
-        overlayAccessService,
-        generateClientId: () => "client-1",
-        clock: () => new Date("2026-06-16T12:00:00.000Z")
-      }),
+      overlayGateway,
       managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
       managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({
         limiter: new LocalManagementRateLimiter({
@@ -156,6 +180,7 @@ async function createApp(rawKeys: string[]) {
         })
       })
     }),
+    overlayGateway,
     authHeaders: {
       authorization: `Bearer ${session.id}`,
       host: "localhost:80"

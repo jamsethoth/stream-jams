@@ -1,0 +1,17 @@
+{
+  "timeStamp": "2026-07-17T12:04:00.000Z",
+  "event": {
+    "source": "Twitch",
+    "type": "Raid"
+  },
+  "data": {
+    "user": {
+      "id": "user-raid",
+      "login": "raider",
+      "name": "Raider"
+    },
+    "viewers": 42,
+    "createdAt": "2026-07-17T12:04:00.000Z",
+    "isTest": false
+  }
+}

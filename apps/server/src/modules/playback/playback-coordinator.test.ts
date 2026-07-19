@@ -5,14 +5,24 @@ import {
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
   type AlertResolverTarget,
+  type AlertEditorDocument,
   type AlertRule,
   type AlertService,
   type AlertVariant,
   type AssetRepository,
-  type NormalizedStreamEvent
+  type NormalizedStreamEvent,
+  type Logger,
+  type PlaybackQueue,
+  type PlaybackQueueSnapshot,
+  type ResolvedAlert,
+  type TtsService
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { PlaybackCoordinator } from "./playback-coordinator.js";
+import {
+  PlaybackCoordinator,
+  type OverlayPlaybackInstructionSink,
+  type PlaybackCoordinatorDependencies
+} from "./playback-coordinator.js";
 
 describe("PlaybackCoordinator", () => {
   it("rejects duplicate events before listing active rules", async () => {
@@ -108,6 +118,134 @@ describe("PlaybackCoordinator", () => {
     expect(deliveredInstructionIds).toEqual(["overlay-instruction-2"]);
   });
 
+  it("queues a resolved editor test through the normal queue and overlay sink", () => {
+    const alertService = new RecordingAlertService([]);
+    const deliveredInstructionIds: string[] = [];
+    const coordinator = createCoordinator({
+      alertService,
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          deliveredInstructionIds.push(instruction.id);
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "editor-test", metadata: { test: true } });
+    const alert: ResolvedAlert = {
+      id: "resolved-editor-test",
+      sourceEventId: event.id,
+      ruleId: "rule-editor",
+      variantId: "layer-text",
+      overlayInstruction: {
+        id: "instruction-editor-test",
+        overlayId: "overlay-1",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape",
+        visual: null,
+        audio: null,
+        text: { text: "Test", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } },
+        tts: null,
+        durationMs: 3_000
+      }
+    };
+
+    const snapshot = coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [alert] });
+
+    expect(snapshot.current?.alerts).toEqual([alert]);
+    expect(deliveredInstructionIds).toEqual(["instruction-editor-test"]);
+    expect(alertService.listActiveRuleCalls).toBe(0);
+  });
+
+  it("advances only after every delivered client finishes every current instruction", () => {
+    const coordinator = createCoordinator({
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          return { deliveredClientIds: ["client-1", "client-2"] };
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "multi-layer" });
+    const firstAlert = createResolvedAlert(event.id, "resolved-1", "instruction-1");
+    const secondAlert = createResolvedAlert(event.id, "resolved-2", "instruction-2");
+    const nextEvent = createCheerEvent({ id: "next-item" });
+    const nextAlert = createResolvedAlert(nextEvent.id, "resolved-3", "instruction-3");
+
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [firstAlert, secondAlert] });
+    coordinator.enqueueResolvedTest({ sourceEvent: nextEvent, alerts: [nextAlert] });
+
+    expect(coordinator.reportInstructionFinished("client-1", "instruction-1").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-1", "instruction-1").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-1", "stale-instruction").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("unknown-client", "instruction-2").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-2", "instruction-1").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-1", "instruction-2").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-2", "instruction-2").current?.id).toBe("queue-item-2");
+    expect(coordinator.reportInstructionFinished("client-2", "instruction-2").current?.id).toBe("queue-item-2");
+    expect(coordinator.reportInstructionFinished("client-1", "instruction-3").current?.id).toBe("queue-item-2");
+    expect(coordinator.reportInstructionFinished("client-2", "instruction-3").current).toBeNull();
+  });
+
+  it("releases every pending instruction when a delivered client disconnects", () => {
+    const coordinator = createCoordinator({
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          return { deliveredClientIds: ["client-1", "client-2"] };
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "disconnect-mid-playback" });
+    coordinator.enqueueResolvedTest({
+      sourceEvent: event,
+      alerts: [
+        createResolvedAlert(event.id, "resolved-1", "instruction-1"),
+        createResolvedAlert(event.id, "resolved-2", "instruction-2")
+      ]
+    });
+
+    coordinator.reportInstructionFinished("client-1", "instruction-1");
+    coordinator.reportInstructionFinished("client-1", "instruction-2");
+
+    expect(coordinator.reportClientDisconnected("unknown-client").current).not.toBeNull();
+    expect(coordinator.reportClientDisconnected("client-2").current).toBeNull();
+  });
+
+  it("immediately completes an item delivered to zero clients", () => {
+    const coordinator = createCoordinator({
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          return { deliveredClientIds: [] };
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "no-recipients" });
+
+    const snapshot = coordinator.enqueueResolvedTest({
+      sourceEvent: event,
+      alerts: [createResolvedAlert(event.id, "resolved-1", "instruction-1")]
+    });
+
+    expect(snapshot.current).toBeNull();
+    expect(snapshot.recent[0]).toMatchObject({ id: "queue-item-1", status: "completed" });
+  });
+
+  it("drains a long zero-recipient queue without stack growth", () => {
+    const itemCount = 10_000;
+    let deliveryCount = 0;
+    const coordinator = createCoordinator({
+      queue: createSequentialPlaybackQueue(itemCount),
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          deliveryCount += 1;
+          return { deliveredClientIds: [] };
+        }
+      }
+    });
+
+    expect(coordinator.resume().current).toBeNull();
+    expect(deliveryCount).toBe(itemCount);
+  });
+
   it("resolves configured additional overlay targets into the same playback item", async () => {
     const deliveredScopes: string[] = [];
     const coordinator = createCoordinator({
@@ -140,6 +278,226 @@ describe("PlaybackCoordinator", () => {
       "unified"
     ]);
     expect(deliveredScopes).toEqual(["module", "unified"]);
+  });
+
+  it("loads editor documents for profile targets and skips disabled profiles", async () => {
+    const rule = createRule({ id: "rule-editor-live" });
+    const document = createEditorDocument(rule);
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      additionalTargets: [
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" },
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "vertical" }
+      ],
+      findEditorDocument: async (ruleId) => ruleId === rule.id ? document : null
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(result.snapshot.current?.alerts.map((alert) => ({
+      variantId: alert.variantId,
+      targetProfileId: alert.overlayInstruction.targetProfileId,
+      text: alert.overlayInstruction.text?.text,
+      layout: alert.overlayInstruction.text?.layout
+    }))).toEqual([
+      expect.objectContaining({ variantId: "variant-1", targetProfileId: undefined }),
+      {
+        variantId: "variant-1",
+        targetProfileId: "landscape",
+        text: "Primary Viewer",
+        layout: { layerId: "layer-primary", x: 100, y: 120, width: 500, height: 100, zIndex: 2 }
+      },
+      {
+        variantId: "variant-1",
+        targetProfileId: "landscape",
+        text: "Secondary Viewer",
+        layout: { layerId: "layer-secondary", x: 300, y: 400, width: 600, height: 120, zIndex: 3 }
+      }
+    ]);
+  });
+
+  it("dispatches one remote TTS trigger before delivering two profile instructions", async () => {
+    const rule = createRule({
+      id: "rule-speakerbot",
+      variants: [createVariant({
+        ttsConfig: {
+          enabled: true,
+          providerId: "speakerbot",
+          voiceId: null,
+          template: "Welcome {actor.displayName}",
+          minimumAmount: null
+        }
+      })]
+    });
+    const baseDocument = createEditorDocument(rule);
+    const document: AlertEditorDocument = {
+      ...baseDocument,
+      layers: [{
+        id: "layer-tts",
+        name: "TTS",
+        type: "tts",
+        visible: true,
+        order: 0,
+        animation,
+        enabled: true,
+        providerId: "speakerbot",
+        template: "Welcome {actor.displayName}"
+      }],
+      targetProfiles: baseDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "ready" as const,
+        layerLayouts: []
+      }))
+    };
+    const dispatched: string[] = [];
+    const deliveredProfiles: Array<string | null | undefined> = [];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      additionalTargets: [
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" },
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "vertical" }
+      ],
+      findEditorDocument: async () => document,
+      ttsService: {
+        async createPlaybackInstruction(input) {
+          dispatched.push(`${input.providerId}:${input.text}:${String(input.metadata?.layerId)}`);
+          return {
+            instruction: { mode: "remote-trigger", text: input.text, audioAssetId: null, providerPayload: null },
+            moderationActions: []
+          };
+        }
+      },
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          deliveredProfiles.push(instruction.targetProfileId);
+          return { deliveredClientIds: [] };
+        }
+      }
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(result.status).toBe("queued");
+    expect(dispatched).toEqual(["speakerbot:Welcome Viewer:layer-tts"]);
+    expect(deliveredProfiles).toEqual([undefined, "landscape", "vertical"]);
+  });
+
+  it("logs one referenced remote TTS failure and continues overlay delivery", async () => {
+    const rule = createRule({
+      id: "rule-speakerbot-failure",
+      variants: [createVariant({
+        ttsConfig: {
+          enabled: true,
+          providerId: "speakerbot",
+          voiceId: null,
+          template: "Do not leak {actor.displayName}",
+          minimumAmount: null
+        }
+      })]
+    });
+    const errors: Array<{ readonly message: string; readonly context: Parameters<Logger["error"]>[1] }> = [];
+    let deliveryCount = 0;
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      ttsService: {
+        async createPlaybackInstruction() {
+          throw new Error("ws://127.0.0.1:7680/?token=secret failed");
+        }
+      },
+      logger: {
+        async error(message, context) {
+          errors.push({ message, context });
+        }
+      },
+      generateReferenceId: () => "ref-tts-failure",
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          deliveryCount += 1;
+          return { deliveredClientIds: [] };
+        }
+      }
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(result.status).toBe("queued");
+    expect(deliveryCount).toBe(1);
+    expect(errors).toEqual([{
+      message: "Speaker.bot TTS playback failed. Visual and audio alert playback continued.",
+      context: {
+        module: "tts",
+        source: "tts.remote-trigger.failed",
+        correlationId: "ref-tts-failure",
+        processingId: null,
+        metadata: { providerId: "speakerbot", sourceEventId: "event-cheer", ruleId: "rule-speakerbot-failure" }
+      }
+    }]);
+    expect(JSON.stringify(errors)).not.toContain("token=secret");
+  });
+
+  it("loads variation editor documents for live profile playback", async () => {
+    const baseRule = createRule({ id: "rule-variation-live" });
+    const rule: AlertRule = {
+      ...baseRule,
+      variants: [
+        { ...baseRule.variants[0]!, enabled: false },
+        createVariant({ id: "variant-special", name: "Special", enabled: true, textTemplate: "Legacy special" })
+      ]
+    };
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule),
+      id: "variant-special",
+      kind: "variation",
+      parentAlertId: rule.id,
+      name: "Special",
+      layers: createEditorDocument(rule).layers.map((layer) =>
+        layer.type === "text" ? { ...layer, template: "Saved variation {actor.displayName}" } : layer
+      )
+    };
+    const requestedEditorIds: string[] = [];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      additionalTargets: [
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" }
+      ],
+      findEditorDocument: async (editorId) => {
+        requestedEditorIds.push(editorId);
+        return editorId === document.id ? document : null;
+      }
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(requestedEditorIds).toContain("variant-special");
+    expect(result.snapshot.current?.alerts).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        overlayInstruction: expect.objectContaining({ text: expect.objectContaining({ text: "Saved variation Viewer" }) })
+      })
+    ]));
+  });
+
+  it("selects one weighted variation for every target of the same event", async () => {
+    const baseRule = createRule({ id: "rule-weighted" });
+    const rule: AlertRule = {
+      ...baseRule,
+      variants: [
+        createVariant({ id: "variant-a", name: "A", weight: 1 }),
+        createVariant({ id: "variant-b", name: "B", weight: 1 })
+      ]
+    };
+    const randomValues = [0.1, 0.9];
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([rule]),
+      additionalTargets: [
+        { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" }
+      ],
+      random: () => randomValues.shift() ?? 0.9
+    });
+
+    const result = await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(result.snapshot.current?.alerts.map((alert) => alert.variantId)).toEqual(["variant-a", "variant-a"]);
   });
 
   it("matches, resolves, and enqueues all ready alerts from one accepted event", async () => {
@@ -210,22 +568,28 @@ function createCoordinator(
     readonly dedupeService?: DefaultPlaybackDedupeService;
     readonly assetRepository?: Pick<AssetRepository, "findById">;
     readonly additionalTargets?: readonly AlertResolverTarget[];
-    readonly overlayPlaybackSink?: { deliverPlaybackInstruction(instruction: import("@stream-jams/core").OverlayInstruction): void };
+    readonly queue?: PlaybackQueue;
+    readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
+    readonly findEditorDocument?: (alertId: string) => Promise<AlertEditorDocument | null>;
+    readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
+    readonly logger?: Pick<Logger, "error">;
+    readonly generateReferenceId?: () => string;
     readonly clock?: MutableClock;
+    readonly random?: () => number;
   } = {}
 ): PlaybackCoordinator {
   const clock = options.clock ?? new MutableClock("2026-05-30T12:00:00.000Z");
   let nextQueueId = 1;
   let nextResolvedId = 1;
 
-  return new PlaybackCoordinator({
+  const dependencies: PlaybackCoordinatorDependencies = {
     alertService: options.alertService ?? new RecordingAlertService([]),
     matcher: new DefaultAlertMatcher(),
     resolver: new DefaultAlertResolver({
       generateId: (kind) => `${kind}-${nextResolvedId++}`,
-      random: () => 0
+      random: options.random ?? (() => 0)
     }),
-    queue: new DefaultPlaybackQueue({
+    queue: options.queue ?? new DefaultPlaybackQueue({
       clock: () => clock.now(),
       generateId: () => `queue-item-${nextQueueId++}`
     }),
@@ -243,8 +607,13 @@ function createCoordinator(
     },
     ...(options.additionalTargets === undefined ? {} : { additionalTargets: options.additionalTargets }),
     ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
-    ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink })
-  });
+    ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink }),
+    ...(options.findEditorDocument === undefined ? {} : { findEditorDocument: options.findEditorDocument }),
+    ...(options.ttsService === undefined ? {} : { ttsService: options.ttsService }),
+    ...(options.logger === undefined ? {} : { logger: options.logger }),
+    ...(options.generateReferenceId === undefined ? {} : { generateReferenceId: options.generateReferenceId })
+  };
+  return new PlaybackCoordinator(dependencies);
 }
 
 class RecordingAlertService implements Pick<AlertService, "listActiveRules"> {
@@ -348,3 +717,111 @@ class InMemoryAssetRepository implements Pick<AssetRepository, "findById"> {
         };
   }
 }
+
+function createResolvedAlert(sourceEventId: string, id: string, instructionId: string): ResolvedAlert {
+  return {
+    id,
+    sourceEventId,
+    ruleId: "rule-editor",
+    variantId: id,
+    overlayInstruction: {
+      id: instructionId,
+      overlayId: "overlay-1",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      visual: null,
+      audio: null,
+      text: { text: id, layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } },
+      tts: null,
+      durationMs: 3_000
+    }
+  };
+}
+
+function createSequentialPlaybackQueue(itemCount: number): PlaybackQueue {
+  const event = createCheerEvent({ id: "zero-recipient-queue" });
+  let index = 0;
+  const getSnapshot = (): PlaybackQueueSnapshot => ({
+    current: index < itemCount
+      ? {
+          id: `queue-item-${index}`,
+          sourceEvent: event,
+          alerts: [createResolvedAlert(event.id, `resolved-${index}`, `instruction-${index}`)],
+          priority: 0,
+          status: "playing",
+          enqueuedAt: "2026-05-30T12:00:00.000Z",
+          startedAt: "2026-05-30T12:00:00.000Z",
+          completedAt: null
+        }
+      : null,
+    queued: [],
+    recent: [],
+    paused: false,
+    muted: false,
+    doNotDisturb: false
+  });
+  const advance = (): PlaybackQueueSnapshot => {
+    index += 1;
+    return getSnapshot();
+  };
+
+  return {
+    getSnapshot,
+    enqueue: getSnapshot,
+    completeCurrent: advance,
+    skipCurrent: advance,
+    replayRecent: getSnapshot,
+    pause: getSnapshot,
+    resume: getSnapshot,
+    mute: getSnapshot,
+    unmute: getSnapshot,
+    setDoNotDisturb: getSnapshot
+  };
+}
+
+function createEditorDocument(rule: AlertRule): AlertEditorDocument {
+  return {
+    id: rule.id,
+    setId: rule.collectionIds[0]!,
+    providerKind: "twitch",
+    eventType: rule.eventType,
+    kind: "default",
+    parentAlertId: null,
+    name: rule.name,
+    enabled: true,
+    conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: rule.cooldownSeconds,
+    rulePriority: rule.priority,
+    durationMs: 3_000,
+    layers: [
+      { id: "layer-primary", name: "Primary", type: "text", visible: true, order: 0, animation, template: "Primary {actor.displayName}" },
+      { id: "layer-secondary", name: "Secondary", type: "text", visible: true, order: 1, animation, template: "Secondary {actor.displayName}" }
+    ],
+    targetProfiles: [
+      {
+        id: "landscape",
+        enabled: true,
+        reviewState: "ready",
+        layerLayouts: [
+          { layerId: "layer-primary", x: 100, y: 120, width: 500, height: 100, zIndex: 2 },
+          { layerId: "layer-secondary", x: 300, y: 400, width: 600, height: 120, zIndex: 3 }
+        ]
+      },
+      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
+    ],
+    samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: {} }]
+  };
+}
+
+const animation = {
+  mode: "preset" as const,
+  entrance: "fade",
+  exit: "fade",
+  durationMs: 300,
+  delayMs: 0,
+  easing: "ease-out"
+};

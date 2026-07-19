@@ -46,9 +46,7 @@ Example local routes:
 ```text
 http://127.0.0.1:39187/manage
 http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_<unguessable-key>
-http://127.0.0.1:39187/overlay/modules/alerts/test/ovl_<unguessable-key>
 http://127.0.0.1:39187/overlay/unified/live/ovl_<unguessable-key>
-http://127.0.0.1:39187/overlay/unified/test/ovl_<unguessable-key>
 ```
 
 The app must support a configurable port. The selected port is stored in non-secret local config. On startup, if the configured port is unavailable, the app should show a clear error and suggest available alternatives.
@@ -61,14 +59,14 @@ Overlay URLs should use unguessable route keys instead of visible query-string t
 
 Rules:
 
-- Live and test overlays must have separate keys.
+- Each module/profile or unified live overlay has its own key.
 - Module-specific and unified overlay URLs must have separately scoped keys.
 - Overlay keys must not grant access to management/configuration APIs.
 - Overlay keys can be regenerated from the management UI.
 - Overlay keys must be redacted from logs and diagnostic exports.
 - Exported configs should omit or regenerate overlay keys by default.
 
-The management UI should clearly separate live output from test output. Test overlay URLs should only show test-scoped events. Live overlay URLs should show both test-scoped events and real events from integrated event sources.
+The management UI presents one browser source per supported target profile. Test sends use the selected profile's live browser source; they do not require a separate OBS source or route key. Live browser sources show explicit test sends and real events from integrated event sources.
 
 ## Core Surfaces
 
@@ -146,7 +144,7 @@ Twitch is the first event provider.
 
 Preferred integration path: Twitch EventSub over WebSocket. This avoids requiring a public webhook endpoint for a locally hosted app.
 
-The first Twitch milestone should start with a limited event set:
+The current Twitch scope includes:
 
 - Follow.
 - Subscription.
@@ -154,14 +152,18 @@ The first Twitch milestone should start with a limited event set:
 - Cheer/Bits.
 - Raid.
 - Channel point redemption.
-
-The event model and provider boundary should leave room for later Twitch events:
-
 - Gifted subscription.
 - Community gift.
 - Hype Train begin, progress, and end.
+- Poll begin, progress, and end.
+- Prediction begin, progress, lock, and end.
+- Stream online and offline.
+
+The following remain deferred:
+
+- [Third-party and charity donation events](future-features.md#third-party-and-charity-donation-events).
 - Creator goals.
-- Charity donations.
+- Stream-driven intake automation.
 
 Each event provider should normalize platform-specific payloads into internal event objects before alert matching.
 

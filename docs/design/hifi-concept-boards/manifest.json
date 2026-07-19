@@ -1,0 +1,133 @@
+{
+  "createdBy": "codex-stream-jams-hifi-concepts",
+  "implementationStatus": "implemented-with-documented-backlog",
+  "implementationAudit": "../ui-refactor-implementation-audit.md",
+  "boards": [
+    {
+      "name": "Hi-Fi - Home",
+      "file": "hi-fi-home.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Event Source Setup",
+      "file": "hi-fi-event-source-setup.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Alert Sets Overview",
+      "file": "hi-fi-alert-sets-overview.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Alert Editor Landscape",
+      "file": "hi-fi-alert-editor-landscape.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Alert Editor Vertical",
+      "file": "hi-fi-alert-editor-vertical.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Alert Editor Send Test Blocked",
+      "file": "hi-fi-alert-editor-send-test-blocked.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Assets Library",
+      "file": "hi-fi-assets-library.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Asset Detail Usage",
+      "file": "hi-fi-asset-detail-usage.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Asset Picker Upload",
+      "file": "hi-fi-asset-picker-upload.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Event Sources List Detail",
+      "file": "hi-fi-event-sources-list-detail.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - TTS Provider Setup",
+      "file": "hi-fi-tts-provider-setup.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - TTS Provider Detail Safety",
+      "file": "hi-fi-tts-provider-detail-safety.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Diagnostics Problems",
+      "file": "hi-fi-diagnostics-problems.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Diagnostics Events",
+      "file": "hi-fi-diagnostics-events.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Diagnostics Raw Logs Failure Detail",
+      "file": "hi-fi-diagnostics-raw-logs-failure-detail.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Settings Overview",
+      "file": "hi-fi-settings-overview.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Backup Export",
+      "file": "hi-fi-backup-export.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Restore Backup",
+      "file": "hi-fi-restore-backup.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Dirty Navigation Guard",
+      "file": "hi-fi-dirty-navigation-guard.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Active Set Save Warning",
+      "file": "hi-fi-active-set-save-warning.png",
+      "width": 1440,
+      "height": 960
+    },
+    {
+      "name": "Hi-Fi - Destructive Confirmation",
+      "file": "hi-fi-destructive-confirmation.png",
+      "width": 1440,
+      "height": 960
+    }
+  ]
+}
