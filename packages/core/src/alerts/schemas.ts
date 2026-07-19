@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { streamEventTypes } from "../events/types.js";
 import {
   nonEmptyStringSchema,
   nonNegativeIntegerSchema,
@@ -41,14 +42,7 @@ export const alertVariantSchema = z.object({
   layout: overlayElementLayoutSchema
 });
 
-export const streamEventTypeSchema = z.enum([
-  "follow",
-  "subscription",
-  "resubscription",
-  "cheer",
-  "raid",
-  "channel_point_redemption"
-]);
+export const streamEventTypeSchema = z.enum(streamEventTypes);
 
 export const alertRuleSchema = z.object({
   id: nonEmptyStringSchema,

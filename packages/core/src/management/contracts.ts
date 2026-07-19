@@ -371,7 +371,7 @@ const commonTemplateVariables = [
   { key: "actor.displayName", label: "Actor display name", description: "Normalized display name for the event actor." }
 ] as const;
 
-const eventTemplateVariables: Record<AlertSampleEventType, readonly z.infer<typeof alertTemplateVariableSchema>[]> = {
+const eventTemplateVariables: Partial<Record<AlertSampleEventType, readonly z.infer<typeof alertTemplateVariableSchema>[]>> = {
   follow: [],
   raid: [{ key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }],
   cheer: [{ key: "cheerAmount", label: "Bits", description: "Number of Bits cheered." }],
@@ -390,7 +390,7 @@ const eventTemplateVariables: Record<AlertSampleEventType, readonly z.infer<type
 };
 
 export function getAlertTemplateVariableCatalog(eventType: AlertSampleEventType) {
-  return [...commonTemplateVariables, ...eventTemplateVariables[eventType]];
+  return [...commonTemplateVariables, ...(eventTemplateVariables[eventType] ?? [])];
 }
 
 export function validateAlertSamplePayload(
@@ -413,6 +413,8 @@ export function validateAlertSamplePayload(
         ? null
         : "Channel Point samples require a reward title.";
     case "follow":
+      return null;
+    default:
       return null;
   }
 }

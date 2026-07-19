@@ -1,8 +1,8 @@
 ## 1. Canonical Event Contract
 
-- [ ] 1.1 Add failing core tests for the 14 event-type identifiers, typed normalized payloads, and shared alert event-type validation.
-- [ ] 1.2 Implement the shared canonical event-type tuple, TypeScript event interfaces, Zod payload schemas, exports, and alert schema reuse.
-- [ ] 1.3 Add normalized scalar condition aliases and tests for the new event families without exposing raw provider metadata.
+- [x] 1.1 Add failing core tests for the 14 event-type identifiers, typed normalized payloads, and shared alert event-type validation.
+- [x] 1.2 Implement the shared canonical event-type tuple, TypeScript event interfaces, Zod payload schemas, exports, and alert schema reuse.
+- [x] 1.3 Add normalized scalar condition aliases and tests for the new event families without exposing raw provider metadata.
 
 ## 2. Direct Twitch EventSub
 

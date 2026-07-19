@@ -562,6 +562,8 @@ function createTestEvent(
         rewardTitle: String(payload.rewardTitle ?? "Sample reward"),
         userInput: typeof payload.userInput === "string" ? payload.userInput : null
       };
+    default:
+      throw new Error(`Test events are not yet defined for ${document.eventType}.`);
   }
 }
 

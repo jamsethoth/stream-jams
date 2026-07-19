@@ -72,16 +72,34 @@ export { DefaultMediaImportPipeline, InvalidMediaImportError, NoopMediaTranscodi
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";
+export { streamEventTypes } from "./events/types.js";
+export type { SubscriptionTier } from "./events/schemas.js";
 export {
   channelPointRedemptionEventSchema,
   cheerEventSchema,
+  communityGiftEventSchema,
   externalStreamEventSchema,
   followEventSchema,
+  giftSubscriptionEventSchema,
+  hypeTrainEndEventSchema,
+  hypeTrainProgressEventSchema,
+  hypeTrainStartEventSchema,
   ingestProviderIdSchema,
   normalizedStreamEventSchema,
+  pollChoiceSchema,
+  pollEndEventSchema,
+  pollProgressEventSchema,
+  pollStartEventSchema,
+  predictionEndEventSchema,
+  predictionLockEventSchema,
+  predictionOutcomeSchema,
+  predictionProgressEventSchema,
+  predictionStartEventSchema,
   raidEventSchema,
   resubscriptionEventSchema,
   sourcePlatformIdSchema,
+  streamOfflineEventSchema,
+  streamOnlineEventSchema,
   streamerBotSubscriptionSelectionSchema,
   subscriptionEventSchema,
   subscriptionTierSchema

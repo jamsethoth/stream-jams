@@ -316,7 +316,7 @@ function overview(id: string, name: string, active: boolean): AlertSetOverview {
 function alert(
   id: string,
   name: string,
-  eventType: "follow" | "raid" | "subscription" | "resubscription" | "cheer" | "channel_point_redemption",
+  eventType: AlertCreateInput["eventType"],
   setId: string,
   enabled: boolean,
   reviewState: "ready" | "needs-review"

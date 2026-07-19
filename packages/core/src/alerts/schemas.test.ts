@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alertRuleSchema } from "./schemas.js";
+import { alertRuleSchema, streamEventTypeSchema } from "./schemas.js";
 
 const validRule = {
   id: "rule-1",
@@ -33,6 +33,23 @@ const validRule = {
 } as const;
 
 describe("alertRuleSchema", () => {
+  it("accepts every canonical event type", () => {
+    const eventTypes = [
+      "follow", "subscription", "resubscription", "cheer", "raid", "channel_point_redemption",
+      "gift_subscription", "community_gift",
+      "hype_train_start", "hype_train_progress", "hype_train_end",
+      "poll_start", "poll_progress", "poll_end",
+      "prediction_start", "prediction_progress", "prediction_lock", "prediction_end",
+      "stream_online", "stream_offline"
+    ] as const;
+
+    for (const eventType of eventTypes) {
+      expect(streamEventTypeSchema.safeParse(eventType).success).toBe(true);
+    }
+
+    expect(streamEventTypeSchema.safeParse("donation").success).toBe(false);
+  });
+
   it("accepts a valid alert rule", () => {
     expect(alertRuleSchema.safeParse(validRule).success).toBe(true);
   });

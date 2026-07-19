@@ -32,12 +32,24 @@ function readConditionField(event: NormalizedStreamEvent, field: string): unknow
     case "tenureMonths":
       return readPath(event, "streakMonths");
     case "giftCount":
-      return readPath(event, "metadata.giftCount");
+      return readPath(event, "amount");
     case "raidViewers":
     case "cheerAmount":
       return readPath(event, "amount");
     case "channelPointReward":
       return readPath(event, "rewardId");
+    case "hypeTrainLevel":
+      return readPath(event, "level");
+    case "hypeTrainProgress":
+      return readPath(event, "progress");
+    case "pollVotes":
+      return readPath(event, "totalVotes");
+    case "predictionPoints":
+      return readPath(event, "totalPoints");
+    case "terminalStatus":
+      return readPath(event, "status");
+    case "streamType":
+      return readPath(event, "streamType");
     default:
       return readPath(event, normalizedField);
   }
