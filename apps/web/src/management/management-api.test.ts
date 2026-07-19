@@ -50,6 +50,9 @@ describe("createHttpManagementApi", () => {
           referenceId: "ref-editor-test",
           test: true
         },
+        "/management/alerts/alert-follow/editor/errors": {
+          referenceId: "err_editor_save"
+        },
         "/management/assets/library": [],
         "/management/diagnostics/workspace": {
           problems: [],
@@ -93,6 +96,7 @@ describe("createHttpManagementApi", () => {
     expect(api.getAlertEditorDocument).toBeTypeOf("function");
     expect(api.saveAlertEditorDocument).toBeTypeOf("function");
     expect(api.sendAlertEditorTest).toBeTypeOf("function");
+    expect(api.reportAlertEditorError).toBeTypeOf("function");
     expect(api.listAssetLibraryItems).toBeTypeOf("function");
     expect(api.getDiagnosticsWorkspace).toBeTypeOf("function");
     expect(api.getConfigurationBackupSummary).toBeTypeOf("function");
@@ -118,6 +122,18 @@ describe("createHttpManagementApi", () => {
         includeTts: false
       })
     ).resolves.toMatchObject({ status: "queued", referenceId: "ref-editor-test" });
+    await expect(api.reportAlertEditorError("alert-follow", {
+      setId: "set-default",
+      error: {
+        summary: "The alert was not saved",
+        cause: "Database write failed.",
+        nextStep: "Review the selected profile and try again.",
+        severity: "error",
+        occurredAt: "2026-07-19T18:00:00.000Z",
+        referenceId: "err_editor_save",
+        correction: null
+      }
+    })).resolves.toEqual({ referenceId: "err_editor_save" });
     await expect(api.listAssetLibraryItems()).resolves.toEqual([]);
     await expect(api.getDiagnosticsWorkspace()).resolves.toEqual({ problems: [], events: [], rawLogs: [] });
     await expect(api.getConfigurationBackupSummary()).resolves.toMatchObject({ state: "ready" });
@@ -919,6 +935,7 @@ interface UiContractManagementApi {
     readonly includeAudio: boolean;
     readonly includeTts: boolean;
   }): Promise<unknown>;
+  reportAlertEditorError(alertId: string, input: unknown): Promise<unknown>;
   listAssetLibraryItems(): Promise<readonly unknown[]>;
   getDiagnosticsWorkspace(): Promise<unknown>;
   getConfigurationBackupSummary(): Promise<unknown>;

@@ -394,8 +394,9 @@ describe("management alert contracts and rules", () => {
       payload: { userName: "A-Very-Long-Raider-Name", raidViewers: 5_000, amount: 5_000 }
     }).success).toBe(true);
     expect(variableCatalog("raid").map((variable) => variable.key)).toEqual(
-      expect.arrayContaining(["userName", "actor.displayName", "raidViewers"])
+      expect.arrayContaining(["userName", "raidViewers"])
     );
+    expect(variableCatalog("raid").map((variable) => variable.key)).not.toContain("actor.displayName");
     expect(validateSample("raid", { raidViewers: 1 })).toBeNull();
     expect(validateSample("raid", { raidViewers: 0 })).toBe("Raid viewer count must be a positive number.");
     expect(validateSample("cheer", { cheerAmount: 100 })).toBeNull();

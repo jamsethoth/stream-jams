@@ -235,6 +235,7 @@ function createService(
       referenceId: "ref-test",
       test: true
     }),
+    reportAlertEditorError: async (_alertId, input) => ({ referenceId: input.error.referenceId }),
     listAssetLibraryItems: async (): Promise<readonly AssetLibraryItem[]> => [],
     updateAssetMetadata: async (_assetId, input) => ({
       id: "asset-1",

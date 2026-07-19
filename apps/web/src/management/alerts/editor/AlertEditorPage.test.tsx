@@ -4,12 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
-import { AlertEditorPage } from "./AlertEditorPage.js";
+import { AlertEditorPage, type AlertEditorPageApi } from "./AlertEditorPage.js";
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("AlertEditorPage", () => {
@@ -144,8 +145,72 @@ describe("AlertEditorPage", () => {
     );
 
     expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Back to alerts" }));
+    expect(screen.queryByRole("button", { name: "Dismiss error" })).not.toBeInTheDocument();
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(8_000));
+    expect(screen.getByText("The alert editor could not be opened")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to alerts" }));
     expect(onBack).toHaveBeenCalledWith("set-default");
+  });
+
+  it("floats loaded-editor action errors, reports them, supports dismissal, and expires them after eight seconds", async () => {
+    const user = userEvent.setup();
+    const reportAlertEditorError = vi.fn(async (_alertId: string, input: { readonly error: { readonly referenceId: string | null } }) => ({
+      referenceId: input.error.referenceId ?? "ui_editor_fallback"
+    }));
+    const managementApi = {
+      getAlertEditorDocument: vi.fn(async () => editorDocument()),
+      getAlertSet: vi.fn(async () => alertSetDetail(false)),
+      listRegisteredProviders: vi.fn(async () => []),
+      getAssetChangeImpact: vi.fn(),
+      listAssetLibraryItems: vi.fn(async () => []),
+      deleteAsset: vi.fn(),
+      updateAssetMetadata: vi.fn(),
+      saveAlertEditorDocument: vi.fn(async () => {
+        throw new Error("Database write failed. (INTERNAL_SERVER_ERROR, err_editor_save)");
+      }),
+      sendAlertEditorTest: vi.fn(),
+      reportAlertEditorError
+    } as AlertEditorPageApi & { readonly reportAlertEditorError: typeof reportAlertEditorError };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={managementApi}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    await user.clear(template);
+    await user.type(template, "Cannot save");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    const firstError = await screen.findByRole("alert");
+    expect(firstError.closest(".alert-editor-page__action-error")).not.toBeNull();
+    expect(firstError).toHaveTextContent("err_editor_save");
+    expect(reportAlertEditorError).toHaveBeenCalledWith("alert-follow", expect.objectContaining({
+      setId: "set-default",
+      error: expect.objectContaining({ referenceId: "err_editor_save" })
+    }));
+    await user.click(screen.getByRole("button", { name: "Dismiss error" }));
+    expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
+
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("The alert was not saved")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(7_999));
+    expect(screen.getByText("The alert was not saved")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
   });
 
   it("shows alert and set validation details with correction steps in the editor", async () => {

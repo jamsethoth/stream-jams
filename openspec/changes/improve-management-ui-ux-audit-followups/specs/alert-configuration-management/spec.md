@@ -21,3 +21,12 @@ The focused alert editor SHALL remain a distinct management route while retainin
 #### Scenario: Narrow editor viewport is used
 - **WHEN** the editor is 700 CSS pixels wide or narrower
 - **THEN** authoring controls are hidden behind the existing clear larger-screen message
+
+### Requirement: Alert Template Variables Match Normalized Event Data
+The alert editor SHALL present only variables relevant to the selected normalized event type and SHALL render those variables consistently in preview, test, and live playback.
+
+#### Scenario: Event actor name is inserted
+- **WHEN** a user inserts `User name`
+- **THEN** the editor writes `{userName}`
+- **AND** live playback resolves it from the normalized event actor display name
+- **AND** legacy saved `{actor.displayName}` templates continue to render without appearing as a second user-facing actor-name choice

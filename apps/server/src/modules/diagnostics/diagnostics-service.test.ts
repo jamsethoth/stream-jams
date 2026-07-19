@@ -211,6 +211,38 @@ describe("DiagnosticsService", () => {
     }));
   });
 
+  it("maps an alert-editor client failure to the visible reference and alert correction", async () => {
+    const runtimeLogSource = new RecordingRuntimeLogSource([{
+      timestamp: "2026-07-19T18:00:00.000Z",
+      level: "ERROR",
+      event: "management.client.error",
+      component: "alerts",
+      message: "Database write failed.",
+      correlationId: "err_editor_save",
+      processingId: null,
+      details: {
+        summary: "The alert was not saved",
+        nextStep: "Review the selected profile and try again.",
+        alertId: "alert-follow",
+        alertSetId: "set-default"
+      }
+    }]);
+    const service = createService(new RecordingDiagnosticsRepository(), [], runtimeLogSource);
+
+    const workspace = await service.getWorkspace();
+
+    expect(workspace.problems).toContainEqual(expect.objectContaining({
+      area: "alerts",
+      summary: "The alert was not saved",
+      referenceId: "err_editor_save",
+      correction: {
+        label: "Open alert",
+        route: "/manage/modules/alerts/editor/alert-follow?set=set-default&diagnostic=err_editor_save"
+      }
+    }));
+    expect(workspace.rawLogs).toContainEqual(expect.objectContaining({ referenceId: "err_editor_save" }));
+  });
+
   it("keeps shared event-intake failures in raw logs instead of duplicating provider status", async () => {
     const runtimeLogSource = new RecordingRuntimeLogSource([{
       timestamp: "2026-05-31T02:04:00.000Z",

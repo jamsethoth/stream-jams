@@ -77,3 +77,16 @@ The management UI SHALL omit zero-value blocker and warning facts and SHALL repl
 #### Scenario: Provider activation has a mixed impact
 - **WHEN** either matching or unmatched alert count is zero
 - **THEN** the zero-valued count is omitted while the nonzero impact remains visible
+
+### Requirement: Alert Editor Action Failures Do Not Reflow The Workspace
+The management UI SHALL present post-load alert-editor action failures without changing the authoring workspace dimensions and SHALL retain diagnostic evidence after transient feedback disappears.
+
+#### Scenario: Alert editor action fails
+- **WHEN** a save, preview, test, or editor command fails after the editor has loaded
+- **THEN** the actionable error appears in a fixed bottom-right surface with a dismiss control
+- **AND** it automatically disappears after eight seconds
+- **AND** its reference ID can locate the sanitized failure in Diagnostics
+
+#### Scenario: Alert editor fails to load
+- **WHEN** the initial alert document or set cannot be loaded
+- **THEN** the blocking failure remains inline and persistent with a route back to Alerts

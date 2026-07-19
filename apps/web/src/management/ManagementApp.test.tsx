@@ -481,6 +481,9 @@ function createManagementApi(): ManagementApi {
       referenceId: "ref-test",
       test: true as const
     })),
+    reportAlertEditorError: vi.fn(async (_alertId, input) => ({
+      referenceId: input.error.referenceId
+    })),
     listAssetLibraryItems: vi.fn(async () => []),
     updateAssetMetadata: vi.fn(async () => {
       throw new Error("not called");

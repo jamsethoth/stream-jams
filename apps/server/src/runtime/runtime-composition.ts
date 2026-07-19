@@ -721,6 +721,25 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     saveAlertEditorDocument: (alertId, document, confirmLiveImpact) =>
       alertEditorService.saveDocument(alertId, document, confirmLiveImpact),
     sendAlertEditorTest: (alertId, request) => alertEditorService.sendTest(alertId, request),
+    async reportAlertEditorError(alertId, input) {
+      await runtimeLogger.error(input.error.cause ?? input.error.summary, {
+        module: "alerts",
+        source: "management.client.error",
+        correlationId: input.error.referenceId,
+        processingId: null,
+        metadata: {
+          summary: input.error.summary,
+          nextStep: input.error.nextStep,
+          alertId,
+          ...(input.setId === null ? {} : { alertSetId: input.setId }),
+          ...(input.error.correction === null ? {} : {
+            correctionLabel: input.error.correction.label,
+            correctionRoute: input.error.correction.route
+          })
+        }
+      });
+      return { referenceId: input.error.referenceId };
+    },
     listAssetLibraryItems: () => assetLibraryService.listItems(),
     updateAssetMetadata: (assetId, input) => assetLibraryService.updateMetadata(assetId, input),
     getAssetChangeImpact: (assetId, candidateMediaType) =>

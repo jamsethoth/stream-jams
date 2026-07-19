@@ -48,3 +48,13 @@
 - [x] 7.3 Rebuild and restart the local app, live-verify all management routes plus Landscape and Vertical overlay behavior, and capture completion evidence.
 - [x] 7.4 Run `openspec.cmd validate improve-management-ui-ux-audit-followups --strict` and reconcile every requirement against code and tests.
 - [x] 7.5 Suppress zero-value problem summaries in Browser sources, Home, and provider activation impact, with focused tests and an all-ready Browser sources story.
+
+## 8. Alert Editor Transient Errors And Variable Review
+
+- [x] 8.1 Add failing editor tests for fixed dismissible action errors, eight-second expiry, and persistent blocking load errors.
+- [x] 8.2 Add failing diagnostics tests proving client-only failures and public backend error IDs are searchable by the same visible reference ID.
+- [x] 8.3 Implement the minimal authenticated client-error reporting path and correlate backend runtime evidence by public error ID.
+- [x] 8.4 Render loaded-editor action errors as a fixed bottom-right surface with manual dismissal and eight-second expiry; update Storybook coverage.
+- [x] 8.5 Add failing live-render tests for `{userName}`, then expose only `User name` while retaining hidden `{actor.displayName}` compatibility.
+- [x] 8.6 Write a comprehensive normalized-event variable inventory and proposed event-specific editor catalog for product review without exposing unapproved variables.
+- [x] 8.7 Run frontend and server validation, strict OpenSpec validation, rebuild/restart, and live-verify error layout, dismissal, expiry, and Diagnostics lookup.

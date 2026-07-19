@@ -401,8 +401,16 @@ export class DiagnosticsService {
       .filter((entry) => entry.level === "ERROR" && !isProviderStatusDiagnostic(entry))
       .map((entry, index) => {
         const referenceId = entry.correlationId === "" ? null : entry.correlationId;
-        const correction = correctionForEvidence(`${entry.component} ${entry.event} ${entry.message}`, referenceId);
-        const area = correctionArea(correction, "runtime");
+        const alertId = readStringDetail(entry, "alertId");
+        const alertSetId = readStringDetail(entry, "alertSetId");
+        const correctionLabel = readStringDetail(entry, "correctionLabel");
+        const correctionRoute = readStringDetail(entry, "correctionRoute");
+        const correctionTarget = correctionLabel !== null && correctionRoute !== null
+          ? correction(correctionLabel, correctionRoute, referenceId)
+          : alertId === null
+            ? correctionForEvidence(`${entry.component} ${entry.event} ${entry.message}`, referenceId)
+            : alertCorrection(alertId, referenceId, alertSetId);
+        const area = correctionArea(correctionTarget, "runtime");
         const actionableSummary = readStringDetail(entry, "summary");
         const actionableNextStep = readStringDetail(entry, "nextStep");
         return {
@@ -414,7 +422,7 @@ export class DiagnosticsService {
           severity: "error" as const,
           occurredAt: entry.timestamp,
           referenceId,
-          correction
+          correction: correctionTarget
         };
       });
 

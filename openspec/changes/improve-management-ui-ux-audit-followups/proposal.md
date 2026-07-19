@@ -14,6 +14,8 @@ The merged management UI is coherent but the post-merge UX audit found paths tha
 - Show required browser-source dimensions and setup guidance, and allow revealed route keys to be hidden again.
 - Remove duplicate route headings, hard-coded management colors, and dead pre-refactor CSS touched by this work.
 - Add focused unit, Storybook, and Playwright coverage for failure, keyboard, reconnect, scaling, and responsive states.
+- Keep alert-editor action failures out of the workspace layout, auto-dismiss them after eight seconds, and retain their reference IDs in Diagnostics.
+- Present one user-facing actor name variable whose live value matches preview while retaining legacy template compatibility.
 
 ## Capabilities
 

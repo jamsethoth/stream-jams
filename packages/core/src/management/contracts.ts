@@ -411,8 +411,7 @@ export const alertTemplateVariableSchema = z.object({
 type AlertSampleEventType = z.infer<typeof streamEventTypeSchema>;
 
 const commonTemplateVariables = [
-  { key: "userName", label: "User name", description: "Display name for the event actor." },
-  { key: "actor.displayName", label: "Actor display name", description: "Normalized display name for the event actor." }
+  { key: "userName", label: "User name", description: "Display name for the event actor." }
 ] as const;
 
 const hypeTrainTemplateVariables = [
@@ -586,6 +585,15 @@ export const alertEditorTestResultSchema = z.object({
   targetProfileId: targetProfileIdSchema,
   referenceId: nonEmptyStringSchema,
   test: z.literal(true)
+});
+
+export const alertEditorErrorReportInputSchema = z.object({
+  setId: nonEmptyStringSchema.nullable(),
+  error: actionableManagementErrorSchema.extend({ referenceId: nonEmptyStringSchema })
+});
+
+export const alertEditorErrorReportResultSchema = z.object({
+  referenceId: nonEmptyStringSchema
 });
 
 export const assetUsageLinkSchema = z.object({
@@ -979,6 +987,8 @@ export type AlertEditorDocument = z.infer<typeof alertEditorDocumentSchema>;
 export type AlertEditorSaveInput = z.infer<typeof alertEditorSaveInputSchema>;
 export type AlertEditorTestRequest = z.infer<typeof alertEditorTestRequestSchema>;
 export type AlertEditorTestResult = z.infer<typeof alertEditorTestResultSchema>;
+export type AlertEditorErrorReportInput = z.infer<typeof alertEditorErrorReportInputSchema>;
+export type AlertEditorErrorReportResult = z.infer<typeof alertEditorErrorReportResultSchema>;
 export type AssetUsageSummary = z.infer<typeof assetUsageSummarySchema>;
 export type AssetLibraryItem = z.infer<typeof assetLibraryItemSchema>;
 export type AssetMetadataUpdateInput = z.infer<typeof assetMetadataUpdateInputSchema>;

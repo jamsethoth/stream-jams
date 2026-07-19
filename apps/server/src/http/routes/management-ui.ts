@@ -2,6 +2,8 @@ import {
   alertCreateInputSchema,
   alertVariationCreateInputSchema,
   alertEditorDocumentSchema,
+  alertEditorErrorReportInputSchema,
+  alertEditorErrorReportResultSchema,
   alertEditorSaveInputSchema,
   alertEditorTestRequestSchema,
   alertEditorTestResultSchema,
@@ -32,6 +34,8 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertEditorErrorReportInput,
+  type AlertEditorErrorReportResult,
   type AlertCreateInput,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
@@ -127,6 +131,7 @@ export interface ManagementUiQueryService {
     confirmLiveImpact: boolean
   ): Promise<AlertEditorDocument>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
+  reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
   getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
@@ -534,6 +539,13 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
 
   app.get("/management/diagnostics/workspace", { preHandler }, async () =>
     diagnosticsWorkspaceViewSchema.parse(await service.getDiagnosticsWorkspace())
+  );
+
+  app.post("/management/alerts/:alertId/editor/errors", { preHandler }, async (request) =>
+    alertEditorErrorReportResultSchema.parse(await service.reportAlertEditorError(
+      readParam(request.params, "alertId"),
+      alertEditorErrorReportInputSchema.parse(request.body)
+    ))
   );
 
   app.get("/management/settings/backup-summary", { preHandler }, async () =>

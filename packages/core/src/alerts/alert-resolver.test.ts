@@ -133,6 +133,17 @@ describe("DefaultAlertResolver", () => {
     expect(JSON.stringify(resolved)).not.toContain("do-not-leak");
   });
 
+  it("renders the user-facing userName alias while retaining legacy actor display-name templates", () => {
+    const event = createCheerEvent({ actor: { id: "viewer-1", displayName: "Viewer" } });
+    const rule = createRule({
+      variants: [createVariant({ textTemplate: "{userName}|{actor.displayName}" })]
+    });
+
+    const [resolved] = createResolver().resolveMatches({ matches: [createMatch(rule, event)], target });
+
+    expect(resolved?.overlayInstruction.text?.text).toBe("Viewer|Viewer");
+  });
+
   it("moderates rendered and TTS text before playback instructions leave the resolver", () => {
     const event = createCheerEvent({
       message: "badword https://example.test/secret"

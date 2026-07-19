@@ -36,6 +36,36 @@ describe("management UI contract routes", () => {
     expect(responses[8]?.json()).toEqual(expect.objectContaining({ state: "ready" }));
   });
 
+  it("records a sanitized alert-editor client error through the protected management boundary", async () => {
+    const { app, authHeaders, service } = await createApp();
+    const response = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/editor/errors",
+      headers: authHeaders,
+      payload: {
+        setId: "set-default",
+        error: {
+          summary: "The alert was not saved",
+          cause: "Database write failed.",
+          nextStep: "Review the selected profile and try again.",
+          severity: "error",
+          occurredAt: "2026-07-19T18:00:00.000Z",
+          referenceId: "err_editor_save",
+          correction: null
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ referenceId: "err_editor_save" });
+    expect(service.editorCommands).toContainEqual([
+      "report-error",
+      "alert-follow",
+      "set-default",
+      "err_editor_save"
+    ]);
+  });
+
   it("rejects missing auth and unsupported provider capabilities", async () => {
     const { app, authHeaders } = await createApp();
 
@@ -670,6 +700,11 @@ class StubManagementUiQueryService {
   async sendAlertEditorTest(alertId: string, request: { readonly targetProfileId: "landscape" | "vertical" }) {
     this.editorCommands.push(["test", alertId, request.targetProfileId]);
     return { status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-editor-test", test: true as const };
+  }
+
+  async reportAlertEditorError(alertId: string, input: { readonly setId: string | null; readonly error: { readonly referenceId: string | null } }) {
+    this.editorCommands.push(["report-error", alertId, input.setId, input.error.referenceId]);
+    return { referenceId: input.error.referenceId ?? "ui_editor_fallback" };
   }
 
   async listAssetLibraryItems() {

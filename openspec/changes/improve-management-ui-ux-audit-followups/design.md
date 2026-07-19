@@ -41,6 +41,10 @@ Settings, Alerts, Assets, and Providers keep their existing local state but retu
 
 Alternative rejected: generic async state machine/context, because four existing components already expose the necessary loading/error state and do not share data lifecycles.
 
+Loaded alert-editor action failures use the same actionable error content in a fixed bottom-right surface. They can be dismissed immediately and expire after eight seconds, so feedback does not resize or scroll the authoring workspace. Initial editor-load failures remain persistent and inline because no usable workspace exists behind them. Client-only failures receive a local reference ID and are written through the authenticated management diagnostics boundary; backend failures use their public error ID as the runtime-log correlation ID.
+
+The editor exposes `User name` as the single actor-name variable. Live template context maps `{userName}` to the normalized actor display name and keeps `{actor.displayName}` available only for saved-template compatibility. Other variables remain event-specific; a normalized-event inventory is reviewed before broadening the catalog.
+
 ### Use native responsive behavior before new components
 
 The mobile navigation wraps into visible destinations instead of relying on an unlabelled horizontal scrollbar. Modules is a non-link group on desktop so only Alerts is current. Dense tables retain semantic markup, but narrow breakpoints hide secondary columns and keep identity, status, and primary actions visible; details remain available in the selected/detail region. Asset filters collapse behind a native `details` summary on narrow screens.

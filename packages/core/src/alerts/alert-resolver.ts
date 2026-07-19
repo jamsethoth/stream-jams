@@ -341,6 +341,7 @@ function createTemplateContext(event: NormalizedStreamEvent): Record<string, unk
       id: event.actor.id,
       displayName: event.actor.displayName
     },
+    userName: event.actor.displayName,
     message: event.message,
     amount: event.amount,
     metadata

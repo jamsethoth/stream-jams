@@ -126,6 +126,34 @@ export const ActiveSetSaveWarning: Story = {
   }
 };
 
+export const ActionFailure: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertSet: async () => ({
+        ...alertSetDetail(),
+        overview: { ...alertSetDetail().overview, active: false }
+      }),
+      saveAlertEditorDocument: fn(async () => {
+        throw new Error("Database write failed. (INTERNAL_SERVER_ERROR, err_story_editor_save)");
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const template = await canvas.findByRole("textbox", { name: "Message template" });
+    await userEvent.clear(template);
+    await userEvent.type(template, "Unsaved message");
+    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    await expect(await canvas.findByText("The alert was not saved")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Dismiss error" })).toBeVisible();
+    await expect(canvas.getByRole("link", { name: "Open diagnostics" })).toHaveAttribute(
+      "href",
+      "/manage/diagnostics?reference=err_story_editor_save"
+    );
+  }
+};
+
 export const NoLayerSelection: Story = {
   args: {
     managementApi: createStoryManagementApi({

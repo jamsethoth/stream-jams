@@ -52,7 +52,7 @@ export type AlertEditorPageApi = Pick<
   | "updateAssetMetadata"
   | "saveAlertEditorDocument"
   | "sendAlertEditorTest"
->;
+> & Partial<Pick<ManagementApi, "reportAlertEditorError">>;
 
 export interface AlertEditorPageProps {
   readonly alertId: string;
@@ -66,6 +66,7 @@ export interface AlertEditorPageProps {
 type InspectorTab = "layers" | "alert" | "event";
 type PickerState = { readonly layerId: string | null; readonly type: "image" | "video" | "audio" };
 type EditorCondition = AlertEditorDocument["conditions"][number];
+type ReportableActionError = ActionableManagementError & { readonly referenceId: string };
 type SaveWarningState = {
   readonly rejectNavigation?: (cause: unknown) => void;
   readonly resolveNavigation?: (saved: boolean) => void;
@@ -157,6 +158,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     return () => { active = false; };
   }, [props.alertId, props.managementApi, props.targetProfileId]);
 
+  const showActionError = useCallback((nextError: ReportableActionError) => {
+    setError(nextError);
+    const report = props.managementApi.reportAlertEditorError;
+    if (report === undefined) return;
+    void report(props.alertId, { setId: loadedSetId ?? null, error: nextError }).catch((cause: unknown) => {
+      console.error(`[${nextError.referenceId}] Alert editor error could not be recorded in Diagnostics.`, cause);
+    });
+  }, [loadedSetId, props.alertId, props.managementApi]);
+
   useEffect(() => {
     if (!previewPlaying || editor === null) return;
     const durationMs = editor.document.durationMs;
@@ -178,10 +188,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     };
   }, [editor, previewPlaying, previewRunId]);
 
+  useEffect(() => {
+    if (error === null || editor === null) return;
+    const timeout = window.setTimeout(() => setError((current) => current === error ? null : current), 8_000);
+    return () => window.clearTimeout(timeout);
+  }, [editor, error]);
+
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
-      setError(missingActiveTtsProviderError());
+      showActionError(missingActiveTtsProviderError());
       throw new Error("An active TTS provider is required before enabled TTS layers can be saved.");
     }
     const submittedDocument = applyActiveTtsProvider(editor.document, activeTtsProvider);
@@ -201,12 +217,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       });
       setNotice("Alert saved.");
     } catch (cause) {
-      setError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
+      showActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
       throw cause;
     } finally {
       setBusy(false);
     }
-  }, [activeTtsProvider, editor, props.alertId, props.managementApi]);
+  }, [activeTtsProvider, editor, props.alertId, props.managementApi, showActionError]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
     if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor).length === 0) return false;
@@ -215,14 +231,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSetDetail(latestSetDetail);
       return latestSetDetail.overview.active;
     } catch (cause) {
-      setError(actionableError(
+      showActionError(actionableError(
         "The alert set status could not be checked",
         cause,
         "Confirm the local service is running, then try saving again."
       ));
       throw cause;
     }
-  }, [editor, props.managementApi]);
+  }, [editor, props.managementApi, showActionError]);
 
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
@@ -382,14 +398,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         });
       }
     } catch (cause) {
-      setError(actionableError("Local preview media could not be played", cause, "Check the selected audio asset and browser audio permissions, then replay the preview."));
+      showActionError(actionableError("Local preview media could not be played", cause, "Check the selected audio asset and browser audio permissions, then replay the preview."));
     }
   }
 
   async function sendTest() {
     if (document === null || samplePayload === null || profile === null) return;
     if (sendIncludeTts && hasEnabledTts(document) && activeTtsProvider === null) {
-      setError(missingActiveTtsProviderError());
+      showActionError(missingActiveTtsProviderError());
       return;
     }
     setBusy(true);
@@ -404,7 +420,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       });
       setNotice(`Queued on ${profileLabel(profileId)}. Reference ${result.referenceId}.`);
     } catch (cause) {
-      setError(actionableError("The alert test was not sent", cause, `Connect and review the ${profileLabel(profileId)} output, then try again.`));
+      showActionError(actionableError("The alert test was not sent", cause, `Connect and review the ${profileLabel(profileId)} output, then try again.`));
     } finally {
       setBusy(false);
     }
@@ -519,7 +535,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setCopyDesignOpen(false);
       setNotice("Design copied. Review the result, then Save to keep it.");
     } catch (cause) {
-      setError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source."));
+      showActionError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source."));
     } finally {
       setBusy(false);
     }
@@ -561,7 +577,17 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         <p>Open this alert on a screen wider than 700px to edit layers and layouts.</p>
       </section>
 
-      {error === null ? null : <ManagementErrorBanner error={error} />}
+      {error === null ? null : (
+        <div className="alert-editor-page__action-error">
+          <ManagementErrorBanner error={error} />
+          <div className="alert-editor-page__action-error-actions">
+            {error.referenceId === null ? null : (
+              <a href={`/manage/diagnostics?reference=${encodeURIComponent(error.referenceId)}`}>Open diagnostics</a>
+            )}
+            <button className="button button--secondary" onClick={() => setError(null)} type="button">Dismiss error</button>
+          </div>
+        </div>
+      )}
       {notice === null ? null : <p className="alert-editor-page__notice" role="status">{notice}</p>}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event condition needs correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
       {validationIssues.length === 0 ? null : (
@@ -1304,7 +1330,7 @@ function formatTtsProviderKind(kind: RegisteredProviderView["kind"]): string {
   return kind === "speakerbot" ? "Speaker.bot" : kind === "browser-speech" ? "Browser Speech" : capitalize(kind);
 }
 
-function missingActiveTtsProviderError(): ActionableManagementError {
+function missingActiveTtsProviderError(): ReportableActionError {
   return {
     ...actionableError(
       "Enabled TTS has no active provider",
@@ -1315,16 +1341,17 @@ function missingActiveTtsProviderError(): ActionableManagementError {
   };
 }
 
-function actionableError(summary: string, cause: unknown, nextStep: string): ActionableManagementError {
+function actionableError(summary: string, cause: unknown, nextStep: string): ReportableActionError {
   const message = cause instanceof Error ? cause.message : "The request failed for an unknown reason.";
-  const referenceMatch = /(?:reference|id)[: ]+([A-Za-z0-9_-]+)/iu.exec(message);
+  const referenceId = /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(message)?.[0]
+    ?? `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   return {
     summary,
     cause: message,
     nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),
-    referenceId: referenceMatch?.[1] ?? null,
+    referenceId,
     correction: null
   };
 }
