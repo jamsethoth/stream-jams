@@ -101,9 +101,12 @@ const hypeTrainFields = {
   cooldownEndsAt: nullableIsoDateTimeSchema
 };
 
-export const hypeTrainStartEventSchema = baseEventSchema.extend({ type: z.literal("hype_train_start"), ...hypeTrainFields });
-export const hypeTrainProgressEventSchema = baseEventSchema.extend({ type: z.literal("hype_train_progress"), ...hypeTrainFields });
-export const hypeTrainEndEventSchema = baseEventSchema.extend({ type: z.literal("hype_train_end"), ...hypeTrainFields });
+export const hypeTrainStartEventSchema = baseEventSchema.extend({ type: z.literal("hype_train_start"), ...hypeTrainFields })
+  .refine((event) => event.amount === event.total, { path: ["amount"], message: "amount must equal total" });
+export const hypeTrainProgressEventSchema = baseEventSchema.extend({ type: z.literal("hype_train_progress"), ...hypeTrainFields })
+  .refine((event) => event.amount === event.total, { path: ["amount"], message: "amount must equal total" });
+export const hypeTrainEndEventSchema = baseEventSchema.extend({ type: z.literal("hype_train_end"), ...hypeTrainFields })
+  .refine((event) => event.amount === event.total, { path: ["amount"], message: "amount must equal total" });
 
 export const pollChoiceSchema = z.object({
   id: nonEmptyStringSchema,
@@ -122,9 +125,12 @@ const pollFields = {
   status: nonEmptyStringSchema
 };
 
-export const pollStartEventSchema = baseEventSchema.extend({ type: z.literal("poll_start"), ...pollFields });
-export const pollProgressEventSchema = baseEventSchema.extend({ type: z.literal("poll_progress"), ...pollFields });
-export const pollEndEventSchema = baseEventSchema.extend({ type: z.literal("poll_end"), ...pollFields });
+export const pollStartEventSchema = baseEventSchema.extend({ type: z.literal("poll_start"), ...pollFields })
+  .refine((event) => event.amount === event.totalVotes, { path: ["amount"], message: "amount must equal totalVotes" });
+export const pollProgressEventSchema = baseEventSchema.extend({ type: z.literal("poll_progress"), ...pollFields })
+  .refine((event) => event.amount === event.totalVotes, { path: ["amount"], message: "amount must equal totalVotes" });
+export const pollEndEventSchema = baseEventSchema.extend({ type: z.literal("poll_end"), ...pollFields })
+  .refine((event) => event.amount === event.totalVotes, { path: ["amount"], message: "amount must equal totalVotes" });
 
 export const predictionOutcomeSchema = z.object({
   id: nonEmptyStringSchema,
@@ -147,10 +153,14 @@ const predictionFields = {
   winningOutcomeId: nullableNonEmptyStringSchema
 };
 
-export const predictionStartEventSchema = baseEventSchema.extend({ type: z.literal("prediction_start"), ...predictionFields });
-export const predictionProgressEventSchema = baseEventSchema.extend({ type: z.literal("prediction_progress"), ...predictionFields });
-export const predictionLockEventSchema = baseEventSchema.extend({ type: z.literal("prediction_lock"), ...predictionFields });
-export const predictionEndEventSchema = baseEventSchema.extend({ type: z.literal("prediction_end"), ...predictionFields });
+export const predictionStartEventSchema = baseEventSchema.extend({ type: z.literal("prediction_start"), ...predictionFields })
+  .refine((event) => event.amount === event.totalPoints, { path: ["amount"], message: "amount must equal totalPoints" });
+export const predictionProgressEventSchema = baseEventSchema.extend({ type: z.literal("prediction_progress"), ...predictionFields })
+  .refine((event) => event.amount === event.totalPoints, { path: ["amount"], message: "amount must equal totalPoints" });
+export const predictionLockEventSchema = baseEventSchema.extend({ type: z.literal("prediction_lock"), ...predictionFields })
+  .refine((event) => event.amount === event.totalPoints, { path: ["amount"], message: "amount must equal totalPoints" });
+export const predictionEndEventSchema = baseEventSchema.extend({ type: z.literal("prediction_end"), ...predictionFields })
+  .refine((event) => event.amount === event.totalPoints, { path: ["amount"], message: "amount must equal totalPoints" });
 
 const streamFields = {
   amount: z.null(),

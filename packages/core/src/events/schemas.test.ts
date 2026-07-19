@@ -7,6 +7,7 @@ import {
   streamEventTypeSchema,
   streamerBotSubscriptionSelectionSchema
 } from "./schemas.js";
+import { streamEventTypes } from "./types.js";
 
 const baseEvent = {
   id: "evt-1",
@@ -32,6 +33,8 @@ describe("normalizedStreamEventSchema", () => {
       "prediction_start", "prediction_progress", "prediction_lock", "prediction_end",
       "stream_online", "stream_offline"
     ] as const;
+
+    expect(streamEventTypes).toEqual(eventTypes);
 
     for (const type of eventTypes) {
       expect(streamEventTypeSchema.safeParse(type).success).toBe(true);
@@ -228,6 +231,56 @@ describe("normalizedStreamEventSchema", () => {
     expect(normalizedStreamEventSchema.safeParse({ ...prediction, outcomes: [{ id: "outcome-1", totalUsers: 10, totalPoints: 1000 }] }).success).toBe(false);
     expect(normalizedStreamEventSchema.safeParse({ ...prediction, outcomes: [{ id: "outcome-1", title: "Yes", totalUsers: 10.5, totalPoints: 1000 }] }).success).toBe(false);
     expect(normalizedStreamEventSchema.safeParse({ ...prediction, outcomes: [{ id: "outcome-1", title: "Yes", totalUsers: 10, totalPoints: 1000.5 }] }).success).toBe(false);
+  });
+
+  it("requires canonical aggregate amounts", () => {
+    const hypeTrain = {
+      ...baseEvent,
+      type: "hype_train_progress",
+      amount: 500,
+      trainId: "train-1",
+      level: 2,
+      progress: 500,
+      goal: 1000,
+      total: 500,
+      startedAt: "2026-05-22T12:34:56.000Z",
+      expiresAt: "2026-05-22T12:39:56.000Z",
+      endedAt: null,
+      cooldownEndsAt: null
+    };
+    const poll = {
+      ...baseEvent,
+      type: "poll_progress",
+      amount: 12,
+      pollId: "poll-1",
+      title: "What should we play?",
+      choices: [{ id: "choice-1", title: "Game A", totalVotes: 12 }],
+      totalVotes: 12,
+      startedAt: "2026-05-22T12:34:56.000Z",
+      endsAt: "2026-05-22T12:39:56.000Z",
+      status: "active"
+    };
+    const prediction = {
+      ...baseEvent,
+      type: "prediction_progress",
+      amount: 1000,
+      predictionId: "prediction-1",
+      title: "Will we win?",
+      outcomes: [{ id: "outcome-1", title: "Yes", totalUsers: 10, totalPoints: 1000 }],
+      totalUsers: 10,
+      totalPoints: 1000,
+      startedAt: "2026-05-22T12:34:56.000Z",
+      locksAt: "2026-05-22T12:39:56.000Z",
+      endedAt: null,
+      status: "active",
+      winningOutcomeId: null
+    };
+
+    expect(normalizedStreamEventSchema.safeParse({ ...hypeTrain, amount: 499 }).success).toBe(false);
+    expect(normalizedStreamEventSchema.safeParse({ ...hypeTrain, amount: null, total: 500 }).success).toBe(false);
+    expect(normalizedStreamEventSchema.safeParse({ ...hypeTrain, amount: null, total: null }).success).toBe(true);
+    expect(normalizedStreamEventSchema.safeParse({ ...poll, amount: 11 }).success).toBe(false);
+    expect(normalizedStreamEventSchema.safeParse({ ...prediction, amount: 999 }).success).toBe(false);
   });
 });
 
