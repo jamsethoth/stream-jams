@@ -21,7 +21,7 @@
     "build": "corepack pnpm -r build",
     "test": "corepack pnpm test:unit",
     "test:unit": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "corepack pnpm --filter @stream-jams/core build && playwright test",
     "test:e2e:report": "playwright show-report",
     "playwright:docker-server": "node scripts/playwright-docker-server.mjs",
     "storybook": "corepack pnpm --filter @stream-jams/web storybook",
