@@ -807,6 +807,90 @@ The old rule-only variant, timestamp-only diagnostic, overlay-ID, and short outp
 - Triggers: **4**.
 - `PRAGMA foreign_key_check` is empty in migration coverage.
 - The regenerated executable schema explorer reported 16 migrations and 18 tables.
-- A rebuilt disposable server opened schema 15, exported archive version 2 with four ordered variants, authorized a generated overlay route, and rejected a wrong route key with HTTP 401.
+- Fresh post-rebase tests opened schema 16; the runtime, backup, and overlay suites verified archive version 2 with ordered variants, generated overlay routes, and HTTP 401 rejection for wrong route keys.
 
 The implementation deliberately leaves journal mode/WAL policy, vacuuming, JSON normalization, optimistic row versions, migration checksums, and periodic `PRAGMA optimize` unchanged pending separate field evidence.
+
+## Post-rebase audit disposition
+
+The implementation commit was rebased onto `origin/main` at `212f8fed3eb20673c2437f5f8ee88c7f3ac72d34`, whose `012-revoke-unsupported-overlay-keys` migration now precedes this change's renumbered `013` through `016` migrations. The executable schema explorer and focused migration/repository/service tests confirm that integration is structurally sound. No additional schema, foreign-key, or index migration is required by the rebase.
+
+Two changes remain before merge: one hot-query rewrite and one artifact-truth correction. Two residual database-use improvements are worth separate follow-up. None was introduced by the rebase, and none requires another migration.
+
+### Required — Remove temporary B-trees from the active-rule parent query
+
+**Affected query:** `SqliteAlertRepository.listActiveRules()`.
+
+**Current behavior:** The fixed four-statement path uses `alert_collections_one_active_set`, covering `alert_rule_collections_collection_rule_idx`, and the alert-rule PK, but the parent `SELECT DISTINCT ... ORDER BY rules.id` still reports both `USE TEMP B-TREE FOR DISTINCT` and `USE TEMP B-TREE FOR ORDER BY`. `DISTINCT` is unnecessary because `(rule_id, collection_id)` is unique and the partial unique active-set index permits at most one enabled collection.
+
+**Risk:** Every event pays two avoidable temporary-sort operations on the otherwise-hardened hot path. The work is bounded by matching rules, so this is a confirmed performance defect rather than a correctness defect.
+
+**Exact change:** Drive the query from `alert_rule_collections`, resolve the one active collection with a scalar subquery, remove `DISTINCT`, and order by `memberships.rule_id`:
+
+```sql
+SELECT rules.id, rules.name, rules.event_type, rules.enabled,
+       rules.cooldown_seconds, rules.priority
+FROM alert_rule_collections AS memberships
+JOIN alert_rules AS rules ON rules.id = memberships.rule_id
+WHERE memberships.collection_id = (
+  SELECT id FROM alert_collections WHERE enabled = 1
+)
+  AND rules.enabled = 1
+  AND rules.event_type = ?
+ORDER BY memberships.rule_id;
+```
+
+The representative plan uses the covering collection/rule index, scalar active-set lookup, and alert-rule PK without a temporary B-tree.
+
+**Migration implications:** None. Migration 013 already supplies the required index in the correct column order.
+
+**Validation:** Extend the existing 1-versus-100-rule statement-count/behavior test with parent-query `EXPLAIN QUERY PLAN` assertions for all three expected indexes and no `USE TEMP B-TREE`; retain negative event-type, disabled-rule, and inactive-collection cases.
+
+### Optional — Residual management read amplification
+
+**Affected code:** `SqliteAlertRepository.listRulesSync()`, `AlertSetManagementService.listSets()` / `getSet()`, and `AssetLibraryService.listItems()` / `#deriveUsage()`.
+
+**Current behavior:** The event path is fixed at four SELECTs, and the management code now uses the promised bulk set/rule-metadata and document methods. The general rule reader still executes one parent SELECT plus three child SELECTs per rule, however. `getSet()` calls `listSets()` and then repeats `listRules()` and browser-source loading. Asset usage also performs one `findRule()` metadata query for every rule that references an asset.
+
+**Risk:** Larger profiles can make alert-set and asset-library management increasingly slow on the single SQLite connection. These are user-driven management paths, not the fixed per-event path, and no production-sized row counts currently justify holding this PR for them. Repeated reads can also assemble one response from different snapshots when another management request commits between them.
+
+**Exact change:** Bulk-hydrate general rule lists with the same keyed child-query pattern used by `listActiveRules()` or add a collection-scoped bulk reader; refactor `getSet()` to build its overview and detail from one collections/rules/browser-source snapshot instead of calling `listSets()` first; and use `AlertSetMetadataRepository.findRules()` once in asset usage derivation. If asset-library row metadata is also observed as material at field scale, add a typed `findMany()` beside its existing `find()` rather than a generic repository abstraction.
+
+**Migration implications:** None. Existing PK and composite indexes cover the proposed bulk lookups.
+
+**Validation:** Add SQLite authorizer statement-count tests for one versus 100 rules on `listSets()`, `getSet()`, and asset usage. Assert stable result equivalence, empty inputs, deduplication, and no repeated browser-source load in `getSet()`.
+
+### Optional — Recheck activation state inside the atomic swap
+
+**Affected code:** `AlertSetManagementService.activateSet()` and `SqliteAlertSetMetadataRepository.activateSet()`.
+
+**Current behavior:** Eligibility and confirmation are computed through several asynchronous reads, then the repository transaction only rechecks that the target collection exists before disabling the current set and enabling it. A concurrent rule or collection mutation between those phases can make the approved target snapshot stale and still be activated.
+
+**Risk:** Two concurrent management requests can activate a set whose blocker/warning decision no longer matches the committed rows. The swap remains exactly-one and atomic, and supported edits can also change an active set immediately after activation, so this is optimistic-concurrency hardening rather than a rebase regression.
+
+**Exact change:** Pass the expected target collection and affected rule snapshots into a synchronous activation mutation. Inside the same `runInTransaction()` that swaps `enabled`, re-read and compare those rows; reject on drift so the caller can reload impact and retry. Keep external I/O and user confirmation outside the transaction.
+
+**Migration implications:** None.
+
+**Validation:** Add a regression that pauses after activation impact is calculated, mutates a target rule or collection, resumes activation, and proves the swap is rejected while the original active set remains enabled. Retain the existing successful atomic replacement and partial-unique-index tests.
+
+### Required — Reconcile OpenSpec delivery state with the rebased PR
+
+**Affected artifacts:** `openspec/changes/harden-sqlite-persistence/design.md`, `tasks.md`, and this addendum's live-smoke evidence.
+
+**Current behavior:** The change is strict-valid but remains 34 of 44 tasks complete. Its design requires six sequential slice PRs landing in `main`; the implementation is instead consolidated in one PR, so the unchecked planning/landing tasks cannot truthfully be completed as written. The prior addendum also reported schema 15 after the rebase introduced schema 16; that statement is corrected above.
+
+**Risk:** Merging leaves the authoritative OpenSpec change permanently in-progress and records a delivery process that did not occur. Strict validation checks artifact shape, not task truth or runtime smoke freshness.
+
+**Exact change:** Before merge, either split delivery to match the approved design or amend the design/tasks to explicitly record an approved consolidated-PR exception. Mark only freshly verified gates complete. Re-run and record the schema-16 disposable runtime smoke, then strict-validate. Sync and archive only after the implementation is in `main`.
+
+**Migration implications:** None.
+
+**Validation:** `openspec.cmd list --json`, `openspec.cmd validate harden-sqlite-persistence --strict`, full repository gates, schema-16 runtime smoke, and confirmation that the final task state matches actual Git history.
+
+### Confirmed strengths and deliberate non-changes
+
+- Main's migration 012 composes cleanly with 013–016; ledger prefix validation rejects unknown, reordered, gapped, and future histories.
+- The alert-variant rebuild preserves ordering/default/check semantics, recreates dependent triggers and indexes, rejects dangling assets before mutation, and leaves `PRAGMA foreign_key_check` clean.
+- The event hot path, playback document/assets, diagnostic retention/order, exact overlay-key lookup, backup variant order, restore compensation, and Twitch singleton replacement have focused regression coverage.
+- Keep foreign keys enabled per connection, the 5-second busy timeout, rollback journal mode, narrow synchronous transactions, current cascade/restrict policies, and deliberate absence of `VACUUM`, WAL, migration checksums, optimistic row versions, and periodic `PRAGMA optimize` until field evidence justifies a separate change.
