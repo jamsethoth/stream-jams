@@ -57,6 +57,7 @@ const tableDefinitions = [
 ] as const satisfies readonly TableDefinition[];
 
 const definitionsByName = new Map(tableDefinitions.map((definition) => [definition.name, definition]));
+const nullableJsonColumns = new Set(["tts_config_json", "tts_safety_json"]);
 const restorePointMarker = Symbol("configuration-restore-point");
 
 interface SqliteConfigurationRestorePoint {
@@ -149,7 +150,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
         }
         for (const column of definition.jsonColumns ?? []) {
           const value = row[column];
-          if (value === null && column === "tts_safety_json") continue;
+          if (value === null && nullableJsonColumns.has(column)) continue;
           if (typeof value !== "string" || !isJson(value)) errors.push(`${definition.name}[${index}].${column} must contain valid JSON.`);
         }
         if (definition.name === "provider_registrations" && typeof row.non_secret_config_json === "string") {

@@ -731,6 +731,10 @@ describe("AlertEditorPage", () => {
       }),
       false
     ));
+    await waitFor(() => {
+      expect(screen.getByText("Saved")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    });
   });
 
   it("requires an active provider before a new TTS layer can be enabled", async () => {

@@ -128,4 +128,4 @@
 
 ## 14. Completion Truth
 
-- [ ] 14.1 Re-audit closed MVP specs, run all required validation, rebuild and restart affected services, and update completion evidence only after live verification.
+- [x] 14.1 Re-audit closed MVP specs, run all required validation, rebuild and restart affected services, and update completion evidence only after live verification.

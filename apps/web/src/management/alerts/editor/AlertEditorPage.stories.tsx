@@ -297,6 +297,16 @@ export const ActiveSpeakerBotTts: Story = {
     await expect(await canvas.findByText("Studio Speaker.bot")).toBeVisible();
     await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     await expect(canvas.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeChecked();
+    const template = canvas.getByRole("textbox", { name: "TTS template" });
+    await userEvent.clear(template);
+    await userEvent.type(template, "Storybook TTS save");
+    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    const dialog = within(
+      await within(globalThis.document.body).findByRole("dialog", { name: "Save changes to active alert?" })
+    );
+    await userEvent.click(dialog.getByRole("button", { name: "Save changes" }));
+    await expect(await canvas.findByText("Saved")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
   }
 };
 

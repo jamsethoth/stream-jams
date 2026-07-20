@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, runInTransaction, runInTransactionAsync } from "./database.js";
 import { variantAlertEditorDocumentsMigration } from "./migrations/010-variant-alert-editor-documents.js";
+import { revokeUnsupportedOverlayKeysMigration } from "./migrations/012-revoke-unsupported-overlay-keys.js";
 
 const expectedTables = [
   "alert_collections",
@@ -40,7 +41,8 @@ describe("Stream Jams SQLite database", () => {
       "008-asset-library-metadata",
       "009-alert-editor-documents",
       "010-variant-alert-editor-documents",
-      "011-alert-variant-order"
+      "011-alert-variant-order",
+      "012-revoke-unsupported-overlay-keys"
     ]);
 
     database.runMigrations();
@@ -56,7 +58,8 @@ describe("Stream Jams SQLite database", () => {
       "008-asset-library-metadata",
       "009-alert-editor-documents",
       "010-variant-alert-editor-documents",
-      "011-alert-variant-order"
+      "011-alert-variant-order",
+      "012-revoke-unsupported-overlay-keys"
     ]);
 
     expect(
@@ -155,6 +158,36 @@ describe("Stream Jams SQLite database", () => {
       expect(connection.prepare("SELECT alert_id FROM alert_editor_documents ORDER BY alert_id").all()).toEqual([
         { alert_id: "alert-follow" },
         { alert_id: "variant-follow" }
+      ]);
+    } finally {
+      connection.close();
+    }
+  });
+
+  it("revokes active overlay keys that use unsupported legacy purposes", () => {
+    const connection = new DatabaseSync(":memory:");
+    try {
+      connection.exec(`
+        CREATE TABLE overlay_keys (
+          id TEXT PRIMARY KEY NOT NULL,
+          purpose TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          revoked_at TEXT
+        );
+        INSERT INTO overlay_keys (id, purpose, created_at, revoked_at) VALUES
+          ('legacy-active', 'module-only', '2026-06-17T18:48:37.949Z', NULL),
+          ('legacy-revoked', 'module-only', '2026-06-17T18:48:35.898Z', '2026-06-18T00:00:00.000Z'),
+          ('live-active', 'live', '2026-07-20T00:00:00.000Z', NULL),
+          ('test-active', 'test', '2026-07-20T00:00:00.000Z', NULL);
+      `);
+
+      connection.exec(revokeUnsupportedOverlayKeysMigration.sql);
+
+      expect(connection.prepare("SELECT id, revoked_at FROM overlay_keys ORDER BY id").all()).toEqual([
+        { id: "legacy-active", revoked_at: "2026-06-17T18:48:37.949Z" },
+        { id: "legacy-revoked", revoked_at: "2026-06-18T00:00:00.000Z" },
+        { id: "live-active", revoked_at: null },
+        { id: "test-active", revoked_at: null }
       ]);
     } finally {
       connection.close();

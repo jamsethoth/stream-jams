@@ -79,7 +79,7 @@ The management UI is used to:
 - Enable, disable, and configure overlay modules.
 - Run module configuration wizards/forms.
 - Upload and manage visual/audio assets.
-- Configure alert collections.
+- Configure alert sets.
 - Configure TTS providers and per-alert TTS behavior.
 - Place alert elements on a fullscreen canvas.
 - Test events with realistic sample payloads.
@@ -437,8 +437,8 @@ The MVP should include:
 
 - Local management UI.
 - Configurable local port.
-- Browser-source live overlay.
-- Browser-source test overlay.
+- Target-profile browser-source live overlays.
+- Alert tests that reuse the connected target-profile output.
 - Module-specific browser-source URLs.
 - Unified browser-source URLs.
 - Unguessable overlay route keys.
@@ -448,10 +448,10 @@ The MVP should include:
 - Twitch EventSub WebSocket ingestion.
 - Normalized Twitch event model.
 - Alert rules and variants.
-- Manual alert collections.
+- Manual alert sets with exactly one active set.
 - Visual media and audio playback.
 - Text templates with event variables.
-- TTS abstraction with at least one practical provider or local fallback.
+- TTS abstraction with Speaker.bot as the first provider.
 - Test alerts with sample event payloads.
 - Playback queue.
 - Basic event/playback logs.
@@ -501,11 +501,11 @@ The MVP should include:
 - Alerts are the first overlay module, not the only long-term overlay feature.
 - The MVP includes the module platform foundation but only implements the Alerts module.
 - Future modules may use separate module-specific overlay URLs or participate in unified overlay URLs.
-- Multiple alert collections can be active at once.
+- Exactly one alert set is active at a time.
 - All matching active alerts play sequentially for a single event.
 - Speaker.bot is the first target TTS provider.
 - The first Twitch milestone starts with follow, sub/resub, cheer, raid, and channel point redemption.
-- Alert collection activation is manual for the MVP.
+- Alert set activation is manual for the MVP.
 - Import/export is planned but not required for the MVP.
 - Secrets are stored outside plain config.
 - Management UI and overlay routes have separate authorization.
