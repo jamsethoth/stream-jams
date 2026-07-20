@@ -32,4 +32,4 @@
 - [x] 5.2 Add alert resolver/playback tests for Speaker.bot TTS config.
 - [x] 5.3 Add management UI tests for per-alert TTS controls.
 - [x] 5.4 Add route tests for provider list and test behavior.
-- [ ] 5.5 Run `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and applicable e2e tests.
+- [x] 5.5 Run `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`, and applicable e2e tests.

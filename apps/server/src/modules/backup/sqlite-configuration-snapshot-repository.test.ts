@@ -47,6 +47,13 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     expect(JSON.stringify(snapshot)).not.toContain("route-hash");
   });
 
+  it("accepts nullable JSON columns from a valid database snapshot", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+
+    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+  });
+
   it("reports unknown tables, invalid columns, and broken soft asset references", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
     const snapshot = repository.snapshot();
@@ -103,7 +110,6 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     };
     const tables = {
       ...snapshot.tables,
-      alert_variants: snapshot.tables.alert_variants?.map((row) => ({ ...row, tts_config_json: "null" })) ?? [],
       alert_editor_documents: [
         ...(snapshot.tables.alert_editor_documents ?? []),
         {

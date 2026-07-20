@@ -1,21 +1,26 @@
 # Stream Jams MVP Final Review
 
-**Review date:** 2026-05-31
+**Review date:** 2026-07-20
 
 ## Completion Audit
 
-The MVP slice set is implemented in the current branch after the EventSub runtime hardening slice.
+The closed MVP specifications are implemented in the current branch. The final audit compared the archived changes, the two active completion candidates, the approved UX decisions, and the production runtime without promoting post-MVP backlog items into closure requirements.
 
-One completion-audit gap was found and fixed before this review was written: the Twitch EventSub WebSocket client, API adapter, normalizer, and ingestion service existed, but production startup did not instantiate or connect the WebSocket client. The fix is documented in `docs/superpowers/plans/2026-05-31-stream-jams-eventsub-runtime-wiring.md` and wires EventSub runtime status into startup, OAuth account changes, management status, and diagnostics.
+The final live pass found and fixed three closure defects: saving an alert with an active TTS provider left the editor falsely dirty; an active legacy overlay key used the removed `module-only` purpose; and backup validation rejected valid nullable TTS configuration. Schema migration 12 revokes unsupported legacy output keys, and the backup validator now accepts its nullable JSON columns.
 
-Validation after the hardening slice:
+Validation after the final fixes:
 
 - `pnpm lint` passed.
 - `pnpm typecheck` passed.
-- `pnpm test` passed: 80 files, 309 tests.
-- `env LD_LIBRARY_PATH=/tmp/playwright-deps/extract/usr/lib/x86_64-linux-gnu pnpm test:e2e` passed: 8 Chromium tests.
+- `pnpm test` passed: 133 files, 878 tests.
 - `pnpm build` passed.
+- `pnpm build-storybook` passed.
+- `pnpm test:storybook:ci` passed: 12 suites, 106 tests.
+- `pnpm test:e2e` passed: 20 Chromium tests.
+- Strict OpenSpec validation passed for `refactor-management-ui-ux` and `add-speakerbot-tts-provider`.
 - `git diff --check` passed.
+
+The rebuilt production service passed its health check and live verification: the Speaker.bot connection and direct voice test were confirmed; Home reported 4 of 4 setup items complete; a temporary Speaker.bot-enabled variation saved cleanly, queued to the connected Landscape output, rendered and cleared in the browser-source overlay, and was removed afterward; the editor showed its actionable larger-screen fallback at 390 px; Diagnostics showed no active problem; data-folder and retained-log maintenance actions succeeded; and Settings reported a backup-ready summary of 56 configuration records and 2 assets.
 
 ## Improvement Opportunities
 
@@ -50,16 +55,16 @@ GitHub Actions `GITHUB_TOKEN` permissions: https://docs.github.com/en/actions/tu
 
 **Validation:** `.github/dependabot.yml` uses Dependabot config syntax version `2`, `package-ecosystem: "npm"` at the repository root, `package-ecosystem: "github-actions"` at the repository root, weekly schedules, and groups for production dependencies, development dependencies, and GitHub Actions. Existing workflow permission blocks were reviewed and remain read-only by default except for documented job-level security scan and dependency review needs.
 
-### P1: Add at least one production-entrypoint integration smoke test
+### P1: Add at least one production-entrypoint integration smoke test - resolved
 
-**Repo evidence:** Unit and route coverage is strong, and Playwright covers browser-visible management and overlay behavior. The EventSub gap happened because production composition in `apps/server/src/index.ts` was not exercised; most Playwright tests mock management API responses from the Vite web app.
+**Repo evidence:** `apps/server/src/runtime/runtime-composition.smoke.test.ts` exercises the same runtime composition factory used by the CLI entrypoint. It covers Fastify-served management and overlay shells, static assets, WebSocket registration, management APIs, runtime adapters, and restart-style durable configuration.
 
-**Why it matters:** Mocked browser tests are fast and useful, but they do not prove the production service graph is assembled. Fastify supports HTTP injection for server tests without a real network port, and Playwright is best reserved for browser-visible workflows. A thin server-composition smoke test would have caught "client exists but is never instantiated" earlier.
+**Why it matters:** Mocked browser tests remain useful for browser workflows, while the smoke suite proves the production service graph is assembled without depending on a real network port.
 
 **Sources:** Fastify testing with `inject()`: https://fastify.dev/docs/latest/Guides/Testing/
 Playwright CI guidance: https://playwright.dev/docs/ci
 
-**Suggested next step:** Extract `apps/server/src/index.ts` composition into a testable factory, then add a smoke test that builds the production service graph with temp config/database and asserts key adapters are wired: SQLite module config, EventSub runtime, diagnostics, overlays, assets, and playback.
+**Validation:** The smoke suite runs inside the confirmed 133-file, 878-test `pnpm test` gate and is required by CI-equivalent validation.
 
 ### P2: Make local Playwright dependency handling explicit for unsupported host images
 

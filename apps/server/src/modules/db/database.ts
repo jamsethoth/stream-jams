@@ -12,6 +12,7 @@ import { assetLibraryMetadataMigration } from "./migrations/008-asset-library-me
 import { alertEditorDocumentsMigration } from "./migrations/009-alert-editor-documents.js";
 import { variantAlertEditorDocumentsMigration } from "./migrations/010-variant-alert-editor-documents.js";
 import { alertVariantOrderMigration } from "./migrations/011-alert-variant-order.js";
+import { revokeUnsupportedOverlayKeysMigration } from "./migrations/012-revoke-unsupported-overlay-keys.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -35,7 +36,8 @@ const migrations = [
   assetLibraryMetadataMigration,
   alertEditorDocumentsMigration,
   variantAlertEditorDocumentsMigration,
-  alertVariantOrderMigration
+  alertVariantOrderMigration,
+  revokeUnsupportedOverlayKeysMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

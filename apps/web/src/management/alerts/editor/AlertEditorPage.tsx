@@ -197,7 +197,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       showActionError(missingActiveTtsProviderError());
       throw new Error("An active TTS provider is required before enabled TTS layers can be saved.");
     }
-    const submittedDocument = applyActiveTtsProvider(editor.document, activeTtsProvider);
+    const sourceDocument = editor.document;
+    const submittedDocument = applyActiveTtsProvider(sourceDocument, activeTtsProvider);
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -209,7 +210,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       );
       setEditor((current) => {
         if (current === null) return null;
-        return current.document === submittedDocument
+        return current.document === sourceDocument
           ? markEditorSaved({ ...current, document: saved })
           : { ...current, savedDocument: saved };
       });
