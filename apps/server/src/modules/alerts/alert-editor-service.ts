@@ -723,6 +723,7 @@ function createLayerInstruction(
     id: instructionId,
     overlayId: "default",
     moduleId: "alerts",
+    operatorTest: true as const,
     purpose: "live" as const,
     scope: "module" as const,
     targetProfileId,

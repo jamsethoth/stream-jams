@@ -1,5 +1,5 @@
 import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OverlayApp, OverlaySurface } from "./OverlayApp.js";
 
@@ -12,8 +12,9 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
-  it("renders image, gif, video, text, and audio instruction shapes with overlay layout", () => {
+  it("renders image, gif, video, text, and audio instruction shapes with overlay layout", async () => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
     const onPlaybackEvent = vi.fn();
 
     render(
@@ -77,10 +78,12 @@ describe("OverlaySurface", () => {
       height: "100vh",
       width: "100vw"
     });
-    expect(onPlaybackEvent).toHaveBeenCalledWith({
-      instructionId: "image-instruction",
-      status: "started"
-    });
+    await waitFor(() =>
+      expect(onPlaybackEvent).toHaveBeenCalledWith({
+        instructionId: "image-instruction",
+        status: "started"
+      })
+    );
   });
 
   it("does not render instructions for disabled module snapshots", () => {

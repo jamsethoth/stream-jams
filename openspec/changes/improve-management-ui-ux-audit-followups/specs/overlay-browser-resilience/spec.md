@@ -32,3 +32,16 @@ The production overlay SHALL fail closed with an empty transparent rendering tre
 - **WHEN** the live overlay cannot connect or receives an internal failure
 - **THEN** no error message, reference, stack detail, or hidden diagnostic text is rendered in the overlay DOM
 - **AND** operator diagnostics remain available through management or logs
+
+### Requirement: Management Test Audio Can Be Activated In Place
+The browser-source overlay SHALL let an operator recover management-triggered test audio when the browser requires a user interaction, without exposing the activation control during live-event playback.
+
+#### Scenario: Browser blocks management test audio
+- **WHEN** a management-triggered test reaches an authorized browser source and audio playback is rejected because user activation is required
+- **THEN** the overlay offers an `Enable alert audio` action and retains the test audio for retry
+- **AND** activating the action retries that audio immediately within the trusted interaction
+
+#### Scenario: Browser blocks live-event audio
+- **WHEN** audio from a live event is rejected because user activation is required
+- **THEN** the overlay renders no operator diagnostic or activation control
+- **AND** the failure remains available through management Diagnostics

@@ -1,11 +1,17 @@
 import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OverlaySurface } from "./OverlaySurface.js";
+
+beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+});
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("OverlaySurface", () => {
@@ -86,6 +92,95 @@ describe("OverlaySurface", () => {
         message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
       })
     );
+  });
+
+  it("lets an operator enable and retry audio blocked during a management test", async () => {
+    const user = userEvent.setup();
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockRejectedValueOnce(new DOMException("Playback requires user interaction", "NotAllowedError"))
+      .mockResolvedValueOnce();
+    const onPlaybackEvent = vi.fn();
+
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          operatorTest: true,
+          audio: { assetId: "asset-audio", volume: 0.35 }
+        })}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    const enableAudio = await screen.findByRole("button", { name: "Enable alert audio" });
+    expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+
+    await user.click(enableAudio);
+
+    expect(play).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith({
+      instructionId: "instruction-1",
+      status: "started"
+    }));
+    expect(screen.queryByRole("button", { name: "Enable alert audio" })).not.toBeInTheDocument();
+  });
+
+  it("reports blocked management-test audio when activation is not granted", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
+      new DOMException("Playback requires user interaction", "NotAllowedError")
+    );
+    const onPlaybackEvent = vi.fn();
+
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          operatorTest: true,
+          audio: { assetId: "asset-audio", volume: 0.35 }
+        })}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole("button", { name: "Enable alert audio" })).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(30_000));
+
+    expect(onPlaybackEvent).toHaveBeenCalledWith({
+      instructionId: "instruction-1",
+      status: "failed",
+      message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
+    });
+  });
+
+  it("uses one activation action to retry every blocked test-audio layer", async () => {
+    const user = userEvent.setup();
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockRejectedValueOnce(new DOMException("Playback requires user interaction", "NotAllowedError"))
+      .mockRejectedValueOnce(new DOMException("Playback requires user interaction", "NotAllowedError"))
+      .mockResolvedValue();
+
+    render(
+      <OverlaySurface
+        composition={compositionFromInstructions([
+          { ...instruction(), operatorTest: true, audio: { assetId: "asset-one", volume: 0.35 } },
+          { ...instruction(), id: "instruction-2", operatorTest: true, audio: { assetId: "asset-two", volume: 0.5 } }
+        ])}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    const enableAudio = await screen.findByRole("button", { name: "Enable alert audio" });
+    expect(screen.getAllByRole("button", { name: "Enable alert audio" })).toHaveLength(1);
+
+    await user.click(enableAudio);
+
+    expect(play).toHaveBeenCalledTimes(4);
+    expect(screen.queryByRole("button", { name: "Enable alert audio" })).not.toBeInTheDocument();
   });
 
   it.each([
@@ -177,11 +272,18 @@ function composition(
   value: OverlayInstruction,
   targetProfileId: "landscape" | "vertical" = "landscape"
 ): OverlayComposition {
+  return compositionFromInstructions([value], targetProfileId);
+}
+
+function compositionFromInstructions(
+  instructions: readonly OverlayInstruction[],
+  targetProfileId: "landscape" | "vertical" = "landscape"
+): OverlayComposition {
   return {
     overlayId: "overlay-1",
     purpose: "live",
     scope: "module",
     targetProfileId,
-    modules: [{ moduleId: "alerts", enabled: true, instructions: [value] }]
+    modules: [{ moduleId: "alerts", enabled: true, instructions }]
   };
 }

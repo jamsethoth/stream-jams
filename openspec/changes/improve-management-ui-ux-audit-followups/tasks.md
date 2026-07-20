@@ -83,3 +83,9 @@
 
 - [x] 11.1 Add a failing regression proving Refresh preserves the active Diagnostics tab and filter after a reference-ID deep link.
 - [x] 11.2 Apply reference-ID navigation only when the deep link changes, then run validation, rebuild/restart, and live-verify Refresh.
+
+## 12. Browser-Source Test Audio Activation
+
+- [x] 12.1 Add a failing regression proving browser-blocked management test audio offers an activation action and retries in the trusted click.
+- [x] 12.2 Mark editor-generated instructions as operator tests, retain fail-closed live behavior, and add production-component Storybook coverage for the activation state.
+- [x] 12.3 Run focused and full validation, strict OpenSpec validation, rebuild/restart, and live-verify blocked test-audio recovery.

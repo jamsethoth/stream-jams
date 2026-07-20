@@ -135,6 +135,7 @@ export interface OverlayInstruction {
   readonly id: string;
   readonly overlayId: string;
   readonly moduleId: string;
+  readonly operatorTest?: true;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
   readonly targetProfileId?: OverlayTargetProfileId | null;

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { OverlayComposition } from "@stream-jams/core";
-import { OverlaySurface } from "./OverlaySurface.js";
+import { AudioActivationPrompt, OverlaySurface } from "./OverlaySurface.js";
 import {
   errorSafeOverlayComposition,
   idleOverlayComposition,
@@ -68,6 +68,21 @@ export const Media: Story = {
   args: {
     composition: mediaOverlayComposition,
     resolveAssetUrl
+  }
+};
+
+export const TestAudioActivation: Story = {
+  args: {
+    composition: idleOverlayComposition,
+    resolveAssetUrl
+  },
+  render: () => <AudioActivationPrompt onEnable={() => undefined} />,
+  parameters: {
+    docs: {
+      description: {
+        story: "Shown only when a management-triggered test needs one browser interaction before audio can play."
+      }
+    }
   }
 };
 
