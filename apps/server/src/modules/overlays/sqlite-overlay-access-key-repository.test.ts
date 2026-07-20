@@ -29,7 +29,7 @@ describe("SqliteOverlayAccessKeyRepository", () => {
     expect(JSON.stringify(database.connection.prepare("SELECT * FROM overlay_keys").all())).not.toContain("ovl_");
   });
 
-  it("finds candidates by overlay id and updates revocation state", async () => {
+  it("finds an exact hash and output history without loading overlay-wide candidates", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteOverlayAccessKeyRepository(database.connection);
     const first = await repository.create({
@@ -53,7 +53,24 @@ describe("SqliteOverlayAccessKeyRepository", () => {
       createdAt: "2026-05-30T10:01:00.000Z"
     });
 
-    await expect(repository.findCandidates("default")).resolves.toEqual([first]);
+    await expect(repository.findByHash("sha256:first")).resolves.toEqual(first);
+    await expect(repository.findByHash("sha256:missing")).resolves.toBeNull();
+    await expect(
+      repository.hasOutput({
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "test",
+        scope: "module"
+      })
+    ).resolves.toBe(true);
+    await expect(
+      repository.hasOutput({
+        overlayId: "default",
+        moduleId: "music",
+        purpose: "test",
+        scope: "module"
+      })
+    ).resolves.toBe(false);
     await expect(
       repository.findByOutput({
         overlayId: "default",

@@ -135,7 +135,69 @@ describe("SqliteDiagnosticsLogRepository", () => {
     await expect(repository.listEventLogs()).resolves.toEqual([newerEvent, olderEvent]);
     await expect(repository.listEventLogs({ limit: 1 })).resolves.toEqual([newerEvent]);
   });
+
+  it("prunes expired rows in deterministic bounded batches", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteDiagnosticsLogRepository(database.connection) as SqliteDiagnosticsLogRepository & {
+      pruneBefore(cutoff: string, batchSize: number): Promise<{
+        readonly eventLogs: number;
+        readonly alertMatchLogs: number;
+        readonly playbackLogs: number;
+      }>;
+    };
+    for (const suffix of ["a", "b", "c"] as const) {
+      await appendDiagnosticSet(repository, suffix, "2026-05-01T00:00:00.000Z");
+    }
+    await appendDiagnosticSet(repository, "current", "2026-05-30T00:00:00.000Z");
+
+    await expect(repository.pruneBefore("2026-05-15T00:00:00.000Z", 2)).resolves.toEqual({
+      eventLogs: 2,
+      alertMatchLogs: 2,
+      playbackLogs: 2
+    });
+    await expect(repository.pruneBefore("2026-05-15T00:00:00.000Z", 2)).resolves.toEqual({
+      eventLogs: 1,
+      alertMatchLogs: 1,
+      playbackLogs: 1
+    });
+    await expect(repository.pruneBefore("2026-05-15T00:00:00.000Z", 2)).resolves.toEqual({
+      eventLogs: 0,
+      alertMatchLogs: 0,
+      playbackLogs: 0
+    });
+    await expect(repository.listEventLogs()).resolves.toEqual([
+      createEventLog("event-log-current", "2026-05-30T00:00:00.000Z")
+    ]);
+  });
 });
+
+async function appendDiagnosticSet(
+  repository: SqliteDiagnosticsLogRepository,
+  suffix: string,
+  timestamp: string
+): Promise<void> {
+  await repository.appendEventLog(createEventLog(`event-log-${suffix}`, timestamp));
+  await repository.appendAlertMatchLog({
+    id: `match-log-${suffix}`,
+    sourceEventId: `event-${suffix}`,
+    ruleId: "rule-1",
+    variantId: "variant-1",
+    matchedAt: timestamp,
+    correlationId: `correlation-${suffix}`,
+    processingId: null
+  });
+  await repository.appendPlaybackLog({
+    id: `playback-log-${suffix}`,
+    queueItemId: `queue-${suffix}`,
+    sourceEventId: `event-${suffix}`,
+    alertIds: [],
+    status: "completed",
+    occurredAt: timestamp,
+    correlationId: `correlation-${suffix}`,
+    processingId: null,
+    message: null
+  });
+}
 
 function toLegacyEvent(event: NormalizedStreamEvent): Record<string, unknown> {
   const legacyEvent: Record<string, unknown> = { ...event };

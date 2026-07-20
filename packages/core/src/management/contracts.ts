@@ -781,10 +781,20 @@ export const configurationBackupAssetSchema = z.object({
   dataBase64: z.string().regex(/^[A-Za-z0-9+/]*={0,2}$/u)
 });
 
-export const configurationBackupArchiveSchema = z.object({
+export const currentConfigurationBackupArchiveVersion = 2 as const;
+
+export const legacyConfigurationBackupArchiveEnvelopeSchema = z.object({
   manifest: z.object({
     format: z.literal("stream-jams-backup"),
     archiveVersion: z.literal(1),
+    schemaVersion: nonNegativeIntegerSchema
+  }).passthrough()
+}).passthrough();
+
+export const configurationBackupArchiveSchema = z.object({
+  manifest: z.object({
+    format: z.literal("stream-jams-backup"),
+    archiveVersion: z.literal(currentConfigurationBackupArchiveVersion),
     appVersion: nonEmptyStringSchema,
     schemaVersion: nonNegativeIntegerSchema,
     createdAt: isoDateTimeSchema,

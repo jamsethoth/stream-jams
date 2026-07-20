@@ -56,6 +56,23 @@ export class SqliteAssetRepository implements AssetRepository {
     return row === undefined ? null : mapAssetRecordRow(row as unknown as AssetRecordRow);
   }
 
+  async findManyByIds(assetIds: readonly string[]): Promise<ReadonlyMap<string, AssetRecord>> {
+    const ids = Array.from(new Set(assetIds));
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = this.#connection
+      .prepare(
+        `SELECT id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path
+         FROM asset_metadata
+         WHERE id IN (${placeholders})`
+      )
+      .all(...ids);
+    return new Map(rows.map((row) => {
+      const asset = mapAssetRecordRow(row as unknown as AssetRecordRow);
+      return [asset.id, asset];
+    }));
+  }
+
   async list(): Promise<readonly AssetRecord[]> {
     return this.#connection
       .prepare(

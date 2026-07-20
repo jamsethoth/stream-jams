@@ -154,6 +154,10 @@ export class AssetLibraryService {
           { cause: error }
         );
       }
+      if (isForeignKeyConstraintError(error)) {
+        const currentImpact = await this.getChangeImpact(assetId);
+        if (!currentImpact.canDelete) throw new AssetLibraryInUseError(currentImpact);
+      }
       throw error;
     }
   }
@@ -238,4 +242,8 @@ export class AssetLibraryService {
     }
     return usage;
   }
+}
+
+function isForeignKeyConstraintError(error: unknown): boolean {
+  return error instanceof Error && /foreign key constraint/iu.test(error.message);
 }

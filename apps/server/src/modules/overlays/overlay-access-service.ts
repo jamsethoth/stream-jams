@@ -1,4 +1,4 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type {
   CreateOverlayKeyInput,
   CreatedOverlayAccessKey,
@@ -41,8 +41,12 @@ export class InMemoryOverlayAccessKeyRepository implements OverlayAccessKeyRepos
     return this.#records.get(keyId) ?? null;
   }
 
-  async findCandidates(overlayId: string): Promise<readonly OverlayAccessKey[]> {
-    return this.records.filter((record) => record.overlayId === overlayId);
+  async findByHash(keyHash: string): Promise<OverlayAccessKey | null> {
+    return this.records.find((record) => record.keyHash === keyHash) ?? null;
+  }
+
+  async hasOutput(input: CreateOverlayKeyInput): Promise<boolean> {
+    return (await this.findByOutput(input)).length > 0;
   }
 
   async findByOutput(input: CreateOverlayKeyInput): Promise<readonly OverlayAccessKey[]> {
@@ -100,10 +104,9 @@ export class LocalOverlayAccessService implements OverlayAccessService {
 
   async verifyRouteAccess(request: OverlayRouteAccessRequest): Promise<OverlayAccessVerification> {
     const requestedKeyHash = hashOverlayRouteKey(request.rawKey);
-    const candidates = await this.#repository.findCandidates(request.overlayId);
-    const hashMatch = candidates.find((candidate) => safeEqual(candidate.keyHash, requestedKeyHash));
+    const hashMatch = await this.#repository.findByHash(requestedKeyHash);
 
-    if (hashMatch !== undefined) {
+    if (hashMatch !== null && hashMatch.overlayId === request.overlayId) {
       if (hashMatch.revokedAt !== null) {
         return {
           authorized: false,
@@ -145,17 +148,9 @@ export class LocalOverlayAccessService implements OverlayAccessService {
       };
     }
 
-    const outputMatch = candidates.some(
-      (candidate) =>
-        candidate.scope === request.scope &&
-        candidate.purpose === request.purpose &&
-        candidate.moduleId === request.moduleId &&
-        (candidate.targetProfileId ?? null) === (request.targetProfileId ?? null)
-    );
-
     return {
       authorized: false,
-      reason: outputMatch ? ("key-mismatch" as const) : ("not-found" as const)
+      reason: (await this.#repository.hasOutput(request)) ? ("key-mismatch" as const) : ("not-found" as const)
     };
   }
 
@@ -205,10 +200,4 @@ function assertValidScopeInput(input: CreateOverlayKeyInput): void {
   ) {
     throw new Error("Overlay target profile must be landscape or vertical");
   }
-}
-
-function safeEqual(left: string, right: string): boolean {
-  const leftBuffer = Buffer.from(left);
-  const rightBuffer = Buffer.from(right);
-  return leftBuffer.length === rightBuffer.length && timingSafeEqual(leftBuffer, rightBuffer);
 }

@@ -41,6 +41,7 @@ export type * from "./alerts/alert-resolver.js";
 export { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alerts/alert-resolver.js";
 export {
   AlertCollectionNotFoundError,
+  LastActiveAlertCollectionError,
   AlertRuleNotFoundError,
   AlertVariantIdConflictError,
   AlertVariantNotFoundError,

@@ -193,6 +193,29 @@ describe("LocalOverlayAccessService", () => {
       })
     ).resolves.toEqual({ authorized: false, reason: "revoked" });
   });
+
+  it("verifies an exact hash without loading historical overlay candidates", async () => {
+    const repository = new ExactLookupOverlayRepository();
+    const service = createService(repository, ["ovl_exactRawKey"]);
+    const created = await service.createKey({
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module"
+    });
+
+    await expect(
+      service.verifyRouteAccess({
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        rawKey: created.rawKey
+      })
+    ).resolves.toEqual({ authorized: true, record: created.record });
+    expect(repository.exactLookupCount).toBe(1);
+    expect(repository.outputLookupCount).toBe(0);
+  });
 });
 
 function createService(repository: InMemoryOverlayAccessKeyRepository, rawKeys: string[]): LocalOverlayAccessService {
@@ -242,8 +265,12 @@ class UnusedOverlayRepositoryContractCheck implements OverlayAccessKeyRepository
     return null;
   }
 
-  async findCandidates() {
-    return [];
+  async findByHash() {
+    return null;
+  }
+
+  async hasOutput() {
+    return false;
   }
 
   async findByOutput() {
@@ -256,3 +283,18 @@ class UnusedOverlayRepositoryContractCheck implements OverlayAccessKeyRepository
 }
 
 void UnusedOverlayRepositoryContractCheck;
+
+class ExactLookupOverlayRepository extends InMemoryOverlayAccessKeyRepository {
+  exactLookupCount = 0;
+  outputLookupCount = 0;
+
+  override async findByHash(keyHash: string) {
+    this.exactLookupCount += 1;
+    return this.records.find((record) => record.keyHash === keyHash) ?? null;
+  }
+
+  override async hasOutput(input: CreateOverlayKeyInput) {
+    this.outputLookupCount += 1;
+    return (await this.findByOutput(input)).length > 0;
+  }
+}

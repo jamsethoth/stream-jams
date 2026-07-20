@@ -12,7 +12,7 @@ import {
 } from "../middleware/local-management-rate-limit.js";
 
 const archive: ConfigurationBackupArchive = {
-  manifest: { format: "stream-jams-backup", archiveVersion: 1, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
+  manifest: { format: "stream-jams-backup", archiveVersion: 2, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
   configuration: { appConfig: {}, tables: {}, providerReconnectMetadata: [], overlayOutputs: [] },
   assets: []
 };

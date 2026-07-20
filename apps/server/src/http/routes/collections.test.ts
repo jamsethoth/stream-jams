@@ -56,10 +56,12 @@ describe("alert collection routes", () => {
         enabled: false
       }
     });
-    expect(toggleResponse.statusCode).toBe(200);
-    expect(toggleResponse.json()).toMatchObject({
-      id: "collection_1",
-      enabled: false
+    expect(toggleResponse.statusCode).toBe(409);
+    expect(toggleResponse.json()).toEqual({
+      error: {
+        code: "LAST_ACTIVE_ALERT_COLLECTION",
+        message: "At least one alert collection must remain active"
+      }
     });
 
     const listResponse = await app.inject({
@@ -72,7 +74,7 @@ describe("alert collection routes", () => {
       {
         id: "collection_1",
         name: "Main Show Alerts",
-        enabled: false
+        enabled: true
       }
     ]);
 
@@ -81,7 +83,7 @@ describe("alert collection routes", () => {
       url: "/alert-collections/collection_1",
       headers: authHeaders
     });
-    expect(deleteResponse.statusCode).toBe(204);
+    expect(deleteResponse.statusCode).toBe(409);
     await expect(
       app.inject({
         method: "GET",
@@ -90,7 +92,7 @@ describe("alert collection routes", () => {
       })
     ).resolves.toMatchObject({
       statusCode: 200,
-      body: "[]"
+      body: JSON.stringify([{ id: "collection_1", name: "Main Show Alerts", enabled: true }])
     });
   });
 

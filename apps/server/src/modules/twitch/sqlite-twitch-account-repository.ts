@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { TwitchAccount, TwitchAccountRepository } from "./twitch-account-repository.js";
+import { runInTransaction } from "../db/database.js";
 
 interface TwitchAccountRow {
   readonly account_id: unknown;
@@ -19,26 +20,28 @@ export class SqliteTwitchAccountRepository implements TwitchAccountRepository {
 
   async saveAccount(account: TwitchAccount): Promise<TwitchAccount> {
     const normalized = normalizeAccount(account);
-    this.#connection.prepare("DELETE FROM twitch_accounts WHERE account_id <> ?").run(normalized.accountId);
-    this.#connection
-      .prepare(
-        `INSERT INTO twitch_accounts (account_id, login, display_name, scopes_json, connected_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(account_id) DO UPDATE SET
-           login = excluded.login,
-           display_name = excluded.display_name,
-           scopes_json = excluded.scopes_json,
-           connected_at = excluded.connected_at,
-           updated_at = excluded.updated_at`
-      )
-      .run(
-        normalized.accountId,
-        normalized.login,
-        normalized.displayName,
-        JSON.stringify(normalized.scopes),
-        normalized.connectedAt,
-        normalized.updatedAt
-      );
+    runInTransaction(this.#connection, () => {
+      this.#connection.prepare("DELETE FROM twitch_accounts WHERE account_id <> ?").run(normalized.accountId);
+      this.#connection
+        .prepare(
+          `INSERT INTO twitch_accounts (account_id, login, display_name, scopes_json, connected_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(account_id) DO UPDATE SET
+             login = excluded.login,
+             display_name = excluded.display_name,
+             scopes_json = excluded.scopes_json,
+             connected_at = excluded.connected_at,
+             updated_at = excluded.updated_at`
+        )
+        .run(
+          normalized.accountId,
+          normalized.login,
+          normalized.displayName,
+          JSON.stringify(normalized.scopes),
+          normalized.connectedAt,
+          normalized.updatedAt
+        );
+    });
     return normalized;
   }
 

@@ -23,11 +23,32 @@ export class SqliteAlertEditorDocumentRepository implements AlertEditorDocumentR
     return alertEditorDocumentSchema.parse(JSON.parse(String(row.document_json)) as unknown);
   }
 
+  async findMany(alertIds: readonly string[]): Promise<ReadonlyMap<string, AlertEditorDocument>> {
+    const ids = Array.from(new Set(alertIds));
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = this.#connection
+      .prepare(
+        `SELECT alert_id, document_json
+         FROM alert_editor_documents
+         WHERE alert_id IN (${placeholders})`
+      )
+      .all(...ids);
+    return new Map(rows.map((row) => [
+      String(row.alert_id),
+      alertEditorDocumentSchema.parse(JSON.parse(String(row.document_json)) as unknown)
+    ]));
+  }
+
   async save(candidate: AlertEditorDocument): Promise<AlertEditorDocument> {
     return this.saveSync(candidate);
   }
 
   async delete(editorId: string): Promise<void> {
+    this.deleteSync(editorId);
+  }
+
+  deleteSync(editorId: string): void {
     this.#connection.prepare("DELETE FROM alert_editor_documents WHERE alert_id = ?").run(editorId);
   }
 

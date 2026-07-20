@@ -1,4 +1,5 @@
-import type { AlertCollection, AlertRule } from "@stream-jams/core";
+import { constants, type DatabaseSync } from "node:sqlite";
+import { DefaultAlertService, type AlertCollection, type AlertRule } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase } from "../db/database.js";
 import { SqliteAlertRepository } from "./sqlite-alert-repository.js";
@@ -7,6 +8,7 @@ describe("SqliteAlertRepository", () => {
   it("saves, finds, lists, and deletes alert collections and rules", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
     const collection = createCollection("collection-1", "Main Alerts");
     const rule = createRule("rule-1", ["collection-1"]);
 
@@ -28,6 +30,7 @@ describe("SqliteAlertRepository", () => {
   it("round-trips variant conditions and priority", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
     const collection = createCollection("collection-1", "Main Alerts");
     const rule = createRule("rule-1", ["collection-1"]);
     const variant = rule.variants[0];
@@ -54,6 +57,7 @@ describe("SqliteAlertRepository", () => {
   it("preserves default and variation order independently of their IDs", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
     const collection = createCollection("collection-1", "Main Alerts");
     const rule = createRule("rule-1", [collection.id]);
     const defaultVariant = { ...rule.variants[0]!, id: "variant-z-default", name: "Default" };
@@ -73,6 +77,7 @@ describe("SqliteAlertRepository", () => {
   it("removes deleted collections from persisted rule collection ids", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
     await repository.saveCollection(createCollection("collection-1", "Main Alerts"));
     await repository.saveCollection(createCollection("collection-2", "Bonus Alerts"));
     await repository.saveRule(createRule("rule-1", ["collection-1", "collection-2"]));
@@ -87,6 +92,7 @@ describe("SqliteAlertRepository", () => {
   it("atomically replaces the active collection when another is enabled", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
 
     await repository.saveCollection(createCollection("collection-1", "Main Alerts"));
     await repository.saveCollection(createCollection("collection-2", "Bonus Alerts"));
@@ -100,6 +106,7 @@ describe("SqliteAlertRepository", () => {
   it("rolls back rule child writes when variant persistence fails", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
     await repository.saveCollection(createCollection("collection-1", "Main Alerts"));
     const originalRule = createRule("rule-1", ["collection-1"]);
     await repository.saveRule(originalRule);
@@ -123,7 +130,42 @@ describe("SqliteAlertRepository", () => {
 
     await expect(repository.findRuleById("rule-1")).resolves.toEqual(originalRule);
   });
+
+  it("loads active rules in a fixed number of SELECT statements", async () => {
+    const oneRuleSelects = await countActiveRuleSelects(1);
+    const oneHundredRuleSelects = await countActiveRuleSelects(100);
+
+    expect(oneRuleSelects).toBe(4);
+    expect(oneHundredRuleSelects).toBe(oneRuleSelects);
+  });
 });
+
+async function countActiveRuleSelects(ruleCount: number): Promise<number> {
+  using database = createInMemoryStreamJamsDatabase();
+  const repository = new SqliteAlertRepository(database.connection);
+  seedRuleAssets(database.connection);
+  const service = new DefaultAlertService({ repository, generateId: () => "unused" });
+  await repository.saveCollection(createCollection("collection-1", "Main Alerts"));
+  for (let index = 0; index < ruleCount; index += 1) {
+    const rule = createRule(`rule-${index.toString().padStart(3, "0")}`, ["collection-1"]);
+    await repository.saveRule({
+      ...rule,
+      variants: rule.variants.map((variant) => ({ ...variant, id: `variant-${index}` }))
+    });
+  }
+
+  let selects = 0;
+  database.connection.setAuthorizer((actionCode) => {
+    if (actionCode === constants.SQLITE_SELECT) selects += 1;
+    return constants.SQLITE_OK;
+  });
+  try {
+    await service.listActiveRules({ eventType: "follow" });
+  } finally {
+    database.connection.setAuthorizer(null);
+  }
+  return selects;
+}
 
 function createCollection(id: string, name: string): AlertCollection {
   return {
@@ -131,6 +173,14 @@ function createCollection(id: string, name: string): AlertCollection {
     name,
     enabled: true
   };
+}
+
+function seedRuleAssets(connection: DatabaseSync): void {
+  const insert = connection.prepare(
+    "INSERT INTO asset_metadata (id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  );
+  insert.run("asset-image-1", "image.png", "image", "image/png", 1, "sha256:image", "image.png");
+  insert.run("asset-audio-1", "audio.mp3", "audio", "audio/mpeg", 1, "sha256:audio", "audio.mp3");
 }
 
 function createRule(id: string, collectionIds: readonly string[]): AlertRule {

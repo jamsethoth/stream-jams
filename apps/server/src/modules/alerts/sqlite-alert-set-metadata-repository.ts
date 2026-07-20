@@ -43,7 +43,29 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
     return row === undefined ? null : mapSetMetadata(row as unknown as AlertSetMetadataRow);
   }
 
+  async findSets(setIds: readonly string[]): Promise<ReadonlyMap<string, AlertSetMetadata>> {
+    const ids = Array.from(new Set(setIds));
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = this.#connection
+      .prepare(
+        `SELECT set_id, starter, starter_review_state, landscape_enabled, landscape_review_state,
+                vertical_enabled, vertical_review_state
+         FROM alert_set_metadata
+         WHERE set_id IN (${placeholders})`
+      )
+      .all(...ids);
+    return new Map(rows.map((row) => {
+      const metadata = mapSetMetadata(row as unknown as AlertSetMetadataRow);
+      return [metadata.setId, metadata];
+    }));
+  }
+
   async saveSet(metadata: AlertSetMetadata): Promise<AlertSetMetadata> {
+    return this.saveSetSync(metadata);
+  }
+
+  saveSetSync(metadata: AlertSetMetadata): AlertSetMetadata {
     this.#connection
       .prepare(
         `INSERT INTO alert_set_metadata (
@@ -71,6 +93,10 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
   }
 
   async deleteSet(setId: string): Promise<void> {
+    this.deleteSetSync(setId);
+  }
+
+  deleteSetSync(setId: string): void {
     this.#connection.prepare("DELETE FROM alert_set_metadata WHERE set_id = ?").run(setId);
   }
 
@@ -83,6 +109,23 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
       )
       .get(ruleId);
     return row === undefined ? null : mapRuleMetadata(row as unknown as AlertRuleManagementMetadataRow);
+  }
+
+  async findRules(ruleIds: readonly string[]): Promise<ReadonlyMap<string, AlertRuleManagementMetadata>> {
+    const ids = Array.from(new Set(ruleIds));
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = this.#connection
+      .prepare(
+        `SELECT rule_id, provider_kind, review_state, target_profile_ids_json
+         FROM alert_rule_management_metadata
+         WHERE rule_id IN (${placeholders})`
+      )
+      .all(...ids);
+    return new Map(rows.map((row) => {
+      const metadata = mapRuleMetadata(row as unknown as AlertRuleManagementMetadataRow);
+      return [metadata.ruleId, metadata];
+    }));
   }
 
   async saveRule(metadata: AlertRuleManagementMetadata): Promise<AlertRuleManagementMetadata> {
@@ -106,6 +149,10 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
   }
 
   async deleteRule(ruleId: string): Promise<void> {
+    this.deleteRuleSync(ruleId);
+  }
+
+  deleteRuleSync(ruleId: string): void {
     this.#connection.prepare("DELETE FROM alert_rule_management_metadata WHERE rule_id = ?").run(ruleId);
   }
 

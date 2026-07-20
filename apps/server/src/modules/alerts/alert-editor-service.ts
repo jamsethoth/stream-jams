@@ -25,6 +25,7 @@ import type {
 
 export interface AlertEditorDocumentRepository {
   find(alertId: string): Promise<AlertEditorDocument | null>;
+  findMany(alertIds: readonly string[]): Promise<ReadonlyMap<string, AlertEditorDocument>>;
   save(document: AlertEditorDocument): Promise<AlertEditorDocument>;
   delete(alertId: string): Promise<void>;
 }
@@ -36,6 +37,7 @@ export interface AlertEditorTestPlayback {
 
 export interface AlertEditorAtomicSaveInput {
   readonly document: AlertEditorDocument;
+  readonly expectedRule: AlertRule;
   readonly metadata: AlertRuleManagementMetadata;
   readonly rule: AlertRule;
 }
@@ -136,7 +138,12 @@ export class AlertEditorService {
     const projectedRule = projectDocumentToRule(document, resolved);
     const projectedMetadata = ruleMetadataFromDocument(document, resolved.rule.id);
     if (this.#options.saveAtomically !== undefined) {
-      return this.#options.saveAtomically({ document, metadata: projectedMetadata, rule: projectedRule });
+      return this.#options.saveAtomically({
+        document,
+        expectedRule: resolved.rule,
+        metadata: projectedMetadata,
+        rule: projectedRule
+      });
     }
     await this.#options.rules.saveRule(projectedRule);
     await this.#options.metadata.saveRule(projectedMetadata);

@@ -13,6 +13,10 @@ import { alertEditorDocumentsMigration } from "./migrations/009-alert-editor-doc
 import { variantAlertEditorDocumentsMigration } from "./migrations/010-variant-alert-editor-documents.js";
 import { alertVariantOrderMigration } from "./migrations/011-alert-variant-order.js";
 import { revokeUnsupportedOverlayKeysMigration } from "./migrations/012-revoke-unsupported-overlay-keys.js";
+import { alertReadIndexesMigration } from "./migrations/013-alert-read-indexes.js";
+import { diagnosticOrderIndexesMigration } from "./migrations/014-diagnostic-order-indexes.js";
+import { alertVariantAssetForeignKeysMigration } from "./migrations/015-alert-variant-asset-foreign-keys.js";
+import { overlayKeyLookupIndexesMigration } from "./migrations/016-overlay-key-lookup-indexes.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -37,7 +41,11 @@ const migrations = [
   alertEditorDocumentsMigration,
   variantAlertEditorDocumentsMigration,
   alertVariantOrderMigration,
-  revokeUnsupportedOverlayKeysMigration
+  revokeUnsupportedOverlayKeysMigration,
+  alertReadIndexesMigration,
+  diagnosticOrderIndexesMigration,
+  alertVariantAssetForeignKeysMigration,
+  overlayKeyLookupIndexesMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;
@@ -61,35 +69,6 @@ export function runInTransaction<T>(connection: DatabaseSync, work: () => T): T 
   } catch (error) {
     transaction.rollback();
     throw error;
-  }
-}
-
-const asyncTransactionQueues = new WeakMap<DatabaseSync, { tail: Promise<void> }>();
-
-export async function runInTransactionAsync<T>(connection: DatabaseSync, work: () => Promise<T>): Promise<T> {
-  const queue = asyncTransactionQueues.get(connection) ?? { tail: Promise.resolve() };
-  const previous = queue.tail;
-  let release!: () => void;
-  const current = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  queue.tail = current;
-  asyncTransactionQueues.set(connection, queue);
-  await previous;
-
-  try {
-    const transaction = beginTransaction(connection);
-    try {
-      const result = await work();
-      transaction.commit();
-      return result;
-    } catch (error) {
-      transaction.rollback();
-      throw error;
-    }
-  } finally {
-    release();
-    if (queue.tail === current) asyncTransactionQueues.delete(connection);
   }
 }
 
@@ -127,8 +106,13 @@ function createStreamJamsDatabase(databasePath: string): StreamJamsDatabase {
   connection.exec("PRAGMA foreign_keys = ON");
 
   const database = new NodeSqliteStreamJamsDatabase(connection);
-  database.runMigrations();
-  return database;
+  try {
+    database.runMigrations();
+    return database;
+  } catch (error) {
+    database.close();
+    throw error;
+  }
 }
 
 class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
@@ -146,15 +130,8 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
       )
     `);
 
-    for (const migration of migrations) {
-      const alreadyApplied = this.connection
-        .prepare("SELECT id FROM schema_migrations WHERE id = ?")
-        .get(migration.id);
-
-      if (alreadyApplied !== undefined) {
-        continue;
-      }
-
+    const appliedCount = validateMigrationHistory(this.connection);
+    for (const migration of migrations.slice(appliedCount)) {
       runInTransaction(this.connection, () => {
         this.connection.exec(migration.sql);
         insertMigrationRecord(this.connection, migration.id);
@@ -171,6 +148,36 @@ class NodeSqliteStreamJamsDatabase implements StreamJamsDatabase {
   [Symbol.dispose](): void {
     this.close();
   }
+}
+
+function validateMigrationHistory(connection: DatabaseSync): number {
+  const appliedIds = connection
+    .prepare("SELECT id FROM schema_migrations ORDER BY rowid")
+    .all()
+    .map((row) => String(row.id));
+  const knownIds: ReadonlySet<string> = new Set(migrations.map((migration) => migration.id));
+
+  for (const [index, appliedId] of appliedIds.entries()) {
+    const expectedId = migrations[index]?.id;
+    if (expectedId === appliedId) {
+      continue;
+    }
+
+    const position = index + 1;
+    if (expectedId === undefined || !knownIds.has(appliedId)) {
+      throw new Error(
+        `Database migration history contains unknown or future migration "${appliedId}" at position ${position}. ` +
+          "Open this database with an application version that recognizes its schema or restore a compatible backup."
+      );
+    }
+
+    throw new Error(
+      `Database migration history is not an exact known prefix at position ${position}: ` +
+        `expected "${expectedId}", found "${appliedId}". Restore a compatible database before restarting.`
+    );
+  }
+
+  return appliedIds.length;
 }
 
 function insertMigrationRecord(connection: DatabaseSync, migrationId: string): StatementResultingChanges {

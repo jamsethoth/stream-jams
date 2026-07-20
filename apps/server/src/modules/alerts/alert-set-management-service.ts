@@ -1,5 +1,8 @@
 import {
   alertCreateInputSchema,
+  alertCollectionSchema,
+  alertRuleSchema,
+  alertVariantSchema,
   alertVariationCreateInputSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
@@ -9,6 +12,8 @@ import {
   alertStarterTemplates,
   evaluateAlertSetActivation,
   type AlertBrowserSourceView,
+  type AlertCollection,
+  type AlertConfigurationIdKind,
   type AlertCreateInput,
   type AlertEditorDocument,
   type AlertInventoryRow,
@@ -25,6 +30,7 @@ import {
   type StreamEventType,
   type TargetProfileId
 } from "@stream-jams/core";
+import type { AlertAggregateMutationStore } from "./alert-aggregate-mutation-store.js";
 import {
   createAlertEditorDocumentFromRule,
   type AlertEditorDocumentRepository
@@ -49,9 +55,11 @@ export interface AlertRuleManagementMetadata {
 
 export interface AlertSetMetadataRepository {
   findSet(setId: string): Promise<AlertSetMetadata | null>;
+  findSets(setIds: readonly string[]): Promise<ReadonlyMap<string, AlertSetMetadata>>;
   saveSet(metadata: AlertSetMetadata): Promise<AlertSetMetadata>;
   deleteSet(setId: string): Promise<void>;
   findRule(ruleId: string): Promise<AlertRuleManagementMetadata | null>;
+  findRules(ruleIds: readonly string[]): Promise<ReadonlyMap<string, AlertRuleManagementMetadata>>;
   saveRule(metadata: AlertRuleManagementMetadata): Promise<AlertRuleManagementMetadata>;
   deleteRule(ruleId: string): Promise<void>;
   activateSet(setId: string): Promise<string | null>;
@@ -78,7 +86,8 @@ export interface AlertSetManagementServiceOptions {
   readonly metadataRepository: AlertSetMetadataRepository;
   readonly documents: AlertEditorDocumentRepository;
   readonly getEditorDocument: (editorId: string) => Promise<AlertEditorDocument>;
-  readonly runAtomically?: <T>(work: () => Promise<T>) => Promise<T>;
+  readonly generateId: (kind: AlertConfigurationIdKind) => string;
+  readonly mutationStore: AlertAggregateMutationStore;
   readonly listBrowserSources: () => Promise<readonly AlertBrowserSourceView[]>;
 }
 
@@ -90,7 +99,8 @@ export class AlertSetManagementService {
   readonly #metadataRepository: AlertSetMetadataRepository;
   readonly #documents: AlertEditorDocumentRepository;
   readonly #getEditorDocument: (editorId: string) => Promise<AlertEditorDocument>;
-  readonly #runAtomically: <T>(work: () => Promise<T>) => Promise<T>;
+  readonly #generateId: (kind: AlertConfigurationIdKind) => string;
+  readonly #mutationStore: AlertAggregateMutationStore;
   readonly #listBrowserSources: () => Promise<readonly AlertBrowserSourceView[]>;
 
   constructor(options: AlertSetManagementServiceOptions) {
@@ -98,23 +108,19 @@ export class AlertSetManagementService {
     this.#metadataRepository = options.metadataRepository;
     this.#documents = options.documents;
     this.#getEditorDocument = options.getEditorDocument;
-    this.#runAtomically = options.runAtomically ?? (async (work) => work());
+    this.#generateId = options.generateId;
+    this.#mutationStore = options.mutationStore;
     this.#listBrowserSources = options.listBrowserSources;
   }
 
   async listSets(): Promise<readonly AlertSetOverview[]> {
     await this.#ensureStarterSet();
-    let collections = await this.#alertService.listCollections();
-    if (!collections.some((collection) => collection.enabled) && collections[0] !== undefined) {
-      await this.#metadataRepository.activateSet(collections[0].id);
-      collections = await this.#alertService.listCollections();
-    }
+    const collections = await this.#alertService.listCollections();
     const rules = await this.#alertService.listRules();
     const browserSources = await this.#listBrowserSources();
-    return Promise.all(
-      collections.map(async (collection) =>
-        this.#toOverview(collection.id, rules, browserSources)
-      )
+    const metadata = await this.#setMetadataByIds(collections.map((collection) => collection.id));
+    return collections.map((collection) =>
+      this.#toOverview(collection, metadata.get(collection.id)!, rules, browserSources)
     );
   }
 
@@ -126,9 +132,16 @@ export class AlertSetManagementService {
     }
     const rules = (await this.#alertService.listRules()).filter((rule) => rule.collectionIds.includes(setId));
     const browserSources = await this.#listBrowserSources();
+    const metadata = await this.#ruleMetadataByIds(rules.map((rule) => rule.id));
+    const documents = await this.#documents.findMany(rules.flatMap((rule) => [
+      rule.id,
+      ...rule.variants.slice(1).map((variant) => variant.id)
+    ]));
     return alertSetDetailSchema.parse({
       overview,
-      inventory: (await Promise.all(rules.map((rule) => this.#toInventoryRows(setId, rule)))).flat(),
+      inventory: rules.flatMap((rule) =>
+        this.#mapInventoryRows(setId, rule, metadata.get(rule.id)!, documents)
+      ),
       browserSources
     });
   }
@@ -136,10 +149,15 @@ export class AlertSetManagementService {
   async createSet(input: AlertSetMutationInput): Promise<AlertSetOverview> {
     const parsed = alertSetMutationInputSchema.parse(input);
     await this.#assertUniqueName(parsed.name);
-    const created = await this.#runAtomically(async () => {
-      const collection = await this.#alertService.createCollection({ name: parsed.name, enabled: false });
-      await this.#metadataRepository.saveSet(defaultSetMetadata(collection.id));
-      return collection;
+    const created = alertCollectionSchema.parse({
+      id: this.#generateId("collection"),
+      name: parsed.name,
+      enabled: false
+    });
+    this.#mutationStore.commit({
+      missingCollectionIds: [created.id],
+      saveCollections: [created],
+      saveSetMetadata: [defaultSetMetadata(created.id)]
     });
     return (await this.getSet(created.id)).overview;
   }
@@ -151,17 +169,19 @@ export class AlertSetManagementService {
     if (template === undefined) {
       throw new Error(`No starter alert template exists for ${parsed.eventType}`);
     }
-    const created = await this.#runAtomically(async () => {
-      const rule = await this.#alertService.createRule(starterRuleInput(setId, template, parsed.name));
-      const metadata = {
-        ruleId: rule.id,
-        providerKind: "twitch" as const,
-        reviewState: "needs-review" as const,
-        targetProfileIds: ["landscape", "vertical"] as const
-      };
-      await this.#metadataRepository.saveRule(metadata);
-      await this.#documents.save(createAlertEditorDocumentFromRule(rule, 0, metadata));
-      return rule;
+    const created = this.#materializeRule(starterRuleInput(setId, template, parsed.name));
+    const metadata = {
+      ruleId: created.id,
+      providerKind: "twitch" as const,
+      reviewState: "needs-review" as const,
+      targetProfileIds: ["landscape", "vertical"] as const
+    };
+    this.#mutationStore.commit({
+      expectedCollections: [await this.#findCollection(setId)],
+      missingRuleIds: [created.id],
+      saveRules: [created],
+      saveRuleMetadata: [metadata],
+      saveDocuments: [createAlertEditorDocumentFromRule(created, 0, metadata)]
     });
     return (await this.#toInventoryRows(setId, created))[0]!;
   }
@@ -172,17 +192,23 @@ export class AlertSetManagementService {
     this.#assertUniqueVariationName(resolved.rule, parsed.name);
     const defaultVariant = resolved.rule.variants[0]!;
     const sourceDocument = await this.#getEditorDocument(resolved.rule.id);
-    const created = await this.#runAtomically(async () => {
-      const updatedRule = await this.#alertService.createVariant(resolved.rule.id, {
-        ...omitId(defaultVariant),
-        name: parsed.name,
-        enabled: false,
-        conditions: [],
-        weight: 1,
-        priority: undefined
-      });
-      const variant = updatedRule.variants.at(-1)!;
-      await this.#documents.save(copyEditorDocument(sourceDocument, {
+    const variant = alertVariantSchema.parse({
+      id: this.#generateId("variant"),
+      ...omitId(defaultVariant),
+      name: parsed.name,
+      enabled: false,
+      conditions: [],
+      weight: 1,
+      priority: undefined
+    });
+    const updatedRule = alertRuleSchema.parse({
+      ...resolved.rule,
+      variants: [...resolved.rule.variants, variant]
+    });
+    this.#mutationStore.commit({
+      expectedRules: [resolved.rule],
+      saveRules: [updatedRule],
+      saveDocuments: [copyEditorDocument(sourceDocument, {
         id: variant.id,
         parentAlertId: updatedRule.id,
         kind: "variation",
@@ -191,11 +217,10 @@ export class AlertSetManagementService {
         variantConditions: [],
         weight: 1,
         priority: null
-      }));
-      return { rule: updatedRule, variantId: variant.id };
+      })]
     });
-    return (await this.#toInventoryRows(created.rule.collectionIds[0]!, created.rule))
-      .find((row) => row.id === created.variantId)!;
+    return (await this.#toInventoryRows(updatedRule.collectionIds[0]!, updatedRule))
+      .find((row) => row.id === variant.id)!;
   }
 
   async duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow> {
@@ -206,48 +231,56 @@ export class AlertSetManagementService {
     if (resolved.kind === "variation") {
       const sourceDocument = await this.#getEditorDocument(resolved.editorId);
       const copyName = this.#nextVariationName(resolved.rule, `${resolved.variant.name} copy`);
-      const created = await this.#runAtomically(async () => {
-        const updatedRule = await this.#alertService.createVariant(resolved.rule.id, {
-          ...omitId(resolved.variant),
-          name: copyName,
-          enabled: false
-        });
-        const variant = updatedRule.variants.at(-1)!;
-        await this.#documents.save(copyEditorDocument(sourceDocument, {
+      const variant = alertVariantSchema.parse({
+        id: this.#generateId("variant"),
+        ...omitId(resolved.variant),
+        name: copyName,
+        enabled: false
+      });
+      const updatedRule = alertRuleSchema.parse({
+        ...resolved.rule,
+        variants: [...resolved.rule.variants, variant]
+      });
+      this.#mutationStore.commit({
+        expectedRules: [resolved.rule],
+        saveRules: [updatedRule],
+        saveDocuments: [copyEditorDocument(sourceDocument, {
           id: variant.id,
           parentAlertId: updatedRule.id,
           kind: "variation",
           name: variant.name,
           enabled: false
-        }));
-        return { rule: updatedRule, variantId: variant.id };
+        })]
       });
-      return (await this.#toInventoryRows(setId, created.rule)).find((row) => row.id === created.variantId)!;
+      return (await this.#toInventoryRows(setId, updatedRule)).find((row) => row.id === variant.id)!;
     }
 
     const sourceDocuments = await Promise.all(resolved.rule.variants.map((_, index) =>
       this.#getEditorDocument(index === 0 ? resolved.rule.id : resolved.rule.variants[index]!.id)
     ));
-    const createdRule = await this.#runAtomically(async () => {
-      const created = await this.#alertService.createRule({
-        ...omitId(resolved.rule),
-        name: `${resolved.rule.name} copy`,
-        enabled: false,
-        variants: resolved.rule.variants.map((variant) => ({ ...omitId(variant), enabled: false }))
-      });
-      const sourceMetadata = await this.#ruleMetadata(resolved.rule.id);
-      await this.#metadataRepository.saveRule({ ...sourceMetadata, ruleId: created.id, reviewState: "needs-review" });
-      for (const [index, document] of sourceDocuments.entries()) {
-        const variant = created.variants[index]!;
-        await this.#documents.save(copyEditorDocument(document, {
-          id: index === 0 ? created.id : variant.id,
-          parentAlertId: index === 0 ? null : created.id,
+    const sourceMetadata = await this.#ruleMetadata(resolved.rule.id);
+    const createdRule = this.#materializeRule({
+      ...omitId(resolved.rule),
+      name: `${resolved.rule.name} copy`,
+      enabled: false,
+      variants: resolved.rule.variants.map((variant) => ({ ...omitId(variant), enabled: false }))
+    });
+    const documents = sourceDocuments.map((document, index) => {
+      const variant = createdRule.variants[index]!;
+      return copyEditorDocument(document, {
+          id: index === 0 ? createdRule.id : variant.id,
+          parentAlertId: index === 0 ? null : createdRule.id,
           kind: index === 0 ? "default" : "variation",
-          name: index === 0 ? created.name : variant.name,
+          name: index === 0 ? createdRule.name : variant.name,
           enabled: false
-        }));
-      }
-      return created;
+      });
+    });
+    this.#mutationStore.commit({
+      expectedCollections: [await this.#findCollection(setId)],
+      missingRuleIds: [createdRule.id],
+      saveRules: [createdRule],
+      saveRuleMetadata: [{ ...sourceMetadata, ruleId: createdRule.id, reviewState: "needs-review" }],
+      saveDocuments: documents
     });
     return (await this.#toInventoryRows(setId, createdRule))[0]!;
   }
@@ -257,20 +290,30 @@ export class AlertSetManagementService {
     await this.#requireLiveImpactConfirmation(resolved, confirmLiveImpact);
     const metadata = await this.#ruleMetadata(resolved.rule.id);
     const setId = resolved.rule.collectionIds[0]!;
-    const updatedRule = await this.#runAtomically(async () => {
-      if (resolved.kind === "variation") {
-        const sourceDocument = await this.#getEditorDocument(resolved.rule.id);
-        const defaultVariant = resolved.rule.variants[0]!;
-        const updated = await this.#alertService.saveVariant(resolved.rule.id, {
-          ...defaultVariant,
-          id: resolved.variant.id,
-          name: resolved.variant.name,
-          enabled: false,
-          conditions: [],
-          weight: 1,
-          priority: undefined
-        });
-        await this.#documents.save(copyEditorDocument(sourceDocument, {
+    let updatedRule: AlertRule;
+    let document: AlertEditorDocument;
+    let updatedMetadata: AlertRuleManagementMetadata | undefined;
+    if (resolved.kind === "variation") {
+      const sourceDocument = await this.#getEditorDocument(resolved.rule.id);
+      const defaultVariant = resolved.rule.variants[0]!;
+      const resetVariant = alertVariantSchema.parse({
+        ...defaultVariant,
+        id: resolved.variant.id,
+        name: resolved.variant.name,
+        enabled: false,
+        conditions: [],
+        weight: 1,
+        priority: undefined
+      });
+      const variants = resolved.rule.variants.map((variant, index) =>
+        index === resolved.variantIndex ? resetVariant : variant
+      );
+      updatedRule = alertRuleSchema.parse({
+        ...resolved.rule,
+        enabled: variants.some((variant) => variant.enabled),
+        variants
+      });
+      document = copyEditorDocument(sourceDocument, {
           id: resolved.variant.id,
           parentAlertId: resolved.rule.id,
           kind: "variation",
@@ -279,25 +322,29 @@ export class AlertSetManagementService {
           variantConditions: [],
           weight: 1,
           priority: null
-        }));
-        return this.#deriveRuleEnabled(updated);
-      }
-
+      });
+    } else {
       const template = alertStarterTemplates.find((candidate) => candidate.eventType === resolved.rule.eventType)!;
       const starter = starterRuleInput(setId, template, resolved.rule.name);
       const resetVariant = { ...starter.variants[0]!, id: resolved.variant.id };
-      const updated = await this.#alertService.updateRule(resolved.rule.id, {
+      updatedRule = alertRuleSchema.parse({
+        id: resolved.rule.id,
         ...starter,
         name: resolved.rule.name,
         variants: [resetVariant, ...resolved.rule.variants.slice(1)],
         enabled: resolved.rule.variants.slice(1).some((variant) => variant.enabled)
       });
-      await this.#metadataRepository.saveRule({ ...metadata, reviewState: "needs-review" });
-      await this.#documents.save(createAlertEditorDocumentFromRule(updated, 0, {
+      updatedMetadata = { ...metadata, reviewState: "needs-review" };
+      document = createAlertEditorDocumentFromRule(updatedRule, 0, {
         ...metadata,
         reviewState: "needs-review"
-      }));
-      return updated;
+      });
+    }
+    this.#mutationStore.commit({
+      expectedRules: [resolved.rule],
+      saveRules: [updatedRule],
+      ...(updatedMetadata === undefined ? {} : { saveRuleMetadata: [updatedMetadata] }),
+      saveDocuments: [document]
     });
     return (await this.#toInventoryRows(setId, updatedRule)).find((row) => row.id === alertId)!;
   }
@@ -305,21 +352,25 @@ export class AlertSetManagementService {
   async deleteManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<void> {
     const resolved = await this.#resolveManagedAlert(alertId);
     await this.#requireLiveImpactConfirmation(resolved, confirmLiveImpact, resolved.kind === "default");
-    await this.#runAtomically(async () => {
-      if (resolved.kind === "default") {
-        for (const editorId of [resolved.rule.id, ...resolved.rule.variants.slice(1).map((variant) => variant.id)]) {
-          await this.#documents.delete(editorId);
-        }
-        await this.#alertService.deleteRule(resolved.rule.id);
-        await this.#metadataRepository.deleteRule(resolved.rule.id);
-        return;
-      }
-      const updated = await this.#alertService.deleteVariant(resolved.rule.id, resolved.variant.id);
-      await this.#alertService.updateRule(updated.id, {
-        ...omitId(updated),
-        enabled: updated.variants.some((variant) => variant.enabled)
+    if (resolved.kind === "default") {
+      this.#mutationStore.commit({
+        expectedRules: [resolved.rule],
+        deleteDocumentIds: [resolved.rule.id, ...resolved.rule.variants.slice(1).map((variant) => variant.id)],
+        deleteRuleMetadataIds: [resolved.rule.id],
+        deleteRuleIds: [resolved.rule.id]
       });
-      await this.#documents.delete(resolved.variant.id);
+      return;
+    }
+    const variants = resolved.rule.variants.filter((variant) => variant.id !== resolved.variant.id);
+    const updatedRule = alertRuleSchema.parse({
+      ...resolved.rule,
+      enabled: variants.some((variant) => variant.enabled),
+      variants
+    });
+    this.#mutationStore.commit({
+      expectedRules: [resolved.rule],
+      saveRules: [updatedRule],
+      deleteDocumentIds: [resolved.variant.id]
     });
   }
 
@@ -339,40 +390,51 @@ export class AlertSetManagementService {
     const sourceDocuments = await Promise.all(sourceRules.map((rule) => Promise.all(rule.variants.map((variant, index) =>
       this.#getEditorDocument(index === 0 ? rule.id : variant.id)
     ))));
-    const duplicate = await this.#runAtomically(async () => {
-      const collection = await this.#alertService.createCollection({ name: parsed.name, enabled: false });
-      await this.#metadataRepository.saveSet({
-        ...defaultSetMetadata(collection.id),
-        landscapeReviewState: "needs-review",
-        verticalReviewState: "needs-review"
-      });
-      for (const [ruleIndex, sourceRule] of sourceRules.entries()) {
-        const created = await this.#alertService.createRule({
+    const sourceMetadata = await Promise.all(sourceRules.map((rule) => this.#ruleMetadata(rule.id)));
+    const duplicate = alertCollectionSchema.parse({
+      id: this.#generateId("collection"),
+      name: parsed.name,
+      enabled: false
+    });
+    const createdRules = sourceRules.map((sourceRule) => this.#materializeRule({
           ...omitId(sourceRule),
           name: sourceRule.name,
           enabled: false,
-          collectionIds: [collection.id],
+          collectionIds: [duplicate.id],
           variants: sourceRule.variants.map((variant) => ({ ...omitId(variant), enabled: false }))
-        });
-        const sourceMetadata = await this.#ruleMetadata(sourceRule.id);
-        await this.#metadataRepository.saveRule({
-          ...sourceMetadata,
+    }));
+    const createdMetadata = createdRules.map((created, index) => ({
+          ...sourceMetadata[index]!,
           ruleId: created.id,
-          reviewState: "needs-review"
-        });
-        for (const [variantIndex, sourceDocument] of sourceDocuments[ruleIndex]!.entries()) {
+          reviewState: "needs-review" as const
+    }));
+    const createdDocuments = createdRules.flatMap((created, ruleIndex) =>
+      sourceDocuments[ruleIndex]!.map((sourceDocument, variantIndex) => {
           const variant = created.variants[variantIndex]!;
-          await this.#documents.save(copyEditorDocument(sourceDocument, {
+          return copyEditorDocument(sourceDocument, {
             id: variantIndex === 0 ? created.id : variant.id,
-            setId: collection.id,
+            setId: duplicate.id,
             parentAlertId: variantIndex === 0 ? null : created.id,
             kind: variantIndex === 0 ? "default" : "variation",
             name: variantIndex === 0 ? created.name : variant.name,
             enabled: false
-          }));
-        }
-      }
-      return collection;
+          });
+      })
+    );
+    this.#mutationStore.commit({
+      expectedCollections: [await this.#findCollection(setId)],
+      expectedRules: sourceRules,
+      missingCollectionIds: [duplicate.id],
+      missingRuleIds: createdRules.map((rule) => rule.id),
+      saveCollections: [duplicate],
+      saveSetMetadata: [{
+        ...defaultSetMetadata(duplicate.id),
+        landscapeReviewState: "needs-review",
+        verticalReviewState: "needs-review"
+      }],
+      saveRules: createdRules,
+      saveRuleMetadata: createdMetadata,
+      saveDocuments: createdDocuments
     });
 
     return (await this.getSet(duplicate.id)).overview;
@@ -392,16 +454,18 @@ export class AlertSetManagementService {
     const variants = resolved.rule.variants.map((variant, index) =>
       index === resolved.variantIndex ? { ...variant, enabled } : variant
     );
-    await this.#runAtomically(async () => {
-      await this.#alertService.updateRule(resolved.rule.id, {
-        ...omitId(resolved.rule),
-        enabled: variants.some((variant) => variant.enabled),
-        variants
-      });
-      await this.#documents.save({ ...document, enabled });
-      if (enabled && metadata.reviewState === "needs-review") {
-        await this.#metadataRepository.saveRule({ ...metadata, reviewState: "ready" });
-      }
+    const updatedRule = alertRuleSchema.parse({
+      ...resolved.rule,
+      enabled: variants.some((variant) => variant.enabled),
+      variants
+    });
+    this.#mutationStore.commit({
+      expectedRules: [resolved.rule],
+      saveRules: [updatedRule],
+      saveDocuments: [{ ...document, enabled }],
+      ...(enabled && metadata.reviewState === "needs-review"
+        ? { saveRuleMetadata: [{ ...metadata, reviewState: "ready" as const }] }
+        : {})
     });
     const setId = resolved.rule.collectionIds[0];
     if (setId === undefined) {
@@ -454,24 +518,26 @@ export class AlertSetManagementService {
       throw new AlertSetDeleteBlockedError(setId, selected.enabled ? "active" : "only-set");
     }
 
-    await this.#runAtomically(async () => {
-      const rules = (await this.#alertService.listRules()).filter((rule) => rule.collectionIds.includes(setId));
-      for (const rule of rules) {
-        if (rule.collectionIds.length === 1) {
-          for (const editorId of [rule.id, ...rule.variants.slice(1).map((variant) => variant.id)]) {
-            await this.#documents.delete(editorId);
-          }
-          await this.#alertService.deleteRule(rule.id);
-          await this.#metadataRepository.deleteRule(rule.id);
-        } else {
-          await this.#alertService.updateRule(rule.id, {
-            ...rule,
-            collectionIds: rule.collectionIds.filter((collectionId) => collectionId !== setId)
-          });
-        }
-      }
-      await this.#alertService.deleteCollection(setId);
-      await this.#metadataRepository.deleteSet(setId);
+    const rules = (await this.#alertService.listRules()).filter((rule) => rule.collectionIds.includes(setId));
+    const deletedRules = rules.filter((rule) => rule.collectionIds.length === 1);
+    const updatedRules = rules
+      .filter((rule) => rule.collectionIds.length > 1)
+      .map((rule) => alertRuleSchema.parse({
+        ...rule,
+        collectionIds: rule.collectionIds.filter((collectionId) => collectionId !== setId)
+      }));
+    this.#mutationStore.commit({
+      expectedCollections: [selected],
+      expectedRules: rules,
+      saveRules: updatedRules,
+      deleteDocumentIds: deletedRules.flatMap((rule) => [
+        rule.id,
+        ...rule.variants.slice(1).map((variant) => variant.id)
+      ]),
+      deleteRuleMetadataIds: deletedRules.map((rule) => rule.id),
+      deleteRuleIds: deletedRules.map((rule) => rule.id),
+      deleteSetMetadataIds: [setId],
+      deleteCollectionIds: [setId]
     });
   }
 
@@ -499,19 +565,18 @@ export class AlertSetManagementService {
     }
   }
 
-  async #toOverview(
-    setId: string,
+  #toOverview(
+    collection: AlertCollection,
+    metadata: AlertSetMetadata,
     allRules: readonly AlertRule[],
     browserSources: readonly AlertBrowserSourceView[]
-  ): Promise<AlertSetOverview> {
-    const collection = await this.#findCollection(setId);
-    const metadata = await this.#setMetadata(setId);
-    const rules = allRules.filter((rule) => rule.collectionIds.includes(setId));
+  ): AlertSetOverview {
+    const rules = allRules.filter((rule) => rule.collectionIds.includes(collection.id));
     const enabledRules = rules.filter((rule) => rule.enabled);
     const issues: AlertValidationIssue[] = [];
     if (enabledRules.length === 0) {
       issues.push(validationIssue({
-        id: `${setId}:no-enabled-alerts`,
+        id: `${collection.id}:no-enabled-alerts`,
         severity: "blocker",
         code: "NO_ENABLED_ALERTS",
         message: "This alert set has no enabled alerts.",
@@ -573,9 +638,22 @@ export class AlertSetManagementService {
 
   async #toInventoryRows(setId: string, rule: AlertRule): Promise<readonly AlertInventoryRow[]> {
     const metadata = await this.#ruleMetadata(rule.id);
-    return Promise.all(rule.variants.map(async (variant, index) => {
+    const documents = await this.#documents.findMany([
+      rule.id,
+      ...rule.variants.slice(1).map((variant) => variant.id)
+    ]);
+    return this.#mapInventoryRows(setId, rule, metadata, documents);
+  }
+
+  #mapInventoryRows(
+    setId: string,
+    rule: AlertRule,
+    metadata: AlertRuleManagementMetadata,
+    documents: ReadonlyMap<string, AlertEditorDocument>
+  ): readonly AlertInventoryRow[] {
+    return rule.variants.map((variant, index) => {
       const editorId = index === 0 ? rule.id : variant.id;
-      const document = await this.#documents.find(editorId);
+      const document = documents.get(editorId);
       const targetProfileIds = document?.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id)
         ?? [...metadata.targetProfileIds];
       const reviewState = document?.targetProfiles.some((profile) => profile.reviewState === "needs-review") === true
@@ -594,7 +672,7 @@ export class AlertSetManagementService {
         targetProfileIds,
         previewText: variant.textTemplate
       };
-    }));
+    });
   }
 
   async #resolveManagedAlert(editorId: string): Promise<ManagedAlertResolution> {
@@ -625,9 +703,16 @@ export class AlertSetManagementService {
     }
   }
 
-  async #deriveRuleEnabled(rule: AlertRule): Promise<AlertRule> {
-    const enabled = rule.variants.some((variant) => variant.enabled);
-    return enabled === rule.enabled ? rule : this.#alertService.setRuleEnabled(rule.id, enabled);
+  #materializeRule(input: Parameters<ManagedAlertService["createRule"]>[0]): AlertRule {
+    return alertRuleSchema.parse({
+      ...input,
+      id: this.#generateId("rule"),
+      collectionIds: Array.from(new Set(input.collectionIds)),
+      variants: input.variants.map((variant) => alertVariantSchema.parse({
+        ...variant,
+        id: this.#generateId("variant")
+      }))
+    });
   }
 
   async #setMetadata(setId: string): Promise<AlertSetMetadata> {
@@ -638,17 +723,32 @@ export class AlertSetManagementService {
     return this.#metadataRepository.saveSet(defaultSetMetadata(setId));
   }
 
+  async #setMetadataByIds(setIds: readonly string[]): Promise<ReadonlyMap<string, AlertSetMetadata>> {
+    const metadata = new Map(await this.#metadataRepository.findSets(setIds));
+    for (const setId of setIds) {
+      if (!metadata.has(setId)) {
+        metadata.set(setId, await this.#metadataRepository.saveSet(defaultSetMetadata(setId)));
+      }
+    }
+    return metadata;
+  }
+
   async #ruleMetadata(ruleId: string): Promise<AlertRuleManagementMetadata> {
     const existing = await this.#metadataRepository.findRule(ruleId);
     if (existing !== null) {
       return existing;
     }
-    return this.#metadataRepository.saveRule({
-      ruleId,
-      providerKind: "twitch",
-      reviewState: "ready",
-      targetProfileIds: ["landscape", "vertical"]
-    });
+    return this.#metadataRepository.saveRule(defaultRuleMetadata(ruleId));
+  }
+
+  async #ruleMetadataByIds(ruleIds: readonly string[]): Promise<ReadonlyMap<string, AlertRuleManagementMetadata>> {
+    const metadata = new Map(await this.#metadataRepository.findRules(ruleIds));
+    for (const ruleId of ruleIds) {
+      if (!metadata.has(ruleId)) {
+        metadata.set(ruleId, await this.#metadataRepository.saveRule(defaultRuleMetadata(ruleId)));
+      }
+    }
+    return metadata;
   }
 
   async #findCollection(setId: string) {
@@ -742,6 +842,15 @@ function defaultSetMetadata(setId: string): AlertSetMetadata {
     landscapeReviewState: "ready",
     verticalEnabled: false,
     verticalReviewState: "needs-review"
+  };
+}
+
+function defaultRuleMetadata(ruleId: string): AlertRuleManagementMetadata {
+  return {
+    ruleId,
+    providerKind: "twitch",
+    reviewState: "ready",
+    targetProfileIds: ["landscape", "vertical"]
   };
 }
 
