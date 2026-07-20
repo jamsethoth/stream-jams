@@ -161,7 +161,6 @@
 .diagnostics-workspace__load-failure { background: var(--color-negative-soft); border: 1px solid var(--color-negative); border-radius: 8px; }
 .diagnostics-workspace__load-failure p { margin-top: 0; }
 .diagnostics-workspace__notice { border: 1px solid; border-radius: 6px; display: grid; gap: 4px; padding: 12px 14px; }
-.diagnostics-workspace__notice--positive { background: var(--color-positive-soft); border-color: var(--color-positive); }
 .diagnostics-workspace__notice--negative { background: var(--color-negative-soft); border-color: var(--color-negative); }
 
 @media (max-width: 980px) {
@@ -172,6 +171,8 @@
 }
 
 @media (max-width: 640px) {
+  .diagnostics-workspace__header { display: contents; }
+  .diagnostics-workspace__actions { order: 5; }
   .diagnostics-workspace__tabs { overflow-x: auto; }
   .diagnostics-workspace__tabs button { flex: 1 0 auto; justify-content: center; }
   .diagnostics-workspace__actions button,

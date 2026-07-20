@@ -71,8 +71,14 @@ describe("management route model", () => {
     });
     expect(parseManagementRoute("/manage/modules/alerts?diagnostic=ref-output-1#browser-sources")).toEqual({
       id: "modules-alerts",
-      diagnosticReferenceId: "ref-output-1"
+      diagnosticReferenceId: "ref-output-1",
+      fragment: "browser-sources"
     });
+    expect(formatManagementRoute({
+      id: "modules-alerts",
+      diagnosticReferenceId: "ref-output-1",
+      fragment: "browser-sources"
+    })).toBe("/manage/modules/alerts?diagnostic=ref-output-1#browser-sources");
   });
 
   it("preserves non-editor deep-link context", () => {

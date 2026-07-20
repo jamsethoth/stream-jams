@@ -68,6 +68,7 @@ describe("overlay schemas", () => {
         id: "instruction-1",
         overlayId: "main",
         moduleId: "alerts",
+        operatorTest: true,
         purpose: "live",
         scope: "module",
         visual: {

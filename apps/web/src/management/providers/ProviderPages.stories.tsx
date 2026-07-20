@@ -372,6 +372,27 @@ export const ActivationWarning: Story = {
   }
 };
 
+export const ActivationWithNoAffectedAlerts: Story = {
+  args: {
+    managementApi: providerApi([activeTwitch, inactiveStreamerBot], {
+      getProviderActivationImpact: async () => ({
+        matchedAlertCount: 0,
+        unmatchedAlertCount: 0,
+        blockers: [],
+        warnings: []
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const row = await canvas.findByRole("row", { name: /Studio Streamer\.bot/u });
+    await userEvent.click(row);
+    await expect(await canvas.findByText(/No active alerts are affected/u)).toBeVisible();
+    await userEvent.click(within(row).getByRole("button", { name: "Activate Studio Streamer.bot" }));
+    await expect(await canvas.findByRole("dialog", { name: "Activate Studio Streamer.bot?" })).toHaveTextContent("No active alerts are affected.");
+  }
+};
+
 export const DeactivationWarning: Story = {
   args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) },
   play: async ({ canvasElement }) => {

@@ -220,7 +220,8 @@ describe("provider pages", () => {
     expect(within(dialog).queryByRole("button", { name: "Register event source" })).not.toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Reconnect Twitch" }));
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Main Twitch reconnected. Live status is updating.");
+    expect(await screen.findByRole("status")).toHaveClass("management-toast--success");
+    expect(screen.getByRole("status")).toHaveTextContent("Main Twitch reconnected. Live status is updating.");
     expect(api.registerProvider).not.toHaveBeenCalled();
     expect(listRegisteredProviders).toHaveBeenCalledTimes(2);
   });
@@ -281,7 +282,7 @@ describe("provider pages", () => {
     render(<EventSourcesPage managementApi={api} />);
 
     expect(await screen.findByText("Authorization update required")).toBeInTheDocument();
-    expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
+    expect(await screen.findByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Reconnect Twitch" }));
     expect(screen.getByRole("dialog", { name: "Reconnect Main Twitch" })).toBeInTheDocument();
   });
@@ -446,7 +447,7 @@ describe("provider pages", () => {
     expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Register event source" }));
     expect(api.validateProvider).toHaveBeenCalledWith({ name: "Twitch", kind: "twitch", configuration: {} });
-    expect(await screen.findByText("Main Twitch registered and active.")).toBeInTheDocument();
+    expect((await screen.findByText("Main Twitch registered and active.")).closest(".management-toast")).toHaveClass("management-toast--success");
     open.mockRestore();
   });
 
@@ -624,8 +625,8 @@ describe("provider pages", () => {
   it("selects an event source by row and confirms activation from its inline action", async () => {
     const user = userEvent.setup();
     const impact: ProviderActivationImpact = {
-      matchedAlertCount: 3,
-      unmatchedAlertCount: 2,
+      matchedAlertCount: 1,
+      unmatchedAlertCount: 1,
       blockers: [],
       warnings: [warning]
     };
@@ -656,10 +657,11 @@ describe("provider pages", () => {
     await user.click(row);
 
     expect(await screen.findByRole("heading", { name: "Local Streamer.bot" })).toBeInTheDocument();
-    expect(await screen.findByText(/2 unmatched alerts/)).toBeInTheDocument();
+    expect(await screen.findByText("1 matching alert, 1 unmatched alert")).toBeInTheDocument();
     expect(screen.getByText("ref-impact-9")).toBeInTheDocument();
     await user.click(activateButton);
     const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
+    expect(dialog).toHaveTextContent("1 matching alert, 1 unmatched alert.");
     expect(dialog).toHaveTextContent("Two enabled alerts do not match Streamer.bot events.");
     expect(activateProvider).not.toHaveBeenCalled();
     await user.click(within(dialog).getByRole("button", { name: "Activate event source" }));
@@ -681,6 +683,51 @@ describe("provider pages", () => {
     const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
     expect(dialog).toHaveTextContent("Local Streamer.bot will become the active event source");
     expect(dialog).not.toHaveTextContent("current event source");
+  });
+
+  it("summarizes zero alert impact without raw zero counts", async () => {
+    const user = userEvent.setup();
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [inactiveStreamerBot]),
+      getProvider: vi.fn(async () => detail(inactiveStreamerBot))
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    expect(await screen.findByText(/No active alerts are affected/u)).toBeInTheDocument();
+    expect(screen.queryByText(/0 matching alerts/u)).not.toBeInTheDocument();
+    const row = screen.getByRole("row", { name: /Local Streamer\.bot/u });
+    await user.click(within(row).getByRole("button", { name: "Activate Local Streamer.bot" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
+    expect(dialog).toHaveTextContent("No active alerts are affected.");
+    expect(dialog).not.toHaveTextContent("0 matching alerts");
+  });
+
+  it("omits the zero side of a mixed alert impact", async () => {
+    const user = userEvent.setup();
+    const impact: ProviderActivationImpact = {
+      matchedAlertCount: 1,
+      unmatchedAlertCount: 0,
+      blockers: [],
+      warnings: []
+    };
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [inactiveStreamerBot]),
+      getProvider: vi.fn(async () => detail(inactiveStreamerBot)),
+      getProviderActivationImpact: vi.fn(async () => impact)
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    expect(await screen.findByText("1 matching alert")).toBeInTheDocument();
+    expect(screen.queryByText(/0 unmatched alerts/u)).not.toBeInTheDocument();
+    const row = screen.getByRole("row", { name: /Local Streamer\.bot/u });
+    await user.click(within(row).getByRole("button", { name: "Activate Local Streamer.bot" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Activate Local Streamer.bot?" });
+    expect(dialog).toHaveTextContent("1 matching alert.");
+    expect(dialog).not.toHaveTextContent("0 unmatched alerts");
   });
 
   it("describes the impact and requires confirmation before deactivating an event source", async () => {
@@ -758,7 +805,7 @@ describe("provider pages", () => {
     expect(screen.getByText("Stream Jams voice test. Your text to speech provider is ready.")).toBeInTheDocument();
     await user.click(testVoiceButton);
     expect(testProviderVoice).toHaveBeenCalledWith(activeSpeakerBot.id);
-    expect(await screen.findByText("Voice test delivered.")).toBeInTheDocument();
+    expect((await screen.findByText("Voice test delivered.")).closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
   it("requires an explicit choice before discarding TTS safety to select another provider", async () => {

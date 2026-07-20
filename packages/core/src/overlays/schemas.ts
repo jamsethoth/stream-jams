@@ -56,6 +56,7 @@ export const overlayInstructionSchema = z.object({
   id: nonEmptyStringSchema,
   overlayId: nonEmptyStringSchema,
   moduleId: nonEmptyStringSchema,
+  operatorTest: z.literal(true).optional(),
   purpose: overlayPurposeSchema,
   scope: overlayScopeSchema,
   targetProfileId: overlayTargetProfileIdSchema.nullable().optional(),

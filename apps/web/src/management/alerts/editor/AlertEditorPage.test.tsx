@@ -4,11 +4,13 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
-import { AlertEditorPage } from "./AlertEditorPage.js";
+import { AlertEditorPage, type AlertEditorPageApi } from "./AlertEditorPage.js";
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("AlertEditorPage", () => {
@@ -23,6 +25,7 @@ describe("AlertEditorPage", () => {
       test: true as const
     }));
     const onOpenAlert = vi.fn();
+    const onBack = vi.fn();
     render(
       <DirtyNavigationProvider>
         <AlertEditorPage
@@ -39,7 +42,7 @@ describe("AlertEditorPage", () => {
             saveAlertEditorDocument,
             sendAlertEditorTest
           }}
-          onBack={() => undefined}
+          onBack={onBack}
           onOpenAlert={onOpenAlert}
           targetProfileId="landscape"
         />
@@ -47,6 +50,34 @@ describe("AlertEditorPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "New follower" })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
+      "AlertsEveryday alertsNew follower"
+    );
+    await user.click(screen.getByRole("button", { name: "Back to alerts" }));
+    expect(onBack).toHaveBeenCalledWith("set-default");
+
+    const layersTab = screen.getByRole("tab", { name: "Layers" });
+    const alertTab = screen.getByRole("tab", { name: "Alert" });
+    const eventTab = screen.getByRole("tab", { name: "Event" });
+    layersTab.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(alertTab).toHaveAttribute("aria-selected", "true");
+    expect(alertTab).toHaveAttribute("tabindex", "0");
+    expect(alertTab).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(eventTab).toHaveAttribute("aria-selected", "true");
+    expect(eventTab).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(layersTab).toHaveAttribute("aria-selected", "true");
+    expect(layersTab).toHaveAttribute("tabindex", "0");
+    expect(alertTab).toHaveAttribute("tabindex", "-1");
+    expect(layersTab).toHaveFocus();
+    for (const inspectorTab of [layersTab, alertTab, eventTab]) {
+      expect(globalThis.document.getElementById(inspectorTab.getAttribute("aria-controls")!)).not.toBeNull();
+    }
+    expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
     expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Landscape/ })).toHaveAttribute("aria-pressed", "true");
 
@@ -78,7 +109,7 @@ describe("AlertEditorPage", () => {
       "alert-follow",
       expect.objectContaining({ targetProfileId: "landscape", includeAudio: true, includeTts: true })
     ));
-    expect(await screen.findByText(/Queued on Landscape.*ref-editor-test/)).toBeInTheDocument();
+    expect((await screen.findByText(/Queued on Landscape.*ref-editor-test/)).closest(".management-toast")).toHaveClass("management-toast--success");
 
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
@@ -87,6 +118,102 @@ describe("AlertEditorPage", () => {
     await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "raid");
     await user.click(screen.getByRole("button", { name: /New raid/ }));
     expect(onOpenAlert).toHaveBeenCalledWith("alert-raid", "vertical");
+  });
+
+  it("uses the loaded document set when set-detail loading fails", async () => {
+    const onBack = vi.fn();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => { throw new Error("set detail unavailable"); }),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={onBack}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss error" })).not.toBeInTheDocument();
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(8_000));
+    expect(screen.getByText("The alert editor could not be opened")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to alerts" }));
+    expect(onBack).toHaveBeenCalledWith("set-default");
+  });
+
+  it("floats loaded-editor action errors, reports them, supports dismissal, and expires them after eight seconds", async () => {
+    const user = userEvent.setup();
+    const reportAlertEditorError = vi.fn(async (_alertId: string, input: { readonly error: { readonly referenceId: string | null } }) => ({
+      referenceId: input.error.referenceId ?? "ui_editor_fallback"
+    }));
+    const managementApi = {
+      getAlertEditorDocument: vi.fn(async () => editorDocument()),
+      getAlertSet: vi.fn(async () => alertSetDetail(false)),
+      listRegisteredProviders: vi.fn(async () => []),
+      getAssetChangeImpact: vi.fn(),
+      listAssetLibraryItems: vi.fn(async () => []),
+      deleteAsset: vi.fn(),
+      updateAssetMetadata: vi.fn(),
+      saveAlertEditorDocument: vi.fn()
+        .mockRejectedValueOnce(new Error("Database write failed."))
+        .mockRejectedValue(new Error("Database write failed. (INTERNAL_SERVER_ERROR, err_editor_save)")),
+      sendAlertEditorTest: vi.fn(),
+      reportAlertEditorError
+    } as AlertEditorPageApi & { readonly reportAlertEditorError: typeof reportAlertEditorError };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={managementApi}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    await user.clear(template);
+    await user.type(template, "Cannot save");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    const firstError = await screen.findByRole("alert");
+    expect(firstError.closest(".management-toast")).toHaveClass("management-toast--failure");
+    expect(reportAlertEditorError).toHaveBeenCalledWith("alert-follow", expect.objectContaining({
+      setId: "set-default",
+      error: expect.objectContaining({ referenceId: expect.stringMatching(/^ui_/u) })
+    }));
+    await user.click(screen.getByRole("button", { name: "Dismiss error" }));
+    expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("err_editor_save");
+    expect(reportAlertEditorError).toHaveBeenCalledTimes(1);
+
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Save" }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByText("The alert was not saved")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(7_999));
+    expect(screen.getByText("The alert was not saved")).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1));
+    expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
   });
 
   it("shows alert and set validation details with correction steps in the editor", async () => {
@@ -323,7 +450,9 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
   });
 
-  it("remembers canvas zoom by profile and confirms before replacing an edited target layout", async () => {
+  it("fits each canvas by default, remembers profile zoom, and confirms before replacing an edited target layout", async () => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(1_000);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(700);
     const user = userEvent.setup();
     render(
       <DirtyNavigationProvider>
@@ -348,10 +477,11 @@ describe("AlertEditorPage", () => {
     );
 
     await screen.findByRole("region", { name: "Landscape alert canvas" });
+    await waitFor(() => expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("49%"));
     await user.click(screen.getByRole("button", { name: "Zoom in" }));
-    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("125%");
+    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("74%");
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
-    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("100%");
+    await waitFor(() => expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("33%"));
 
     const xPosition = screen.getByLabelText("X");
     await user.clear(xPosition);
@@ -365,7 +495,7 @@ describe("AlertEditorPage", () => {
 
     await user.click(screen.getByRole("button", { name: /Landscape/ }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).getByRole("button", { name: "Discard and switch" }));
-    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("125%");
+    expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("74%");
   });
 
   it("edits preset animation timing and easing", async () => {
@@ -485,7 +615,7 @@ describe("AlertEditorPage", () => {
       layers: [
         ...editorDocument().layers,
         { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-audio", volume: 0.5, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
-        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, enabled: true, providerId: "speakerbot", template: "Hello {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, enabled: true, providerId: "speakerbot", template: "Hello {actor.displayName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
       ]
     };
     const sendAlertEditorTest = vi.fn();
@@ -530,6 +660,7 @@ describe("AlertEditorPage", () => {
 
     await waitFor(() => expect(getAssetFile).toHaveBeenCalledWith("asset-audio"));
     expect(speak).toHaveBeenCalledOnce();
+    expect(speak.mock.calls[0]?.[0]).toMatchObject({ text: "Hello James" });
     expect(sendAlertEditorTest).not.toHaveBeenCalled();
     const seek = screen.getByRole("slider", { name: "Preview position" });
     fireEvent.change(seek, { target: { value: "1200" } });

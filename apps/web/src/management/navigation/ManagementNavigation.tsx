@@ -21,7 +21,11 @@ export function ManagementNavigation({ activeRoute, onNavigate }: ManagementNavi
         <ul>
           {managementPrimaryRoutes.map((route) => (
             <li key={route.id}>
-              <NavigationLink active={activeRoute.id === route.id} onNavigate={onNavigate} route={route} />
+              {route.childRoutes.length === 0 ? (
+                <NavigationLink active={activeRoute.id === route.id} onNavigate={onNavigate} route={route} />
+              ) : (
+                <span className="management-nav__group">{route.label}</span>
+              )}
               {route.childRoutes.length === 0 ? null : (
                 <ul className="management-nav__children">
                   {route.childRoutes.map((child) => (
@@ -52,7 +56,7 @@ function NavigationLink({
   readonly route: ManagementRouteDefinition;
 }) {
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
       return;
     }
     event.preventDefault();

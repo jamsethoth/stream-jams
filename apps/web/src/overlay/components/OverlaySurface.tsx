@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { targetProfileDefinitions } from "@stream-jams/core";
 import type {
   OverlayComposition,
   OverlayElementLayout,
@@ -20,27 +21,82 @@ export interface OverlaySurfaceProps {
 
 export const overlayRootStyle: CSSProperties = {
   background: "transparent",
-  minHeight: "100vh",
+  height: "100vh",
   overflow: "hidden",
   position: "relative",
   width: "100vw"
 };
 
+const testAudioActivationEvent = "stream-jams:test-audio-activation";
+
 export function OverlaySurface({ composition, onPlaybackEvent, resolveAssetUrl }: OverlaySurfaceProps) {
+  const [blockedTestAudioIds, setBlockedTestAudioIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [viewport, setViewport] = useState(() => ({
+    height: window.innerHeight,
+    width: window.innerWidth
+  }));
+  useEffect(() => {
+    const updateViewport = () => setViewport({ height: window.innerHeight, width: window.innerWidth });
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+  const setTestAudioBlocked = useCallback((instructionId: string, blocked: boolean) => {
+    setBlockedTestAudioIds((current) => {
+      const next = new Set(current);
+      if (blocked) {
+        next.add(instructionId);
+      } else {
+        next.delete(instructionId);
+      }
+      return next.size === current.size ? current : next;
+    });
+  }, []);
+  const enableTestAudio = useCallback(() => {
+    window.dispatchEvent(new Event(testAudioActivationEvent));
+  }, []);
+  useEffect(() => {
+    const activeInstructionIds = new Set(
+      composition.modules.flatMap((moduleSnapshot) => moduleSnapshot.instructions.map((instruction) => instruction.id))
+    );
+    setBlockedTestAudioIds((current) => {
+      const next = new Set([...current].filter((instructionId) => activeInstructionIds.has(instructionId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [composition]);
+  const profile = targetProfileDefinitions.find((candidate) => candidate.id === composition.targetProfileId);
+  const instructions = composition.modules
+    .filter((moduleSnapshot) => moduleSnapshot.enabled)
+    .flatMap((moduleSnapshot) =>
+      moduleSnapshot.instructions.map((instruction) => (
+        <OverlayInstructionLayer
+          instruction={instruction}
+          key={instruction.id}
+          onPlaybackEvent={onPlaybackEvent}
+          onTestAudioBlockedChange={setTestAudioBlocked}
+          resolveAssetUrl={resolveAssetUrl}
+        />
+      ))
+    );
+
   return (
     <div className="overlay-root" data-testid="overlay-root" style={overlayRootStyle}>
-      {composition.modules
-        .filter((moduleSnapshot) => moduleSnapshot.enabled)
-        .flatMap((moduleSnapshot) =>
-          moduleSnapshot.instructions.map((instruction) => (
-            <OverlayInstructionLayer
-              instruction={instruction}
-              key={instruction.id}
-              onPlaybackEvent={onPlaybackEvent}
-              resolveAssetUrl={resolveAssetUrl}
-            />
-          ))
-        )}
+      {profile === undefined ? instructions : (
+        <div
+          data-testid="overlay-profile-canvas"
+          style={{
+            height: `${profile.height}px`,
+            left: "50%",
+            position: "absolute",
+            top: "50%",
+            transform: `translate(-50%, -50%) scale(${Math.min(viewport.width / profile.width, viewport.height / profile.height)})`,
+            transformOrigin: "center",
+            width: `${profile.width}px`
+          }}
+        >
+          {instructions}
+        </div>
+      )}
+      {blockedTestAudioIds.size === 0 ? null : <AudioActivationPrompt onEnable={enableTestAudio} />}
     </div>
   );
 }
@@ -48,14 +104,18 @@ export function OverlaySurface({ composition, onPlaybackEvent, resolveAssetUrl }
 function OverlayInstructionLayer({
   instruction,
   onPlaybackEvent,
+  onTestAudioBlockedChange,
   resolveAssetUrl
 }: {
   readonly instruction: OverlayInstruction;
   readonly resolveAssetUrl: (assetId: string) => string;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
+  readonly onTestAudioBlockedChange: (instructionId: string, blocked: boolean) => void;
 }) {
   const completionReportedRef = useRef(false);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const [audioBlocked, setAudioBlocked] = useState(false);
+  const [audioStarted, setAudioStarted] = useState(instruction.audio === null);
   const reportFailure = useCallback((message: string) => {
     if (completionReportedRef.current) {
       return;
@@ -70,6 +130,10 @@ function OverlayInstructionLayer({
   }, [instruction.id, onPlaybackEvent]);
 
   useEffect(() => {
+    if (!audioStarted) {
+      return;
+    }
+
     onPlaybackEvent?.({
       instructionId: instruction.id,
       status: "started"
@@ -87,7 +151,7 @@ function OverlayInstructionLayer({
     }, instruction.durationMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [instruction.durationMs, instruction.id, onPlaybackEvent]);
+  }, [audioStarted, instruction.durationMs, instruction.id, onPlaybackEvent]);
 
   useEffect(() => {
     if (instruction.tts?.mode !== "browser-speech" || typeof window.speechSynthesis === "undefined") {
@@ -100,15 +164,55 @@ function OverlayInstructionLayer({
 
   const audioAssetId = instruction.audio?.assetId ?? null;
   const audioVolume = instruction.audio?.volume ?? 1;
-  useEffect(() => {
+  const startAudio = useCallback(() => {
     const element = audioElementRef.current;
     if (element === null || audioAssetId === null) {
       return;
     }
 
     element.volume = Math.min(1, Math.max(0, audioVolume));
-    void element.play().catch((error: unknown) => reportFailure(audioStartFailureMessage(error)));
-  }, [audioAssetId, audioVolume, reportFailure]);
+    void element.play().then(() => {
+      onTestAudioBlockedChange(instruction.id, false);
+      setAudioBlocked(false);
+      setAudioStarted(true);
+    }).catch((error: unknown) => {
+      if (instruction.operatorTest === true && isAudioActivationBlocked(error)) {
+        onTestAudioBlockedChange(instruction.id, true);
+        setAudioBlocked(true);
+        return;
+      }
+
+      reportFailure(audioStartFailureMessage(error));
+    });
+  }, [audioAssetId, audioVolume, instruction.id, instruction.operatorTest, onTestAudioBlockedChange, reportFailure]);
+
+  useEffect(() => {
+    startAudio();
+    const element = audioElementRef.current;
+    return () => element?.pause();
+  }, [startAudio]);
+
+  useEffect(() => {
+    if (!audioBlocked) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      onTestAudioBlockedChange(instruction.id, false);
+      reportFailure(audioStartFailureMessage(new DOMException("Playback requires user interaction", "NotAllowedError")));
+    }, 30_000);
+    return () => window.clearTimeout(timeoutId);
+  }, [audioBlocked, instruction.id, onTestAudioBlockedChange, reportFailure]);
+
+  useEffect(() => {
+    if (!audioBlocked) {
+      return;
+    }
+
+    const retry = () => startAudio();
+    window.addEventListener(testAudioActivationEvent, retry);
+    return () => window.removeEventListener(testAudioActivationEvent, retry);
+  }, [audioBlocked, startAudio]);
 
   return (
     <>
@@ -133,6 +237,7 @@ function OverlayInstructionLayer({
         <div
           className="overlay-text"
           data-testid={`overlay-text-${instruction.id}`}
+          dir="auto"
           style={elementStyle(instruction.text.layout, instruction.animation, instruction.durationMs)}
         >
           {instruction.text.text}
@@ -152,7 +257,10 @@ function OverlayInstructionLayer({
       {instruction.audio === null ? null : (
         <audio
           data-testid={`overlay-audio-${instruction.id}`}
-          onError={() => reportFailure("Audio playback failed. Confirm the audio file is supported, then retry.")}
+          onError={() => {
+            onTestAudioBlockedChange(instruction.id, false);
+            reportFailure("Audio playback failed. Confirm the audio file is supported, then retry.");
+          }}
           preload="auto"
           ref={audioElementRef}
           src={resolveAssetUrl(instruction.audio.assetId)}
@@ -162,8 +270,22 @@ function OverlayInstructionLayer({
   );
 }
 
+export function AudioActivationPrompt({ onEnable }: { readonly onEnable: () => void }) {
+  return (
+    <div aria-live="polite" className="overlay-audio-activation" role="status">
+      <strong>Enable audio for test alerts</strong>
+      <span>Allow this browser source to play alert audio. In OBS, open Interact first.</span>
+      <button onClick={onEnable} type="button">Enable alert audio</button>
+    </div>
+  );
+}
+
+function isAudioActivationBlocked(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "name" in error && error.name === "NotAllowedError";
+}
+
 function audioStartFailureMessage(error: unknown): string {
-  if (typeof error === "object" && error !== null && "name" in error && error.name === "NotAllowedError") {
+  if (isAudioActivationBlocked(error)) {
     return "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry.";
   }
 

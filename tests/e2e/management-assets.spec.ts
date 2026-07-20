@@ -3,6 +3,7 @@ import { mockManagementShell } from "./e2e-helpers.js";
 
 test("asset library filters, edits, previews impact, and keeps invalid uploads in context", async ({ page }) => {
   await mockManagementShell(page);
+  await page.setViewportSize({ width: 390, height: 844 });
   const commands: Array<{ readonly command: string; readonly body?: unknown }> = [];
   let displayName = "Follower burst";
 
@@ -72,9 +73,13 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Assets" }).click();
-  await expect(page.getByRole("cell", { name: "Follower burst" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Follower burst", exact: true })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Follower burst/u }).getByText("Available")).toBeVisible();
   await expect(page.getByRole("link", { name: "New follower" })).toHaveAttribute("href", "/manage/modules/alerts/editor/alert-follow?set=set-default&event=follow&profile=landscape");
+  await expect(page.getByText("Filters", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
+  await page.getByText("Filters", { exact: true }).click();
   await page.getByLabel("Usage").selectOption("unused");
   await page.getByLabel("Type").selectOption("audio");
   await expect(page.getByRole("button", { name: "Short chime", exact: true })).toBeVisible();
@@ -86,7 +91,7 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
   await page.getByLabel("Display name").fill("Winter follower");
   await page.getByLabel("Tags").fill("winter, follow");
   await page.getByRole("button", { name: "Save asset details" }).click();
-  await expect(page.getByText("Asset details saved.")).toBeVisible();
+  await expect(page.locator(".management-toast--success")).toContainText("Asset details saved.");
 
   await page.getByRole("button", { name: "Replace file" }).click();
   await page.getByLabel("Replacement file").setInputFiles({ name: "replacement.png", mimeType: "image/png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) });
@@ -94,7 +99,7 @@ test("asset library filters, edits, previews impact, and keeps invalid uploads i
   const replacement = page.getByRole("dialog", { name: "Replace Winter follower?" });
   await expect(replacement.getByText("1 alert usage will update everywhere.")).toBeVisible();
   await replacement.getByRole("button", { name: "Replace everywhere" }).click();
-  await expect(page.getByText("Asset replaced everywhere it is used.")).toBeVisible();
+  await expect(page.locator(".management-toast--success")).toContainText("Asset replaced everywhere it is used.");
 
   await page.getByRole("button", { name: "Add asset" }).click();
   await page.getByRole("tab", { name: "Upload new" }).click();

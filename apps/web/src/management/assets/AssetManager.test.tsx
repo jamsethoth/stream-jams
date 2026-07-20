@@ -1,18 +1,22 @@
 import type { AssetChangeImpact, AssetLibraryItem, AssetMetadataUpdateInput } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssetManager, type AssetLibraryManagementApi } from "./AssetManager.js";
 import type { AssetApi, AssetRecord } from "./asset-api.js";
 
 describe("AssetManager", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
 
   it("shows searchable assets, preview details, tags, and contextual usage links", async () => {
     const fixture = createFixture();
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
 
     await screen.findByRole("button", { name: "Follower burst" });
+    expect(screen.getByText("Filters", { selector: "summary" }).closest("details")).toHaveAttribute("open");
     expect(screen.getByText("seasonal")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /New follower/ })).toHaveAttribute(
       "href",
@@ -22,6 +26,55 @@ describe("AssetManager", () => {
     await userEvent.type(screen.getByRole("searchbox", { name: "Search assets" }), "chime");
     expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
+  });
+
+  it("shows only retry when the initial asset-library load fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const listAssetLibraryItems = vi.fn()
+      .mockRejectedValueOnce(new Error("Local service unavailable"))
+      .mockResolvedValue([imageItem, audioItem]);
+    const fixture = createFixture({ listAssetLibraryItems });
+
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+
+    expect(await screen.findByText("Asset library could not be loaded")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry loading assets" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Add asset" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No assets imported yet.")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Retry loading assets" }));
+    expect(await screen.findByRole("button", { name: "Follower burst" })).toBeInTheDocument();
+    expect(listAssetLibraryItems).toHaveBeenCalledTimes(2);
+  });
+
+  it("hides asset controls while the initial load and retry are pending", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const initial = deferred<readonly AssetLibraryItem[]>();
+    const retry = deferred<readonly AssetLibraryItem[]>();
+    const listAssetLibraryItems = vi.fn()
+      .mockReturnValueOnce(initial.promise)
+      .mockReturnValueOnce(retry.promise);
+    const fixture = createFixture({ listAssetLibraryItems });
+
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+
+    expect(await screen.findByText("Loading asset library...")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Add asset" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "Search assets" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry loading assets" })).not.toBeInTheDocument();
+
+    await act(async () => initial.reject(new Error("Local service unavailable")));
+    await user.click(await screen.findByRole("button", { name: "Retry loading assets" }));
+
+    expect(await screen.findByText("Loading asset library...")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Add asset" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("searchbox", { name: "Search assets" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry loading assets" })).not.toBeInTheDocument();
+
+    await act(async () => retry.resolve([imageItem, audioItem]));
+    expect(await screen.findByRole("button", { name: "Add asset" })).toBeVisible();
   });
 
   it("combines unused and multi-tag filters with AND behavior", async () => {
@@ -94,6 +147,7 @@ describe("AssetManager", () => {
     await user.click(within(screen.getByRole("dialog", { name: "Switch assets with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 
     await waitFor(() => expect(fixture.metadataUpdates).toEqual([{ displayName: "Saved follower", tags: ["seasonal", "follow"] }]));
+    expect((await screen.findByText("Asset details saved.")).closest(".management-toast")).toHaveClass("management-toast--success");
     expect(await screen.findByRole("region", { name: "Raid chime details" })).toBeInTheDocument();
   });
 
@@ -117,7 +171,10 @@ describe("AssetManager", () => {
     const fixture = createFixture();
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
     await screen.findByRole("button", { name: "Follower burst" });
-    expect(screen.getByRole("button", { name: "Delete asset" })).toBeDisabled();
+    const blockedDelete = screen.getByRole("button", { name: "Delete asset" });
+    expect(blockedDelete).toBeDisabled();
+    expect(blockedDelete).toHaveAccessibleDescription("Remove 1 alert use before deleting this asset.");
+    expect(screen.getByText("Remove 1 alert use before deleting this asset.")).toBeVisible();
 
     await userEvent.click(screen.getByRole("row", { name: /Raid chime/ }));
     await userEvent.click(screen.getByRole("button", { name: "Delete asset" }));
@@ -128,7 +185,7 @@ describe("AssetManager", () => {
   });
 });
 
-function createFixture() {
+function createFixture(overrides: Partial<AssetLibraryManagementApi> = {}) {
   let items: readonly AssetLibraryItem[] = [imageItem, audioItem];
   const metadataUpdates: AssetMetadataUpdateInput[] = [];
   const replacements: Array<{ assetId: string; file: File; confirmed: boolean }> = [];
@@ -148,7 +205,8 @@ function createFixture() {
     async deleteAsset(assetId) {
       deleted.push(assetId);
       items = items.filter((item) => item.id !== assetId);
-    }
+    },
+    ...overrides
   };
   const assetApi: AssetApi = {
     async listAssets() { return []; },
@@ -193,3 +251,13 @@ const audioItem: AssetLibraryItem = {
 };
 
 const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, reject, resolve };
+}

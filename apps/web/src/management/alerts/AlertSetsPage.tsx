@@ -12,8 +12,10 @@ import {
 } from "@stream-jams/core";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
+import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi } from "../management-api.js";
 import "./alert-sets-page.css";
 
@@ -63,15 +65,21 @@ interface AlertMutationDialogState {
   readonly alert: AlertInventoryRow;
 }
 
+const targetProfileDimensions: Record<TargetProfileId, Readonly<{ width: number; height: number }>> = {
+  landscape: { width: 1920, height: 1080 },
+  vertical: { width: 1080, height: 1920 }
+};
+
 export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: AlertSetsPageProps) {
   const [sets, setSets] = useState<readonly AlertSetOverview[]>([]);
   const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
   const [expandedSetId, setExpandedSetId] = useState<string | null>(null);
   const [detail, setDetail] = useState<AlertSetDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
@@ -99,35 +107,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
   const browserSourceRefreshFailed = useRef(false);
+  const effectLoadGeneration = useRef(0);
 
   useEffect(() => {
-    let active = true;
-    void (async () => {
-      try {
-        const loadedSets = await managementApi.listAlertSets();
-        if (!active) return;
-        setSets(loadedSets);
-        const selected = loadedSets.find((candidate) => candidate.id === initialSetId)
-          ?? loadedSets.find((candidate) => candidate.active)
-          ?? loadedSets[0]
-          ?? null;
-        setSelectedSetId(selected?.id ?? null);
-        setExpandedSetId(selected?.id ?? null);
-        const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
-        if (!active) return;
-        setDetail(loadedDetail);
-        setBrowserSourceStatusUpdatedAt(loadedDetail === null ? null : new Date().toISOString());
-        browserSourceRefreshFailed.current = false;
-        setBrowserSourceRefreshError(null);
-      } catch (cause) {
-        if (active) setError(toActionableError("Alert sets could not be loaded", cause, "Refresh the page and try again."));
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
+    const generation = ++effectLoadGeneration.current;
+    void loadAlertSets(initialSetId, true, generation);
+    return () => { effectLoadGeneration.current += 1; };
   }, [initialSetId, managementApi]);
 
   useEffect(() => {
@@ -199,6 +184,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setSelectedSetId(setId);
     setLoading(true);
     setError(null);
+    setNotice(null);
     browserSourceRefreshFailed.current = false;
     setBrowserSourceRefreshError(null);
     try {
@@ -212,20 +198,39 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
+  async function loadAlertSets(preferredSetId: string | null | undefined, handleFailure = false, effectGeneration: number | null = null) {
+    const isStale = () => effectGeneration !== null && effectGeneration !== effectLoadGeneration.current;
+    setLoading(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const loadedSets = await managementApi.listAlertSets();
+      const selected = loadedSets.find((candidate) => candidate.id === preferredSetId)
+        ?? loadedSets.find((candidate) => candidate.active)
+        ?? loadedSets[0]
+        ?? null;
+      const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
+      if (isStale()) return;
+      setSets(loadedSets);
+      setSelectedSetId(selected?.id ?? null);
+      setExpandedSetId(selected?.id ?? null);
+      setDetail(loadedDetail);
+      setBrowserSourceStatusUpdatedAt(loadedDetail === null ? null : new Date().toISOString());
+      browserSourceRefreshFailed.current = false;
+      setBrowserSourceRefreshError(null);
+      setInitialLoadFailed(false);
+    } catch (cause) {
+      if (isStale()) return;
+      setInitialLoadFailed(detail === null);
+      setError(toActionableError("Alert sets could not be loaded", cause, "Refresh the page and try again."));
+      if (!handleFailure) throw cause;
+    } finally {
+      if (!isStale()) setLoading(false);
+    }
+  }
+
   async function refresh(preferredSetId = selectedSetId) {
-    const refreshedSets = await managementApi.listAlertSets();
-    setSets(refreshedSets);
-    const selected = refreshedSets.find((candidate) => candidate.id === preferredSetId)
-      ?? refreshedSets.find((candidate) => candidate.active)
-      ?? refreshedSets[0]
-      ?? null;
-    setSelectedSetId(selected?.id ?? null);
-    setExpandedSetId(selected?.id ?? null);
-    const refreshedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
-    setDetail(refreshedDetail);
-    setBrowserSourceStatusUpdatedAt(refreshedDetail === null ? null : new Date().toISOString());
-    browserSourceRefreshFailed.current = false;
-    setBrowserSourceRefreshError(null);
+    await loadAlertSets(preferredSetId);
   }
 
   function openNameDialog(action: NameAction, set: AlertSetOverview | null) {
@@ -239,6 +244,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (name === "" || nameDialog === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const result = nameDialog.action === "create"
         ? await managementApi.createAlertSet({ name })
@@ -246,7 +252,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
           ? await managementApi.renameAlertSet(nameDialog.set?.id ?? "", { name })
           : await managementApi.duplicateAlertSet(nameDialog.set?.id ?? "", { name });
       await refresh(result.id);
-      setNotice(nameDialog.action === "create" ? "Alert set created." : nameDialog.action === "rename" ? "Alert set renamed." : "Alert set duplicated.");
+      setNotice({
+        tone: nameDialog.action === "duplicate" ? "warning" : "success",
+        message: nameDialog.action === "create" ? "Alert set created." : nameDialog.action === "rename" ? "Alert set renamed." : "Alert set duplicated."
+      });
       setNameDialog(null);
     } catch (cause) {
       setError(toActionableError("The alert set was not saved", cause, "Check the name and try again."));
@@ -307,7 +316,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       const created = await managementApi.createAlertVariation(variationParent.id, { name: variationName.trim() });
       await refresh(created.setId);
       setVariationParent(null);
-      setNotice(`${created.name} created disabled and marked Needs review.`);
+      setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
       setVariationError(toActionableError(
         "The variation was not created",
@@ -322,10 +331,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function duplicateAlert(alert: AlertInventoryRow) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const created = await managementApi.duplicateManagedAlert(alert.id);
       await refresh(created.setId);
-      setNotice(`${created.name} duplicated disabled and marked Needs review.`);
+      setNotice({ tone: "warning", message: `${created.name} duplicated disabled and marked Needs review.` });
     } catch (cause) {
       setError(toActionableError("The alert was not duplicated", cause, "Review the alert and try again."));
     } finally {
@@ -338,6 +348,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     const { action, alert } = alertMutation;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       if (action === "reset") {
         await managementApi.resetManagedAlert(alert.id, true);
@@ -345,7 +356,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         await managementApi.deleteManagedAlert(alert.id, true);
       }
       await refresh(alert.setId);
-      setNotice(action === "reset" ? `${alert.name} reset to its event default and marked Needs review.` : `${alert.name} deleted.`);
+      setNotice({
+        tone: action === "reset" ? "warning" : "success",
+        message: action === "reset" ? `${alert.name} reset to its event default and marked Needs review.` : `${alert.name} deleted.`
+      });
       setAlertMutation(null);
     } catch (cause) {
       setError(toActionableError(
@@ -361,6 +375,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function prepareActivation(set: AlertSetOverview) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       setActivationSet(set);
       setActivationImpact(await managementApi.getAlertSetActivationImpact(set.id));
@@ -376,10 +391,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (activationSet === null || activationImpact === null || activationImpact.blockers.length > 0) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.activateAlertSet(activationSet.id, activationImpact.warnings.length > 0);
       await refresh(activationSet.id);
-      setNotice(`${activationSet.name} is now active.`);
+      setNotice({ tone: "success", message: `${activationSet.name} is now active.` });
       setActivationSet(null);
       setActivationImpact(null);
     } catch (cause) {
@@ -393,11 +409,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (detail === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const overview = await managementApi.markStarterAlertSetReviewComplete(detail.overview.id);
       setDetail({ ...detail, overview });
       replaceOverview(overview);
-      setNotice("Starter review marked complete. Alerts remain disabled until you enable them.");
+      setNotice({ tone: "warning", message: "Starter review marked complete.", detail: "Alerts remain disabled until you enable them." });
     } catch (cause) {
       setError(toActionableError("Starter review was not updated", cause, "Try the action again."));
     } finally {
@@ -408,11 +425,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function toggleAlert(alert: AlertInventoryRow) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const updated = await managementApi.setManagedAlertEnabled(alert.id, !alert.enabled);
       setDetail(updated);
       replaceOverview(updated.overview);
-      setNotice(`${alert.name} ${alert.enabled ? "disabled" : "enabled"}.`);
+      setNotice({ tone: "success", message: `${alert.name} ${alert.enabled ? "disabled" : "enabled"}.` });
     } catch (cause) {
       setError(toActionableError("The alert was not updated", cause, "Review its validation state and try again."));
     } finally {
@@ -440,6 +458,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setTestingAlertId(alert.id);
     setTestMenuAlertId(null);
     setError(null);
+    setNotice(null);
     try {
       const document = await managementApi.getAlertEditorDocument(alert.id);
       const sample = document.samplePayloads.find((candidate) => candidate.kind === "built-in");
@@ -451,7 +470,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         includeAudio: true,
         includeTts: true
       });
-      setNotice(`${alert.name} test queued for ${formatProfile(result.targetProfileId)}. Reference ${result.referenceId}.`);
+      setNotice({ tone: "success", message: `${alert.name} test queued for ${formatProfile(result.targetProfileId)}. Reference ${result.referenceId}.` });
     } catch (cause) {
       setError(toActionableError(
         "The alert test was not sent",
@@ -466,10 +485,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function createBrowserSource(source: AlertBrowserSourceView) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.createOverlayOutputKey(outputRequest(source));
       await refresh(detail?.overview.id ?? null);
-      setNotice(`${formatProfile(source.targetProfileId)} URL created.`);
+      setNotice({ tone: "success", message: `${formatProfile(source.targetProfileId)} URL created.` });
     } catch (cause) {
       setError(toActionableError("The browser-source URL was not created", cause, "Check Diagnostics, then try again."));
     } finally {
@@ -481,10 +501,15 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (regenerateDialog === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.regenerateOverlayOutputKey(outputRequest(regenerateDialog.source));
       await refresh(detail?.overview.id ?? null);
-      setNotice(`${formatProfile(regenerateDialog.source.targetProfileId)} URL regenerated. Update every browser source that used the old URL.`);
+      setNotice({
+        tone: "warning",
+        message: `${formatProfile(regenerateDialog.source.targetProfileId)} URL regenerated.`,
+        detail: "Update every browser source that used the old URL."
+      });
       setRegenerateDialog(null);
       setRegenerateConfirmation("");
     } catch (cause) {
@@ -496,10 +521,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
 
   async function copyBrowserSource(source: AlertBrowserSourceView) {
     if (source.url === null) return;
+    setError(null);
+    setNotice(null);
     try {
       if (navigator.clipboard === undefined) throw new Error("Clipboard access is unavailable in this browser.");
       await navigator.clipboard.writeText(source.url);
-      setNotice(`${formatProfile(source.targetProfileId)} URL copied.`);
+      setNotice({ tone: "success", message: `${formatProfile(source.targetProfileId)} URL copied.` });
     } catch (cause) {
       setError(toActionableError("The browser-source URL was not copied", cause, "Reveal the URL and copy it manually."));
     }
@@ -509,10 +536,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     if (deleteSet === null) return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await managementApi.deleteAlertSet(deleteSet.id);
       await refresh(null);
-      setNotice(`${deleteSet.name} deleted.`);
+      setNotice({ tone: "success", message: `${deleteSet.name} deleted.` });
       setDeleteSet(null);
     } catch (cause) {
       setError(toActionableError("The alert set was not deleted", cause, "Activate another set first, then retry."));
@@ -528,11 +556,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   if (loading && detail === null) {
     return <p className="management-empty" role="status">Loading alert sets...</p>;
   }
+  if (initialLoadFailed && error !== null) return <section aria-label="Alert sets" className="alert-sets-page"><ManagementErrorBanner error={error} /><button onClick={() => void loadAlertSets(initialSetId, true)} type="button">Retry loading alert sets</button></section>;
 
   return (
     <div className="alert-sets-page">
-      {error === null ? null : <ManagementErrorBanner error={error} />}
-      {notice === null ? null : <p className="alert-sets-page__notice" role="status">{notice}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       {detail === null ? null : (
         <BrowserSources
@@ -547,7 +576,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
               requiresTypedConfirmation: source.connectionState !== "never-connected" || source.lastConnectedAt !== null
             });
           }}
-          onReveal={(source) => setRevealedSourceIds((current) => new Set([...current, source.id]))}
+          onToggleReveal={(source) => setRevealedSourceIds((current) => {
+            const next = new Set(current);
+            if (next.has(source.id)) next.delete(source.id);
+            else next.add(source.id);
+            return next;
+          })}
           onToggle={() => setBrowserSourcesExpanded((current) => !current)}
           profiles={detail.overview.targetProfiles}
           refreshError={browserSourceRefreshError}
@@ -674,8 +708,8 @@ function ValidationRollup({ detail, set }: { readonly detail: AlertSetDetail | n
     ? set.targetProfiles.filter((profile) => profile.reviewState === "needs-review").length
     : detail.inventory.filter((alert) => alert.reviewState === "needs-review").length;
   const needsReviewLabel = detail === null
-    ? `${needsReviewCount} profile${needsReviewCount === 1 ? " needs" : "s need"} review`
-    : `${needsReviewCount} need review`;
+    ? formatCount(needsReviewCount, { one: "profile needs review", other: "profiles need review" })
+    : formatCount(needsReviewCount, { one: "alert needs review", other: "alerts need review" });
 
   if (blockerCount === 0 && warningCount === 0 && needsReviewCount === 0) {
     return <span className="alert-sets-page__validation-rollup alert-sets-page__validation-rollup--ready">Ready</span>;
@@ -683,8 +717,8 @@ function ValidationRollup({ detail, set }: { readonly detail: AlertSetDetail | n
 
   return (
     <span aria-label="Validation summary" className="alert-sets-page__validation-rollup">
-      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, "blocker")}</span> : null}
-      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, "warning")}</span> : null}
+      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, { one: "blocker", other: "blockers" })}</span> : null}
+      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, { one: "warning", other: "warnings" })}</span> : null}
       {needsReviewCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">{needsReviewLabel}</span> : null}
     </span>
   );
@@ -765,26 +799,28 @@ function AlertInventory({
               return (
                 <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
                   <th scope="row"><span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"}</small></th>
-                  <td><span>{formatEventType(alert.eventType)}</span><small>{formatProvider(alert.providerKind)} catalog</small></td>
-                  <td>{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
-                  <td><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
-                  <td>
+                  <td data-label="Event"><span>{formatEventType(alert.eventType)}</span><small>{formatProvider(alert.providerKind)} catalog</small></td>
+                  <td data-label="Profiles">{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
+                  <td data-label="State"><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
+                  <td data-label="Validation">
                     <span className="alert-sets-page__alert-validation">
-                      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, "blocker")}</span> : null}
-                      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, "warning")}</span> : null}
+                      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, { one: "blocker", other: "blockers" })}</span> : null}
+                      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, { one: "warning", other: "warnings" })}</span> : null}
                       {alert.reviewState === "needs-review" ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">Needs review</span> : blockerCount === 0 && warningCount === 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--ready">Ready</span> : null}
                     </span>
                   </td>
-                  <td>
+                  <td data-label="Actions">
                     <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                       <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" onClick={() => onEdit(alert)} type="button">Edit</button>
-                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Preview</button>
+                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" onClick={() => onPreview(alert)} type="button">Preview</button>
                       <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
-                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                       <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
                       <details className="alert-sets-page__action-menu">
                         <summary aria-label={`More actions for ${alert.name}`}>More</summary>
                         <div role="group" aria-label={`Additional actions for ${alert.name}`}>
+                          <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" onClick={() => onPreview(alert)} type="button">Preview</button>
+                          {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                           <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
                           <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
                           <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
@@ -816,7 +852,7 @@ function BrowserSources({
   onCopy,
   onCreate,
   onRegenerate,
-  onReveal,
+  onToggleReveal,
   onToggle,
   profiles,
   refreshError,
@@ -829,7 +865,7 @@ function BrowserSources({
   readonly onCopy: (source: AlertBrowserSourceView) => void;
   readonly onCreate: (source: AlertBrowserSourceView) => void;
   readonly onRegenerate: (source: AlertBrowserSourceView) => void;
-  readonly onReveal: (source: AlertBrowserSourceView) => void;
+  readonly onToggleReveal: (source: AlertBrowserSourceView) => void;
   readonly onToggle: () => void;
   readonly profiles: AlertSetOverview["targetProfiles"];
   readonly refreshError: ActionableManagementError | null;
@@ -860,8 +896,8 @@ function BrowserSources({
           <p>One live URL per target profile.</p>
         </div>
         <div aria-label="Browser source summary" className="alert-sets-page__browser-source-summary">
-          <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--ready">{readyCount} ready</span>
-          <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--warning">{needsSetupCount} needs setup</span>
+          {readyCount > 0 ? <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--ready">{readyCount} ready</span> : null}
+          {needsSetupCount > 0 ? <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--warning">{needsSetupCount} needs setup</span> : null}
           {refreshError === null ? null : <span className="alert-sets-page__browser-source-count alert-sets-page__browser-source-count--error">Status refresh failed</span>}
         </div>
       </div>
@@ -869,13 +905,14 @@ function BrowserSources({
         <div className="alert-sets-page__browser-source-details" id="browser-source-details">
           <p className={`alert-sets-page__status-freshness${refreshError === null ? "" : " alert-sets-page__status-freshness--stale"}`} role="status">
             {refreshError === null
-              ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${new Date(statusUpdatedAt).toLocaleTimeString()}`
-              : statusUpdatedAt === null ? "Connection status stale." : `Connection status stale. Last updated ${new Date(statusUpdatedAt).toLocaleTimeString()}`}
+              ? statusUpdatedAt === null ? "Connection status has not loaded." : `Connection status updated ${formatDateTime(statusUpdatedAt)}`
+              : statusUpdatedAt === null ? "Connection status stale." : `Connection status stale. Last updated ${formatDateTime(statusUpdatedAt)}`}
           </p>
           {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
           <div className="alert-sets-page__source-list">
             {sources.map((source) => {
               const label = formatProfile(source.targetProfileId);
+              const dimensions = targetProfileDimensions[source.targetProfileId];
               const revealed = revealedSourceIds.has(source.id);
               const profileEnabled = profiles.find((profile) => profile.id === source.targetProfileId)?.enabled === true;
               const ready = source.copyableUrlStatus === "available";
@@ -883,15 +920,17 @@ function BrowserSources({
                 ? "Listening now"
                 : source.lastConnectedAt === null
                   ? "Not listening. No connection recorded."
-                  : `Not listening. Last seen ${new Date(source.lastConnectedAt).toLocaleString()}`;
+                  : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
               return (
                 <article aria-label={`${label} browser source`} className="alert-sets-page__source" key={source.id}>
                   <div className="alert-sets-page__source-heading"><div><strong>{label}</strong><span>{profileEnabled ? "Profile enabled" : "Profile disabled"}</span></div><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
                   <p className="alert-sets-page__source-telemetry">{listenerStatus}</p>
+                  <p className="alert-sets-page__source-dimensions"><strong>{dimensions.width} x {dimensions.height}</strong></p>
+                  <p className="alert-sets-page__source-guidance">Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</p>
                   {source.url === null ? <p className="alert-sets-page__source-missing">Create a URL before adding this profile to OBS.</p> : revealed ? <input aria-label={`${label} browser source`} readOnly value={source.url} /> : <code className="alert-sets-page__source-masked">{maskRouteKey(source.url)}</code>}
                   <div className="alert-sets-page__row-actions">
                     {source.copyableUrlStatus === "create-required" ? <button disabled={busy} onClick={() => onCreate(source)} type="button">Create URL</button> : null}
-                    {source.url === null ? null : <><button aria-label={`Reveal ${label} URL`} className="button button--secondary" disabled={revealed} onClick={() => onReveal(source)} type="button">Reveal</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
+                    {source.url === null ? null : <><button aria-label={`${revealed ? "Hide" : "Reveal"} ${label} URL`} className="button button--secondary" onClick={() => onToggleReveal(source)} type="button">{revealed ? "Hide" : "Reveal"}</button><button aria-label={`Copy ${label} URL`} className="button button--secondary" onClick={() => onCopy(source)} type="button">Copy</button></>}
                     {source.copyableUrlStatus !== "create-required" ? <button aria-label={`Regenerate ${label} URL`} className="button button--danger" disabled={busy} onClick={() => onRegenerate(source)} type="button">Regenerate</button> : null}
                   </div>
                 </article>
@@ -1068,20 +1107,18 @@ function formatProvider(value: string): string {
   return value === "streamerbot" ? "Streamer.bot" : value === "speakerbot" ? "Speaker.bot" : value === "browser-speech" ? "Browser Speech" : "Twitch";
 }
 
-function formatCount(value: number, noun: string): string {
-  return `${value} ${noun}${value === 1 ? "" : "s"}`;
-}
-
 function formatProfile(value: "landscape" | "vertical"): string {
   return value === "landscape" ? "Landscape" : "Vertical";
 }
 
 function toActionableError(summary: string, cause: unknown, nextStep: string): ActionableManagementError {
-  const referenceId = `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+  const message = cause instanceof Error ? cause.message : "An unexpected error occurred.";
+  const referenceId = /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(message)?.[0]
+    ?? `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   console.error(`[${referenceId}] ${summary}`, cause);
   return {
     summary,
-    cause: cause instanceof Error ? cause.message : "An unexpected error occurred.",
+    cause: message,
     nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),

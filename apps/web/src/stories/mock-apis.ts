@@ -145,6 +145,9 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async sendAlertEditorTest(_alertId, request) {
       return { status: "queued", targetProfileId: request.targetProfileId, referenceId: "ref-story-test", test: true };
     },
+    async reportAlertEditorError(_alertId, input) {
+      return { referenceId: input.error.referenceId };
+    },
     async listAssetLibraryItems() {
       return storyAssetLibraryItems;
     },

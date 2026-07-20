@@ -25,20 +25,49 @@ describe("AlertSetsPage", () => {
     expect(within(landscapeSource).getByText("Ready")).toBeInTheDocument();
     expect(within(landscapeSource).getByText("Profile enabled")).toBeInTheDocument();
     expect(within(landscapeSource).getByText("Listening now")).toBeInTheDocument();
+    expect(within(landscapeSource).getByText("1920 x 1080")).toBeInTheDocument();
+    expect(within(landscapeSource).getByText(/Add a Browser source in OBS at 1920 x 1080/)).toBeInTheDocument();
     const verticalSource = screen.getByRole("article", { name: "Vertical browser source" });
     expect(within(verticalSource).getByText("Needs setup")).toBeInTheDocument();
     expect(within(verticalSource).getByText("Profile disabled")).toBeInTheDocument();
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
-    expect(screen.getByText("4 need review")).toBeInTheDocument();
+    expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
+    expect(screen.getByText("4 alerts need review")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
     expect(screen.getByRole("textbox", { name: "Landscape browser source" })).toHaveValue(
       "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_landscape?profile=landscape"
     );
+    await user.click(screen.getByRole("button", { name: "Hide Landscape URL" }));
+    expect(screen.queryByRole("textbox", { name: "Landscape browser source" })).not.toBeInTheDocument();
+    expect(landscapeSource.querySelector(".alert-sets-page__source-masked")).toBeInTheDocument();
+    expect(api.createOverlayOutputKey).not.toHaveBeenCalled();
+    expect(api.regenerateOverlayOutputKey).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Enable New follower" }));
     expect(api.setManagedAlertEnabled).toHaveBeenCalledWith("alert-follow", true);
     await user.click(screen.getByRole("button", { name: "Mark starter review done" }));
     expect(api.markStarterAlertSetReviewComplete).toHaveBeenCalledWith("set-default");
+  });
+
+  it("shows only retry when the initial alert-set load fails", async () => {
+    const reportError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    const listAlertSets = vi.fn()
+      .mockRejectedValueOnce(new Error("Local service unavailable"))
+      .mockResolvedValue([overview()]);
+    const api = alertSetsApi({ listAlertSets });
+
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("Alert sets could not be loaded")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry loading alert sets" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create set" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No alert sets")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Retry loading alert sets" }));
+    expect(await screen.findByRole("button", { name: "Create set" })).toBeInTheDocument();
+    expect(listAlertSets).toHaveBeenCalledTimes(2);
+    reportError.mockRestore();
   });
 
   it("keeps browser sources outside alert-set management and collapses its details by default", async () => {
@@ -66,7 +95,7 @@ describe("AlertSetsPage", () => {
     expect(within(selectedSet).getByRole("button", { name: "Delete Default" })).toBeDisabled();
     expect(within(selectedSet).getByRole("button", { name: "Edit New follower" })).toBeInTheDocument();
     expect(within(selectedSet).getByText("1 blocker")).toBeInTheDocument();
-    expect(within(selectedSet).getByText("4 need review")).toBeInTheDocument();
+    expect(within(selectedSet).getByText("4 alerts need review")).toBeInTheDocument();
     expect(screen.queryByText("Active set")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Validation" })).not.toBeInTheDocument();
 
@@ -75,7 +104,30 @@ describe("AlertSetsPage", () => {
     expect(within(selectedSet).queryByRole("button", { name: "Edit New follower" })).not.toBeInTheDocument();
     expect(within(selectedSet).getByRole("button", { name: "Expand Default" })).toHaveAttribute("aria-expanded", "false");
     expect(within(selectedSet).getByText("1 blocker")).toBeInTheDocument();
-    expect(within(selectedSet).getByText("4 need review")).toBeInTheDocument();
+    expect(within(selectedSet).getByText("4 alerts need review")).toBeInTheDocument();
+  });
+
+  it("omits the setup warning when every browser-source URL is ready", async () => {
+    const source = detail();
+    const vertical = source.browserSources[1]!;
+    const readyDetail: AlertSetDetail = {
+      ...source,
+      browserSources: [
+        source.browserSources[0]!,
+        {
+          ...vertical,
+          keyId: "key-vertical",
+          url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_vertical?profile=vertical",
+          copyableUrlStatus: "available"
+        }
+      ]
+    };
+
+    render(<AlertSetsPage managementApi={alertSetsApi({ getAlertSet: vi.fn(async () => readyDetail) })} onEditAlert={vi.fn()} />);
+
+    const browserSources = await screen.findByRole("region", { name: "Browser sources" });
+    expect(within(browserSources).getByText("2 ready")).toBeInTheDocument();
+    expect(within(browserSources).queryByText(/needs setup/u)).not.toBeInTheDocument();
   });
 
   it("expands browser sources when targeted by the route hash", async () => {
@@ -121,7 +173,26 @@ describe("AlertSetsPage", () => {
       includeTts: true
     }));
     expect(getAlertEditorDocument).toHaveBeenCalledWith("alert-follow");
-    expect(screen.getByText("New follower test queued for Vertical. Reference ref-inline-test.")).toBeInTheDocument();
+    expect(screen.getByText("New follower test queued for Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
+  });
+
+  it("links a failed inline alert test to the server Diagnostics record", async () => {
+    const sendAlertEditorTest = vi.fn(async () => {
+      throw new Error(
+        "Finish reviewing and enable the landscape profile before sending it to an output. "
+        + "(ALERT_EDITOR_TEST_BLOCKED, err_inline_test_blocked)"
+      );
+    });
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ sendAlertEditorTest })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Test New follower" }));
+
+    expect(await screen.findByText("err_inline_test_blocked")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute(
+      "href",
+      "/manage/diagnostics?reference=err_inline_test_blocked"
+    );
   });
 
   it("creates an alert in the expanded set and opens it in the focused editor", async () => {
@@ -199,7 +270,7 @@ describe("AlertSetsPage", () => {
     expect(rows.map((row) => row.textContent).join("|")).toMatch(/New follower.*VIP follower.*New raid/u);
     expect(screen.getByRole("row", { name: /VIP follower/u })).toHaveClass("alert-sets-page__variation-row");
 
-    await user.click(screen.getByRole("button", { name: "Add variation to New follower" }));
+    await user.click(screen.getAllByRole("button", { name: "Add variation to New follower" })[0]!);
     const dialog = screen.getByRole("dialog", { name: "Add variation to New follower" });
     await user.clear(within(dialog).getByLabelText("Variation name"));
     await user.type(within(dialog).getByLabelText("Variation name"), "Large follower");
@@ -296,6 +367,28 @@ describe("AlertSetsPage", () => {
     const selectedSet = await screen.findByRole("region", { name: "Seasonal alert set" });
     expect(within(selectedSet).getByRole("button", { name: "Collapse Seasonal" })).toHaveAttribute("aria-expanded", "true");
     expect(getAlertSet).toHaveBeenCalledWith(seasonal.id);
+  });
+
+  it("ignores an older route load that resolves after the current set", async () => {
+    const first = { ...overview(), id: "set-first", name: "First", active: false, starter: false };
+    const second = { ...overview(), id: "set-second", name: "Second", active: false, starter: false };
+    const firstDetail = deferred<AlertSetDetail>();
+    const getAlertSet = vi.fn((setId: string) => setId === first.id
+      ? firstDetail.promise
+      : Promise.resolve({ ...detail(), overview: second }));
+    const api = alertSetsApi({ listAlertSets: vi.fn(async () => [first, second]), getAlertSet });
+
+    const { rerender } = render(<AlertSetsPage initialSetId={first.id} managementApi={api} onEditAlert={vi.fn()} />);
+    await waitFor(() => expect(getAlertSet).toHaveBeenCalledWith(first.id));
+
+    rerender(<AlertSetsPage initialSetId={second.id} managementApi={api} onEditAlert={vi.fn()} />);
+    const secondRegion = await screen.findByRole("region", { name: "Second alert set" });
+    expect(within(secondRegion).getByRole("button", { name: "Collapse Second" })).toBeInTheDocument();
+
+    await act(async () => firstDetail.resolve({ ...detail(), overview: first }));
+
+    expect(within(screen.getByRole("region", { name: "Second alert set" })).getByRole("button", { name: "Collapse Second" })).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "First alert set" })).getByRole("button", { name: "Expand First" })).toBeInTheDocument();
   });
 
   it("requires typed confirmation before regenerating a connected browser source", async () => {
@@ -575,4 +668,12 @@ function editorDocument(): AlertEditorDocument {
     ],
     samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: { userName: "James" } }]
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
 }

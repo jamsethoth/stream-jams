@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import type { OverlayComposition } from "@stream-jams/core";
-import { OverlaySurface } from "./OverlaySurface.js";
+import { AudioActivationPrompt, OverlaySurface } from "./OverlaySurface.js";
 import {
   errorSafeOverlayComposition,
   idleOverlayComposition,
@@ -20,6 +20,14 @@ const meta: Meta<typeof OverlaySurface> = {
   ],
   parameters: {
     layout: "fullscreen",
+    viewport: {
+      options: {
+        landscapeCanonical: { name: "Landscape 1920 x 1080", styles: { width: "1920px", height: "1080px" } },
+        landscapeNoncanonical: { name: "Landscape in 1200 x 800", styles: { width: "1200px", height: "800px" } },
+        verticalCanonical: { name: "Vertical 1080 x 1920", styles: { width: "1080px", height: "1920px" } },
+        verticalNoncanonical: { name: "Vertical in 1200 x 800", styles: { width: "1200px", height: "800px" } }
+      }
+    },
     docs: {
       description: {
         component: "Fullscreen transparent browser-source renderer using normalized overlay instructions."
@@ -63,6 +71,21 @@ export const Media: Story = {
   }
 };
 
+export const TestAudioActivation: Story = {
+  args: {
+    composition: idleOverlayComposition,
+    resolveAssetUrl
+  },
+  render: () => <AudioActivationPrompt onEnable={() => undefined} />,
+  parameters: {
+    docs: {
+      description: {
+        story: "Shown only when a management-triggered test needs one browser interaction before audio can play."
+      }
+    }
+  }
+};
+
 export const AnimatedShape: Story = {
   args: {
     composition: {
@@ -94,6 +117,38 @@ export const AnimatedShape: Story = {
   }
 };
 
+export const LandscapeCanonical: Story = {
+  args: {
+    composition: profileComposition("landscape"),
+    resolveAssetUrl
+  },
+  parameters: { viewport: { defaultViewport: "landscapeCanonical" } }
+};
+
+export const LandscapeNoncanonical: Story = {
+  args: {
+    composition: profileComposition("landscape"),
+    resolveAssetUrl
+  },
+  parameters: { viewport: { defaultViewport: "landscapeNoncanonical" } }
+};
+
+export const VerticalCanonical: Story = {
+  args: {
+    composition: profileComposition("vertical"),
+    resolveAssetUrl
+  },
+  parameters: { viewport: { defaultViewport: "verticalCanonical" } }
+};
+
+export const VerticalNoncanonical: Story = {
+  args: {
+    composition: profileComposition("vertical"),
+    resolveAssetUrl
+  },
+  parameters: { viewport: { defaultViewport: "verticalNoncanonical" } }
+};
+
 export const ErrorSafe: Story = {
   args: {
     composition: errorSafeOverlayComposition,
@@ -107,3 +162,35 @@ export const ErrorSafe: Story = {
     }
   }
 };
+
+function profileComposition(profileId: "landscape" | "vertical"): OverlayComposition {
+  const vertical = profileId === "vertical";
+  return {
+    overlayId: `overlay-alerts-${profileId}`,
+    purpose: "test",
+    scope: "module",
+    targetProfileId: profileId,
+    modules: [{
+      moduleId: "alerts",
+      enabled: true,
+      instructions: [{
+        id: `instruction-${profileId}`,
+        overlayId: `overlay-alerts-${profileId}`,
+        moduleId: "alerts",
+        purpose: "test",
+        scope: "module",
+        targetProfileId: profileId,
+        visual: null,
+        audio: null,
+        text: {
+          text: vertical ? "Vertical profile alert" : "Landscape profile alert",
+          layout: vertical
+            ? { x: 140, y: 820, width: 800, height: 180, zIndex: 10 }
+            : { x: 560, y: 450, width: 800, height: 180, zIndex: 10 }
+        },
+        tts: null,
+        durationMs: 60_000
+      }]
+    }]
+  };
+}

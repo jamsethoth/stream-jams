@@ -33,6 +33,87 @@ export const ActiveSet: Story = {
   }
 };
 
+export const AllBrowserSourcesReady: Story = {
+  args: {
+    managementApi: (() => {
+      const source = detail(activeSet);
+      const vertical = source.browserSources[1]!;
+      return api([activeSet], {
+        ...source,
+        browserSources: [
+          source.browserSources[0]!,
+          {
+            ...vertical,
+            keyId: "key-live-vertical",
+            url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_story_vertical?profile=vertical",
+            copyableUrlStatus: "available"
+          }
+        ]
+      });
+    })()
+  },
+  play: async ({ canvasElement }) => {
+    const browserSources = await within(canvasElement).findByRole("region", { name: "Browser sources" });
+    await expect(within(browserSources).getByText("2 ready")).toBeVisible();
+    await expect(within(browserSources).queryByText(/needs setup/u)).not.toBeInTheDocument();
+  }
+};
+
+export const BrowserSourceSetup: Story = {
+  args: { managementApi: api([activeSet], detail(activeSet)) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Expand browser sources" }));
+    const source = canvas.getByRole("article", { name: "Landscape browser source" });
+    await expect(within(source).getByText("1920 x 1080")).toBeVisible();
+    await expect(within(source).getByText(/Add a Browser source in OBS at 1920 x 1080/u)).toBeVisible();
+    await userEvent.click(within(source).getByRole("button", { name: "Reveal Landscape URL" }));
+    await expect(within(source).getByRole("button", { name: "Hide Landscape URL" })).toBeVisible();
+  }
+};
+
+export const NarrowRtlExpandedCopy: Story = {
+  args: {
+    managementApi: (() => {
+      const longSet = { ...activeSet, name: "Everyday celebrations and community milestones" };
+      const longDetail = detail(longSet);
+      return api([longSet], {
+        ...longDetail,
+        inventory: longDetail.inventory.map((item) => ({ ...item, name: "A very long localized follower celebration title" }))
+      });
+    })()
+  },
+  globals: { locale: "ar" },
+  parameters: {
+    viewport: {
+      defaultViewport: "narrowPhone",
+      options: {
+        narrowPhone: { name: "Narrow phone 390 x 844", styles: { width: "390px", height: "844px" } }
+      }
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(document.documentElement).toHaveAttribute("dir", "rtl");
+    await expect((await canvas.findAllByRole("button", { name: /Edit A very long localized/u }))[0]).toBeVisible();
+    await expect(canvas.getAllByRole("button", { name: /Test A very long localized/u })[0]).toBeVisible();
+  }
+};
+
+export const InitialLoadFailure: Story = {
+  beforeEach: () => {
+    const reportError = console.error;
+    console.error = fn();
+    return () => { console.error = reportError; };
+  },
+  args: {
+    managementApi: {
+      ...api([activeSet], detail(activeSet)),
+      listAlertSets: async () => { throw new Error("The local service is unavailable."); }
+    }
+  }
+};
+
 export const InactiveSelectedSet: Story = {
   args: { managementApi: api([activeSet, inactiveSet], detailById()) },
   play: async ({ canvasElement }) => {

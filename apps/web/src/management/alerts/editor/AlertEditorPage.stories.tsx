@@ -1,6 +1,6 @@
 import type { AlertEditorDocument, AlertSetDetail, RegisteredProviderView } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../../stories/mock-apis.js";
 import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
 import { AlertEditorPage } from "./AlertEditorPage.js";
@@ -29,7 +29,31 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const ReadyLandscape: Story = {};
+export const ReadyLandscape: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
+      "AlertsEveryday alertsNew follower"
+    );
+    await waitFor(() => expect(canvas.getByRole("status", { name: "Canvas zoom" })).not.toHaveTextContent("100%"));
+  }
+};
+
+export const TabletWorkspace: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Fit" })).toBeVisible();
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "editorTablet",
+      options: {
+        editorTablet: { name: "Editor tablet 820 x 768", styles: { width: "820px", height: "768px" } }
+      }
+    }
+  }
+};
 
 export const VerticalNeedsReview: Story = {
   args: { targetProfileId: "vertical" },
@@ -46,7 +70,11 @@ export const CopiedVerticalLayout: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
     await userEvent.click(canvas.getByRole("button", { name: "Copy layout from Landscape" }));
-    await expect(canvas.getByText("Landscape layout copied to Vertical. Review the generated layout before enabling it.")).toBeVisible();
+    const warning = canvas.getByText("Landscape layout copied to Vertical.").closest(".management-toast");
+    await expect(warning).not.toBeNull();
+    await expect(warning).toHaveClass("management-toast--warning");
+    await expect(warning).toHaveTextContent("Landscape layout copied to Vertical.");
+    await expect(warning).toHaveTextContent("Review the generated layout before enabling it.");
     await expect(canvas.getAllByText("Needs review")).not.toHaveLength(0);
   }
 };
@@ -102,6 +130,34 @@ export const ActiveSetSaveWarning: Story = {
   }
 };
 
+export const ActionFailure: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertSet: async () => ({
+        ...alertSetDetail(),
+        overview: { ...alertSetDetail().overview, active: false }
+      }),
+      saveAlertEditorDocument: fn(async () => {
+        throw new Error("Database write failed. (INTERNAL_SERVER_ERROR, err_story_editor_save)");
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const template = await canvas.findByRole("textbox", { name: "Message template" });
+    await userEvent.clear(template);
+    await userEvent.type(template, "Unsaved message");
+    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    await expect(await canvas.findByText("The alert was not saved")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Dismiss error" })).toBeVisible();
+    await expect(canvas.getByRole("link", { name: "Open diagnostics" })).toHaveAttribute(
+      "href",
+      "/manage/diagnostics?reference=err_story_editor_save"
+    );
+  }
+};
+
 export const NoLayerSelection: Story = {
   args: {
     managementApi: createStoryManagementApi({
@@ -137,7 +193,7 @@ export const EdgeCaseSample: Story = {
 };
 
 export const CommunityGiftSamplesAndConditions: Story = {
-  tags: ["task-5-expanded-event"],
+  tags: ["task-5-expanded-event", "task-9-template-catalog"],
   args: {
     alertId: "alert-community-gift",
     managementApi: createStoryManagementApi({
@@ -147,6 +203,13 @@ export const CommunityGiftSamplesAndConditions: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: "Insert {gifterName}" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Insert {giftCount}" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Insert {tier}" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Insert {cumulativeGifts}" })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: "Insert {userName}" })).not.toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: "Insert {amount}" })).not.toBeInTheDocument();
+    await expect(await canvas.findByText("Community gift gifted 5 subscriptions (42 total)!")).toBeVisible();
     await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
     const sample = canvas.getByRole("combobox", { name: "Sample payload" });
     await expect(sample).toHaveValue("normal");
@@ -334,8 +397,7 @@ function editorDocument(): AlertEditorDocument {
     rulePriority: 0,
     durationMs: 5_000,
     templateVariables: [
-      { key: "userName", label: "User name", description: "Display name for the event actor." },
-      { key: "actor.displayName", label: "Actor display name", description: "Normalized display name for the event actor." }
+      { key: "userName", label: "User name", description: "Display name for the event actor." }
     ],
     layers: [
       { id: "layer-text", name: "Message", type: "text", visible: true, order: 0, template: "Thanks, {userName}!", animation: preset("fade") },
@@ -380,7 +442,7 @@ function variationDocument(): AlertEditorDocument {
     weight: 2,
     priority: 5,
     templateVariables: [
-      ...(editorDocument().templateVariables ?? []),
+      { key: "userName", label: "User name", description: "Display name for the event actor." },
       { key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }
     ],
     samplePayloads: [
@@ -397,13 +459,13 @@ function communityGiftDocument(): AlertEditorDocument {
     eventType: "community_gift",
     name: "Community gift received",
     templateVariables: [
-      ...(editorDocument().templateVariables ?? []),
-      { key: "tier", label: "Gift tier", description: "Subscription tier for the community gift." },
-      { key: "amount", label: "Gift count", description: "Number of subscriptions in the community gift." },
-      { key: "cumulativeTotal", label: "Cumulative total", description: "Gift subscriptions from the gifter during the stream." }
+      { key: "gifterName", label: "Gifter name", description: "Display name of the community-gift sender." },
+      { key: "giftCount", label: "Gift count", description: "Number of subscriptions in the aggregate community gift." },
+      { key: "tier", label: "Tier", description: "Community gift tier." },
+      { key: "cumulativeGifts", label: "Cumulative gifts", description: "Gifter cumulative community gift total when available." }
     ],
     layers: editorDocument().layers.map((layer) => layer.type === "text"
-      ? { ...layer, template: "{userName} gifted {amount} subscriptions!" }
+      ? { ...layer, template: "{gifterName} gifted {giftCount} subscriptions ({cumulativeGifts} total)!" }
       : layer),
     samplePayloads: [
       {

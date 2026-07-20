@@ -18,7 +18,6 @@ export { OverlaySurface } from "./components/OverlaySurface.js";
 export function OverlayApp() {
   const route = useMemo(() => parseOverlayRoute(`${window.location.pathname}${window.location.search}`), []);
   const [composition, setComposition] = useState<OverlayComposition | null>(null);
-  const [error, setError] = useState<string | null>(route === null ? "Overlay route is unavailable" : null);
   const connectionRef = useRef<OverlayClientConnection | null>(null);
 
   useEffect(() => {
@@ -30,14 +29,13 @@ export function OverlayApp() {
       route,
       onMessage(message: OverlayClientMessage) {
         if (message.type === "composition") {
-          setError(null);
           setComposition(message.composition);
         } else if (message.type === "playback") {
           if (instructionMatchesRoute(route, message.instruction)) {
             setComposition((current) => appendInstruction(current, route, message.instruction));
           }
         } else {
-          setError(message.message);
+          setComposition(null);
         }
       }
     });
@@ -73,11 +71,7 @@ export function OverlayApp() {
   );
 
   if (composition === null) {
-    return (
-      <div className="overlay-root" data-testid="overlay-root" style={overlayRootStyle}>
-        {error === null ? null : <p className="overlay-error">{error}</p>}
-      </div>
-    );
+    return <div className="overlay-root" data-testid="overlay-root" style={overlayRootStyle} />;
   }
 
   return <OverlaySurface composition={composition} onPlaybackEvent={onPlaybackEvent} resolveAssetUrl={resolveOverlayAssetUrl} />;

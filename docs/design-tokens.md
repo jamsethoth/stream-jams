@@ -21,6 +21,7 @@ This file documents the management theme contract in `apps/web/src/App.css`. Age
 | `--color-warning` / `--color-warning-soft` | `#8a5a00` / `#fff1cf` | Review and warning states |
 | `--color-negative` / `--color-negative-soft` | `#b4232d` / `#fae7e9` | Failure and destructive actions |
 | `--color-focus` | `#0a74c9` | Keyboard focus outline |
+| `--color-on-action` | `#ffffff` | Text on primary and destructive action fills |
 | Overlay text | `#ffffff` | Browser-source text output |
 | Overlay text shadow | `rgba(0, 0, 0, 0.72)` | Text legibility over stream content |
 

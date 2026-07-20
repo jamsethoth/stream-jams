@@ -2,6 +2,8 @@ import {
   homeSetupSummarySchema,
   type AlertCreateInput,
   type AlertEditorDocument,
+  type AlertEditorErrorReportInput,
+  type AlertEditorErrorReportResult,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
   type AlertSetActivationImpact,
@@ -84,6 +86,7 @@ export interface ManagementUiServiceOptions {
     confirmLiveImpact: boolean
   ) => Promise<AlertEditorDocument>;
   readonly sendAlertEditorTest: (alertId: string, request: AlertEditorTestRequest) => Promise<AlertEditorTestResult>;
+  readonly reportAlertEditorError: (alertId: string, input: AlertEditorErrorReportInput) => Promise<AlertEditorErrorReportResult>;
   readonly listAssetLibraryItems: () => Promise<readonly AssetLibraryItem[]>;
   readonly updateAssetMetadata: (assetId: string, input: AssetMetadataUpdateInput) => Promise<AssetLibraryItem>;
   readonly getAssetChangeImpact: (assetId: string, candidateMediaType?: AssetMediaType) => Promise<AssetChangeImpact>;
@@ -280,6 +283,10 @@ export class ManagementUiService {
 
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView> {
     return this.#options.getDiagnosticsWorkspace();
+  }
+
+  reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult> {
+    return this.#options.reportAlertEditorError(alertId, input);
   }
 
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary> {

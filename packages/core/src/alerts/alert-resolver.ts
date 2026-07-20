@@ -53,6 +53,11 @@ export interface AlertResolverDependencies {
   readonly conditionEvaluator?: AlertConditionEvaluator;
 }
 
+export interface AlertTemplateSampleContextSource {
+  readonly eventType: NormalizedStreamEvent["type"];
+  readonly samplePayload: Record<string, unknown>;
+}
+
 export class AlertVariantSelectionError extends Error {
   constructor(readonly ruleId: string) {
     super(`Alert rule "${ruleId}" does not have an enabled variant`);
@@ -184,7 +189,7 @@ export class DefaultAlertResolver implements AlertResolver {
       return {
         ...base,
         text: {
-          text: this.#renderedTextTemplateRenderer.render({ template: layer.template, values: createTemplateContext(match.event) }),
+          text: this.#renderedTextTemplateRenderer.render({ template: layer.template, values: createAlertTemplateContext(match.event) }),
           layout
         }
       };
@@ -208,7 +213,7 @@ export class DefaultAlertResolver implements AlertResolver {
         ...base,
         tts: {
           mode: layer.providerId === "browser-speech" ? "browser-speech" : "remote-trigger",
-          text: this.#ttsTemplateRenderer.render({ template: layer.template, values: createTemplateContext(match.event) }),
+          text: this.#ttsTemplateRenderer.render({ template: layer.template, values: createAlertTemplateContext(match.event) }),
           audioAssetId: null,
           providerPayload: { providerId: layer.providerId, layerId: layer.id }
         }
@@ -297,7 +302,7 @@ export class DefaultAlertResolver implements AlertResolver {
       text: {
         text: this.#renderedTextTemplateRenderer.render({
           template: variant.textTemplate,
-          values: createTemplateContext(match.event)
+          values: createAlertTemplateContext(match.event)
         }),
         layout: variant.layout
       },
@@ -315,7 +320,7 @@ export class DefaultAlertResolver implements AlertResolver {
       mode: config.providerId === "speakerbot" ? "remote-trigger" : "browser-speech",
       text: this.#ttsTemplateRenderer.render({
         template: config.template,
-        values: createTemplateContext(match.event)
+        values: createAlertTemplateContext(match.event)
       }),
       audioAssetId: null,
       providerPayload: {
@@ -330,52 +335,131 @@ function toEditorTargetProfileId(value: OverlayTargetProfileId | null | undefine
   return value === "landscape" || value === "vertical" ? value : null;
 }
 
-function createTemplateContext(event: NormalizedStreamEvent): Record<string, unknown> {
-  const metadata = sanitizeMetadataRecord(event.metadata);
+export function createAlertTemplateContext(
+  source: NormalizedStreamEvent | AlertTemplateSampleContextSource
+): Record<string, unknown> {
+  const isSample = "samplePayload" in source;
+  const eventType = isSample ? source.eventType : source.type;
+  const values = (isSample ? source.samplePayload : source) as Record<string, unknown>;
+  const actor = isSample
+    ? readTemplateActor(values.actor, values.userName)
+    : source.actor;
+  const metadata = sanitizeMetadataRecord(asRecord(values.metadata));
   const context: Record<string, unknown> = {
-    id: event.id,
-    providerId: event.providerId,
-    occurredAt: event.occurredAt,
-    type: event.type,
-    actor: {
-      id: event.actor.id,
-      displayName: event.actor.displayName
-    },
-    message: event.message,
-    amount: event.amount,
+    id: values.id,
+    providerId: values.providerId,
+    sourcePlatform: values.sourcePlatform,
+    ingestProvider: values.ingestProvider,
+    occurredAt: values.occurredAt,
+    type: eventType,
+    actor,
+    userName: actor.displayName,
+    message: values.message ?? null,
+    amount: values.amount ?? null,
     metadata
   };
-
-  if ("tier" in event) {
-    context.tier = event.tier;
-  }
-
-  if ("streakMonths" in event) {
-    context.streakMonths = event.streakMonths;
-    context.tenure = event.streakMonths;
-    context.tenureMonths = event.streakMonths;
-  }
-
-  if (event.type === "cheer") {
-    context.cheerAmount = event.amount;
-  }
-
-  if (event.type === "raid") {
-    context.raidViewers = event.amount;
-  }
-
-  if (event.type === "channel_point_redemption") {
-    context.rewardId = event.rewardId;
-    context.rewardTitle = event.rewardTitle;
-    context.channelPointReward = event.rewardId;
-    context.userInput = event.userInput;
-  }
 
   if (Object.prototype.hasOwnProperty.call(metadata, "giftCount")) {
     context.giftCount = metadata.giftCount;
   }
 
+  switch (eventType) {
+    case "follow":
+    case "stream_offline":
+      break;
+    case "subscription":
+      context.tier = values.tier;
+      break;
+    case "resubscription": {
+      const streakMonths = values.streakMonths ?? null;
+      context.totalMonths = values.totalMonths ?? values.amount;
+      context.streakMonths = streakMonths;
+      context.tier = values.tier;
+      context.tenure = values.tenure ?? streakMonths;
+      context.tenureMonths = values.tenureMonths ?? streakMonths;
+      break;
+    }
+    case "cheer":
+      context.cheerAmount = values.cheerAmount ?? values.amount;
+      break;
+    case "raid":
+      context.raidViewers = values.raidViewers ?? values.amount;
+      break;
+    case "channel_point_redemption":
+      context.rewardId = values.rewardId;
+      context.rewardTitle = values.rewardTitle;
+      context.channelPointReward = values.channelPointReward ?? values.rewardId;
+      context.userInput = values.userInput ?? null;
+      break;
+    case "gift_subscription": {
+      const recipient = readTemplateActor(values.recipient, actor.displayName);
+      const gifter = readNullableTemplateActor(values.gifter);
+      context.recipient = recipient;
+      context.gifter = gifter;
+      context.recipientName = readText(values.recipientName) ?? recipient.displayName;
+      context.gifterName = readText(values.gifterName) ?? gifter?.displayName ?? null;
+      context.tier = values.tier;
+      break;
+    }
+    case "community_gift":
+      context.gifterName = readText(values.gifterName) ?? actor.displayName;
+      context.giftCount = values.giftCount ?? values.amount;
+      context.tier = values.tier;
+      context.cumulativeGifts = values.cumulativeGifts ?? values.cumulativeTotal ?? null;
+      context.cumulativeTotal = values.cumulativeTotal ?? values.cumulativeGifts ?? null;
+      break;
+    case "hype_train_start":
+    case "hype_train_progress":
+    case "hype_train_end":
+      context.level = values.level ?? null;
+      context.progress = values.progress ?? null;
+      context.goal = values.goal ?? null;
+      context.total = values.total ?? null;
+      break;
+    case "poll_start":
+    case "poll_progress":
+    case "poll_end":
+      context.title = values.title;
+      context.totalVotes = values.totalVotes;
+      context.status = values.status;
+      break;
+    case "prediction_start":
+    case "prediction_progress":
+    case "prediction_lock":
+    case "prediction_end":
+      context.title = values.title;
+      context.totalUsers = values.totalUsers;
+      context.totalPoints = values.totalPoints;
+      context.status = values.status;
+      break;
+    case "stream_online":
+      context.streamType = values.streamType ?? null;
+      break;
+  }
+
   return context;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function readTemplateActor(value: unknown, fallbackDisplayName: unknown) {
+  const actor = asRecord(value);
+  return {
+    id: typeof actor.id === "string" ? actor.id : null,
+    displayName: readText(actor.displayName) ?? readText(fallbackDisplayName) ?? ""
+  };
+}
+
+function readNullableTemplateActor(value: unknown) {
+  return value === null || value === undefined ? null : readTemplateActor(value, null);
+}
+
+function readText(value: unknown): string | null {
+  return typeof value === "string" && value.trim() !== "" ? value : null;
 }
 
 function sanitizeMetadataRecord(metadata: Record<string, unknown>): Record<string, unknown> {

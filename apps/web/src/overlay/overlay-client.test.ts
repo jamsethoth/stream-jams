@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  connectOverlayClient,
   createOverlayAssetUrl,
   createOverlayPlaybackReporter,
   createOverlayWebSocketUrl,
   parseOverlayRoute
 } from "./overlay-client.js";
+
+beforeEach(() => {
+  FakeWebSocket.instances.length = 0;
+  vi.useFakeTimers();
+});
+
+afterEach(() => vi.useRealTimers());
 
 describe("overlay-client", () => {
   it("parses module and unified overlay routes without query-string credentials", () => {
@@ -95,7 +103,128 @@ describe("overlay-client", () => {
       }
     ]);
   });
+
+  it("reconnects after 1, 2, 4, 8, then 10 seconds capped", () => {
+    connectClient();
+
+    for (const delay of [1_000, 2_000, 4_000, 8_000, 10_000, 10_000]) {
+      FakeWebSocket.instances.at(-1)!.emit("close");
+      vi.advanceTimersByTime(delay - 1);
+      const socketCount = FakeWebSocket.instances.length;
+      vi.advanceTimersByTime(1);
+      expect(FakeWebSocket.instances).toHaveLength(socketCount + 1);
+    }
+  });
+
+  it("resets reconnect backoff after a socket opens", () => {
+    connectClient();
+    FakeWebSocket.instances[0]!.emit("close");
+    vi.advanceTimersByTime(1_000);
+    FakeWebSocket.instances[1]!.emit("close");
+    vi.advanceTimersByTime(2_000);
+
+    FakeWebSocket.instances[2]!.emit("open");
+    FakeWebSocket.instances[2]!.emit("close");
+    vi.advanceTimersByTime(999);
+    expect(FakeWebSocket.instances).toHaveLength(3);
+    vi.advanceTimersByTime(1);
+    expect(FakeWebSocket.instances).toHaveLength(4);
+  });
+
+  it("cancels reconnect and closes the active socket when disposed", () => {
+    const connection = connectClient();
+    FakeWebSocket.instances[0]!.emit("close");
+    vi.advanceTimersByTime(1_000);
+
+    connection.close();
+    expect(FakeWebSocket.instances[1]!.close).toHaveBeenCalledOnce();
+    vi.advanceTimersByTime(30_000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+  });
+
+  it("forwards a gateway overlay error through the existing client error state", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+
+    FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({
+      type: "overlay.error",
+      code: "OVERLAY_ROUTE_KEY_UNAUTHORIZED",
+      message: "Overlay route key is not authorized for this output"
+    }));
+
+    expect(onMessage).toHaveBeenCalledWith({
+      type: "error",
+      message: "Overlay route key is not authorized for this output"
+    });
+  });
+
+  it("treats a policy close as a terminal transport failure", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+
+    FakeWebSocket.instances[0]!.emitClose(1008);
+    expect(onMessage).toHaveBeenCalledWith({
+      type: "error",
+      message: "Overlay transport connection closed"
+    });
+    vi.advanceTimersByTime(30_000);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+  });
 });
+
+function connectClient(onMessage = vi.fn()) {
+  return connectOverlayClient({
+    route: parseOverlayRoute("/overlay/modules/alerts/live/ovl_reconnect?profile=landscape")!,
+    fetcher: vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({
+        overlayId: "default",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape",
+        modules: []
+      })
+    }) as unknown as typeof fetch,
+    WebSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+    onMessage
+  });
+}
+
+class FakeWebSocket {
+  static readonly instances: FakeWebSocket[] = [];
+  readonly close = vi.fn();
+  readonly sent: string[] = [];
+  readyState: number = WebSocket.CONNECTING;
+  readonly #listeners = new Map<string, Array<(event: Event) => void>>();
+
+  constructor(readonly url: string) {
+    FakeWebSocket.instances.push(this);
+  }
+
+  addEventListener(type: string, listener: (event: Event) => void): void {
+    const listeners = this.#listeners.get(type) ?? [];
+    listeners.push(listener);
+    this.#listeners.set(type, listeners);
+  }
+
+  emit(type: "open" | "close"): void {
+    this.readyState = type === "open" ? WebSocket.OPEN : WebSocket.CLOSED;
+    for (const listener of this.#listeners.get(type) ?? []) listener(new Event(type));
+  }
+
+  emitClose(code: number): void {
+    this.readyState = WebSocket.CLOSED;
+    for (const listener of this.#listeners.get("close") ?? []) listener({ code } as CloseEvent);
+  }
+
+  emitMessage(data: string): void {
+    for (const listener of this.#listeners.get("message") ?? []) listener({ data } as MessageEvent);
+  }
+
+  send(message: string): void {
+    this.sent.push(message);
+  }
+}
 
 class RecordingWebSocket {
   readonly sent: unknown[] = [];

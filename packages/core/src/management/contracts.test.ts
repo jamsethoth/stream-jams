@@ -393,9 +393,8 @@ describe("management alert contracts and rules", () => {
       kind: "built-in",
       payload: { userName: "A-Very-Long-Raider-Name", raidViewers: 5_000, amount: 5_000 }
     }).success).toBe(true);
-    expect(variableCatalog("raid").map((variable) => variable.key)).toEqual(
-      expect.arrayContaining(["userName", "actor.displayName", "raidViewers"])
-    );
+    expect(variableCatalog("raid").map((variable) => variable.key)).toEqual(["userName", "raidViewers"]);
+    expect(variableCatalog("raid").map((variable) => variable.key)).not.toContain("actor.displayName");
     expect(validateSample("raid", { raidViewers: 1 })).toBeNull();
     expect(validateSample("raid", { raidViewers: 0 })).toBe("Raid viewer count must be a positive number.");
     expect(validateSample("cheer", { cheerAmount: 100 })).toBeNull();
@@ -413,6 +412,7 @@ describe("management alert contracts and rules", () => {
       readonly eventType: string;
       readonly group: string;
       readonly label: string;
+      readonly text: string;
     }[];
     const eventTypes = core.streamEventTypes as readonly string[];
     const variableCatalog = exportedFunction("getAlertTemplateVariableCatalog") as unknown as (
@@ -432,21 +432,38 @@ describe("management alert contracts and rules", () => {
       group: "Subscriptions",
       label: "Community gift received"
     });
-    expect(variableCatalog("gift_subscription").map((variable) => variable.key)).toEqual(
-      expect.arrayContaining(["tier", "recipient.displayName"])
-    );
-    expect(variableCatalog("hype_train_progress").map((variable) => variable.key)).toEqual(
-      expect.arrayContaining(["level", "progress", "total"])
-    );
-    expect(variableCatalog("poll_end").map((variable) => variable.key)).toEqual(
-      expect.arrayContaining(["title", "totalVotes", "status"])
-    );
-    expect(variableCatalog("prediction_end").map((variable) => variable.key)).toEqual(
-      expect.arrayContaining(["title", "totalPoints", "totalUsers", "status"])
-    );
-    expect(variableCatalog("stream_online").map((variable) => variable.key)).toEqual(
-      expect.arrayContaining(["streamType"])
-    );
+    const expectedCatalog: Record<string, readonly string[]> = {
+      follow: ["userName"],
+      subscription: ["userName", "tier"],
+      resubscription: ["userName", "totalMonths", "streakMonths", "tier", "message"],
+      cheer: ["userName", "cheerAmount", "message"],
+      raid: ["userName", "raidViewers"],
+      channel_point_redemption: ["userName", "rewardTitle", "userInput"],
+      gift_subscription: ["recipientName", "gifterName", "tier"],
+      community_gift: ["gifterName", "giftCount", "tier", "cumulativeGifts"],
+      hype_train_start: ["level", "progress", "goal", "total"],
+      hype_train_progress: ["level", "progress", "goal", "total"],
+      hype_train_end: ["level", "progress", "goal", "total"],
+      poll_start: ["title", "totalVotes", "status"],
+      poll_progress: ["title", "totalVotes", "status"],
+      poll_end: ["title", "totalVotes", "status"],
+      prediction_start: ["title", "totalUsers", "totalPoints", "status"],
+      prediction_progress: ["title", "totalUsers", "totalPoints", "status"],
+      prediction_lock: ["title", "totalUsers", "totalPoints", "status"],
+      prediction_end: ["title", "totalUsers", "totalPoints", "status"],
+      stream_online: ["streamType"],
+      stream_offline: []
+    };
+
+    for (const eventType of eventTypes) {
+      expect(variableCatalog(eventType).map((variable) => variable.key), eventType).toEqual(expectedCatalog[eventType]);
+    }
+    for (const template of templates) {
+      const referencedKeys = [...template.text.matchAll(/\{([^{}]+)\}/gu)].map((match) => match[1]);
+      expect(variableCatalog(template.eventType).map((variable) => variable.key), template.eventType).toEqual(
+        expect.arrayContaining(referencedKeys)
+      );
+    }
   });
 
   it("uses a stream-online starter text that is valid without a stream type", () => {

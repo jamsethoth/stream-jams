@@ -38,7 +38,7 @@ export { DefaultAlertConditionEvaluator } from "./alerts/condition-evaluator.js"
 export type * from "./alerts/alert-matcher.js";
 export { DefaultAlertMatcher } from "./alerts/alert-matcher.js";
 export type * from "./alerts/alert-resolver.js";
-export { AlertVariantSelectionError, DefaultAlertResolver } from "./alerts/alert-resolver.js";
+export { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alerts/alert-resolver.js";
 export {
   AlertCollectionNotFoundError,
   AlertRuleNotFoundError,

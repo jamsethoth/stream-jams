@@ -36,7 +36,7 @@ const configuredSummary: HomeSetupSummary = {
     active: true,
     starter: true,
     starterReviewState: "complete",
-    enabledAlertCount: 3,
+    enabledAlertCount: 1,
     targetProfiles: [
       { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 1 },
       { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
@@ -72,10 +72,28 @@ describe("HomePanel", () => {
       "/manage/event-sources?provider=twitch-main"
     );
     expect(screen.getByText("Default")).toBeInTheDocument();
-    expect(screen.getByText("3 enabled alerts")).toBeInTheDocument();
+    expect(screen.getByText("1 enabled alert")).toBeInTheDocument();
     expect(screen.getByText("1 warning")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Reconnect Twitch, then test the event source.");
     expect(screen.getByText("ref-home-17")).toBeInTheDocument();
+  });
+
+  it("omits zero blocker and warning facts for a clean active set", async () => {
+    const cleanSummary: HomeSetupSummary = {
+      ...configuredSummary,
+      activeAlertSet: {
+        ...configuredSummary.activeAlertSet!,
+        targetProfiles: configuredSummary.activeAlertSet!.targetProfiles.map((profile) => ({ ...profile, warningCount: 0 })),
+        validationIssues: []
+      },
+      actionableProblems: []
+    };
+
+    render(<HomePanel managementApi={{ getHomeSetupSummary: vi.fn(async () => cleanSummary) }} />);
+
+    expect(await screen.findByText("Default")).toBeInTheDocument();
+    expect(screen.queryByText("Blockers")).not.toBeInTheDocument();
+    expect(screen.queryByText("Warnings")).not.toBeInTheDocument();
   });
 
   it("turns load failure into a visible next step", async () => {

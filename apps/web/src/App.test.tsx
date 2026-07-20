@@ -139,6 +139,9 @@ function createManagementApi(): ManagementApi {
     async sendAlertEditorTest(_alertId, request) {
       return { status: "queued", targetProfileId: request.targetProfileId, referenceId: "ref-test", test: true };
     },
+    async reportAlertEditorError(_alertId, input) {
+      return { referenceId: input.error.referenceId };
+    },
     async listAssetLibraryItems() {
       return [];
     },

@@ -4,12 +4,14 @@ import {
   type AssetLibraryItem,
   type AssetMediaType
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirmationDialog.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
+import { formatBytes, formatCount, formatDate } from "../foundation/formatters.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AssetPicker } from "./AssetPicker.js";
 import { AssetPreview } from "./AssetPreview.js";
@@ -42,9 +44,10 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [items, setItems] = useState<readonly AssetLibraryItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [search, setSearch] = useState("");
   const [mediaType, setMediaType] = useState<"all" | AssetMediaType>("all");
   const [usageFilter, setUsageFilter] = useState<"all" | "used" | "unused">("all");
@@ -53,6 +56,8 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [setFilter, setSetFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [tagFilters, setTagFilters] = useState<readonly string[]>([]);
+  const [compactFilters, setCompactFilters] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -60,6 +65,16 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [deleteItem, setDeleteItem] = useState<AssetLibraryItem | null>(null);
+  const hasLoadedItems = useRef(false);
+
+  useEffect(() => {
+    const media = window.matchMedia?.("(max-width: 700px)");
+    if (media === undefined) return;
+    const update = () => setCompactFilters(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -67,8 +82,11 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
       const loaded = await managementApi.listAssetLibraryItems();
       setItems(loaded);
       setSelectedId((current) => loaded.some((item) => item.id === current) ? current : (loaded[0]?.id ?? null));
+      hasLoadedItems.current = true;
+      setInitialLoadFailed(false);
       setError(null);
     } catch (loadError) {
+      if (!hasLoadedItems.current) setInitialLoadFailed(true);
       setError(actionableError(loadError, "Asset library could not be loaded", "Retry. If the problem continues, open Diagnostics and search the reference ID."));
     } finally {
       setLoading(false);
@@ -124,13 +142,14 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const persistMetadata = useCallback(async (): Promise<boolean> => {
     if (selected === null) return false;
     setBusy(true);
+    setNotice(null);
     try {
       const updated = await managementApi.updateAssetMetadata(selected.id, {
         displayName: displayName.trim(),
         tags: normalizedTags
       });
       setItems((current) => current.map((item) => item.id === updated.id ? updated : item));
-      setSuccess("Asset details saved.");
+      setNotice({ tone: "success", message: "Asset details saved." });
       setError(null);
       return true;
     } catch (saveError) {
@@ -180,6 +199,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
 
   async function reviewReplacement() {
     if (replacement?.file === null || replacement === null) return;
+    setNotice(null);
     const validation = await validateAssetFile(replacement.file);
     if (!validation.accepted || validation.mediaType === null) {
       setError(uploadError(validation.reason));
@@ -200,10 +220,11 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   async function confirmReplacement() {
     if (replacement?.file === null || replacement?.impact === null || replacement === null) return;
     setBusy(true);
+    setNotice(null);
     try {
       await assetApi.replaceAsset(replacement.item.id, replacement.file, true);
       setReplacement(null);
-      setSuccess("Asset replaced everywhere it is used.");
+      setNotice({ tone: "success", message: "Asset replaced everywhere it is used." });
       await loadItems();
     } catch (replaceError) {
       setError(actionableError(replaceError, "Asset file was not replaced", "Review the file format and affected usages, then retry."));
@@ -216,10 +237,11 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
     if (deleteItem === null) return;
     const assetId = deleteItem.id;
     setBusy(true);
+    setNotice(null);
     try {
       await managementApi.deleteAsset(assetId);
       setDeleteItem(null);
-      setSuccess("Unused asset deleted.");
+      setNotice({ tone: "success", message: "Unused asset deleted." });
       await loadItems();
     } catch (deleteError) {
       setError(actionableError(deleteError, "Asset was not deleted", "Refresh usage details and remove every alert reference before retrying."));
@@ -228,30 +250,35 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
     }
   }
 
+  if (!hasLoadedItems.current && loading) return <p className="management-empty" role="status">Loading asset library...</p>;
+  if (initialLoadFailed && error !== null) return <section aria-label="Asset library" className="asset-library"><ManagementErrorBanner error={error} /><button onClick={() => void loadItems()} type="button">Retry loading assets</button></section>;
+
   return (
     <div className="asset-library" aria-labelledby="asset-library-title">
       <div className="asset-library__toolbar">
         <div>
           <h2 id="asset-library-title">Asset library</h2>
-          <p>{items.length} reusable media {items.length === 1 ? "asset" : "assets"}</p>
+          <p>{formatCount(items.length, { one: "reusable media asset", other: "reusable media assets" })}</p>
         </div>
         <button onClick={() => setPickerOpen(true)} type="button">Add asset</button>
       </div>
 
-      {error === null ? null : <ManagementErrorBanner error={error} />}
-      {success === null ? null : <p className="asset-library__success" role="status">{success}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
-      <div className="asset-library__filters" aria-label="Asset filters">
-        <label className="asset-library__search"><span>Search assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
-        <FilterSelect label="Type" onChange={setMediaType} value={mediaType} options={["all", "image", "gif", "video", "audio"]} />
-        <FilterSelect label="Usage" onChange={setUsageFilter} value={usageFilter} options={["all", "used", "unused"]} />
-        <FilterSelect label="Health" onChange={setHealthFilter} value={healthFilter} options={["all", "available", "missing", "broken"]} />
-        <FilterSelect label="Module" onChange={setModuleFilter} value={moduleFilter} options={["all", "alerts"]} />
-        <label><span>Set</span><select onChange={(event) => setSetFilter(event.currentTarget.value)} value={setFilter}><option value="all">All</option>{setOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-        <label><span>Event</span><select onChange={(event) => setEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All</option>{eventOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-      </div>
-
-      {allTags.length === 0 ? null : <fieldset className="asset-library__tag-filters"><legend>Tags (match all)</legend>{allTags.map((tag) => <label key={tag}><input checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} type="checkbox" />{tag}</label>)}</fieldset>}
+      <details className="asset-library__filter-disclosure" onToggle={(event) => { if (compactFilters) setFiltersExpanded(event.currentTarget.open); }} open={!compactFilters || filtersExpanded}>
+        <summary>Filters</summary>
+        <div className="asset-library__filters" aria-label="Asset filters">
+          <label className="asset-library__search"><span>Search assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
+          <FilterSelect label="Type" onChange={setMediaType} value={mediaType} options={["all", "image", "gif", "video", "audio"]} />
+          <FilterSelect label="Usage" onChange={setUsageFilter} value={usageFilter} options={["all", "used", "unused"]} />
+          <FilterSelect label="Health" onChange={setHealthFilter} value={healthFilter} options={["all", "available", "missing", "broken"]} />
+          <FilterSelect label="Module" onChange={setModuleFilter} value={moduleFilter} options={["all", "alerts"]} />
+          <label><span>Set</span><select onChange={(event) => setSetFilter(event.currentTarget.value)} value={setFilter}><option value="all">All</option>{setOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          <label><span>Event</span><select onChange={(event) => setEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All</option>{eventOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+        </div>
+        {allTags.length === 0 ? null : <fieldset className="asset-library__tag-filters"><legend>Tags (match all)</legend>{allTags.map((tag) => <label key={tag}><input checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} type="checkbox" />{tag}</label>)}</fieldset>}
+      </details>
 
       {loading ? <p className="management-empty">Loading asset library...</p> : null}
       {!loading && items.length === 0 ? <div className="management-empty"><strong>No assets imported yet.</strong><p>Add media here or from an alert layer without leaving that editing flow.</p></div> : null}
@@ -262,9 +289,9 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
           <table className="asset-library__table">
             <thead><tr><th><span className="asset-library__sr-only">Preview</span></th><th>Name</th><th>Type</th><th>Usage</th><th>Health</th><th>Updated</th></tr></thead>
             <tbody>{filtered.map((item) => <tr aria-selected={item.id === selectedId} key={item.id} onClick={() => requestAssetSelection(item.id)}>
-              <td><AssetPreview assetApi={assetApi} compact item={item} /></td>
-              <td><button className="asset-library__row-action" onClick={(event) => { event.stopPropagation(); requestAssetSelection(item.id); }} type="button">{item.displayName}</button><small>{item.originalFileName}</small></td>
-              <td>{formatLabel(item.mediaType)}</td><td>{item.usage.totalUsageCount}</td><td><StatusBadge label={formatLabel(item.health)} tone={healthTone(item.health)} /></td><td>{formatDate(item.updatedAt)}</td>
+              <td data-label="Preview"><AssetPreview assetApi={assetApi} compact item={item} /></td>
+              <td data-label="Name"><button className="asset-library__row-action" onClick={(event) => { event.stopPropagation(); requestAssetSelection(item.id); }} type="button">{item.displayName}</button><small>{item.originalFileName}</small></td>
+              <td data-label="Type">{formatLabel(item.mediaType)}</td><td data-label="Usage">{formatCount(item.usage.totalUsageCount, { one: "use", other: "uses" })}</td><td data-label="Health"><StatusBadge label={formatLabel(item.health)} tone={healthTone(item.health)} /></td><td data-label="Updated">{formatDate(item.updatedAt)}</td>
             </tr>)}</tbody>
           </table>
         </div>
@@ -273,8 +300,9 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
           <div className="asset-library__detail-heading"><div><h3>{selected.displayName}</h3><p>{selected.originalFileName}</p></div><StatusBadge label={formatLabel(selected.health)} tone={healthTone(selected.health)} /></div>
           <dl className="asset-library__facts"><div><dt>Type</dt><dd>{formatLabel(selected.mediaType)}</dd></div><div><dt>Size</dt><dd>{formatBytes(selected.sizeBytes)}</dd></div><div><dt>Dimensions</dt><dd>{selected.width === null || selected.height === null ? "Not available" : `${selected.width} x ${selected.height}`}</dd></div><div><dt>Duration</dt><dd>{selected.durationMs === null ? "Not available" : formatDuration(selected.durationMs)}</dd></div><div><dt>Created</dt><dd>{formatDate(selected.createdAt)}</dd></div><div><dt>Updated</dt><dd>{formatDate(selected.updatedAt)}</dd></div></dl>
           <form className="asset-library__metadata" onSubmit={saveMetadata}><label><span>Display name</span><input maxLength={160} onChange={(event) => setDisplayName(event.currentTarget.value)} required value={displayName} /></label><label><span>Tags</span><input aria-describedby="asset-tag-help" onChange={(event) => setTags(event.currentTarget.value)} value={tags} /></label><small id="asset-tag-help">Comma-separated; tags are matched without case.</small><button disabled={busy || displayName.trim() === ""} type="submit">Save asset details</button></form>
-          <section className="asset-library__usage" aria-labelledby="asset-usage-title"><div><h4 id="asset-usage-title">Used by</h4><span>{selected.usage.totalUsageCount} {selected.usage.totalUsageCount === 1 ? "alert context" : "alert contexts"}</span></div>{selected.usage.usages.length === 0 ? <p>Not currently linked to an alert.</p> : <ul>{selected.usage.usages.map((usage) => <li key={`${usage.setId ?? "unassigned"}-${usage.alertId}`}><a href={usageHref(usage)}>{usage.alertName}</a><span>{usage.setName ?? "Unassigned set"} / {formatLabel(usage.eventType)} / {usage.targetProfileIds.length === 0 ? "No profiles" : usage.targetProfileIds.map(formatLabel).join(", ")}</span></li>)}</ul>}</section>
-          <div className="asset-library__actions"><button className="button button--secondary" onClick={() => setReplacement({ item: selected, file: null, impact: null })} type="button">Replace file</button><button className="button button--danger-quiet" disabled={selected.usage.totalUsageCount > 0} onClick={() => setDeleteItem(selected)} title={selected.usage.totalUsageCount > 0 ? "Remove alert usages before deleting this asset." : undefined} type="button">Delete asset</button></div>
+          <section className="asset-library__usage" aria-labelledby="asset-usage-title"><div><h4 id="asset-usage-title">Used by</h4><span>{formatCount(selected.usage.totalUsageCount, { one: "alert context", other: "alert contexts" })}</span></div>{selected.usage.usages.length === 0 ? <p>Not currently linked to an alert.</p> : <ul>{selected.usage.usages.map((usage) => <li key={`${usage.setId ?? "unassigned"}-${usage.alertId}`}><a href={usageHref(usage)}>{usage.alertName}</a><span>{usage.setName ?? "Unassigned set"} / {formatLabel(usage.eventType)} / {usage.targetProfileIds.length === 0 ? "No profiles" : usage.targetProfileIds.map(formatLabel).join(", ")}</span></li>)}</ul>}</section>
+          <div className="asset-library__actions"><button className="button button--secondary" onClick={() => setReplacement({ item: selected, file: null, impact: null })} type="button">Replace file</button><button aria-describedby={selected.usage.totalUsageCount > 0 ? `asset-delete-help-${selected.id}` : undefined} className="button button--danger-quiet" disabled={selected.usage.totalUsageCount > 0} onClick={() => setDeleteItem(selected)} type="button">Delete asset</button></div>
+          {selected.usage.totalUsageCount > 0 ? <p className="asset-library__delete-help" id={`asset-delete-help-${selected.id}`}>Remove {formatCount(selected.usage.totalUsageCount, { one: "alert use", other: "alert uses" })} before deleting this asset.</p> : null}
         </div>}
       </div> : null}
 
@@ -326,6 +354,4 @@ function usageHref(usage: AssetLibraryItem["usage"]["usages"][number]): string {
 
 function healthTone(health: AssetLibraryItem["health"]): "positive" | "warning" | "negative" { return health === "available" ? "positive" : health === "missing" ? "warning" : "negative"; }
 function formatLabel(value: string): string { return value.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" "); }
-function formatDate(value: string): string { return new Date(value).toLocaleDateString(); }
 function formatDuration(value: number): string { return `${(value / 1000).toFixed(1)} s`; }
-function formatBytes(value: number): string { return value < 1024 ? `${value} B` : value < 1024 * 1024 ? `${(value / 1024).toFixed(1)} KiB` : `${(value / 1024 / 1024).toFixed(1)} MiB`; }

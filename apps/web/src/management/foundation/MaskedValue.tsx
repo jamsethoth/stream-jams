@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ManagementToast, type ManagementToastNotice } from "./ManagementToast.js";
 
 export interface MaskedValueProps {
   readonly label: string;
@@ -7,14 +8,18 @@ export interface MaskedValueProps {
 
 export function MaskedValue({ label, value }: MaskedValueProps) {
   const [revealed, setRevealed] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<ManagementToastNotice | null>(null);
 
   async function copyValue() {
     try {
       await navigator.clipboard.writeText(value);
-      setFeedback(`Copied ${label}.`);
+      setFeedback({ tone: "success", message: `Copied ${label}.` });
     } catch (error) {
-      setFeedback(error instanceof Error ? `Copy failed: ${error.message}` : "Copy failed. Select and copy the revealed value.");
+      setFeedback({
+        tone: "failure",
+        message: "Copy failed.",
+        detail: error instanceof Error ? error.message : "Select and copy the revealed value."
+      });
     }
   }
 
@@ -42,7 +47,7 @@ export function MaskedValue({ label, value }: MaskedValueProps) {
           Copy
         </button>
       </div>
-      {feedback === null ? null : <span aria-live="polite" className="management-copy-feedback">{feedback}</span>}
+      {feedback === null ? null : <ManagementToast notice={feedback} onDismiss={() => setFeedback(null)} />}
     </div>
   );
 }

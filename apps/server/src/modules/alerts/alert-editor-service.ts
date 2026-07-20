@@ -4,6 +4,7 @@ import {
   alertEditorTestRequestSchema,
   getAlertTemplateVariableCatalog,
   getAlertEditorAffectedProfileIds,
+  createAlertTemplateContext,
   normalizedStreamEventSchema,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
@@ -204,7 +205,7 @@ export class AlertEditorService {
     visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>
   ): readonly ResolvedAlert[] {
     const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
-    const context = createTemplateContext(request.samplePayload, sourceEvent);
+    const context = createAlertTemplateContext(sourceEvent);
     const layers = [...request.document.layers]
       .filter((layer) => layer.visible)
       .sort((left, right) => left.order - right.order)
@@ -708,17 +709,6 @@ function nullableDate(value: unknown, fallback: string): string | null {
   return value === null ? null : text(value, fallback);
 }
 
-function createTemplateContext(payload: Record<string, unknown>, event: NormalizedStreamEvent): Record<string, unknown> {
-  return {
-    ...payload,
-    actor: event.actor,
-    amount: event.amount,
-    message: event.message,
-    metadata: event.metadata,
-    type: event.type
-  };
-}
-
 function createLayerInstruction(
   layer: AlertLayer,
   layout: OverlayElementLayout | undefined,
@@ -733,6 +723,7 @@ function createLayerInstruction(
     id: instructionId,
     overlayId: "default",
     moduleId: "alerts",
+    operatorTest: true as const,
     purpose: "live" as const,
     scope: "module" as const,
     targetProfileId,

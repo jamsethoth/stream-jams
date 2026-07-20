@@ -1,0 +1,4 @@
+interface:
+  display_name: "Stream Jams DB Schema"
+  short_description: "Regenerate an interactive SQLite schema explorer"
+  default_prompt: "Use $stream-jams-db-schema to regenerate the Stream Jams relational database schema explorer from current migrations."

@@ -1,11 +1,17 @@
 import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { OverlaySurface } from "./OverlaySurface.js";
+
+beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => undefined);
+});
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe("OverlaySurface", () => {
@@ -87,7 +93,164 @@ describe("OverlaySurface", () => {
       })
     );
   });
+
+  it("lets an operator enable and retry audio blocked during a management test", async () => {
+    const user = userEvent.setup();
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockRejectedValueOnce(new DOMException("Playback requires user interaction", "NotAllowedError"))
+      .mockResolvedValueOnce();
+    const onPlaybackEvent = vi.fn();
+
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          operatorTest: true,
+          audio: { assetId: "asset-audio", volume: 0.35 }
+        })}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    const enableAudio = await screen.findByRole("button", { name: "Enable alert audio" });
+    expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+
+    await user.click(enableAudio);
+
+    expect(play).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith({
+      instructionId: "instruction-1",
+      status: "started"
+    }));
+    expect(screen.queryByRole("button", { name: "Enable alert audio" })).not.toBeInTheDocument();
+  });
+
+  it("reports blocked management-test audio when activation is not granted", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
+      new DOMException("Playback requires user interaction", "NotAllowedError")
+    );
+    const onPlaybackEvent = vi.fn();
+
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          operatorTest: true,
+          audio: { assetId: "asset-audio", volume: 0.35 }
+        })}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    await act(async () => Promise.resolve());
+    expect(screen.getByRole("button", { name: "Enable alert audio" })).toBeInTheDocument();
+
+    act(() => vi.advanceTimersByTime(30_000));
+
+    expect(onPlaybackEvent).toHaveBeenCalledWith({
+      instructionId: "instruction-1",
+      status: "failed",
+      message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
+    });
+  });
+
+  it("uses one activation action to retry every blocked test-audio layer", async () => {
+    const user = userEvent.setup();
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play")
+      .mockRejectedValueOnce(new DOMException("Playback requires user interaction", "NotAllowedError"))
+      .mockRejectedValueOnce(new DOMException("Playback requires user interaction", "NotAllowedError"))
+      .mockResolvedValue();
+
+    render(
+      <OverlaySurface
+        composition={compositionFromInstructions([
+          { ...instruction(), operatorTest: true, audio: { assetId: "asset-one", volume: 0.35 } },
+          { ...instruction(), id: "instruction-2", operatorTest: true, audio: { assetId: "asset-two", volume: 0.5 } }
+        ])}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    const enableAudio = await screen.findByRole("button", { name: "Enable alert audio" });
+    expect(screen.getAllByRole("button", { name: "Enable alert audio" })).toHaveLength(1);
+
+    await user.click(enableAudio);
+
+    expect(play).toHaveBeenCalledTimes(4);
+    expect(screen.queryByRole("button", { name: "Enable alert audio" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["Landscape canonical", "landscape", 1_920, 1_080, 1_920, 1_080, 1],
+    ["Landscape noncanonical", "landscape", 960, 1_080, 1_920, 1_080, 0.5],
+    ["Vertical canonical", "vertical", 1_080, 1_920, 1_080, 1_920, 1],
+    ["Vertical noncanonical", "vertical", 1_080, 1_080, 1_080, 1_920, 0.5625]
+  ] as const)(
+    "scales and centers the %s fixed profile without changing profile-pixel geometry",
+    (_name, profileId, viewportWidth, viewportHeight, profileWidth, profileHeight, scale) => {
+      setViewport(viewportWidth, viewportHeight);
+      render(
+        <OverlaySurface
+          composition={composition({
+            ...instruction(),
+            targetProfileId: profileId,
+            shape: {
+              fill: "#123456",
+              layout: { x: 120, y: 80, width: 320, height: 240, zIndex: 5 }
+            }
+          }, profileId)}
+          resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+        />
+      );
+
+      expect(screen.getByTestId("overlay-root")).toHaveStyle({
+        background: "transparent",
+        height: "100vh",
+        width: "100vw"
+      });
+      expect(screen.getByTestId("overlay-profile-canvas")).toHaveStyle({
+        height: `${profileHeight}px`,
+        left: "50%",
+        position: "absolute",
+        top: "50%",
+        transform: `translate(-50%, -50%) scale(${scale})`,
+        transformOrigin: "center",
+        width: `${profileWidth}px`
+      });
+      expect(screen.getByTestId("overlay-shape-instruction-1")).toHaveStyle({
+        height: "240px",
+        left: "120px",
+        top: "80px",
+        width: "320px"
+      });
+    }
+  );
+
+  it("lets user-generated text determine its own direction", () => {
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          text: {
+            text: "مرحبا Viewer",
+            layout: { x: 120, y: 80, width: 320, height: 240, zIndex: 5 }
+          }
+        })}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    expect(screen.getByText("مرحبا Viewer")).toHaveAttribute("dir", "auto");
+  });
 });
+
+function setViewport(width: number, height: number): void {
+  Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: height });
+}
 
 function instruction(): OverlayInstruction {
   return {
@@ -105,12 +268,22 @@ function instruction(): OverlayInstruction {
   };
 }
 
-function composition(value: OverlayInstruction): OverlayComposition {
+function composition(
+  value: OverlayInstruction,
+  targetProfileId: "landscape" | "vertical" = "landscape"
+): OverlayComposition {
+  return compositionFromInstructions([value], targetProfileId);
+}
+
+function compositionFromInstructions(
+  instructions: readonly OverlayInstruction[],
+  targetProfileId: "landscape" | "vertical" = "landscape"
+): OverlayComposition {
   return {
     overlayId: "overlay-1",
     purpose: "live",
     scope: "module",
-    targetProfileId: "landscape",
-    modules: [{ moduleId: "alerts", enabled: true, instructions: [value] }]
+    targetProfileId,
+    modules: [{ moduleId: "alerts", enabled: true, instructions }]
   };
 }

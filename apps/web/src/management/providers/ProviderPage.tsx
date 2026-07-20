@@ -12,9 +12,11 @@ import type {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
+import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import "./provider-pages.css";
@@ -86,7 +88,7 @@ export function ProviderPage({
   const [pageError, setPageError] = useState<ActionableManagementError | null>(null);
   const [refreshError, setRefreshError] = useState<ActionableManagementError | null>(null);
   const [operationError, setOperationError] = useState<ActionableManagementError | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [setupOpen, setSetupOpen] = useState(openSetupOnLoad);
   const [reconnectProvider, setReconnectProvider] = useState<RegisteredProviderView | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingProviderAction | null>(null);
@@ -228,6 +230,7 @@ export function ProviderPage({
   async function requestActivation(provider: RegisteredProviderView) {
     setActionLoadingProviderId(provider.id);
     setOperationError(null);
+    setNotice(null);
     try {
       const nextImpact = await managementApi.getProviderActivationImpact(provider.id);
       setPendingAction({ kind: "activate", provider, impact: nextImpact });
@@ -240,12 +243,14 @@ export function ProviderPage({
 
   function requestDeactivation(provider: RegisteredProviderView) {
     setOperationError(null);
+    setNotice(null);
     setPendingAction({ kind: "deactivate", provider, impact: null });
   }
 
   async function confirmProviderAction() {
     if (pendingAction === null) return;
     setActionBusy(true);
+    setNotice(null);
     try {
       if (pendingAction.kind === "activate") {
         await managementApi.activateProvider(pendingAction.provider.id, true);
@@ -254,7 +259,7 @@ export function ProviderPage({
       }
       await loadProviders(pendingAction.provider.id);
       setOperationError(null);
-      setNotice(`${pendingAction.provider.name} is ${pendingAction.kind === "activate" ? "active" : "inactive"}.`);
+      setNotice({ tone: "success", message: `${pendingAction.provider.name} is ${pendingAction.kind === "activate" ? "active" : "inactive"}.` });
       setPendingAction(null);
     } catch (error) {
       const activating = pendingAction.kind === "activate";
@@ -275,12 +280,13 @@ export function ProviderPage({
     if (selectedProvider === null || safety === null) {
       return false;
     }
+    setNotice(null);
     try {
       const saved = await managementApi.updateTtsSafety(selectedProvider.id, safety);
       setSafety(saved);
       setSavedSafety(saved);
       setOperationError(null);
-      setNotice("TTS safety settings saved.");
+      setNotice({ tone: "success", message: "TTS safety settings saved." });
       return true;
     } catch (error) {
       setOperationError(actionableError(error, "Unable to save TTS safety settings", "Review each safety value, then retry the save."));
@@ -339,6 +345,7 @@ export function ProviderPage({
     if (selectedProvider === null) {
       return;
     }
+    setNotice(null);
     try {
       const result = await managementApi.testProviderVoice(selectedProvider.id);
       if (!result.delivered) {
@@ -346,7 +353,7 @@ export function ProviderPage({
         return;
       }
       setOperationError(null);
-      setNotice("Voice test delivered.");
+      setNotice({ tone: "success", message: "Voice test delivered." });
     } catch (error) {
       setOperationError(actionableError(error, "Unable to test provider voice", "Confirm the provider is connected and its output is available, then retry."));
     }
@@ -355,17 +362,13 @@ export function ProviderPage({
   return (
     <div className="provider-page">
       <div className="provider-page__toolbar">
-        <div>
-          <h2>{copy.title}</h2>
-          <p>Register providers, validate connections, and choose which provider is active.</p>
-        </div>
         <button onClick={() => { setReconnectProvider(null); setSetupOpen(true); }} type="button">{copy.add}</button>
       </div>
 
       {pageError === null ? null : <ManagementErrorBanner error={pageError} />}
       {refreshError === null ? null : <ManagementErrorBanner error={refreshError} />}
-      {operationError === null ? null : <ManagementErrorBanner error={operationError} />}
-      {notice === null ? null : <p className="provider-page__notice" role="status">{notice}</p>}
+      {operationError === null ? null : <ManagementErrorToast error={operationError} onDismiss={() => setOperationError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       {loading ? <p className="provider-page__empty" role="status">Loading providers...</p> : null}
       {!loading && pageError === null && providers.length === 0 ? <p className="provider-page__empty">{copy.empty}</p> : null}
@@ -398,7 +401,7 @@ export function ProviderPage({
                     key={provider.id}
                     onClick={() => requestProviderSelection(provider.id)}
                   >
-                    <th scope="row">
+                    <th data-label="Provider" scope="row">
                       <button
                         aria-label={`Select ${provider.name}`}
                         aria-pressed={provider.id === selectedProviderId}
@@ -416,18 +419,18 @@ export function ProviderPage({
                     </th>
                     {capability === "event-source" ? (
                       <>
-                        <td><StatusBadge label={provider.active ? "In use" : "Not in use"} tone={provider.active ? "positive" : "neutral"} /></td>
-                        <td><StatusBadge label={formatLiveStatus(eventSourceLiveStatus(provider))} tone={liveStatusTone(eventSourceLiveStatus(provider))} /></td>
+                        <td data-label="Usage"><StatusBadge label={provider.active ? "In use" : "Not in use"} tone={provider.active ? "positive" : "neutral"} /></td>
+                        <td data-label="Live status"><StatusBadge label={formatLiveStatus(eventSourceLiveStatus(provider))} tone={liveStatusTone(eventSourceLiveStatus(provider))} /></td>
                       </>
                     ) : (
                       <>
-                        <td><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></td>
-                        <td>{provider.usedByAlertCount}</td>
-                        <td><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
+                        <td data-label="Connection"><StatusBadge label={formatState(provider.connectionState)} tone={connectionTone(provider.connectionState)} /></td>
+                        <td data-label="Used by alerts">{provider.usedByAlertCount}</td>
+                        <td data-label="Runtime"><StatusBadge label={provider.active ? "Active" : "Inactive"} tone={provider.active ? "positive" : "neutral"} /></td>
                       </>
                     )}
                     {capability === "event-source" ? (
-                      <td>
+                      <td data-label="Actions">
                         <button
                           aria-label={`${provider.active ? "Deactivate" : "Activate"} ${provider.name}`}
                           className="provider-page__secondary-action"
@@ -490,15 +493,21 @@ export function ProviderPage({
         onReconnected={async (providerId, providerName) => {
           await loadProviders(providerId);
           setReconnectProvider(null);
-          setNotice(`${providerName} reconnected. Live status is updating.`);
+          setOperationError(null);
+          setNotice({ tone: "success", message: `${providerName} reconnected. Live status is updating.` });
         }}
         onRegistered={async (providerId, providerName, active) => {
           await loadProviders(providerId);
           setSetupOpen(false);
           setReconnectProvider(null);
+          setOperationError(null);
           setNotice(active
-            ? `${providerName} registered and active.`
-            : `${providerName} registered but inactive. Set it active when you are ready to switch ${capability === "event-source" ? "event intake" : "text-to-speech output"}.`);
+            ? { tone: "success", message: `${providerName} registered and active.` }
+            : {
+                tone: "warning",
+                message: `${providerName} registered but inactive.`,
+                detail: `Set it active when you are ready to switch ${capability === "event-source" ? "event intake" : "text-to-speech output"}.`
+              });
         }}
         open={setupOpen || reconnectProvider !== null}
         reconnectProvider={reconnectProvider}
@@ -514,7 +523,7 @@ export function ProviderPage({
               <p>Live event intake will stop for {pendingAction.provider.name}. Provider settings and alert mappings will remain saved, and the provider connection can remain connected.</p>
               <p>Activate this or another event source to resume intake.</p>
               <p>
-                {pendingAction.provider.usedByAlertCount} {pendingAction.provider.usedByAlertCount === 1 ? "alert uses" : "alerts use"} this provider type.
+                {formatCount(pendingAction.provider.usedByAlertCount, { one: "alert uses", other: "alerts use" })} this provider type.
               </p>
             </>
           ) : (
@@ -526,7 +535,7 @@ export function ProviderPage({
                     : `${pendingAction?.provider.name ?? "This event source"} will become the active event source. Saved configuration will not be deleted.`
                   : "This provider will handle text-to-speech output. The current active provider will become inactive."}
               </p>
-              <p>{pendingAction?.impact.matchedAlertCount ?? 0} matching alerts, {pendingAction?.impact.unmatchedAlertCount ?? 0} unmatched alerts.</p>
+              <p>{formatActivationImpactSummary(pendingAction?.impact.matchedAlertCount ?? 0, pendingAction?.impact.unmatchedAlertCount ?? 0)}.</p>
               <div className="provider-page__errors">
                 {[...(pendingAction?.impact.blockers ?? []), ...(pendingAction?.impact.warnings ?? [])].map((item, index) => (
                   <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />
@@ -613,10 +622,10 @@ function ProviderDetail({
             )}
           </>
         ) : <div><dt>Connection</dt><dd>{formatState(provider.connectionState)}</dd></div>}
-        <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : new Date(provider.validatedAt).toLocaleString()}</dd></div>
+        <div><dt>Last validated</dt><dd>{provider.validatedAt === null ? "Never" : formatDateTime(provider.validatedAt)}</dd></div>
         <div>
           <dt>Used by alerts</dt>
-          <dd>{provider.usedByAlertCount} alert {provider.usedByAlertCount === 1 ? "use" : "uses"}</dd>
+          <dd>{formatCount(provider.usedByAlertCount, { one: "alert use", other: "alert uses" })}</dd>
         </div>
       </dl>
 
@@ -625,7 +634,7 @@ function ProviderDetail({
           <h4 id="activation-impact-title">Activation impact</h4>
           {impact === null ? <p role="status">Checking alert impact...</p> : (
             <>
-              <p>{impact.matchedAlertCount} matching alerts, {impact.unmatchedAlertCount} unmatched alerts</p>
+              <p>{formatActivationImpactSummary(impact.matchedAlertCount, impact.unmatchedAlertCount)}</p>
               <div className="provider-page__errors">
                 {[...impact.blockers, ...impact.warnings].map((item, index) => (
                   <ManagementErrorBanner error={item} key={item.referenceId ?? `${item.summary}-${index}`} />
@@ -1023,7 +1032,7 @@ function ProviderSetupWizard({
                         <div className="provider-page__twitch-code" role="status">
                           <span>Code</span>
                           <code>{twitchAuthorization.userCode}</code>
-                          <span>Expires {new Date(twitchAuthorization.expiresAt).toLocaleTimeString()}</span>
+                          <span>Expires {formatDateTime(twitchAuthorization.expiresAt)}</span>
                         </div>
                         {requestError === null ? <p role="status">Waiting for Twitch authorization...</p> : null}
                       </>
@@ -1111,6 +1120,13 @@ function ProviderSetupWizard({
 
 function formatTwitchAccount(status: Extract<TwitchConnectionStatusView, { readonly connected: true }>): string {
   return `${status.account.displayName} (@${status.account.login})`;
+}
+
+function formatActivationImpactSummary(matchedAlertCount: number, unmatchedAlertCount: number): string {
+  if (matchedAlertCount === 0 && unmatchedAlertCount === 0) return "No active alerts are affected";
+  if (matchedAlertCount === 0) return formatCount(unmatchedAlertCount, { one: "unmatched alert", other: "unmatched alerts" });
+  if (unmatchedAlertCount === 0) return formatCount(matchedAlertCount, { one: "matching alert", other: "matching alerts" });
+  return `${formatCount(matchedAlertCount, { one: "matching alert", other: "matching alerts" })}, ${formatCount(unmatchedAlertCount, { one: "unmatched alert", other: "unmatched alerts" })}`;
 }
 
 function providerSetupDescription(kind: ProviderKind): string {

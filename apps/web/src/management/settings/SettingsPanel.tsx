@@ -9,6 +9,8 @@ import {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
+import { formatBytes, formatCount, formatHours } from "../foundation/formatters.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
 import type { ManagementApi, ServerConfigView } from "../management-api.js";
@@ -36,30 +38,32 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   const [restoreResult, setRestoreResult] = useState<ConfigurationRestoreResult | null>(null);
   const [confirmation, setConfirmation] = useState("");
   const [loading, setLoading] = useState(true);
+  const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [maintenanceBusy, setMaintenanceBusy] = useState<"open-data-folder" | "clear-old-logs" | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
-  useEffect(() => {
-    let active = true;
-    void Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary()])
+  const loadSettings = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    await Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary()])
       .then(([serverConfig, backupSummary]) => {
-        if (!active) return;
         setSavedConfig(serverConfig);
         setConfigDraft(serverConfig);
         setSummary(backupSummary);
+        setInitialLoadFailed(false);
       })
       .catch((cause: unknown) => {
-        if (active) setError(actionable("Settings could not be loaded", cause, "Refresh the page and try again."));
+        setInitialLoadFailed(true);
+        setError(actionable("Settings could not be loaded", cause, "Refresh the page and try again."));
       })
       .finally(() => {
-        if (active) setLoading(false);
+        setLoading(false);
       });
-    return () => {
-      active = false;
-    };
   }, [managementApi]);
+
+  useEffect(() => { void loadSettings(); }, [loadSettings]);
 
   useEffect(() => {
     if (loading || window.location.hash !== "#backup-restore") return;
@@ -95,9 +99,10 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       await saveServer();
-      setNotice("Server settings saved. Restart Stream Jams if the port changed.");
+      setNotice({ tone: "warning", message: "Server settings saved.", detail: "Restart Stream Jams if the port changed." });
     } catch (cause) {
       setError(actionable("Server settings were not saved", cause, "Check the port and try again."));
     } finally {
@@ -112,7 +117,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     try {
       const exported = await managementApi.exportConfigurationBackup();
       downloadArchive(exported);
-      setNotice(`Backup exported with ${exported.manifest.configurationRecordCount} configuration records and ${exported.manifest.assetCount} assets.`);
+      setNotice({ tone: "success", message: `Backup exported with ${formatCount(exported.manifest.configurationRecordCount, { one: "configuration record", other: "configuration records" })} and ${formatCount(exported.manifest.assetCount, { one: "asset", other: "assets" })}.` });
     } catch (cause) {
       setError(actionable("Backup was not exported", cause, "Check Diagnostics and storage health, then try again."));
     } finally {
@@ -173,7 +178,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
       setArchiveName(null);
       setPreflight(null);
       setConfirmation("");
-      setNotice("Configuration restored. Complete the follow-up actions before going live.");
+      setNotice({ tone: "warning", message: "Configuration restored.", detail: "Complete the follow-up actions before going live." });
       setSummary(await managementApi.getConfigurationBackupSummary());
     } catch (cause) {
       setError(actionable("Configuration was not restored", cause, "Resolve the reported failure, validate the backup again, and retry."));
@@ -188,7 +193,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     setNotice(null);
     try {
       const result = await managementApi.openDataFolder();
-      setNotice(`Data folder opened: ${result.dataDirectory}`);
+      setNotice({ tone: "success", message: `Data folder opened: ${result.dataDirectory}` });
     } catch (cause) {
       setError(actionable(
         "Data folder was not opened",
@@ -206,11 +211,12 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     setNotice(null);
     try {
       const result = await managementApi.clearOldLogs();
-      setNotice(
-        result.deletedCount === 0
+      setNotice({
+        tone: "success",
+        message: result.deletedCount === 0
           ? "No expired log files needed clearing."
-          : `${result.deletedCount} old log file${result.deletedCount === 1 ? "" : "s"} cleared.`
-      );
+          : `${formatCount(result.deletedCount, { one: "old log file", other: "old log files" })} cleared.`
+      });
     } catch (cause) {
       setError(actionable(
         "Old logs were not cleared",
@@ -223,16 +229,16 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   }
 
   if (loading) return <p className="management-empty" role="status">Loading settings...</p>;
+  if (initialLoadFailed && error !== null) return <section aria-label="Settings" className="settings-page"><ManagementErrorBanner error={error} /><button onClick={() => void loadSettings()} type="button">Retry loading settings</button></section>;
 
   return (
-    <section aria-labelledby="settings-title" className="settings-page">
+    <section aria-label="Settings" className="settings-page">
       <header className="settings-page__header">
-        <div><h2 id="settings-title">Settings</h2><p>Local application preferences, storage, diagnostics retention, and configuration recovery.</p></div>
         {summary === null ? null : <span className="settings-page__version">Stream Jams {summary.appVersion} · Schema {summary.schemaVersion}</span>}
       </header>
 
-      {error === null ? null : <ManagementErrorBanner error={error} />}
-      {notice === null ? null : <p className="settings-page__notice" role="status">{notice}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
       <section aria-labelledby="appearance-heading" className="settings-page__section">
         <div className="settings-page__section-heading"><div><h3 id="appearance-heading">Appearance</h3><p>Choose how the management interface is displayed on this device.</p></div></div>
@@ -276,7 +282,7 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
         </div>
         {summary === null ? null : (
           <div className="settings-page__backup-summary">
-            <strong>{summary.configurationRecordCount} configuration records · {summary.assetCount} assets · {formatBytes(summary.totalAssetBytes)}</strong>
+            <strong>{formatCount(summary.configurationRecordCount, { one: "configuration record", other: "configuration records" })} · {formatCount(summary.assetCount, { one: "asset", other: "assets" })} · {formatBytes(summary.totalAssetBytes)}</strong>
             <span>Excluded: {summary.secretExclusions.join(", ")}</span>
           </div>
         )}
@@ -306,10 +312,10 @@ function RestoreImpact({ impact }: { readonly impact: NonNullable<ConfigurationR
     <section aria-label="Restore impact" className="settings-page__impact">
       <h4>Restore impact</h4>
       <ul>
-        <li>{countLabel(impact.alertSets, "alert set")}</li>
-        <li>{countLabel(impact.providers, "provider")}</li>
-        <li>{countLabel(impact.assets, "asset")}</li>
-        <li>{countLabel(impact.browserOutputs, "browser output")}</li>
+        <li>{formatCount(impact.alertSets, { one: "alert set", other: "alert sets" })}</li>
+        <li>{formatCount(impact.providers, { one: "provider", other: "providers" })}</li>
+        <li>{formatCount(impact.assets, { one: "asset", other: "assets" })}</li>
+        <li>{formatCount(impact.browserOutputs, { one: "browser output", other: "browser outputs" })}</li>
       </ul>
     </section>
   );
@@ -356,18 +362,4 @@ function actionable(summary: string, cause: unknown, nextStep: string): Actionab
 function readReferenceId(cause: unknown): string | null {
   if (!(cause instanceof Error)) return null;
   return /\b(?:ref|err)_[A-Za-z0-9_-]+\b/u.exec(cause.message)?.[0] ?? null;
-}
-
-function formatHours(hours: number): string {
-  return hours % 24 === 0 ? `${hours / 24} days` : `${hours} hours`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function countLabel(count: number, singular: string): string {
-  return `${count} ${singular}${count === 1 ? "" : "s"}`;
 }

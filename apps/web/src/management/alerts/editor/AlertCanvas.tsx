@@ -1,4 +1,4 @@
-import type { AlertEditorDocument, AlertLayer, TargetProfileId } from "@stream-jams/core";
+import { createAlertTemplateContext, type AlertEditorDocument, type AlertLayer, type TargetProfileId } from "@stream-jams/core";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
@@ -49,6 +49,10 @@ export function AlertCanvas(props: AlertCanvasProps) {
   const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
   const viewState = props.viewState ?? { zoom: props.zoom ?? 100, scrollLeft: 0, scrollTop: 0 };
   const background = props.background ?? { mode: "checkerboard", color: "#1a1e23" };
+  const templateContext = createAlertTemplateContext({
+    eventType: props.document.eventType,
+    samplePayload: props.samplePayload
+  });
 
   useEffect(() => {
     const viewport = viewportRef.current;
@@ -59,14 +63,14 @@ export function AlertCanvas(props: AlertCanvasProps) {
 
   useEffect(() => {
     const requestId = props.fitRequestId ?? 0;
-    if (requestId === 0 || requestId === processedFitRequestRef.current) return;
+    if (props.viewState !== undefined && (requestId === 0 || requestId === processedFitRequestRef.current)) return;
     processedFitRequestRef.current = requestId;
     const viewport = viewportRef.current;
     if (viewport === null || props.onViewStateChange === undefined) return;
     const horizontalZoom = (Math.max(1, viewport.clientWidth - 56) / dimensions.width) * 100;
     const verticalZoom = (Math.max(1, viewport.clientHeight - 56) / dimensions.height) * 100;
     props.onViewStateChange({ zoom: Math.max(10, Math.min(150, Math.floor(Math.min(horizontalZoom, verticalZoom)))), scrollLeft: 0, scrollTop: 0 });
-  }, [dimensions.height, dimensions.width, props.fitRequestId, props.onViewStateChange]);
+  }, [dimensions.height, dimensions.width, props.fitRequestId, props.onViewStateChange, props.viewState]);
 
   function beginOperation(event: ReactPointerEvent<HTMLElement>, layerId: string, mode: "move" | "resize") {
     const layout = layouts.get(layerId);
@@ -147,10 +151,16 @@ export function AlertCanvas(props: AlertCanvasProps) {
               return (
                 <div
                   aria-label={`${layer.name} layer`}
+                  aria-pressed={props.selectedLayerId === layer.id}
                   className={`alert-canvas__layer${props.selectedLayerId === layer.id ? " alert-canvas__layer--selected" : ""}`}
                   key={`${layer.id}:${props.preview ? props.previewRunId ?? 0 : "edit"}`}
                   onClick={() => props.onSelectLayer(layer.id)}
                   onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      props.onSelectLayer(layer.id);
+                      return;
+                    }
                     if (!event.key.startsWith("Arrow")) return;
                     event.preventDefault();
                     const step = event.shiftKey ? 10 : 1;
@@ -174,7 +184,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   )}
                   tabIndex={0}
                 >
-                  <CanvasLayer assetApi={props.assetApi} layer={layer} samplePayload={props.samplePayload} />
+                  <CanvasLayer assetApi={props.assetApi} layer={layer} templateContext={templateContext} />
                   <span
                     aria-hidden="true"
                     className="alert-canvas__resize-handle"
@@ -202,14 +212,14 @@ export function AlertCanvas(props: AlertCanvasProps) {
 function CanvasLayer({
   assetApi,
   layer,
-  samplePayload
+  templateContext
 }: {
   readonly assetApi: AssetApi;
   readonly layer: AlertLayer;
-  readonly samplePayload: Record<string, unknown>;
+  readonly templateContext: Record<string, unknown>;
 }) {
   if (layer.type === "text") {
-    return <span className="alert-canvas__text">{renderTemplate(layer.template, samplePayload)}</span>;
+    return <span className="alert-canvas__text">{renderTemplate(layer.template, templateContext)}</span>;
   }
   if (layer.type === "image" || layer.type === "video") {
     return <CanvasAsset assetApi={assetApi} assetId={layer.assetId} kind={layer.type} />;

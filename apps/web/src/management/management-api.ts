@@ -1,6 +1,7 @@
 import {
   alertInventoryRowSchema,
   alertEditorDocumentSchema,
+  alertEditorErrorReportResultSchema,
   alertEditorTestResultSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
@@ -25,6 +26,8 @@ import {
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
   type AlertEditorDocument,
+  type AlertEditorErrorReportInput,
+  type AlertEditorErrorReportResult,
   type AlertCreateInput,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
@@ -256,6 +259,7 @@ export interface ManagementApi {
     confirmLiveImpact?: boolean
   ): Promise<AlertEditorDocument>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
+  reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult>;
   listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
   getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
@@ -583,6 +587,15 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         request,
         alertEditorTestResultSchema,
         "Unable to send the alert test."
+      );
+    },
+
+    reportAlertEditorError(alertId, input) {
+      return postContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/editor/errors`,
+        input,
+        alertEditorErrorReportResultSchema,
+        "Unable to record the alert editor error."
       );
     },
 

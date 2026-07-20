@@ -162,6 +162,7 @@ test("management alerts reviews the starter set and safely manages its landscape
     });
   });
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/manage");
   await page.getByRole("link", { name: "Alerts" }).click();
 
@@ -181,6 +182,13 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(sourceCard.getByText("Ready")).toBeVisible();
   await expect(sourceCard.getByText("Profile enabled")).toBeVisible();
   await expect(sourceCard.getByText("Listening now")).toBeVisible();
+  await expect(sourceCard.getByText("1920 x 1080", { exact: true })).toBeVisible();
+  await expect(sourceCard.getByText(/Add a Browser source in OBS at 1920 x 1080/u)).toBeVisible();
+  const alertRow = page.getByRole("row", { name: /New follower/u });
+  await expect(alertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();
+  await expect(alertRow.getByRole("button", { name: "Test New follower" })).toBeVisible();
+  await expect(alertRow.getByRole("button", { name: "Enable New follower" })).toBeVisible();
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   listening = false;
   await expect(sourceCard.getByText(/Not listening\. Last seen/u)).toBeVisible({ timeout: 7_000 });
   await page.getByRole("button", { name: "Reveal Landscape URL" }).click();
@@ -188,13 +196,22 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(source).toHaveValue(
     "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_landscape_e2e?profile=landscape"
   );
+  await page.getByRole("button", { name: "Hide Landscape URL" }).click();
+  await expect(sourceCard.getByRole("textbox", { name: "Landscape browser source" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Enable New follower" }).click();
-  await expect(page.getByText("New follower enabled.")).toBeVisible();
+  await expect(page.locator(".management-toast--success")).toContainText("New follower enabled.");
   await page.getByRole("button", { name: "Mark starter review done" }).click();
-  await expect(page.getByText("Starter review marked complete. Alerts remain disabled until you enable them.")).toBeVisible();
+  const reviewWarning = page.locator(".management-toast--warning");
+  await expect(reviewWarning).toContainText("Starter review marked complete.");
+  await expect(reviewWarning).toContainText("Alerts remain disabled until you enable them.");
   await page.getByRole("button", { name: "Test New follower" }).click();
-  await expect(page.getByText("New follower test queued for Landscape. Reference ref-inline-e2e.")).toBeVisible();
+  const successToast = page.locator(".management-toast--success");
+  await expect(successToast).toContainText("New follower test queued for Landscape. Reference ref-inline-e2e.");
+  const toastBounds = await successToast.boundingBox();
+  if (toastBounds === null) throw new Error("Expected the success toast to have visible bounds.");
+  expect(toastBounds.x).toBeGreaterThanOrEqual(0);
+  expect(toastBounds.x + toastBounds.width).toBeLessThanOrEqual(390);
   expect(testRequests).toHaveLength(1);
   expect(testRequests[0]).toMatchObject({
     targetProfileId: "landscape",
@@ -208,7 +225,8 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(dialog.getByRole("button", { name: "Regenerate URL" })).toBeDisabled();
   await dialog.getByLabel("Type REGENERATE to continue").fill("REGENERATE");
   await dialog.getByRole("button", { name: "Regenerate URL" }).click();
-  await expect(page.getByText(/Landscape URL regenerated/u)).toBeVisible();
+  await expect(page.locator(".management-toast--warning")).toContainText("Landscape URL regenerated.");
+  await expect(page.locator(".management-toast--warning")).toContainText("Update every browser source that used the old URL.");
 
   expect(commands).toEqual([
     { command: "enable", body: { enabled: true } },
@@ -505,6 +523,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
 
 test("focused alert editor saves layouts and separates preview from test delivery", async ({ page }) => {
   await mockManagementShell(page);
+  await page.setViewportSize({ width: 820, height: 768 });
   const savedDocuments: unknown[] = [];
   const testRequests: unknown[] = [];
   const document = alertEditorDocument();
@@ -561,10 +580,18 @@ test("focused alert editor saves layouts and separates preview from test deliver
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Alerts" }).click();
+  const tabletAlertRow = page.getByRole("row", { name: /New follower/u });
+  await expect(tabletAlertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole("button", { name: "Edit New follower" }).click();
 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-follow\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Fit" })).toBeVisible();
+  expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  const focusedContent = await page.locator(".management-route-content--focused").boundingBox();
+  expect(focusedContent?.width).toBeGreaterThan(1280);
   await page.getByRole("textbox", { name: "Message template" }).fill("Welcome, {actor.displayName}!");
   await page.getByRole("button", { name: "Save" }).click();
   const saveDialog = page.getByRole("dialog", { name: "Save changes to active alert?" });

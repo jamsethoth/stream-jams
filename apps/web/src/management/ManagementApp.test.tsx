@@ -1,5 +1,5 @@
 import type { AssetRecord } from "./assets/asset-api.js";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AssetLibraryItem, DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,11 +24,12 @@ describe("ManagementApp", () => {
     expect(screen.queryByRole("navigation", { name: "Legacy tools" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Module setup" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("link", { name: "Modules" }));
+    expect(screen.queryByRole("link", { name: "Modules" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("link", { name: "Alerts" }));
 
     expect(window.location.pathname).toBe("/manage/modules/alerts");
-    expect(screen.getByRole("link", { name: "Modules" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page")).toHaveLength(1);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
   });
 
@@ -115,6 +116,51 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/manage");
   });
 
+  it("guards unsaved asset metadata when following an internal usage link", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    vi.mocked(managementApi.listAssetLibraryItems).mockResolvedValue([assetLibraryItemWithUsage]);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    const details = await screen.findByRole("region", { name: "Follower burst details" });
+    const displayName = within(details).getByLabelText("Display name");
+    await user.clear(displayName);
+    await user.type(displayName, "Updated follower burst");
+    await user.click(within(details).getByRole("link", { name: "Follower alert" }));
+
+    expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toHaveTextContent(
+      "Asset details have unsaved changes."
+    );
+    expect(window.location.pathname).toBe("/manage/assets");
+  });
+
+  it.each([
+    ["modified click", { ctrlKey: true }, {}],
+    ["new window", {}, { target: "_blank" }],
+    ["download", {}, { download: "asset.txt" }],
+    ["external origin", {}, { href: "https://example.com/manage" }]
+  ])("preserves native behavior for a raw internal link: %s", async (_label, eventInit, attributes) => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    vi.mocked(managementApi.listAssetLibraryItems).mockResolvedValue([assetLibraryItemWithUsage]);
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    const details = await screen.findByRole("region", { name: "Follower burst details" });
+    const displayName = within(details).getByLabelText("Display name");
+    await user.clear(displayName);
+    await user.type(displayName, "Updated follower burst");
+    const link = within(details).getByRole("link", { name: "Follower alert" });
+    Object.entries(attributes).forEach(([name, value]) => link.setAttribute(name, value));
+    link.addEventListener("click", (event) => event.preventDefault());
+
+    fireEvent.click(link, eventInit);
+
+    expect(screen.queryByRole("dialog", { name: "Leave with unsaved changes?" })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/manage/assets");
+  });
+
   it("prefills diagnostics from route context", async () => {
     window.history.replaceState(null, "", "/manage/diagnostics?reference=ref-provider-1");
     render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
@@ -162,8 +208,8 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "TTS providers" }));
     const ttsPanel = screen.getByRole("region", { name: "TTS providers content" });
-    expect(await within(ttsPanel).findByRole("heading", { name: "TTS providers" })).toBeInTheDocument();
     expect((await within(ttsPanel).findAllByText("Browser Speech")).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("heading", { name: "TTS providers" })).toHaveLength(1);
     expect(within(ttsPanel).getByRole("heading", { name: "Safety defaults" })).toBeInTheDocument();
     expect(within(ttsPanel).getByLabelText("Default voice")).toBeInTheDocument();
 
@@ -180,7 +226,8 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "Diagnostics" }));
     const diagnosticsPanel = screen.getByRole("region", { name: "Diagnostics content" });
-    expect(await within(diagnosticsPanel).findByRole("heading", { name: "Diagnostics workspace" })).toBeInTheDocument();
+    expect(await within(diagnosticsPanel).findByText(/Failures remain visible with plain-language next steps/)).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Diagnostics" })).toHaveLength(1);
     expect(within(diagnosticsPanel).getByRole("button", { name: /Event source disconnected/ })).toBeInTheDocument();
     await user.type(within(diagnosticsPanel).getByPlaceholderText("Reference ID or message"), "ref-provider-1");
     expect(within(diagnosticsPanel).getByRole("link", { name: "Open event sources" })).toHaveAttribute(
@@ -205,8 +252,8 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "Event sources" }));
     const twitchPanel = screen.getByRole("region", { name: "Event sources content" });
-    expect(await within(twitchPanel).findByRole("heading", { name: "Event sources" })).toBeInTheDocument();
     expect((await within(twitchPanel).findAllByText("Main Twitch")).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("heading", { name: "Event sources" })).toHaveLength(1);
     expect(within(twitchPanel).getByRole("columnheader", { name: "Usage" })).toBeInTheDocument();
     expect(within(twitchPanel).getByRole("columnheader", { name: "Live status" })).toBeInTheDocument();
 
@@ -434,6 +481,9 @@ function createManagementApi(): ManagementApi {
       referenceId: "ref-test",
       test: true as const
     })),
+    reportAlertEditorError: vi.fn(async (_alertId, input) => ({
+      referenceId: input.error.referenceId
+    })),
     listAssetLibraryItems: vi.fn(async () => []),
     updateAssetMetadata: vi.fn(async () => {
       throw new Error("not called");
@@ -614,6 +664,22 @@ const assetLibraryItem: AssetLibraryItem = {
   createdAt: "2026-07-15T08:00:00.000Z",
   updatedAt: "2026-07-15T08:00:00.000Z",
   usage: { assetId: "asset-image", totalUsageCount: 0, usages: [] }
+};
+
+const assetLibraryItemWithUsage: AssetLibraryItem = {
+  ...assetLibraryItem,
+  usage: {
+    assetId: assetLibraryItem.id,
+    totalUsageCount: 1,
+    usages: [{
+      setId: "set-default",
+      setName: "General Alerts",
+      eventType: "follow",
+      alertId: "alert-follow",
+      alertName: "Follower alert",
+      targetProfileIds: ["landscape"]
+    }]
+  }
 };
 
 function diagnosticsWorkspace(): DiagnosticsWorkspaceView {

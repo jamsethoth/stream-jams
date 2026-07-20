@@ -3,6 +3,9 @@
 .asset-library h2, .asset-library h3, .asset-library h4, .asset-picker h2 { margin: 0; }
 .asset-library p, .asset-picker p { color: var(--color-text-muted); margin: 4px 0 0; }
 .asset-library__toolbar, .asset-library__detail-heading, .asset-library__usage > div { align-items: center; display: flex; gap: 16px; justify-content: space-between; }
+.asset-library__filter-disclosure > summary { cursor: pointer; font-weight: 700; }
+.asset-library__filter-disclosure > summary::marker { color: var(--color-accent); }
+.asset-library__filter-disclosure[open] > summary { margin-bottom: 12px; }
 .asset-library__filters { display: grid; gap: 10px; grid-template-columns: minmax(220px, 2fr) repeat(6, minmax(112px, 1fr)); }
 .asset-library__filters label, .asset-library__metadata label, .asset-picker label { display: grid; gap: 6px; min-width: 0; }
 .asset-library__filters span, .asset-library__metadata label > span, .asset-picker label > span { color: var(--color-text-muted); font-size: 13px; font-weight: 700; }
@@ -39,7 +42,7 @@
 .asset-library__usage a { color: var(--color-accent); font-weight: 700; }
 .asset-library__usage li span { color: var(--color-text-muted); font-size: 12px; }
 .asset-library__actions { display: flex; flex-wrap: wrap; gap: 10px; }
-.asset-library__success { background: var(--color-positive-soft); border: 1px solid var(--color-positive); border-radius: 6px; color: var(--color-positive) !important; padding: 10px 12px; }
+.asset-library__delete-help { color: var(--color-text-muted); font-size: 13px; margin: -8px 0 0; }
 .asset-library__modal, .asset-picker { display: grid; gap: 16px; }
 .asset-library__warning { background: var(--color-warning-soft); border: 1px solid var(--color-warning); border-radius: 6px; color: var(--color-text) !important; padding: 10px; }
 .management-modal:has(.asset-picker) { max-width: 820px; }
@@ -51,7 +54,24 @@
 .asset-picker__options { display: grid; gap: 6px; max-height: 300px; overflow-y: auto; }
 .asset-picker__options > button { align-items: center; background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text); display: grid; gap: 10px; grid-template-columns: 64px minmax(0, 1fr); min-width: 0; padding: 9px; text-align: left; width: 100%; }
 .asset-picker .management-modal__actions > button { flex: 1 1 160px; }
-.asset-picker__options > button[aria-selected="true"] { background: var(--color-accent-soft); border-color: var(--color-accent); }
+.asset-picker__options > button[aria-pressed="true"] { background: var(--color-accent-soft); border-color: var(--color-accent); }
 .asset-picker__limits { font-size: 13px; }
+@media (min-width: 701px) { .asset-library__filter-disclosure > summary { display: none; } }
 @media (max-width: 1100px) { .asset-library__filters { grid-template-columns: repeat(4, minmax(130px, 1fr)); } .asset-library__search { grid-column: span 2; } .asset-library__workspace { grid-template-columns: 1fr; } .asset-library__details { border-left: 0; border-top: 1px solid var(--color-border); padding-left: 0; padding-top: 18px; } }
-@media (max-width: 700px) { .asset-library__toolbar { align-items: stretch; flex-direction: column; } .asset-library__filters { grid-template-columns: 1fr 1fr; } .asset-library__search { grid-column: 1 / -1; } .asset-library__facts { grid-template-columns: 1fr; } .asset-picker { width: 100%; } }
+@media (max-width: 700px) {
+  .asset-library__toolbar { align-items: stretch; flex-direction: column; }
+  .asset-library__filters { grid-template-columns: 1fr; }
+  .asset-library__search { grid-column: auto; }
+  .asset-library__facts { grid-template-columns: 1fr; }
+  .asset-picker { width: 100%; }
+  .asset-library__table-wrap { border: 0; overflow-x: visible; }
+  .asset-library__table { min-width: 0; }
+  .asset-library__table thead { display: none; }
+  .asset-library__table tbody { display: grid; gap: 12px; }
+  .asset-library__table tr { border: 1px solid var(--color-border); border-radius: 6px; display: grid; gap: 10px; grid-template-columns: 72px minmax(0, 1fr); padding: 12px; }
+  .asset-library__table td { border: 0; min-width: 0; padding: 0; }
+  .asset-library__table td:first-child { grid-row: 1 / span 2; }
+  .asset-library__table td:nth-child(n + 3) { display: none; }
+  .asset-library__table td:nth-child(5) { display: block; }
+  .asset-library__row-action { overflow-wrap: anywhere; }
+}

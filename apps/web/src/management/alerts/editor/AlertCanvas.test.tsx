@@ -1,5 +1,6 @@
 import type { AlertEditorDocument } from "@stream-jams/core";
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AlertCanvas } from "./AlertCanvas.js";
@@ -98,6 +99,82 @@ describe("AlertCanvas", () => {
     expect(container.querySelector(".alert-canvas__safe-area")).toBeInTheDocument();
     expect(container.querySelector(".alert-canvas__grid")).toBeInTheDocument();
     expect(container.querySelector(".alert-canvas__surface")).toHaveStyle({ backgroundColor: "#00ff00" });
+  });
+
+  it("renders approved aliases from the event-specific sample context", () => {
+    const textDocument: AlertEditorDocument = {
+      ...editorDocument,
+      eventType: "community_gift",
+      layers: [{
+        id: "layer-text",
+        name: "Message",
+        type: "text",
+        visible: true,
+        order: 0,
+        template: "{gifterName} gifted {giftCount}; {cumulativeGifts} total.",
+        animation: editorDocument.layers[0]!.animation
+      }],
+      targetProfiles: editorDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        layerLayouts: profile.id === "landscape"
+          ? [{ layerId: "layer-text", x: 100, y: 100, width: 800, height: 160, zIndex: 1 }]
+          : []
+      }))
+    };
+
+    render(
+      <AlertCanvas
+        assetApi={assetApi}
+        document={textDocument}
+        onGeometryChange={vi.fn()}
+        onSelectLayer={vi.fn()}
+        preview={false}
+        profileId="landscape"
+        samplePayload={{
+          actor: { id: "gifter-1", displayName: "Generous viewer" },
+          amount: 5,
+          tier: "1000",
+          cumulativeTotal: 42
+        }}
+        selectedLayerId={null}
+      />
+    );
+
+    expect(screen.getByText("Generous viewer gifted 5; 42 total.")).toBeInTheDocument();
+  });
+
+  it("selects a focused layer with Enter or Space and exposes pressed state", async () => {
+    const user = userEvent.setup();
+    const onSelectLayer = vi.fn();
+    const props = {
+      assetApi,
+      background: { mode: "checkerboard" as const, color: "#1a1e23" },
+      document: editorDocument,
+      onGeometryChange: vi.fn(),
+      onSelectLayer,
+      onViewStateChange: vi.fn(),
+      preview: false,
+      profileId: "landscape" as const,
+      samplePayload: {},
+      showGrid: true,
+      showSafeArea: true,
+      viewState: { zoom: 100, scrollLeft: 0, scrollTop: 0 }
+    };
+    const { rerender } = render(<AlertCanvas {...props} selectedLayerId={null} />);
+    const layer = screen.getByRole("button", { name: "Badge layer" });
+
+    expect(layer).toHaveAttribute("aria-pressed", "false");
+    layer.focus();
+    await user.keyboard("{Enter}");
+    expect(onSelectLayer).toHaveBeenLastCalledWith("layer-shape");
+
+    rerender(<AlertCanvas {...props} selectedLayerId="layer-shape" />);
+    const selectedLayer = screen.getByRole("button", { name: "Badge layer" });
+    expect(selectedLayer).toHaveAttribute("aria-pressed", "true");
+    selectedLayer.focus();
+    await user.keyboard(" ");
+    expect(onSelectLayer).toHaveBeenCalledTimes(2);
+    expect(props.onGeometryChange).not.toHaveBeenCalled();
   });
 });
 

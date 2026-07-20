@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, userEvent, waitFor, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
 import { AssetManager } from "./AssetManager.js";
 
@@ -13,6 +13,20 @@ export const PopulatedWithDetail: Story = {
 
 export const EmptyLibrary: Story = {
   args: { assetApi: createStoryAssetApi(), managementApi: createStoryManagementApi({ listAssetLibraryItems: async () => [] }) }
+};
+
+export const InitialLoadFailure: Story = {
+  beforeEach: () => {
+    const reportError = console.error;
+    console.error = fn();
+    return () => { console.error = reportError; };
+  },
+  args: {
+    assetApi: createStoryAssetApi(),
+    managementApi: createStoryManagementApi({
+      listAssetLibraryItems: async () => { throw new Error("The local service is unavailable."); }
+    })
+  }
 };
 
 export const FilteredToUnusedAudio: Story = {

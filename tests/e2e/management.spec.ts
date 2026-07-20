@@ -37,6 +37,7 @@ test("management diagnostics include backend error code and id", async ({ page }
 });
 
 test("event source onboarding connects validates and registers Twitch", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   const startBodies: (string | null)[] = [];
   const pollBodies: (string | null)[] = [];
   let pollCount = 0;
@@ -201,6 +202,8 @@ test("event source onboarding connects validates and registers Twitch", async ({
   const row = page.getByRole("row", { name: /Twitch/ });
   await expect(row).toContainText("In use");
   await expect(row).toContainText("Healthy");
+  await expect(row.getByRole("button", { name: "Deactivate Twitch" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await expect(row.getByRole("button", { name: /View/ })).toHaveCount(0);
   await row.click();
   await expect(page.getByRole("heading", { name: "Twitch" })).toBeVisible();
@@ -215,6 +218,7 @@ test("event source onboarding connects validates and registers Twitch", async ({
 });
 
 test("diagnostics workspace preserves correction context and copies sanitized evidence", async ({ page, context }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.route("**/auth/management/sessions", async (route) => {
     await route.fulfill({
@@ -309,8 +313,18 @@ test("diagnostics workspace preserves correction context and copies sanitized ev
     });
   });
 
-  await page.goto("/manage");
-  await page.getByRole("link", { name: "Diagnostics" }).click();
+  await page.goto("/manage/diagnostics?reference=ref-output-e2e");
+  const problemsBox = await page.getByRole("region", { name: "Open problems" }).boundingBox();
+  const exportBox = await page.getByRole("button", { name: "Export support bundle" }).boundingBox();
+  expect(exportBox?.y).toBeGreaterThan((problemsBox?.y ?? 0) + (problemsBox?.height ?? 0));
+
+  await page.getByRole("tab", { name: /Events/ }).click();
+  await page.getByLabel("Outcome").selectOption("failed");
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect(page.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Outcome")).toHaveValue("failed");
+
+  await page.getByRole("tab", { name: /Problems/ }).click();
   await page.getByPlaceholder("Reference ID or message").fill("ref-output-e2e");
 
   await expect(page.getByRole("link", { name: "Open browser sources" })).toHaveAttribute(

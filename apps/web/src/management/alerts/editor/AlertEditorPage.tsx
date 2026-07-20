@@ -1,4 +1,5 @@
 import {
+  createAlertTemplateContext,
   getAlertEditorAffectedProfileIds,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -9,10 +10,12 @@ import {
   type RegisteredProviderView,
   type TargetProfileId
 } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
+import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
+import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../../foundation/ManagementToast.js";
 import { ModalSurface } from "../../foundation/ModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
@@ -51,13 +54,13 @@ export type AlertEditorPageApi = Pick<
   | "updateAssetMetadata"
   | "saveAlertEditorDocument"
   | "sendAlertEditorTest"
->;
+> & Partial<Pick<ManagementApi, "reportAlertEditorError">>;
 
 export interface AlertEditorPageProps {
   readonly alertId: string;
   readonly assetApi: AssetApi;
   readonly managementApi: AlertEditorPageApi;
-  readonly onBack: () => void;
+  readonly onBack: (setId: string | undefined) => void;
   readonly onOpenAlert: (alertId: string, profileId: TargetProfileId) => void;
   readonly targetProfileId?: string | undefined;
 }
@@ -65,6 +68,7 @@ export interface AlertEditorPageProps {
 type InspectorTab = "layers" | "alert" | "event";
 type PickerState = { readonly layerId: string | null; readonly type: "image" | "video" | "audio" };
 type EditorCondition = AlertEditorDocument["conditions"][number];
+type ReportableActionError = ActionableManagementError & { readonly referenceId: string };
 type SaveWarningState = {
   readonly rejectNavigation?: (cause: unknown) => void;
   readonly resolveNavigation?: (saved: boolean) => void;
@@ -73,6 +77,7 @@ type SaveWarningState = {
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editor, setEditor] = useState<AlertEditorState | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
+  const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
   const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
   const [ttsProvidersLoaded, setTtsProvidersLoaded] = useState(false);
   const [ttsProviderError, setTtsProviderError] = useState<ActionableManagementError | null>(null);
@@ -80,7 +85,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTab>("layers");
   const [search, setSearch] = useState("");
-  const [canvasViews, setCanvasViews] = useState<Record<TargetProfileId, CanvasViewState>>(() => initialCanvasViews());
+  const [canvasViews, setCanvasViews] = useState<Partial<Record<TargetProfileId, CanvasViewState>>>({});
   const [fitRequestId, setFitRequestId] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
@@ -99,29 +104,37 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const previewFrameRef = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [saveWarning, setSaveWarning] = useState<SaveWarningState | null>(null);
   const [copyDesignOpen, setCopyDesignOpen] = useState(false);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
+  const tabRefs = useRef<Record<InspectorTab, HTMLButtonElement | null>>({
+    layers: null,
+    alert: null,
+    event: null
+  });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
 
   useEffect(() => {
     let active = true;
     setEditor(null);
     setSetDetail(null);
+    setLoadedSetId(undefined);
     setError(null);
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
     void props.managementApi.getAlertEditorDocument(props.alertId).then(async (document) => {
+      if (!active) return;
+      setLoadedSetId(document.setId);
       const loadedSetDetail = await props.managementApi.getAlertSet(document.setId);
       if (!active) return;
       setEditor(createEditorState(document));
       setProfileId(props.targetProfileId === "vertical" ? "vertical" : "landscape");
-      setCanvasViews(initialCanvasViews());
+      setCanvasViews({});
       setSelectedLayerId(document.layers[0]?.id ?? null);
       const firstSample = document.samplePayloads[0] ?? null;
       setSampleId(firstSample?.id ?? null);
@@ -147,6 +160,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     return () => { active = false; };
   }, [props.alertId, props.managementApi, props.targetProfileId]);
 
+  const showActionError = useCallback((nextError: ReportableActionError) => {
+    setNotice(null);
+    setError(nextError);
+    const report = props.managementApi.reportAlertEditorError;
+    if (report === undefined || !nextError.referenceId.startsWith("ui_")) return;
+    void report(props.alertId, { setId: loadedSetId ?? null, error: nextError }).catch((cause: unknown) => {
+      console.error(`[${nextError.referenceId}] Alert editor error could not be recorded in Diagnostics.`, cause);
+    });
+  }, [loadedSetId, props.alertId, props.managementApi]);
+
   useEffect(() => {
     if (!previewPlaying || editor === null) return;
     const durationMs = editor.document.durationMs;
@@ -171,12 +194,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
-      setError(missingActiveTtsProviderError());
+      showActionError(missingActiveTtsProviderError());
       throw new Error("An active TTS provider is required before enabled TTS layers can be saved.");
     }
     const submittedDocument = applyActiveTtsProvider(editor.document, activeTtsProvider);
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const saved = await props.managementApi.saveAlertEditorDocument(
         props.alertId,
@@ -189,14 +213,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           ? markEditorSaved({ ...current, document: saved })
           : { ...current, savedDocument: saved };
       });
-      setNotice("Alert saved.");
+      setNotice({ tone: "success", message: "Alert saved." });
     } catch (cause) {
-      setError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
+      showActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
       throw cause;
     } finally {
       setBusy(false);
     }
-  }, [activeTtsProvider, editor, props.alertId, props.managementApi]);
+  }, [activeTtsProvider, editor, props.alertId, props.managementApi, showActionError]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
     if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor).length === 0) return false;
@@ -205,19 +229,19 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSetDetail(latestSetDetail);
       return latestSetDetail.overview.active;
     } catch (cause) {
-      setError(actionableError(
+      showActionError(actionableError(
         "The alert set status could not be checked",
         cause,
         "Confirm the local service is running, then try saving again."
       ));
       throw cause;
     }
-  }, [editor, props.managementApi]);
+  }, [editor, props.managementApi, showActionError]);
 
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
     setError(null);
-    setNotice("Unsaved changes reverted.");
+    setNotice({ tone: "success", message: "Unsaved changes reverted." });
   }, []);
 
   const saveForNavigation = useCallback(async () => {
@@ -244,7 +268,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const document = editor?.document ?? null;
   const selectedLayer = document?.layers.find((layer) => layer.id === selectedLayerId) ?? null;
   const profile = document?.targetProfiles.find((candidate) => candidate.id === profileId) ?? null;
-  const canvasView = canvasViews[profileId];
+  const storedCanvasView = canvasViews[profileId];
+  const canvasView = storedCanvasView ?? DEFAULT_CANVAS_VIEW;
   const documentConditionError = document === null ? null : alertDocumentConditionError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
   const visibleAlerts = useMemo(() => {
@@ -311,7 +336,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     if (request === null) return;
     updateDocument((current) => copyProfileLayout(current, request.sourceId, request.targetId));
     setProfileCopy(null);
-    setNotice(`${profileLabel(request.sourceId)} layout copied to ${profileLabel(request.targetId)}. Review the generated layout before enabling it.`);
+    setNotice({ tone: "warning", message: `${profileLabel(request.sourceId)} layout copied to ${profileLabel(request.targetId)}.`, detail: "Review the generated layout before enabling it." });
   }
 
   function chooseSample(nextSampleId: string) {
@@ -340,12 +365,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setPreviewPlaying(true);
     setPreviewElapsedMs(0);
     setPreviewRunId((current) => current + 1);
-    setNotice("Local preview is running.");
+    setNotice({ tone: "success", message: "Local preview is running." });
     void playPreviewMedia(document, samplePayload);
   }
 
   async function playPreviewMedia(currentDocument: AlertEditorDocument, payload: Record<string, unknown>) {
     try {
+      const templateContext = createAlertTemplateContext({ eventType: currentDocument.eventType, samplePayload: payload });
       if (previewIncludeAudio) {
         const audioLayers = currentDocument.layers.filter(
           (layer): layer is Extract<AlertLayer, { type: "audio" }> => layer.visible && layer.type === "audio"
@@ -367,22 +393,23 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         currentDocument.layers.filter(
           (layer): layer is Extract<AlertLayer, { type: "tts" }> => layer.visible && layer.type === "tts" && layer.enabled
         ).forEach((layer) => {
-          speechSynthesis.speak(new SpeechSynthesisUtterance(renderTemplateValue(layer.template, payload)));
+          speechSynthesis.speak(new SpeechSynthesisUtterance(renderTemplateValue(layer.template, templateContext)));
         });
       }
     } catch (cause) {
-      setError(actionableError("Local preview media could not be played", cause, "Check the selected audio asset and browser audio permissions, then replay the preview."));
+      showActionError(actionableError("Local preview media could not be played", cause, "Check the selected audio asset and browser audio permissions, then replay the preview."));
     }
   }
 
   async function sendTest() {
     if (document === null || samplePayload === null || profile === null) return;
     if (sendIncludeTts && hasEnabledTts(document) && activeTtsProvider === null) {
-      setError(missingActiveTtsProviderError());
+      showActionError(missingActiveTtsProviderError());
       return;
     }
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const result = await props.managementApi.sendAlertEditorTest(props.alertId, {
         document: applyActiveTtsProvider(document, activeTtsProvider),
@@ -391,9 +418,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         includeAudio: sendIncludeAudio,
         includeTts: sendIncludeTts
       });
-      setNotice(`Queued on ${profileLabel(profileId)}. Reference ${result.referenceId}.`);
+      setNotice({ tone: "success", message: `Queued on ${profileLabel(profileId)}. Reference ${result.referenceId}.` });
     } catch (cause) {
-      setError(actionableError("The alert test was not sent", cause, `Connect and review the ${profileLabel(profileId)} output, then try again.`));
+      showActionError(actionableError("The alert test was not sent", cause, `Connect and review the ${profileLabel(profileId)} output, then try again.`));
     } finally {
       setBusy(false);
     }
@@ -431,13 +458,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   function addSimpleLayer(type: "text" | "tts") {
     if (document === null) return;
     const id = nextLayerId(document, type);
+    const defaultVariable = document.templateVariables?.[0]?.key;
+    const defaultTemplate = defaultVariable === undefined ? "" : `{${defaultVariable}}`;
     const layer = type === "text"
-      ? { ...layerBase(id, "Text", type, document.layers.length), template: "{userName}" }
+      ? { ...layerBase(id, "Text", type, document.layers.length), template: defaultTemplate }
       : {
           ...layerBase(id, "Text to speech", type, document.layers.length),
           enabled: activeTtsProvider !== null,
           providerId: activeTtsProvider?.kind ?? "browser-speech",
-          template: "{userName}"
+          template: defaultTemplate
         };
     updateDocument((current) => addLayer(current, layer, type === "text" ? defaultGeometryByProfile() : {}));
     setSelectedLayerId(id);
@@ -465,18 +494,51 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setPicker(null);
   }
 
+  function handleInspectorTabKeyDown(event: KeyboardEvent<HTMLButtonElement>, currentTab: InspectorTab) {
+    const tabs: readonly InspectorTab[] = ["layers", "alert", "event"];
+    const currentIndex = tabs.indexOf(currentTab);
+    let nextTab: InspectorTab | undefined;
+
+    switch (event.key) {
+      case "ArrowRight":
+      case "ArrowDown":
+        nextTab = tabs[(currentIndex + 1) % tabs.length];
+        break;
+      case "ArrowLeft":
+      case "ArrowUp":
+        nextTab = tabs[(currentIndex - 1 + tabs.length) % tabs.length];
+        break;
+      case "Home":
+        nextTab = tabs[0];
+        break;
+      case "End":
+        nextTab = tabs[tabs.length - 1];
+        break;
+      default:
+        return;
+    }
+
+    if (nextTab === undefined) {
+      return;
+    }
+    event.preventDefault();
+    setTab(nextTab);
+    tabRefs.current[nextTab]?.focus();
+  }
+
   async function applyCopiedDesign() {
     if (copyDesignSourceId === "") return;
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const source = await props.managementApi.getAlertEditorDocument(copyDesignSourceId);
       updateDocument((target) => copyAlertDesign(source, target));
       setSelectedLayerId(source.layers[0]?.id ?? null);
       setCopyDesignOpen(false);
-      setNotice("Design copied. Review the result, then Save to keep it.");
+      setNotice({ tone: "warning", message: "Design copied.", detail: "Review the result, then Save to keep it." });
     } catch (cause) {
-      setError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source."));
+      showActionError(actionableError("The alert design was not copied", cause, "Choose another alert or return to Alerts and review the source."));
     } finally {
       setBusy(false);
     }
@@ -485,7 +547,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   if (document === null || editor === null || profile === null) {
     return error === null
       ? <p className="management-empty" role="status">Loading alert editor...</p>
-      : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={props.onBack} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
+      : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={() => props.onBack(loadedSetId)} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
   }
 
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
@@ -494,7 +556,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
         <div>
-          <button className="alert-editor-page__back" onClick={props.onBack} type="button">Back to alerts</button>
+          <button className="alert-editor-page__back" onClick={() => props.onBack(document.setId)} type="button">Back to alerts</button>
+          <Breadcrumbs items={["Alerts", setDetail?.overview.name ?? "Alert set", document.name]} />
           <div className="alert-editor-page__title-row">
             <h2>{document.name}</h2>
             <StatusBadge label={isEditorDirty(editor) ? "Unsaved" : "Saved"} tone={isEditorDirty(editor) ? "warning" : "positive"} />
@@ -517,8 +580,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         <p>Open this alert on a screen wider than 700px to edit layers and layouts.</p>
       </section>
 
-      {error === null ? null : <ManagementErrorBanner error={error} />}
-      {notice === null ? null : <p className="alert-editor-page__notice" role="status">{notice}</p>}
+      {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
+      {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event condition needs correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
       {validationIssues.length === 0 ? null : (
         <section aria-label="Validation issues" className="alert-editor-page__validation">
@@ -606,65 +669,94 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             selectedLayerId={selectedLayerId}
             showGrid={showGrid}
             showSafeArea={showSafeArea}
-            viewState={canvasView}
+            {...(storedCanvasView === undefined ? {} : { viewState: storedCanvasView })}
           />
         </main>
 
         <aside className="alert-editor-page__inspector" aria-label="Alert inspector">
           <div className="alert-editor-page__tabs" role="tablist" aria-label="Inspector sections">
             {(["layers", "alert", "event"] as const).map((value) => (
-              <button aria-selected={tab === value} key={value} onClick={() => setTab(value)} role="tab" type="button">{capitalize(value)}</button>
+              <button
+                aria-controls={`alert-editor-panel-${value}`}
+                aria-selected={tab === value}
+                id={`alert-editor-tab-${value}`}
+                key={value}
+                onClick={() => setTab(value)}
+                onKeyDown={(event) => handleInspectorTabKeyDown(event, value)}
+                ref={(element) => { tabRefs.current[value] = element; }}
+                role="tab"
+                tabIndex={tab === value ? 0 : -1}
+                type="button"
+              >
+                {capitalize(value)}
+              </button>
             ))}
           </div>
-          {tab === "layers" ? (
-            <LayerInspector
-              activeTtsProvider={activeTtsProvider}
-              document={document}
-              onAddAsset={(type) => setPicker({ layerId: null, type })}
-              onAddSimple={addSimpleLayer}
-              onChange={updateDocument}
-              onChooseAsset={(layer) => setPicker({ layerId: layer.id, type: layer.type as "image" | "video" | "audio" })}
-              onSelect={setSelectedLayerId}
-              profileId={profileId}
-              selectedLayer={selectedLayer}
-              ttsProviderError={ttsProviderError}
-              ttsProvidersLoaded={ttsProvidersLoaded}
+          <div
+            aria-labelledby={`alert-editor-tab-${tab}`}
+            id={`alert-editor-panel-${tab}`}
+            role="tabpanel"
+            tabIndex={0}
+          >
+            {tab === "layers" ? (
+              <LayerInspector
+                activeTtsProvider={activeTtsProvider}
+                document={document}
+                onAddAsset={(type) => setPicker({ layerId: null, type })}
+                onAddSimple={addSimpleLayer}
+                onChange={updateDocument}
+                onChooseAsset={(layer) => setPicker({ layerId: layer.id, type: layer.type as "image" | "video" | "audio" })}
+                onSelect={setSelectedLayerId}
+                profileId={profileId}
+                selectedLayer={selectedLayer}
+                ttsProviderError={ttsProviderError}
+                ttsProvidersLoaded={ttsProvidersLoaded}
+              />
+            ) : tab === "alert" ? (
+              <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
+                setCopyDesignSourceId(visibleAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
+                setCopyDesignOpen(true);
+              }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
+            ) : (
+              <EventInspector
+                document={document}
+                previewIncludeAudio={previewIncludeAudio}
+                previewIncludeTts={previewIncludeTts}
+                sendIncludeAudio={sendIncludeAudio}
+                sendIncludeTts={sendIncludeTts}
+                onPreviewIncludeAudio={setPreviewIncludeAudio}
+                onPreviewIncludeTts={setPreviewIncludeTts}
+                onSendIncludeAudio={setSendIncludeAudio}
+                onSendIncludeTts={setSendIncludeTts}
+                onChange={updateDocument}
+                onPreview={previewLocally}
+                onResetSample={() => sampleId === null ? undefined : chooseSample(sampleId)}
+                onSample={chooseSample}
+                onSampleDraft={(value) => {
+                  setSampleDraft(value);
+                  const parsed = parseSample(value);
+                  setSampleError(parsed === null ? "Sample payload must be a valid JSON object." : validateAlertSamplePayload(document.eventType, parsed));
+                  setPreview(false);
+                  setPreviewPlaying(false);
+                  setPreviewElapsedMs(0);
+                }}
+                onSend={() => void sendTest()}
+                sampleDraft={sampleDraft}
+                sampleError={sampleError}
+                sampleId={sampleId}
+                sendDisabled={!canSend}
+              />
+            )}
+          </div>
+          {(["layers", "alert", "event"] as const).filter((value) => value !== tab).map((value) => (
+            <div
+              aria-labelledby={`alert-editor-tab-${value}`}
+              hidden
+              id={`alert-editor-panel-${value}`}
+              key={value}
+              role="tabpanel"
             />
-          ) : tab === "alert" ? (
-            <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
-              setCopyDesignSourceId(visibleAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
-              setCopyDesignOpen(true);
-            }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
-          ) : (
-            <EventInspector
-              document={document}
-              previewIncludeAudio={previewIncludeAudio}
-              previewIncludeTts={previewIncludeTts}
-              sendIncludeAudio={sendIncludeAudio}
-              sendIncludeTts={sendIncludeTts}
-              onPreviewIncludeAudio={setPreviewIncludeAudio}
-              onPreviewIncludeTts={setPreviewIncludeTts}
-              onSendIncludeAudio={setSendIncludeAudio}
-              onSendIncludeTts={setSendIncludeTts}
-              onChange={updateDocument}
-              onPreview={previewLocally}
-              onResetSample={() => sampleId === null ? undefined : chooseSample(sampleId)}
-              onSample={chooseSample}
-              onSampleDraft={(value) => {
-                setSampleDraft(value);
-                const parsed = parseSample(value);
-                setSampleError(parsed === null ? "Sample payload must be a valid JSON object." : validateAlertSamplePayload(document.eventType, parsed));
-                setPreview(false);
-                setPreviewPlaying(false);
-                setPreviewElapsedMs(0);
-              }}
-              onSend={() => void sendTest()}
-              sampleDraft={sampleDraft}
-              sampleError={sampleError}
-              sampleId={sampleId}
-              sendDisabled={!canSend}
-            />
-          )}
+          ))}
         </aside>
       </div>
 
@@ -1124,12 +1216,7 @@ function alertDocumentConditionError(document: AlertEditorDocument): string | nu
   return null;
 }
 
-function initialCanvasViews(): Record<TargetProfileId, CanvasViewState> {
-  return {
-    landscape: { zoom: 100, scrollLeft: 0, scrollTop: 0 },
-    vertical: { zoom: 100, scrollLeft: 0, scrollTop: 0 }
-  };
-}
+const DEFAULT_CANVAS_VIEW: CanvasViewState = { zoom: 100, scrollLeft: 0, scrollTop: 0 };
 
 function profileLayoutChanged(
   savedDocument: AlertEditorDocument,
@@ -1236,7 +1323,7 @@ function formatTtsProviderKind(kind: RegisteredProviderView["kind"]): string {
   return kind === "speakerbot" ? "Speaker.bot" : kind === "browser-speech" ? "Browser Speech" : capitalize(kind);
 }
 
-function missingActiveTtsProviderError(): ActionableManagementError {
+function missingActiveTtsProviderError(): ReportableActionError {
   return {
     ...actionableError(
       "Enabled TTS has no active provider",
@@ -1247,16 +1334,17 @@ function missingActiveTtsProviderError(): ActionableManagementError {
   };
 }
 
-function actionableError(summary: string, cause: unknown, nextStep: string): ActionableManagementError {
+function actionableError(summary: string, cause: unknown, nextStep: string): ReportableActionError {
   const message = cause instanceof Error ? cause.message : "The request failed for an unknown reason.";
-  const referenceMatch = /(?:reference|id)[: ]+([A-Za-z0-9_-]+)/iu.exec(message);
+  const referenceId = /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(message)?.[0]
+    ?? `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   return {
     summary,
     cause: message,
     nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),
-    referenceId: referenceMatch?.[1] ?? null,
+    referenceId,
     correction: null
   };
 }

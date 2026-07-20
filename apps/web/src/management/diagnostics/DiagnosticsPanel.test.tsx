@@ -1,9 +1,10 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DiagnosticsDebugExportView, DiagnosticsExportView } from "../management-api.js";
 import { DiagnosticsPanel } from "./DiagnosticsPanel.js";
+import { formatDateTime } from "../foundation/formatters.js";
 
 afterEach(() => {
   cleanup();
@@ -50,12 +51,28 @@ describe("DiagnosticsPanel", () => {
     expect(within(detail).getByRole("heading", { name: "subscription" })).toBeInTheDocument();
     expect(within(detail).getByText("Alert rendering failed.")).toBeInTheDocument();
     expect(within(detail).getByText("Live")).toBeInTheDocument();
-    expect(within(detail).getByText(new Date("2026-07-15T22:28:07.000Z").toLocaleString())).toBeInTheDocument();
+    expect(within(detail).getByText(formatDateTime("2026-07-15T22:28:07.000Z"))).toBeInTheDocument();
     expect(within(detail).getAllByText(/viewer42/)).toHaveLength(2);
     expect(within(detail).getByRole("link", { name: "Open alert" })).toHaveAttribute(
       "href",
       "/manage/modules/alerts/editor/alert-sub?diagnostic=ref-event-2"
     );
+  });
+
+  it("preserves the active tab and filter when refreshed after a reference-ID deep link", async () => {
+    const user = userEvent.setup();
+    const api = managementApi();
+    api.getDiagnosticsWorkspace = vi.fn(async () => workspace());
+    render(<DiagnosticsPanel initialReferenceId="ref-provider-1" managementApi={api} />);
+
+    await screen.findByRole("heading", { name: "Open problems" });
+    await user.click(screen.getByRole("tab", { name: /Events/ }));
+    await user.selectOptions(screen.getByLabelText("Outcome"), "failed");
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(api.getDiagnosticsWorkspace).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Outcome")).toHaveValue("failed");
   });
 
   it("copies only the sanitized raw-log bundle", async () => {
@@ -73,7 +90,7 @@ describe("DiagnosticsPanel", () => {
     const copied = String(writeText.mock.calls[0]?.[0]);
     expect(copied).toContain("[REDACTED]");
     expect(copied).not.toContain("oauth-secret");
-    expect(await screen.findByText("Sanitized event copied")).toBeInTheDocument();
+    expect((await screen.findByText("Sanitized event copied")).closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
   it("opens a referenced historical failure in raw logs when it is no longer an active problem", async () => {
@@ -118,6 +135,7 @@ describe("DiagnosticsPanel", () => {
     await user.click(screen.getByRole("button", { name: "Copy error JSON" }));
 
     expect(await screen.findByText("Error JSON could not be copied")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveClass("management-toast--failure");
     expect(screen.getByRole("alert")).toHaveTextContent("Allow clipboard access, then retry");
   });
 
