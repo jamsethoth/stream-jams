@@ -209,7 +209,7 @@ function quoteIdentifier(value) {
 }
 
 function renderFragment(schemaModel) {
-  const serializedModel = JSON.stringify(schemaModel)
+  const serializedModel = JSON.stringify(schemaModel, null, 2)
     .replaceAll("<", "\\u003c")
     .replaceAll("\u2028", "\\u2028")
     .replaceAll("\u2029", "\\u2029");
