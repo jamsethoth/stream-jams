@@ -209,7 +209,10 @@ function quoteIdentifier(value) {
 }
 
 function renderFragment(schemaModel) {
-  const encodedModel = Buffer.from(JSON.stringify(schemaModel), "utf8").toString("base64");
+  const serializedModel = JSON.stringify(schemaModel)
+    .replaceAll("<", "\\u003c")
+    .replaceAll("\u2028", "\\u2028")
+    .replaceAll("\u2029", "\\u2029");
   return `
 <div id="stream-jams-schema-explorer">
   <p class="text-muted" id="sj-schema-context"></p>
@@ -251,8 +254,7 @@ function renderFragment(schemaModel) {
 
 <script>
 (function () {
-  const modelBytes = Uint8Array.from(atob("__SCHEMA_MODEL_BASE64__"), function (character) { return character.charCodeAt(0); });
-  const model = JSON.parse(new TextDecoder().decode(modelBytes));
+  const model = __SCHEMA_MODEL__;
   const root = document.getElementById("stream-jams-schema-explorer");
   const context = root.querySelector("#sj-schema-context");
   const searchInput = root.querySelector("#sj-schema-search");
@@ -426,5 +428,5 @@ function renderFragment(schemaModel) {
   selectTable(selectedTableId);
 })();
 </script>
-`.replace("__SCHEMA_MODEL_BASE64__", encodedModel).trimStart();
+`.replace("__SCHEMA_MODEL__", serializedModel).trimStart();
 }
