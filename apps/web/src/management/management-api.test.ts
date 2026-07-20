@@ -138,7 +138,7 @@ describe("createHttpManagementApi", () => {
     await expect(api.getDiagnosticsWorkspace()).resolves.toEqual({ problems: [], events: [], rawLogs: [] });
     await expect(api.getConfigurationBackupSummary()).resolves.toMatchObject({ state: "ready" });
     const archive = backupArchive();
-    await expect(api.exportConfigurationBackup()).resolves.toMatchObject({ manifest: { archiveVersion: 1 } });
+    await expect(api.exportConfigurationBackup()).resolves.toMatchObject({ manifest: { archiveVersion: 2 } });
     await expect(api.preflightConfigurationRestore(archive)).resolves.toMatchObject({ state: "valid" });
     await expect(api.restoreConfiguration({ archive, archiveId: backupPreflight().archiveId, confirmation: "RESTORE", regenerateRouteKeys: true })).resolves.toMatchObject({ state: "completed" });
     await expect(api.openDataFolder()).resolves.toEqual({ dataDirectory: "C:/Users/James/.stream-jams/data" });
@@ -948,7 +948,7 @@ interface UiContractManagementApi {
 
 function backupArchive() {
   return {
-    manifest: { format: "stream-jams-backup", archiveVersion: 1, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
+    manifest: { format: "stream-jams-backup", archiveVersion: 2, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
     configuration: { appConfig: {}, tables: {}, providerReconnectMetadata: [], overlayOutputs: [] },
     assets: []
   } as const;

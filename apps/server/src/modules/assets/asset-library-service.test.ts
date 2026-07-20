@@ -89,12 +89,24 @@ describe("AssetLibraryService", () => {
     expect(fixture.assets.records).toContainEqual(asset);
     expect(fixture.metadata.records.get(asset.id)).toMatchObject({ displayName: "Follower art" });
   });
+
+  it("translates a raced database asset reference into the existing in-use error", async () => {
+    const fixture = createFixture({
+      rules: [],
+      rulesAfterDeleteError: [rule],
+      deleteError: new Error("FOREIGN KEY constraint failed")
+    });
+
+    await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toBeInstanceOf(AssetLibraryInUseError);
+    expect(fixture.store.rolledBack).toEqual([asset.storagePath]);
+  });
 });
 
 function createFixture(options: {
   readonly rules?: readonly AlertRule[];
   readonly targetProfileIds?: readonly ("landscape" | "vertical")[];
   readonly deleteError?: Error;
+  readonly rulesAfterDeleteError?: readonly AlertRule[];
 } = {}) {
   const assets = new MemoryAssetRepository([asset], options.deleteError);
   const metadata = new MemoryMetadataRepository();
@@ -105,7 +117,11 @@ function createFixture(options: {
     assetStore: store,
     alertRepository: {
       async listCollections() { return collections; },
-      async listRules() { return options.rules ?? [rule]; }
+      async listRules() {
+        return assets.deleteAttempted && options.rulesAfterDeleteError !== undefined
+          ? options.rulesAfterDeleteError
+          : options.rules ?? [rule];
+      }
     },
     ruleMetadataRepository: {
       async findRule() {
@@ -123,11 +139,16 @@ function createFixture(options: {
 }
 
 class MemoryAssetRepository {
+  deleteAttempted = false;
   constructor(readonly records: AssetRecord[], readonly deleteError?: Error) {}
   async list() { return this.records; }
   async findById(assetId: string) { return this.records.find((record) => record.id === assetId) ?? null; }
   async save(record: AssetRecord) { this.records.splice(0, this.records.length, ...this.records.filter((item) => item.id !== record.id), record); return record; }
-  async delete(assetId: string) { if (this.deleteError !== undefined) throw this.deleteError; this.records.splice(0, this.records.length, ...this.records.filter((record) => record.id !== assetId)); }
+  async delete(assetId: string) {
+    this.deleteAttempted = true;
+    if (this.deleteError !== undefined) throw this.deleteError;
+    this.records.splice(0, this.records.length, ...this.records.filter((record) => record.id !== assetId));
+  }
 }
 
 class MemoryMetadataRepository {

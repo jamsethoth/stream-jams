@@ -45,6 +45,7 @@ import { AlertSetManagementService } from "../modules/alerts/alert-set-managemen
 import { SqliteAlertSetMetadataRepository } from "../modules/alerts/sqlite-alert-set-metadata-repository.js";
 import { AlertEditorService } from "../modules/alerts/alert-editor-service.js";
 import { SqliteAlertEditorDocumentRepository } from "../modules/alerts/sqlite-alert-editor-document-repository.js";
+import { SqliteAlertAggregateMutationStore } from "../modules/alerts/sqlite-alert-aggregate-mutation-store.js";
 import { LocalManagementSessionService } from "../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
@@ -57,7 +58,6 @@ import { SqliteConfigurationSnapshotRepository } from "../modules/backup/sqlite-
 import {
   currentSchemaVersion,
   openStreamJamsDatabase,
-  runInTransactionAsync,
   type StreamJamsDatabase
 } from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
@@ -114,7 +114,11 @@ import {
   type TwitchEventSubRuntimeDiagnostic,
   type TwitchEventSubRuntimeState
 } from "../modules/twitch/twitch-eventsub-runtime-service.js";
-import { defaultTwitchClientId, TwitchOAuthService } from "../modules/twitch/twitch-oauth-service.js";
+import {
+  createTwitchTokenSecretRef,
+  defaultTwitchClientId,
+  TwitchOAuthService
+} from "../modules/twitch/twitch-oauth-service.js";
 import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
 import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../server/port-availability.js";
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
@@ -246,9 +250,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     logDirectory,
     logSettings,
     logRetentionService,
+    diagnosticsLogRepository,
     pathOpener: createPlatformPathOpener(),
     now
   });
+  await localMaintenanceService.clearOldLogs();
   const overlayOutputManagementService = new OverlayOutputManagementService({
     overlayAccessService,
     overlayKeyRepository,
@@ -349,7 +355,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     ],
     assetRepository,
-    findEditorDocument: (alertId) => alertEditorDocumentRepository.find(alertId),
+    findEditorDocuments: (alertIds) => alertEditorDocumentRepository.findMany(alertIds),
     overlayPlaybackSink: overlayGateway,
     ttsService,
     logger: runtimeLogger,
@@ -493,6 +499,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now
   });
   const alertSetMetadataRepository = new SqliteAlertSetMetadataRepository(database.connection);
+  const alertAggregateMutationStore = new SqliteAlertAggregateMutationStore(
+    database.connection,
+    alertRepository,
+    alertSetMetadataRepository,
+    alertEditorDocumentRepository
+  );
   const listAlertBrowserSources = async (): Promise<readonly AlertBrowserSourceView[]> => {
       const origin = `http://${initialConfig.server.host}:${initialConfig.server.port}`;
       const outputs = await overlayOutputManagementService.listOutputs(origin);
@@ -552,12 +564,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     generateId: () => `editor_${randomBytes(12).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
-    async saveAtomically(input) {
-      return runInTransactionAsync(database.connection, async () => {
-        alertRepository.saveRuleSync(input.rule);
-        alertSetMetadataRepository.saveRuleSync(input.metadata);
-        return alertEditorDocumentRepository.saveSync(input.document);
+    saveAtomically(input) {
+      alertAggregateMutationStore.commit({
+        expectedRules: [input.expectedRule],
+        saveRules: [input.rule],
+        saveRuleMetadata: [input.metadata],
+        saveDocuments: [input.document]
       });
+      return Promise.resolve(input.document);
     },
     now
   });
@@ -566,7 +580,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     metadataRepository: alertSetMetadataRepository,
     documents: alertEditorDocumentRepository,
     getEditorDocument: (editorId) => alertEditorService.getDocument(editorId),
-    runAtomically: (work) => runInTransactionAsync(database.connection, work),
+    generateId: generateAlertConfigurationId,
+    mutationStore: alertAggregateMutationStore,
     listBrowserSources: listAlertBrowserSources
   });
   const diagnosticsService = new DiagnosticsService({
@@ -685,6 +700,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         restoredOrigin
       );
       return { label: regenerated.output.label, url: regenerated.url };
+    },
+    twitchCredentials: {
+      async findConnectedAccountId() {
+        return (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null;
+      },
+      async deleteTokenSecrets(accountId) {
+        await Promise.all([
+          secretStore.deleteSecret(createTwitchTokenSecretRef(accountId, "access_token")),
+          secretStore.deleteSecret(createTwitchTokenSecretRef(accountId, "refresh_token"))
+        ]);
+      }
     },
     runExclusive: (work) => maintenanceGate.runMaintenance(work)
   });

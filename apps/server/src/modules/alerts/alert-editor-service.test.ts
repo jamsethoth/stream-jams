@@ -19,7 +19,8 @@ import type { AlertRuleManagementMetadata } from "./alert-set-management-service
 import { SqliteAlertRepository } from "./sqlite-alert-repository.js";
 import { SqliteAlertEditorDocumentRepository } from "./sqlite-alert-editor-document-repository.js";
 import { SqliteAlertSetMetadataRepository } from "./sqlite-alert-set-metadata-repository.js";
-import { createInMemoryStreamJamsDatabase, runInTransaction } from "../db/database.js";
+import { SqliteAlertAggregateMutationStore } from "./sqlite-alert-aggregate-mutation-store.js";
+import { createInMemoryStreamJamsDatabase } from "../db/database.js";
 
 const rule: AlertRule = {
   id: "alert-follow",
@@ -506,6 +507,12 @@ describe("AlertEditorService", () => {
     const rules = new SqliteAlertRepository(database.connection);
     const metadata = new SqliteAlertSetMetadataRepository(database.connection);
     const storedDocuments = new SqliteAlertEditorDocumentRepository(database.connection);
+    const mutations = new SqliteAlertAggregateMutationStore(
+      database.connection,
+      rules,
+      metadata,
+      storedDocuments
+    );
     await rules.saveCollection({ id: "set-default", name: "Default", enabled: false });
     await rules.saveRule(rule);
     const options = {
@@ -516,20 +523,21 @@ describe("AlertEditorService", () => {
       enqueueTest: async () => undefined,
       generateId: () => "generated",
       generateReferenceId: () => "reference",
-      async saveAtomically(input: Parameters<NonNullable<AlertEditorServiceOptions["saveAtomically"]>>[0]) {
-        return runInTransaction(database.connection, () => {
-          rules.saveRuleSync(input.rule);
-          metadata.saveRuleSync(input.metadata);
-          storedDocuments.saveSync(input.document);
-          throw new Error("document save failed");
+      saveAtomically(input: Parameters<NonNullable<AlertEditorServiceOptions["saveAtomically"]>>[0]) {
+        mutations.commit({
+          expectedRules: [input.expectedRule],
+          saveRules: [input.rule],
+          saveRuleMetadata: [input.metadata],
+          saveDocuments: [input.document, { ...input.document, id: "missing-parent", parentAlertId: "missing" }]
         });
+        return Promise.resolve(input.document);
       }
     };
     const service = new AlertEditorService(options);
     const document = await service.getDocument(rule.id);
 
     await expect(service.saveDocument(rule.id, { ...document, name: "Partially saved" })).rejects.toThrow(
-      "document save failed"
+      "alert editor document owner must be an alert rule or alert variant"
     );
 
     await expect(rules.findRuleById(rule.id)).resolves.toEqual(rule);
@@ -544,6 +552,7 @@ function createHarness(
 ) {
   const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
     find: vi.fn(async () => null),
+    findMany: vi.fn(async () => new Map()),
     save: vi.fn(async (document: AlertEditorDocument) => document),
     delete: vi.fn(async () => undefined)
   };
@@ -577,6 +586,11 @@ function createHarness(
 function createHarnessWithRule(ruleFixture: AlertRule, storedDocument: AlertEditorDocument | null = null) {
   const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
     find: vi.fn(async (editorId: string) => editorId === storedDocument?.id ? storedDocument : null),
+    findMany: vi.fn(async (editorIds: readonly string[]) =>
+      storedDocument !== null && editorIds.includes(storedDocument.id)
+        ? new Map([[storedDocument.id, storedDocument]])
+        : new Map()
+    ),
     save: vi.fn(async (document: AlertEditorDocument) => document),
     delete: vi.fn(async () => undefined)
   };

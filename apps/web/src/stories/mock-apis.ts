@@ -249,7 +249,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
 
 export function storyBackupArchive() {
   return {
-    manifest: { format: "stream-jams-backup" as const, archiveVersion: 1 as const, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
+    manifest: { format: "stream-jams-backup" as const, archiveVersion: 2 as const, appVersion: "0.0.0", schemaVersion: 9, createdAt: "2026-07-15T05:00:00.000Z", configurationChecksum: `sha256:${"a".repeat(64)}`, configurationRecordCount: 0, assetCount: 0, totalAssetBytes: 0 },
     configuration: { appConfig: {}, tables: {}, providerReconnectMetadata: [], overlayOutputs: [] },
     assets: []
   };

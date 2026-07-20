@@ -498,6 +498,13 @@ class InMemoryAssetRepository implements AssetRepository {
     return this.#records.get(assetId) ?? null;
   }
 
+  async findManyByIds(assetIds: readonly string[]): Promise<ReadonlyMap<string, AssetRecord>> {
+    return new Map(assetIds.flatMap((assetId) => {
+      const record = this.#records.get(assetId);
+      return record === undefined ? [] : [[assetId, record]];
+    }));
+  }
+
   async list(): Promise<readonly AssetRecord[]> {
     this.listCount += 1;
     return Array.from(this.#records.values());

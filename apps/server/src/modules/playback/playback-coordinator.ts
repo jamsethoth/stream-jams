@@ -5,6 +5,7 @@ import type {
   AlertResolver,
   AlertResolverTarget,
   AlertService,
+  AlertVariant,
   AssetRepository,
   NormalizedStreamEvent,
   PlaybackCooldownService,
@@ -58,9 +59,9 @@ export interface PlaybackCoordinatorDependencies {
   readonly defaultTarget: AlertResolverTarget;
   readonly additionalTargets?: readonly AlertResolverTarget[];
   readonly visualAssetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
-  readonly assetRepository?: Pick<AssetRepository, "findById">;
+  readonly assetRepository?: Pick<AssetRepository, "findManyByIds">;
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
-  readonly findEditorDocument?: (alertId: string) => Promise<AlertEditorDocument | null>;
+  readonly findEditorDocuments?: (alertIds: readonly string[]) => Promise<ReadonlyMap<string, AlertEditorDocument>>;
   readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
   readonly logger?: Pick<Logger, "error">;
   readonly generateReferenceId?: () => string;
@@ -75,9 +76,10 @@ export class PlaybackCoordinator {
   readonly #dedupeService: PlaybackDedupeService;
   readonly #targets: readonly AlertResolverTarget[];
   readonly #visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
-  readonly #assetRepository: Pick<AssetRepository, "findById"> | null;
+  readonly #assetRepository: Pick<AssetRepository, "findManyByIds"> | null;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
-  readonly #findEditorDocument: ((alertId: string) => Promise<AlertEditorDocument | null>) | null;
+  readonly #findEditorDocuments:
+    ((alertIds: readonly string[]) => Promise<ReadonlyMap<string, AlertEditorDocument>>) | null;
   readonly #ttsService: Pick<TtsService, "createPlaybackInstruction"> | null;
   readonly #logger: Pick<Logger, "error"> | null;
   readonly #generateReferenceId: (() => string) | null;
@@ -95,7 +97,7 @@ export class PlaybackCoordinator {
     this.#visualAssetMediaTypes = dependencies.visualAssetMediaTypes ?? {};
     this.#assetRepository = dependencies.assetRepository ?? null;
     this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
-    this.#findEditorDocument = dependencies.findEditorDocument ?? null;
+    this.#findEditorDocuments = dependencies.findEditorDocuments ?? null;
     this.#ttsService = dependencies.ttsService ?? null;
     this.#logger = dependencies.logger ?? null;
     this.#generateReferenceId = dependencies.generateReferenceId ?? null;
@@ -131,9 +133,12 @@ export class PlaybackCoordinator {
       return this.#result("cooldown", matches.map((match) => match.rule.id), []);
     }
 
-    const editorDocuments = await this.#loadEditorDocuments(readyMatches);
-    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(readyMatches, editorDocuments.values());
     const selectedVariants = this.#resolver.selectVariants(readyMatches);
+    const editorDocuments = await this.#loadEditorDocuments(readyMatches, selectedVariants);
+    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(
+      selectedVariants.values(),
+      editorDocuments.values()
+    );
     const resolvedAlerts = this.#targets.flatMap((target) =>
       this.#resolver.resolveMatches({
         matches: readyMatches,
@@ -337,7 +342,7 @@ export class PlaybackCoordinator {
   }
 
   async #resolveVisualAssetMediaTypes(
-    matches: readonly AlertMatch[],
+    selectedVariants: Iterable<AlertVariant>,
     editorDocuments: Iterable<AlertEditorDocument>
   ): Promise<Readonly<Record<string, "image" | "gif" | "video">>> {
     const mediaTypes: Record<string, "image" | "gif" | "video"> = {
@@ -348,11 +353,9 @@ export class PlaybackCoordinator {
     }
 
     const visualAssetIds = new Set<string>();
-    for (const match of matches) {
-      for (const variant of match.rule.variants) {
-        if (variant.visualAssetId !== null && mediaTypes[variant.visualAssetId] === undefined) {
-          visualAssetIds.add(variant.visualAssetId);
-        }
+    for (const variant of selectedVariants) {
+      if (variant.visualAssetId !== null && mediaTypes[variant.visualAssetId] === undefined) {
+        visualAssetIds.add(variant.visualAssetId);
       }
     }
     for (const document of editorDocuments) {
@@ -363,8 +366,8 @@ export class PlaybackCoordinator {
       }
     }
 
-    for (const assetId of visualAssetIds) {
-      const asset = await this.#assetRepository.findById(assetId);
+    const assets = await this.#assetRepository.findManyByIds([...visualAssetIds]);
+    for (const [assetId, asset] of assets) {
       if (asset?.mediaType === "image" || asset?.mediaType === "gif" || asset?.mediaType === "video") {
         mediaTypes[assetId] = asset.mediaType;
       }
@@ -373,19 +376,16 @@ export class PlaybackCoordinator {
     return mediaTypes;
   }
 
-  async #loadEditorDocuments(matches: readonly AlertMatch[]): Promise<ReadonlyMap<string, AlertEditorDocument>> {
-    const documents = new Map<string, AlertEditorDocument>();
-    if (this.#findEditorDocument === null) return documents;
-
-    const editorIds = new Set(matches.flatMap((match) => [
-      match.rule.id,
-      ...match.rule.variants.slice(1).map((variant) => variant.id)
-    ]));
-    await Promise.all([...editorIds].map(async (editorId) => {
-      const document = await this.#findEditorDocument!(editorId);
-      if (document !== null) documents.set(editorId, document);
-    }));
-    return documents;
+  async #loadEditorDocuments(
+    matches: readonly AlertMatch[],
+    selectedVariants: ReadonlyMap<string, AlertVariant>
+  ): Promise<ReadonlyMap<string, AlertEditorDocument>> {
+    if (this.#findEditorDocuments === null) return new Map();
+    const editorIds = matches.map((match) => {
+      const selected = selectedVariants.get(match.rule.id)!;
+      return selected.id === match.rule.variants[0]?.id ? match.rule.id : selected.id;
+    });
+    return this.#findEditorDocuments(editorIds);
   }
 
   #result(

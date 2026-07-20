@@ -65,16 +65,37 @@ export class SqliteOverlayAccessKeyRepository implements OverlayAccessKeyReposit
     return row === undefined ? null : mapOverlayAccessKeyRow(row as unknown as OverlayAccessKeyRow);
   }
 
-  async findCandidates(overlayId: string): Promise<readonly OverlayAccessKey[]> {
-    return this.#connection
+  async findByHash(keyHash: string): Promise<OverlayAccessKey | null> {
+    const row = this.#connection
       .prepare(
         `SELECT id, overlay_id, module_id, purpose, scope, target_profile_id, key_hash, route_key_secret_ref_json, created_at, revoked_at
          FROM overlay_keys
-         WHERE overlay_id = ?
-         ORDER BY created_at, id`
+         WHERE key_hash = ?`
       )
-      .all(overlayId)
-      .map((row) => mapOverlayAccessKeyRow(row as unknown as OverlayAccessKeyRow));
+      .get(keyHash);
+
+    return row === undefined ? null : mapOverlayAccessKeyRow(row as unknown as OverlayAccessKeyRow);
+  }
+
+  async hasOutput(input: {
+    readonly overlayId: string;
+    readonly moduleId: string | null;
+    readonly purpose: OverlayPurpose;
+    readonly scope: OverlayScope;
+    readonly targetProfileId?: OverlayTargetProfileId | null;
+  }): Promise<boolean> {
+    return this.#connection
+      .prepare(
+        `SELECT 1
+         FROM overlay_keys
+         WHERE overlay_id = ?
+           AND module_id IS ?
+           AND purpose = ?
+           AND scope = ?
+           AND target_profile_id IS ?
+         LIMIT 1`
+      )
+      .get(input.overlayId, input.moduleId, input.purpose, input.scope, input.targetProfileId ?? null) !== undefined;
   }
 
   async findByOutput(input: {

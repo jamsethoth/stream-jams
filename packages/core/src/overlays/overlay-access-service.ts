@@ -39,7 +39,8 @@ export type OverlayAccessVerification =
 export interface OverlayAccessKeyRepository {
   create(input: OverlayAccessKeyCreateRecordInput): Promise<OverlayAccessKey>;
   findById(keyId: string): Promise<OverlayAccessKey | null>;
-  findCandidates(overlayId: string): Promise<readonly OverlayAccessKey[]>;
+  findByHash(keyHash: string): Promise<OverlayAccessKey | null>;
+  hasOutput(input: CreateOverlayKeyInput): Promise<boolean>;
   findByOutput(input: CreateOverlayKeyInput): Promise<readonly OverlayAccessKey[]>;
   update(record: OverlayAccessKey): Promise<OverlayAccessKey | null>;
 }

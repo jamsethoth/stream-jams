@@ -37,6 +37,10 @@ describe("SqliteAlertEditorDocumentRepository", () => {
     await expect(repository.find(document.id)).resolves.toBeNull();
     await expect(repository.save(document)).resolves.toEqual(document);
     await expect(repository.find(document.id)).resolves.toEqual(document);
+    await expect(repository.findMany([])).resolves.toEqual(new Map());
+    await expect(repository.findMany([document.id, document.id, "missing"])).resolves.toEqual(
+      new Map([[document.id, document]])
+    );
 
     const renamed = { ...document, name: "Follower welcome" };
     await repository.save(renamed);

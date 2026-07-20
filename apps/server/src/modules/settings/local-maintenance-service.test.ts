@@ -86,13 +86,44 @@ describe("LocalMaintenanceService", () => {
       "Log directory permission denied"
     );
   });
+
+  it("uses one cutoff and reports file plus bounded relational deletions", async () => {
+    const cleanupExpiredLogs = vi.fn(async () => ({
+      deletedFilePaths: [`${logDirectory}/runtime-2026071508.jsonl`],
+      retainedFilePaths: []
+    }));
+    const pruneBefore = vi.fn()
+      .mockResolvedValueOnce({ eventLogs: 2, alertMatchLogs: 1, playbackLogs: 0 })
+      .mockResolvedValueOnce({ eventLogs: 0, alertMatchLogs: 0, playbackLogs: 0 });
+
+    await expect(createService(
+      { open: vi.fn() },
+      { cleanupExpiredLogs },
+      { pruneBefore }
+    ).clearOldLogs()).resolves.toEqual({ deletedCount: 4 });
+
+    expect(cleanupExpiredLogs).toHaveBeenCalledWith(expect.objectContaining({ now }));
+    expect(pruneBefore).toHaveBeenNthCalledWith(1, "2026-07-16T12:00:00.000Z", 500);
+    expect(pruneBefore).toHaveBeenNthCalledWith(2, "2026-07-16T12:00:00.000Z", 500);
+  });
 });
 
 function createService(
   pathOpener: { readonly open: (path: string) => Promise<void> } = { open: vi.fn(async () => undefined) },
-  logRetentionService: Pick<LogRetentionService, "cleanupExpiredLogs"> = new LogRetentionService()
+  logRetentionService: Pick<LogRetentionService, "cleanupExpiredLogs"> = new LogRetentionService(),
+  diagnosticsLogRepository = {
+    pruneBefore: vi.fn(async () => ({ eventLogs: 0, alertMatchLogs: 0, playbackLogs: 0 }))
+  }
 ) {
-  return new LocalMaintenanceService({ dataDirectory, logDirectory, logSettings, logRetentionService, pathOpener, now: () => now });
+  return new LocalMaintenanceService({
+    dataDirectory,
+    logDirectory,
+    logSettings,
+    logRetentionService,
+    diagnosticsLogRepository,
+    pathOpener,
+    now: () => now
+  });
 }
 
 function successfulSpawn(): ReturnType<typeof vi.fn<SpawnPathProcess>> {

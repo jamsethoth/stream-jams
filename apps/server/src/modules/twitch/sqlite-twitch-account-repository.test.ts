@@ -80,6 +80,37 @@ describe("SqliteTwitchAccountRepository", () => {
 
     await expect(repository.findConnectedAccount()).resolves.toBeNull();
   });
+
+  it("restores the prior singleton account when replacement insertion fails", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteTwitchAccountRepository(database.connection);
+    const previous = {
+      accountId: "old-id",
+      login: "oldstreamer",
+      displayName: "Old Streamer",
+      scopes: ["bits:read"],
+      connectedAt: "2026-05-30T12:00:00.000Z",
+      updatedAt: "2026-05-30T12:00:00.000Z"
+    };
+    await repository.saveAccount(previous);
+    database.connection.exec(`
+      CREATE TRIGGER reject_twitch_replacement
+      BEFORE INSERT ON twitch_accounts
+      WHEN NEW.account_id = 'new-id'
+      BEGIN
+        SELECT RAISE(ABORT, 'replacement failed');
+      END;
+    `);
+
+    await expect(repository.saveAccount({
+      ...previous,
+      accountId: "new-id",
+      login: "newstreamer",
+      displayName: "New Streamer"
+    })).rejects.toThrow("replacement failed");
+
+    await expect(repository.findConnectedAccount()).resolves.toEqual(previous);
+  });
 });
 
 function listColumnNames(connection: {

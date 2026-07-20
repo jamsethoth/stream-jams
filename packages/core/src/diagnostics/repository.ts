@@ -40,6 +40,12 @@ export interface DiagnosticsLogListOptions {
   readonly limit?: number;
 }
 
+export interface DiagnosticsPruneCounts {
+  readonly eventLogs: number;
+  readonly alertMatchLogs: number;
+  readonly playbackLogs: number;
+}
+
 export interface DiagnosticsLogRepository {
   appendEventLog(record: EventLogRecord): Promise<EventLogRecord>;
   listEventLogs(options?: DiagnosticsLogListOptions): Promise<readonly EventLogRecord[]>;
@@ -47,4 +53,5 @@ export interface DiagnosticsLogRepository {
   listAlertMatchLogs(options?: DiagnosticsLogListOptions): Promise<readonly AlertMatchLogRecord[]>;
   appendPlaybackLog(record: PlaybackLogRecord): Promise<PlaybackLogRecord>;
   listPlaybackLogs(options?: DiagnosticsLogListOptions): Promise<readonly PlaybackLogRecord[]>;
+  pruneBefore(cutoff: string, batchSize: number): Promise<DiagnosticsPruneCounts>;
 }

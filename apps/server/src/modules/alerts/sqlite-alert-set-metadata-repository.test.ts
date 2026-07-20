@@ -42,6 +42,14 @@ describe("SqliteAlertSetMetadataRepository", () => {
       providerKind: "twitch",
       targetProfileIds: ["landscape", "vertical"]
     });
+    expect(await repository.findSets([])).toEqual(new Map());
+    expect(await repository.findSets(["set-default", "set-default", "missing"])).toEqual(new Map([
+      ["set-default", expect.objectContaining({ starter: true, starterReviewState: "pending" })]
+    ]));
+    expect(await repository.findRules([])).toEqual(new Map());
+    expect(await repository.findRules(["alert-follow", "alert-follow", "missing"])).toEqual(new Map([
+      ["alert-follow", expect.objectContaining({ providerKind: "twitch" })]
+    ]));
   });
 
   it("atomically replaces the one active alert set", async () => {

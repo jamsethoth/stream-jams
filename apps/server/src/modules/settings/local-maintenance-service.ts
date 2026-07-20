@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import type { LogSettings } from "@stream-jams/core";
+import type { DiagnosticsLogRepository, LogSettings } from "@stream-jams/core";
 import type { LogRetentionService } from "../diagnostics/log-retention-service.js";
 
 export interface PathOpenerProcess {
@@ -23,6 +23,7 @@ export interface LocalMaintenanceServiceOptions {
   readonly logDirectory: string;
   readonly logSettings: LogSettings;
   readonly logRetentionService: Pick<LogRetentionService, "cleanupExpiredLogs">;
+  readonly diagnosticsLogRepository: Pick<DiagnosticsLogRepository, "pruneBefore">;
   readonly pathOpener: PlatformPathOpener;
   readonly now?: () => Date;
 }
@@ -43,12 +44,23 @@ export class LocalMaintenanceService {
   }
 
   async clearOldLogs() {
+    const now = this.#now();
     const result = await this.#options.logRetentionService.cleanupExpiredLogs({
       logDirectory: this.#options.logDirectory,
       settings: this.#options.logSettings,
-      now: this.#now()
+      now
     });
-    return { deletedCount: result.deletedFilePaths.length };
+    const cutoff = new Date(
+      now.getTime() - this.#options.logSettings.retentionHours * 60 * 60 * 1_000
+    ).toISOString();
+    let deletedRows = 0;
+    while (true) {
+      const counts = await this.#options.diagnosticsLogRepository.pruneBefore(cutoff, 500);
+      const batchDeleted = counts.eventLogs + counts.alertMatchLogs + counts.playbackLogs;
+      deletedRows += batchDeleted;
+      if (batchDeleted === 0) break;
+    }
+    return { deletedCount: result.deletedFilePaths.length + deletedRows };
   }
 }
 

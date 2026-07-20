@@ -26,12 +26,12 @@ describe("DefaultAlertService", () => {
     await expect(
       service.updateCollection(collection.id, {
         name: "Main Show Alerts",
-        enabled: false
+        enabled: true
       })
     ).resolves.toMatchObject({
       id: collection.id,
       name: "Main Show Alerts",
-      enabled: false
+      enabled: true
     });
     await expect(service.setCollectionEnabled(collection.id, true)).resolves.toMatchObject({
       id: collection.id,
@@ -52,13 +52,29 @@ describe("DefaultAlertService", () => {
     });
 
     await service.deleteRule(rule.id);
+    await service.createCollection({ name: "Replacement", enabled: true });
     await service.deleteCollection(collection.id);
 
     await expect(service.listRules()).resolves.toEqual([]);
-    await expect(service.listCollections()).resolves.toEqual([]);
+    await expect(service.listCollections()).resolves.toEqual([
+      expect.objectContaining({ name: "Replacement", enabled: true })
+    ]);
   });
 
-  it("treats multiple enabled collections as active while applying individual rule disable precedence", async () => {
+  it("rejects disabling the sole active alert collection", async () => {
+    const repository = new InMemoryAlertRepository();
+    const service = createService(repository);
+    const collection = await service.createCollection({ name: "Main", enabled: true });
+
+    await expect(service.setCollectionEnabled(collection.id, false)).rejects.toThrow(
+      "At least one alert collection must remain active"
+    );
+    await expect(service.updateCollection(collection.id, { name: collection.name, enabled: false })).rejects.toThrow(
+      "At least one alert collection must remain active"
+    );
+  });
+
+  it("atomically replaces the active collection while applying individual rule disable precedence", async () => {
     const repository = new InMemoryAlertRepository();
     const service = createService(repository);
     const mainCollection = await service.createCollection({ name: "Main", enabled: true });
@@ -83,7 +99,7 @@ describe("DefaultAlertService", () => {
     );
 
     await expect(service.getActivationState()).resolves.toEqual({
-      enabledCollectionIds: [mainCollection.id, bonusCollection.id],
+      enabledCollectionIds: [bonusCollection.id],
       disabledRuleIds: [disabledRule.id]
     });
     await expect(service.listActiveRules({ eventType: "follow" })).resolves.toEqual([multiCollectionRule]);
@@ -286,6 +302,11 @@ class InMemoryAlertRepository implements AlertRepository {
   readonly #collections = new Map<string, AlertCollection>();
   readonly #rules = new Map<string, AlertRule>();
   async saveCollection(collection: AlertCollection): Promise<AlertCollection> {
+    if (collection.enabled) {
+      for (const [id, existing] of this.#collections) {
+        if (id !== collection.id && existing.enabled) this.#collections.set(id, { ...existing, enabled: false });
+      }
+    }
     this.#collections.set(collection.id, collection);
     return collection;
   }
@@ -313,6 +334,17 @@ class InMemoryAlertRepository implements AlertRepository {
 
   async listRules(): Promise<readonly AlertRule[]> {
     return Array.from(this.#rules.values()).sort((left, right) => left.id.localeCompare(right.id));
+  }
+
+  async listActiveRules(input: { readonly eventType?: AlertRule["eventType"] } = {}): Promise<readonly AlertRule[]> {
+    const enabledCollectionIds = new Set(
+      Array.from(this.#collections.values()).filter((collection) => collection.enabled).map((collection) => collection.id)
+    );
+    return (await this.listRules()).filter((rule) =>
+      rule.enabled &&
+      (input.eventType === undefined || rule.eventType === input.eventType) &&
+      rule.collectionIds.some((collectionId) => enabledCollectionIds.has(collectionId))
+    );
   }
 
   async deleteRule(ruleId: string): Promise<void> {

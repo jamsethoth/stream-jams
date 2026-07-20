@@ -3,7 +3,9 @@ import {
   appConfigSchema,
   configurationBackupLimits,
   configurationBackupArchiveSchema,
+  currentConfigurationBackupArchiveVersion,
   configurationRestoreRequestSchema,
+  legacyConfigurationBackupArchiveEnvelopeSchema,
   type ActionableManagementError,
   type AppConfig,
   type AppConfigUpdate,
@@ -59,6 +61,10 @@ export interface ConfigurationBackupServiceOptions {
   readonly getAvailableBytes: () => Promise<number>;
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
+  readonly twitchCredentials?: {
+    findConnectedAccountId(): Promise<string | null>;
+    deleteTokenSecrets(accountId: string): Promise<void>;
+  };
   readonly runExclusive?: <T>(work: () => Promise<T>) => Promise<T>;
 }
 
@@ -197,7 +203,7 @@ export class ConfigurationBackupService {
     const archive = {
       manifest: {
         format: "stream-jams-backup" as const,
-        archiveVersion: 1 as const,
+        archiveVersion: currentConfigurationBackupArchiveVersion,
         appVersion: this.#options.appVersion,
         schemaVersion: this.#options.schemaVersion,
         createdAt: this.#now().toISOString(),
@@ -220,6 +226,23 @@ export class ConfigurationBackupService {
     const runtime = await this.#options.getRuntime();
     const parsed = configurationBackupArchiveSchema.safeParse(input);
     if (!parsed.success) {
+      if (legacyConfigurationBackupArchiveEnvelopeSchema.safeParse(input).success) {
+        return {
+          state: "invalid",
+          archiveId: null,
+          appVersion: null,
+          schemaVersion: null,
+          createdAt: null,
+          impact: null,
+          runtime,
+          blockers: [blocker(
+            "Backup variant order was not captured",
+            "Archive version 1 did not preserve saved alert variant order and cannot be restored safely.",
+            "Export a new backup from the source installation."
+          )],
+          warnings: []
+        };
+      }
       return {
         state: "invalid",
         archiveId: null,
@@ -360,6 +383,7 @@ export class ConfigurationBackupService {
       throw new ConfigurationRestoreBlockedError("RESTORE_LIVE_BLOCKED", liveBlocker(runtime));
     }
 
+    const connectedTwitchAccountId = await this.#options.twitchCredentials?.findConnectedAccountId() ?? null;
     const restorePoint = this.#options.snapshotRepository.captureRestorePoint();
     const currentAssets = await this.#options.assetRepository.list();
     let safetyBackupPath: string;
@@ -447,6 +471,21 @@ export class ConfigurationBackupService {
         referenceId: this.#options.generateReferenceId(),
         correction: { label: "Open Diagnostics", route: "/manage/diagnostics" }
       });
+    }
+    if (connectedTwitchAccountId !== null && this.#options.twitchCredentials !== undefined) {
+      try {
+        await this.#options.twitchCredentials.deleteTokenSecrets(connectedTwitchAccountId);
+      } catch {
+        warnings.push({
+          ...warning(
+            "Old Twitch credentials could not be removed",
+            "The restored configuration is disconnected, but an orphaned local Twitch credential may remain.",
+            "Open Diagnostics with the reference ID, then reconnect Twitch."
+          ),
+          referenceId: this.#options.generateReferenceId(),
+          correction: { label: "Open Diagnostics", route: "/manage/diagnostics" }
+        });
+      }
     }
     const restoredOrigin = `http://${restoredConfig.server.host}:${restoredConfig.server.port}`;
     for (const output of request.archive.configuration.overlayOutputs) {

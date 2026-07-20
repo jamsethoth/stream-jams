@@ -138,6 +138,10 @@ class RecordingAssetRepository implements AssetRepository {
     return null;
   }
 
+  async findManyByIds(): Promise<ReadonlyMap<string, AssetRecord>> {
+    return new Map();
+  }
+
   async list(): Promise<readonly AssetRecord[]> {
     return this.records;
   }

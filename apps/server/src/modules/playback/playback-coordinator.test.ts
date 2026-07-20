@@ -95,6 +95,29 @@ describe("PlaybackCoordinator", () => {
     });
   });
 
+  it("bulk-loads assets only for the selected variant", async () => {
+    const assets = new InMemoryAssetRepository({
+      "asset-selected": "image",
+      "asset-unselected": "video"
+    });
+    const coordinator = createCoordinator({
+      alertService: new RecordingAlertService([
+        createRule({
+          variants: [
+            createVariant({ id: "variant-selected", visualAssetId: "asset-selected" }),
+            createVariant({ id: "variant-unselected", visualAssetId: "asset-unselected" })
+          ]
+        })
+      ]),
+      assetRepository: assets,
+      random: () => 0
+    });
+
+    await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(assets.requestedIds).toEqual(["asset-selected"]);
+  });
+
   it("delivers each newly started current overlay instruction to the overlay sink once", async () => {
     const deliveredInstructionIds: string[] = [];
     const coordinator = createCoordinator({
@@ -469,7 +492,7 @@ describe("PlaybackCoordinator", () => {
 
     const result = await coordinator.enqueueEvent(createCheerEvent());
 
-    expect(requestedEditorIds).toContain("variant-special");
+    expect(requestedEditorIds).toEqual(["variant-special"]);
     expect(result.snapshot.current?.alerts).toEqual(expect.arrayContaining([
       expect.objectContaining({
         overlayInstruction: expect.objectContaining({ text: expect.objectContaining({ text: "Saved variation Viewer" }) })
@@ -566,7 +589,7 @@ function createCoordinator(
     readonly alertService?: Pick<AlertService, "listActiveRules">;
     readonly cooldownService?: DefaultPlaybackCooldownService;
     readonly dedupeService?: DefaultPlaybackDedupeService;
-    readonly assetRepository?: Pick<AssetRepository, "findById">;
+    readonly assetRepository?: Pick<AssetRepository, "findManyByIds">;
     readonly additionalTargets?: readonly AlertResolverTarget[];
     readonly queue?: PlaybackQueue;
     readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
@@ -608,7 +631,14 @@ function createCoordinator(
     ...(options.additionalTargets === undefined ? {} : { additionalTargets: options.additionalTargets }),
     ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
     ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink }),
-    ...(options.findEditorDocument === undefined ? {} : { findEditorDocument: options.findEditorDocument }),
+    ...(options.findEditorDocument === undefined ? {} : {
+      findEditorDocuments: async (editorIds: readonly string[]) => new Map(
+        (await Promise.all(editorIds.map(async (editorId) => [
+          editorId,
+          await options.findEditorDocument!(editorId)
+        ] as const))).flatMap(([editorId, document]) => document === null ? [] : [[editorId, document]])
+      )
+    }),
     ...(options.ttsService === undefined ? {} : { ttsService: options.ttsService }),
     ...(options.logger === undefined ? {} : { logger: options.logger }),
     ...(options.generateReferenceId === undefined ? {} : { generateReferenceId: options.generateReferenceId })
@@ -699,14 +729,18 @@ function createVariant(overrides: Partial<AlertVariant> = {}): AlertVariant {
   };
 }
 
-class InMemoryAssetRepository implements Pick<AssetRepository, "findById"> {
+class InMemoryAssetRepository implements Pick<AssetRepository, "findManyByIds"> {
+  requestedIds: readonly string[] = [];
+
   constructor(readonly mediaTypes: Readonly<Record<string, "image" | "gif" | "video" | "audio">>) {}
 
-  async findById(assetId: string) {
-    const mediaType = this.mediaTypes[assetId];
-    return mediaType === undefined
-      ? null
-      : {
+  async findManyByIds(assetIds: readonly string[]) {
+    this.requestedIds = [...assetIds];
+    return new Map(assetIds.flatMap((assetId) => {
+      const mediaType = this.mediaTypes[assetId];
+      return mediaType === undefined
+        ? []
+        : [[assetId, {
           id: assetId,
           originalFileName: assetId + ".bin",
           mediaType,
@@ -714,7 +748,8 @@ class InMemoryAssetRepository implements Pick<AssetRepository, "findById"> {
           sizeBytes: 1,
           checksum: "sha256:test",
           storagePath: "/assets/" + assetId
-        };
+        }] as const];
+    }));
   }
 }
 

@@ -1,5 +1,6 @@
 import {
   AlertCollectionNotFoundError,
+  LastActiveAlertCollectionError,
   type AlertService,
   createAlertCollectionInputSchema,
   updateAlertCollectionInputSchema
@@ -93,6 +94,13 @@ function sendCollectionError(reply: Parameters<typeof sendHttpError>[0], error: 
   if (error instanceof AlertCollectionNotFoundError) {
     return sendHttpError(reply, 404, {
       code: "ALERT_COLLECTION_NOT_FOUND",
+      message: error.message
+    });
+  }
+
+  if (error instanceof LastActiveAlertCollectionError) {
+    return sendHttpError(reply, 409, {
+      code: "LAST_ACTIVE_ALERT_COLLECTION",
       message: error.message
     });
   }

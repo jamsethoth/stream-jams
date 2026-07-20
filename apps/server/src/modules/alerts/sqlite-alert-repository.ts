@@ -34,6 +34,10 @@ interface AlertConditionRow {
   readonly value_json: unknown;
 }
 
+interface AlertRuleChildRow {
+  readonly rule_id: unknown;
+}
+
 interface AlertVariantRow {
   readonly id: unknown;
   readonly name: unknown;
@@ -57,6 +61,10 @@ export class SqliteAlertRepository implements AlertRepository {
   }
 
   async saveCollection(collection: AlertCollection): Promise<AlertCollection> {
+    return this.saveCollectionSync(collection);
+  }
+
+  saveCollectionSync(collection: AlertCollection): AlertCollection {
     const parsed = alertCollectionSchema.parse(collection);
     runInTransaction(this.#connection, () => {
       if (parsed.enabled) {
@@ -78,6 +86,10 @@ export class SqliteAlertRepository implements AlertRepository {
   }
 
   async findCollectionById(collectionId: string): Promise<AlertCollection | null> {
+    return this.findCollectionByIdSync(collectionId);
+  }
+
+  findCollectionByIdSync(collectionId: string): AlertCollection | null {
     const row = this.#connection
       .prepare("SELECT id, name, enabled FROM alert_collections WHERE id = ?")
       .get(collectionId);
@@ -85,6 +97,10 @@ export class SqliteAlertRepository implements AlertRepository {
   }
 
   async listCollections(): Promise<readonly AlertCollection[]> {
+    return this.listCollectionsSync();
+  }
+
+  listCollectionsSync(): readonly AlertCollection[] {
     return this.#connection
       .prepare("SELECT id, name, enabled FROM alert_collections ORDER BY id")
       .all()
@@ -92,6 +108,10 @@ export class SqliteAlertRepository implements AlertRepository {
   }
 
   async deleteCollection(collectionId: string): Promise<void> {
+    this.deleteCollectionSync(collectionId);
+  }
+
+  deleteCollectionSync(collectionId: string): void {
     this.#connection.prepare("DELETE FROM alert_collections WHERE id = ?").run(collectionId);
   }
 
@@ -211,10 +231,18 @@ export class SqliteAlertRepository implements AlertRepository {
   }
 
   async findRuleById(ruleId: string): Promise<AlertRule | null> {
+    return this.findRuleByIdSync(ruleId);
+  }
+
+  findRuleByIdSync(ruleId: string): AlertRule | null {
     return this.#findRuleById(ruleId);
   }
 
   async listRules(): Promise<readonly AlertRule[]> {
+    return this.listRulesSync();
+  }
+
+  listRulesSync(): readonly AlertRule[] {
     const rows = this.#connection
       .prepare(
          `SELECT id, name, event_type, enabled, cooldown_seconds, priority
@@ -226,7 +254,76 @@ export class SqliteAlertRepository implements AlertRepository {
     return rows.map((row) => this.#mapRuleRow(row as unknown as AlertRuleRow));
   }
 
+  async listActiveRules(input: { readonly eventType?: StreamEventType } = {}): Promise<readonly AlertRule[]> {
+    const eventFilter = input.eventType === undefined ? "" : "AND rules.event_type = ?";
+    const parameters = input.eventType === undefined ? [] : [input.eventType];
+    const ruleRows = this.#connection
+      .prepare(
+        `SELECT DISTINCT rules.id, rules.name, rules.event_type, rules.enabled,
+                rules.cooldown_seconds, rules.priority
+         FROM alert_rules AS rules
+         JOIN alert_rule_collections AS memberships ON memberships.rule_id = rules.id
+         JOIN alert_collections AS collections ON collections.id = memberships.collection_id
+         WHERE rules.enabled = 1
+           AND collections.enabled = 1
+           ${eventFilter}
+         ORDER BY rules.id`
+      )
+      .all(...parameters) as unknown as readonly AlertRuleRow[];
+    if (ruleRows.length === 0) return [];
+
+    const ruleIds = ruleRows.map((row) => String(row.id));
+    const placeholders = ruleIds.map(() => "?").join(", ");
+    const collectionRows = this.#connection
+      .prepare(
+        `SELECT rule_id, collection_id
+         FROM alert_rule_collections
+         WHERE rule_id IN (${placeholders})
+         ORDER BY rule_id, collection_id`
+      )
+      .all(...ruleIds) as unknown as readonly (AlertRuleChildRow & { readonly collection_id: unknown })[];
+    const conditionRows = this.#connection
+      .prepare(
+        `SELECT rule_id, field, operator, value_json
+         FROM alert_rule_conditions
+         WHERE rule_id IN (${placeholders})
+         ORDER BY rule_id, position`
+      )
+      .all(...ruleIds) as unknown as readonly (AlertRuleChildRow & AlertConditionRow)[];
+    const variantRows = this.#connection
+      .prepare(
+        `SELECT rule_id, id, name, enabled, weight, conditions_json, priority, visual_asset_id,
+                audio_asset_id, text_template, tts_config_json, duration_ms, layout_json
+         FROM alert_variants
+         WHERE rule_id IN (${placeholders})
+         ORDER BY rule_id, variant_order, id`
+      )
+      .all(...ruleIds) as unknown as readonly (AlertRuleChildRow & AlertVariantRow)[];
+
+    const collectionsByRule = groupRows(collectionRows, (row) => String(row.collection_id));
+    const conditionsByRule = groupRows(conditionRows, mapConditionRow);
+    const variantsByRule = groupRows(variantRows, mapVariantRow);
+    return ruleRows.map((row) => {
+      const ruleId = String(row.id);
+      return alertRuleSchema.parse({
+        id: ruleId,
+        name: String(row.name),
+        eventType: row.event_type as StreamEventType,
+        enabled: integerToBoolean(row.enabled),
+        collectionIds: collectionsByRule.get(ruleId) ?? [],
+        conditions: conditionsByRule.get(ruleId) ?? [],
+        variants: variantsByRule.get(ruleId) ?? [],
+        cooldownSeconds: Number(row.cooldown_seconds),
+        priority: Number(row.priority)
+      });
+    });
+  }
+
   async deleteRule(ruleId: string): Promise<void> {
+    this.deleteRuleSync(ruleId);
+  }
+
+  deleteRuleSync(ruleId: string): void {
     this.#connection.prepare("DELETE FROM alert_rules WHERE id = ?").run(ruleId);
   }
 
@@ -336,4 +433,18 @@ function booleanToInteger(value: boolean): 0 | 1 {
 
 function integerToBoolean(value: unknown): boolean {
   return Number(value) === 1;
+}
+
+function groupRows<TRow extends AlertRuleChildRow, TValue>(
+  rows: readonly TRow[],
+  map: (row: TRow) => TValue
+): ReadonlyMap<string, readonly TValue[]> {
+  const grouped = new Map<string, TValue[]>();
+  for (const row of rows) {
+    const ruleId = String(row.rule_id);
+    const values = grouped.get(ruleId) ?? [];
+    values.push(map(row));
+    grouped.set(ruleId, values);
+  }
+  return grouped;
 }

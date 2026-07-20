@@ -37,7 +37,7 @@ describe("ConfigurationBackupService", () => {
 
     expect(archive.manifest).toMatchObject({
       format: "stream-jams-backup",
-      archiveVersion: 1,
+      archiveVersion: 2,
       appVersion: "1.2.3",
       schemaVersion: 9,
       assetCount: 1,
@@ -50,6 +50,21 @@ describe("ConfigurationBackupService", () => {
       dataBase64: pngBytes.toString("base64")
     });
     expect(JSON.stringify(archive)).not.toMatch(/oauth|accessToken|secret_ref|route_key|key_hash/iu);
+  });
+
+  it("rejects version-one archives because they did not capture variant order", async () => {
+    const { service } = createService();
+    const archive = await service.exportArchive();
+    const legacy = structuredClone(archive) as unknown as { manifest: { archiveVersion: number } };
+    legacy.manifest.archiveVersion = 1;
+
+    await expect(service.preflight(legacy)).resolves.toMatchObject({
+      state: "invalid",
+      blockers: [expect.objectContaining({
+        summary: "Backup variant order was not captured",
+        nextStep: "Export a new backup from the source installation."
+      })]
+    });
   });
 
   it("reports checksum blockers and never enables an invalid archive", async () => {
@@ -170,9 +185,12 @@ describe("ConfigurationBackupService", () => {
   it("restores the complete operational database state when config replacement fails", async () => {
     const restorePoint = { providerSecret: "credential/provider-token", routeKeyHash: "route-hash" };
     const restoreRestorePoint = vi.fn();
+    const deleteTokenSecrets = vi.fn(async () => undefined);
     const { service } = createService({
       captureRestorePoint: () => restorePoint,
       restoreRestorePoint,
+      findConnectedTwitchAccountId: async () => "old-account",
+      deleteTokenSecrets,
       updateConfig: vi.fn().mockRejectedValue(new Error("Config file is locked"))
     });
     const archive = await service.exportArchive();
@@ -186,6 +204,7 @@ describe("ConfigurationBackupService", () => {
     })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
 
     expect(restoreRestorePoint).toHaveBeenCalledWith(restorePoint);
+    expect(deleteTokenSecrets).not.toHaveBeenCalled();
   });
 
   it("reports old-asset cleanup failures without failing a completed restore", async () => {
@@ -209,6 +228,50 @@ describe("ConfigurationBackupService", () => {
       })
     ]));
   });
+
+  it("removes old Twitch token references after a successful disconnected restore", async () => {
+    const deleteTokenSecrets = vi.fn(async () => undefined);
+    const { service } = createService({
+      findConnectedTwitchAccountId: async () => "old-account",
+      deleteTokenSecrets
+    });
+    const archive = await service.exportArchive();
+    const preflight = await service.preflight(archive);
+
+    const result = await service.restore({
+      archive,
+      archiveId: preflight.archiveId!,
+      confirmation: "RESTORE",
+      regenerateRouteKeys: true
+    });
+
+    expect(deleteTokenSecrets).toHaveBeenCalledExactlyOnceWith("old-account");
+    expect(result.state).toBe("completed");
+  });
+
+  it("keeps restore completed and warns when an old Twitch secret cannot be removed", async () => {
+    const { service } = createService({
+      findConnectedTwitchAccountId: async () => "old-account",
+      deleteTokenSecrets: vi.fn().mockRejectedValue(new Error("secret unavailable"))
+    });
+    const archive = await service.exportArchive();
+    const preflight = await service.preflight(archive);
+
+    const result = await service.restore({
+      archive,
+      archiveId: preflight.archiveId!,
+      confirmation: "RESTORE",
+      regenerateRouteKeys: true
+    });
+
+    expect(result.warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        summary: "Old Twitch credentials could not be removed",
+        cause: expect.not.stringContaining("secret unavailable"),
+        referenceId: "ref-backup-test"
+      })
+    ]));
+  });
 });
 
 function createService(overrides: {
@@ -222,6 +285,8 @@ function createService(overrides: {
   readonly captureRestorePoint?: ConfigurationSnapshotRepository["captureRestorePoint"];
   readonly restoreRestorePoint?: ConfigurationSnapshotRepository["restoreRestorePoint"];
   readonly assetRecords?: readonly AssetRecord[];
+  readonly findConnectedTwitchAccountId?: () => Promise<string | null>;
+  readonly deleteTokenSecrets?: (accountId: string) => Promise<void>;
 } = {}) {
   const replace = overrides.replace ?? replacementMock();
   const options: ConfigurationBackupServiceOptions = {
@@ -262,7 +327,11 @@ function createService(overrides: {
     safetyBackupStore: {
       write: overrides.writeSafetyBackup ?? (async () => "C:/safe/pre-restore.streamjams-backup")
     },
-    regenerateOutput: overrides.regenerateOutput ?? (async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` }))
+    regenerateOutput: overrides.regenerateOutput ?? (async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` })),
+    twitchCredentials: {
+      findConnectedAccountId: overrides.findConnectedTwitchAccountId ?? (async () => null),
+      deleteTokenSecrets: overrides.deleteTokenSecrets ?? (async () => undefined)
+    }
   };
   return { service: new ConfigurationBackupService(options), replace };
 }

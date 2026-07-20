@@ -47,11 +47,95 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     expect(JSON.stringify(snapshot)).not.toContain("route-hash");
   });
 
-  it("accepts nullable JSON columns from a valid database snapshot", () => {
+  it("keeps Twitch account state only in operational rollback points", () => {
+    database.connection.prepare(
+      "INSERT INTO twitch_accounts (account_id, login, display_name, scopes_json, connected_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+    ).run("old-account", "old", "Old", "[]", "2026-07-15T04:00:00.000Z", "2026-07-15T04:00:00.000Z");
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const portable = repository.snapshot();
+    const restorePoint = repository.captureRestorePoint();
+
+    expect(portable.tables).not.toHaveProperty("twitch_accounts");
+    repository.replace({
+      tables: portable.tables,
+      assets: [seededAsset()]
+    });
+    expect(database.connection.prepare("SELECT account_id FROM twitch_accounts").all()).toEqual([]);
+
+    repository.restoreRestorePoint(restorePoint);
+    expect(database.connection.prepare("SELECT account_id FROM twitch_accounts").all()).toEqual([
+      { account_id: "old-account" }
+    ]);
+  });
+
+  it("preserves saved variant order when ids sort differently", () => {
+    database.connection.prepare(
+      `INSERT INTO alert_variants (
+        id, rule_id, name, enabled, weight, visual_asset_id, audio_asset_id,
+        text_template, tts_config_json, duration_ms, layout_json,
+        conditions_json, priority, variant_order
+      )
+      SELECT ?, rule_id, ?, enabled, weight, visual_asset_id, audio_asset_id,
+        text_template, tts_config_json, duration_ms, layout_json,
+        conditions_json, priority, ?
+      FROM alert_variants WHERE id = ?`
+    ).run("variant-aaa", "Later", 1, "variant-follow");
+
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
     const snapshot = repository.snapshot();
 
-    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+    expect(snapshot.tables.alert_variants).toEqual([
+      expect.objectContaining({ id: "variant-follow", variant_order: 0 }),
+      expect.objectContaining({ id: "variant-aaa", variant_order: 1 })
+    ]);
+
+    repository.replace({
+      tables: snapshot.tables,
+      assets: [seededAsset()]
+    });
+    expect(database.connection.prepare(
+      "SELECT id, variant_order FROM alert_variants ORDER BY variant_order, id"
+    ).all()).toEqual([
+      { id: "variant-follow", variant_order: 0 },
+      { id: "variant-aaa", variant_order: 1 }
+    ]);
+  });
+
+  it("keeps portable table mappings aligned with migrated columns", () => {
+    const snapshot = new SqliteConfigurationSnapshotRepository(database.connection).snapshot();
+    const intentionallyExcludedColumns = new Map([
+      ["asset_metadata", new Set(["storage_path"])],
+      ["provider_registrations", new Set(["secret_ref_json"])]
+    ]);
+
+    for (const [tableName, rows] of Object.entries(snapshot.tables)) {
+      const firstRow = rows[0];
+      if (firstRow === undefined) throw new Error(`Seeded row required for ${tableName}`);
+      const excluded = intentionallyExcludedColumns.get(tableName) ?? new Set<string>();
+      const migratedColumns = database.connection
+        .prepare(`PRAGMA table_xinfo(${tableName})`)
+        .all()
+        .map((row) => String(row.name))
+        .filter((name) => !excluded.has(name));
+
+      expect(Object.keys(firstRow), tableName).toEqual(migratedColumns);
+    }
+  });
+
+  it("round-trips nullable JSON columns as SQL null", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const configuration: ConfigurationBackupArchive["configuration"] = {
+      appConfig: {},
+      ...snapshot
+    };
+
+    expect(snapshot.tables.alert_variants?.[0]?.tts_config_json).toBeNull();
+    expect(repository.validate(configuration)).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(database.connection.prepare("SELECT tts_config_json FROM alert_variants").get()).toEqual({
+      tts_config_json: null
+    });
   });
 
   it("reports unknown tables, invalid columns, and broken soft asset references", () => {
@@ -73,6 +157,29 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       expect.stringContaining("extra"),
       expect.stringContaining("missing-asset"),
       expect.stringContaining("accessToken")
+    ]));
+  });
+
+  it("rejects negative and duplicate per-rule variant order values", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const [variant] = snapshot.tables.alert_variants ?? [];
+    if (variant === undefined) throw new Error("Seeded variant is required");
+    const configuration: ConfigurationBackupArchive["configuration"] = {
+      appConfig: {},
+      ...snapshot,
+      tables: {
+        ...snapshot.tables,
+        alert_variants: [
+          { ...variant, variant_order: -1 },
+          { ...variant, id: "variant-second", variant_order: -1 }
+        ]
+      }
+    };
+
+    expect(repository.validate(configuration)).toEqual(expect.arrayContaining([
+      expect.stringContaining("variant_order must be a non-negative integer"),
+      expect.stringContaining("duplicates the unique key (rule_id, variant_order)")
     ]));
   });
 

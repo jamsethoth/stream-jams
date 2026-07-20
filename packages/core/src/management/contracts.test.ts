@@ -648,7 +648,7 @@ describe("management asset diagnostics home and backup contracts", () => {
     const archive = {
       manifest: {
         format: "stream-jams-backup",
-        archiveVersion: 1,
+        archiveVersion: 2,
         appVersion: "0.0.0",
         schemaVersion: 9,
         createdAt: "2026-07-15T05:00:00.000Z",

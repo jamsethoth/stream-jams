@@ -27,12 +27,21 @@ describe("SqliteAssetRepository", () => {
 
     await repository.save(asset);
     await expect(repository.findById("asset-image-1")).resolves.toEqual(asset);
+    await expect(repository.findManyByIds([])).resolves.toEqual(new Map());
+    await expect(repository.findManyByIds([asset.id, asset.id, "missing"])).resolves.toEqual(
+      new Map([[asset.id, asset]])
+    );
     await expect(repository.list()).resolves.toEqual([asset]);
 
     await repository.save(updatedAsset);
     await expect(repository.findById("asset-image-1")).resolves.toEqual(updatedAsset);
 
+    database.connection.prepare(
+      "INSERT INTO asset_library_metadata (asset_id, display_name, tags_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?)"
+    ).run(asset.id, "Alert", "[]", "2026-07-20T00:00:00.000Z", "2026-07-20T00:00:00.000Z");
+
     await repository.delete("asset-image-1");
     await expect(repository.findById("asset-image-1")).resolves.toBeNull();
+    expect(database.connection.prepare("SELECT asset_id FROM asset_library_metadata").all()).toEqual([]);
   });
 });

@@ -6,7 +6,7 @@ import {
   type AlertRepository,
   type AlertRule
 } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   AlertSetActivationBlockedError,
   AlertSetDeleteBlockedError,
@@ -17,6 +17,10 @@ import {
   type AlertSetMetadata,
   type AlertSetMetadataRepository
 } from "./alert-set-management-service.js";
+import type {
+  AlertAggregateMutation,
+  AlertAggregateMutationStore
+} from "./alert-aggregate-mutation-store.js";
 import {
   AlertEditorService,
   type AlertEditorDocumentRepository
@@ -55,6 +59,24 @@ describe("AlertSetManagementService", () => {
     ]);
     expect(detail.inventory.every((row) => !row.enabled && row.reviewState === "needs-review")).toBe(true);
     expect(detail.browserSources.map((output) => output.targetProfileId)).toEqual(["landscape", "vertical"]);
+  });
+
+  it("bulk-loads set metadata, rule metadata, and editor documents for set detail", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const findSets = vi.spyOn(fixture.metadataRepository, "findSets");
+    const findRules = vi.spyOn(fixture.metadataRepository, "findRules");
+    const findDocuments = vi.spyOn(fixture.documents, "findMany");
+    const findRule = vi.spyOn(fixture.metadataRepository, "findRule");
+    const findDocument = vi.spyOn(fixture.documents, "find");
+
+    await fixture.service.getSet(starter!.id);
+
+    expect(findSets).toHaveBeenCalledOnce();
+    expect(findRules).toHaveBeenCalledOnce();
+    expect(findDocuments).toHaveBeenCalledOnce();
+    expect(findRule).not.toHaveBeenCalled();
+    expect(findDocument).not.toHaveBeenCalled();
   });
 
   it("marks starter review complete without silently enabling alerts", async () => {
@@ -338,9 +360,10 @@ describe("AlertSetManagementService", () => {
 function createFixture() {
   const alertRepository = new InMemoryAlertRepository();
   let nextId = 0;
+  const generateId = (kind: "collection" | "rule" | "variant") => `${kind}-${(nextId += 1)}`;
   const alertService = new DefaultAlertService({
     repository: alertRepository,
-    generateId: (kind) => `${kind}-${(nextId += 1)}`
+    generateId
   });
   const metadataRepository = new InMemoryAlertSetMetadataRepository(alertService);
   const documents = new InMemoryAlertEditorDocumentRepository();
@@ -358,7 +381,8 @@ function createFixture() {
     metadataRepository,
     documents,
     getEditorDocument: (editorId) => alertEditorService.getDocument(editorId),
-    runAtomically: async (work) => work(),
+    generateId,
+    mutationStore: createInMemoryMutationStore(alertRepository, metadataRepository, documents),
     listBrowserSources: async () => [
       {
         id: "module:alerts:landscape:live",
@@ -385,11 +409,39 @@ function createFixture() {
   return { alertService, metadataRepository, documents, alertEditorService, service };
 }
 
+function createInMemoryMutationStore(
+  alerts: InMemoryAlertRepository,
+  metadata: InMemoryAlertSetMetadataRepository,
+  documents: InMemoryAlertEditorDocumentRepository
+): AlertAggregateMutationStore {
+  return {
+    commit(mutation: AlertAggregateMutation) {
+      for (const collection of mutation.saveCollections ?? []) void alerts.saveCollection(collection);
+      for (const item of mutation.saveSetMetadata ?? []) void metadata.saveSet(item);
+      for (const rule of mutation.saveRules ?? []) void alerts.saveRule(rule);
+      for (const item of mutation.saveRuleMetadata ?? []) void metadata.saveRule(item);
+      for (const document of mutation.saveDocuments ?? []) void documents.save(document);
+      for (const id of mutation.deleteDocumentIds ?? []) void documents.delete(id);
+      for (const id of mutation.deleteRuleMetadataIds ?? []) void metadata.deleteRule(id);
+      for (const id of mutation.deleteRuleIds ?? []) void alerts.deleteRule(id);
+      for (const id of mutation.deleteSetMetadataIds ?? []) void metadata.deleteSet(id);
+      for (const id of mutation.deleteCollectionIds ?? []) void alerts.deleteCollection(id);
+    }
+  };
+}
+
 class InMemoryAlertEditorDocumentRepository implements AlertEditorDocumentRepository {
   readonly #documents = new Map<string, AlertEditorDocument>();
 
   async find(editorId: string): Promise<AlertEditorDocument | null> {
     return structuredClone(this.#documents.get(editorId) ?? null);
+  }
+
+  async findMany(editorIds: readonly string[]): Promise<ReadonlyMap<string, AlertEditorDocument>> {
+    return new Map(editorIds.flatMap((editorId) => {
+      const document = this.#documents.get(editorId);
+      return document === undefined ? [] : [[editorId, structuredClone(document)]];
+    }));
   }
 
   async save(document: AlertEditorDocument): Promise<AlertEditorDocument> {
@@ -407,6 +459,13 @@ class InMemoryAlertRepository implements AlertRepository {
   readonly #rules = new Map<string, AlertRule>();
 
   async saveCollection(collection: AlertCollection): Promise<AlertCollection> {
+    if (collection.enabled) {
+      for (const [id, existing] of this.#collections) {
+        if (id !== collection.id && existing.enabled) {
+          this.#collections.set(id, { ...existing, enabled: false });
+        }
+      }
+    }
     this.#collections.set(collection.id, structuredClone(collection));
     return collection;
   }
@@ -436,6 +495,17 @@ class InMemoryAlertRepository implements AlertRepository {
     return Array.from(this.#rules.values());
   }
 
+  async listActiveRules(input: { readonly eventType?: AlertRule["eventType"] } = {}): Promise<readonly AlertRule[]> {
+    const enabledCollectionIds = new Set(
+      Array.from(this.#collections.values()).filter((collection) => collection.enabled).map((collection) => collection.id)
+    );
+    return (await this.listRules()).filter((rule) =>
+      rule.enabled &&
+      (input.eventType === undefined || rule.eventType === input.eventType) &&
+      rule.collectionIds.some((collectionId) => enabledCollectionIds.has(collectionId))
+    );
+  }
+
   async deleteRule(ruleId: string): Promise<void> {
     this.#rules.delete(ruleId);
   }
@@ -454,6 +524,13 @@ class InMemoryAlertSetMetadataRepository implements AlertSetMetadataRepository {
     return this.#setMetadata.get(setId) ?? null;
   }
 
+  async findSets(setIds: readonly string[]): Promise<ReadonlyMap<string, AlertSetMetadata>> {
+    return new Map(setIds.flatMap((setId) => {
+      const metadata = this.#setMetadata.get(setId);
+      return metadata === undefined ? [] : [[setId, metadata]];
+    }));
+  }
+
   async saveSet(metadata: AlertSetMetadata): Promise<AlertSetMetadata> {
     this.#setMetadata.set(metadata.setId, metadata);
     return metadata;
@@ -465,6 +542,13 @@ class InMemoryAlertSetMetadataRepository implements AlertSetMetadataRepository {
 
   async findRule(ruleId: string): Promise<AlertRuleManagementMetadata | null> {
     return this.#ruleMetadata.get(ruleId) ?? null;
+  }
+
+  async findRules(ruleIds: readonly string[]): Promise<ReadonlyMap<string, AlertRuleManagementMetadata>> {
+    return new Map(ruleIds.flatMap((ruleId) => {
+      const metadata = this.#ruleMetadata.get(ruleId);
+      return metadata === undefined ? [] : [[ruleId, metadata]];
+    }));
   }
 
   async saveRule(metadata: AlertRuleManagementMetadata): Promise<AlertRuleManagementMetadata> {
@@ -479,9 +563,7 @@ class InMemoryAlertSetMetadataRepository implements AlertSetMetadataRepository {
   async activateSet(setId: string): Promise<string | null> {
     const collections = await this.#alertService.listCollections();
     const replaced = collections.find((collection) => collection.enabled)?.id ?? null;
-    for (const collection of collections) {
-      await this.#alertService.setCollectionEnabled(collection.id, collection.id === setId);
-    }
+    await this.#alertService.setCollectionEnabled(setId, true);
     return replaced === setId ? null : replaced;
   }
 }

@@ -49,7 +49,7 @@ const tableDefinitions = [
   ),
   table("alert_rule_collections", ["rule_id", "collection_id"], ["rule_id", "collection_id"]),
   table("alert_rule_conditions", ["rule_id", "position", "field", "operator", "value_json"], ["rule_id", "position"], ["value_json"]),
-  table("alert_variants", ["id", "rule_id", "name", "enabled", "weight", "visual_asset_id", "audio_asset_id", "text_template", "tts_config_json", "duration_ms", "layout_json", "conditions_json", "priority"], ["rule_id", "id"], ["tts_config_json", "layout_json", "conditions_json"]),
+  table("alert_variants", ["id", "rule_id", "name", "enabled", "weight", "visual_asset_id", "audio_asset_id", "text_template", "tts_config_json", "duration_ms", "layout_json", "conditions_json", "priority", "variant_order"], ["rule_id", "variant_order", "id"], ["tts_config_json", "layout_json", "conditions_json"]),
   table("alert_set_metadata", ["set_id", "starter", "starter_review_state", "landscape_enabled", "landscape_review_state", "vertical_enabled", "vertical_review_state"], ["set_id"]),
   table("alert_rule_management_metadata", ["rule_id", "provider_kind", "review_state", "target_profile_ids_json"], ["rule_id"], ["target_profile_ids_json"]),
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
@@ -99,7 +99,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     return {
       marker: restorePointMarker,
       tables: Object.fromEntries(
-        [...tableDefinitions.map((definition) => definition.name), "overlay_keys"].map((name) => [
+        [...tableDefinitions.map((definition) => definition.name), "overlay_keys", "twitch_accounts"].map((name) => [
           name,
           this.connection.prepare(`SELECT * FROM ${name}`).all().map(toPlainRecord)
         ])
@@ -114,6 +114,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
 
     runInTransaction(this.connection, () => {
       this.connection.prepare("DELETE FROM overlay_keys").run();
+      this.connection.prepare("DELETE FROM twitch_accounts").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
@@ -121,6 +122,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
         insertCapturedRows(this.connection, definition.name, restorePoint.tables[definition.name] ?? []);
       }
       insertCapturedRows(this.connection, "overlay_keys", restorePoint.tables.overlay_keys ?? []);
+      insertCapturedRows(this.connection, "twitch_accounts", restorePoint.tables.twitch_accounts ?? []);
     });
   }
 
@@ -182,6 +184,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
 
     runInTransaction(this.connection, () => {
       this.connection.prepare("DELETE FROM overlay_keys").run();
+      this.connection.prepare("DELETE FROM twitch_accounts").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
@@ -312,6 +315,7 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
       }));
     const variants = (tables.alert_variants ?? [])
       .filter((candidate) => candidate.rule_id === row.id)
+      .sort((left, right) => Number(left.variant_order) - Number(right.variant_order) || String(left.id).localeCompare(String(right.id)))
       .map((variant) => ({
         id: variant.id,
         name: variant.name,
@@ -352,6 +356,12 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
       checksum: row.checksum,
       storagePath: `backup/${String(row.id)}`
     }));
+  }
+
+  for (const [index, row] of (tables.alert_variants ?? []).entries()) {
+    if (!Number.isInteger(row.variant_order) || Number(row.variant_order) < 0) {
+      errors.push(`alert_variants[${index}].variant_order must be a non-negative integer.`);
+    }
   }
 
   for (const [index, row] of (tables.provider_registrations ?? []).entries()) {
@@ -438,6 +448,7 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
     ["alert_rule_collections", ["rule_id", "collection_id"]],
     ["alert_rule_conditions", ["rule_id", "position"]],
     ["alert_variants", ["id"]],
+    ["alert_variants", ["rule_id", "variant_order"]],
     ["alert_set_metadata", ["set_id"]],
     ["alert_rule_management_metadata", ["rule_id"]],
     ["asset_library_metadata", ["asset_id"]],

@@ -4,12 +4,14 @@ import {
   type AlertMatchLogRecord,
   type DiagnosticsLogListOptions,
   type DiagnosticsLogRepository,
+  type DiagnosticsPruneCounts,
   type EventLogRecord,
   type EventLogStatus,
   type NormalizedStreamEvent,
   type PlaybackLogRecord,
   type PlaybackLogStatus
 } from "@stream-jams/core";
+import { runInTransaction } from "../db/database.js";
 
 interface EventLogRow {
   readonly id: unknown;
@@ -162,6 +164,37 @@ export class SqliteDiagnosticsLogRepository implements DiagnosticsLogRepository 
       options
     ).map((row) => mapPlaybackLogRow(row as unknown as PlaybackLogRow));
   }
+
+  async pruneBefore(cutoff: string, batchSize: number): Promise<DiagnosticsPruneCounts> {
+    const limit = normalizeLimit(batchSize);
+    return runInTransaction(this.#connection, () => ({
+      eventLogs: deleteBatch(this.#connection, "event_logs", "received_at", cutoff, limit),
+      alertMatchLogs: deleteBatch(this.#connection, "alert_match_logs", "matched_at", cutoff, limit),
+      playbackLogs: deleteBatch(this.#connection, "playback_logs", "occurred_at", cutoff, limit)
+    }));
+  }
+}
+
+function deleteBatch(
+  connection: DatabaseSync,
+  table: "event_logs" | "alert_match_logs" | "playback_logs",
+  timestampColumn: "received_at" | "matched_at" | "occurred_at",
+  cutoff: string,
+  batchSize: number
+): number {
+  const result = connection
+    .prepare(
+      `DELETE FROM ${table}
+       WHERE id IN (
+         SELECT id
+         FROM ${table}
+         WHERE ${timestampColumn} < ?
+         ORDER BY ${timestampColumn}, id
+         LIMIT ?
+       )`
+    )
+    .run(cutoff, batchSize);
+  return Number(result.changes);
 }
 
 function selectRows(

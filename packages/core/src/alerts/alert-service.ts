@@ -79,6 +79,13 @@ export class AlertCollectionNotFoundError extends Error {
   }
 }
 
+export class LastActiveAlertCollectionError extends Error {
+  constructor(readonly collectionId: string) {
+    super("At least one alert collection must remain active");
+    this.name = "LastActiveAlertCollectionError";
+  }
+}
+
 export class AlertRuleNotFoundError extends Error {
   constructor(readonly ruleId: string) {
     super(`Alert rule "${ruleId}" was not found`);
@@ -141,8 +148,9 @@ export class DefaultAlertService implements AlertService {
   }
 
   async updateCollection(collectionId: string, input: UpdateAlertCollectionInput): Promise<AlertCollection> {
-    await this.#requireCollection(collectionId);
+    const current = await this.#requireCollection(collectionId);
     const parsed = updateAlertCollectionInputSchema.parse(input);
+    if (current.enabled && !parsed.enabled) await this.#requireAnotherActiveCollection(collectionId);
     return this.#repository.saveCollection(
       alertCollectionSchema.parse({
         id: collectionId,
@@ -153,6 +161,7 @@ export class DefaultAlertService implements AlertService {
 
   async setCollectionEnabled(collectionId: string, enabled: boolean): Promise<AlertCollection> {
     const collection = await this.#requireCollection(collectionId);
+    if (collection.enabled && !enabled) await this.#requireAnotherActiveCollection(collectionId);
     return this.#repository.saveCollection({
       ...collection,
       enabled
@@ -160,7 +169,8 @@ export class DefaultAlertService implements AlertService {
   }
 
   async deleteCollection(collectionId: string): Promise<void> {
-    await this.#requireCollection(collectionId);
+    const collection = await this.#requireCollection(collectionId);
+    if (collection.enabled) await this.#requireAnotherActiveCollection(collectionId);
     await this.#repository.deleteCollection(collectionId);
   }
 
@@ -280,28 +290,7 @@ export class DefaultAlertService implements AlertService {
   }
 
   async listActiveRules(input: ListActiveAlertRulesInput = {}): Promise<readonly AlertRule[]> {
-    const [collections, rules] = await Promise.all([this.#repository.listCollections(), this.#repository.listRules()]);
-    const enabledCollectionIds = new Set(
-      collections.filter((collection) => collection.enabled).map((collection) => collection.id)
-    );
-    const activeRules: AlertRule[] = [];
-    const seenRuleIds = new Set<string>();
-
-    for (const rule of rules) {
-      if (
-        !rule.enabled ||
-        seenRuleIds.has(rule.id) ||
-        (input.eventType !== undefined && rule.eventType !== input.eventType) ||
-        !rule.collectionIds.some((collectionId) => enabledCollectionIds.has(collectionId))
-      ) {
-        continue;
-      }
-
-      seenRuleIds.add(rule.id);
-      activeRules.push(rule);
-    }
-
-    return activeRules;
+    return this.#repository.listActiveRules(input);
   }
 
   async #requireCollection(collectionId: string): Promise<AlertCollection> {
@@ -315,6 +304,13 @@ export class DefaultAlertService implements AlertService {
 
   async #requireCollections(collectionIds: readonly string[]): Promise<void> {
     await Promise.all(collectionIds.map((collectionId) => this.#requireCollection(collectionId)));
+  }
+
+  async #requireAnotherActiveCollection(collectionId: string): Promise<void> {
+    const collections = await this.#repository.listCollections();
+    if (!collections.some((collection) => collection.id !== collectionId && collection.enabled)) {
+      throw new LastActiveAlertCollectionError(collectionId);
+    }
   }
 
   async #requireRule(ruleId: string): Promise<AlertRule> {
