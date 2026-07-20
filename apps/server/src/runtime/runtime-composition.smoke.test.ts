@@ -44,6 +44,37 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("indexes server failures by the public error ID returned to the browser", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: join(testRoot, "missing-web-dist"),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-07-20T01:00:00.000Z")
+    });
+    runtimeCompositions.push(composition);
+    const failed = await composition.app.inject({ method: "GET", url: "/manage" });
+    const errorId = (failed.json() as { readonly error: { readonly id: string } }).error.id;
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+
+    expect(failed.statusCode).toBe(503);
+    await waitFor(async () => {
+      const response = await composition.app.inject({
+        method: "GET",
+        url: "/management/diagnostics/workspace",
+        headers: authHeaders
+      });
+      const workspace = response.json() as { readonly rawLogs: readonly { readonly referenceId: string | null }[] };
+      return workspace.rawLogs.some((entry) => entry.referenceId === errorId);
+    });
+  });
+
   it("projects overlay playback failures into operator diagnostics", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({

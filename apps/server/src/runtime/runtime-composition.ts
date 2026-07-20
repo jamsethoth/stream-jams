@@ -816,10 +816,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       void runtimeLogger.error("Server HTTP error", {
         module: "server",
         source: "server.error",
-        correlationId: entry.requestId,
+        correlationId: entry.errorId,
         processingId: null,
         metadata: {
-          errorId: entry.errorId,
+          requestId: entry.requestId,
           code: entry.code,
           method: entry.method,
           url: entry.url,
