@@ -166,9 +166,9 @@ describe("AlertEditorPage", () => {
       listAssetLibraryItems: vi.fn(async () => []),
       deleteAsset: vi.fn(),
       updateAssetMetadata: vi.fn(),
-      saveAlertEditorDocument: vi.fn(async () => {
-        throw new Error("Database write failed. (INTERNAL_SERVER_ERROR, err_editor_save)");
-      }),
+      saveAlertEditorDocument: vi.fn()
+        .mockRejectedValueOnce(new Error("Database write failed."))
+        .mockRejectedValue(new Error("Database write failed. (INTERNAL_SERVER_ERROR, err_editor_save)")),
       sendAlertEditorTest: vi.fn(),
       reportAlertEditorError
     } as AlertEditorPageApi & { readonly reportAlertEditorError: typeof reportAlertEditorError };
@@ -191,13 +191,16 @@ describe("AlertEditorPage", () => {
 
     const firstError = await screen.findByRole("alert");
     expect(firstError.closest(".management-toast")).toHaveClass("management-toast--failure");
-    expect(firstError).toHaveTextContent("err_editor_save");
     expect(reportAlertEditorError).toHaveBeenCalledWith("alert-follow", expect.objectContaining({
       setId: "set-default",
-      error: expect.objectContaining({ referenceId: "err_editor_save" })
+      error: expect.objectContaining({ referenceId: expect.stringMatching(/^ui_/u) })
     }));
     await user.click(screen.getByRole("button", { name: "Dismiss error" }));
     expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("err_editor_save");
+    expect(reportAlertEditorError).toHaveBeenCalledTimes(1);
 
     vi.useFakeTimers();
     await act(async () => {

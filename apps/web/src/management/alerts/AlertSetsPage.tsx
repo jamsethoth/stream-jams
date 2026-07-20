@@ -1112,11 +1112,13 @@ function formatProfile(value: "landscape" | "vertical"): string {
 }
 
 function toActionableError(summary: string, cause: unknown, nextStep: string): ActionableManagementError {
-  const referenceId = `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
+  const message = cause instanceof Error ? cause.message : "An unexpected error occurred.";
+  const referenceId = /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(message)?.[0]
+    ?? `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`;
   console.error(`[${referenceId}] ${summary}`, cause);
   return {
     summary,
-    cause: cause instanceof Error ? cause.message : "An unexpected error occurred.",
+    cause: message,
     nextStep,
     severity: "error",
     occurredAt: new Date().toISOString(),

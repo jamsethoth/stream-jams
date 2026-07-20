@@ -76,3 +76,5 @@
 - [x] 10.4 Run focused tests, lint, typecheck, full tests, Storybook build/tests, Playwright, strict OpenSpec validation, then rebuild/restart and live-verify toast layout and timing at narrow, tablet, and desktop widths.
 - [x] 10.5 Add a regression test proving public backend error IDs are the runtime correlation IDs used by Diagnostics, then fix the shared server-error logging boundary.
 - [x] 10.6 Run focused and full validation, strict OpenSpec validation, rebuild/restart, and live-verify the linked Diagnostics result.
+- [x] 10.7 Add regressions proving handled alert-editor failures are recorded before response and alert-list toasts preserve the returned public error ID, then fix both boundaries.
+- [x] 10.8 Run focused and full validation, strict OpenSpec validation, rebuild/restart, and live-verify a blocked alert-test Diagnostics link.

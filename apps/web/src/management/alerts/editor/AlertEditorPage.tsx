@@ -164,7 +164,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setNotice(null);
     setError(nextError);
     const report = props.managementApi.reportAlertEditorError;
-    if (report === undefined) return;
+    if (report === undefined || !nextError.referenceId.startsWith("ui_")) return;
     void report(props.alertId, { setId: loadedSetId ?? null, error: nextError }).catch((cause: unknown) => {
       console.error(`[${nextError.referenceId}] Alert editor error could not be recorded in Diagnostics.`, cause);
     });

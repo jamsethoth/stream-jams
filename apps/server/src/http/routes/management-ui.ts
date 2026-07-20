@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   alertCreateInputSchema,
   alertVariationCreateInputSchema,
@@ -146,11 +147,13 @@ export interface ManagementUiRouteDependencies {
   readonly managementUiQueryService: ManagementUiQueryService;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
+  readonly generateServerErrorId?: (() => string) | undefined;
 }
 
 export function registerManagementUiRoutes(app: FastifyInstance, dependencies: ManagementUiRouteDependencies): void {
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
   const service = dependencies.managementUiQueryService;
+  const generateErrorId = dependencies.generateServerErrorId ?? (() => `err_${randomUUID()}`);
 
   app.get("/management/home", { preHandler }, async () =>
     homeSetupSummarySchema.parse(await service.getHomeSetupSummary())
@@ -441,48 +444,80 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
   });
 
   app.get("/management/alerts/:alertId/editor", { preHandler }, async (request, reply) => {
+    const alertId = readParam(request.params, "alertId");
     try {
-      return alertEditorDocumentSchema.parse(await service.getAlertEditorDocument(readParam(request.params, "alertId")));
+      return alertEditorDocumentSchema.parse(await service.getAlertEditorDocument(alertId));
     } catch (error) {
-      return sendAlertEditorCommandError(reply, error);
+      return sendAlertEditorCommandError(reply, error, {
+        service,
+        generateErrorId,
+        alertId,
+        setId: null,
+        summary: "The alert editor could not be opened",
+        nextStep: "Return to Alerts and choose the alert again."
+      });
     }
   });
 
   app.put("/management/alerts/:alertId/editor", { preHandler }, async (request, reply) => {
+    const alertId = readParam(request.params, "alertId");
     const input = alertEditorSaveInputSchema.safeParse(request.body);
     if (!input.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_EDITOR_DOCUMENT",
-        message: "Review the alert layers and target profiles, then try saving again."
-      });
+      return recordAlertEditorError(reply, {
+        service,
+        generateErrorId,
+        alertId,
+        setId: null,
+        summary: "The alert was not saved",
+        nextStep: "Review the alert layers and target profiles, then try saving again."
+      }, 400, "INVALID_ALERT_EDITOR_DOCUMENT", "Review the alert layers and target profiles, then try saving again.");
     }
     try {
       return alertEditorDocumentSchema.parse(
         await service.saveAlertEditorDocument(
-          readParam(request.params, "alertId"),
+          alertId,
           input.data.document,
           input.data.confirmLiveImpact
         )
       );
     } catch (error) {
-      return sendAlertEditorCommandError(reply, error);
+      return sendAlertEditorCommandError(reply, error, {
+        service,
+        generateErrorId,
+        alertId,
+        setId: input.data.document.setId,
+        summary: "The alert was not saved",
+        nextStep: "Review the selected profile and highlighted fields, then try again."
+      });
     }
   });
 
   app.post("/management/alerts/:alertId/editor/test", { preHandler }, async (request, reply) => {
+    const alertId = readParam(request.params, "alertId");
     const input = alertEditorTestRequestSchema.safeParse(request.body);
     if (!input.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_EDITOR_TEST",
-        message: "Choose a target profile and valid sample payload, then try Send test again."
-      });
+      return recordAlertEditorError(reply, {
+        service,
+        generateErrorId,
+        alertId,
+        setId: null,
+        summary: "The alert test was not sent",
+        nextStep: "Choose a target profile and valid sample payload, then try Send test again."
+      }, 400, "INVALID_ALERT_EDITOR_TEST", "Choose a target profile and valid sample payload, then try Send test again.");
     }
     try {
       return alertEditorTestResultSchema.parse(
-        await service.sendAlertEditorTest(readParam(request.params, "alertId"), input.data)
+        await service.sendAlertEditorTest(alertId, input.data)
       );
     } catch (error) {
-      return sendAlertEditorCommandError(reply, error);
+      return sendAlertEditorCommandError(reply, error, {
+        service,
+        generateErrorId,
+        alertId,
+        setId: input.data.document.setId,
+        summary: "The alert test was not sent",
+        nextStep: `Connect and review the ${input.data.targetProfileId} output, then try again.`
+      });
     }
   });
 
@@ -580,24 +615,40 @@ function sendAssetCommandError(reply: Parameters<typeof sendHttpError>[0], error
   throw error;
 }
 
-function sendAlertEditorCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+interface AlertEditorErrorContext {
+  readonly service: Pick<ManagementUiQueryService, "reportAlertEditorError">;
+  readonly generateErrorId: () => string;
+  readonly alertId: string;
+  readonly setId: string | null;
+  readonly summary: string;
+  readonly nextStep: string;
+}
+
+async function sendAlertEditorCommandError(
+  reply: Parameters<typeof sendHttpError>[0],
+  error: unknown,
+  context: AlertEditorErrorContext
+) {
   if (error instanceof AlertEditorNotFoundError) {
-    return sendHttpError(reply, 404, {
-      code: error.code,
-      message: "The selected alert no longer exists. Return to the alert set and choose another alert."
-    });
+    return recordAlertEditorError(
+      reply,
+      context,
+      404,
+      error.code,
+      "The selected alert no longer exists. Return to the alert set and choose another alert."
+    );
   }
   if (error instanceof AlertEditorValidationError) {
-    return sendHttpError(reply, 422, {
-      code: error.code,
-      message: `${error.message} Review the highlighted editor settings and try again.`
-    });
+    return recordAlertEditorError(
+      reply,
+      context,
+      422,
+      error.code,
+      `${error.message} Review the highlighted editor settings and try again.`
+    );
   }
   if (error instanceof AlertEditorDeliveryBlockedError) {
-    return sendHttpError(reply, 409, {
-      code: error.code,
-      message: error.message
-    });
+    return recordAlertEditorError(reply, context, 409, error.code, error.message);
   }
   if (error instanceof AlertEditorLiveImpactConfirmationRequiredError) {
     return sendHttpError(reply, 409, {
@@ -606,6 +657,29 @@ function sendAlertEditorCommandError(reply: Parameters<typeof sendHttpError>[0],
     });
   }
   throw error;
+}
+
+async function recordAlertEditorError(
+  reply: Parameters<typeof sendHttpError>[0],
+  context: AlertEditorErrorContext,
+  statusCode: number,
+  code: string,
+  message: string
+) {
+  const referenceId = context.generateErrorId();
+  await context.service.reportAlertEditorError(context.alertId, {
+    setId: context.setId,
+    error: {
+      summary: context.summary,
+      cause: message,
+      nextStep: context.nextStep,
+      severity: "error",
+      occurredAt: new Date().toISOString(),
+      referenceId,
+      correction: null
+    }
+  });
+  return sendHttpError(reply, statusCode, { code, id: referenceId, message });
 }
 
 function sendProviderCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {

@@ -176,6 +176,25 @@ describe("AlertSetsPage", () => {
     expect(screen.getByText("New follower test queued for Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
+  it("links a failed inline alert test to the server Diagnostics record", async () => {
+    const sendAlertEditorTest = vi.fn(async () => {
+      throw new Error(
+        "Finish reviewing and enable the landscape profile before sending it to an output. "
+        + "(ALERT_EDITOR_TEST_BLOCKED, err_inline_test_blocked)"
+      );
+    });
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ sendAlertEditorTest })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Test New follower" }));
+
+    expect(await screen.findByText("err_inline_test_blocked")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute(
+      "href",
+      "/manage/diagnostics?reference=err_inline_test_blocked"
+    );
+  });
+
   it("creates an alert in the expanded set and opens it in the focused editor", async () => {
     const created = {
       ...detail().inventory[0]!,
