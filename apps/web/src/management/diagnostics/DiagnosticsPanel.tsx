@@ -37,6 +37,7 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [loadNotice, setLoadNotice] = useState<InlineNotice | null>(null);
   const mounted = useRef(true);
+  const appliedReferenceId = useRef<string | null>(null);
 
   useEffect(() => {
     mounted.current = true;
@@ -48,10 +49,12 @@ export function DiagnosticsPanel({ initialReferenceId, managementApi }: Diagnost
 
   useEffect(() => {
     setQuery(initialReferenceId ?? "");
+    if (initialReferenceId === undefined) appliedReferenceId.current = null;
   }, [initialReferenceId]);
 
   useEffect(() => {
-    if (workspace === null || initialReferenceId === undefined) return;
+    if (workspace === null || initialReferenceId === undefined || appliedReferenceId.current === initialReferenceId) return;
+    appliedReferenceId.current = initialReferenceId;
     const problem = workspace.problems.find((item) => item.referenceId === initialReferenceId);
     if (problem !== undefined) {
       setActiveTab("problems");

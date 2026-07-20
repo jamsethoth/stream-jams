@@ -78,6 +78,14 @@ The management UI SHALL omit zero-value blocker and warning facts and SHALL repl
 - **WHEN** either matching or unmatched alert count is zero
 - **THEN** the zero-valued count is omitted while the nonzero impact remains visible
 
+### Requirement: Diagnostics Refresh Preserves The Active View
+The management UI SHALL refresh Diagnostics evidence without resetting the user's current tab, search, filter, or sort state.
+
+#### Scenario: Filtered Diagnostics view is refreshed
+- **WHEN** a user refreshes Diagnostics after selecting a tab and filter
+- **THEN** the latest evidence loads into that active tab
+- **AND** the current search, filter, and sort selections remain unchanged
+
 ### Requirement: Alert Editor Action Failures Do Not Reflow The Workspace
 The management UI SHALL present post-load alert-editor action failures without changing the authoring workspace dimensions and SHALL retain diagnostic evidence after transient feedback disappears.
 

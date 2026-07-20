@@ -78,3 +78,8 @@
 - [x] 10.6 Run focused and full validation, strict OpenSpec validation, rebuild/restart, and live-verify the linked Diagnostics result.
 - [x] 10.7 Add regressions proving handled alert-editor failures are recorded before response and alert-list toasts preserve the returned public error ID, then fix both boundaries.
 - [x] 10.8 Run focused and full validation, strict OpenSpec validation, rebuild/restart, and live-verify a blocked alert-test Diagnostics link.
+
+## 11. Diagnostics Refresh State
+
+- [x] 11.1 Add a failing regression proving Refresh preserves the active Diagnostics tab and filter after a reference-ID deep link.
+- [x] 11.2 Apply reference-ID navigation only when the deep link changes, then run validation, rebuild/restart, and live-verify Refresh.

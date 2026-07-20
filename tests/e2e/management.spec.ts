@@ -313,11 +313,18 @@ test("diagnostics workspace preserves correction context and copies sanitized ev
     });
   });
 
-  await page.goto("/manage");
-  await page.getByRole("link", { name: "Diagnostics" }).click();
+  await page.goto("/manage/diagnostics?reference=ref-output-e2e");
   const problemsBox = await page.getByRole("region", { name: "Open problems" }).boundingBox();
   const exportBox = await page.getByRole("button", { name: "Export support bundle" }).boundingBox();
   expect(exportBox?.y).toBeGreaterThan((problemsBox?.y ?? 0) + (problemsBox?.height ?? 0));
+
+  await page.getByRole("tab", { name: /Events/ }).click();
+  await page.getByLabel("Outcome").selectOption("failed");
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect(page.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Outcome")).toHaveValue("failed");
+
+  await page.getByRole("tab", { name: /Problems/ }).click();
   await page.getByPlaceholder("Reference ID or message").fill("ref-output-e2e");
 
   await expect(page.getByRole("link", { name: "Open browser sources" })).toHaveAttribute(

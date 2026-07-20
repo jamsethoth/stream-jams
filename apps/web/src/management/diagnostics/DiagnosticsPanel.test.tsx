@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -57,6 +57,22 @@ describe("DiagnosticsPanel", () => {
       "href",
       "/manage/modules/alerts/editor/alert-sub?diagnostic=ref-event-2"
     );
+  });
+
+  it("preserves the active tab and filter when refreshed after a reference-ID deep link", async () => {
+    const user = userEvent.setup();
+    const api = managementApi();
+    api.getDiagnosticsWorkspace = vi.fn(async () => workspace());
+    render(<DiagnosticsPanel initialReferenceId="ref-provider-1" managementApi={api} />);
+
+    await screen.findByRole("heading", { name: "Open problems" });
+    await user.click(screen.getByRole("tab", { name: /Events/ }));
+    await user.selectOptions(screen.getByLabelText("Outcome"), "failed");
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => expect(api.getDiagnosticsWorkspace).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("tab", { name: /Events/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Outcome")).toHaveValue("failed");
   });
 
   it("copies only the sanitized raw-log bundle", async () => {
