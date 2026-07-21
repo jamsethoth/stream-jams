@@ -4,7 +4,7 @@
 
 **Goal:** Eliminate the remaining active-rule temporary sorts, land the reconciled delivery record, then sync and archive `harden-sqlite-persistence` with no open tasks.
 
-**Architecture:** Keep the existing four-statement active-rule reader and migration-013 indexes. Change only the parent SELECT so collection-first traversal supplies deterministic rule order without `DISTINCT` or temporary B-trees. Deliver that query fix first; after it reaches `main`, use a fresh branch to merge the five delta specs into main specs and archive the completed change.
+**Architecture:** Keep the existing four-statement active-rule reader and migration-013 indexes. Change only the parent SELECT so collection-first traversal supplies deterministic rule order without `DISTINCT` or temporary B-trees. After the query fix passes local and CI gates, merge the five delta specs into main specs and archive the completed change in the same PR so `main` receives one atomic implementation/spec state.
 
 **Tech Stack:** TypeScript 6, Node.js 24 `node:sqlite`, SQLite `EXPLAIN QUERY PLAN`, Vitest 4, pnpm 11, OpenSpec 1.4.
 
@@ -15,12 +15,12 @@
 - Add no migration, index, dependency, repository abstraction, frontend change, WAL setting, or planner-maintenance behavior.
 - Keep migrations 013 through 016 unchanged; migration 013 already has the required `(collection_id, rule_id)` index.
 - Use the existing `EXPLAIN QUERY PLAN` style in `apps/server/src/modules/db/database.test.ts`.
-- Do not sync or archive the OpenSpec change until the query-fix PR is present in `origin/main`.
+- Do not sync or archive the OpenSpec change until the query fix passes focused, full-repository, and PR CI gates.
 - Storybook gates are not required because no frontend file changes.
 
 ## File Map
 
-Query-fix PR:
+PR #72:
 
 - Modify `apps/server/src/modules/alerts/sqlite-alert-repository.ts`: rewrite only the `listActiveRules()` parent SELECT.
 - Modify `apps/server/src/modules/db/database.test.ts`: prove the real parent-query shape uses the three existing indexes without a temporary B-tree.
@@ -29,14 +29,14 @@ Query-fix PR:
 - Retain the already-prepared reconciliation edits in `proposal.md`, `design.md`, and `tasks.md`.
 - Add this implementation plan.
 
-Sync/archive PR after the query-fix PR reaches `main`:
+Sync/archive update after the query-fix gates pass:
 
 - Modify `openspec/specs/alert-configuration-management/spec.md`: merge the exactly-one-active-set requirement changes.
 - Create `openspec/specs/configuration-backup-restore/spec.md`: promote the three backup/restore requirements.
 - Modify `openspec/specs/overlay-output-management/spec.md`: add exact deterministic overlay-key verification.
 - Modify `openspec/specs/runtime-log-operations/spec.md`: extend retention to relational diagnostics.
 - Create `openspec/specs/sqlite-persistence-integrity/spec.md`: promote transaction, bounded-read, asset-FK, query-plan, and migration-ledger requirements.
-- Move `openspec/changes/harden-sqlite-persistence/` to `openspec/changes/archive/2026-07-20-harden-sqlite-persistence/` through the OpenSpec archive command after sync and validation.
+- Move `openspec/changes/harden-sqlite-persistence/` to `openspec/changes/archive/2026-07-21-harden-sqlite-persistence/` through the OpenSpec archive command after sync and validation.
 
 ---
 
@@ -248,7 +248,7 @@ git commit -m "perf(db): avoid active-rule temp sorts"
 
 ---
 
-### Task 4: Verify And Land The Query-Fix PR
+### Task 4: Verify The Query-Fix PR Before Archiving
 
 **Files:**
 
@@ -257,7 +257,7 @@ git commit -m "perf(db): avoid active-rule temp sorts"
 **Interfaces:**
 
 - Consumes: the two commits from Tasks 1 and 3.
-- Produces: task 8.4 present in remote `main`, which is the hard prerequisite for task 8.5.
+- Produces: a green PR candidate with task 8.4 complete, which is the prerequisite for task 8.5.
 
 - [ ] **Step 1: Run repository gates**
 
@@ -300,7 +300,7 @@ gh pr edit $sqliteQueryPr --repo jamsethoth/stream-jams --body $sqliteQueryBody
 
 Update the validation list with the fresh test counts before requesting review.
 
-- [ ] **Step 3: Require green CI and approval before merge**
+- [ ] **Step 3: Require green CI before sync and archive**
 
 Run:
 
@@ -308,17 +308,7 @@ Run:
 gh pr checks $sqliteQueryPr --repo jamsethoth/stream-jams --watch
 ```
 
-Expected: validate, build, Storybook, e2e, dependency review, and CodeQL checks pass. Merge only after explicit user approval; admin bypass is not implied by approval given for PR #71.
-
-- [ ] **Step 4: Confirm the merge before starting archive work**
-
-```powershell
-git fetch origin main
-$sqliteQueryMerge = gh pr view $sqliteQueryPr --repo jamsethoth/stream-jams --json mergeCommit --jq '.mergeCommit.oid'
-git merge-base --is-ancestor $sqliteQueryMerge origin/main
-```
-
-Expected: exit 0. If not, stop; task 8.5 must not start.
+Expected: validate, build, Storybook, e2e, dependency review, and CodeQL checks pass. Continue with sync/archive in this PR, rerun CI, and merge only after explicit user approval; admin bypass is not implied by approval given for PR #71.
 
 ---
 
@@ -337,11 +327,9 @@ Expected: exit 0. If not, stop; task 8.5 must not start.
 - Consumes: all five delta specs under `openspec/changes/harden-sqlite-persistence/specs/` and their corresponding main specs.
 - Produces: idempotently merged main requirements with no lost pre-existing scenarios.
 
-- [ ] **Step 1: Create a fresh post-merge branch**
+- [ ] **Step 1: Continue on the validated PR branch**
 
 ```powershell
-git fetch origin main
-git switch -c codex/archive-harden-sqlite-persistence origin/main
 openspec.cmd status --change harden-sqlite-persistence --json
 openspec.cmd instructions apply --change harden-sqlite-persistence --json
 ```
@@ -409,7 +397,7 @@ Expected: every listed requirement appears exactly once; all main specs validate
 
 **Interfaces:**
 
-- Consumes: query-fix merge in `origin/main` and fully synced main specs from Task 5.
+- Consumes: the green query fix in PR #72 and fully synced main specs from Task 5.
 - Produces: no active `harden-sqlite-persistence` change and a strict-valid dated archive.
 
 - [ ] **Step 1: Mark the final task complete and validate before moving it**
@@ -428,7 +416,7 @@ Expected: strict validation passes and progress is 45/45 with state `all_done`.
 First confirm the target does not exist:
 
 ```powershell
-Test-Path openspec/changes/archive/2026-07-20-harden-sqlite-persistence
+Test-Path openspec/changes/archive/2026-07-21-harden-sqlite-persistence
 ```
 
 Expected: `False`.
@@ -439,7 +427,7 @@ Archive through the native CLI:
 openspec.cmd archive harden-sqlite-persistence --skip-specs -y
 ```
 
-Expected: the active change moves to `openspec/changes/archive/2026-07-20-harden-sqlite-persistence/` with `.openspec.yaml`, proposal, design, specs, and completed tasks preserved.
+Expected: the active change moves to `openspec/changes/archive/2026-07-21-harden-sqlite-persistence/` with `.openspec.yaml`, proposal, design, specs, and completed tasks preserved.
 
 - [ ] **Step 3: Verify the final OpenSpec repository state**
 
@@ -450,21 +438,19 @@ git status --short
 git diff --check
 ```
 
-Expected: `harden-sqlite-persistence` is absent from active changes; all specs and changes validate; status contains only the five main-spec updates and the archived change move; diff check is empty.
+Expected: `harden-sqlite-persistence` is absent from active changes; all 15 main specs validate; the archived change passed strict validation before moving; status contains only the five main-spec updates and the archived change move; diff check is empty. The full-tree audit may still report the pre-existing `add-main-branch-changelog` SHALL/MUST error, whose files are unchanged from `origin/main`.
 
 - [ ] **Step 4: Commit the sync and archive**
 
 ```powershell
-git add openspec/specs openspec/changes/archive/2026-07-20-harden-sqlite-persistence
+git add openspec/specs openspec/changes/archive/2026-07-21-harden-sqlite-persistence
 git commit -m "docs(openspec): archive SQLite hardening"
 ```
 
-- [ ] **Step 5: Publish the archive PR**
+- [ ] **Step 5: Update PR #72 and require green CI before merge**
 
 ```powershell
-git push -u origin codex/archive-harden-sqlite-persistence
-gh pr create --repo jamsethoth/stream-jams --base main --head codex/archive-harden-sqlite-persistence --title "docs(openspec): archive SQLite hardening" --fill
-$sqliteArchivePr = gh pr list --repo jamsethoth/stream-jams --head codex/archive-harden-sqlite-persistence --state open --json number --jq '.[0].number'
+git push origin codex/reconcile-harden-sqlite-openspec
 $sqliteArchiveBody = @'
 ## Summary
 
@@ -478,8 +464,8 @@ $sqliteArchiveBody = @'
 - `openspec.cmd validate --all --strict`
 - `git diff --check`
 '@
-gh pr edit $sqliteArchivePr --repo jamsethoth/stream-jams --body $sqliteArchiveBody
-gh pr checks $sqliteArchivePr --repo jamsethoth/stream-jams --watch
+gh pr edit 72 --repo jamsethoth/stream-jams --body $sqliteArchiveBody
+gh pr checks 72 --repo jamsethoth/stream-jams --watch
 ```
 
 Expected: CI passes. Merge only after explicit user approval, then fetch `origin/main` and confirm the archive commit is an ancestor.
@@ -489,7 +475,7 @@ Expected: CI passes. Merge only after explicit user approval, then fetch `origin
 - [ ] Active-rule retrieval returns the same ordered domain results and still executes four SELECTs for one and 100 rules.
 - [ ] The active parent plan uses `alert_collections_one_active_set`, `alert_rule_collections_collection_rule_idx`, and the alert-rule PK with no `USE TEMP B-TREE`.
 - [ ] No migration, index, dependency, public API, frontend, or database-policy change was added.
-- [ ] Query-fix PR is present in `origin/main` before sync/archive begins.
+- [ ] PR #72 query-fix gates pass before sync/archive begins.
 - [ ] All five delta capabilities are represented exactly once in main specs without deleting unrelated scenarios.
 - [ ] Archived tasks show 45/45 complete and the change is absent from `openspec.cmd list --json`.
-- [ ] `openspec.cmd validate --all --strict` passes after archive.
+- [ ] Main specs and the completed change validate strictly; the full-tree audit has no new failure beyond the unchanged `add-main-branch-changelog` SHALL/MUST error.

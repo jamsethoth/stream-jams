@@ -65,4 +65,4 @@
 - [x] 8.2 Regenerate the relational schema explorer with the repo-local executable skill and confirm the final migration, table, FK, trigger, and index inventory matches the design.
 - [x] 8.3 Record measured before/after statement counts and query plans in the audit or change notes; leave WAL, vacuuming, JSON normalization, row versions, migration checksums, and `PRAGMA optimize` unchanged.
 - [x] 8.4 Rewrite the active-rule parent query to avoid temporary DISTINCT/ordering B-trees and add representative plan coverage without another migration.
-- [ ] 8.5 Run final strict validation, sync accepted delta specs, and archive the change after task 8.4 is merged to `main`.
+- [x] 8.5 Run final strict validation, sync accepted delta specs, and archive the change with the completed implementation.
