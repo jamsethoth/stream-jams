@@ -1,6 +1,6 @@
 ## Why
 
-The SQLite audit found two release-blocking correctness defects—lossy alert-variant backup ordering and async transaction leakage—plus bounded integrity, lifecycle, and hot-query gaps that will worsen as local profiles accumulate configuration and diagnostics. Addressing them as one dependency-ordered initiative keeps the persistence contract coherent while preserving six independently reviewable implementation slices.
+The SQLite audit found two release-blocking correctness defects—lossy alert-variant backup ordering and async transaction leakage—plus bounded integrity, lifecycle, and hot-query gaps that will worsen as local profiles accumulate configuration and diagnostics. Addressing them as one dependency-ordered initiative keeps the persistence contract coherent. The six technical slices organize implementation and verification, while the approved delivery was consolidated into one reviewed PR.
 
 ## What Changes
 

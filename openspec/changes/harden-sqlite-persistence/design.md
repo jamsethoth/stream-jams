@@ -14,7 +14,7 @@ The same audit traced event playback and management reads, exercised representat
 - Apply existing retention settings to relational diagnostics without long write locks.
 - Enforce variant asset references, exactly-one-active-set mutation policy, and disconnected credential state after restore.
 - Use exact indexed overlay-key verification and fail closed on unexpected migration ledgers.
-- Deliver the work as six independently testable and reviewable slices, each starting from the preceding slice on remote `main`.
+- Organize the work as six independently testable technical slices and deliver their approved combined result through one consolidated integration gate.
 
 **Non-Goals:**
 
@@ -26,11 +26,11 @@ The same audit traced event playback and management reads, exercised representat
 
 ## Decisions
 
-### 1. One initiative, six sequential integration gates
+### 1. One initiative, six technical slices, one approved delivery
 
-The OpenSpec change is one persistence contract, but implementation is split into backup correctness, transaction isolation, hot reads, diagnostic lifecycle, referential/restore integrity, and low-risk hardening. Each slice gets its own branch, tests, review, and PR. The next slice MUST refresh and confirm the previous slice is present in `origin/main` before selecting migration IDs or editing.
+The OpenSpec change is one persistence contract organized into backup correctness, transaction isolation, hot reads, diagnostic lifecycle, referential/restore integrity, and low-risk hardening. Those slices retain focused tests and review evidence, but their approved implementation was consolidated into PR #71 after rebasing onto current `origin/main`. Main's migration 012 therefore precedes this change's migrations 013 through 016.
 
-Alternative: one large PR. Rejected because it combines archive compatibility, concurrency, query rewrites, and table rebuilds into one rollback and review boundary. Parallel migration slices are also rejected because they would race for migration IDs and edit the shared registry.
+Alternative: six sequential PRs. This was the original delivery plan, but it was explicitly superseded by the approved consolidated review and merge. Parallel migration development remains rejected because it would race for migration IDs and edit the shared registry.
 
 ### 2. Archive version 2 is lossless; affected version 1 archives fail preflight
 
@@ -92,18 +92,20 @@ Before applying pending migrations or exposing the connection, read all ledger I
 - **Composite indexes increase write cost** → Replace subsumed indexes rather than retaining both; compare representative plans before and after.
 - **Retention competes with event writes** → Use small batches and invoke outside event processing; tests exercise equal timestamps and concurrent appends.
 - **Secret cleanup occurs outside the DB transaction** → Keep the DB disconnected on cleanup failure and report the orphan; rollback DB state only for failures before replacement completes.
-- **One OpenSpec change spans several PRs** → Merge the planning artifacts first, update only the completed slice checkboxes in each PR, and gate every next slice on refreshed remote `main`.
+- **One consolidated PR broadens the review boundary** → Preserve focused verification by technical slice, rebase before final review, run full repository/CI gates on the combined head, and record the delivery exception explicitly rather than claiming sequential landings.
 
 ## Migration Plan
 
-1. Merge planning artifacts without production changes.
-2. Land archive version/order correction and drift tests; no DB migration.
-3. Land synchronous alert mutation boundary and remove production use of async SQLite transactions; no DB migration.
-4. Add next-contiguous alert read indexes and bulk read paths; prove fixed statement count and query plans.
-5. Add next-contiguous diagnostic composite indexes and bounded retention.
-6. Rebuild `alert_variants` for asset FKs/indexes, recreate dependent index/trigger objects, and add Twitch/active-set restore guards.
-7. Add next-contiguous overlay indexes, exact verification, and migration-ledger prefix validation.
-8. Run strict OpenSpec validation, affected package gates after each slice, and the full repository/browser gates before final archive of the change.
+1. Implement archive version/order correction and drift tests; no DB migration.
+2. Implement the synchronous alert mutation boundary and remove production use of async SQLite transactions; no DB migration.
+3. Add alert read indexes and bulk read paths; prove fixed statement count and query plans.
+4. Add diagnostic composite indexes and bounded retention.
+5. Rebuild `alert_variants` for asset FKs/indexes, recreate dependent index/trigger objects, and add Twitch/active-set restore guards.
+6. Add overlay indexes, exact verification, and migration-ledger prefix validation.
+7. Rebase the combined implementation onto current `origin/main`, renumber migrations contiguously after main's migration 012, and run focused plus full repository/CI gates.
+8. Merge the approved consolidated PR, reconcile delivery history, close any remaining requirement gap, then sync and archive the change.
+
+The consolidated implementation landed through PR #71 as squash commit `147a7b0a042f5388b1ff61117f13014e1fc314fc`.
 
 Each migration is forward-only. If a migration fails, its `BEGIN IMMEDIATE` transaction rolls back. After a migration commits, rollback is an application downgrade only to a build that knows the new schema; user configuration must not be destructively down-migrated.
 
