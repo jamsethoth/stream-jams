@@ -159,7 +159,7 @@ The current Twitch scope includes:
 - Prediction begin, progress, lock, and end.
 - Stream online and offline.
 
-The following remain deferred:
+The canonical status and priority for deferred event work is maintained in the [Stream Jams backlog](backlog.md). Current product boundaries still defer:
 
 - [Third-party and charity donation events](future-features.md#third-party-and-charity-donation-events).
 - Creator goals.
@@ -458,22 +458,9 @@ The MVP should include:
 - Secure secret storage.
 - Redacted diagnostics.
 
-## Post-MVP Feature List
+## Post-MVP Backlog
 
-- Alert pack import/export.
-- Music widget module.
-- Additional overlay widget modules.
-- Additional event providers.
-- Additional TTS providers.
-- Electron packaged desktop application.
-- Docker image for self-hosted/cloud-hosted deployments.
-- LAN overlay mode.
-- Encrypted config backup/export.
-- More advanced moderation tools.
-- Alert scheduling.
-- Shared/community alert packs.
-- Cloud sync, if ever desired.
-- Electron `safeStorage` secret-store adapter and migration once the Electron shell exists.
+The canonical post-MVP list, current priorities, dependency triggers, rejected directions, and promoted OpenSpec changes are maintained in the [Stream Jams backlog](backlog.md). This product plan defines product intent and does not duplicate that changing status index.
 
 ## Reference Research
 
@@ -501,7 +488,7 @@ The MVP should include:
 - Alerts are the first overlay module, not the only long-term overlay feature.
 - The MVP includes the module platform foundation but only implements the Alerts module.
 - Future modules may use separate module-specific overlay URLs or participate in unified overlay URLs.
-- Exactly one alert set is active at a time.
+- Exactly one alert set is active at a time; overlapping active sets are not planned without a new product decision.
 - All matching active alerts play sequentially for a single event.
 - Speaker.bot is the first target TTS provider.
 - The first Twitch milestone starts with follow, sub/resub, cheer, raid, and channel point redemption.

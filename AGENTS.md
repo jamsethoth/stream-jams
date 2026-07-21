@@ -14,6 +14,7 @@
 ## Context Routing
 
 - Product scope: `docs/product-plan.md`.
+- Canonical backlog: `docs/backlog.md`. Add new deferred work there first, link detailed rationale instead of duplicating status, attach an OpenSpec change when promoted, and remove the backlog row after implementation and spec sync complete.
 - MVP architecture and slice guidance: `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`, `docs/superpowers/stream-jams-mvp-slice-autonomy-prompt.md`, and the relevant slice plan under `docs/superpowers/plans/`.
 - Frontend/UX source of truth: `docs/ai/frontend-agent-guide.md`; follow its routing to the UX spec, UI guidelines, design tokens, and overlay error rules.
 - Use `.agents/skills/stream-jams-frontend-change` for frontend implementation and `.agents/skills/stream-jams-frontend-review` for frontend review.

@@ -1,8 +1,8 @@
 # Stream Jams Future Features
 
-This document captures intentionally deferred product and architecture ideas that should not be lost while current work stays tightly scoped.
+This document retains detailed rationale for selected deferred ideas. [`docs/backlog.md`](backlog.md) is the canonical index for current status, priority, dependencies, and promoted OpenSpec work.
 
-Each item should become its own design/spec before implementation.
+Add future items to the backlog first. Add or update a section here only when an item needs design questions or architectural context that does not fit the index. Each implemented item still requires its own approved OpenSpec change.
 
 ## Third-Party And Charity Donation Events
 
@@ -90,40 +90,6 @@ Each item should become its own design/spec before implementation.
 - Action execution over a non-local Streamer.bot connection.
 
 
-## Twitch Secure Configuration And UI Parity
-
-**Status:** Deferred.
-
-**Captured:** 2026-05-31.
-
-**Why deferred:** The MVP Twitch integration currently has a management UI for connection/status, but Twitch app credentials are configured through process environment variables. Streamer.bot planning introduces a stronger explicit configuration model for secure transport defaults, insecure-mode opt-ins, encrypted-at-rest credentials, warning states, and connection diagnostics.
-
-**Future capability:** Bring Twitch integration up to the same configuration and security standard as the Streamer.bot integration where the concepts apply.
-
-**Design questions to answer before implementation:**
-
-- Should Twitch client ID and client secret move from environment variables into management configuration?
-- Which Twitch credential values are secrets and which are non-secret configuration?
-- Should in-app Twitch credential management require the current runtime OS credential adapter, the future Electron `safeStorage` adapter, or either backend through the shared `SecretStore` contract?
-- How should the UI distinguish app credentials, connected broadcaster account, OAuth token status, and EventSub runtime status?
-- What warning or blocked state should appear when credential storage is unavailable or temporarily locked?
-- Should Twitch credential changes force token revocation, account disconnect, or EventSub reconnect?
-- What diagnostics prove Twitch OAuth and EventSub communication are using expected secure upstream endpoints?
-
-**Likely prerequisites:**
-
-- Production-ready OS-backed secret-store selection.
-- Provider configuration model that separates non-secret settings from secret refs.
-- Streamer.bot secure configuration implementation or equivalent shared provider-settings pattern.
-- Server-composition smoke tests that prove runtime uses the selected secret store.
-
-**Known UI gaps from the current Twitch panel:**
-
-- No UI for Twitch app client ID or client secret configuration.
-- No UI for credential storage health.
-- No explicit secure-communication status beyond relying on Twitch HTTPS endpoints.
-- No EventSub subscription selection or scope explanation beyond listing granted scopes.
-
 ## Evaluate Storybook Vitest Addon
 
 **Status:** Deferred.
@@ -148,23 +114,22 @@ Each item should become its own design/spec before implementation.
 - A small comparison branch or spike with timing, failure output, and maintenance notes.
 
 
-## Expanded Alert Condition Builder Fields
+## Advanced Alert Condition Builder
 
 **Status:** Deferred.
 
 **Captured:** 2026-06-16.
 
-**Why deferred:** The first expanded alert editor should stay small enough to ship and verify. It exposes only normalized `amount`, `tier`, and `rewardId` fields so streamers can cover common cheer, subscription, raid, and channel point cases without opening provider-payload or nested-field complexity.
+**Why deferred:** The implemented editor and planned variation-authoring change cover typed operators for safe normalized event fields. Generic nested logic, actor/message targeting, and advanced provider-specific fields remain a separate product and moderation problem.
 
-**Future capability:** Allow alert rules and variants to use a broader accessible field set while keeping the condition builder understandable and provider-safe.
+**Future capability:** Allow alert rules and variants to combine broader safe normalized fields through understandable AND/OR groups without exposing arbitrary provider payload paths.
 
 **Candidate fields:**
 
 - Actor identity and display name.
 - Message text and channel point user input.
 - Channel point reward title.
-- Resubscription streak or tenure fields.
-- Gift count and other normalized subscription metadata if added.
+- Additional normalized event fields not covered by the planned variation-authoring controls.
 - Provider metadata only through explicit, documented normalized aliases, not arbitrary raw JSON paths by default.
 
 **Design questions to answer before implementation:**
@@ -177,57 +142,31 @@ Each item should become its own design/spec before implementation.
 
 **Likely prerequisites:**
 
-- A typed field-metadata registry shared by the condition builder and matcher tests.
+- The typed field-metadata registry planned by `improve-alert-variation-authoring`.
 - Clear event-type-to-field compatibility rules.
 - UI tests proving accessible labels, validation, and disabled/unavailable field behavior.
 
 
-## Interactive Alert Layout Canvas
-
-**Status:** Deferred, but required before the initial app scope can be considered complete.
-
-**Captured:** 2026-06-16.
-
-**Why deferred:** The alert editor slice uses numeric `x`, `y`, `width`, `height`, and `zIndex` controls with a static preview. That is enough to configure and verify layout without taking on direct manipulation, keyboard resizing, snapping, selection, and responsive preview behavior in the same slice.
-
-**Future capability:** Provide an interactive alert layout canvas for direct positioning and sizing of alert visuals/text within the overlay coordinate space.
-
-**Design questions to answer before implementation:**
-
-- What coordinate system and responsive scaling model should the canvas use?
-- How should keyboard users move, resize, layer, and inspect selected elements?
-- Should the canvas support snapping, guides, aspect-ratio locks, and safe areas?
-- How should previews represent browser-source viewport sizes used in OBS?
-- How should canvas edits remain equivalent to the numeric layout model so users can switch between direct and precise editing?
-
-**Likely prerequisites:**
-
-- Stable overlay layout schema and renderer behavior from the expanded alert editor.
-- Accessibility design for keyboard and screen-reader operation.
-- Playwright coverage for visible canvas editing and overlay render parity.
-
-
-## Alert Configuration Backup, History, And Rollback
+## Alert Version History And Rollback
 
 **Status:** Deferred.
 
 **Captured:** 2026-06-16.
 
-**Why deferred:** The expanded alert editor uses hard deletes with confirmation and impact summaries, but durable backup/history/rollback is a broader state-management feature that cuts across alert collections, rules, variants, assets, and possibly module config.
+**Why deferred:** Complete configuration backup and guarded restore are implemented. Fine-grained version history, soft delete, selective rollback, and retention policy remain a separate state-management feature.
 
-**Future capability:** Let users back up current alert/module configuration state, inspect previous snapshots, and restore an earlier known-good configuration after accidental edits or deletes.
+**Future capability:** Let users inspect prior alert versions, recover deleted alerts, and restore a selected alert or set without replacing the complete application configuration.
 
 **Design questions to answer before implementation:**
 
-- What state is included in a backup: alerts only, module config, asset metadata, asset files, overlay keys, or all local app state?
-- Are backups automatic, manual, or both?
-- Where are backups stored, and how are they protected from corruption or accidental deletion?
-- How should restore handle assets or overlay keys that no longer exist?
-- Should restore be all-or-nothing, selective by collection/rule/variant, or both?
-- How should the UI preview restore impact before applying a snapshot?
+- Which edits and destructive actions create a version?
+- How many versions are retained, for how long, and under what storage bound?
+- Should recovery operate on one alert, one set, or a selected group?
+- How should a historical version reference assets that were replaced or deleted?
+- How should the UI preview live-output impact before applying a rollback?
 
 **Likely prerequisites:**
 
-- Durable SQLite-backed runtime state for the relevant configuration domains.
-- Export/import or snapshot services with explicit UTF-8/LF JSON serialization and transaction-backed restore.
-- Tests proving restore can roll back a hard-delete scenario without partial state.
+- Existing transactional configuration backup/restore and alert document persistence.
+- A bounded version-retention model and asset-reference policy.
+- Tests proving selective recovery does not partially replace live configuration.
