@@ -105,6 +105,21 @@ describe("Stream Jams SQLite database", () => {
       .prepare("EXPLAIN QUERY PLAN SELECT rule_id FROM alert_rule_collections WHERE collection_id = ?")
       .all("set-default")
       .map((row) => String(row.detail));
+    const activeRulePlan = database.connection
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT rules.id, rules.name, rules.event_type, rules.enabled,
+                rules.cooldown_seconds, rules.priority
+         FROM alert_collections AS collections
+         JOIN alert_rule_collections AS memberships ON memberships.collection_id = collections.id
+         JOIN alert_rules AS rules ON rules.id = memberships.rule_id
+         WHERE collections.enabled = 1
+           AND rules.enabled = 1
+           AND rules.event_type = ?
+         ORDER BY memberships.rule_id`
+      )
+      .all("follow")
+      .map((row) => String(row.detail));
     const variantPlan = database.connection
       .prepare(
         `EXPLAIN QUERY PLAN
@@ -114,6 +129,11 @@ describe("Stream Jams SQLite database", () => {
       .map((row) => String(row.detail));
 
     expect(membershipPlan.join("\n")).toContain("alert_rule_collections_collection_rule_idx");
+    const activeRulePlanText = activeRulePlan.join("\n");
+    expect(activeRulePlanText).toContain("alert_collections_one_active_set");
+    expect(activeRulePlanText).toContain("alert_rule_collections_collection_rule_idx");
+    expect(activeRulePlanText).toContain("sqlite_autoindex_alert_rules_1");
+    expect(activeRulePlanText).not.toContain("USE TEMP B-TREE");
     expect(variantPlan.join("\n")).toContain("alert_variants_rule_order_idx");
     expect(variantPlan.join("\n")).not.toContain("USE TEMP B-TREE");
   });

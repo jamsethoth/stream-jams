@@ -815,36 +815,37 @@ The implementation deliberately leaves journal mode/WAL policy, vacuuming, JSON 
 
 The implementation commit was rebased onto `origin/main` at `212f8fed3eb20673c2437f5f8ee88c7f3ac72d34`, whose `012-revoke-unsupported-overlay-keys` migration now precedes this change's renumbered `013` through `016` migrations. The executable schema explorer and focused migration/repository/service tests confirm that integration is structurally sound. No additional schema, foreign-key, or index migration is required by the rebase.
 
-Two changes remain before merge: one hot-query rewrite and one artifact-truth correction. Two residual database-use improvements are worth separate follow-up. None was introduced by the rebase, and none requires another migration.
+The post-rebase audit identified one hot-query rewrite and one artifact-truth correction; both are now resolved. Two residual database-use improvements remain optional follow-up. None was introduced by the rebase, and none requires another migration.
 
-### Required — Remove temporary B-trees from the active-rule parent query
+### Resolved — Active-rule parent query avoids temporary B-trees
 
 **Affected query:** `SqliteAlertRepository.listActiveRules()`.
 
-**Current behavior:** The fixed four-statement path uses `alert_collections_one_active_set`, covering `alert_rule_collections_collection_rule_idx`, and the alert-rule PK, but the parent `SELECT DISTINCT ... ORDER BY rules.id` still reports both `USE TEMP B-TREE FOR DISTINCT` and `USE TEMP B-TREE FOR ORDER BY`. `DISTINCT` is unnecessary because `(rule_id, collection_id)` is unique and the partial unique active-set index permits at most one enabled collection.
+**Previous behavior:** The fixed four-statement path used `alert_collections_one_active_set`, covering `alert_rule_collections_collection_rule_idx`, and the alert-rule PK, but the parent `SELECT DISTINCT ... ORDER BY rules.id` reported both `USE TEMP B-TREE FOR DISTINCT` and `USE TEMP B-TREE FOR ORDER BY`. `DISTINCT` was unnecessary because `(rule_id, collection_id)` is unique and the partial unique active-set index permits at most one enabled collection.
 
 **Risk:** Every event pays two avoidable temporary-sort operations on the otherwise-hardened hot path. The work is bounded by matching rules, so this is a confirmed performance defect rather than a correctness defect.
 
-**Exact change:** Drive the query from `alert_rule_collections`, resolve the one active collection with a scalar subquery, remove `DISTINCT`, and order by `memberships.rule_id`:
+**Exact change:** Drive the query from the indexed active collection through `alert_rule_collections`, remove `DISTINCT`, and order by `memberships.rule_id`:
 
 ```sql
 SELECT rules.id, rules.name, rules.event_type, rules.enabled,
        rules.cooldown_seconds, rules.priority
-FROM alert_rule_collections AS memberships
+FROM alert_collections AS collections
+JOIN alert_rule_collections AS memberships ON memberships.collection_id = collections.id
 JOIN alert_rules AS rules ON rules.id = memberships.rule_id
-WHERE memberships.collection_id = (
-  SELECT id FROM alert_collections WHERE enabled = 1
-)
+WHERE collections.enabled = 1
   AND rules.enabled = 1
   AND rules.event_type = ?
 ORDER BY memberships.rule_id;
 ```
 
-The representative plan uses the covering collection/rule index, scalar active-set lookup, and alert-rule PK without a temporary B-tree.
+The representative plan uses the active-set index, covering collection/rule index, and alert-rule PK without a temporary B-tree.
 
 **Migration implications:** None. Migration 013 already supplies the required index in the correct column order.
 
 **Validation:** Extend the existing 1-versus-100-rule statement-count/behavior test with parent-query `EXPLAIN QUERY PLAN` assertions for all three expected indexes and no `USE TEMP B-TREE`; retain negative event-type, disabled-rule, and inactive-collection cases.
+
+**Resolution:** Collection-first traversal through the active-set join uses the existing migration-013 covering index and rule PK without `DISTINCT` or temporary ordering. Focused plan and 1-versus-100-rule tests preserve the four-statement result contract.
 
 ### Optional — Residual management read amplification
 

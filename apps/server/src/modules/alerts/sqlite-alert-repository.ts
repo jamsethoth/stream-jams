@@ -259,15 +259,15 @@ export class SqliteAlertRepository implements AlertRepository {
     const parameters = input.eventType === undefined ? [] : [input.eventType];
     const ruleRows = this.#connection
       .prepare(
-        `SELECT DISTINCT rules.id, rules.name, rules.event_type, rules.enabled,
+        `SELECT rules.id, rules.name, rules.event_type, rules.enabled,
                 rules.cooldown_seconds, rules.priority
-         FROM alert_rules AS rules
-         JOIN alert_rule_collections AS memberships ON memberships.rule_id = rules.id
-         JOIN alert_collections AS collections ON collections.id = memberships.collection_id
-         WHERE rules.enabled = 1
-           AND collections.enabled = 1
+         FROM alert_collections AS collections
+         JOIN alert_rule_collections AS memberships ON memberships.collection_id = collections.id
+         JOIN alert_rules AS rules ON rules.id = memberships.rule_id
+         WHERE collections.enabled = 1
+           AND rules.enabled = 1
            ${eventFilter}
-         ORDER BY rules.id`
+         ORDER BY memberships.rule_id`
       )
       .all(...parameters) as unknown as readonly AlertRuleRow[];
     if (ruleRows.length === 0) return [];

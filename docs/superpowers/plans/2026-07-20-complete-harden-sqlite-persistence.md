@@ -162,11 +162,10 @@ Keep `eventFilter`, `parameters`, empty-result handling, and all three child que
 ```ts
 `SELECT rules.id, rules.name, rules.event_type, rules.enabled,
         rules.cooldown_seconds, rules.priority
- FROM alert_rule_collections AS memberships
+ FROM alert_collections AS collections
+ JOIN alert_rule_collections AS memberships ON memberships.collection_id = collections.id
  JOIN alert_rules AS rules ON rules.id = memberships.rule_id
- WHERE memberships.collection_id = (
-   SELECT id FROM alert_collections WHERE enabled = 1
- )
+ WHERE collections.enabled = 1
    AND rules.enabled = 1
    ${eventFilter}
  ORDER BY memberships.rule_id`
@@ -182,11 +181,10 @@ const activeRulePlan = database.connection
     `EXPLAIN QUERY PLAN
      SELECT rules.id, rules.name, rules.event_type, rules.enabled,
             rules.cooldown_seconds, rules.priority
-     FROM alert_rule_collections AS memberships
+     FROM alert_collections AS collections
+     JOIN alert_rule_collections AS memberships ON memberships.collection_id = collections.id
      JOIN alert_rules AS rules ON rules.id = memberships.rule_id
-     WHERE memberships.collection_id = (
-       SELECT id FROM alert_collections WHERE enabled = 1
-     )
+     WHERE collections.enabled = 1
        AND rules.enabled = 1
        AND rules.event_type = ?
      ORDER BY memberships.rule_id`
@@ -224,7 +222,7 @@ to:
 Append after the validation paragraph:
 
 ```markdown
-**Resolution:** Collection-first traversal through the active-set scalar subquery uses the existing migration-013 covering index and rule PK without `DISTINCT` or temporary ordering. Focused plan and 1-versus-100-rule tests preserve the four-statement result contract.
+**Resolution:** Collection-first traversal through the active-set join uses the existing migration-013 covering index and rule PK without `DISTINCT` or temporary ordering. Focused plan and 1-versus-100-rule tests preserve the four-statement result contract.
 ```
 
 Change task 8.4 in `openspec/changes/harden-sqlite-persistence/tasks.md` from `[ ]` to `[x]`.
