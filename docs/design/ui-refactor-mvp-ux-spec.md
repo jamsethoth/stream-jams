@@ -2,6 +2,7 @@
 
 This spec consolidates the UI refactor decisions from `docs/design/ui-refactor-decisions.md`.
 The decision log remains the raw history. This document is the implementation-facing MVP UX source.
+Backlog labels in this specification explain the MVP design boundary; [`docs/backlog.md`](../backlog.md) owns current status, priority, dependencies, and promoted OpenSpec links.
 
 ## Goals
 
