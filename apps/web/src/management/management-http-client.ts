@@ -1,4 +1,4 @@
-import { readHttpError } from "./http-errors.js";
+import { formatHttpError, readHttpErrorDetails } from "./http-errors.js";
 
 export interface HttpManagementClientOptions {
   readonly fetch?: typeof fetch;
@@ -26,6 +26,22 @@ export interface ManagementHttpClient {
   deleteRequest(path: string, fallbackMessage: string, body?: unknown): Promise<void>;
 }
 
+export class ManagementHttpError extends Error {
+  constructor(
+    message: string,
+    readonly code: string | null,
+    readonly referenceId: string | null
+  ) {
+    super(message);
+    this.name = "ManagementHttpError";
+  }
+}
+
+async function createManagementHttpError(response: Response, fallback: string): Promise<ManagementHttpError> {
+  const details = await readHttpErrorDetails(response, fallback);
+  return new ManagementHttpError(formatHttpError(details), details.code, details.referenceId);
+}
+
 export function createManagementHttpClient(options: HttpManagementClientOptions = {}): ManagementHttpClient {
   const fetcher = options.fetch ?? globalThis.fetch.bind(globalThis);
   let sessionId: string | null = null;
@@ -43,7 +59,7 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
       method: "POST"
     });
     if (!response.ok) {
-      throw new Error(await readHttpError(response, "Unable to create management session."));
+      throw await createManagementHttpError(response, "Unable to create management session.");
     }
 
     const session = (await response.json()) as ManagementSessionResponse;
@@ -73,7 +89,7 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     }
 
     if (!response.ok) {
-      throw new Error(await readHttpError(response, fallbackMessage));
+      throw await createManagementHttpError(response, fallbackMessage);
     }
 
     return response;

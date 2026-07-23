@@ -82,6 +82,11 @@ function ManagementAppContent({ assetApi, managementApi }: ResolvedManagementApp
       {navigation.route.id === "alert-editor" ? null : <ManagementNavigation activeRoute={navigation.route} onNavigate={navigation.requestNavigation} />}
       <main className={navigation.route.id === "alert-editor" ? "management-main management-main--focused" : "management-main"}>
         {navigation.route.id === "alert-editor" ? null : <PageHeader
+          action={(
+            <a className="button button--secondary surface-switch-link" href="/operator">
+              Open Operator Console
+            </a>
+          )}
           breadcrumbs={definition.breadcrumbs}
           description={definition.description}
           status={<StatusBadge label="Local" tone="positive" />}

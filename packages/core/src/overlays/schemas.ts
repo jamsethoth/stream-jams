@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ttsPlaybackInstructionSchema } from "../tts/schemas.js";
 import {
   nonEmptyStringSchema,
   nonNegativeIntegerSchema,
@@ -65,7 +66,7 @@ export const overlayInstructionSchema = z.object({
   text: overlayTextInstructionSchema.nullable(),
   shape: overlayShapeInstructionSchema.nullable().optional(),
   animation: overlayPresetAnimationInstructionSchema.nullable().optional(),
-  tts: z.unknown().nullable(),
+  tts: ttsPlaybackInstructionSchema.nullable(),
   durationMs: positiveIntegerSchema.max(120_000)
 });
 

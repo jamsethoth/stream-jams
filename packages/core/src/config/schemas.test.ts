@@ -20,8 +20,17 @@ const validConfig = {
 
 describe("appConfigSchema", () => {
   it("accepts local-only server and storage settings", () => {
-    expect(appConfigSchema.parse(validConfig)).toEqual(validConfig);
-    expect(exportedAppConfigSchema.parse(validConfig)).toEqual(validConfig);
+    const expected = {
+      ...validConfig,
+      playback: {
+        paused: false,
+        muted: false,
+        doNotDisturb: false
+      }
+    };
+
+    expect(appConfigSchema.parse(validConfig)).toEqual(expected);
+    expect(exportedAppConfigSchema.parse(validConfig)).toEqual(expected);
   });
 
   it("backfills default logging settings when reading older config files", () => {
@@ -32,8 +41,36 @@ describe("appConfigSchema", () => {
 
     expect(appConfigSchema.parse(legacyConfig)).toEqual({
       ...legacyConfig,
-      logging: defaultLogSettings
+      logging: defaultLogSettings,
+      playback: {
+        paused: false,
+        muted: false,
+        doNotDisturb: false
+      }
     });
+  });
+
+  it("validates persisted playback safety state", () => {
+    expect(
+      appConfigSchema.parse({
+        ...validConfig,
+        playback: {
+          paused: true,
+          muted: true,
+          doNotDisturb: true
+        }
+      }).playback
+    ).toEqual({ paused: true, muted: true, doNotDisturb: true });
+    expect(
+      appConfigSchema.safeParse({
+        ...validConfig,
+        playback: {
+          paused: "yes",
+          muted: false,
+          doNotDisturb: false
+        }
+      }).success
+    ).toBe(false);
   });
 
   it("rejects non-local hosts, invalid ports, and empty directories", () => {
@@ -66,6 +103,10 @@ describe("appConfigUpdateSchema", () => {
         retentionHours: 72,
         apiKey: "logging-secret"
       },
+      playback: {
+        muted: true,
+        apiKey: "playback-secret"
+      },
       twitch: {
         accessToken: "twitch-secret"
       }
@@ -81,6 +122,9 @@ describe("appConfigUpdateSchema", () => {
       logging: {
         level: "DEBUG",
         retentionHours: 72
+      },
+      playback: {
+        muted: true
       }
     });
   });

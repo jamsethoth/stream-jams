@@ -293,6 +293,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
     clock: now,
+    initialPlaybackMuted: initialConfig.playback.muted,
     onClientDisconnected(clientId) {
       playbackCoordinator.reportClientDisconnected(clientId);
     },
@@ -318,7 +319,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
   });
   const playbackQueue = new DefaultPlaybackQueue({
-    generateId: generatePlaybackQueueItemId
+    generateId: generatePlaybackQueueItemId,
+    initialSafetyState: initialConfig.playback
   });
   const playbackCoordinator = new PlaybackCoordinator({
     alertService,
@@ -359,7 +361,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayPlaybackSink: overlayGateway,
     ttsService,
     logger: runtimeLogger,
-    generateReferenceId: generateRuntimeReferenceId
+    generateReferenceId: generateRuntimeReferenceId,
+    persistPlaybackSafetyState: async (patch) => (await configStore.updateConfig({ playback: patch })).playback
   });
   const eventPipeline = new EventPipeline({
     playbackCoordinator,

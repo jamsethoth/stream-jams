@@ -12,6 +12,7 @@ import type {
   PlaybackDedupeService,
   PlaybackQueue,
   PlaybackQueueSnapshot,
+  PlaybackSafetyState,
   ResolvedAlert,
   OverlayInstruction,
   EnqueuePlaybackItemInput,
@@ -47,6 +48,8 @@ function dedupeTargets(targets: readonly AlertResolverTarget[]): readonly AlertR
 
 export interface OverlayPlaybackInstructionSink {
   deliverPlaybackInstruction(instruction: OverlayInstruction): { readonly deliveredClientIds: readonly string[] } | void;
+  setPlaybackMuted?(muted: boolean): void;
+  stopPlaybackInstructions?(instructionIds: readonly string[]): void;
 }
 
 export interface PlaybackCoordinatorDependencies {
@@ -65,6 +68,7 @@ export interface PlaybackCoordinatorDependencies {
   readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
   readonly logger?: Pick<Logger, "error">;
   readonly generateReferenceId?: () => string;
+  readonly persistPlaybackSafetyState?: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
 }
 
 export class PlaybackCoordinator {
@@ -83,7 +87,9 @@ export class PlaybackCoordinator {
   readonly #ttsService: Pick<TtsService, "createPlaybackInstruction"> | null;
   readonly #logger: Pick<Logger, "error"> | null;
   readonly #generateReferenceId: (() => string) | null;
+  readonly #persistPlaybackSafetyState: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
   #lastDeliveredCurrentItemId: string | null = null;
+  #lastRemoteTtsItemId: string | null = null;
   #pendingClientsByInstructionId = new Map<string, Set<string> | null>();
 
   constructor(dependencies: PlaybackCoordinatorDependencies) {
@@ -101,6 +107,14 @@ export class PlaybackCoordinator {
     this.#ttsService = dependencies.ttsService ?? null;
     this.#logger = dependencies.logger ?? null;
     this.#generateReferenceId = dependencies.generateReferenceId ?? null;
+    this.#persistPlaybackSafetyState = dependencies.persistPlaybackSafetyState ?? (async (patch) => {
+      const snapshot = this.#queue.getSnapshot();
+      return {
+        paused: patch.paused ?? snapshot.paused,
+        muted: patch.muted ?? snapshot.muted,
+        doNotDisturb: patch.doNotDisturb ?? snapshot.doNotDisturb
+      };
+    });
   }
 
   getSnapshot(): PlaybackQueueSnapshot {
@@ -148,7 +162,6 @@ export class PlaybackCoordinator {
         selectedVariants
       })
     );
-    await this.#dispatchRemoteTts(resolvedAlerts);
     const snapshot = this.#deliverCurrent(this.#queue.enqueue({
       sourceEvent: event,
       alerts: resolvedAlerts,
@@ -193,7 +206,8 @@ export class PlaybackCoordinator {
       dispatched.add(key);
 
       if (this.#ttsService === null) {
-        throw new Error(`Remote TTS provider "${providerId}" is not configured in playback.`);
+        await this.#recordRemoteTtsFailure(providerId, alert);
+        continue;
       }
       try {
         await this.#ttsService.createPlaybackInstruction({
@@ -278,6 +292,10 @@ export class PlaybackCoordinator {
   }
 
   skipCurrent(): PlaybackQueueSnapshot {
+    const instructionIds = this.#queue.getSnapshot().current?.alerts.map((alert) => alert.overlayInstruction.id) ?? [];
+    if (instructionIds.length > 0) {
+      this.#overlayPlaybackSink?.stopPlaybackInstructions?.(instructionIds);
+    }
     return this.#deliverCurrent(this.#queue.skipCurrent());
   }
 
@@ -285,40 +303,61 @@ export class PlaybackCoordinator {
     return this.#deliverCurrent(this.#queue.replayRecent(itemId));
   }
 
-  pause(): PlaybackQueueSnapshot {
+  async pause(): Promise<PlaybackQueueSnapshot> {
+    await this.#persistPlaybackSafetyState({ paused: true });
     return this.#queue.pause();
   }
 
-  resume(): PlaybackQueueSnapshot {
+  async resume(): Promise<PlaybackQueueSnapshot> {
+    await this.#persistPlaybackSafetyState({ paused: false });
     return this.#deliverCurrent(this.#queue.resume());
   }
 
-  mute(): PlaybackQueueSnapshot {
-    return this.#queue.mute();
+  async mute(): Promise<PlaybackQueueSnapshot> {
+    await this.#persistPlaybackSafetyState({ muted: true });
+    const snapshot = this.#queue.mute();
+    this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    return snapshot;
   }
 
-  unmute(): PlaybackQueueSnapshot {
-    return this.#queue.unmute();
+  async unmute(): Promise<PlaybackQueueSnapshot> {
+    await this.#persistPlaybackSafetyState({ muted: false });
+    const snapshot = this.#queue.unmute();
+    this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    return snapshot;
   }
 
-  setDoNotDisturb(enabled: boolean): PlaybackQueueSnapshot {
+  async setDoNotDisturb(enabled: boolean): Promise<PlaybackQueueSnapshot> {
+    await this.#persistPlaybackSafetyState({ doNotDisturb: enabled });
     return this.#deliverCurrent(this.#queue.setDoNotDisturb(enabled));
   }
 
   #deliverCurrent(initialSnapshot: PlaybackQueueSnapshot): PlaybackQueueSnapshot {
-    if (this.#overlayPlaybackSink === null) {
-      return initialSnapshot;
-    }
-
     let snapshot = initialSnapshot;
     while (true) {
       if (snapshot.current === null) {
         this.#lastDeliveredCurrentItemId = null;
+        this.#lastRemoteTtsItemId = null;
         this.#pendingClientsByInstructionId.clear();
         return snapshot;
       }
 
+      const shouldDispatchRemoteTts = snapshot.current.id !== this.#lastRemoteTtsItemId;
+      if (shouldDispatchRemoteTts) {
+        this.#lastRemoteTtsItemId = snapshot.current.id;
+      }
+
+      if (this.#overlayPlaybackSink === null) {
+        if (shouldDispatchRemoteTts && !snapshot.muted) {
+          void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
+        }
+        return snapshot;
+      }
+
       if (snapshot.current.id === this.#lastDeliveredCurrentItemId) {
+        if (shouldDispatchRemoteTts && !snapshot.muted) {
+          void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
+        }
         return snapshot;
       }
 
@@ -332,6 +371,9 @@ export class PlaybackCoordinator {
         } else if (delivery.deliveredClientIds.length > 0) {
           this.#pendingClientsByInstructionId.set(instructionId, new Set(delivery.deliveredClientIds));
         }
+      }
+      if (shouldDispatchRemoteTts && !snapshot.muted) {
+        void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
       }
 
       if (this.#pendingClientsByInstructionId.size > 0) {

@@ -20,11 +20,20 @@ export interface PlaybackQueueItem {
   readonly completedAt: string | null;
 }
 
-export interface PlaybackQueueSnapshot {
-  readonly current: PlaybackQueueItem | null;
-  readonly queued: readonly PlaybackQueueItem[];
-  readonly recent: readonly PlaybackQueueItem[];
+export interface PlaybackSafetyState {
   readonly paused: boolean;
   readonly muted: boolean;
   readonly doNotDisturb: boolean;
+}
+
+export const defaultPlaybackSafetyState: PlaybackSafetyState = {
+  paused: false,
+  muted: false,
+  doNotDisturb: false
+};
+
+export interface PlaybackQueueSnapshot extends PlaybackSafetyState {
+  readonly current: PlaybackQueueItem | null;
+  readonly queued: readonly PlaybackQueueItem[];
+  readonly recent: readonly PlaybackQueueItem[];
 }

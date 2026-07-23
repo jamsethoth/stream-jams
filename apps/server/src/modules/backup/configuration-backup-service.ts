@@ -427,7 +427,11 @@ export class ConfigurationBackupService {
       }
 
       this.#options.snapshotRepository.replace({ tables: request.archive.configuration.tables, assets: stagedAssets });
-      await this.#options.configStore.updateConfig({ server: restoredConfig.server, logging: restoredConfig.logging });
+      await this.#options.configStore.updateConfig({
+        server: restoredConfig.server,
+        logging: restoredConfig.logging,
+        playback: restoredConfig.playback
+      });
     } catch (cause) {
       let rollbackFailure: unknown;
       try {

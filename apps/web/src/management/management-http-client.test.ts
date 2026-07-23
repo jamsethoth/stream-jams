@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createManagementHttpClient } from "./management-http-client.js";
+import { ManagementHttpError, createManagementHttpClient } from "./management-http-client.js";
 
 describe("createManagementHttpClient", () => {
   it("reuses the management session and sends CSRF headers for mutating JSON requests", async () => {
@@ -72,6 +72,30 @@ describe("createManagementHttpClient", () => {
     const client = createManagementHttpClient({ fetch: fetcher });
 
     await expect(client.getJson("/broken", "Fallback message.")).rejects.toThrow("Fallback message.");
+  });
+
+  it("retains safe error code and reference metadata for correction links", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/auth/management/sessions"
+        ? jsonResponse({ id: "mgmt_session", csrfToken: "csrf_session" })
+        : jsonResponse({
+            error: {
+              code: "PLAYBACK_CONFIG_WRITE_FAILED",
+              id: "err_operator_1",
+              message: "Playback protection could not be saved."
+            }
+          }, { status: 500 })
+    );
+    const client = createManagementHttpClient({ fetch: fetcher });
+
+    const error = await client.postJson("/playback/mute", undefined, "Unable to mute.").catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ManagementHttpError);
+    expect(error).toMatchObject({
+      message: "Playback protection could not be saved. (PLAYBACK_CONFIG_WRITE_FAILED, err_operator_1)",
+      code: "PLAYBACK_CONFIG_WRITE_FAILED",
+      referenceId: "err_operator_1"
+    });
   });
 
   it("renews an unauthorized management session and retries the request once", async () => {

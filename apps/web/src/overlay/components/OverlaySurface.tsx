@@ -15,6 +15,7 @@ export interface OverlayPlaybackEvent {
 
 export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;
+  readonly muted?: boolean;
   readonly resolveAssetUrl: (assetId: string) => string;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
 }
@@ -29,7 +30,7 @@ export const overlayRootStyle: CSSProperties = {
 
 const testAudioActivationEvent = "stream-jams:test-audio-activation";
 
-export function OverlaySurface({ composition, onPlaybackEvent, resolveAssetUrl }: OverlaySurfaceProps) {
+export function OverlaySurface({ composition, muted = false, onPlaybackEvent, resolveAssetUrl }: OverlaySurfaceProps) {
   const [blockedTestAudioIds, setBlockedTestAudioIds] = useState<ReadonlySet<string>>(() => new Set());
   const [viewport, setViewport] = useState(() => ({
     height: window.innerHeight,
@@ -71,6 +72,7 @@ export function OverlaySurface({ composition, onPlaybackEvent, resolveAssetUrl }
         <OverlayInstructionLayer
           instruction={instruction}
           key={instruction.id}
+          muted={muted}
           onPlaybackEvent={onPlaybackEvent}
           onTestAudioBlockedChange={setTestAudioBlocked}
           resolveAssetUrl={resolveAssetUrl}
@@ -103,17 +105,20 @@ export function OverlaySurface({ composition, onPlaybackEvent, resolveAssetUrl }
 
 function OverlayInstructionLayer({
   instruction,
+  muted,
   onPlaybackEvent,
   onTestAudioBlockedChange,
   resolveAssetUrl
 }: {
   readonly instruction: OverlayInstruction;
+  readonly muted: boolean;
   readonly resolveAssetUrl: (assetId: string) => string;
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
   readonly onTestAudioBlockedChange: (instructionId: string, blocked: boolean) => void;
 }) {
   const completionReportedRef = useRef(false);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const speechConsideredRef = useRef(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [audioStarted, setAudioStarted] = useState(instruction.audio === null);
   const reportFailure = useCallback((message: string) => {
@@ -158,9 +163,16 @@ function OverlayInstructionLayer({
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(instruction.tts.text);
-    window.speechSynthesis.speak(utterance);
-  }, [instruction.tts]);
+    if (!speechConsideredRef.current) {
+      speechConsideredRef.current = true;
+      if (!muted) {
+        window.speechSynthesis.speak(new SpeechSynthesisUtterance(instruction.tts.text));
+      }
+    }
+    if (muted) {
+      window.speechSynthesis.cancel();
+    }
+  }, [instruction.tts, muted]);
 
   const audioAssetId = instruction.audio?.assetId ?? null;
   const audioVolume = instruction.audio?.volume ?? 1;
@@ -220,6 +232,7 @@ function OverlayInstructionLayer({
         <video
           autoPlay
           data-testid={`overlay-video-${instruction.id}`}
+          muted={muted}
           onError={() => reportFailure("Video playback failed")}
           src={resolveAssetUrl(instruction.visual.assetId)}
           style={elementStyle(instruction.visual.layout, instruction.animation, instruction.durationMs)}
@@ -257,6 +270,7 @@ function OverlayInstructionLayer({
       {instruction.audio === null ? null : (
         <audio
           data-testid={`overlay-audio-${instruction.id}`}
+          muted={muted}
           onError={() => {
             onTestAudioBlockedChange(instruction.id, false);
             reportFailure("Audio playback failed. Confirm the audio file is supported, then retry.");

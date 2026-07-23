@@ -44,6 +44,38 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("restores playback protections before serving commands and persists later changes", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const configStore = new StaticConfigStore(createConfig(testRoot, {
+      paused: true,
+      muted: true,
+      doNotDisturb: true
+    }));
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore,
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+
+    expect((await composition.app.inject({ method: "GET", url: "/playback", headers: authHeaders })).json()).toMatchObject({
+      paused: true,
+      muted: true,
+      doNotDisturb: true
+    });
+    expect((await composition.app.inject({ method: "POST", url: "/playback/unmute", headers: authHeaders })).json()).toMatchObject({
+      muted: false
+    });
+    await expect(configStore.readConfig()).resolves.toMatchObject({ playback: { muted: false } });
+  });
+
   it("indexes server failures by the public error ID returned to the browser", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({
@@ -1501,7 +1533,10 @@ function managementAuthHeaders(sessionResponse: { json(): unknown }): {
   };
 }
 
-function createConfig(testRoot: string): AppConfig {
+function createConfig(
+  testRoot: string,
+  playback = { paused: false, muted: false, doNotDisturb: false }
+): AppConfig {
   return {
     server: {
       host: "127.0.0.1",
@@ -1515,7 +1550,8 @@ function createConfig(testRoot: string): AppConfig {
       level: "INFO",
       rollover: "hourly",
       retentionHours: 48
-    }
+    },
+    playback
   };
 }
 
@@ -1540,6 +1576,11 @@ class StaticConfigStore implements ConfigStore {
         level: patch.logging?.level ?? this.config.logging.level,
         rollover: patch.logging?.rollover ?? this.config.logging.rollover,
         retentionHours: patch.logging?.retentionHours ?? this.config.logging.retentionHours
+      },
+      playback: {
+        paused: patch.playback?.paused ?? this.config.playback.paused,
+        muted: patch.playback?.muted ?? this.config.playback.muted,
+        doNotDisturb: patch.playback?.doNotDisturb ?? this.config.playback.doNotDisturb
       }
     };
     return this.config;

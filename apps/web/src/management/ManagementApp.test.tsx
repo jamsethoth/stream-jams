@@ -16,6 +16,16 @@ beforeEach(() => {
 });
 
 describe("ManagementApp", () => {
+  it("places same-tab operator navigation in the page header", () => {
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    const header = screen.getByRole("banner");
+    const link = within(header).getByRole("link", { name: "Open Operator Console" });
+    expect(link).toHaveAttribute("href", "/operator");
+    expect(link).not.toHaveAttribute("target");
+    expect(link).toHaveClass("surface-switch-link");
+  });
+
   it("uses stable sidebar links and nested Modules navigation", async () => {
     const user = userEvent.setup();
     render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
@@ -69,6 +79,22 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/manage/settings");
     await user.click(screen.getByRole("button", { name: "Discard" }));
     expect(window.location.pathname).toBe("/manage/assets");
+  });
+
+  it("preserves the native beforeunload guard for dirty surface navigation", async () => {
+    const user = userEvent.setup();
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    await user.click(screen.getByRole("link", { name: "Settings" }));
+    const port = await screen.findByLabelText("Port");
+    await user.clear(port);
+    await user.type(port, "7161");
+
+    const beforeUnload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeUnload);
+
+    expect(beforeUnload.defaultPrevented).toBe(true);
+    expect(screen.getByRole("link", { name: "Open Operator Console" })).toHaveAttribute("href", "/operator");
   });
 
   it("guards unsaved TTS safety settings when navigating", async () => {

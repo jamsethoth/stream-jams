@@ -18,6 +18,11 @@ const defaultConfig: AppConfig = {
     level: "INFO",
     rollover: "hourly",
     retentionHours: 48
+  },
+  playback: {
+    paused: false,
+    muted: false,
+    doNotDisturb: false
   }
 };
 
@@ -50,6 +55,9 @@ describe("FileConfigStore", () => {
       },
       storage: {
         assetDirectory: "/tmp/stream-jams/imported-assets"
+      },
+      playback: {
+        muted: true
       }
     });
 
@@ -62,7 +70,12 @@ describe("FileConfigStore", () => {
         dataDirectory: "/tmp/stream-jams/data",
         assetDirectory: "/tmp/stream-jams/imported-assets"
       },
-      logging: defaultConfig.logging
+      logging: defaultConfig.logging,
+      playback: {
+        paused: false,
+        muted: true,
+        doNotDisturb: false
+      }
     });
 
     await expect(new FileConfigStore({ configFilePath, defaultConfig }).readConfig()).resolves.toEqual({
@@ -74,7 +87,12 @@ describe("FileConfigStore", () => {
         dataDirectory: "/tmp/stream-jams/data",
         assetDirectory: "/tmp/stream-jams/imported-assets"
       },
-      logging: defaultConfig.logging
+      logging: defaultConfig.logging,
+      playback: {
+        paused: false,
+        muted: true,
+        doNotDisturb: false
+      }
     });
   });
 

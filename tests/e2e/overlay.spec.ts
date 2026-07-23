@@ -1,8 +1,9 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { Buffer } from "node:buffer";
+import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
 test("module test overlay renders a test alert without displaying its route key", async ({ page }) => {
-  await installOverlaySocketMock(page);
+  await installOverlayWebSocketMock(page);
   await page.route("**/overlay/modules/alerts/test/ovl_test/composition", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -50,7 +51,7 @@ test("module test overlay renders a test alert without displaying its route key"
 });
 
 test("management test audio can be enabled after the browser blocks autoplay", async ({ page }) => {
-  await installOverlaySocketMock(page);
+  await installOverlayWebSocketMock(page);
   await page.addInitScript(() => {
     const state = window as Window & {
       __audioActivationClick?: boolean;
@@ -117,34 +118,6 @@ test("management test audio can be enabled after the browser blocks autoplay", a
   expect(audioState.attempts).toBeGreaterThan(1);
   expect(audioState.succeeded).toBe(true);
 });
-
-async function installOverlaySocketMock(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    class OverlayTestWebSocket extends EventTarget {
-      readonly readyState = 1;
-
-      constructor(readonly url: string) {
-        super();
-        setTimeout(() => this.dispatchEvent(new Event("open")), 0);
-      }
-
-      send(message: string) {
-        const windowWithReports = window as Window & { __overlaySocketMessages?: unknown[] };
-        windowWithReports.__overlaySocketMessages ??= [];
-        windowWithReports.__overlaySocketMessages.push(JSON.parse(message) as unknown);
-      }
-
-      close() {
-        this.dispatchEvent(new CloseEvent("close"));
-      }
-    }
-
-    Object.defineProperty(window, "WebSocket", {
-      configurable: true,
-      value: OverlayTestWebSocket
-    });
-  });
-}
 
 function silentWav(): Buffer {
   const sampleCount = 8_000;

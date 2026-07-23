@@ -68,6 +68,62 @@ describe("OverlaySurface", () => {
     expect((screen.getByTestId("overlay-audio-instruction-1") as HTMLAudioElement).volume).toBe(0.35);
   });
 
+  it("mutes audio and embedded video from authoritative playback state", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          visual: {
+            assetId: "asset-video",
+            mediaType: "video",
+            layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }
+          },
+          audio: { assetId: "asset-audio", volume: 1 }
+        })}
+        muted
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", true);
+    expect(screen.getByTestId("overlay-audio-instruction-1")).toHaveProperty("muted", true);
+  });
+
+  it("does not start browser speech late after an instruction begins muted", () => {
+    const speak = vi.fn();
+    const cancel = vi.fn();
+    vi.stubGlobal("SpeechSynthesisUtterance", class {
+      constructor(readonly text: string) {}
+    });
+    Object.defineProperty(window, "speechSynthesis", {
+      configurable: true,
+      value: { speak, cancel }
+    });
+    const speechInstruction: OverlayInstruction = {
+      ...instruction(),
+      tts: { mode: "browser-speech", text: "Hello", audioAssetId: null, providerPayload: null }
+    };
+    const { rerender } = render(
+      <OverlaySurface
+        composition={composition(speechInstruction)}
+        muted
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    rerender(
+      <OverlaySurface
+        composition={composition(speechInstruction)}
+        muted={false}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    expect(speak).not.toHaveBeenCalled();
+    expect(cancel).toHaveBeenCalled();
+  });
+
   it("reports a browser-rejected audio start with an actionable failure", async () => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValue(
       new DOMException("Playback requires user interaction", "NotAllowedError")

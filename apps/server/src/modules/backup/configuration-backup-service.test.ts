@@ -17,7 +17,8 @@ const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
   server: { host: "127.0.0.1", port: 39187 },
   storage: { dataDirectory: "C:/source/data", assetDirectory: "C:/source/assets" },
-  logging: { level: "INFO", rollover: "hourly", retentionHours: 336 }
+  logging: { level: "INFO", rollover: "hourly", retentionHours: 336 },
+  playback: { paused: true, muted: true, doNotDisturb: true }
 };
 const asset: AssetRecord = {
   id: "asset-follow",
@@ -170,7 +171,8 @@ describe("ConfigurationBackupService", () => {
     }));
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
       server: { host: "127.0.0.1", port: 40123 },
-      logging: appConfig.logging
+      logging: appConfig.logging,
+      playback: appConfig.playback
     }));
     expect(updateConfig.mock.calls[0]?.[0]).not.toHaveProperty("storage");
     expect(regenerateOutput).toHaveBeenCalledWith(expect.anything(), "http://127.0.0.1:40123");

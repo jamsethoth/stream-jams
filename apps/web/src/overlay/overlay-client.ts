@@ -38,6 +38,14 @@ export type OverlayClientMessage =
       readonly instruction: OverlayInstruction;
     }
   | {
+      readonly type: "audio-state";
+      readonly muted: boolean;
+    }
+  | {
+      readonly type: "stop";
+      readonly instructionIds: readonly string[];
+    }
+  | {
       readonly type: "error";
       readonly message: string;
     };
@@ -265,6 +273,8 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
   const candidate = parsed as {
     readonly type?: unknown;
     readonly instruction?: unknown;
+    readonly muted?: unknown;
+    readonly instructionIds?: unknown;
     readonly message?: unknown;
   };
   if (candidate.type === "overlay.playback" && typeof candidate.instruction === "object" && candidate.instruction !== null) {
@@ -272,6 +282,19 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
       type: "playback",
       instruction: candidate.instruction as OverlayInstruction
     };
+  }
+
+  if (candidate.type === "overlay.playback.audio-state" && typeof candidate.muted === "boolean") {
+    return { type: "audio-state", muted: candidate.muted };
+  }
+
+  if (
+    candidate.type === "overlay.playback.stop" &&
+    Array.isArray(candidate.instructionIds) &&
+    candidate.instructionIds.length > 0 &&
+    candidate.instructionIds.every((instructionId) => typeof instructionId === "string" && instructionId !== "")
+  ) {
+    return { type: "stop", instructionIds: candidate.instructionIds as string[] };
   }
 
   return candidate.type === "overlay.error" && typeof candidate.message === "string"

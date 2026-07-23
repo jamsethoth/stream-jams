@@ -46,6 +46,7 @@ const resolveAssetUrl = (assetId: string) =>
 export const Idle: Story = {
   args: {
     composition: idleOverlayComposition,
+    muted: false,
     resolveAssetUrl
   },
   parameters: {
@@ -60,6 +61,7 @@ export const Idle: Story = {
 export const TextOnly: Story = {
   args: {
     composition: textOnlyOverlayComposition,
+    muted: false,
     resolveAssetUrl
   }
 };
@@ -67,6 +69,7 @@ export const TextOnly: Story = {
 export const Media: Story = {
   args: {
     composition: mediaOverlayComposition,
+    muted: false,
     resolveAssetUrl
   }
 };
@@ -74,6 +77,7 @@ export const Media: Story = {
 export const TestAudioActivation: Story = {
   args: {
     composition: idleOverlayComposition,
+    muted: false,
     resolveAssetUrl
   },
   render: () => <AudioActivationPrompt onEnable={() => undefined} />,
@@ -113,6 +117,7 @@ export const AnimatedShape: Story = {
         }]
       }]
     } satisfies OverlayComposition,
+    muted: false,
     resolveAssetUrl
   }
 };
@@ -120,6 +125,7 @@ export const AnimatedShape: Story = {
 export const LandscapeCanonical: Story = {
   args: {
     composition: profileComposition("landscape"),
+    muted: false,
     resolveAssetUrl
   },
   parameters: { viewport: { defaultViewport: "landscapeCanonical" } }
@@ -128,6 +134,7 @@ export const LandscapeCanonical: Story = {
 export const LandscapeNoncanonical: Story = {
   args: {
     composition: profileComposition("landscape"),
+    muted: false,
     resolveAssetUrl
   },
   parameters: { viewport: { defaultViewport: "landscapeNoncanonical" } }
@@ -136,6 +143,7 @@ export const LandscapeNoncanonical: Story = {
 export const VerticalCanonical: Story = {
   args: {
     composition: profileComposition("vertical"),
+    muted: false,
     resolveAssetUrl
   },
   parameters: { viewport: { defaultViewport: "verticalCanonical" } }
@@ -144,6 +152,7 @@ export const VerticalCanonical: Story = {
 export const VerticalNoncanonical: Story = {
   args: {
     composition: profileComposition("vertical"),
+    muted: false,
     resolveAssetUrl
   },
   parameters: { viewport: { defaultViewport: "verticalNoncanonical" } }
@@ -152,12 +161,28 @@ export const VerticalNoncanonical: Story = {
 export const ErrorSafe: Story = {
   args: {
     composition: errorSafeOverlayComposition,
+    muted: false,
     resolveAssetUrl
   },
   parameters: {
     docs: {
       description: {
         story: "Use this to verify production fail-closed overlay behavior: nothing is rendered on the broadcast surface."
+      }
+    }
+  }
+};
+
+export const MutedMedia: Story = {
+  args: {
+    composition: mediaOverlayComposition,
+    muted: true,
+    resolveAssetUrl
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: "Media remains visible while playback audio and speech are muted."
       }
     }
   }

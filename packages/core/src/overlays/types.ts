@@ -135,15 +135,15 @@ export interface OverlayInstruction {
   readonly id: string;
   readonly overlayId: string;
   readonly moduleId: string;
-  readonly operatorTest?: true;
+  readonly operatorTest?: true | undefined;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
-  readonly targetProfileId?: OverlayTargetProfileId | null;
+  readonly targetProfileId?: OverlayTargetProfileId | null | undefined;
   readonly visual: OverlayVisualInstruction | null;
   readonly audio: OverlayAudioInstruction | null;
   readonly text: OverlayTextInstruction | null;
-  readonly shape?: OverlayShapeInstruction | null;
-  readonly animation?: OverlayPresetAnimationInstruction | null;
+  readonly shape?: OverlayShapeInstruction | null | undefined;
+  readonly animation?: OverlayPresetAnimationInstruction | null | undefined;
   readonly tts: TtsPlaybackInstruction | null;
   readonly durationMs: number;
 }

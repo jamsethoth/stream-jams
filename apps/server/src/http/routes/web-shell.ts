@@ -45,6 +45,7 @@ export function registerWebShellRoutes(app: FastifyInstance, dependencies: WebSh
   app.get("/legacy/*", async (_request, reply) => reply.redirect("/manage", 302));
   app.get("/manage", async (_request, reply) => sendHtml(reply, await renderer.renderManagementShell()));
   app.get("/manage/*", async (_request, reply) => sendHtml(reply, await renderer.renderManagementShell()));
+  app.get("/operator", async (_request, reply) => sendHtml(reply, await renderer.renderManagementShell()));
 
   return renderer;
 }

@@ -144,13 +144,19 @@ export {
 } from "./overlays/schemas.js";
 
 export type * from "./playback/types.js";
+export { defaultPlaybackSafetyState } from "./playback/types.js";
 export type * from "./playback/playback-queue.js";
 export { DefaultPlaybackQueue, PlaybackQueueItemNotFoundError } from "./playback/playback-queue.js";
 export type * from "./playback/cooldown-service.js";
 export { DefaultPlaybackCooldownService } from "./playback/cooldown-service.js";
 export type * from "./playback/dedupe-service.js";
 export { DefaultPlaybackDedupeService } from "./playback/dedupe-service.js";
-export { playbackQueueItemSchema, playbackQueueSnapshotSchema, resolvedAlertSchema } from "./playback/schemas.js";
+export {
+  playbackQueueItemSchema,
+  playbackQueueSnapshotSchema,
+  playbackSafetyStateSchema,
+  resolvedAlertSchema
+} from "./playback/schemas.js";
 
 export type * from "./security/types.js";
 export type { Redactor, SecretStore } from "./security/secret-store.js";

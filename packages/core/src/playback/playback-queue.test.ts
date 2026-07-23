@@ -91,6 +91,31 @@ describe("DefaultPlaybackQueue", () => {
     });
   });
 
+  it("restores playback safety state before accepting queue items", () => {
+    const pausedQueue = createQueue(new MutableClock("2026-05-30T12:00:00.000Z"), {
+      paused: true,
+      muted: true,
+      doNotDisturb: false
+    });
+    pausedQueue.enqueue({ sourceEvent: createCheerEvent(), alerts: [createResolvedAlert("paused")], priority: 0 });
+
+    expect(pausedQueue.getSnapshot()).toMatchObject({
+      current: null,
+      paused: true,
+      muted: true,
+      doNotDisturb: false
+    });
+
+    const dndQueue = createQueue(new MutableClock("2026-05-30T12:00:00.000Z"), {
+      paused: false,
+      muted: false,
+      doNotDisturb: true
+    });
+    dndQueue.enqueue({ sourceEvent: createCheerEvent(), alerts: [createResolvedAlert("dnd")], priority: 0 });
+
+    expect(dndQueue.getSnapshot()).toMatchObject({ current: null, doNotDisturb: true });
+  });
+
   it("records completed and skipped items, replays known recent items, and rejects unknown replay IDs", () => {
     const clock = new MutableClock("2026-05-30T12:00:00.000Z");
     const queue = createQueue(clock);
@@ -151,11 +176,15 @@ describe("DefaultPlaybackQueue", () => {
   });
 });
 
-function createQueue(clock: MutableClock): DefaultPlaybackQueue {
+function createQueue(
+  clock: MutableClock,
+  initialSafetyState?: { readonly paused: boolean; readonly muted: boolean; readonly doNotDisturb: boolean }
+): DefaultPlaybackQueue {
   let nextId = 1;
   return new DefaultPlaybackQueue({
     clock: () => clock.now(),
-    generateId: () => `queue-item-${nextId++}`
+    generateId: () => `queue-item-${nextId++}`,
+    ...(initialSafetyState === undefined ? {} : { initialSafetyState })
   });
 }
 

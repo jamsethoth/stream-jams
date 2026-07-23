@@ -15,7 +15,6 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 | ID | Feature | Priority | Dependencies | OpenSpec |
 | --- | --- | --- | --- | --- |
-| BL-001 | Alert playback operator controls on a separate `/operator` surface | P0 | None; UI refactor prerequisites are complete | [`add-alert-playback-operator-controls`](../openspec/changes/add-alert-playback-operator-controls/proposal.md) |
 | BL-002 | Alert typography and simple text-container style controls | P0 | None; UI refactor prerequisites are complete | [`add-alert-visual-style-controls`](../openspec/changes/add-alert-visual-style-controls/proposal.md) |
 | BL-003 | Simple solid-fill shape-layer authoring | P1 | BL-002 | [`add-alert-shape-layer-authoring`](../openspec/changes/add-alert-shape-layer-authoring/proposal.md) |
 | BL-004 | Understandable variation priority groups, relative chance, conditions, and sample explanations | P1 | None; normalized Twitch events and UI prerequisites are complete | [`improve-alert-variation-authoring`](../openspec/changes/improve-alert-variation-authoring/proposal.md) |
