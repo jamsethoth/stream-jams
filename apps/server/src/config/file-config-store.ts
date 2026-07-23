@@ -57,6 +57,10 @@ export class FileConfigStore implements ConfigStore {
       logging: {
         ...current.logging,
         ...parsedPatch.logging
+      },
+      playback: {
+        ...current.playback,
+        ...parsedPatch.playback
       }
     });
 

@@ -177,31 +177,31 @@ class RecordingPlaybackCoordinator {
     return this.snapshot;
   }
 
-  pause(): PlaybackQueueSnapshot {
+  async pause(): Promise<PlaybackQueueSnapshot> {
     this.calls.push("pause");
     this.snapshot = { ...this.snapshot, paused: true };
     return this.snapshot;
   }
 
-  resume(): PlaybackQueueSnapshot {
+  async resume(): Promise<PlaybackQueueSnapshot> {
     this.calls.push("resume");
     this.snapshot = { ...this.snapshot, paused: false };
     return this.snapshot;
   }
 
-  mute(): PlaybackQueueSnapshot {
+  async mute(): Promise<PlaybackQueueSnapshot> {
     this.calls.push("mute");
     this.snapshot = { ...this.snapshot, muted: true };
     return this.snapshot;
   }
 
-  unmute(): PlaybackQueueSnapshot {
+  async unmute(): Promise<PlaybackQueueSnapshot> {
     this.calls.push("unmute");
     this.snapshot = { ...this.snapshot, muted: false };
     return this.snapshot;
   }
 
-  setDoNotDisturb(enabled: boolean): PlaybackQueueSnapshot {
+  async setDoNotDisturb(enabled: boolean): Promise<PlaybackQueueSnapshot> {
     this.calls.push(`do-not-disturb:${enabled}`);
     this.snapshot = { ...this.snapshot, doNotDisturb: enabled };
     return this.snapshot;

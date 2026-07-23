@@ -17,6 +17,11 @@ describe("default app config", () => {
         level: "INFO",
         rollover: "hourly",
         retentionHours: 48
+      },
+      playback: {
+        paused: false,
+        muted: false,
+        doNotDisturb: false
       }
     });
   });

@@ -15,7 +15,8 @@ const baseConfig: AppConfig = {
     level: "INFO",
     rollover: "hourly",
     retentionHours: 48
-  }
+  },
+  playback: { paused: false, muted: false, doNotDisturb: false }
 };
 
 describe("LogConfigService", () => {

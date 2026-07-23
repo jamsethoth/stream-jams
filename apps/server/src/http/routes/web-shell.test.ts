@@ -62,6 +62,10 @@ describe("web shell routes", () => {
       method: "GET",
       url: "/manage/modules/alerts"
     });
+    const operator = await app.inject({
+      method: "GET",
+      url: "/operator"
+    });
     const assetApi = await app.inject({
       method: "GET",
       url: "/assets"
@@ -94,6 +98,9 @@ describe("web shell routes", () => {
     expect(nestedManagement.statusCode).toBe(200);
     expect(nestedManagement.headers["content-type"]).toContain("text/html");
     expect(nestedManagement.body).toBe(management.body);
+    expect(operator.statusCode).toBe(200);
+    expect(operator.headers["content-type"]).toContain("text/html");
+    expect(operator.body).toBe(management.body);
     expect(assetApi.statusCode).toBe(401);
     expect(legacyManagement.statusCode).toBe(404);
     expect(removedLegacyPage.statusCode).toBe(302);

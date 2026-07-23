@@ -1,5 +1,5 @@
 import type { NormalizedStreamEvent } from "../events/types.js";
-import type { PlaybackQueueItem, PlaybackQueueSnapshot, ResolvedAlert } from "./types.js";
+import type { PlaybackQueueItem, PlaybackQueueSnapshot, PlaybackSafetyState, ResolvedAlert } from "./types.js";
 
 export interface EnqueuePlaybackItemInput {
   readonly sourceEvent: NormalizedStreamEvent;
@@ -24,6 +24,7 @@ export interface PlaybackQueueDependencies {
   readonly clock?: () => Date;
   readonly generateId: () => string;
   readonly recentLimit?: number;
+  readonly initialSafetyState?: PlaybackSafetyState;
 }
 
 export class PlaybackQueueItemNotFoundError extends Error {
@@ -53,6 +54,9 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
     this.#clock = dependencies.clock ?? (() => new Date());
     this.#generateId = dependencies.generateId;
     this.#recentLimit = dependencies.recentLimit ?? 25;
+    this.#paused = dependencies.initialSafetyState?.paused ?? false;
+    this.#muted = dependencies.initialSafetyState?.muted ?? false;
+    this.#doNotDisturb = dependencies.initialSafetyState?.doNotDisturb ?? false;
   }
 
   getSnapshot(): PlaybackQueueSnapshot {

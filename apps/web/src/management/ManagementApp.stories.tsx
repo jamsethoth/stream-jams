@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import { ManagementApp, type ManagementAppProps } from "./ManagementApp.js";
 import { createStoryAssetApi, createStoryManagementApi } from "../stories/mock-apis.js";
 
@@ -25,6 +26,11 @@ export const FullShell: Story = {
     managementApi: createStoryManagementApi()
   },
   render: (args) => <ManagementAppAtRoute args={args} path="/" />,
+  play: async ({ canvasElement }) => {
+    const link = within(canvasElement).getByRole("link", { name: "Open Operator Console" });
+    await expect(link).toHaveAttribute("href", "/operator");
+    await expect(link).not.toHaveAttribute("target");
+  },
   parameters: {
     docs: {
       description: {

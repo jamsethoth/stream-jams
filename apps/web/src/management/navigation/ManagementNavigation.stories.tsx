@@ -31,7 +31,6 @@ export const Sidebar: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("navigation", { name: "Primary" })).toBeVisible();
     await expect(canvas.queryByRole("navigation", { name: "Legacy tools" })).not.toBeInTheDocument();
-    await expect(canvas.queryByRole("link", { name: "Playback controls" })).not.toBeInTheDocument();
   },
   parameters: {
     docs: {

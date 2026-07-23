@@ -158,6 +158,25 @@ describe("overlay-client", () => {
     });
   });
 
+  it("parses audio-state and targeted stop messages and ignores malformed controls", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+
+    for (const message of [
+      { type: "overlay.playback.audio-state", muted: true },
+      { type: "overlay.playback.stop", instructionIds: ["instruction-1", "instruction-2"] },
+      { type: "overlay.playback.audio-state", muted: "yes" },
+      { type: "overlay.playback.stop", instructionIds: [] },
+      { type: "overlay.playback.stop", instructionIds: [""] }
+    ]) {
+      FakeWebSocket.instances[0]!.emitMessage(JSON.stringify(message));
+    }
+
+    expect(onMessage).toHaveBeenCalledWith({ type: "audio-state", muted: true });
+    expect(onMessage).toHaveBeenCalledWith({ type: "stop", instructionIds: ["instruction-1", "instruction-2"] });
+    expect(onMessage).toHaveBeenCalledTimes(2);
+  });
+
   it("treats a policy close as a terminal transport failure", () => {
     const onMessage = vi.fn();
     connectClient(onMessage);

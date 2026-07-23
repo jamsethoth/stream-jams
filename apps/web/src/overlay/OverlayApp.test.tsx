@@ -153,6 +153,7 @@ describe("OverlayApp transport integration", () => {
     }));
 
     render(<OverlayApp />);
+    act(() => AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.playback.audio-state", muted: false }));
     expect(await screen.findByText("Visible before close")).toBeInTheDocument();
     vi.useFakeTimers();
 
@@ -259,6 +260,12 @@ class AppFakeWebSocket {
   emitClose(code: number): void {
     this.readyState = AppFakeWebSocket.CLOSED;
     for (const listener of this.#listeners.get("close") ?? []) listener({ code } as CloseEvent);
+  }
+
+  emitMessage(message: unknown): void {
+    for (const listener of this.#listeners.get("message") ?? []) {
+      listener(new MessageEvent("message", { data: JSON.stringify(message) }));
+    }
   }
 
   send(message: string): void {

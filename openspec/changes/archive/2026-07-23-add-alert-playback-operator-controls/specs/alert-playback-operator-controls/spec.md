@@ -5,7 +5,9 @@ The system SHALL provide a local `/operator` surface for stream-time alert playb
 
 #### Scenario: Operator surface is opened from management
 - **WHEN** an authorized user chooses `Open operator console` from management
-- **THEN** the application opens the `/operator` route using the same local authenticated session
+- **THEN** ordinary activation navigates the current tab to `/operator` using the existing local management-session bootstrap and authorization boundary
+- **AND** the link retains native modified-click and browser-context-menu behavior
+- **AND** the operator surface does not copy or persist bearer or CSRF values for cross-tab reuse
 - **AND** the operator surface does not show management editing navigation
 
 #### Scenario: Configuration correction is required
@@ -32,22 +34,36 @@ The operator surface SHALL show the authoritative current, queued, recent, pause
 - **AND** polling resumes with an immediate refresh when the document becomes visible
 
 ### Requirement: Existing Playback Controls Are Directly Operable
-Authorized operators SHALL be able to pause or resume playback, mute or unmute alert audio, enable or disable do-not-disturb, skip the current item, and replay a known recent item through the existing protected playback commands.
+Authorized operators SHALL be able to pause or resume queue advancement, mute or unmute alert audio, enable or disable do-not-disturb, skip the current item, and replay a known recent item through the existing protected playback commands.
 
 #### Scenario: Reversible playback state is changed
 - **WHEN** an operator changes pause, mute, or do-not-disturb state
 - **THEN** the returned authoritative snapshot updates the operator surface immediately
 - **AND** the persistent status remains visible until the state is reversed
+- **AND** queue-pause copy states that the current alert continues while queued alerts wait
 
 #### Scenario: Current alert is skipped
 - **WHEN** an operator skips the current playback item
 - **THEN** the current item is completed with skipped status
+- **AND** every active overlay instruction for that item is removed before the next item is delivered
 - **AND** the next eligible queued item starts according to existing pause and do-not-disturb rules
 
 #### Scenario: Recent alert is replayed
 - **WHEN** an operator replays a known recent item
 - **THEN** the runtime enqueues the same resolved alert content using existing queue priority semantics
 - **AND** replay of an unknown or expired item fails without mutating the queue
+
+#### Scenario: Alert audio is muted
+- **WHEN** an operator mutes alert audio
+- **THEN** connected browser sources immediately mute alert audio, embedded video audio, and browser speech
+- **AND** reconnecting browser sources receive the authoritative muted state
+- **AND** remote TTS is not triggered for items that begin while muted
+
+#### Scenario: Alert audio is unmuted
+- **WHEN** an operator unmutes alert audio
+- **THEN** connected and reconnecting browser sources receive the authoritative unmuted state
+- **AND** future items may trigger configured remote TTS normally
+- **AND** the system does not claim it can recall speech already handed to an external TTS provider
 
 ### Requirement: Playback Safety State Survives Restart
 The system SHALL persist paused, muted, and do-not-disturb state as non-secret local configuration and SHALL restore that state before new playback begins after restart.

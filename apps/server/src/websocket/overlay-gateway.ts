@@ -64,6 +64,7 @@ export interface OverlayGatewayDependencies {
   readonly clock?: () => Date;
   readonly onClientDisconnected?: (clientId: string) => void;
   readonly onPlaybackReport?: (report: OverlayGatewayPlaybackReport) => void;
+  readonly initialPlaybackMuted?: boolean;
 }
 
 interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
@@ -85,6 +86,14 @@ type OverlayGatewayMessage =
       readonly instruction: OverlayInstruction;
     }
   | {
+      readonly type: "overlay.playback.audio-state";
+      readonly muted: boolean;
+    }
+  | {
+      readonly type: "overlay.playback.stop";
+      readonly instructionIds: readonly string[];
+    }
+  | {
       readonly type: "overlay.error";
       readonly code: string;
       readonly message: string;
@@ -98,6 +107,7 @@ export class OverlayGateway {
   readonly #onPlaybackReport: (report: OverlayGatewayPlaybackReport) => void;
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
   readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
+  #playbackMuted: boolean;
 
   constructor(dependencies: OverlayGatewayDependencies) {
     this.#overlayAccessService = dependencies.overlayAccessService;
@@ -105,6 +115,7 @@ export class OverlayGateway {
     this.#clock = dependencies.clock ?? (() => new Date());
     this.#onClientDisconnected = dependencies.onClientDisconnected ?? (() => undefined);
     this.#onPlaybackReport = dependencies.onPlaybackReport ?? (() => undefined);
+    this.#playbackMuted = dependencies.initialPlaybackMuted ?? false;
   }
 
   get clients(): readonly OverlayGatewayClient[] {
@@ -168,6 +179,10 @@ export class OverlayGateway {
         ? {}
         : { targetProfileId: registration.targetProfileId })
     });
+    sendGatewayMessage(socket, {
+      type: "overlay.playback.audio-state",
+      muted: this.#playbackMuted
+    });
 
     return {
       authorized: true,
@@ -210,6 +225,27 @@ export class OverlayGateway {
       deliveredClientIds,
       skippedClientIds
     };
+  }
+
+  setPlaybackMuted(muted: boolean): void {
+    this.#playbackMuted = muted;
+    for (const client of this.#clients.values()) {
+      sendGatewayMessage(client.socket, { type: "overlay.playback.audio-state", muted });
+    }
+  }
+
+  stopPlaybackInstructions(instructionIds: readonly string[]): void {
+    const uniqueInstructionIds = [...new Set(instructionIds.filter((instructionId) => instructionId !== ""))];
+    if (uniqueInstructionIds.length === 0) {
+      return;
+    }
+
+    for (const client of this.#clients.values()) {
+      sendGatewayMessage(client.socket, {
+        type: "overlay.playback.stop",
+        instructionIds: uniqueInstructionIds
+      });
+    }
   }
 
   handleClientMessage(clientId: string, rawMessage: string): void {

@@ -111,7 +111,12 @@ export async function installOverlayWebSocketMock(page: Page): Promise<void> {
         windowWithMocks.__overlaySockets ??= [];
         windowWithMocks.__overlaySocketMessages ??= [];
         windowWithMocks.__overlaySockets.push(this);
-        setTimeout(() => this.dispatchEvent(new Event("open")), 0);
+        setTimeout(() => {
+          this.dispatchEvent(new Event("open"));
+          this.dispatchEvent(new MessageEvent("message", {
+            data: JSON.stringify({ type: "overlay.playback.audio-state", muted: false })
+          }));
+        }, 0);
       }
 
       send(message: string) {

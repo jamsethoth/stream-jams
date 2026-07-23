@@ -10,6 +10,48 @@ import { describe, expect, it } from "vitest";
 import { OverlayGateway, type OverlayGatewaySocket } from "./overlay-gateway.js";
 
 describe("OverlayGateway", () => {
+  it("sends authoritative audio state on connect and broadcasts mute and targeted stop changes", async () => {
+    const gateway = createGateway({
+      allowed: [{
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        rawKey: "ovl_moduleLive"
+      }],
+      initialPlaybackMuted: true
+    });
+    const firstSocket = new RecordingSocket();
+    await gateway.registerClient(firstSocket, {
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      rawKey: "ovl_moduleLive"
+    });
+
+    expect(firstSocket.messages.at(-1)).toEqual({ type: "overlay.playback.audio-state", muted: true });
+
+    gateway.setPlaybackMuted(false);
+    gateway.stopPlaybackInstructions(["instruction-1", "instruction-1", "instruction-2"]);
+    gateway.stopPlaybackInstructions([]);
+
+    expect(firstSocket.messages.slice(-2)).toEqual([
+      { type: "overlay.playback.audio-state", muted: false },
+      { type: "overlay.playback.stop", instructionIds: ["instruction-1", "instruction-2"] }
+    ]);
+
+    const reconnect = new RecordingSocket();
+    await gateway.registerClient(reconnect, {
+      overlayId: "default",
+      moduleId: "alerts",
+      purpose: "live",
+      scope: "module",
+      rawKey: "ovl_moduleLive"
+    });
+    expect(reconnect.messages.at(-1)).toEqual({ type: "overlay.playback.audio-state", muted: false });
+  });
+
   it("registers an authorized module client and delivers only matching module instructions", async () => {
     const gateway = createGateway({
       allowed: [
@@ -348,6 +390,7 @@ function createGateway(options: {
   readonly onClientDisconnected?: ConstructorParameters<typeof OverlayGateway>[0]["onClientDisconnected"];
   readonly onPlaybackReport?: ConstructorParameters<typeof OverlayGateway>[0]["onPlaybackReport"];
   readonly clock?: () => Date;
+  readonly initialPlaybackMuted?: boolean;
 }): OverlayGateway {
   let clientNumber = 0;
   return new OverlayGateway({
@@ -356,6 +399,7 @@ function createGateway(options: {
       clientNumber += 1;
       return `client-${clientNumber}`;
     },
+    ...(options.initialPlaybackMuted === undefined ? {} : { initialPlaybackMuted: options.initialPlaybackMuted }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     ...(options.onClientDisconnected === undefined ? {} : { onClientDisconnected: options.onClientDisconnected }),
     ...(options.onPlaybackReport === undefined ? {} : { onPlaybackReport: options.onPlaybackReport })

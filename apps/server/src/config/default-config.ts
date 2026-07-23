@@ -1,5 +1,5 @@
 import path from "node:path";
-import { defaultLogSettings, type AppConfig } from "@stream-jams/core";
+import { defaultLogSettings, defaultPlaybackSafetyState, type AppConfig } from "@stream-jams/core";
 
 const appDataDirectoryName = ".stream-jams";
 
@@ -29,7 +29,8 @@ export function createDefaultAppConfig(homeDirectory: string, options: DefaultAp
       dataDirectory: pathOperations.join(dataRoot, "data"),
       assetDirectory: pathOperations.join(dataRoot, "assets")
     },
-    logging: defaultLogSettings
+    logging: defaultLogSettings,
+    playback: defaultPlaybackSafetyState
   };
 }
 

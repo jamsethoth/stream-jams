@@ -22,11 +22,15 @@ export const playbackQueueItemSchema = z.object({
   completedAt: isoDateTimeSchema.nullable()
 });
 
+export const playbackSafetyStateSchema = z.object({
+  paused: z.boolean(),
+  muted: z.boolean(),
+  doNotDisturb: z.boolean()
+});
+
 export const playbackQueueSnapshotSchema = z.object({
   current: playbackQueueItemSchema.nullable(),
   queued: z.array(playbackQueueItemSchema),
   recent: z.array(playbackQueueItemSchema),
-  paused: z.boolean(),
-  muted: z.boolean(),
-  doNotDisturb: z.boolean()
+  ...playbackSafetyStateSchema.shape
 });

@@ -14,6 +14,7 @@ import {
   type Logger,
   type PlaybackQueue,
   type PlaybackQueueSnapshot,
+  type PlaybackSafetyState,
   type ResolvedAlert,
   type TtsService
 } from "@stream-jams/core";
@@ -135,10 +136,78 @@ describe("PlaybackCoordinator", () => {
     });
 
     await coordinator.enqueueEvent(createCheerEvent({ amount: 500 }));
-    coordinator.pause();
-    coordinator.resume();
+    await coordinator.pause();
+    await coordinator.resume();
 
     expect(deliveredInstructionIds).toEqual(["overlay-instruction-2"]);
+  });
+
+  it("persists safety state before applying it and leaves runtime unchanged on failure", async () => {
+    const observedPausedStates: boolean[] = [];
+    const coordinator = createCoordinator({
+      persistPlaybackSafetyState: async (patch) => {
+        observedPausedStates.push(coordinator.getSnapshot().paused);
+        return { paused: patch.paused ?? false, muted: false, doNotDisturb: false };
+      }
+    });
+
+    await expect(coordinator.pause()).resolves.toMatchObject({ paused: true });
+    expect(observedPausedStates).toEqual([false]);
+
+    const failing = createCoordinator({
+      persistPlaybackSafetyState: async () => {
+        throw new Error("config write failed");
+      }
+    });
+
+    await expect(failing.mute()).rejects.toThrow("config write failed");
+    expect(failing.getSnapshot().muted).toBe(false);
+  });
+
+  it("broadcasts persisted mute state and stops current instructions before advancing", async () => {
+    const calls: string[] = [];
+    const coordinator = createCoordinator({
+      persistPlaybackSafetyState: async (patch) => {
+        calls.push(`persist:${String(patch.muted)}`);
+        return { paused: false, muted: patch.muted ?? false, doNotDisturb: false };
+      },
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          calls.push(`deliver:${instruction.id}`);
+        },
+        setPlaybackMuted(muted) {
+          calls.push(`mute:${String(muted)}`);
+        },
+        stopPlaybackInstructions(instructionIds) {
+          calls.push(`stop:${instructionIds.join(",")}`);
+        }
+      }
+    });
+    const firstEvent = createCheerEvent({ id: "first" });
+    const nextEvent = createCheerEvent({ id: "next" });
+    coordinator.enqueueResolvedTest({
+      sourceEvent: firstEvent,
+      alerts: [
+        createResolvedAlert(firstEvent.id, "first-a", "instruction-a"),
+        createResolvedAlert(firstEvent.id, "first-b", "instruction-b")
+      ]
+    });
+    coordinator.enqueueResolvedTest({
+      sourceEvent: nextEvent,
+      alerts: [createResolvedAlert(nextEvent.id, "next", "instruction-next")]
+    });
+
+    await coordinator.mute();
+    coordinator.skipCurrent();
+
+    expect(calls).toEqual([
+      "deliver:instruction-a",
+      "deliver:instruction-b",
+      "persist:true",
+      "mute:true",
+      "stop:instruction-a,instruction-b",
+      "deliver:instruction-next"
+    ]);
   });
 
   it("queues a resolved editor test through the normal queue and overlay sink", () => {
@@ -252,7 +321,7 @@ describe("PlaybackCoordinator", () => {
     expect(snapshot.recent[0]).toMatchObject({ id: "queue-item-1", status: "completed" });
   });
 
-  it("drains a long zero-recipient queue without stack growth", () => {
+  it("drains a long zero-recipient queue without stack growth", async () => {
     const itemCount = 10_000;
     let deliveryCount = 0;
     const coordinator = createCoordinator({
@@ -265,7 +334,7 @@ describe("PlaybackCoordinator", () => {
       }
     });
 
-    expect(coordinator.resume().current).toBeNull();
+    expect((await coordinator.resume()).current).toBeNull();
     expect(deliveryCount).toBe(itemCount);
   });
 
@@ -294,6 +363,7 @@ describe("PlaybackCoordinator", () => {
 
     const result = await coordinator.enqueueEvent(createCheerEvent({ amount: 500 }));
 
+    await Promise.resolve();
     expect(result.status).toBe("queued");
     expect(result.enqueuedAlertIds).toEqual(["resolved-alert-1", "resolved-alert-3"]);
     expect(result.snapshot.current?.alerts.map((alert) => alert.overlayInstruction.scope)).toEqual([
@@ -339,7 +409,7 @@ describe("PlaybackCoordinator", () => {
     ]);
   });
 
-  it("dispatches one remote TTS trigger before delivering two profile instructions", async () => {
+  it("dispatches one remote TTS trigger when the item becomes current", async () => {
     const rule = createRule({
       id: "rule-speakerbot",
       variants: [createVariant({
@@ -373,7 +443,7 @@ describe("PlaybackCoordinator", () => {
         layerLayouts: []
       }))
     };
-    const dispatched: string[] = [];
+    const calls: string[] = [];
     const deliveredProfiles: Array<string | null | undefined> = [];
     const coordinator = createCoordinator({
       alertService: new RecordingAlertService([rule]),
@@ -384,7 +454,7 @@ describe("PlaybackCoordinator", () => {
       findEditorDocument: async () => document,
       ttsService: {
         async createPlaybackInstruction(input) {
-          dispatched.push(`${input.providerId}:${input.text}:${String(input.metadata?.layerId)}`);
+          calls.push(`tts:${input.providerId}:${input.text}:${String(input.metadata?.layerId)}`);
           return {
             instruction: { mode: "remote-trigger", text: input.text, audioAssetId: null, providerPayload: null },
             moderationActions: []
@@ -394,6 +464,7 @@ describe("PlaybackCoordinator", () => {
       overlayPlaybackSink: {
         deliverPlaybackInstruction(instruction) {
           deliveredProfiles.push(instruction.targetProfileId);
+          calls.push(`overlay:${String(instruction.targetProfileId)}`);
           return { deliveredClientIds: [] };
         }
       }
@@ -402,8 +473,63 @@ describe("PlaybackCoordinator", () => {
     const result = await coordinator.enqueueEvent(createCheerEvent());
 
     expect(result.status).toBe("queued");
-    expect(dispatched).toEqual(["speakerbot:Welcome Viewer:layer-tts"]);
+    expect(calls).toEqual([
+      "overlay:undefined",
+      "overlay:landscape",
+      "overlay:vertical",
+      "tts:speakerbot:Welcome Viewer:layer-tts"
+    ]);
     expect(deliveredProfiles).toEqual([undefined, "landscape", "vertical"]);
+  });
+
+  it("waits to dispatch remote TTS until playback starts and suppresses items that start muted", async () => {
+    const dispatched: string[] = [];
+    const ttsService: Pick<TtsService, "createPlaybackInstruction"> = {
+      async createPlaybackInstruction(input) {
+        dispatched.push(input.text);
+        return {
+          instruction: { mode: "remote-trigger", text: input.text, audioAssetId: null, providerPayload: null },
+          moderationActions: []
+        };
+      }
+    };
+    const pausedQueue = new DefaultPlaybackQueue({
+      generateId: () => "paused-item",
+      initialSafetyState: { paused: true, muted: false, doNotDisturb: false }
+    });
+    const paused = createCoordinator({ queue: pausedQueue, ttsService });
+    paused.enqueueResolvedTest({
+      sourceEvent: createCheerEvent({ id: "paused-event" }),
+      alerts: [createRemoteTtsAlert("paused-event", "speak-after-resume")]
+    });
+
+    expect(dispatched).toEqual([]);
+    await paused.resume();
+    await Promise.resolve();
+    expect(dispatched).toEqual(["speak-after-resume"]);
+
+    let mutedQueueId = 0;
+    const mutedQueue = new DefaultPlaybackQueue({
+      generateId: () => `muted-item-${++mutedQueueId}`,
+      initialSafetyState: { paused: false, muted: true, doNotDisturb: false }
+    });
+    const muted = createCoordinator({ queue: mutedQueue, ttsService });
+    muted.enqueueResolvedTest({
+      sourceEvent: createCheerEvent({ id: "muted-event" }),
+      alerts: [createRemoteTtsAlert("muted-event", "never-speak-late")]
+    });
+
+    await muted.unmute();
+    await Promise.resolve();
+    expect(dispatched).toEqual(["speak-after-resume"]);
+
+    muted.completeCurrent();
+    muted.enqueueResolvedTest({
+      sourceEvent: createCheerEvent({ id: "future-event" }),
+      alerts: [createRemoteTtsAlert("future-event", "future-speech")]
+    });
+    await Promise.resolve();
+    expect(dispatched).toEqual(["speak-after-resume", "future-speech"]);
   });
 
   it("logs one referenced remote TTS failure and continues overlay delivery", async () => {
@@ -597,6 +723,7 @@ function createCoordinator(
     readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
     readonly logger?: Pick<Logger, "error">;
     readonly generateReferenceId?: () => string;
+    readonly persistPlaybackSafetyState?: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
     readonly clock?: MutableClock;
     readonly random?: () => number;
   } = {}
@@ -641,7 +768,10 @@ function createCoordinator(
     }),
     ...(options.ttsService === undefined ? {} : { ttsService: options.ttsService }),
     ...(options.logger === undefined ? {} : { logger: options.logger }),
-    ...(options.generateReferenceId === undefined ? {} : { generateReferenceId: options.generateReferenceId })
+    ...(options.generateReferenceId === undefined ? {} : { generateReferenceId: options.generateReferenceId }),
+    ...(options.persistPlaybackSafetyState === undefined
+      ? {}
+      : { persistPlaybackSafetyState: options.persistPlaybackSafetyState })
   };
   return new PlaybackCoordinator(dependencies);
 }
@@ -770,6 +900,25 @@ function createResolvedAlert(sourceEventId: string, id: string, instructionId: s
       text: { text: id, layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } },
       tts: null,
       durationMs: 3_000
+    }
+  };
+}
+
+function createRemoteTtsAlert(sourceEventId: string, text: string): ResolvedAlert {
+  const alert = createResolvedAlert(sourceEventId, `resolved-${text}`, `instruction-${text}`);
+  return {
+    ...alert,
+    overlayInstruction: {
+      ...alert.overlayInstruction,
+      tts: {
+        mode: "remote-trigger",
+        text,
+        audioAssetId: null,
+        providerPayload: {
+          providerId: "speakerbot",
+          layerId: "layer-tts"
+        }
+      }
     }
   };
 }

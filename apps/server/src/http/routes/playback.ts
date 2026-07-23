@@ -4,11 +4,11 @@ import { sendHttpError } from "../errors.js";
 
 export interface PlaybackRouteCoordinator {
   getSnapshot(): PlaybackQueueSnapshot;
-  pause(): PlaybackQueueSnapshot;
-  resume(): PlaybackQueueSnapshot;
-  mute(): PlaybackQueueSnapshot;
-  unmute(): PlaybackQueueSnapshot;
-  setDoNotDisturb(enabled: boolean): PlaybackQueueSnapshot;
+  pause(): Promise<PlaybackQueueSnapshot>;
+  resume(): Promise<PlaybackQueueSnapshot>;
+  mute(): Promise<PlaybackQueueSnapshot>;
+  unmute(): Promise<PlaybackQueueSnapshot>;
+  setDoNotDisturb(enabled: boolean): Promise<PlaybackQueueSnapshot>;
   skipCurrent(): PlaybackQueueSnapshot;
   replayRecent(itemId: string): PlaybackQueueSnapshot;
 }
@@ -25,22 +25,22 @@ export function registerPlaybackRoutes(app: FastifyInstance, dependencies: Playb
 
   app.get("/playback", { preHandler }, async () => dependencies.playbackCoordinator.getSnapshot());
   app.post("/playback/pause", { preHandler }, async (request) => {
-    const snapshot = dependencies.playbackCoordinator.pause();
+    const snapshot = await dependencies.playbackCoordinator.pause();
     await logPlaybackTransition(dependencies, request.id, "pause");
     return snapshot;
   });
   app.post("/playback/resume", { preHandler }, async (request) => {
-    const snapshot = dependencies.playbackCoordinator.resume();
+    const snapshot = await dependencies.playbackCoordinator.resume();
     await logPlaybackTransition(dependencies, request.id, "resume");
     return snapshot;
   });
   app.post("/playback/mute", { preHandler }, async (request) => {
-    const snapshot = dependencies.playbackCoordinator.mute();
+    const snapshot = await dependencies.playbackCoordinator.mute();
     await logPlaybackTransition(dependencies, request.id, "mute");
     return snapshot;
   });
   app.post("/playback/unmute", { preHandler }, async (request) => {
-    const snapshot = dependencies.playbackCoordinator.unmute();
+    const snapshot = await dependencies.playbackCoordinator.unmute();
     await logPlaybackTransition(dependencies, request.id, "unmute");
     return snapshot;
   });
@@ -58,7 +58,7 @@ export function registerPlaybackRoutes(app: FastifyInstance, dependencies: Playb
       });
     }
 
-    const snapshot = dependencies.playbackCoordinator.setDoNotDisturb(payload.enabled);
+    const snapshot = await dependencies.playbackCoordinator.setDoNotDisturb(payload.enabled);
     await logPlaybackTransition(dependencies, request.id, "do-not-disturb", { enabled: payload.enabled });
     return snapshot;
   });

@@ -9,8 +9,8 @@
     "typecheck": "tsc -b tsconfig.json",
     "storybook": "storybook dev --host 127.0.0.1 --port 6006",
     "build-storybook": "storybook build",
-    "test-storybook": "node ../../scripts/test-storybook.mjs --url http://127.0.0.1:6006 --ci --failOnConsole --maxWorkers=2 --testTimeout=30000",
-    "test-storybook:ci": "start-server-and-test \"storybook dev --host 127.0.0.1 --port 6006 --ci\" http://127.0.0.1:6006 \"node ../../scripts/test-storybook.mjs --url http://127.0.0.1:6006 --ci --failOnConsole --maxWorkers=2 --testTimeout=30000\""
+    "test-storybook": "node ../../scripts/test-storybook.mjs --url http://127.0.0.1:6006 --ci --failOnConsole --maxWorkers=1 --testTimeout=30000",
+    "test-storybook:ci": "start-server-and-test \"storybook dev --host 127.0.0.1 --port 6006 --ci\" http://127.0.0.1:6006 \"node ../../scripts/test-storybook.mjs --url http://127.0.0.1:6006 --ci --failOnConsole --maxWorkers=1 --testTimeout=30000\""
   },
   "dependencies": {
     "@stream-jams/core": "workspace:*",
