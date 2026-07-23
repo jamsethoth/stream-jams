@@ -65,7 +65,7 @@ The repository SHALL validate pull requests targeting `main` so changelog-requir
 
 ### Requirement: Main Branch Invariant Validation
 
-The repository SHOULD validate the changelog invariant after updates to `main`.
+The repository SHALL validate the changelog invariant after updates to `main`.
 
 #### Scenario: Main branch receives a merge
 
