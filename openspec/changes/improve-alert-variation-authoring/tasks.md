@@ -5,15 +5,15 @@
 
 ## 2. Priority Groups And Relative Chance
 
-- [ ] 2.1 Add failing core tests for grouping existing numeric priorities, stable group ordering, deterministic normalization after reorder, moving a variation between groups, preserving unchanged priorities, and explaining a legacy default-priority tie.
-- [ ] 2.2 Implement pure priority-group projection and normalization helpers over the existing optional integer priority contract that emit no assignments for unchanged groups and normalize every conditional sibling only after an explicit group order or membership change.
-- [ ] 2.3 Add failing chance tests for highest eligible group filtering, positive weights, one candidate, multiple candidates, disabled or non-matching variants, default fallback, and a legacy default-priority tie.
-- [ ] 2.4 Implement `projectAlertVariationSelection` as the shared pure resolver projection for eligibility, highest priority, and total weight; use it for live resolution and sample explanation while keeping random consumption only in live weighted choice.
+- [x] 2.1 Add failing core tests for grouping existing numeric priorities, stable group ordering, deterministic normalization after reorder, moving a variation between groups, preserving unchanged priorities, and explaining a legacy default-priority tie.
+- [x] 2.2 Implement pure priority-group projection and normalization helpers over the existing optional integer priority contract that emit no assignments for unchanged groups and normalize every conditional sibling only after an explicit group order or membership change.
+- [x] 2.3 Add failing chance tests for highest eligible group filtering, positive weights, one candidate, multiple candidates, disabled or non-matching variants, default fallback, and a legacy default-priority tie.
+- [x] 2.4 Implement `projectAlertVariationSelection` as the shared pure resolver projection for eligibility, highest priority, and total weight; use it for live resolution and sample explanation while keeping random consumption only in live weighted choice.
 
 ## 3. Typed Condition Authoring
 
-- [ ] 3.1 Add one exhaustive normalized condition-field catalog defining event applicability, value kind, approved operators, bounds or options, and summary formatting.
-- [ ] 3.2 Add failing catalog, evaluator, and server-boundary tests for every normalized event type, equals/includes/min/max/range controls, invalid ranges, unchanged unsupported saved conditions, rejection of new or modified unsupported conditions, and raw metadata exclusion.
+- [x] 3.1 Add one exhaustive normalized condition-field catalog defining event applicability, value kind, approved operators, bounds or options, and summary formatting.
+- [x] 3.2 Add failing catalog, evaluator, and server-boundary tests for every normalized event type, equals/includes/min/max/range controls, invalid ranges, unchanged unsupported saved conditions, rejection of new or modified unsupported conditions, and raw metadata exclusion.
 - [ ] 3.3 Implement core `validateAuthoredAlertConditions` catalog validation and enforce it in `AlertEditorService.saveDocument` by comparing candidate rule and variation conditions with their current saved conditions; allow unchanged unsupported conditions to round-trip or be removed, reject new, modified, or duplicated unsupported conditions, and complete this validation before any persistence mutation or transaction.
 - [ ] 3.4 Add the focused authenticated `GET /management/alerts/:alertId/editor/variation-context` projection required to provide sibling variation context and pure sample evaluation to the web app without expanding general inventory or editor-document responses.
 
