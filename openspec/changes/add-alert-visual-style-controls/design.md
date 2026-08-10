@@ -56,6 +56,12 @@ Older documents parse with defaults matching the current fixed appearance. A dat
 
 Alternative considered: leave defaults implicit forever. Rejected because future style-default changes would silently alter old alerts.
 
+### Validate profile review as a state transition
+
+Save validation permits a profile that was already enabled and `Needs review` to remain in that state while the user reviews profiles incrementally. It still rejects a candidate that newly enables a profile before `Mark reviewed` has cleared that profile's review state. This keeps explicit review and enablement guarantees without deadlocking alerts whose landscape and vertical profiles both begin enabled and unreviewed.
+
+Alternative considered: automatically disable other unreviewed profiles when one profile is marked reviewed. Rejected because saving one review decision must not silently change live-profile enablement.
+
 ## Risks / Trade-offs
 
 - [OBS and management browsers render a font preset differently] -> Use only local fallback stacks; gate exact shared-mapper output, computed browser CSS, and fixed-viewport outer-box geometry. Keep screenshots optional for human review and use an OBS/Cef browser source as a manual smoke check rather than a pixel-diff gate.

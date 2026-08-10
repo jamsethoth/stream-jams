@@ -121,7 +121,6 @@ export class AlertEditorService {
     if (document.id !== alertId) {
       throw new AlertEditorValidationError(["The editor document does not match the selected alert."]);
     }
-    validateDocumentForSave(document);
 
     const resolved = await this.#resolveEditorItem(alertId);
     const metadata = await this.#options.metadata.findRule(resolved.rule.id);
@@ -129,6 +128,7 @@ export class AlertEditorService {
     const current = stored === null
       ? createDocumentFromRule(resolved, metadata)
       : hydrateDocument(stored, resolved, metadata);
+    validateDocumentForSave(document, current);
     const affectedProfileIds = getAlertEditorAffectedProfileIds(current, document);
     if (!confirmLiveImpact && affectedProfileIds.length > 0) {
       const collections = await this.#options.rules.listCollections();
@@ -430,13 +430,17 @@ function fitLayout(layout: OverlayElementLayout, width: number, height: number):
   };
 }
 
-function validateDocumentForSave(document: AlertEditorDocument): void {
+function validateDocumentForSave(document: AlertEditorDocument, current: AlertEditorDocument): void {
   const layerIds = document.layers.map((layer) => layer.id);
   const issues = layerIds.length === new Set(layerIds).size ? [] : ["Layer names must identify unique layers."];
   const enabledProfiles = document.targetProfiles.filter((profile) => profile.enabled);
   if (enabledProfiles.length === 0) issues.push("Enable at least one target profile before saving.");
   for (const profile of enabledProfiles) {
-    if (profile.reviewState !== "ready") {
+    const currentProfile = current.targetProfiles.find((candidate) => candidate.id === profile.id);
+    if (
+      profile.reviewState !== "ready"
+      && !(currentProfile?.enabled === true && currentProfile.reviewState === "needs-review")
+    ) {
       issues.push(`Finish reviewing the ${profile.id} profile before enabling it.`);
     }
     issues.push(...validateProfile(document, profile));

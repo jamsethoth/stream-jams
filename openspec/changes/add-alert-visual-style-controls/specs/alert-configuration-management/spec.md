@@ -73,3 +73,8 @@ The focused editor SHALL expose style controls only for a selected text layer us
 - **WHEN** a user toggles a major selected-layer editor section
 - **THEN** its controls hide or reappear through a keyboard-accessible native disclosure
 - **AND** collapsing the section does not change draft alert data
+
+#### Scenario: Multiple enabled profiles require review
+- **WHEN** an alert already has multiple enabled profiles marked `Needs review`
+- **THEN** the user can mark and save each profile as reviewed incrementally
+- **AND** the system still rejects newly enabling any profile that remains `Needs review`

@@ -336,6 +336,49 @@ describe("AlertEditorService", () => {
     expect(harness.documents.save).not.toHaveBeenCalled();
   });
 
+  it("saves one reviewed profile while another already-enabled profile still needs review", async () => {
+    const generated = await createHarness().service.getDocument(rule.id);
+    const stored: AlertEditorDocument = {
+      ...generated,
+      targetProfiles: generated.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "needs-review"
+      }))
+    };
+    const harness = createHarnessWithRule(rule, stored);
+    const current = await harness.service.getDocument(rule.id);
+    const partiallyReviewed: AlertEditorDocument = {
+      ...current,
+      targetProfiles: current.targetProfiles.map((profile) => profile.id === "landscape"
+        ? { ...profile, reviewState: "ready" }
+        : profile)
+    };
+
+    await expect(harness.service.saveDocument(rule.id, partiallyReviewed)).resolves.toEqual(partiallyReviewed);
+    expect(harness.documents.save).toHaveBeenCalledWith(partiallyReviewed);
+    expect(harness.metadata.saveRule).toHaveBeenCalledWith(expect.objectContaining({
+      reviewState: "needs-review",
+      targetProfileIds: ["landscape", "vertical"]
+    }));
+  });
+
+  it("still rejects newly enabling a profile that needs review", async () => {
+    const harness = createHarness();
+    const document = await harness.service.getDocument(rule.id);
+    const invalid: AlertEditorDocument = {
+      ...document,
+      targetProfiles: document.targetProfiles.map((profile) => profile.id === "vertical"
+        ? { ...profile, enabled: true }
+        : profile)
+    };
+
+    await expect(harness.service.saveDocument(rule.id, invalid)).rejects.toThrow(
+      "Finish reviewing the vertical profile before enabling it."
+    );
+    expect(harness.documents.save).not.toHaveBeenCalled();
+  });
+
   it("requires explicit confirmation before changing live output in an active set", async () => {
     const harness = createHarness(true);
     const document = await harness.service.getDocument(rule.id);

@@ -526,7 +526,15 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.setViewportSize({ width: 820, height: 768 });
   const savedDocuments: unknown[] = [];
   const testRequests: unknown[] = [];
-  let document = alertEditorDocument();
+  const initialDocument = alertEditorDocument();
+  let document: ReturnType<typeof alertEditorDocument> = {
+    ...initialDocument,
+    targetProfiles: initialDocument.targetProfiles.map((profile) => ({
+      ...profile,
+      enabled: true,
+      reviewState: "needs-review"
+    }))
+  };
   const overview = {
     id: "set-default",
     name: "Default",
@@ -535,8 +543,8 @@ test("focused alert editor saves layouts and separates preview from test deliver
     starterReviewState: "complete",
     enabledAlertCount: 1,
     targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
+      { id: "landscape", enabled: true, reviewState: "needs-review", blockerCount: 0, warningCount: 1 },
+      { id: "vertical", enabled: true, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
     ],
     validationIssues: [],
     outputs: []
@@ -552,7 +560,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
       kind: "default",
       enabled: true,
       reviewState: "ready",
-      targetProfileIds: ["landscape"],
+      targetProfileIds: ["landscape", "vertical"],
       previewText: "Thanks for following!"
     }],
     browserSources: []
@@ -599,6 +607,18 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.setViewportSize({ width: 1920, height: 1080 });
   const focusedContent = await page.locator(".management-route-content--focused").boundingBox();
   expect(focusedContent?.width).toBeGreaterThan(1280);
+  await page.getByRole("tab", { name: "Alert" }).click();
+  await page.getByRole("button", { name: "Mark profile reviewed" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  expect(savedDocuments).toHaveLength(1);
+  expect(savedDocuments[0]).toMatchObject({
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready" },
+      { id: "vertical", enabled: true, reviewState: "needs-review" }
+    ]
+  });
+  await page.getByRole("tab", { name: "Layers" }).click();
   const disclosures = [
     ["Typography", "Font size"],
     ["Text box", "Padding"],
@@ -647,8 +667,8 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(saveDialog.getByText("Landscape")).toBeVisible();
   await saveDialog.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
-  expect(savedDocuments).toHaveLength(1);
-  expect(savedDocuments[0]).toMatchObject({
+  expect(savedDocuments).toHaveLength(2);
+  expect(savedDocuments[1]).toMatchObject({
     layers: [{
       template: "Welcome, {actor.displayName}!",
       textStyle: {
@@ -689,9 +709,6 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.getByRole("button", { name: "Mark profile reviewed" }).click();
   await page.getByRole("checkbox", { name: "Use this profile for live alerts" }).check();
   await page.getByRole("button", { name: "Save" }).click();
-  const verticalSaveDialog = page.getByRole("dialog", { name: "Save changes to active alert?" });
-  await expect(verticalSaveDialog.getByText("Vertical")).toBeVisible();
-  await verticalSaveDialog.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
 
   const verticalEditorUrl = new URL(page.url());

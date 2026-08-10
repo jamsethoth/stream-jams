@@ -1441,6 +1441,59 @@ describe("AlertEditorPage", () => {
       { enabled: false, reviewState: "needs-review", layerLayouts: source.targetProfiles[1]!.layerLayouts }
     ]);
   });
+
+  it("reviews and saves two already-enabled profiles incrementally", async () => {
+    const user = userEvent.setup();
+    const base = editorDocument();
+    const initial: AlertEditorDocument = {
+      ...base,
+      targetProfiles: base.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "needs-review"
+      }))
+    };
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={initial.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => initial),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Mark profile reviewed" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    expect(saveAlertEditorDocument.mock.calls[0]![1].targetProfiles).toEqual([
+      expect.objectContaining({ id: "landscape", enabled: true, reviewState: "ready" }),
+      expect.objectContaining({ id: "vertical", enabled: true, reviewState: "needs-review" })
+    ]);
+
+    await user.click(screen.getByRole("button", { name: /^Vertical/u }));
+    await user.click(screen.getByRole("button", { name: "Mark profile reviewed" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(2));
+    expect(saveAlertEditorDocument.mock.calls[1]![1].targetProfiles).toEqual([
+      expect.objectContaining({ id: "landscape", enabled: true, reviewState: "ready" }),
+      expect.objectContaining({ id: "vertical", enabled: true, reviewState: "ready" })
+    ]);
+  });
 });
 
 function NavigationProbe() {

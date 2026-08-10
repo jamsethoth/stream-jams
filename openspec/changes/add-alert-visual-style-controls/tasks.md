@@ -39,3 +39,8 @@
 - [x] 6.4 Prove styled vertical authoring, reload, preview, Send test, target-profile transport, and fixed-viewport overlay rendering with deterministic CSS and outer-box geometry assertions.
 - [x] 6.5 Toggle Live TTS, Typography, Text box, Position and size, and Animation preset disclosures individually and independently in proportional component, Storybook, and real-browser coverage without dirtying alert data.
 - [x] 6.6 Run focused and repository frontend gates, strict OpenSpec validation, rebuilt live browser verification, an OBS/Cef smoke check when OBS is available, and restore the pre-verification stopped-app state.
+
+## 7. Review Workflow Correction
+
+- [x] 7.1 Add a failing service regression and Playwright coverage for incrementally reviewing an alert whose landscape and vertical profiles are both already enabled and `Needs review`.
+- [x] 7.2 Make save validation transition-aware, retain rejection for newly enabled unreviewed profiles, run required gates, rebuild and restart the app, verify the live workflow, and update the pull request.
