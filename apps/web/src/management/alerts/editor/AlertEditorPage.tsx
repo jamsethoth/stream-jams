@@ -897,13 +897,24 @@ export function completeAlertEditorSave(
   submittedPriorityGroups: AlertEditorState["priorityGroups"],
   savedDocument: AlertEditorDocument
 ): AlertEditorState {
-  return current.document === submittedDocument && current.priorityGroups === submittedPriorityGroups
-    ? markEditorSaved({ ...current, document: savedDocument })
-    : {
-        ...current,
-        savedDocument,
-        savedPriorityGroups: submittedPriorityGroups
-      };
+  const documentSettled = current.document === submittedDocument;
+  const groupsSettled = current.priorityGroups === submittedPriorityGroups;
+  if (documentSettled && groupsSettled) {
+    return markEditorSaved({
+      ...current,
+      document: savedDocument,
+      priorityGroups: submittedPriorityGroups
+    });
+  }
+  return {
+    ...current,
+    document: documentSettled ? savedDocument : current.document,
+    savedDocument,
+    priorityGroups: groupsSettled ? submittedPriorityGroups : current.priorityGroups,
+    savedPriorityGroups: submittedPriorityGroups,
+    past: [{ document: savedDocument, priorityGroups: submittedPriorityGroups }],
+    future: []
+  };
 }
 
 export function evaluateAlertEditorDraftSample(
@@ -969,7 +980,13 @@ function assertValidVariationContext(
   context: AlertVariationAuthoringContext
 ): void {
   const selected = context.candidates.find((candidate) => candidate.editorId === document.id);
-  if (context.eventType !== document.eventType || selected?.kind !== document.kind) {
+  const expectedRuleId = document.kind === "default" ? document.id : document.parentAlertId;
+  if (
+    expectedRuleId === null
+    || context.ruleId !== expectedRuleId
+    || context.eventType !== document.eventType
+    || selected?.kind !== document.kind
+  ) {
     throw new Error("Alert variation context does not match the selected editor document.");
   }
 }
@@ -993,6 +1010,8 @@ function affectedProfileIds(
     const candidateEditorIds = new Set(context.candidates.map((candidate) => candidate.editorId));
     for (const alert of setDetail?.inventory ?? []) {
       if (!candidateEditorIds.has(alert.id)) continue;
+      const enabled = alert.id === editor.document.id ? editor.document.enabled : alert.enabled;
+      if (!enabled) continue;
       for (const targetProfileId of alert.targetProfileIds) profileIds.add(targetProfileId);
     }
   }

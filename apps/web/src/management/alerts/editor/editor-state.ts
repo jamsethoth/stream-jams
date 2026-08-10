@@ -160,8 +160,14 @@ function samePriorityGroups(
     const rightGroup = right[groupIndex];
     return rightGroup !== undefined
       && group.variationIds.length === rightGroup.variationIds.length
-      && group.variationIds.every((variationId, variationIndex) => variationId === rightGroup.variationIds[variationIndex]);
+      && sameVariationMembership(group.variationIds, rightGroup.variationIds);
   });
+}
+
+function sameVariationMembership(left: readonly string[], right: readonly string[]): boolean {
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((variationId, index) => variationId === sortedRight[index]);
 }
 
 export function copyAlertDesign(

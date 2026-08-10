@@ -139,6 +139,22 @@ describe("alert editor history", () => {
     expect(isEditorDirty(saved)).toBe(false);
   });
 
+  it("treats variation order within one priority group as unchanged membership", () => {
+    const initialGroups: readonly AlertPriorityGroup[] = [
+      { variationIds: ["variant-a", "variant-b"] },
+      { variationIds: ["variant-low"] }
+    ];
+    const initial = createEditorState(createDocument(), initialGroups);
+
+    const reordered = applyPriorityGroupUpdate(initial, () => [
+      { variationIds: ["variant-b", "variant-a"] },
+      { variationIds: ["variant-low"] }
+    ]);
+
+    expect(reordered).toBe(initial);
+    expect(isEditorDirty(reordered)).toBe(false);
+  });
+
   it("applies the history limit across mixed document and group edits", () => {
     const initialGroups: readonly AlertPriorityGroup[] = [
       { variationIds: ["variant-high"] },

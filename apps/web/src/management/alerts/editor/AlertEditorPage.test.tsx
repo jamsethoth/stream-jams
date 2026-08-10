@@ -20,7 +20,13 @@ import {
   type AlertEditorPageApi,
   type AlertEditorPageProps
 } from "./AlertEditorPage.js";
-import { applyPriorityGroupUpdate, createEditorState } from "./editor-state.js";
+import {
+  applyEditorUpdate,
+  applyPriorityGroupUpdate,
+  createEditorState,
+  isEditorDirty,
+  undoEditorUpdate
+} from "./editor-state.js";
 
 type TestAlertEditorPageProps = Omit<AlertEditorPageProps, "managementApi"> & {
   readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext"> &
@@ -99,6 +105,76 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
   });
 
+  it("rejects a variation context belonging to another rule", async () => {
+    const document: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-raid-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid"
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertVariationAuthoringContext: vi.fn(async () => ({
+              ...variationContext(document),
+              ruleId: "alert-another-rule"
+            })),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+  });
+
+  it("rejects a default context whose rule ID is not the document ID", async () => {
+    const document = editorDocument();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertVariationAuthoringContext: vi.fn(async () => ({
+              ...variationContext(document),
+              ruleId: "alert-another-rule"
+            })),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+  });
+
   it("builds complete assignments only for changed groups and maps editor IDs to resolver variant IDs", () => {
     const selected: AlertEditorDocument = {
       ...editorDocument(),
@@ -131,9 +207,18 @@ describe("AlertEditorPage", () => {
       { variationId: "variant-resolver-low", priority: 2 },
       { variationId: "variant-editor-high-resolver", priority: 1 }
     ]);
+
+    const sameMembership = createEditorState(selected, [{
+      variationIds: ["variant-editor-high", "variant-editor-low"]
+    }]);
+    const reorderedMembership = applyPriorityGroupUpdate(sameMembership, () => [{
+      variationIds: ["variant-editor-low", "variant-editor-high"]
+    }]);
+    expect(reorderedMembership).toBe(sameMembership);
+    expect(priorityAssignmentsForEditor(reorderedMembership, context)).toBeUndefined();
   });
 
-  it("names every enabled sibling profile for a group-only dirty draft", () => {
+  it("excludes disabled sibling profiles from a group-only dirty draft impact", () => {
     const selected: AlertEditorDocument = {
       ...editorDocument(),
       id: "variant-editor-high",
@@ -164,11 +249,28 @@ describe("AlertEditorPage", () => {
       inventory: [
         ...detail.inventory,
         { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
-        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
       ]
     };
 
-    expect(affectedProfileLabelsForEditor(changed, siblingDetail, context)).toEqual(["Landscape", "Vertical"]);
+    expect(affectedProfileLabelsForEditor(changed, siblingDetail, context)).toEqual(["Landscape"]);
+
+    const disabledSelected = applyPriorityGroupUpdate(
+      createEditorState({ ...selected, enabled: false }, [
+        { variationIds: ["variant-editor-high"] },
+        { variationIds: ["variant-editor-low"] }
+      ]),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+    const noEnabledCandidates: AlertSetDetail = {
+      ...detail,
+      inventory: [
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+      ]
+    };
+    expect(affectedProfileLabelsForEditor(disabledSelected, noEnabledCandidates, context)).toEqual([]);
   });
 
   it("preserves document and group edits made while an earlier save is pending", () => {
@@ -198,6 +300,55 @@ describe("AlertEditorPage", () => {
     expect(completed.priorityGroups[0]?.variationIds).toContain("variant-new");
     expect(completed.savedDocument).toBe(savedDocument);
     expect(completed.savedPriorityGroups).toBe(submitted.priorityGroups);
+  });
+
+  it("settles unchanged groups while preserving a document-only edit made during save", () => {
+    const selected = editorDocument();
+    const initial = createEditorState(selected, [{ variationIds: ["variant-high"] }]);
+    const submitted = applyEditorUpdate(initial, (document) => ({ ...document, name: "Submitted" }));
+    const pending = applyEditorUpdate(submitted, (document) => ({ ...document, name: "Newer local edit" }));
+    const savedDocument = { ...submitted.document, name: "Saved response" };
+
+    const completed = completeAlertEditorSave(
+      pending,
+      submitted.document,
+      submitted.priorityGroups,
+      savedDocument
+    );
+
+    expect(completed.document.name).toBe("Newer local edit");
+    expect(completed.savedDocument).toBe(savedDocument);
+    expect(completed.priorityGroups).toBe(submitted.priorityGroups);
+    expect(completed.savedPriorityGroups).toBe(submitted.priorityGroups);
+    expect(completed.past).toEqual([{ document: savedDocument, priorityGroups: submitted.priorityGroups }]);
+    expect(isEditorDirty(completed)).toBe(true);
+    expect(isEditorDirty(undoEditorUpdate(completed))).toBe(false);
+  });
+
+  it("settles the saved document while preserving a group-only edit made during save", () => {
+    const selected = editorDocument();
+    const initial = createEditorState(selected, [
+      { variationIds: ["variant-high"] },
+      { variationIds: ["variant-low"] }
+    ]);
+    const submitted = applyEditorUpdate(initial, (document) => ({ ...document, name: "Submitted" }));
+    const pending = applyPriorityGroupUpdate(submitted, (groups) => [groups[1]!, groups[0]!]);
+    const savedDocument = { ...submitted.document, name: "Saved response" };
+
+    const completed = completeAlertEditorSave(
+      pending,
+      submitted.document,
+      submitted.priorityGroups,
+      savedDocument
+    );
+
+    expect(completed.document).toBe(savedDocument);
+    expect(completed.savedDocument).toBe(savedDocument);
+    expect(completed.priorityGroups).toBe(pending.priorityGroups);
+    expect(completed.savedPriorityGroups).toBe(submitted.priorityGroups);
+    expect(completed.past).toEqual([{ document: savedDocument, priorityGroups: submitted.priorityGroups }]);
+    expect(isEditorDirty(completed)).toBe(true);
+    expect(isEditorDirty(undoEditorUpdate(completed))).toBe(false);
   });
 
   it("evaluates the current selected draft with normalized group assignments and resolver IDs", () => {
