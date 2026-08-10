@@ -14,7 +14,8 @@
 
 - [ ] 3.1 Add one exhaustive normalized condition-field catalog defining event applicability, value kind, approved operators, bounds or options, and summary formatting.
 - [ ] 3.2 Add failing catalog, evaluator, and server-boundary tests for every normalized event type, equals/includes/min/max/range controls, invalid ranges, unchanged unsupported saved conditions, rejection of new or modified unsupported conditions, and raw metadata exclusion.
-- [ ] 3.3 Add the focused authenticated `GET /management/alerts/:alertId/editor/variation-context` projection required to provide sibling variation context and pure sample evaluation to the web app without expanding general inventory or editor-document responses.
+- [ ] 3.3 Implement core `validateAuthoredAlertConditions` catalog validation and enforce it in `AlertEditorService.saveDocument` by comparing candidate rule and variation conditions with their current saved conditions; allow unchanged unsupported conditions to round-trip or be removed, reject new, modified, or duplicated unsupported conditions, and complete this validation before any persistence mutation or transaction.
+- [ ] 3.4 Add the focused authenticated `GET /management/alerts/:alertId/editor/variation-context` projection required to provide sibling variation context and pure sample evaluation to the web app without expanding general inventory or editor-document responses.
 
 ## 4. Focused Editor Experience
 
