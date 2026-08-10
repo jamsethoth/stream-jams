@@ -430,6 +430,18 @@ export function buildAlertPriorityGroups(
     .map(([, variationIds]) => ({ variationIds }));
 }
 
+export function areAlertPriorityGroupsEqual(
+  left: readonly AlertPriorityGroup[],
+  right: readonly AlertPriorityGroup[]
+): boolean {
+  return left.length === right.length && left.every((group, groupIndex) => {
+    const rightGroup = right[groupIndex];
+    return rightGroup !== undefined
+      && group.variationIds.length === rightGroup.variationIds.length
+      && sameVariationMembership(group.variationIds, rightGroup.variationIds);
+  });
+}
+
 export function moveAlertPriorityGroup(
   groups: readonly AlertPriorityGroup[],
   fromIndex: number,
@@ -667,6 +679,12 @@ function candidateConditionsMatch(
 
 function cloneGroups(groups: readonly AlertPriorityGroup[]): { variationIds: string[] }[] {
   return groups.map((group) => ({ variationIds: [...group.variationIds] }));
+}
+
+function sameVariationMembership(left: readonly string[], right: readonly string[]): boolean {
+  const sortedLeft = [...left].sort();
+  const sortedRight = [...right].sort();
+  return sortedLeft.every((variationId, index) => variationId === sortedRight[index]);
 }
 
 function isGroupIndex(groups: readonly AlertPriorityGroup[], index: number): boolean {

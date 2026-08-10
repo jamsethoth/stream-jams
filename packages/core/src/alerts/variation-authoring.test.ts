@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normalizedStreamEventSchema } from "../events/schemas.js";
 import { streamEventTypes, type StreamEventType } from "../events/types.js";
 import {
+  areAlertPriorityGroupsEqual,
   buildAlertPriorityGroups,
   chooseWeightedAlertVariation,
   createNormalizedAlertSampleEvent,
@@ -197,6 +198,27 @@ describe("normalized alert sample events", () => {
 });
 
 describe("alert variation priority groups", () => {
+  it("treats ID order within an ordered group as equal membership", () => {
+    expect(areAlertPriorityGroupsEqual(
+      [{ variationIds: ["a", "b"] }, { variationIds: ["c"] }],
+      [{ variationIds: ["b", "a"] }, { variationIds: ["c"] }]
+    )).toBe(true);
+  });
+
+  it("treats priority-group order changes as unequal", () => {
+    expect(areAlertPriorityGroupsEqual(
+      [{ variationIds: ["a", "b"] }, { variationIds: ["c"] }],
+      [{ variationIds: ["c"] }, { variationIds: ["b", "a"] }]
+    )).toBe(false);
+  });
+
+  it("treats priority-group membership changes as unequal", () => {
+    expect(areAlertPriorityGroupsEqual(
+      [{ variationIds: ["a", "b"] }, { variationIds: ["c"] }],
+      [{ variationIds: ["a"] }, { variationIds: ["b", "c"] }]
+    )).toBe(false);
+  });
+
   it("groups legacy priorities stably by descending effective priority", () => {
     expect(buildAlertPriorityGroups([
       candidate("unset-a", { priority: undefined }),

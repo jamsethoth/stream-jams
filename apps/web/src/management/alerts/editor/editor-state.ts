@@ -1,4 +1,5 @@
 import {
+  areAlertPriorityGroupsEqual,
   targetProfileDefinitions,
   type AlertEditorDocument,
   type AlertLayer,
@@ -85,7 +86,7 @@ export function applyPriorityGroupUpdate(
   update: (groups: readonly AlertPriorityGroup[]) => readonly AlertPriorityGroup[]
 ): AlertEditorState {
   const priorityGroups = update(state.priorityGroups);
-  if (samePriorityGroups(priorityGroups, state.priorityGroups)) {
+  if (areAlertPriorityGroupsEqual(priorityGroups, state.priorityGroups)) {
     return state;
   }
 
@@ -145,29 +146,11 @@ export function isEditorDirty(state: AlertEditorState): boolean {
 }
 
 export function arePriorityGroupsDirty(state: AlertEditorState): boolean {
-  return !samePriorityGroups(state.priorityGroups, state.savedPriorityGroups);
+  return !areAlertPriorityGroupsEqual(state.priorityGroups, state.savedPriorityGroups);
 }
 
 function currentSnapshot(state: AlertEditorState): AlertEditorSnapshot {
   return { document: state.document, priorityGroups: state.priorityGroups };
-}
-
-function samePriorityGroups(
-  left: readonly AlertPriorityGroup[],
-  right: readonly AlertPriorityGroup[]
-): boolean {
-  return left.length === right.length && left.every((group, groupIndex) => {
-    const rightGroup = right[groupIndex];
-    return rightGroup !== undefined
-      && group.variationIds.length === rightGroup.variationIds.length
-      && sameVariationMembership(group.variationIds, rightGroup.variationIds);
-  });
-}
-
-function sameVariationMembership(left: readonly string[], right: readonly string[]): boolean {
-  const sortedLeft = [...left].sort();
-  const sortedRight = [...right].sort();
-  return sortedLeft.every((variationId, index) => variationId === sortedRight[index]);
 }
 
 export function copyAlertDesign(

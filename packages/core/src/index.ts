@@ -55,6 +55,7 @@ export { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateCo
 export type * from "./alerts/variation-authoring.js";
 export type { AlertVariationPriorityAssignment } from "./alerts/variation-authoring.js";
 export {
+  areAlertPriorityGroupsEqual,
   buildAlertPriorityGroups,
   chooseWeightedAlertVariation,
   createNormalizedAlertSampleEvent,
