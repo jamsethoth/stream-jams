@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { alertEditorDocumentSchema } from "@stream-jams/core";
 import { createHttpManagementApi } from "./management-api.js";
 
 describe("createHttpManagementApi", () => {
@@ -27,6 +28,29 @@ describe("createHttpManagementApi", () => {
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.getAlertVariationAuthoringContext("alert-follow")).rejects.toThrow();
+  });
+
+  it("sends complete sibling priority assignments through the existing editor save request", async () => {
+    const document = alertEditorDocumentSchema.parse(editorDocument());
+    const assignments = [
+      { variationId: "variant-vip", priority: 3 },
+      { variationId: "variant-raid", priority: 2 }
+    ];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/management/alerts/alert-follow/editor") {
+        expect(init).toMatchObject({
+          method: "PUT",
+          body: JSON.stringify({ document, confirmLiveImpact: true, priorityAssignments: assignments })
+        });
+        return jsonResponse(document);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.saveAlertEditorDocument("alert-follow", document, true, assignments)).resolves.toMatchObject(document);
   });
 
   it("loads runtime-validated UI refactor contracts through the existing client", async () => {
@@ -983,7 +1007,12 @@ interface UiContractManagementApi {
   getTtsProviderSafetySettings(providerId: string): Promise<unknown>;
   listAlertSets(): Promise<readonly unknown[]>;
   getAlertEditorDocument(alertId: string): Promise<unknown>;
-  saveAlertEditorDocument(alertId: string, document: ReturnType<typeof editorDocument>): Promise<unknown>;
+  saveAlertEditorDocument(
+    alertId: string,
+    document: ReturnType<typeof editorDocument>,
+    confirmLiveImpact?: boolean,
+    priorityAssignments?: readonly { readonly variationId: string; readonly priority: number }[]
+  ): Promise<unknown>;
   sendAlertEditorTest(alertId: string, request: {
     readonly document: ReturnType<typeof editorDocument>;
     readonly targetProfileId: "landscape" | "vertical";

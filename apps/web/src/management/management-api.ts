@@ -38,6 +38,7 @@ import {
   type AlertInventoryRow,
   type AlertVariationCreateInput,
   type AlertVariationAuthoringContext,
+  type AlertVariationPriorityAssignment,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -259,7 +260,8 @@ export interface ManagementApi {
   saveAlertEditorDocument(
     alertId: string,
     document: AlertEditorDocument,
-    confirmLiveImpact?: boolean
+    confirmLiveImpact?: boolean,
+    priorityAssignments?: readonly AlertVariationPriorityAssignment[]
   ): Promise<AlertEditorDocument>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult>;
@@ -582,11 +584,11 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       );
     },
 
-    async saveAlertEditorDocument(alertId, document, confirmLiveImpact = false) {
+    async saveAlertEditorDocument(alertId, document, confirmLiveImpact = false, priorityAssignments = []) {
       return alertEditorDocumentSchema.parse(
         await client.putJson<unknown>(
           `/management/alerts/${encodeURIComponent(alertId)}/editor`,
-          { document, confirmLiveImpact },
+          { document, confirmLiveImpact, priorityAssignments },
           "Unable to save alert editor changes."
         )
       );

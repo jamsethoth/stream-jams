@@ -5,9 +5,11 @@ import {
   getAlertTemplateVariableCatalog,
   getAlertEditorAffectedProfileIds,
   createAlertTemplateContext,
+  createNormalizedAlertSampleEvent,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
-  normalizedStreamEventSchema,
+  validateAuthoredAlertConditions,
+  type AlertCondition,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
@@ -16,6 +18,7 @@ import {
   type AlertRule,
   type AlertTargetProfileDocument,
   type AlertVariationAuthoringContext,
+  type AlertVariationPriorityAssignment,
   type NormalizedStreamEvent,
   type OverlayElementLayout,
   type ResolvedAlert,
@@ -139,7 +142,8 @@ export class AlertEditorService {
   async saveDocument(
     alertId: string,
     candidate: AlertEditorDocument,
-    confirmLiveImpact = false
+    confirmLiveImpact = false,
+    priorityAssignments: readonly AlertVariationPriorityAssignment[] = []
   ): Promise<AlertEditorDocument> {
     const document = alertEditorDocumentSchema.parse(candidate);
     if (document.id !== alertId) {
@@ -152,20 +156,67 @@ export class AlertEditorService {
     const current = stored === null
       ? createDocumentFromRule(resolved, metadata)
       : hydrateDocument(stored, resolved, metadata);
-    validateDocumentForSave(document, current);
-    const affectedProfileIds = getAlertEditorAffectedProfileIds(current, document);
-    if (!confirmLiveImpact && affectedProfileIds.length > 0) {
+    const assignments = validatePriorityAssignments(resolved.rule, priorityAssignments);
+    const selectedPriority = resolved.kind === "variation"
+      ? assignments.get(resolved.variant.id) ?? resolved.variant.priority ?? null
+      : resolved.variant.priority ?? null;
+    const saveDocument = alertEditorDocumentSchema.parse({ ...document, priority: selectedPriority });
+    validateDocumentForSave(saveDocument, current);
+    validateConditionChanges(
+      saveDocument.eventType,
+      "Rule",
+      saveDocument.conditions,
+      resolved.rule.conditions
+    );
+    validateConditionChanges(
+      saveDocument.eventType,
+      "Variation",
+      saveDocument.variantConditions,
+      resolved.variant.conditions ?? []
+    );
+    const projectedRule = applyPriorityAssignments(
+      projectDocumentToRule(saveDocument, resolved),
+      assignments
+    );
+    const affectedProfileIds = new Set(getAlertEditorAffectedProfileIds(current, saveDocument));
+    if (assignments.size > 0) {
+      const siblingIds = resolved.rule.variants.slice(1).map((variant) => variant.id);
+      const storedSiblings = await this.#options.documents.findMany(siblingIds);
+      for (const [variantIndex, variant] of resolved.rule.variants.entries()) {
+        if (variantIndex === 0) continue;
+        const assignment = assignments.get(variant.id);
+        if (assignment === undefined) continue;
+        const siblingResolved: ResolvedEditorItem = {
+          rule: resolved.rule,
+          variant,
+          variantIndex,
+          editorId: variant.id,
+          kind: "variation"
+        };
+        const storedSibling = storedSiblings.get(variant.id);
+        const currentSibling = storedSibling === undefined
+          ? createDocumentFromRule(siblingResolved, metadata)
+          : hydrateDocument(storedSibling, siblingResolved, metadata);
+        const changedSibling = alertEditorDocumentSchema.parse({
+          ...currentSibling,
+          priority: assignment
+        });
+        for (const profileId of getAlertEditorAffectedProfileIds(currentSibling, changedSibling)) {
+          affectedProfileIds.add(profileId);
+        }
+      }
+    }
+    if (!confirmLiveImpact && affectedProfileIds.size > 0) {
       const collections = await this.#options.rules.listCollections();
       const activeSetIds = new Set(collections.filter((collection) => collection.enabled).map((collection) => collection.id));
       if (activeSetIds.has(current.setId) || activeSetIds.has(document.setId)) {
-        throw new AlertEditorLiveImpactConfirmationRequiredError(affectedProfileIds);
+        throw new AlertEditorLiveImpactConfirmationRequiredError([...affectedProfileIds]);
       }
     }
-    const projectedRule = projectDocumentToRule(document, resolved);
-    const projectedMetadata = ruleMetadataFromDocument(document, resolved.rule.id);
+    const projectedMetadata = ruleMetadataFromDocument(saveDocument, resolved.rule.id);
     if (this.#options.saveAtomically !== undefined) {
       return this.#options.saveAtomically({
-        document,
+        document: saveDocument,
         expectedRule: resolved.rule,
         metadata: projectedMetadata,
         rule: projectedRule
@@ -173,7 +224,7 @@ export class AlertEditorService {
     }
     await this.#options.rules.saveRule(projectedRule);
     await this.#options.metadata.saveRule(projectedMetadata);
-    return this.#options.documents.save(document);
+    return this.#options.documents.save(saveDocument);
   }
 
   async sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
@@ -196,7 +247,13 @@ export class AlertEditorService {
     }
 
     const referenceId = this.#options.generateReferenceId();
-    const sourceEvent = createTestEvent(request.document, request.samplePayload, referenceId, this.#now());
+    const sourceEvent = createNormalizedAlertSampleEvent({
+      eventType: request.document.eventType,
+      ingestProvider: request.document.providerKind === "streamerbot" ? "streamerbot" : "twitch",
+      payload: request.samplePayload,
+      id: referenceId,
+      occurredAt: this.#now().toISOString()
+    });
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(request.document);
     const alerts = this.#createTestAlerts(request, profile, sourceEvent, visualAssetMediaTypes);
     if (alerts.length === 0) {
@@ -472,6 +529,100 @@ function validateDocumentForSave(document: AlertEditorDocument, current: AlertEd
   if (issues.length > 0) throw new AlertEditorValidationError(issues);
 }
 
+function validatePriorityAssignments(
+  rule: AlertRule,
+  assignments: readonly AlertVariationPriorityAssignment[]
+): ReadonlyMap<string, number> {
+  if (assignments.length === 0) return new Map();
+
+  const defaultVariant = rule.variants[0];
+  if (defaultVariant === undefined) {
+    throw new AlertEditorValidationError(["This alert is missing its default variation."]);
+  }
+  const conditionalIds = rule.variants.slice(1).map((variant) => variant.id);
+  const conditionalIdSet = new Set(conditionalIds);
+  const seen = new Set<string>();
+  const issues: string[] = [];
+  const priorityBase = Math.max(defaultVariant.priority ?? 0, 0);
+
+  for (const assignment of assignments) {
+    if (assignment.variationId === rule.id || assignment.variationId === defaultVariant.id) {
+      issues.push("The default alert priority cannot be changed by a variation-group save.");
+    } else if (!conditionalIdSet.has(assignment.variationId)) {
+      issues.push(`Variation "${assignment.variationId}" does not belong to this alert.`);
+    }
+    if (seen.has(assignment.variationId)) {
+      issues.push(`Variation "${assignment.variationId}" has more than one priority assignment.`);
+    }
+    seen.add(assignment.variationId);
+    if (!Number.isInteger(assignment.priority) || assignment.priority <= priorityBase) {
+      issues.push(`Variation "${assignment.variationId}" requires an integer priority above ${priorityBase}.`);
+    }
+  }
+
+  const missingIds = conditionalIds.filter((id) => !seen.has(id));
+  if (missingIds.length > 0) {
+    issues.push(`Priority assignments are missing ${missingIds.join(", ")}.`);
+  }
+  if (assignments.length !== conditionalIds.length) {
+    issues.push("A priority-group save must assign every non-default variation exactly once.");
+  }
+
+  const priorities = [...new Set(assignments.map(({ priority }) => priority))].sort((left, right) => left - right);
+  if (priorities.some((priority, index) => priority !== priorityBase + index + 1)) {
+    issues.push(`Priority groups must use contiguous values beginning at ${priorityBase + 1}.`);
+  }
+
+  if (issues.length > 0) throw new AlertEditorValidationError(issues);
+  return new Map(assignments.map(({ variationId, priority }) => [variationId, priority]));
+}
+
+function validateConditionChanges(
+  eventType: AlertEditorDocument["eventType"],
+  scope: "Rule" | "Variation",
+  candidateConditions: readonly AlertCondition[],
+  savedConditions: readonly AlertCondition[]
+): void {
+  const unchangedUnsupported = savedConditions
+    .filter((condition) => hasUnsupportedConditionIssue(eventType, condition))
+    .map(serializeCondition);
+  const issues: string[] = [];
+
+  candidateConditions.forEach((condition, conditionIndex) => {
+    const validationIssues = validateAuthoredAlertConditions(eventType, [condition]);
+    if (validationIssues.length === 0) return;
+    const onlyUnsupported = validationIssues.every(
+      ({ code }) => code === "unsupported-field" || code === "unsupported-operator"
+    );
+    if (onlyUnsupported) {
+      const serialized = serializeCondition(condition);
+      const savedIndex = unchangedUnsupported.indexOf(serialized);
+      if (savedIndex >= 0) {
+        unchangedUnsupported.splice(savedIndex, 1);
+        return;
+      }
+    }
+    for (const issue of validationIssues) {
+      issues.push(`${scope} condition ${conditionIndex + 1}: ${issue.message}`);
+    }
+  });
+
+  if (issues.length > 0) throw new AlertEditorValidationError(issues);
+}
+
+function hasUnsupportedConditionIssue(
+  eventType: AlertEditorDocument["eventType"],
+  condition: AlertCondition
+): boolean {
+  return validateAuthoredAlertConditions(eventType, [condition]).some(
+    ({ code }) => code === "unsupported-field" || code === "unsupported-operator"
+  );
+}
+
+function serializeCondition(condition: AlertCondition): string {
+  return JSON.stringify([condition.field, condition.operator, condition.value]);
+}
+
 function validateProfile(document: AlertEditorDocument, profile: AlertTargetProfileDocument): readonly string[] {
   const dimensions = profile.id === "landscape" ? { width: 1920, height: 1080 } : { width: 1080, height: 1920 };
   const layouts = new Map<string, OverlayElementLayout>();
@@ -535,6 +686,21 @@ function projectDocumentToRule(document: AlertEditorDocument, resolved: Resolved
         layout
       }
       : variant)
+  };
+}
+
+function applyPriorityAssignments(
+  rule: AlertRule,
+  assignments: ReadonlyMap<string, number>
+): AlertRule {
+  if (assignments.size === 0) return rule;
+  return {
+    ...rule,
+    variants: rule.variants.map((variant, index) => {
+      if (index === 0) return variant;
+      const priority = assignments.get(variant.id);
+      return priority === undefined ? variant : { ...variant, priority };
+    })
   };
 }
 
@@ -643,111 +809,6 @@ function builtInSamples(normal: Record<string, unknown>, edge: Record<string, un
     { id: "normal", label: `Normal ${label}`, kind: "built-in" as const, payload: normal },
     { id: "edge", label: `Edge ${label}`, kind: "built-in" as const, payload: edge }
   ];
-}
-
-function createTestEvent(
-  document: AlertEditorDocument,
-  payload: Record<string, unknown>,
-  referenceId: string,
-  now: Date
-): NormalizedStreamEvent {
-  const actorValue = payload.actor;
-  const actorRecord = typeof actorValue === "object" && actorValue !== null ? actorValue as Record<string, unknown> : {};
-  const displayName = String(actorRecord.displayName ?? payload.userName ?? "Sample user");
-  const amount = positiveNumber(payload.amount) ? payload.amount : 1;
-  const occurredAt = now.toISOString();
-  const base = {
-    id: referenceId,
-    providerId: "twitch" as const,
-    sourcePlatform: "twitch" as const,
-    ingestProvider: document.providerKind === "streamerbot" ? "streamerbot" as const : "twitch" as const,
-    occurredAt,
-    actor: { id: actorRecord.id === undefined ? null : String(actorRecord.id), displayName },
-    message: typeof payload.message === "string" ? payload.message : null,
-    metadata: { ...payload, test: true, referenceId }
-  };
-  const total = nonNegativeNumber(payload.total) ? payload.total : 100;
-  const totalVotes = nonNegativeNumber(payload.totalVotes) ? payload.totalVotes : 0;
-  const totalPoints = nonNegativeNumber(payload.totalPoints) ? payload.totalPoints : 0;
-  const totalUsers = nonNegativeNumber(payload.totalUsers) ? payload.totalUsers : 0;
-  const event = (() => {
-    switch (document.eventType) {
-      case "follow": return { ...base, type: "follow" as const, amount: null };
-      case "subscription": return { ...base, type: "subscription" as const, amount, tier: readTier(payload.tier) };
-      case "resubscription": return { ...base, type: "resubscription" as const, amount, tier: readTier(payload.tier), streakMonths: nonNegativeNumber(payload.streakMonths) ? payload.streakMonths : amount };
-      case "cheer": return { ...base, type: "cheer" as const, amount: positiveNumber(payload.cheerAmount) ? payload.cheerAmount : amount };
-      case "raid": return { ...base, type: "raid" as const, amount: positiveNumber(payload.raidViewers) ? payload.raidViewers : amount };
-      case "channel_point_redemption": return { ...base, type: "channel_point_redemption" as const, amount: null, rewardId: text(payload.rewardId, "sample-reward"), rewardTitle: text(payload.rewardTitle, "Sample reward"), userInput: nullableText(payload.userInput) };
-      case "gift_subscription": {
-        const recipient = actor(payload.recipient, "GiftRecipient");
-        return {
-          ...base,
-          type: "gift_subscription" as const,
-          actor: recipient,
-          userName: recipient.displayName,
-          amount: 1 as const,
-          tier: readTier(payload.tier),
-          recipient,
-          gifter: nullableActor(payload.gifter)
-        };
-      }
-      case "community_gift": return { ...base, type: "community_gift" as const, amount, tier: readTier(payload.tier), cumulativeTotal: nonNegativeNumber(payload.cumulativeTotal) ? payload.cumulativeTotal : null, anonymous: payload.anonymous === true };
-      case "hype_train_start":
-      case "hype_train_progress":
-      case "hype_train_end": return { ...base, type: document.eventType, amount: total, trainId: text(payload.trainId, "sample-train"), level: nullableNumber(payload.level), progress: nullableNumber(payload.progress), goal: nullableNumber(payload.goal), total, startedAt: nullableDate(payload.startedAt, occurredAt), expiresAt: nullableDate(payload.expiresAt, occurredAt), endedAt: document.eventType === "hype_train_end" ? nullableDate(payload.endedAt, occurredAt) : null, cooldownEndsAt: null };
-      case "poll_start":
-      case "poll_progress":
-      case "poll_end": return { ...base, type: document.eventType, amount: totalVotes, pollId: text(payload.pollId, "sample-poll"), title: text(payload.title, "Sample poll"), choices: [{ id: "choice-1", title: "Option one", totalVotes }], totalVotes, startedAt: text(payload.startedAt, occurredAt), endsAt: text(payload.endsAt, occurredAt), status: text(payload.status, document.eventType === "poll_end" ? "completed" : "active") };
-      case "prediction_start":
-      case "prediction_progress":
-      case "prediction_lock":
-      case "prediction_end": return { ...base, type: document.eventType, amount: totalPoints, predictionId: text(payload.predictionId, "sample-prediction"), title: text(payload.title, "Sample prediction"), outcomes: [{ id: "outcome-1", title: "Option one", totalUsers, totalPoints }], totalUsers, totalPoints, startedAt: text(payload.startedAt, occurredAt), locksAt: document.eventType === "prediction_lock" ? nullableDate(payload.locksAt, occurredAt) : null, endedAt: document.eventType === "prediction_end" ? nullableDate(payload.endedAt, occurredAt) : null, status: text(payload.status, document.eventType === "prediction_end" ? "resolved" : document.eventType === "prediction_lock" ? "locked" : "active"), winningOutcomeId: document.eventType === "prediction_end" ? "outcome-1" : null };
-      case "stream_online": return { ...base, type: "stream_online" as const, amount: null, streamId: nullableText(payload.streamId), streamType: nullableText(payload.streamType), startedAt: nullableDate(payload.startedAt, occurredAt), endedAt: null };
-      case "stream_offline": return { ...base, type: "stream_offline" as const, amount: null, streamId: nullableText(payload.streamId), streamType: nullableText(payload.streamType), startedAt: null, endedAt: nullableDate(payload.endedAt, occurredAt) };
-    }
-  })();
-  return normalizedStreamEventSchema.parse(event);
-}
-
-function readTier(value: unknown): "1000" | "2000" | "3000" | "prime" {
-  return value === "2000" || value === "3000" || value === "prime" ? value : "1000";
-}
-
-function actor(value: unknown, fallbackDisplayName: string) {
-  const record = recordValue(value);
-  return { id: nullableText(record.id), displayName: text(record.displayName, fallbackDisplayName) };
-}
-
-function nullableActor(value: unknown) {
-  return value === null || value === undefined ? null : actor(value, "Sample gifter");
-}
-
-function recordValue(value: unknown): Record<string, unknown> {
-  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
-}
-
-function text(value: unknown, fallback: string): string {
-  return typeof value === "string" && value.trim() !== "" ? value : fallback;
-}
-
-function nullableText(value: unknown): string | null {
-  return typeof value === "string" && value.trim() !== "" ? value : null;
-}
-
-function positiveNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-function nonNegativeNumber(value: unknown): value is number {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0;
-}
-
-function nullableNumber(value: unknown): number | null {
-  return nonNegativeNumber(value) ? value : null;
-}
-
-function nullableDate(value: unknown, fallback: string): string | null {
-  return value === null ? null : text(value, fallback);
 }
 
 function createLayerInstruction(

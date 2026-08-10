@@ -184,6 +184,19 @@ describe("ManagementUiService", () => {
     await expect(service.getAlertVariationAuthoringContext("variant-vip")).resolves.toEqual(context);
     expect(getAlertVariationAuthoringContext).toHaveBeenCalledWith("variant-vip");
   });
+
+  it("forwards complete sibling priority assignments through the existing save command", async () => {
+    const document = { id: "variant-vip" } as AlertEditorDocument;
+    const assignments = [
+      { variationId: "variant-vip", priority: 3 },
+      { variationId: "variant-raid", priority: 2 }
+    ];
+    const saveAlertEditorDocument = vi.fn(async (_alertId, saved: AlertEditorDocument) => saved);
+    const service = createService([], null, undefined, {}, undefined, undefined, saveAlertEditorDocument);
+
+    await expect(service.saveAlertEditorDocument("variant-vip", document, true, assignments)).resolves.toBe(document);
+    expect(saveAlertEditorDocument).toHaveBeenCalledWith("variant-vip", document, true, assignments);
+  });
 });
 
 function createService(
@@ -197,7 +210,8 @@ function createService(
   getTwitchAuthorization: ManagementUiServiceOptions["getTwitchAuthorization"] | undefined = undefined,
   getAlertVariationAuthoringContext: ManagementUiServiceOptions["getAlertVariationAuthoringContext"] = async () => {
     throw new Error("not configured");
-  }
+  },
+  saveAlertEditorDocument: ManagementUiServiceOptions["saveAlertEditorDocument"] = async (_alertId, document) => document
 ) {
   const resolvedGetTwitchAuthorization = getTwitchAuthorization ?? (async () => ({
     connected: false,
@@ -256,7 +270,7 @@ function createService(
       throw new Error("not configured");
     },
     getAlertVariationAuthoringContext,
-    saveAlertEditorDocument: async (_alertId, document) => document,
+    saveAlertEditorDocument,
     sendAlertEditorTest: async (_alertId, request) => ({
       status: "queued",
       targetProfileId: request.targetProfileId,

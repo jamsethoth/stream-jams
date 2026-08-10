@@ -49,6 +49,7 @@ import {
   type AlertSetOverview,
   type AlertVariationCreateInput,
   type AlertVariationAuthoringContext,
+  type AlertVariationPriorityAssignment,
   type AssetLibraryItem,
   type AssetChangeImpact,
   type AssetMediaType,
@@ -132,7 +133,8 @@ export interface ManagementUiQueryService {
   saveAlertEditorDocument(
     alertId: string,
     document: AlertEditorDocument,
-    confirmLiveImpact: boolean
+    confirmLiveImpact: boolean,
+    priorityAssignments: readonly AlertVariationPriorityAssignment[]
   ): Promise<AlertEditorDocument>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult>;
@@ -498,7 +500,8 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
         await service.saveAlertEditorDocument(
           alertId,
           input.data.document,
-          input.data.confirmLiveImpact
+          input.data.confirmLiveImpact,
+          input.data.priorityAssignments
         )
       );
     } catch (error) {

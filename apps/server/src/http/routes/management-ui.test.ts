@@ -167,7 +167,11 @@ describe("management UI contract routes", () => {
       method: "PUT",
       url: "/management/alerts/alert-follow/editor",
       headers: authHeaders,
-      payload: { document: { ...document, name: "Follower welcome" }, confirmLiveImpact: true }
+      payload: {
+        document: { ...document, name: "Follower welcome" },
+        confirmLiveImpact: true,
+        priorityAssignments: [{ variationId: "variant-vip", priority: 2 }]
+      }
     });
     const sent = await app.inject({
       method: "POST",
@@ -187,7 +191,7 @@ describe("management UI contract routes", () => {
     expect(sent.statusCode).toBe(200);
     expect(sent.json()).toEqual({ status: "queued", targetProfileId: "landscape", referenceId: "ref-editor-test", test: true });
     expect(service.editorCommands).toEqual([
-      ["save", "alert-follow", "Follower welcome", true],
+      ["save", "alert-follow", "Follower welcome", true, [{ variationId: "variant-vip", priority: 2 }]],
       ["test", "alert-follow", "landscape"]
     ]);
   });
@@ -874,10 +878,11 @@ class StubManagementUiQueryService {
   async saveAlertEditorDocument(
     alertId: string,
     document: Awaited<ReturnType<StubManagementUiQueryService["getAlertEditorDocument"]>>,
-    confirmLiveImpact: boolean
+    confirmLiveImpact: boolean,
+    priorityAssignments: readonly { readonly variationId: string; readonly priority: number }[]
   ) {
     if (!confirmLiveImpact) throw new AlertEditorLiveImpactConfirmationRequiredError(["landscape"]);
-    this.editorCommands.push(["save", alertId, document.name, confirmLiveImpact]);
+    this.editorCommands.push(["save", alertId, document.name, confirmLiveImpact, priorityAssignments]);
     return document;
   }
 

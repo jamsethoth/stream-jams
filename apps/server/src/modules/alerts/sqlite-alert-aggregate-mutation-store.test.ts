@@ -72,6 +72,45 @@ describe("SqliteAlertAggregateMutationStore", () => {
       { id: "event-log-unrelated" }
     ]);
   });
+
+  it("rolls back every sibling priority when the final selected editor-document write fails", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const { alerts, metadata, documents, store } = createStore(database.connection);
+    const collection = createCollection();
+    const base = createRule();
+    const original: AlertRule = {
+      ...base,
+      variants: [
+        { ...base.variants[0]!, id: "variant-default", priority: 5 },
+        { ...base.variants[0]!, id: "variant-high", name: "High", priority: 7 },
+        { ...base.variants[0]!, id: "variant-low", name: "Low", priority: 6 }
+      ]
+    };
+    const ruleMetadata = createRuleMetadata();
+    alerts.saveCollectionSync(collection);
+    alerts.saveRuleSync(original);
+    const persisted = await alerts.findRuleById(original.id);
+    if (persisted === null) throw new Error("Missing persisted priority fixture");
+    const changed: AlertRule = {
+      ...persisted,
+      variants: persisted.variants.map((variant, index) => ({
+        ...variant,
+        priority: index === 0 ? 5 : index === 1 ? 6 : 7
+      }))
+    };
+    const selected = createAlertEditorDocumentFromRule(changed, 1, ruleMetadata);
+
+    expect(() => store.commit({
+      expectedRules: [persisted],
+      saveRules: [changed],
+      saveRuleMetadata: [ruleMetadata],
+      saveDocuments: [selected, { ...selected, id: "missing-parent", parentAlertId: "missing" }]
+    })).toThrow("alert editor document owner must be an alert rule or alert variant");
+
+    await expect(alerts.findRuleById(original.id)).resolves.toEqual(persisted);
+    await expect(metadata.findRule(original.id)).resolves.toBeNull();
+    await expect(documents.find("variant-high")).resolves.toBeNull();
+  });
 });
 
 function createStore(connection: ConstructorParameters<typeof SqliteAlertRepository>[0]) {
