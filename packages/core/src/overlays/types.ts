@@ -1,3 +1,4 @@
+import type { AlertTextBoxStyle, AlertTextStyle } from "../alerts/text-style.js";
 import type { OverlayModuleSnapshot } from "../overlay-modules/types.js";
 import type { SecretRef } from "../security/types.js";
 import type {
@@ -115,6 +116,8 @@ export interface OverlayAudioInstruction {
 export interface OverlayTextInstruction {
   readonly text: string;
   readonly layout: OverlayElementLayout;
+  readonly textStyle?: AlertTextStyle | undefined;
+  readonly boxStyle?: AlertTextBoxStyle | undefined;
 }
 
 export interface OverlayShapeInstruction {

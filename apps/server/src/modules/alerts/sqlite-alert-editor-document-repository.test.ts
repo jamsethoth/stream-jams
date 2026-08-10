@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { AlertEditorDocument } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument
+} from "@stream-jams/core";
 import { createInMemoryStreamJamsDatabase } from "../db/database.js";
 import { SqliteAlertRepository } from "./sqlite-alert-repository.js";
 import { SqliteAlertEditorDocumentRepository } from "./sqlite-alert-editor-document-repository.js";
@@ -45,6 +49,26 @@ describe("SqliteAlertEditorDocumentRepository", () => {
     const renamed = { ...document, name: "Follower welcome" };
     await repository.save(renamed);
     await expect(repository.find(document.id)).resolves.toEqual(renamed);
+
+    const legacy = {
+      ...document,
+      layers: document.layers.map((layer) => {
+        if (layer.type !== "text") return layer;
+        const legacyLayer: Record<string, unknown> = { ...layer };
+        delete legacyLayer["boxStyle"];
+        delete legacyLayer["textStyle"];
+        return legacyLayer;
+      })
+    };
+    database.connection
+      .prepare("UPDATE alert_editor_documents SET document_json = ? WHERE alert_id = ?")
+      .run(JSON.stringify(legacy), document.id);
+    await expect(repository.find(document.id)).resolves.toMatchObject({
+      layers: [{
+        textStyle: compatibilityAlertTextStyle,
+        boxStyle: compatibilityAlertTextBoxStyle
+      }]
+    });
   });
 
   it("stores and deletes a variation document by its variant identity", async () => {
@@ -163,6 +187,8 @@ function editorDocument(): AlertEditorDocument {
       visible: true,
       order: 0,
       template: "{userName}",
+      textStyle: structuredClone(compatibilityAlertTextStyle),
+      boxStyle: structuredClone(compatibilityAlertTextBoxStyle),
       animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
     }],
     targetProfiles: [

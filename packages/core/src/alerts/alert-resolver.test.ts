@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { DefaultModerationService } from "../moderation/moderation-service.js";
 import { resolvedAlertSchema } from "../playback/schemas.js";
 import { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alert-resolver.js";
+import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "./text-style.js";
 
 describe("DefaultAlertResolver", () => {
   it("resolves priority-ordered matches into overlay instructions without raw event payloads", () => {
@@ -359,7 +360,9 @@ describe("DefaultAlertResolver", () => {
     ]);
     expect(resolved[0]?.overlayInstruction.text).toEqual({
       text: "Welcome Profile Viewer",
-      layout: { layerId: "layer-text", x: 120, y: 80, width: 600, height: 140, zIndex: 3 }
+      layout: { layerId: "layer-text", x: 120, y: 80, width: 600, height: 140, zIndex: 3 },
+      textStyle: compatibilityAlertTextStyle,
+      boxStyle: compatibilityAlertTextBoxStyle
     });
     expect(resolved[1]?.overlayInstruction.visual).toEqual({
       assetId: "asset-image",
@@ -581,11 +584,31 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
     rulePriority: rule.priority,
     durationMs: 4_000,
     layers: [
-      { id: "layer-text", name: "Text", type: "text", visible: true, order: 0, animation, template: "Welcome {actor.displayName}" },
+      {
+        id: "layer-text",
+        name: "Text",
+        type: "text",
+        visible: true,
+        order: 0,
+        animation,
+        template: "Welcome {actor.displayName}",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
+      },
       { id: "layer-image", name: "Image", type: "image", visible: true, order: 1, animation, assetId: "asset-image" },
       { id: "layer-audio", name: "Audio", type: "audio", visible: true, order: 2, animation, assetId: "asset-audio", volume: 0.5 },
       { id: "layer-tts", name: "TTS", type: "tts", visible: true, order: 3, animation, enabled: true, providerId: "speakerbot", template: "Read {actor.displayName}" },
-      { id: "layer-hidden", name: "Hidden", type: "text", visible: false, order: 4, animation, template: "Hidden" },
+      {
+        id: "layer-hidden",
+        name: "Hidden",
+        type: "text",
+        visible: false,
+        order: 4,
+        animation,
+        template: "Hidden",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
+      },
       { id: "layer-shape", name: "Shape", type: "shape", visible: true, order: 5, animation, fill: "#fff" }
     ],
     targetProfiles: [

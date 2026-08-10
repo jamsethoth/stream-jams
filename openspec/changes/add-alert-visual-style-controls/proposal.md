@@ -7,6 +7,7 @@ The alert canvas supports free positioning, media, text, and animation, but ever
 - Add bounded, provider-independent text style fields for a local font preset, size, weight, horizontal and vertical alignment, line height, text color, and text shadow.
 - Add simple layer-container styling for background color and opacity, padding, corner radius, and shadow.
 - Expose the same validated controls in the focused editor for both landscape and vertical profile designs.
+- Make each major selected-layer editor section collapsible with native accessible disclosures.
 - Render saved styles identically in editor preview, local preview playback, Send test, and live browser-source output.
 - Migrate existing alert documents to explicit defaults that preserve their current appearance.
 - Keep custom font upload, external font URLs, rich-text markup, arbitrary CSS, gradients, filters, blend modes, and timeline/keyframe editing out of this change.

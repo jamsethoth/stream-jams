@@ -3,6 +3,8 @@ import {
   normalizedStreamEventSchema,
   streamEventTypes,
   validateAlertSamplePayload,
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
   AlertEditorDocument,
   AlertRule,
   AlertEditorTestRequest
@@ -58,7 +60,12 @@ describe("AlertEditorService", () => {
       setId: "set-default",
       eventType: "follow",
       providerKind: "twitch",
-      layers: [{ type: "text", template: "Thanks, {actor.displayName}!" }]
+      layers: [{
+        type: "text",
+        template: "Thanks, {actor.displayName}!",
+        textStyle: compatibilityAlertTextStyle,
+        boxStyle: compatibilityAlertTextBoxStyle
+      }]
     });
     expect(document.targetProfiles).toEqual([
       expect.objectContaining({ id: "landscape", enabled: true, reviewState: "ready" }),
@@ -371,7 +378,11 @@ describe("AlertEditorService", () => {
           expect.objectContaining({
             overlayInstruction: expect.objectContaining({
               targetProfileId: "landscape",
-              text: expect.objectContaining({ text: "Thanks, James!" })
+              text: expect.objectContaining({
+                text: "Thanks, James!",
+                textStyle: compatibilityAlertTextStyle,
+                boxStyle: compatibilityAlertTextBoxStyle
+              })
             })
           })
         ]

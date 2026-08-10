@@ -1,4 +1,9 @@
-import type { AlertEditorDocument, AlertLayer } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument,
+  type AlertLayer
+} from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import {
   addLayer,
@@ -101,6 +106,10 @@ describe("alert editor layer operations", () => {
     const copied = copyAlertDesign(source, target);
 
     expect(copied.layers.map((layer) => layer.name)).toEqual(["Source Follower name", "Source Avatar"]);
+    expect(copied.layers[0]).toMatchObject({
+      textStyle: compatibilityAlertTextStyle,
+      boxStyle: compatibilityAlertTextBoxStyle
+    });
     expect(copied.targetProfiles.map((profile) => profile.layerLayouts)).toEqual(
       source.targetProfiles.map((profile) => profile.layerLayouts)
     );
@@ -176,6 +185,10 @@ describe("alert editor layer operations", () => {
       ["layer-text-copy", "Follower name copy", 1],
       ["layer-image", "Avatar", 2]
     ]);
+    expect(duplicated.layers[1]).toMatchObject({
+      textStyle: compatibilityAlertTextStyle,
+      boxStyle: compatibilityAlertTextBoxStyle
+    });
     expect(profileLayout(duplicated, "vertical", "layer-text-copy")).toEqual({
       ...profileLayout(document, "vertical", "layer-text"),
       layerId: "layer-text-copy",
@@ -328,7 +341,13 @@ function createDocument(): AlertEditorDocument {
     rulePriority: 0,
     durationMs: 5000,
     layers: [
-      { ...layerBase("layer-text", "Follower name", 0), type: "text", template: "{userName}" },
+      {
+        ...layerBase("layer-text", "Follower name", 0),
+        type: "text",
+        template: "{userName}",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
+      },
       { ...layerBase("layer-image", "Avatar", 1), type: "image", assetId: "asset-avatar" }
     ],
     targetProfiles: [

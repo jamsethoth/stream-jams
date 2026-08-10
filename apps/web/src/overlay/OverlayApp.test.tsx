@@ -49,6 +49,7 @@ describe("OverlaySurface", () => {
     const image = screen.getByTestId("overlay-visual-image-instruction");
     const gif = screen.getByTestId("overlay-visual-gif-instruction");
     const video = screen.getByTestId("overlay-video-video-instruction");
+    const textLayer = screen.getByTestId("overlay-text-image-instruction");
     const text = screen.getByText("Thanks for following");
     const audio = screen.getByTestId("overlay-audio-image-instruction");
 
@@ -64,7 +65,7 @@ describe("OverlaySurface", () => {
       width: "320px",
       zIndex: "5"
     });
-    expect(text).toHaveStyle({
+    expect(textLayer).toHaveStyle({
       height: "80px",
       left: "10px",
       position: "absolute",
@@ -73,6 +74,7 @@ describe("OverlaySurface", () => {
       zIndex: "6"
     });
     expect(text).toHaveAttribute("dir", "auto");
+    expect(text).toHaveStyle({ fontSize: "32px" });
     expect(screen.getByTestId("overlay-root")).toHaveStyle({
       background: "transparent",
       height: "100vh",

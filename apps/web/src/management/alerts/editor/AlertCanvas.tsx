@@ -1,6 +1,7 @@
 import { createAlertTemplateContext, type AlertEditorDocument, type AlertLayer, type TargetProfileId } from "@stream-jams/core";
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
+import { alertTextLayerStyle } from "../../../overlay/components/alert-text-style.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
 import { snapLayerGeometry, type CanvasViewState, type LayerGeometry } from "./editor-state.js";
 
@@ -184,7 +185,12 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   )}
                   tabIndex={0}
                 >
-                  <CanvasLayer assetApi={props.assetApi} layer={layer} templateContext={templateContext} />
+                  <CanvasLayer
+                    assetApi={props.assetApi}
+                    layer={layer}
+                    scale={viewState.zoom / 100}
+                    templateContext={templateContext}
+                  />
                   <span
                     aria-hidden="true"
                     className="alert-canvas__resize-handle"
@@ -212,14 +218,21 @@ export function AlertCanvas(props: AlertCanvasProps) {
 function CanvasLayer({
   assetApi,
   layer,
+  scale,
   templateContext
 }: {
   readonly assetApi: AssetApi;
   readonly layer: AlertLayer;
+  readonly scale: number;
   readonly templateContext: Record<string, unknown>;
 }) {
   if (layer.type === "text") {
-    return <span className="alert-canvas__text">{renderTemplate(layer.template, templateContext)}</span>;
+    const style = alertTextLayerStyle({ textStyle: layer.textStyle, boxStyle: layer.boxStyle, scale });
+    return style === null ? null : (
+      <span className="alert-canvas__text alert-text-layer" style={style}>
+        {renderTemplate(layer.template, templateContext)}
+      </span>
+    );
   }
   if (layer.type === "image" || layer.type === "video") {
     return <CanvasAsset assetApi={assetApi} assetId={layer.assetId} kind={layer.type} />;

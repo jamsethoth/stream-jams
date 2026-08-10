@@ -1,4 +1,10 @@
-import type { AlertEditorDocument, AlertSetDetail, RegisteredProviderView } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument,
+  type AlertSetDetail,
+  type RegisteredProviderView
+} from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../../stories/mock-apis.js";
@@ -28,6 +34,124 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const CompatibilityTextStyle: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const typography = within(await canvas.findByRole("group", { name: "Typography" }));
+    await expect(typography.getByLabelText("Font preset")).toHaveValue("system-sans");
+    await expect(typography.getByLabelText("Font size")).toHaveValue(32);
+    await expect(typography.getByLabelText("Font weight")).toHaveValue("800");
+    await expect(canvas.getByRole("group", { name: "Text box" })).toBeVisible();
+  }
+};
+
+export const CollapsibleLayerSections: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await canvas.findByLabelText("Font size");
+    const disclosures = [
+      ["Typography", "Font size"],
+      ["Text box", "Padding"],
+      ["Position and size", "X"],
+      ["Animation preset", "Animation duration (milliseconds)"]
+    ] as const;
+    const collapsedControls: HTMLElement[] = [];
+    for (const [label, controlLabel] of disclosures) {
+      const summary = canvas.getByText(label, { selector: "summary" });
+      await expect(summary.closest("details")).toHaveAttribute("open");
+      const control = canvas.getByLabelText(controlLabel);
+      await userEvent.click(summary);
+      await expect(control).not.toBeVisible();
+      collapsedControls.push(control);
+      for (const collapsed of collapsedControls) await expect(collapsed).not.toBeVisible();
+      await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+    }
+    for (const [label, controlLabel] of [...disclosures].reverse()) {
+      await userEvent.click(canvas.getByText(label, { selector: "summary" }));
+      await expect(canvas.getByLabelText(controlLabel)).toBeVisible();
+      await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+    }
+    await expect(canvas.getByLabelText("Font size")).toHaveValue(32);
+  }
+};
+
+export const ContrastingCustomTextStyle: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => styledEditorDocument(),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByLabelText("Font preset")).toHaveValue("serif");
+    await expect(canvas.getByLabelText("Font size")).toHaveValue(64);
+    await expect(canvas.getByLabelText("Background color opacity")).toHaveValue("75");
+  }
+};
+
+export const VerticalCustomTextStyle: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => styledEditorDocument(),
+      getAlertSet: async () => alertSetDetail()
+    }),
+    targetProfileId: "vertical"
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
+    await expect(canvas.getByLabelText("Font preset")).toHaveValue("serif");
+  }
+};
+
+export const InvalidTextStyle: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ({
+        ...styledEditorDocument(),
+        layers: styledEditorDocument().layers.map((layer) => layer.type === "text"
+          ? { ...layer, textStyle: { ...layer.textStyle, fontSizePx: 513 } }
+          : layer)
+      }),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Font size must be between 8 and 512.")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Preview" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+  }
+};
+
+export const NarrowScreenStyleGuard: Story = {
+  parameters: {
+    viewport: {
+      defaultViewport: "styleNarrow",
+      options: {
+        styleNarrow: { name: "Style guard 640 x 900", styles: { width: "640px", height: "900px" } }
+      }
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("heading", {
+      name: "Alert editor requires a larger screen",
+      hidden: true
+    })).toBeInTheDocument();
+  }
+};
+
+export const ReducedMotionStyleAuthoring: Story = {
+  parameters: { reducedMotion: "reduce" },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("group", { name: "Typography" })).toBeVisible();
+    await expect(canvas.queryByText("Preview playing")).not.toBeInTheDocument();
+  }
+};
 
 export const ReadyLandscape: Story = {
   play: async ({ canvasElement }) => {
@@ -296,7 +420,15 @@ export const ActiveSpeakerBotTts: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Studio Speaker.bot")).toBeVisible();
     await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
-    await expect(canvas.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeChecked();
+    const enabled = canvas.getByRole("checkbox", { name: "Enable TTS for this alert" });
+    await expect(enabled).toBeChecked();
+    const liveTtsSummary = canvas.getByText("Live TTS", { selector: "summary" });
+    await userEvent.click(liveTtsSummary);
+    await expect(enabled).not.toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+    await userEvent.click(liveTtsSummary);
+    await expect(enabled).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     const template = canvas.getByRole("textbox", { name: "TTS template" });
     await userEvent.clear(template);
     await userEvent.type(template, "Storybook TTS save");
@@ -410,7 +542,17 @@ function editorDocument(): AlertEditorDocument {
       { key: "userName", label: "User name", description: "Display name for the event actor." }
     ],
     layers: [
-      { id: "layer-text", name: "Message", type: "text", visible: true, order: 0, template: "Thanks, {userName}!", animation: preset("fade") },
+      {
+        id: "layer-text",
+        name: "Message",
+        type: "text",
+        visible: true,
+        order: 0,
+        template: "Thanks, {userName}!",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle),
+        animation: preset("fade")
+      },
       { id: "layer-image", name: "Celebration", type: "image", visible: true, order: 1, assetId: "asset-alert-image", animation: preset("scale") }
     ],
     targetProfiles: [
@@ -437,6 +579,33 @@ function editorDocument(): AlertEditorDocument {
       { id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "James" } },
       { id: "edge", label: "Long-content example", kind: "built-in", payload: { userName: "A-Very-Long-Display-Name" } }
     ]
+  };
+}
+
+function styledEditorDocument(): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    layers: editorDocument().layers.map((layer) => layer.type === "text"
+      ? {
+          ...layer,
+          textStyle: {
+            fontPreset: "serif",
+            fontSizePx: 64,
+            fontWeight: 700,
+            lineHeight: 1.3,
+            horizontalAlign: "left",
+            verticalAlign: "bottom",
+            color: "#FFCC00FF",
+            shadow: null
+          },
+          boxStyle: {
+            backgroundColor: "#102030BF",
+            paddingPx: 24,
+            cornerRadiusPx: 18,
+            shadow: { offsetX: 4, offsetY: 6, blur: 12, color: "#00000080" }
+          }
+        }
+      : layer)
   };
 }
 

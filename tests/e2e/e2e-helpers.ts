@@ -7,6 +7,7 @@ interface OverlayComposition {
   readonly overlayId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: "landscape" | "vertical" | undefined;
   readonly modules: readonly OverlayModuleSnapshot[];
 }
 
@@ -22,6 +23,7 @@ interface OverlayInstruction {
   readonly moduleId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: "landscape" | "vertical" | undefined;
   readonly visual: {
     readonly assetId: string;
     readonly mediaType: "image" | "gif" | "video";
@@ -43,6 +45,8 @@ interface OverlayInstruction {
       readonly height: number;
       readonly zIndex: number;
     };
+    readonly textStyle: Record<string, unknown> | undefined;
+    readonly boxStyle: Record<string, unknown> | undefined;
   } | null;
   readonly tts: null;
   readonly durationMs: number;
@@ -161,12 +165,14 @@ export async function sendOverlayPlayback(page: Page, instruction: OverlayInstru
 export function emptyComposition(input: {
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: "landscape" | "vertical" | undefined;
   readonly modules?: readonly OverlayModuleSnapshot[] | undefined;
 }): OverlayComposition {
   return {
     overlayId: "default",
     purpose: input.purpose,
     scope: input.scope,
+    ...(input.targetProfileId === undefined ? {} : { targetProfileId: input.targetProfileId }),
     modules: input.modules ?? []
   };
 }
@@ -176,9 +182,19 @@ export function textInstruction(input: {
   readonly text: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly targetProfileId?: "landscape" | "vertical" | undefined;
   readonly durationMs?: number | undefined;
   readonly moduleId?: string | undefined;
   readonly overlayId?: string | undefined;
+  readonly textStyle?: Record<string, unknown> | undefined;
+  readonly boxStyle?: Record<string, unknown> | undefined;
+  readonly layout?: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+    readonly zIndex: number;
+  } | undefined;
 }): OverlayInstruction {
   return {
     id: input.id,
@@ -186,17 +202,20 @@ export function textInstruction(input: {
     moduleId: input.moduleId ?? "alerts",
     purpose: input.purpose,
     scope: input.scope,
+    ...(input.targetProfileId === undefined ? {} : { targetProfileId: input.targetProfileId }),
     visual: null,
     audio: null,
     text: {
       text: input.text,
-      layout: {
+      layout: input.layout ?? {
         x: 40,
         y: 32,
         width: 420,
         height: 96,
         zIndex: 10
-      }
+      },
+      textStyle: input.textStyle,
+      boxStyle: input.boxStyle
     },
     tts: null,
     durationMs: input.durationMs ?? 4000

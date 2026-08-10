@@ -1,4 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle
+} from "@stream-jams/core";
 import { createServerApp, type ServerAppDependencies } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
@@ -155,6 +159,10 @@ describe("management UI contract routes", () => {
       headers: authHeaders
     });
     const document = loaded.json();
+    expect(document.layers[0]).toMatchObject({
+      textStyle: compatibilityAlertTextStyle,
+      boxStyle: compatibilityAlertTextBoxStyle
+    });
     const saved = await app.inject({
       method: "PUT",
       url: "/management/alerts/alert-follow/editor",
@@ -182,6 +190,67 @@ describe("management UI contract routes", () => {
       ["save", "alert-follow", "Follower welcome", true],
       ["test", "alert-follow", "landscape"]
     ]);
+  });
+
+  it("rejects an unknown alert font before calling the save command", async () => {
+    const { app, authHeaders, service } = await createApp();
+    const document = (await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor",
+      headers: authHeaders
+    })).json();
+
+    const response = await app.inject({
+      method: "PUT",
+      url: "/management/alerts/alert-follow/editor",
+      headers: authHeaders,
+      payload: {
+        confirmLiveImpact: true,
+        document: {
+          ...document,
+          layers: [{
+            id: "layer-text",
+            name: "Message",
+            type: "text",
+            visible: true,
+            order: 0,
+            template: "Welcome, {userName}!",
+            textStyle: {
+              fontPreset: "https://fonts.invalid/custom.woff2",
+              fontSizePx: 32,
+              fontWeight: 800,
+              lineHeight: 1.15,
+              horizontalAlign: "center",
+              verticalAlign: "center",
+              color: "#FFFFFFFF",
+              shadow: null
+            },
+            boxStyle: {
+              backgroundColor: "#00000000",
+              paddingPx: 0,
+              cornerRadiusPx: 0,
+              shadow: null
+            },
+            animation: {
+              mode: "preset",
+              entrance: "fade",
+              exit: "fade",
+              durationMs: 300,
+              delayMs: 0,
+              easing: "ease-out"
+            }
+          }]
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "INVALID_ALERT_EDITOR_DOCUMENT"
+      }
+    });
+    expect(service.editorCommands).not.toContainEqual(expect.arrayContaining(["save"]));
   });
 
   it("requires explicit confirmation when an editor save can change live output", async () => {
@@ -458,7 +527,7 @@ async function createApp() {
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     generateServerErrorId: () => "err_settings_maintenance",
     serverErrorLogger: vi.fn()
-  } as ServerAppDependencies & { readonly managementUiQueryService: StubManagementUiQueryService };
+  } as unknown as ServerAppDependencies & { readonly managementUiQueryService: StubManagementUiQueryService };
 
   return {
     app: createServerApp(dependencies),
@@ -676,7 +745,22 @@ class StubManagementUiQueryService {
       cooldownSeconds: 0,
       rulePriority: 0,
       durationMs: 5000,
-      layers: [],
+      layers: [{
+        id: "layer-text",
+        name: "Message",
+        type: "text" as const,
+        visible: true,
+        order: 0,
+        template: "Thanks, {userName}!",
+        animation: {
+          mode: "preset" as const,
+          entrance: "fade",
+          exit: "fade",
+          durationMs: 300,
+          delayMs: 0,
+          easing: "ease-out"
+        }
+      }],
       targetProfiles: [
         { id: "landscape" as const, enabled: true, reviewState: "ready" as const, layerLayouts: [] },
         { id: "vertical" as const, enabled: false, reviewState: "needs-review" as const, layerLayouts: [] }

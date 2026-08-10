@@ -250,6 +250,13 @@ describe("management alert contracts and rules", () => {
 
     expect(editorDocument.parse(document)).toEqual({
       ...document,
+      layers: [
+        {
+          ...document.layers[0],
+          textStyle: core.compatibilityAlertTextStyle,
+          boxStyle: core.compatibilityAlertTextBoxStyle
+        }
+      ],
       variantConditions: [],
       weight: 1,
       priority: null,

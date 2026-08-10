@@ -68,3 +68,8 @@ The focused editor SHALL expose style controls only for a selected text layer us
 - **WHEN** a user changes a style value and invokes Undo
 - **THEN** the prior validated style is restored in both the form and canvas
 - **AND** Redo can reapply the change
+
+#### Scenario: Major layer section is collapsed
+- **WHEN** a user toggles a major selected-layer editor section
+- **THEN** its controls hide or reappear through a keyboard-accessible native disclosure
+- **AND** collapsing the section does not change draft alert data

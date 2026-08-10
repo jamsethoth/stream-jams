@@ -1,5 +1,11 @@
 import { z } from "zod";
 import { alertConditionSchema, streamEventTypeSchema } from "../alerts/schemas.js";
+import {
+  alertTextBoxStyleSchema,
+  alertTextStyleSchema,
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle
+} from "../alerts/text-style.js";
 import { assetMediaTypeSchema } from "../assets/schemas.js";
 import {
   isoDateTimeSchema,
@@ -344,7 +350,9 @@ const alertLayerBaseSchema = z.object({
 export const alertLayerSchema = z.discriminatedUnion("type", [
   alertLayerBaseSchema.extend({
     type: z.literal("text"),
-    template: z.string()
+    template: z.string(),
+    textStyle: alertTextStyleSchema.default(compatibilityAlertTextStyle),
+    boxStyle: alertTextBoxStyleSchema.default(compatibilityAlertTextBoxStyle)
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("image"),

@@ -6,6 +6,7 @@ import type {
   OverlayInstruction,
   OverlayPresetAnimationInstruction
 } from "@stream-jams/core";
+import { alertTextLayerStyle } from "./alert-text-style.js";
 
 export interface OverlayPlaybackEvent {
   readonly instructionId: string;
@@ -116,11 +117,18 @@ function OverlayInstructionLayer({
   readonly onPlaybackEvent?: ((event: OverlayPlaybackEvent) => void) | undefined;
   readonly onTestAudioBlockedChange: (instructionId: string, blocked: boolean) => void;
 }) {
+  const textPresentationStyle = instruction.text === null
+    ? undefined
+    : alertTextLayerStyle({
+        textStyle: instruction.text.textStyle,
+        boxStyle: instruction.text.boxStyle
+      });
+  const presentationInvalid = instruction.text !== null && textPresentationStyle === null;
   const completionReportedRef = useRef(false);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const speechConsideredRef = useRef(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
-  const [audioStarted, setAudioStarted] = useState(instruction.audio === null);
+  const [audioStarted, setAudioStarted] = useState(instruction.audio === null && !presentationInvalid);
   const reportFailure = useCallback((message: string) => {
     if (completionReportedRef.current) {
       return;
@@ -135,7 +143,7 @@ function OverlayInstructionLayer({
   }, [instruction.id, onPlaybackEvent]);
 
   useEffect(() => {
-    if (!audioStarted) {
+    if (!audioStarted || presentationInvalid) {
       return;
     }
 
@@ -156,10 +164,20 @@ function OverlayInstructionLayer({
     }, instruction.durationMs);
 
     return () => window.clearTimeout(timeoutId);
-  }, [audioStarted, instruction.durationMs, instruction.id, onPlaybackEvent]);
+  }, [audioStarted, instruction.durationMs, instruction.id, onPlaybackEvent, presentationInvalid]);
 
   useEffect(() => {
-    if (instruction.tts?.mode !== "browser-speech" || typeof window.speechSynthesis === "undefined") {
+    if (!presentationInvalid) return;
+    onTestAudioBlockedChange(instruction.id, false);
+    reportFailure("Alert text style could not be rendered safely.");
+  }, [instruction.id, onTestAudioBlockedChange, presentationInvalid, reportFailure]);
+
+  useEffect(() => {
+    if (
+      presentationInvalid ||
+      instruction.tts?.mode !== "browser-speech" ||
+      typeof window.speechSynthesis === "undefined"
+    ) {
       return;
     }
 
@@ -172,11 +190,12 @@ function OverlayInstructionLayer({
     if (muted) {
       window.speechSynthesis.cancel();
     }
-  }, [instruction.tts, muted]);
+  }, [instruction.tts, muted, presentationInvalid]);
 
   const audioAssetId = instruction.audio?.assetId ?? null;
   const audioVolume = instruction.audio?.volume ?? 1;
   const startAudio = useCallback(() => {
+    if (presentationInvalid) return;
     const element = audioElementRef.current;
     if (element === null || audioAssetId === null) {
       return;
@@ -196,7 +215,15 @@ function OverlayInstructionLayer({
 
       reportFailure(audioStartFailureMessage(error));
     });
-  }, [audioAssetId, audioVolume, instruction.id, instruction.operatorTest, onTestAudioBlockedChange, reportFailure]);
+  }, [
+    audioAssetId,
+    audioVolume,
+    instruction.id,
+    instruction.operatorTest,
+    onTestAudioBlockedChange,
+    presentationInvalid,
+    reportFailure
+  ]);
 
   useEffect(() => {
     startAudio();
@@ -226,6 +253,8 @@ function OverlayInstructionLayer({
     return () => window.removeEventListener(testAudioActivationEvent, retry);
   }, [audioBlocked, startAudio]);
 
+  if (presentationInvalid) return null;
+
   return (
     <>
       {instruction.visual === null ? null : instruction.visual.mediaType === "video" ? (
@@ -250,10 +279,11 @@ function OverlayInstructionLayer({
         <div
           className="overlay-text"
           data-testid={`overlay-text-${instruction.id}`}
-          dir="auto"
           style={elementStyle(instruction.text.layout, instruction.animation, instruction.durationMs)}
         >
-          {instruction.text.text}
+          <div className="alert-text-layer" dir="auto" style={textPresentationStyle ?? undefined}>
+            {instruction.text.text}
+          </div>
         </div>
       )}
       {instruction.shape == null ? null : (

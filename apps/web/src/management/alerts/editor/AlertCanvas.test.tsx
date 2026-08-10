@@ -1,4 +1,7 @@
-import type { AlertEditorDocument } from "@stream-jams/core";
+import {
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument
+} from "@stream-jams/core";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -112,6 +115,22 @@ describe("AlertCanvas", () => {
         visible: true,
         order: 0,
         template: "{gifterName} gifted {giftCount}; {cumulativeGifts} total.",
+        textStyle: {
+          ...compatibilityAlertTextStyle,
+          fontPreset: "serif",
+          fontSizePx: 64,
+          fontWeight: 700,
+          horizontalAlign: "left",
+          verticalAlign: "bottom",
+          color: "#FFCC00FF",
+          shadow: null
+        },
+        boxStyle: {
+          backgroundColor: "#102030BF",
+          paddingPx: 24,
+          cornerRadiusPx: 18,
+          shadow: { offsetX: 4, offsetY: 6, blur: 12, color: "#00000080" }
+        },
         animation: editorDocument.layers[0]!.animation
       }],
       targetProfiles: editorDocument.targetProfiles.map((profile) => ({
@@ -137,10 +156,22 @@ describe("AlertCanvas", () => {
           cumulativeTotal: 42
         }}
         selectedLayerId={null}
+        viewState={{ zoom: 50, scrollLeft: 0, scrollTop: 0 }}
       />
     );
 
-    expect(screen.getByText("Generous viewer gifted 5; 42 total.")).toBeInTheDocument();
+    const styledText = screen.getByText("Generous viewer gifted 5; 42 total.");
+    expect(styledText.style.backgroundColor).toBe("rgba(16, 32, 48, 0.75)");
+    expect(styledText.style.borderRadius).toBe("9px");
+    expect(styledText.style.boxShadow).toBe("2px 3px 6px #00000080");
+    expect(styledText.style.color).toBe("rgb(255, 204, 0)");
+    expect(styledText.style.fontFamily).toBe('Georgia, "Times New Roman", serif');
+    expect(styledText.style.fontSize).toBe("32px");
+    expect(styledText.style.fontWeight).toBe("700");
+    expect(styledText.style.justifyContent).toBe("flex-end");
+    expect(styledText.style.padding).toBe("12px");
+    expect(styledText.style.textAlign).toBe("left");
+    expect(styledText.style.textShadow).toBe("none");
   });
 
   it("selects a focused layer with Enter or Space and exposes pressed state", async () => {

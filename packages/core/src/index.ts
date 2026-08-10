@@ -31,6 +31,19 @@ export {
 export type * from "./auth/management-session-service.js";
 
 export type * from "./alerts/types.js";
+export type * from "./alerts/text-style.js";
+export {
+  alertFontPresets,
+  alertFontWeights,
+  alertShadowStyleSchema,
+  alertTextBoxStyleSchema,
+  alertTextStyleLimits,
+  alertTextStyleSchema,
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  defaultOptionalAlertShadow,
+  rgbaColorSchema
+} from "./alerts/text-style.js";
 export type * from "./alerts/repository.js";
 export type * from "./alerts/alert-service.js";
 export type * from "./alerts/condition-evaluator.js";
