@@ -11,6 +11,7 @@ import {
   type AlertSetDetail,
   type AlertInventoryRow,
   type AlertVariationCreateInput,
+  type AlertVariationAuthoringContext,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -80,6 +81,7 @@ export interface ManagementUiServiceOptions {
   readonly getTwitchAuthorization: () => Promise<TwitchConnectionStatus>;
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
+  readonly getAlertVariationAuthoringContext: (alertId: string) => Promise<AlertVariationAuthoringContext>;
   readonly saveAlertEditorDocument: (
     alertId: string,
     document: AlertEditorDocument,
@@ -251,6 +253,10 @@ export class ManagementUiService {
 
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument> {
     return this.#options.getAlertEditorDocument(alertId);
+  }
+
+  getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext> {
+    return this.#options.getAlertVariationAuthoringContext(alertId);
   }
 
   saveAlertEditorDocument(

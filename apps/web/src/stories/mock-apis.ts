@@ -139,6 +139,9 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getAlertEditorDocument() {
       throw new Error("No alert editor document configured for this story.");
     },
+    async getAlertVariationAuthoringContext() {
+      throw new Error("No alert variation context configured for this story.");
+    },
     async saveAlertEditorDocument(_alertId, document) {
       return document;
     },

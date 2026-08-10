@@ -8,6 +8,7 @@ import {
   alertEditorSaveInputSchema,
   alertEditorTestRequestSchema,
   alertEditorTestResultSchema,
+  alertVariationAuthoringContextSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
   alertSetDetailSchema,
@@ -47,6 +48,7 @@ import {
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AlertVariationCreateInput,
+  type AlertVariationAuthoringContext,
   type AssetLibraryItem,
   type AssetChangeImpact,
   type AssetMediaType,
@@ -126,6 +128,7 @@ export interface ManagementUiQueryService {
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
+  getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext>;
   saveAlertEditorDocument(
     alertId: string,
     document: AlertEditorDocument,
@@ -454,6 +457,24 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
         alertId,
         setId: null,
         summary: "The alert editor could not be opened",
+        nextStep: "Return to Alerts and choose the alert again."
+      });
+    }
+  });
+
+  app.get("/management/alerts/:alertId/editor/variation-context", { preHandler }, async (request, reply) => {
+    const alertId = readParam(request.params, "alertId");
+    try {
+      return alertVariationAuthoringContextSchema.parse(
+        await service.getAlertVariationAuthoringContext(alertId)
+      );
+    } catch (error) {
+      return sendAlertEditorCommandError(reply, error, {
+        service,
+        generateErrorId,
+        alertId,
+        setId: null,
+        summary: "The alert variation context could not be opened",
         nextStep: "Return to Alerts and choose the alert again."
       });
     }

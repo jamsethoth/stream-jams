@@ -15,6 +15,7 @@ import {
   type AlertRepository,
   type AlertRule,
   type AlertTargetProfileDocument,
+  type AlertVariationAuthoringContext,
   type NormalizedStreamEvent,
   type OverlayElementLayout,
   type ResolvedAlert,
@@ -110,6 +111,29 @@ export class AlertEditorService {
     return stored === null
       ? createDocumentFromRule(resolved, metadata)
       : hydrateDocument(stored, resolved, metadata);
+  }
+
+  async getVariationContext(alertId: string): Promise<AlertVariationAuthoringContext> {
+    const { rule } = await this.#resolveEditorItem(alertId);
+    return {
+      ruleId: rule.id,
+      eventType: rule.eventType,
+      candidates: rule.variants.map((variant, index) => ({
+        editorId: index === 0 ? rule.id : variant.id,
+        variantId: variant.id,
+        kind: index === 0 ? "default" : "variation",
+        name: index === 0 ? rule.name : variant.name,
+        enabled: variant.enabled,
+        conditions: (variant.conditions ?? []).map((condition) => ({
+          ...condition,
+          value: typeof condition.value === "object"
+            ? [condition.value[0], condition.value[1]] as [number, number]
+            : condition.value
+        })),
+        weight: variant.weight,
+        priority: variant.priority ?? null
+      }))
+    };
   }
 
   async saveDocument(

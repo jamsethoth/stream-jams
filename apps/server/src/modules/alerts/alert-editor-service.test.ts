@@ -12,6 +12,7 @@ import {
 import {
   AlertEditorDeliveryBlockedError,
   AlertEditorLiveImpactConfirmationRequiredError,
+  AlertEditorNotFoundError,
   AlertEditorService,
   AlertEditorValidationError,
   type AlertEditorDocumentRepository,
@@ -50,6 +51,80 @@ const rule: AlertRule = {
 };
 
 describe("AlertEditorService", () => {
+  it("projects stable sibling authoring context from default and variation route IDs", async () => {
+    const variationRule: AlertRule = {
+      ...rule,
+      conditions: [{ field: "actor.displayName", operator: "includes", value: "VIP" }],
+      variants: [
+        { ...rule.variants[0]!, id: "variant-default", weight: 2, priority: 4 },
+        {
+          ...rule.variants[0]!,
+          id: "variant-disabled",
+          name: "Disabled VIP",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          weight: 3,
+          priority: 9
+        },
+        {
+          ...rule.variants[0]!,
+          id: "variant-weighted",
+          name: "Weighted VIP",
+          conditions: [{ field: "actor.displayName", operator: "includes", value: "Jam" }],
+          weight: 7
+        }
+      ]
+    };
+    const harness = createHarnessWithRule(variationRule);
+    const expected = {
+      ruleId: variationRule.id,
+      eventType: "follow",
+      candidates: [
+        {
+          editorId: variationRule.id,
+          variantId: "variant-default",
+          kind: "default",
+          name: variationRule.name,
+          enabled: true,
+          conditions: [],
+          weight: 2,
+          priority: 4
+        },
+        {
+          editorId: "variant-disabled",
+          variantId: "variant-disabled",
+          kind: "variation",
+          name: "Disabled VIP",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          weight: 3,
+          priority: 9
+        },
+        {
+          editorId: "variant-weighted",
+          variantId: "variant-weighted",
+          kind: "variation",
+          name: "Weighted VIP",
+          enabled: true,
+          conditions: [{ field: "actor.displayName", operator: "includes", value: "Jam" }],
+          weight: 7,
+          priority: null
+        }
+      ]
+    } as const;
+
+    await expect(harness.service.getVariationContext(variationRule.id)).resolves.toEqual(expected);
+    await expect(harness.service.getVariationContext("variant-weighted")).resolves.toEqual(expected);
+  });
+
+  it("rejects variation context requests for an unknown editor ID", async () => {
+    const harness = createHarnessWithRule(rule);
+
+    await expect(harness.service.getVariationContext("missing-alert")).rejects.toEqual(
+      new AlertEditorNotFoundError("missing-alert")
+    );
+  });
+
   it("creates a deterministic editor document for a legacy alert", async () => {
     const harness = createHarness();
 

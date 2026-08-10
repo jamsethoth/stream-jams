@@ -3,6 +3,7 @@ import {
   alertEditorDocumentSchema,
   alertEditorErrorReportResultSchema,
   alertEditorTestResultSchema,
+  alertVariationAuthoringContextSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
   alertSetDetailSchema,
@@ -36,6 +37,7 @@ import {
   type AlertSetDetail,
   type AlertInventoryRow,
   type AlertVariationCreateInput,
+  type AlertVariationAuthoringContext,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -253,6 +255,7 @@ export interface ManagementApi {
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
+  getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext>;
   saveAlertEditorDocument(
     alertId: string,
     document: AlertEditorDocument,
@@ -568,6 +571,14 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         `/management/alerts/${encodeURIComponent(alertId)}/editor`,
         alertEditorDocumentSchema,
         "Unable to load alert editor document."
+      );
+    },
+
+    getAlertVariationAuthoringContext(alertId) {
+      return getContract(
+        `/management/alerts/${encodeURIComponent(alertId)}/editor/variation-context`,
+        alertVariationAuthoringContextSchema,
+        "Unable to load alert variation context."
       );
     },
 

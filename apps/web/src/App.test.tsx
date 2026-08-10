@@ -133,6 +133,9 @@ function createManagementApi(): ManagementApi {
     async getAlertEditorDocument() {
       throw new Error("not called");
     },
+    async getAlertVariationAuthoringContext() {
+      throw new Error("not called");
+    },
     async saveAlertEditorDocument(_alertId, document) {
       return document;
     },

@@ -1,5 +1,6 @@
 import type {
   AlertEditorDocument,
+  AlertVariationAuthoringContext,
   AlertSetOverview,
   AssetLibraryItem,
   ConfigurationBackupSummary,
@@ -161,6 +162,28 @@ describe("ManagementUiService", () => {
     expect(resetAlert).toHaveBeenCalledWith("alert-1", true);
     expect(deleteAlert).toHaveBeenCalledWith("variant-1", false);
   });
+
+  it("forwards focused variation context reads without changing the editor ID", async () => {
+    const context: AlertVariationAuthoringContext = {
+      ruleId: "alert-follow",
+      eventType: "follow",
+      candidates: [{
+        editorId: "alert-follow",
+        variantId: "variant-follow",
+        kind: "default",
+        name: "New follower",
+        enabled: true,
+        conditions: [],
+        weight: 1,
+        priority: null
+      }]
+    };
+    const getAlertVariationAuthoringContext = vi.fn(async () => context);
+    const service = createService([], null, undefined, {}, undefined, getAlertVariationAuthoringContext);
+
+    await expect(service.getAlertVariationAuthoringContext("variant-vip")).resolves.toEqual(context);
+    expect(getAlertVariationAuthoringContext).toHaveBeenCalledWith("variant-vip");
+  });
 });
 
 function createService(
@@ -171,13 +194,17 @@ function createService(
     readonly error: RegisteredProviderView["error"];
   }) | undefined = undefined,
   alertSetOverrides: Partial<ManagementUiServiceOptions["alertSetService"]> = {},
-  getTwitchAuthorization: ManagementUiServiceOptions["getTwitchAuthorization"] = async () => ({
+  getTwitchAuthorization: ManagementUiServiceOptions["getTwitchAuthorization"] | undefined = undefined,
+  getAlertVariationAuthoringContext: ManagementUiServiceOptions["getAlertVariationAuthoringContext"] = async () => {
+    throw new Error("not configured");
+  }
+) {
+  const resolvedGetTwitchAuthorization = getTwitchAuthorization ?? (async () => ({
     connected: false,
     authorizationState: "disconnected",
     missingScopes: [],
     account: null
-  })
-) {
+  } as const));
   const runtimeView = getEventSourceRuntimeView ?? ((providerView: RegisteredProviderView) => ({
     liveStatus: !providerView.active
       ? "not-running"
@@ -228,6 +255,7 @@ function createService(
     getAlertEditorDocument: async (): Promise<AlertEditorDocument> => {
       throw new Error("not configured");
     },
+    getAlertVariationAuthoringContext,
     saveAlertEditorDocument: async (_alertId, document) => document,
     sendAlertEditorTest: async (_alertId, request) => ({
       status: "queued",
@@ -276,7 +304,7 @@ function createService(
       blockers: []
     }),
     getEventSourceRuntimeView: runtimeView,
-    getTwitchAuthorization
+    getTwitchAuthorization: resolvedGetTwitchAuthorization
   };
   return new ManagementUiService(options);
 }

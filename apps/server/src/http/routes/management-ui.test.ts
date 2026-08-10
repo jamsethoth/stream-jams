@@ -192,6 +192,76 @@ describe("management UI contract routes", () => {
     ]);
   });
 
+  it("protects and validates sibling variation context for default and variation editor IDs", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const unauthorized = await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor/variation-context"
+    });
+    const defaultResponse = await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor/variation-context",
+      headers: authHeaders
+    });
+    const variationResponse = await app.inject({
+      method: "GET",
+      url: "/management/alerts/variant-vip/editor/variation-context",
+      headers: authHeaders
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(defaultResponse.statusCode).toBe(200);
+    expect(defaultResponse.json()).toEqual(variationResponse.json());
+    expect(defaultResponse.json()).toEqual({
+      ruleId: "alert-follow",
+      eventType: "follow",
+      candidates: [
+        {
+          editorId: "alert-follow",
+          variantId: "variant-follow",
+          kind: "default",
+          name: "New follower",
+          enabled: true,
+          conditions: [],
+          weight: 1,
+          priority: null
+        },
+        {
+          editorId: "variant-vip",
+          variantId: "variant-vip",
+          kind: "variation",
+          name: "VIP follower",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          weight: 3,
+          priority: 7
+        }
+      ]
+    });
+    expect(service.editorCommands).toEqual([
+      ["variation-context", "alert-follow"],
+      ["variation-context", "variant-vip"]
+    ]);
+  });
+
+  it("fails closed when the variation context service returns a malformed projection", async () => {
+    const { app, authHeaders, service } = await createApp();
+    vi.spyOn(service, "getAlertVariationAuthoringContext").mockResolvedValue({
+      ruleId: "alert-follow",
+      eventType: "follow",
+      candidates: []
+    } as never);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor/variation-context",
+      headers: authHeaders
+    });
+
+    expect(response.statusCode).toBe(500);
+  });
+
   it("rejects an unknown alert font before calling the save command", async () => {
     const { app, authHeaders, service } = await createApp();
     const document = (await app.inject({
@@ -767,6 +837,36 @@ class StubManagementUiQueryService {
       ],
       samplePayloads: [
         { id: "sample-normal", label: "Normal follower", kind: "built-in" as const, payload: { userName: "viewer" } }
+      ]
+    };
+  }
+
+  async getAlertVariationAuthoringContext(alertId: string) {
+    this.editorCommands.push(["variation-context", alertId]);
+    return {
+      ruleId: "alert-follow",
+      eventType: "follow" as const,
+      candidates: [
+        {
+          editorId: "alert-follow",
+          variantId: "variant-follow",
+          kind: "default" as const,
+          name: "New follower",
+          enabled: true,
+          conditions: [],
+          weight: 1,
+          priority: null
+        },
+        {
+          editorId: "variant-vip",
+          variantId: "variant-vip",
+          kind: "variation" as const,
+          name: "VIP follower",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals" as const, value: "James" }],
+          weight: 3,
+          priority: 7
+        }
       ]
     };
   }
