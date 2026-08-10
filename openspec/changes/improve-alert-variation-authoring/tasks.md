@@ -5,8 +5,8 @@
 
 ## 2. Priority Groups And Relative Chance
 
-- [ ] 2.1 Add failing core tests for grouping existing numeric priorities, stable group ordering, deterministic normalization after reorder, moving a variation between groups, preserving unchanged priorities, and explaining a legacy default-priority tie.
-- [ ] 2.2 Implement pure priority-group projection and normalization helpers over the existing optional integer priority contract that emit no assignments for unchanged groups and normalize every conditional sibling only after an explicit group order or membership change.
+- [x] 2.1 Add failing core tests for grouping existing numeric priorities, stable group ordering, deterministic normalization after reorder, moving a variation between groups, preserving unchanged priorities, and explaining a legacy default-priority tie.
+- [x] 2.2 Implement pure priority-group projection and normalization helpers over the existing optional integer priority contract that emit no assignments for unchanged groups and normalize every conditional sibling only after an explicit group order or membership change.
 - [x] 2.3 Add failing chance tests for highest eligible group filtering, positive weights, one candidate, multiple candidates, disabled or non-matching variants, default fallback, and a legacy default-priority tie.
 - [x] 2.4 Implement `projectAlertVariationSelection` as the shared pure resolver projection for eligibility, highest priority, and total weight; use it for live resolution and sample explanation while keeping random consumption only in live weighted choice.
 

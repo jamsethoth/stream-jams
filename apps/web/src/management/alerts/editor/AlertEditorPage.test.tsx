@@ -3,6 +3,7 @@ import {
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
   type AlertSetDetail,
+  type AlertVariationAuthoringContext,
   type RegisteredProviderView
 } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -10,7 +11,30 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
-import { AlertEditorPage, type AlertEditorPageApi } from "./AlertEditorPage.js";
+import {
+  AlertEditorPage as ProductionAlertEditorPage,
+  affectedProfileLabelsForEditor,
+  completeAlertEditorSave,
+  evaluateAlertEditorDraftSample,
+  priorityAssignmentsForEditor,
+  type AlertEditorPageApi,
+  type AlertEditorPageProps
+} from "./AlertEditorPage.js";
+import { applyPriorityGroupUpdate, createEditorState } from "./editor-state.js";
+
+type TestAlertEditorPageProps = Omit<AlertEditorPageProps, "managementApi"> & {
+  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext"> &
+    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext">>;
+};
+
+function AlertEditorPage(props: TestAlertEditorPageProps) {
+  const getAlertVariationAuthoringContext = props.managementApi.getAlertVariationAuthoringContext
+    ?? (async (alertId: string) => variationContext(await props.managementApi.getAlertEditorDocument(alertId)));
+  return <ProductionAlertEditorPage
+    {...props}
+    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext }}
+  />;
+}
 
 afterEach(() => {
   cleanup();
@@ -20,6 +44,209 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("waits for valid variation context and blocks the editor when context loading fails", async () => {
+    let resolveContext: ((context: AlertVariationAuthoringContext) => void) | undefined;
+    const contextResult = new Promise<AlertVariationAuthoringContext>((resolve) => { resolveContext = resolve; });
+    const document = editorDocument();
+    const commonApi = {
+      getAlertEditorDocument: vi.fn(async () => document),
+      getAlertSet: vi.fn(async () => alertSetDetail(false)),
+      listRegisteredProviders: vi.fn(async () => []),
+      getAssetChangeImpact: vi.fn(),
+      listAssetLibraryItems: vi.fn(async () => []),
+      deleteAsset: vi.fn(),
+      updateAssetMetadata: vi.fn(),
+      saveAlertEditorDocument: vi.fn(),
+      sendAlertEditorTest: vi.fn()
+    };
+    const view = render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            ...commonApi,
+            getAlertVariationAuthoringContext: vi.fn(() => contextResult)
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("Loading alert editor...")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+    await act(async () => { resolveContext?.(variationContext(document)); });
+    expect(await screen.findByRole("heading", { name: document.name })).toBeInTheDocument();
+    view.unmount();
+
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            ...commonApi,
+            getAlertVariationAuthoringContext: vi.fn(async () => { throw new Error("context unavailable"); })
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+  });
+
+  it("builds complete assignments only for changed groups and maps editor IDs to resolver variant IDs", () => {
+    const selected: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-editor-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid",
+      priority: 9
+    };
+    const context = variationContext(selected, [{
+      editorId: "variant-editor-low",
+      variantId: "variant-resolver-low",
+      kind: "variation",
+      name: "Low",
+      enabled: true,
+      conditions: [],
+      weight: 1,
+      priority: 3
+    }]);
+    const initialGroups = [
+      { variationIds: ["variant-editor-high"] },
+      { variationIds: ["variant-editor-low"] }
+    ] as const;
+    const initial = createEditorState(selected, initialGroups);
+
+    expect(priorityAssignmentsForEditor(initial, context)).toBeUndefined();
+
+    const changed = applyPriorityGroupUpdate(initial, (groups) => [groups[1]!, groups[0]!]);
+    expect(priorityAssignmentsForEditor(changed, context)).toEqual([
+      { variationId: "variant-resolver-low", priority: 2 },
+      { variationId: "variant-editor-high-resolver", priority: 1 }
+    ]);
+  });
+
+  it("names every enabled sibling profile for a group-only dirty draft", () => {
+    const selected: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-editor-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid"
+    };
+    const context = variationContext(selected, [{
+      editorId: "variant-editor-low",
+      variantId: "variant-resolver-low",
+      kind: "variation",
+      name: "Low",
+      enabled: true,
+      conditions: [],
+      weight: 1,
+      priority: 3
+    }]);
+    const changed = applyPriorityGroupUpdate(
+      createEditorState(selected, [
+        { variationIds: ["variant-editor-high"] },
+        { variationIds: ["variant-editor-low"] }
+      ]),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+    const detail = alertSetDetail(true);
+    const siblingDetail: AlertSetDetail = {
+      ...detail,
+      inventory: [
+        ...detail.inventory,
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+      ]
+    };
+
+    expect(affectedProfileLabelsForEditor(changed, siblingDetail, context)).toEqual(["Landscape", "Vertical"]);
+  });
+
+  it("preserves document and group edits made while an earlier save is pending", () => {
+    const selected = editorDocument();
+    const initialGroups = [
+      { variationIds: ["variant-high"] },
+      { variationIds: ["variant-low"] }
+    ] as const;
+    const submitted = applyPriorityGroupUpdate(
+      createEditorState(selected, initialGroups),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+    const pending = applyPriorityGroupUpdate(
+      { ...submitted, document: { ...submitted.document, name: "Newer local edit" } },
+      (groups) => [{ variationIds: [...groups[0]!.variationIds, "variant-new"] }, groups[1]!]
+    );
+    const savedDocument = { ...selected, name: "Saved response" };
+
+    const completed = completeAlertEditorSave(
+      pending,
+      submitted.document,
+      submitted.priorityGroups,
+      savedDocument
+    );
+
+    expect(completed.document.name).toBe("Newer local edit");
+    expect(completed.priorityGroups[0]?.variationIds).toContain("variant-new");
+    expect(completed.savedDocument).toBe(savedDocument);
+    expect(completed.savedPriorityGroups).toBe(submitted.priorityGroups);
+  });
+
+  it("evaluates the current selected draft with normalized group assignments and resolver IDs", () => {
+    const selected: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-editor-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid",
+      enabled: true,
+      variantConditions: [{ field: "raidViewers", operator: "min", value: 20 }],
+      weight: 4,
+      priority: 9
+    };
+    const context = variationContext(selected, [{
+      editorId: "variant-editor-low",
+      variantId: "variant-resolver-low",
+      kind: "variation",
+      name: "Low",
+      enabled: true,
+      conditions: [],
+      weight: 1,
+      priority: 3
+    }]);
+    const editor = applyPriorityGroupUpdate(
+      createEditorState(selected, [
+        { variationIds: ["variant-editor-high"] },
+        { variationIds: ["variant-editor-low"] }
+      ]),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+
+    const evaluation = evaluateAlertEditorDraftSample(editor, context, {
+      userName: "Raider",
+      raidViewers: 25,
+      amount: 25
+    });
+
+    expect(evaluation).toMatchObject({
+      outcome: "weighted-candidates",
+      highestEligiblePriority: 2,
+      candidates: [
+        { id: "alert-raid-default-resolver", inHighestEligibleGroup: false },
+        { id: "variant-editor-high-resolver", conditionsMatch: true, inHighestEligibleGroup: false },
+        { id: "variant-resolver-low", conditionsMatch: true, inHighestEligibleGroup: true }
+      ]
+    });
+  });
+
   it("edits and validates text-only typography and box styles", async () => {
     const user = userEvent.setup();
     const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
@@ -348,6 +575,7 @@ describe("AlertEditorPage", () => {
     }));
     const managementApi = {
       getAlertEditorDocument: vi.fn(async () => editorDocument()),
+      getAlertVariationAuthoringContext: vi.fn(async () => variationContext(editorDocument())),
       getAlertSet: vi.fn(async () => alertSetDetail(false)),
       listRegisteredProviders: vi.fn(async () => []),
       getAssetChangeImpact: vi.fn(),
@@ -1615,5 +1843,37 @@ function alertSetDetail(active = true): AlertSetDetail {
       { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
+  };
+}
+
+function variationContext(
+  document: AlertEditorDocument,
+  siblings: AlertVariationAuthoringContext["candidates"] = []
+): AlertVariationAuthoringContext {
+  const ruleId = document.kind === "default" ? document.id : document.parentAlertId!;
+  const defaultCandidate = {
+    editorId: ruleId,
+    variantId: `${ruleId}-default-resolver`,
+    kind: "default" as const,
+    name: "Default",
+    enabled: document.kind === "default" ? document.enabled : true,
+    conditions: [],
+    weight: document.kind === "default" ? document.weight : 1,
+    priority: document.kind === "default" ? document.priority : null
+  };
+  const selectedCandidate = document.kind === "default" ? [] : [{
+    editorId: document.id,
+    variantId: `${document.id}-resolver`,
+    kind: "variation" as const,
+    name: document.name,
+    enabled: document.enabled,
+    conditions: document.variantConditions,
+    weight: document.weight,
+    priority: document.priority
+  }];
+  return {
+    ruleId,
+    eventType: document.eventType,
+    candidates: [defaultCandidate, ...selectedCandidate, ...siblings]
   };
 }

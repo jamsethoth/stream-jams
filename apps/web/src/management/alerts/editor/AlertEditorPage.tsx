@@ -4,16 +4,23 @@ import {
   alertTextBoxStyleSchema,
   alertTextStyleLimits,
   alertTextStyleSchema,
+  buildAlertPriorityGroups,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   createAlertTemplateContext,
+  createNormalizedAlertSampleEvent,
   defaultOptionalAlertShadow,
+  evaluateAlertVariationSample,
   getAlertEditorAffectedProfileIds,
+  normalizeAlertPriorityGroups,
   validateAlertSamplePayload,
   type ActionableManagementError,
   type AlertEditorDocument,
   type AlertLayer,
   type AlertSetDetail,
+  type AlertVariationAuthoringContext,
+  type AlertVariationPriorityAssignment,
+  type AlertVariationSampleEvaluation,
   type AssetMediaType,
   type RegisteredProviderView,
   type TargetProfileId
@@ -33,6 +40,7 @@ import { RgbaColorControl } from "./RgbaColorControl.js";
 import {
   addLayer,
   applyEditorUpdate,
+  arePriorityGroupsDirty,
   copyAlertDesign,
   copyProfileLayout,
   createEditorState,
@@ -55,6 +63,7 @@ import "./alert-editor-page.css";
 export type AlertEditorPageApi = Pick<
   ManagementApi,
   | "getAlertEditorDocument"
+  | "getAlertVariationAuthoringContext"
   | "getAlertSet"
   | "listRegisteredProviders"
   | "getAssetChangeImpact"
@@ -85,6 +94,7 @@ type SaveWarningState = {
 
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editor, setEditor] = useState<AlertEditorState | null>(null);
+  const [variationContext, setVariationContext] = useState<AlertVariationAuthoringContext | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
   const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
   const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
@@ -130,18 +140,34 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   useEffect(() => {
     let active = true;
     setEditor(null);
+    setVariationContext(null);
     setSetDetail(null);
     setLoadedSetId(undefined);
     setError(null);
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
-    void props.managementApi.getAlertEditorDocument(props.alertId).then(async (document) => {
+    const documentRequest = props.managementApi.getAlertEditorDocument(props.alertId);
+    void Promise.all([
+      documentRequest,
+      props.managementApi.getAlertVariationAuthoringContext(props.alertId)
+    ]).then(async ([document, context]) => {
       if (!active) return;
       setLoadedSetId(document.setId);
+      assertValidVariationContext(document, context);
       const loadedSetDetail = await props.managementApi.getAlertSet(document.setId);
       if (!active) return;
-      setEditor(createEditorState(document));
+      const priorityGroups = buildAlertPriorityGroups(context.candidates
+        .filter((candidate) => candidate.kind === "variation")
+        .map((candidate) => ({
+          id: candidate.editorId,
+          enabled: candidate.enabled,
+          conditions: candidate.conditions,
+          weight: candidate.weight,
+          priority: candidate.priority
+        })));
+      setEditor(createEditorState(document, priorityGroups));
+      setVariationContext(context);
       setProfileId(props.targetProfileId === "vertical" ? "vertical" : "landscape");
       setCanvasViews({});
       setSelectedLayerId(document.layers[0]?.id ?? null);
@@ -201,7 +227,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }, [editor, previewPlaying, previewRunId]);
 
   const save = useCallback(async (confirmLiveImpact = false) => {
-    if (editor === null) return;
+    if (editor === null || variationContext === null) return;
     const styleError = alertDocumentTextStyleError(editor.document);
     if (styleError !== null) throw new Error(styleError);
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
@@ -209,22 +235,32 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       throw new Error("An active TTS provider is required before enabled TTS layers can be saved.");
     }
     const sourceDocument = editor.document;
+    const sourcePriorityGroups = editor.priorityGroups;
     const submittedDocument = applyActiveTtsProvider(sourceDocument, activeTtsProvider);
+    const priorityAssignments = priorityAssignmentsForEditor(editor, variationContext);
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      const saved = await props.managementApi.saveAlertEditorDocument(
-        props.alertId,
-        submittedDocument,
-        confirmLiveImpact
-      );
+      const saved = priorityAssignments === undefined
+        ? await props.managementApi.saveAlertEditorDocument(
+            props.alertId,
+            submittedDocument,
+            confirmLiveImpact
+          )
+        : await props.managementApi.saveAlertEditorDocument(
+            props.alertId,
+            submittedDocument,
+            confirmLiveImpact,
+            priorityAssignments
+          );
       setEditor((current) => {
         if (current === null) return null;
-        return current.document === sourceDocument
-          ? markEditorSaved({ ...current, document: saved })
-          : { ...current, savedDocument: saved };
+        return completeAlertEditorSave(current, sourceDocument, sourcePriorityGroups, saved);
       });
+      setVariationContext((current) => current === null
+        ? null
+        : updateVariationContextAfterSave(current, saved, priorityAssignments ?? []));
       setNotice({ tone: "success", message: "Alert saved." });
     } catch (cause) {
       showActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
@@ -232,10 +268,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     } finally {
       setBusy(false);
     }
-  }, [activeTtsProvider, editor, props.alertId, props.managementApi, showActionError]);
+  }, [activeTtsProvider, editor, props.alertId, props.managementApi, showActionError, variationContext]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
-    if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor).length === 0) return false;
+    if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor, setDetail, variationContext).length === 0) return false;
     try {
       const latestSetDetail = await props.managementApi.getAlertSet(editor.document.setId);
       setSetDetail(latestSetDetail);
@@ -248,7 +284,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       ));
       throw cause;
     }
-  }, [editor, props.managementApi, showActionError]);
+  }, [editor, props.managementApi, setDetail, showActionError, variationContext]);
 
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
@@ -270,9 +306,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   useDirtyNavigationSource({
     id: `alert-editor:${props.alertId}`,
     dirty: editor !== null && isEditorDirty(editor),
-    summary: editor !== null && hasLiveSaveImpact(editor, setDetail)
-      ? `This active alert has unsaved changes that can affect ${affectedProfileLabels(editor).join(" and ")} live output.`
-      : "This alert has unsaved layer or profile changes.",
+    summary: editor !== null && hasLiveSaveImpact(editor, setDetail, variationContext)
+      ? `This active alert has unsaved changes that can affect ${affectedProfileLabelsForEditor(editor, setDetail, variationContext).join(" and ")} live output.`
+      : editor !== null && arePriorityGroupsDirty(editor)
+        ? `This alert has unsaved priority group changes affecting ${affectedProfileLabelsForEditor(editor, setDetail, variationContext).join(" and ") || "no enabled"} profiles.`
+        : "This alert has unsaved layer or profile changes.",
     save: saveForNavigation,
     discard
   });
@@ -285,6 +323,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const documentConditionError = document === null ? null : alertDocumentConditionError(document);
   const documentStyleError = document === null ? null : alertDocumentTextStyleError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
+  const variationEvaluation = useMemo(() => (
+    editor === null || variationContext === null || samplePayload === null || sampleError !== null
+      ? null
+      : evaluateAlertEditorDraftSample(editor, variationContext, samplePayload)
+  ), [editor, sampleError, samplePayload, variationContext]);
+  void variationEvaluation;
   const visibleAlerts = useMemo(() => {
     const query = search.trim().toLowerCase();
     return (setDetail?.inventory ?? []).filter((alert) => query === "" || `${alert.name} ${alert.eventType}`.toLowerCase().includes(query));
@@ -806,7 +850,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           </div>
           <dl>
             <div><dt>Event</dt><dd>{formatEventType(document.eventType)} events</dd></div>
-            <div><dt>Profiles</dt><dd>{affectedProfileLabels(editor).join(", ") || "None"}</dd></div>
+            <div><dt>Profiles</dt><dd>{affectedProfileLabelsForEditor(editor, setDetail, variationContext).join(", ") || "None"}</dd></div>
           </dl>
           <div className="management-modal__actions">
             <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
@@ -830,17 +874,137 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   );
 }
 
-function hasLiveSaveImpact(editor: AlertEditorState, setDetail: AlertSetDetail | null): boolean {
+export function priorityAssignmentsForEditor(
+  editor: AlertEditorState,
+  context: AlertVariationAuthoringContext
+): readonly AlertVariationPriorityAssignment[] | undefined {
+  if (!arePriorityGroupsDirty(editor)) return undefined;
+  const defaultCandidate = context.candidates.find((candidate) => candidate.kind === "default");
+  if (defaultCandidate === undefined) throw new Error("Variation context is missing its default candidate.");
+  const candidatesByEditorId = new Map(context.candidates.map((candidate) => [candidate.editorId, candidate]));
+  return normalizeAlertPriorityGroups(editor.priorityGroups, defaultCandidate.priority ?? 0).map((assignment) => {
+    const candidate = candidatesByEditorId.get(assignment.variationId);
+    if (candidate?.kind !== "variation") {
+      throw new Error(`Priority group contains unknown variation editor ID ${assignment.variationId}.`);
+    }
+    return { variationId: candidate.variantId, priority: assignment.priority };
+  });
+}
+
+export function completeAlertEditorSave(
+  current: AlertEditorState,
+  submittedDocument: AlertEditorDocument,
+  submittedPriorityGroups: AlertEditorState["priorityGroups"],
+  savedDocument: AlertEditorDocument
+): AlertEditorState {
+  return current.document === submittedDocument && current.priorityGroups === submittedPriorityGroups
+    ? markEditorSaved({ ...current, document: savedDocument })
+    : {
+        ...current,
+        savedDocument,
+        savedPriorityGroups: submittedPriorityGroups
+      };
+}
+
+export function evaluateAlertEditorDraftSample(
+  editor: AlertEditorState,
+  context: AlertVariationAuthoringContext,
+  samplePayload: Record<string, unknown>
+): AlertVariationSampleEvaluation {
+  const assignments = priorityAssignmentsForEditor(editor, context) ?? [];
+  const priorities = new Map(assignments.map((assignment) => [assignment.variationId, assignment.priority]));
+  const candidates = context.candidates.map((candidate) => {
+    const selected = candidate.editorId === editor.document.id;
+    return {
+      id: candidate.variantId,
+      enabled: selected ? editor.document.enabled : candidate.enabled,
+      conditions: selected && candidate.kind === "variation"
+        ? editor.document.variantConditions
+        : candidate.conditions,
+      weight: selected ? editor.document.weight : candidate.weight,
+      priority: priorities.get(candidate.variantId)
+        ?? (selected ? editor.document.priority : candidate.priority)
+    };
+  });
+  const defaultCandidate = context.candidates.find((candidate) => candidate.kind === "default");
+  if (defaultCandidate === undefined) throw new Error("Variation context is missing its default candidate.");
+  return evaluateAlertVariationSample({
+    event: createNormalizedAlertSampleEvent({
+      eventType: editor.document.eventType,
+      ingestProvider: samplePayload.ingestProvider === "streamerbot" ? "streamerbot" : "twitch",
+      payload: samplePayload,
+      id: "alert-editor-sample",
+      occurredAt: "2000-01-01T00:00:00.000Z"
+    }),
+    ruleConditions: editor.document.conditions,
+    candidates,
+    defaultCandidateId: defaultCandidate.variantId
+  });
+}
+
+function updateVariationContextAfterSave(
+  context: AlertVariationAuthoringContext,
+  savedDocument: AlertEditorDocument,
+  assignments: readonly AlertVariationPriorityAssignment[]
+): AlertVariationAuthoringContext {
+  const priorities = new Map(assignments.map((assignment) => [assignment.variationId, assignment.priority]));
+  return {
+    ...context,
+    candidates: context.candidates.map((candidate) => {
+      const selected = candidate.editorId === savedDocument.id;
+      return {
+        ...candidate,
+        enabled: selected ? savedDocument.enabled : candidate.enabled,
+        conditions: selected && candidate.kind === "variation" ? savedDocument.variantConditions : candidate.conditions,
+        weight: selected ? savedDocument.weight : candidate.weight,
+        priority: priorities.get(candidate.variantId)
+          ?? (selected ? savedDocument.priority : candidate.priority)
+      };
+    })
+  };
+}
+
+function assertValidVariationContext(
+  document: AlertEditorDocument,
+  context: AlertVariationAuthoringContext
+): void {
+  const selected = context.candidates.find((candidate) => candidate.editorId === document.id);
+  if (context.eventType !== document.eventType || selected?.kind !== document.kind) {
+    throw new Error("Alert variation context does not match the selected editor document.");
+  }
+}
+
+function hasLiveSaveImpact(
+  editor: AlertEditorState,
+  setDetail: AlertSetDetail | null,
+  context: AlertVariationAuthoringContext | null
+): boolean {
   if (setDetail?.overview.active !== true || !isEditorDirty(editor)) return false;
-  return affectedProfileIds(editor).length > 0;
+  return affectedProfileIds(editor, setDetail, context).length > 0;
 }
 
-function affectedProfileIds(editor: AlertEditorState): TargetProfileId[] {
-  return [...getAlertEditorAffectedProfileIds(editor.savedDocument, editor.document)];
+function affectedProfileIds(
+  editor: AlertEditorState,
+  setDetail: AlertSetDetail | null,
+  context: AlertVariationAuthoringContext | null
+): TargetProfileId[] {
+  const profileIds = new Set(getAlertEditorAffectedProfileIds(editor.savedDocument, editor.document));
+  if (arePriorityGroupsDirty(editor) && context !== null) {
+    const candidateEditorIds = new Set(context.candidates.map((candidate) => candidate.editorId));
+    for (const alert of setDetail?.inventory ?? []) {
+      if (!candidateEditorIds.has(alert.id)) continue;
+      for (const targetProfileId of alert.targetProfileIds) profileIds.add(targetProfileId);
+    }
+  }
+  return [...profileIds];
 }
 
-function affectedProfileLabels(editor: AlertEditorState): string[] {
-  return affectedProfileIds(editor).map(profileLabel);
+export function affectedProfileLabelsForEditor(
+  editor: AlertEditorState,
+  setDetail: AlertSetDetail | null,
+  context: AlertVariationAuthoringContext | null
+): string[] {
+  return affectedProfileIds(editor, setDetail, context).map(profileLabel);
 }
 
 function LayerInspector({

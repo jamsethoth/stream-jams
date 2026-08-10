@@ -2,12 +2,14 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
+  type AlertPriorityGroup,
   type AlertLayer
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import {
   addLayer,
   applyEditorUpdate,
+  applyPriorityGroupUpdate,
   copyAlertDesign,
   copyProfileLayout,
   createEditorState,
@@ -35,10 +37,10 @@ describe("alert editor history", () => {
     state = applyEditorUpdate(state, (document) => ({ ...document, name: "Two" }));
     state = applyEditorUpdate(state, (document) => ({ ...document, name: "Three" }));
 
-    expect(state.past.map((document) => document.name)).toEqual(["One", "Two"]);
+    expect(state.past.map((snapshot) => snapshot.document.name)).toEqual(["One", "Two"]);
     state = undoEditorUpdate(state);
     expect(state.document.name).toBe("Two");
-    expect(state.future.map((document) => document.name)).toEqual(["Three"]);
+    expect(state.future.map((snapshot) => snapshot.document.name)).toEqual(["Three"]);
 
     state = redoEditorUpdate(state);
     expect(state.document.name).toBe("Three");
@@ -77,6 +79,81 @@ describe("alert editor history", () => {
     expect(reverted.past).toEqual([]);
     expect(reverted.future).toEqual([]);
     expect(isEditorDirty(reverted)).toBe(false);
+  });
+
+  it("keeps document and priority-group edits in one undo and redo sequence", () => {
+    const initialGroups: readonly AlertPriorityGroup[] = [
+      { variationIds: ["variant-high"] },
+      { variationIds: ["variant-low"] }
+    ];
+    let state = createEditorState(createDocument(), initialGroups);
+
+    state = applyEditorUpdate(state, (document) => ({ ...document, name: "Draft name" }));
+    state = applyPriorityGroupUpdate(state, (groups) => [groups[1]!, groups[0]!]);
+
+    expect(state.document.name).toBe("Draft name");
+    expect(state.priorityGroups).toEqual([
+      { variationIds: ["variant-low"] },
+      { variationIds: ["variant-high"] }
+    ]);
+
+    state = undoEditorUpdate(state);
+    expect(state.document.name).toBe("Draft name");
+    expect(state.priorityGroups).toBe(initialGroups);
+
+    state = undoEditorUpdate(state);
+    expect(state.document.name).toBe("New follower");
+    expect(state.priorityGroups).toBe(initialGroups);
+
+    state = redoEditorUpdate(redoEditorUpdate(state));
+    expect(state.document.name).toBe("Draft name");
+    expect(state.priorityGroups).toEqual([
+      { variationIds: ["variant-low"] },
+      { variationIds: ["variant-high"] }
+    ]);
+  });
+
+  it("treats group-only changes as dirty and saves or reverts both baselines", () => {
+    const initialGroups: readonly AlertPriorityGroup[] = [
+      { variationIds: ["variant-high"] },
+      { variationIds: ["variant-low"] }
+    ];
+    const initial = createEditorState(createDocument(), initialGroups);
+    const draft = applyPriorityGroupUpdate(initial, (groups) => [groups[1]!, groups[0]!]);
+
+    expect(isEditorDirty(draft)).toBe(true);
+    expect(draft.document).toBe(initial.document);
+
+    const reverted = revertEditorChanges(draft);
+    expect(reverted.document).toBe(initial.savedDocument);
+    expect(reverted.priorityGroups).toBe(initial.savedPriorityGroups);
+    expect(reverted.past).toEqual([]);
+    expect(reverted.future).toEqual([]);
+    expect(isEditorDirty(reverted)).toBe(false);
+
+    const saved = markEditorSaved(draft);
+    expect(saved.savedDocument).toBe(saved.document);
+    expect(saved.savedPriorityGroups).toBe(saved.priorityGroups);
+    expect(saved.past).toEqual([]);
+    expect(saved.future).toEqual([]);
+    expect(isEditorDirty(saved)).toBe(false);
+  });
+
+  it("applies the history limit across mixed document and group edits", () => {
+    const initialGroups: readonly AlertPriorityGroup[] = [
+      { variationIds: ["variant-high"] },
+      { variationIds: ["variant-low"] }
+    ];
+    let state = createEditorState(createDocument(), initialGroups, 2);
+    state = applyEditorUpdate(state, (document) => ({ ...document, name: "One" }));
+    state = applyPriorityGroupUpdate(state, (groups) => [groups[1]!, groups[0]!]);
+    state = applyEditorUpdate(state, (document) => ({ ...document, name: "Three" }));
+
+    expect(state.past).toHaveLength(2);
+    state = undoEditorUpdate(undoEditorUpdate(state));
+    expect(state.document.name).toBe("One");
+    expect(state.priorityGroups).toBe(initialGroups);
+    expect(undoEditorUpdate(state)).toBe(state);
   });
 });
 
