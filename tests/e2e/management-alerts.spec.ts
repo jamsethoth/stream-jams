@@ -607,8 +607,11 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.setViewportSize({ width: 1920, height: 1080 });
   const focusedContent = await page.locator(".management-route-content--focused").boundingBox();
   expect(focusedContent?.width).toBeGreaterThan(1280);
-  await page.getByRole("tab", { name: "Alert" }).click();
-  await page.getByRole("button", { name: "Mark profile reviewed" }).click();
+  const landscapeReviewWarning = page.locator(".alert-editor-page__profile-warning");
+  await expect(landscapeReviewWarning).toContainText("Needs review");
+  await landscapeReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
+  await expect(page.getByText("Unsaved")).toBeVisible();
+  expect(savedDocuments).toHaveLength(0);
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
   expect(savedDocuments).toHaveLength(1);
@@ -705,9 +708,9 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(verticalStyledText).toBeVisible();
   await expect(page.getByLabel("Font size")).toHaveValue("48");
   await expect(page.getByLabel("Padding")).toHaveValue("16");
-  await page.getByRole("tab", { name: "Alert" }).click();
-  await page.getByRole("button", { name: "Mark profile reviewed" }).click();
-  await page.getByRole("checkbox", { name: "Use this profile for live alerts" }).check();
+  const verticalReviewWarning = page.locator(".alert-editor-page__profile-warning");
+  await expect(verticalReviewWarning).toContainText("Needs review");
+  await verticalReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
 

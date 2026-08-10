@@ -1476,8 +1476,12 @@ describe("AlertEditorPage", () => {
       </DirtyNavigationProvider>
     );
 
-    await user.click(await screen.findByRole("tab", { name: "Alert" }));
-    await user.click(screen.getByRole("button", { name: "Mark profile reviewed" }));
+    const landscapeReviewWarning = (await screen.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
+    expect(landscapeReviewWarning).not.toBeNull();
+    await user.click(within(landscapeReviewWarning as HTMLElement).getByRole("button", { name: "Mark reviewed" }));
+    expect(screen.getByText("Unsaved")).toBeInTheDocument();
+    expect(screen.queryByText(/This generated layout is editable/u)).not.toBeInTheDocument();
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     expect(saveAlertEditorDocument.mock.calls[0]![1].targetProfiles).toEqual([
@@ -1486,7 +1490,10 @@ describe("AlertEditorPage", () => {
     ]);
 
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
-    await user.click(screen.getByRole("button", { name: "Mark profile reviewed" }));
+    const verticalReviewWarning = (await screen.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
+    expect(verticalReviewWarning).not.toBeNull();
+    await user.click(within(verticalReviewWarning as HTMLElement).getByRole("button", { name: "Mark reviewed" }));
+    expect(saveAlertEditorDocument).toHaveBeenCalledOnce();
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(2));
     expect(saveAlertEditorDocument.mock.calls[1]![1].targetProfiles).toEqual([

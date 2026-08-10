@@ -185,6 +185,12 @@ export const VerticalNeedsReview: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Send test" })).toBeDisabled();
+    const warning = (await canvas.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
+    await expect(warning).not.toBeNull();
+    const warningCanvas = within(warning as HTMLElement);
+    await userEvent.click(warningCanvas.getByRole("button", { name: "Mark reviewed" }));
+    await expect(canvas.getByText("Unsaved")).toBeVisible();
+    await expect(canvas.queryByText(/This generated layout is editable/u)).not.toBeInTheDocument();
   }
 };
 

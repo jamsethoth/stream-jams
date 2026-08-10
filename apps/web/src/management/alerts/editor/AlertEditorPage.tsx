@@ -671,6 +671,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <div className="alert-editor-page__profile-warning" role="status">
               <strong>Needs review</strong>
               <span>This generated layout is editable but cannot be sent live until you mark it reviewed and enable it.</span>
+              <button className="button button--secondary button--compact" onClick={() => updateDocument((current) => updateProfile(current, profileId, { reviewState: "ready" }))} type="button">Mark reviewed</button>
             </div>
           ) : null}
           <AlertCanvas

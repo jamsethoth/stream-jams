@@ -334,6 +334,7 @@
   background: var(--color-warning-soft);
   border-bottom: 1px solid var(--color-warning);
   display: flex;
+  flex-wrap: wrap;
   font-size: 12px;
   gap: 8px;
   padding: 8px 12px;
@@ -375,6 +376,10 @@
 
 .alert-editor-page__profile-warning span {
   color: var(--color-text-muted);
+}
+
+.alert-editor-page__profile-warning .button {
+  margin-left: auto;
 }
 
 .alert-canvas {

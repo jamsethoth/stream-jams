@@ -47,6 +47,6 @@
 
 ## 8. Review Action Discoverability
 
-- [ ] 8.1 Add failing component, Storybook, and Playwright coverage for a selected-profile warning that exposes `Mark reviewed`, updates only the draft profile state, and still requires explicit `Save`.
-- [ ] 8.2 Add the inline action to the existing profile warning using the current button and warning patterns, while retaining the Alert-tab action as a secondary path.
-- [ ] 8.3 Run focused and repository frontend gates, strict OpenSpec validation, rebuild and restart the app, verify the live workflow, and update the pull request UX note.
+- [x] 8.1 Add failing component, Storybook, and Playwright coverage for a selected-profile warning that exposes `Mark reviewed`, updates only the draft profile state, and still requires explicit `Save`.
+- [x] 8.2 Add the inline action to the existing profile warning using the current button and warning patterns, while retaining the Alert-tab action as a secondary path.
+- [x] 8.3 Run focused and repository frontend gates, strict OpenSpec validation, rebuild and restart the app, verify the live workflow, and update the pull request UX note.
