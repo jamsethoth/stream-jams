@@ -1,4 +1,10 @@
 import { z } from "zod";
+import {
+  alertTextBoxStyleSchema,
+  alertTextStyleSchema,
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle
+} from "../alerts/text-style.js";
 import { ttsPlaybackInstructionSchema } from "../tts/schemas.js";
 import {
   nonEmptyStringSchema,
@@ -36,7 +42,9 @@ export const overlayAudioInstructionSchema = z.object({
 
 export const overlayTextInstructionSchema = z.object({
   text: z.string(),
-  layout: overlayElementLayoutSchema
+  layout: overlayElementLayoutSchema,
+  textStyle: alertTextStyleSchema.default(compatibilityAlertTextStyle),
+  boxStyle: alertTextBoxStyleSchema.default(compatibilityAlertTextBoxStyle)
 });
 
 export const overlayShapeInstructionSchema = z.object({

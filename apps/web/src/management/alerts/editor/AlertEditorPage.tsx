@@ -1,5 +1,13 @@
 import {
+  alertFontPresets,
+  alertFontWeights,
+  alertTextBoxStyleSchema,
+  alertTextStyleLimits,
+  alertTextStyleSchema,
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
   createAlertTemplateContext,
+  defaultOptionalAlertShadow,
   getAlertEditorAffectedProfileIds,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -21,6 +29,7 @@ import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
+import { RgbaColorControl } from "./RgbaColorControl.js";
 import {
   addLayer,
   applyEditorUpdate,
@@ -193,6 +202,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null) return;
+    const styleError = alertDocumentTextStyleError(editor.document);
+    if (styleError !== null) throw new Error(styleError);
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
       showActionError(missingActiveTtsProviderError());
       throw new Error("An active TTS provider is required before enabled TTS layers can be saved.");
@@ -272,6 +283,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const storedCanvasView = canvasViews[profileId];
   const canvasView = storedCanvasView ?? DEFAULT_CANVAS_VIEW;
   const documentConditionError = document === null ? null : alertDocumentConditionError(document);
+  const documentStyleError = document === null ? null : alertDocumentTextStyleError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
   const visibleAlerts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -357,6 +369,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSampleError("Sample payload must be a valid JSON object.");
       return;
     }
+    if (alertDocumentTextStyleError(document) !== null) return;
     const validationError = validateAlertSamplePayload(document.eventType, samplePayload);
     if (validationError !== null) {
       setSampleError(validationError);
@@ -404,6 +417,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   async function sendTest() {
     if (document === null || samplePayload === null || profile === null) return;
+    if (alertDocumentTextStyleError(document) !== null) return;
     if (sendIncludeTts && hasEnabledTts(document) && activeTtsProvider === null) {
       showActionError(missingActiveTtsProviderError());
       return;
@@ -462,7 +476,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const defaultVariable = document.templateVariables?.[0]?.key;
     const defaultTemplate = defaultVariable === undefined ? "" : `{${defaultVariable}}`;
     const layer = type === "text"
-      ? { ...layerBase(id, "Text", type, document.layers.length), template: defaultTemplate }
+      ? {
+          ...layerBase(id, "Text", type, document.layers.length),
+          template: defaultTemplate,
+          textStyle: structuredClone(compatibilityAlertTextStyle),
+          boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
+        }
       : {
           ...layerBase(id, "Text to speech", type, document.layers.length),
           enabled: activeTtsProvider !== null,
@@ -552,7 +571,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
-  const canSend = profile.enabled && profile.reviewState === "ready" && samplePayload !== null && sampleError === null && documentConditionError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
+  const canSend = profile.enabled && profile.reviewState === "ready" && samplePayload !== null && sampleError === null && documentConditionError === null && documentStyleError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
   return (
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
@@ -568,11 +587,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         </div>
         <div className="alert-editor-page__header-actions">
           <button className="button button--secondary" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</button>
-          <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null} onClick={previewLocally} type="button">Preview</button>
+          <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null} onClick={previewLocally} type="button">Preview</button>
           {preview ? <button className="button button--secondary" onClick={() => previewPlaying ? setPreviewPlaying(false) : previewLocally()} type="button">{previewPlaying ? "Pause preview" : "Replay preview"}</button> : null}
           {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => { setPreviewPlaying(false); setPreviewElapsedMs(Math.max(0, Math.min(document.durationMs, Number(event.currentTarget.value)))); }} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
-          <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
+          <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
         </div>
       </header>
 
@@ -652,6 +671,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <div className="alert-editor-page__profile-warning" role="status">
               <strong>Needs review</strong>
               <span>This generated layout is editable but cannot be sent live until you mark it reviewed and enable it.</span>
+              <button className="button button--secondary button--compact" onClick={() => updateDocument((current) => updateProfile(current, profileId, { reviewState: "ready" }))} type="button">Mark reviewed</button>
             </div>
           ) : null}
           <AlertCanvas
@@ -745,6 +765,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 sampleDraft={sampleDraft}
                 sampleError={sampleError}
                 sampleId={sampleId}
+                previewDisabled={sampleError !== null || documentStyleError !== null}
                 sendDisabled={!canSend}
               />
             )}
@@ -873,41 +894,43 @@ function LayerInspector({
           <h3>{selectedLayer.name}</h3>
           <label><span>Layer name</span><input onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, name: value }))); }} value={selectedLayer.name} /></label>
           {selectedLayer.type === "tts" ? (
-            <fieldset>
-              <legend>Live TTS</legend>
-              {activeTtsProvider !== null ? (
-                <div aria-label="Active TTS provider">
-                  <span>Active provider</span>
-                  <strong>{activeTtsProvider.name}</strong>
-                  <p>{formatTtsProviderKind(activeTtsProvider.kind)} is used for live TTS.</p>
-                </div>
-              ) : !ttsProvidersLoaded ? (
-                <p role="status">Loading active TTS provider...</p>
-              ) : (
-                <div>
-                  <p role="alert">{ttsProviderError === null
-                    ? "An active TTS provider is required before this layer can be used live."
-                    : `${ttsProviderError.summary}. ${ttsProviderError.nextStep}`}</p>
-                  <a href="/manage/tts-providers">Set up a TTS provider</a>
-                </div>
-              )}
-              <label>
-                <span>Use TTS for this alert</span>
-                <input
-                  aria-label="Enable TTS for this alert"
-                  checked={selectedLayer.enabled}
-                  disabled={!selectedLayer.enabled && activeTtsProvider === null}
-                  onChange={(event) => {
-                    const enabled = event.currentTarget.checked;
-                    if (enabled && activeTtsProvider === null) return;
-                    onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "tts"
-                      ? { ...layer, enabled, ...(enabled ? { providerId: activeTtsProvider!.kind } : {}) }
-                      : layer));
-                  }}
-                  type="checkbox"
-                />
-              </label>
-            </fieldset>
+            <details className="alert-editor-inspector__disclosure" open>
+              <summary>Live TTS</summary>
+              <fieldset aria-label="Live TTS">
+                {activeTtsProvider !== null ? (
+                  <div aria-label="Active TTS provider">
+                    <span>Active provider</span>
+                    <strong>{activeTtsProvider.name}</strong>
+                    <p>{formatTtsProviderKind(activeTtsProvider.kind)} is used for live TTS.</p>
+                  </div>
+                ) : !ttsProvidersLoaded ? (
+                  <p role="status">Loading active TTS provider...</p>
+                ) : (
+                  <div>
+                    <p role="alert">{ttsProviderError === null
+                      ? "An active TTS provider is required before this layer can be used live."
+                      : `${ttsProviderError.summary}. ${ttsProviderError.nextStep}`}</p>
+                    <a href="/manage/tts-providers">Set up a TTS provider</a>
+                  </div>
+                )}
+                <label>
+                  <span>Use TTS for this alert</span>
+                  <input
+                    aria-label="Enable TTS for this alert"
+                    checked={selectedLayer.enabled}
+                    disabled={!selectedLayer.enabled && activeTtsProvider === null}
+                    onChange={(event) => {
+                      const enabled = event.currentTarget.checked;
+                      if (enabled && activeTtsProvider === null) return;
+                      onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "tts"
+                        ? { ...layer, enabled, ...(enabled ? { providerId: activeTtsProvider!.kind } : {}) }
+                        : layer));
+                    }}
+                    type="checkbox"
+                  />
+                </label>
+              </fieldset>
+            </details>
           ) : null}
           {(selectedLayer.type === "text" || selectedLayer.type === "tts") ? (
             <>
@@ -918,6 +941,14 @@ function LayerInspector({
               </div>
             </>
           ) : null}
+          {selectedLayer.type === "text" ? (
+            <TextStyleControls
+              layer={selectedLayer}
+              onChange={(updatedLayer) => onChange((current) =>
+                updateLayer(current, selectedLayer.id, (layer) => layer.type === "text" ? updatedLayer : layer)
+              )}
+            />
+          ) : null}
           {(selectedLayer.type === "image" || selectedLayer.type === "video" || selectedLayer.type === "audio") ? (
             <div className="alert-editor-inspector__asset"><span>Asset</span><code>{selectedLayer.assetId}</code><button className="button button--secondary button--compact" onClick={() => onChooseAsset(selectedLayer)} type="button">Choose asset</button></div>
           ) : null}
@@ -925,21 +956,25 @@ function LayerInspector({
             <label><span>Volume {Math.round(selectedLayer.volume * 100)}%</span><input max="1" min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer)); }} step="0.05" type="range" value={selectedLayer.volume} /></label>
           ) : null}
           {layout === undefined ? null : (
-            <fieldset className="alert-editor-inspector__geometry">
-              <legend>Position and size</legend>
-              {(["x", "y", "width", "height"] as const).map((field) => (
-                <label key={field}><span>{field.toUpperCase()}</span><input min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayerGeometry(current, profileId, selectedLayer.id, { [field]: value })); }} type="number" value={layout[field]} /></label>
-              ))}
-            </fieldset>
+            <details className="alert-editor-inspector__disclosure" open>
+              <summary>Position and size</summary>
+              <fieldset aria-label="Position and size" className="alert-editor-inspector__geometry">
+                {(["x", "y", "width", "height"] as const).map((field) => (
+                  <label key={field}><span>{field.toUpperCase()}</span><input min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayerGeometry(current, profileId, selectedLayer.id, { [field]: value })); }} type="number" value={layout[field]} /></label>
+                ))}
+              </fieldset>
+            </details>
           )}
-          <fieldset className="alert-editor-inspector__animation">
-            <legend>Animation preset</legend>
+          <details className="alert-editor-inspector__disclosure" open>
+            <summary>Animation preset</summary>
+            <fieldset aria-label="Animation preset" className="alert-editor-inspector__animation">
             <label><span>Entrance</span><select onChange={(event) => { const entrance = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, entrance } }))); }} value={selectedLayer.animation.entrance}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-up">Slide up</option></select></label>
             <label><span>Exit</span><select onChange={(event) => { const exit = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, exit } }))); }} value={selectedLayer.animation.exit}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-down">Slide down</option></select></label>
             <label><span>Animation duration (milliseconds)</span><input aria-label="Animation duration (milliseconds)" min="0" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, durationMs } }))); }} type="number" value={selectedLayer.animation.durationMs} /></label>
             <label><span>Animation delay (milliseconds)</span><input aria-label="Animation delay (milliseconds)" min="0" onChange={(event) => { const delayMs = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, delayMs } }))); }} type="number" value={selectedLayer.animation.delayMs} /></label>
             <label><span>Animation easing</span><select aria-label="Animation easing" onChange={(event) => { const easing = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, easing } }))); }} value={selectedLayer.animation.easing}><option value="linear">Linear</option><option value="ease">Ease</option><option value="ease-in">Ease in</option><option value="ease-out">Ease out</option><option value="ease-in-out">Ease in out</option></select></label>
-          </fieldset>
+            </fieldset>
+          </details>
           <div className="alert-editor-inspector__actions">
             <button className="button button--secondary button--compact" disabled={selectedLayer.order === 0} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order - 1))} type="button">Move up</button>
             <button className="button button--secondary button--compact" disabled={selectedLayer.order === document.layers.length - 1} onClick={() => onChange((current) => reorderLayer(current, selectedLayer.id, selectedLayer.order + 1))} type="button">Move down</button>
@@ -950,6 +985,299 @@ function LayerInspector({
       )}
     </div>
   );
+}
+
+type TextLayer = Extract<AlertLayer, { type: "text" }>;
+
+function TextStyleControls({ layer, onChange }: {
+  readonly layer: TextLayer;
+  readonly onChange: (layer: TextLayer) => void;
+}) {
+  const textShadow = layer.textStyle.shadow;
+  const boxShadow = layer.boxStyle.shadow;
+  return (
+    <>
+      <details className="alert-editor-inspector__disclosure" open>
+        <summary>Typography</summary>
+        <fieldset aria-label="Typography" className="alert-editor-inspector__style">
+        <label>
+          <span>Font preset</span>
+          <select
+            aria-label="Font preset"
+            onChange={(event) => onChange({
+              ...layer,
+              textStyle: { ...layer.textStyle, fontPreset: event.currentTarget.value as TextLayer["textStyle"]["fontPreset"] }
+            })}
+            value={layer.textStyle.fontPreset}
+          >
+            {alertFontPresets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label}</option>)}
+          </select>
+        </label>
+        <StyleNumberInput
+          error={boundedStyleError("Font size", layer.textStyle.fontSizePx, alertTextStyleLimits.fontSizePx, true)}
+          id="text-font-size"
+          label="Font size"
+          limits={alertTextStyleLimits.fontSizePx}
+          onChange={(fontSizePx) => onChange({ ...layer, textStyle: { ...layer.textStyle, fontSizePx } })}
+          value={layer.textStyle.fontSizePx}
+        />
+        <label>
+          <span>Font weight</span>
+          <select
+            aria-label="Font weight"
+            onChange={(event) => onChange({
+              ...layer,
+              textStyle: {
+                ...layer.textStyle,
+                fontWeight: Number(event.currentTarget.value) as TextLayer["textStyle"]["fontWeight"]
+              }
+            })}
+            value={layer.textStyle.fontWeight}
+          >
+            {alertFontWeights.map((weight) => <option key={weight} value={weight}>{weight}</option>)}
+          </select>
+        </label>
+        <StyleNumberInput
+          error={boundedStyleError("Line height", layer.textStyle.lineHeight, alertTextStyleLimits.lineHeight, false)}
+          id="text-line-height"
+          label="Line height"
+          limits={alertTextStyleLimits.lineHeight}
+          onChange={(lineHeight) => onChange({ ...layer, textStyle: { ...layer.textStyle, lineHeight } })}
+          step={0.05}
+          value={layer.textStyle.lineHeight}
+        />
+        <label>
+          <span>Horizontal alignment</span>
+          <select
+            aria-label="Horizontal alignment"
+            onChange={(event) => onChange({
+              ...layer,
+              textStyle: {
+                ...layer.textStyle,
+                horizontalAlign: event.currentTarget.value as TextLayer["textStyle"]["horizontalAlign"]
+              }
+            })}
+            value={layer.textStyle.horizontalAlign}
+          >
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
+        <label>
+          <span>Vertical alignment</span>
+          <select
+            aria-label="Vertical alignment"
+            onChange={(event) => onChange({
+              ...layer,
+              textStyle: {
+                ...layer.textStyle,
+                verticalAlign: event.currentTarget.value as TextLayer["textStyle"]["verticalAlign"]
+              }
+            })}
+            value={layer.textStyle.verticalAlign}
+          >
+            <option value="top">Top</option>
+            <option value="center">Center</option>
+            <option value="bottom">Bottom</option>
+          </select>
+        </label>
+        <RgbaColorControl
+          label="Text color"
+          onChange={(color) => onChange({ ...layer, textStyle: { ...layer.textStyle, color } })}
+          value={layer.textStyle.color}
+        />
+        <label className="alert-editor-inspector__check">
+          <input
+            aria-label="Text shadow"
+            checked={textShadow !== null}
+            onChange={(event) => onChange({
+              ...layer,
+              textStyle: {
+                ...layer.textStyle,
+                shadow: event.currentTarget.checked
+                  ? structuredClone(compatibilityAlertTextStyle.shadow)
+                  : null
+              }
+            })}
+            type="checkbox"
+          />
+          <span>Text shadow</span>
+        </label>
+        {textShadow === null ? null : (
+          <ShadowControls
+            id="text-shadow"
+            label="Text shadow"
+            onChange={(shadow) => onChange({ ...layer, textStyle: { ...layer.textStyle, shadow } })}
+            shadow={textShadow}
+          />
+        )}
+        </fieldset>
+      </details>
+      <details className="alert-editor-inspector__disclosure" open>
+        <summary>Text box</summary>
+        <fieldset aria-label="Text box" className="alert-editor-inspector__style">
+        <RgbaColorControl
+          label="Background color"
+          onChange={(backgroundColor) => onChange({ ...layer, boxStyle: { ...layer.boxStyle, backgroundColor } })}
+          value={layer.boxStyle.backgroundColor}
+        />
+        <StyleNumberInput
+          error={boundedStyleError("Padding", layer.boxStyle.paddingPx, alertTextStyleLimits.paddingPx, true)}
+          id="text-box-padding"
+          label="Padding"
+          limits={alertTextStyleLimits.paddingPx}
+          onChange={(paddingPx) => onChange({ ...layer, boxStyle: { ...layer.boxStyle, paddingPx } })}
+          value={layer.boxStyle.paddingPx}
+        />
+        <StyleNumberInput
+          error={boundedStyleError(
+            "Corner radius",
+            layer.boxStyle.cornerRadiusPx,
+            alertTextStyleLimits.cornerRadiusPx,
+            true
+          )}
+          id="text-box-radius"
+          label="Corner radius"
+          limits={alertTextStyleLimits.cornerRadiusPx}
+          onChange={(cornerRadiusPx) => onChange({ ...layer, boxStyle: { ...layer.boxStyle, cornerRadiusPx } })}
+          value={layer.boxStyle.cornerRadiusPx}
+        />
+        <label className="alert-editor-inspector__check">
+          <input
+            aria-label="Box shadow"
+            checked={boxShadow !== null}
+            onChange={(event) => onChange({
+              ...layer,
+              boxStyle: {
+                ...layer.boxStyle,
+                shadow: event.currentTarget.checked ? structuredClone(defaultOptionalAlertShadow) : null
+              }
+            })}
+            type="checkbox"
+          />
+          <span>Box shadow</span>
+        </label>
+        {boxShadow === null ? null : (
+          <ShadowControls
+            id="box-shadow"
+            label="Box shadow"
+            onChange={(shadow) => onChange({ ...layer, boxStyle: { ...layer.boxStyle, shadow } })}
+            shadow={boxShadow}
+          />
+        )}
+        </fieldset>
+      </details>
+    </>
+  );
+}
+
+function ShadowControls({
+  id,
+  label,
+  onChange,
+  shadow
+}: {
+  readonly id: string;
+  readonly label: string;
+  readonly onChange: (shadow: NonNullable<TextLayer["textStyle"]["shadow"]>) => void;
+  readonly shadow: NonNullable<TextLayer["textStyle"]["shadow"]>;
+}) {
+  return (
+    <div className="alert-editor-inspector__shadow">
+      <StyleNumberInput
+        error={boundedStyleError(
+          `${label} horizontal offset`,
+          shadow.offsetX,
+          alertTextStyleLimits.shadowOffsetPx,
+          true
+        )}
+        id={`${id}-offset-x`}
+        label={`${label} horizontal offset`}
+        limits={alertTextStyleLimits.shadowOffsetPx}
+        onChange={(offsetX) => onChange({ ...shadow, offsetX })}
+        value={shadow.offsetX}
+      />
+      <StyleNumberInput
+        error={boundedStyleError(
+          `${label} vertical offset`,
+          shadow.offsetY,
+          alertTextStyleLimits.shadowOffsetPx,
+          true
+        )}
+        id={`${id}-offset-y`}
+        label={`${label} vertical offset`}
+        limits={alertTextStyleLimits.shadowOffsetPx}
+        onChange={(offsetY) => onChange({ ...shadow, offsetY })}
+        value={shadow.offsetY}
+      />
+      <StyleNumberInput
+        error={boundedStyleError(`${label} blur`, shadow.blur, alertTextStyleLimits.shadowBlurPx, true)}
+        id={`${id}-blur`}
+        label={`${label} blur`}
+        limits={alertTextStyleLimits.shadowBlurPx}
+        onChange={(blur) => onChange({ ...shadow, blur })}
+        value={shadow.blur}
+      />
+      <RgbaColorControl
+        label={`${label} color`}
+        onChange={(color) => onChange({ ...shadow, color })}
+        value={shadow.color}
+      />
+    </div>
+  );
+}
+
+function StyleNumberInput({
+  error,
+  id,
+  label,
+  limits,
+  onChange,
+  step = 1,
+  value
+}: {
+  readonly error: string | null;
+  readonly id: string;
+  readonly label: string;
+  readonly limits: { readonly min: number; readonly max: number };
+  readonly onChange: (value: number) => void;
+  readonly step?: number;
+  readonly value: number;
+}) {
+  const errorId = `${id}-error`;
+  return (
+    <div className="alert-editor-inspector__style-field">
+      <label htmlFor={id}><span>{label}</span></label>
+      <input
+        aria-describedby={error === null ? undefined : errorId}
+        aria-invalid={error !== null}
+        aria-label={label}
+        id={id}
+        max={limits.max}
+        min={limits.min}
+        onChange={(event) => onChange(Number(event.currentTarget.value))}
+        step={step}
+        type="number"
+        value={value}
+      />
+      {error === null ? null : <p className="alert-editor-inspector__field-error" id={errorId} role="alert">{error}</p>}
+    </div>
+  );
+}
+
+function boundedStyleError(
+  label: string,
+  value: number,
+  limits: { readonly min: number; readonly max: number },
+  integer: boolean
+): string | null {
+  if (!Number.isFinite(value) || value < limits.min || value > limits.max) {
+    return `${label} must be between ${limits.min} and ${limits.max}.`;
+  }
+  return integer && !Number.isInteger(value)
+    ? `${label} must be a whole number between ${limits.min} and ${limits.max}.`
+    : null;
 }
 
 function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
@@ -997,6 +1325,7 @@ function EventInspector(props: {
   readonly sampleDraft: string;
   readonly sampleError: string | null;
   readonly sampleId: string | null;
+  readonly previewDisabled: boolean;
   readonly sendDisabled: boolean;
 }) {
   return (
@@ -1030,7 +1359,7 @@ function EventInspector(props: {
       <button className="button button--secondary" onClick={props.onResetSample} type="button">Reset sample</button>
       <fieldset className="alert-editor-inspector__audio"><legend>Local preview</legend><label className="alert-editor-inspector__check"><input checked={props.previewIncludeAudio} onChange={(event) => props.onPreviewIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Preview audio</span></label><label className="alert-editor-inspector__check"><input checked={props.previewIncludeTts} onChange={(event) => props.onPreviewIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Preview TTS</span></label></fieldset>
       <fieldset className="alert-editor-inspector__audio"><legend>Send test</legend><label className="alert-editor-inspector__check"><input checked={props.sendIncludeAudio} onChange={(event) => props.onSendIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Send audio</span></label><label className="alert-editor-inspector__check"><input checked={props.sendIncludeTts} onChange={(event) => props.onSendIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Send TTS</span></label></fieldset>
-      <div className="alert-editor-inspector__actions"><button className="button button--secondary" disabled={props.sampleError !== null} onClick={props.onPreview} type="button">Replay preview</button><button className="button button--primary" disabled={props.sendDisabled} onClick={props.onSend} type="button">Send test</button></div>
+      <div className="alert-editor-inspector__actions"><button className="button button--secondary" disabled={props.previewDisabled} onClick={props.onPreview} type="button">Replay preview</button><button className="button button--primary" disabled={props.sendDisabled} onClick={props.onSend} type="button">Send test</button></div>
     </div>
   );
 }
@@ -1213,6 +1542,19 @@ function alertDocumentConditionError(document: AlertEditorDocument): string | nu
     if (definition === undefined) continue;
     const message = conditionValidationMessage(definition, condition.value);
     if (message !== null) return message;
+  }
+  return null;
+}
+
+function alertDocumentTextStyleError(document: AlertEditorDocument): string | null {
+  for (const layer of document.layers) {
+    if (layer.type !== "text") continue;
+    if (!alertTextStyleSchema.safeParse(layer.textStyle).success) {
+      return `${layer.name} has invalid typography.`;
+    }
+    if (!alertTextBoxStyleSchema.safeParse(layer.boxStyle).success) {
+      return `${layer.name} has invalid text box styling.`;
+    }
   }
   return null;
 }

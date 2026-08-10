@@ -157,14 +157,10 @@ textarea {
   width: 100vw;
 }
 
-.overlay-text {
-  align-items: center;
-  display: flex;
-  font-size: 32px;
-  font-weight: 800;
-  line-height: 1.15;
-  overflow-wrap: anywhere;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.72);
+.alert-text-layer {
+  box-sizing: border-box;
+  height: 100%;
+  width: 100%;
 }
 
 .overlay-audio-activation {

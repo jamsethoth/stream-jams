@@ -44,15 +44,33 @@ One pure mapping converts validated style contracts into React style values used
 
 Alternative considered: duplicate CSS mapping in editor and overlay components. Rejected because drift is the primary regression risk for authoring controls.
 
+### Use native disclosures for major layer sections
+
+The existing Live TTS, Typography, Text box, Position and size, and Animation preset sections use native `details` and `summary` elements. Sections start open to preserve the current workflow, remain keyboard operable without custom state, and may be collapsed independently without changing alert data.
+
+Alternative considered: add persisted accordion state. Rejected because disclosure state is low-risk transient view state and persistence is unnecessary for this focused usability change.
+
 ### Backfill explicit compatibility defaults
 
 Older documents parse with defaults matching the current fixed appearance. A database migration rewrites stored editor documents to the current schema version so backup/export and later edits are deterministic.
 
 Alternative considered: leave defaults implicit forever. Rejected because future style-default changes would silently alter old alerts.
 
+### Validate profile review as a state transition
+
+Save validation permits a profile that was already enabled and `Needs review` to remain in that state while the user reviews profiles incrementally. It still rejects a candidate that newly enables a profile before `Mark reviewed` has cleared that profile's review state. This keeps explicit review and enablement guarantees without deadlocking alerts whose landscape and vertical profiles both begin enabled and unreviewed.
+
+Alternative considered: automatically disable other unreviewed profiles when one profile is marked reviewed. Rejected because saving one review decision must not silently change live-profile enablement.
+
+### Surface review beside the selected-profile warning
+
+When the selected target profile is `Needs review`, its warning bar above the canvas includes a `Mark reviewed` action. Activating it changes only the draft review state for the selected profile, makes the editor dirty, and leaves persistence to the existing explicit `Save` action. The warning and inline action disappear once the profile is marked reviewed. The Alert tab retains its existing review control as a secondary path.
+
+Alternative considered: place the action among the global header controls. Rejected because review belongs to the selected target profile and a global placement obscures that relationship. Placing it inside the profile selector was also rejected because it would crowd a navigation control with a state-changing action.
+
 ## Risks / Trade-offs
 
-- [OBS and management browsers render a font preset differently] -> Use only local fallback stacks and add screenshot coverage in both editor and overlay stories.
+- [OBS and management browsers render a font preset differently] -> Use only local fallback stacks; gate exact shared-mapper output, computed browser CSS, and fixed-viewport outer-box geometry. Keep screenshots optional for human review and use an OBS/Cef browser source as a manual smoke check rather than a pixel-diff gate.
 - [Large padding changes effective content size] -> Keep geometry as the outer box, clamp padding, and show overflow in preview exactly as live output will render it.
 - [Schema growth makes editor forms noisy] -> Use native controls in one selected-layer style section and omit advanced properties.
 - [Migration changes existing appearance] -> Assert compatibility defaults against current CSS and add before/after fixtures.

@@ -68,3 +68,20 @@ The focused editor SHALL expose style controls only for a selected text layer us
 - **WHEN** a user changes a style value and invokes Undo
 - **THEN** the prior validated style is restored in both the form and canvas
 - **AND** Redo can reapply the change
+
+#### Scenario: Major layer section is collapsed
+- **WHEN** a user toggles a major selected-layer editor section
+- **THEN** its controls hide or reappear through a keyboard-accessible native disclosure
+- **AND** collapsing the section does not change draft alert data
+
+#### Scenario: Multiple enabled profiles require review
+- **WHEN** an alert already has multiple enabled profiles marked `Needs review`
+- **THEN** the user can mark and save each profile as reviewed incrementally
+- **AND** the system still rejects newly enabling any profile that remains `Needs review`
+
+#### Scenario: Selected profile requires review
+- **WHEN** the selected target profile is marked `Needs review`
+- **THEN** its warning bar above the canvas exposes a keyboard-accessible `Mark reviewed` action
+- **AND** activating the action updates only the selected profile's draft review state
+- **AND** the editor remains unsaved until the user invokes the existing `Save` action
+- **AND** the warning and inline action are hidden after the profile is marked reviewed

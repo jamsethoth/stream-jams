@@ -1,4 +1,12 @@
-import type { AlertEditorDocument, AlertSetActivationImpact, AlertSetDetail, AlertSetOverview, StreamEventType } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument,
+  type AlertSetActivationImpact,
+  type AlertSetDetail,
+  type AlertSetOverview,
+  type StreamEventType
+} from "@stream-jams/core";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -660,6 +668,8 @@ function editorDocument(): AlertEditorDocument {
       visible: true,
       order: 0,
       template: "Thanks, {userName}!",
+      textStyle: structuredClone(compatibilityAlertTextStyle),
+      boxStyle: structuredClone(compatibilityAlertTextBoxStyle),
       animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
     }],
     targetProfiles: [

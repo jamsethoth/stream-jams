@@ -4,6 +4,8 @@ import {
   DefaultPlaybackCooldownService,
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
   type AlertResolverTarget,
   type AlertEditorDocument,
   type AlertRule,
@@ -982,8 +984,28 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
     rulePriority: rule.priority,
     durationMs: 3_000,
     layers: [
-      { id: "layer-primary", name: "Primary", type: "text", visible: true, order: 0, animation, template: "Primary {actor.displayName}" },
-      { id: "layer-secondary", name: "Secondary", type: "text", visible: true, order: 1, animation, template: "Secondary {actor.displayName}" }
+      {
+        id: "layer-primary",
+        name: "Primary",
+        type: "text",
+        visible: true,
+        order: 0,
+        animation,
+        template: "Primary {actor.displayName}",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
+      },
+      {
+        id: "layer-secondary",
+        name: "Secondary",
+        type: "text",
+        visible: true,
+        order: 1,
+        animation,
+        template: "Secondary {actor.displayName}",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
+      }
     ],
     targetProfiles: [
       {

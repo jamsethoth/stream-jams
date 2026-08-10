@@ -1,4 +1,8 @@
-import type { ConfigurationBackupArchive } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type ConfigurationBackupArchive
+} from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
@@ -45,6 +49,37 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     ]);
     expect(JSON.stringify(snapshot)).not.toContain("credential/provider-token");
     expect(JSON.stringify(snapshot)).not.toContain("route-hash");
+    expect(JSON.parse(String(snapshot.tables.alert_editor_documents?.[0]?.document_json))).toMatchObject({
+      layers: [{
+        textStyle: compatibilityAlertTextStyle,
+        boxStyle: compatibilityAlertTextBoxStyle
+      }]
+    });
+  });
+
+  it("round-trips non-default text and box styles through a portable snapshot", () => {
+    const expected = styledEditorDocument();
+    database.connection.prepare(
+      "UPDATE alert_editor_documents SET document_json = ? WHERE alert_id = ?"
+    ).run(JSON.stringify(expected), expected.id);
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const configuration: ConfigurationBackupArchive["configuration"] = {
+      appConfig: {},
+      ...snapshot
+    };
+
+    expect(repository.validate(configuration)).toEqual([]);
+    repository.replace({
+      tables: snapshot.tables,
+      assets: [seededAsset()]
+    });
+
+    const row = database.connection.prepare(
+      "SELECT document_json FROM alert_editor_documents WHERE alert_id = ?"
+    ).get(expected.id) as { readonly document_json: string } | undefined;
+    expect(row).toBeDefined();
+    expect(JSON.parse(String(row?.document_json))).toEqual(expected);
   });
 
   it("keeps Twitch account state only in operational rollback points", () => {
@@ -381,12 +416,65 @@ function editorDocument() {
     cooldownSeconds: 0,
     rulePriority: 0,
     durationMs: 5_000,
-    layers: [],
+    layers: [{
+      id: "layer-text",
+      name: "Message",
+      type: "text",
+      visible: true,
+      order: 0,
+      template: "Thanks",
+      textStyle: structuredClone(compatibilityAlertTextStyle),
+      boxStyle: structuredClone(compatibilityAlertTextBoxStyle),
+      animation: {
+        mode: "preset",
+        entrance: "fade",
+        exit: "fade",
+        durationMs: 300,
+        delayMs: 0,
+        easing: "ease-out"
+      }
+    }],
     targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [] },
-      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
+      {
+        id: "landscape",
+        enabled: true,
+        reviewState: "ready",
+        layerLayouts: [{ layerId: "layer-text", x: 0, y: 0, width: 100, height: 100, zIndex: 0 }]
+      },
+      {
+        id: "vertical",
+        enabled: false,
+        reviewState: "needs-review",
+        layerLayouts: [{ layerId: "layer-text", x: 0, y: 0, width: 100, height: 100, zIndex: 0 }]
+      }
     ],
     samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: { userName: "James" } }]
+  };
+}
+
+function styledEditorDocument() {
+  const document = editorDocument();
+  return {
+    ...document,
+    layers: document.layers.map((layer) => layer.type === "text" ? {
+      ...layer,
+      textStyle: {
+        fontPreset: "serif" as const,
+        fontSizePx: 64,
+        fontWeight: 700 as const,
+        lineHeight: 1.3,
+        horizontalAlign: "left" as const,
+        verticalAlign: "bottom" as const,
+        color: "#FFCC00BF" as const,
+        shadow: { offsetX: -4, offsetY: 6, blur: 12, color: "#00000080" as const }
+      },
+      boxStyle: {
+        backgroundColor: "#102030BF" as const,
+        paddingPx: 24,
+        cornerRadiusPx: 18,
+        shadow: { offsetX: 4, offsetY: 8, blur: 20, color: "#ABCDEF66" as const }
+      }
+    } : layer)
   };
 }
 

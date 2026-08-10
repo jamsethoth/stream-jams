@@ -5,6 +5,8 @@ import {
   getAlertTemplateVariableCatalog,
   getAlertEditorAffectedProfileIds,
   createAlertTemplateContext,
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
   normalizedStreamEventSchema,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
@@ -119,7 +121,6 @@ export class AlertEditorService {
     if (document.id !== alertId) {
       throw new AlertEditorValidationError(["The editor document does not match the selected alert."]);
     }
-    validateDocumentForSave(document);
 
     const resolved = await this.#resolveEditorItem(alertId);
     const metadata = await this.#options.metadata.findRule(resolved.rule.id);
@@ -127,6 +128,7 @@ export class AlertEditorService {
     const current = stored === null
       ? createDocumentFromRule(resolved, metadata)
       : hydrateDocument(stored, resolved, metadata);
+    validateDocumentForSave(document, current);
     const affectedProfileIds = getAlertEditorAffectedProfileIds(current, document);
     if (!confirmLiveImpact && affectedProfileIds.length > 0) {
       const collections = await this.#options.rules.listCollections();
@@ -291,7 +293,11 @@ function createDocumentFromRule(
   if (variant.visualAssetId !== null) {
     layers.push(layerBase(`${resolved.editorId}-visual`, "Visual", "image", layers.length, { assetId: variant.visualAssetId }));
   }
-  layers.push(layerBase(`${resolved.editorId}-text`, "Message", "text", layers.length, { template: variant.textTemplate }));
+  layers.push(layerBase(`${resolved.editorId}-text`, "Message", "text", layers.length, {
+    template: variant.textTemplate,
+    textStyle: structuredClone(compatibilityAlertTextStyle),
+    boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
+  }));
   if (variant.audioAssetId !== null) {
     layers.push(layerBase(`${resolved.editorId}-audio`, "Audio", "audio", layers.length, { assetId: variant.audioAssetId, volume: 1 }));
   }
@@ -424,13 +430,17 @@ function fitLayout(layout: OverlayElementLayout, width: number, height: number):
   };
 }
 
-function validateDocumentForSave(document: AlertEditorDocument): void {
+function validateDocumentForSave(document: AlertEditorDocument, current: AlertEditorDocument): void {
   const layerIds = document.layers.map((layer) => layer.id);
   const issues = layerIds.length === new Set(layerIds).size ? [] : ["Layer names must identify unique layers."];
   const enabledProfiles = document.targetProfiles.filter((profile) => profile.enabled);
   if (enabledProfiles.length === 0) issues.push("Enable at least one target profile before saving.");
   for (const profile of enabledProfiles) {
-    if (profile.reviewState !== "ready") {
+    const currentProfile = current.targetProfiles.find((candidate) => candidate.id === profile.id);
+    if (
+      profile.reviewState !== "ready"
+      && !(currentProfile?.enabled === true && currentProfile.reviewState === "needs-review")
+    ) {
       issues.push(`Finish reviewing the ${profile.id} profile before enabling it.`);
     }
     issues.push(...validateProfile(document, profile));
@@ -741,7 +751,15 @@ function createLayerInstruction(
     durationMs
   };
   if (layer.type === "text" && layout !== undefined) {
-    return { ...base, text: { text: renderer.render({ template: layer.template, values: context }), layout } };
+    return {
+      ...base,
+      text: {
+        text: renderer.render({ template: layer.template, values: context }),
+        layout,
+        textStyle: layer.textStyle,
+        boxStyle: layer.boxStyle
+      }
+    };
   }
   if ((layer.type === "image" || layer.type === "video") && layout !== undefined) {
     return {

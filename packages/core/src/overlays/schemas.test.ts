@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "../alerts/text-style.js";
 import { moduleOutputRequestSchema, overlayInstructionSchema } from "./schemas.js";
 import { moduleOverlayPath, moduleOverlayWebSocketPath } from "./types.js";
 
@@ -63,8 +64,7 @@ describe("overlay schemas", () => {
   });
 
   it("accepts valid overlay instructions", () => {
-    expect(
-      overlayInstructionSchema.safeParse({
+    const instruction = overlayInstructionSchema.parse({
         id: "instruction-1",
         overlayId: "main",
         moduleId: "alerts",
@@ -83,8 +83,35 @@ describe("overlay schemas", () => {
         },
         tts: null,
         durationMs: 5000
+      });
+
+    expect(instruction.text).toEqual({
+      text: "Thanks for the follow",
+      layout,
+      textStyle: compatibilityAlertTextStyle,
+      boxStyle: compatibilityAlertTextBoxStyle
+    });
+  });
+
+  it("rejects invalid supplied text styles", () => {
+    expect(
+      overlayInstructionSchema.safeParse({
+        id: "instruction-invalid-style",
+        overlayId: "main",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        visual: null,
+        audio: null,
+        text: {
+          text: "Unsafe font",
+          layout,
+          textStyle: { ...compatibilityAlertTextStyle, fontPreset: "remote-font" }
+        },
+        tts: null,
+        durationMs: 5000
       }).success
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it("preserves optional shape and preset animation instructions", () => {

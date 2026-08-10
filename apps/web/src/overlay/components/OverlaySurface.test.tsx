@@ -1,4 +1,9 @@
-import type { OverlayComposition, OverlayInstruction } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type OverlayComposition,
+  type OverlayInstruction
+} from "@stream-jams/core";
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -300,6 +305,89 @@ describe("OverlaySurface", () => {
     );
 
     expect(screen.getByText("مرحبا Viewer")).toHaveAttribute("dir", "auto");
+  });
+
+  it("renders validated text and box styles", () => {
+    render(
+      <OverlaySurface
+        composition={composition({
+          ...instruction(),
+          text: {
+            text: "Styled alert",
+            layout: { x: 120, y: 80, width: 320, height: 240, zIndex: 5 },
+            textStyle: {
+              ...compatibilityAlertTextStyle,
+              fontPreset: "serif",
+              fontSizePx: 64,
+              fontWeight: 700,
+              horizontalAlign: "left",
+              verticalAlign: "bottom",
+              color: "#FFCC00FF",
+              shadow: null
+            },
+            boxStyle: {
+              backgroundColor: "#102030BF",
+              paddingPx: 24,
+              cornerRadiusPx: 18,
+              shadow: { offsetX: 4, offsetY: 6, blur: 12, color: "#00000080" }
+            }
+          }
+        })}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    const styledAlert = screen.getByText("Styled alert");
+    expect(styledAlert.style.backgroundColor).toBe("rgba(16, 32, 48, 0.75)");
+    expect(styledAlert.style.borderRadius).toBe("18px");
+    expect(styledAlert.style.boxShadow).toBe("4px 6px 12px #00000080");
+    expect(styledAlert.style.color).toBe("rgb(255, 204, 0)");
+    expect(styledAlert.style.fontFamily).toBe('Georgia, "Times New Roman", serif');
+    expect(styledAlert.style.fontSize).toBe("64px");
+    expect(styledAlert.style.fontWeight).toBe("700");
+    expect(styledAlert.style.justifyContent).toBe("flex-end");
+    expect(styledAlert.style.padding).toBe("24px");
+    expect(styledAlert.style.textAlign).toBe("left");
+    expect(styledAlert.style.textShadow).toBe("none");
+  });
+
+  it("fails closed and transparent when a forged text style is unsafe", async () => {
+    const onPlaybackEvent = vi.fn();
+    const unsafe = {
+      ...instruction(),
+      visual: {
+        assetId: "asset-image",
+        mediaType: "image",
+        layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }
+      },
+      audio: { assetId: "asset-audio", volume: 1 },
+      text: {
+        text: "Do not render",
+        layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 2 },
+        textStyle: { ...compatibilityAlertTextStyle, fontPreset: "remote-font" },
+        boxStyle: compatibilityAlertTextBoxStyle
+      },
+      tts: { mode: "browser-speech", text: "Do not speak", audioAssetId: null, providerPayload: null }
+    } as unknown as OverlayInstruction;
+
+    render(
+      <OverlaySurface
+        composition={composition(unsafe)}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith({
+      instructionId: "instruction-1",
+      status: "failed",
+      message: "Alert text style could not be rendered safely."
+    }));
+    expect(screen.queryByText("Do not render")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("overlay-visual-instruction-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("overlay-audio-instruction-1")).not.toBeInTheDocument();
+    expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "started" }));
+    expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
   });
 });
 

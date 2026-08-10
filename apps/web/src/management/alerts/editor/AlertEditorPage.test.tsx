@@ -1,4 +1,10 @@
-import type { AlertEditorDocument, AlertSetDetail, RegisteredProviderView } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument,
+  type AlertSetDetail,
+  type RegisteredProviderView
+} from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +20,188 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("edits and validates text-only typography and box styles", async () => {
+    const user = userEvent.setup();
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const typography = await screen.findByRole("group", { name: "Typography" });
+    const textBox = screen.getByRole("group", { name: "Text box" });
+    const disclosures = [
+      ["Typography", "Font size"],
+      ["Text box", "Padding"],
+      ["Position and size", "X"],
+      ["Animation preset", "Animation duration (milliseconds)"]
+    ] as const;
+    const initialFontSize = within(typography).getByLabelText("Font size");
+    const collapsedControls: HTMLElement[] = [];
+    for (const [label, controlLabel] of disclosures) {
+      const summary = screen.getByText(label, { selector: "summary" });
+      expect(summary.closest("details")).toHaveAttribute("open");
+      const control = screen.getByLabelText(controlLabel);
+      await user.click(summary);
+      expect(summary.closest("details")).not.toHaveAttribute("open");
+      expect(control).not.toBeVisible();
+      collapsedControls.push(control);
+      for (const collapsed of collapsedControls) expect(collapsed).not.toBeVisible();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    }
+    for (const [label, controlLabel] of [...disclosures].reverse()) {
+      await user.click(screen.getByText(label, { selector: "summary" }));
+      expect(screen.getByLabelText(controlLabel)).toBeVisible();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    }
+    expect(initialFontSize).toHaveValue(32);
+
+    await user.click(screen.getByRole("button", { name: "100%" }));
+    await user.selectOptions(within(typography).getByLabelText("Font preset"), "serif");
+    await user.clear(within(typography).getByLabelText("Font size"));
+    await user.type(within(typography).getByLabelText("Font size"), "64");
+    await user.selectOptions(within(typography).getByLabelText("Font weight"), "700");
+    fireEvent.change(within(typography).getByLabelText("Line height"), { target: { value: "1.45" } });
+    await user.selectOptions(within(typography).getByLabelText("Horizontal alignment"), "left");
+    await user.selectOptions(within(typography).getByLabelText("Vertical alignment"), "bottom");
+    fireEvent.change(within(typography).getByLabelText("Text color color"), {
+      target: { value: "#abcdef" }
+    });
+    fireEvent.change(within(typography).getByLabelText("Text color opacity"), {
+      target: { value: "50" }
+    });
+    fireEvent.change(within(typography).getByLabelText("Text shadow horizontal offset"), {
+      target: { value: "-5" }
+    });
+    fireEvent.change(within(typography).getByLabelText("Text shadow vertical offset"), {
+      target: { value: "7" }
+    });
+    fireEvent.change(within(typography).getByLabelText("Text shadow blur"), {
+      target: { value: "20" }
+    });
+    fireEvent.change(within(typography).getByLabelText("Text shadow color color"), {
+      target: { value: "#112233" }
+    });
+    fireEvent.change(within(typography).getByLabelText("Text shadow color opacity"), {
+      target: { value: "40" }
+    });
+    fireEvent.change(within(textBox).getByLabelText("Background color color"), {
+      target: { value: "#102030" }
+    });
+    fireEvent.change(within(textBox).getByLabelText("Background color opacity"), {
+      target: { value: "75" }
+    });
+    await user.clear(within(textBox).getByLabelText("Padding"));
+    await user.type(within(textBox).getByLabelText("Padding"), "24");
+    await user.clear(within(textBox).getByLabelText("Corner radius"));
+    await user.type(within(textBox).getByLabelText("Corner radius"), "18");
+    await user.click(within(textBox).getByLabelText("Box shadow"));
+    fireEvent.change(within(textBox).getByLabelText("Box shadow horizontal offset"), {
+      target: { value: "3" }
+    });
+    fireEvent.change(within(textBox).getByLabelText("Box shadow vertical offset"), {
+      target: { value: "9" }
+    });
+    fireEvent.change(within(textBox).getByLabelText("Box shadow blur"), {
+      target: { value: "16" }
+    });
+    fireEvent.change(within(textBox).getByLabelText("Box shadow color color"), {
+      target: { value: "#445566" }
+    });
+    fireEvent.change(within(textBox).getByLabelText("Box shadow color opacity"), {
+      target: { value: "60" }
+    });
+
+    expect(screen.getByText("Thanks, James!").style.fontFamily).toBe('Georgia, "Times New Roman", serif');
+    expect(screen.getByText("Thanks, James!").style.fontSize).toBe("64px");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      "alert-follow",
+      expect.objectContaining({
+        layers: expect.arrayContaining([
+          expect.objectContaining({
+            textStyle: expect.objectContaining({
+              fontPreset: "serif",
+              fontSizePx: 64,
+              fontWeight: 700,
+              lineHeight: 1.45,
+              horizontalAlign: "left",
+              verticalAlign: "bottom",
+              color: "#ABCDEF80",
+              shadow: {
+                offsetX: -5,
+                offsetY: 7,
+                blur: 20,
+                color: "#11223366"
+              }
+            }),
+            boxStyle: expect.objectContaining({
+              backgroundColor: "#102030BF",
+              paddingPx: 24,
+              cornerRadiusPx: 18,
+              shadow: {
+                offsetX: 3,
+                offsetY: 9,
+                blur: 16,
+                color: "#44556699"
+              }
+            })
+          })
+        ])
+      }),
+      false
+    ));
+
+    const fontSize = within(typography).getByLabelText("Font size");
+    fireEvent.change(fontSize, { target: { value: "513" } });
+    expect(fontSize).toHaveAttribute("aria-invalid", "true");
+    expect(within(typography).getByRole("alert")).toHaveTextContent("Font size must be between 8 and 512.");
+    expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(within(typography).getByLabelText("Font size")).toHaveValue(64);
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(within(typography).getByLabelText("Font size")).toHaveValue(513);
+
+    fireEvent.change(within(typography).getByLabelText("Line height"), { target: { value: "3.01" } });
+    expect(within(typography).getByText("Line height must be between 0.75 and 3.")).toBeVisible();
+    fireEvent.change(within(typography).getByLabelText("Text shadow horizontal offset"), {
+      target: { value: "1.5" }
+    });
+    expect(within(typography).getByText(
+      "Text shadow horizontal offset must be a whole number between -256 and 256."
+    )).toBeVisible();
+    fireEvent.change(within(textBox).getByLabelText("Padding"), { target: { value: "257" } });
+    expect(within(textBox).getByText("Padding must be between 0 and 256.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /CelebrationImage/u }));
+    expect(screen.queryByRole("group", { name: "Typography" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Text box" })).not.toBeInTheDocument();
+  });
+
   it("loads a focused canvas workspace and keeps Preview separate from Send test", async () => {
     const user = userEvent.setup();
     const document = editorDocument();
@@ -710,8 +898,16 @@ describe("AlertEditorPage", () => {
 
     expect(await screen.findByText("Studio Speaker.bot")).toBeInTheDocument();
     expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeInTheDocument();
+    const liveTtsSummary = screen.getByText("Live TTS", { selector: "summary" });
+    expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     const enabled = screen.getByRole("checkbox", { name: "Enable TTS for this alert" });
+    await user.click(liveTtsSummary);
+    expect(enabled).not.toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    await user.click(liveTtsSummary);
+    expect(enabled).toBeVisible();
     expect(enabled).toBeChecked();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     await user.click(enabled);
     expect(enabled).not.toBeChecked();
     await user.click(enabled);
@@ -1186,6 +1382,8 @@ describe("AlertEditorPage", () => {
         visible: true,
         order: 0,
         template: "Raid from {userName}!",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle),
         animation: { mode: "preset", entrance: "scale", exit: "fade", durationMs: 500, delayMs: 25, easing: "ease-out" }
       }],
       targetProfiles: target.targetProfiles.map((profile) => ({
@@ -1243,6 +1441,66 @@ describe("AlertEditorPage", () => {
       { enabled: false, reviewState: "needs-review", layerLayouts: source.targetProfiles[1]!.layerLayouts }
     ]);
   });
+
+  it("reviews and saves two already-enabled profiles incrementally", async () => {
+    const user = userEvent.setup();
+    const base = editorDocument();
+    const initial: AlertEditorDocument = {
+      ...base,
+      targetProfiles: base.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "needs-review"
+      }))
+    };
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={initial.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => initial),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const landscapeReviewWarning = (await screen.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
+    expect(landscapeReviewWarning).not.toBeNull();
+    await user.click(within(landscapeReviewWarning as HTMLElement).getByRole("button", { name: "Mark reviewed" }));
+    expect(screen.getByText("Unsaved")).toBeInTheDocument();
+    expect(screen.queryByText(/This generated layout is editable/u)).not.toBeInTheDocument();
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    expect(saveAlertEditorDocument.mock.calls[0]![1].targetProfiles).toEqual([
+      expect.objectContaining({ id: "landscape", enabled: true, reviewState: "ready" }),
+      expect.objectContaining({ id: "vertical", enabled: true, reviewState: "needs-review" })
+    ]);
+
+    await user.click(screen.getByRole("button", { name: /^Vertical/u }));
+    const verticalReviewWarning = (await screen.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
+    expect(verticalReviewWarning).not.toBeNull();
+    await user.click(within(verticalReviewWarning as HTMLElement).getByRole("button", { name: "Mark reviewed" }));
+    expect(saveAlertEditorDocument).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(2));
+    expect(saveAlertEditorDocument.mock.calls[1]![1].targetProfiles).toEqual([
+      expect.objectContaining({ id: "landscape", enabled: true, reviewState: "ready" }),
+      expect.objectContaining({ id: "vertical", enabled: true, reviewState: "ready" })
+    ]);
+  });
 });
 
 function NavigationProbe() {
@@ -1295,6 +1553,8 @@ function editorDocument(): AlertEditorDocument {
         visible: true,
         order: 0,
         template: "Thanks, {userName}!",
+        textStyle: structuredClone(compatibilityAlertTextStyle),
+        boxStyle: structuredClone(compatibilityAlertTextBoxStyle),
         animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
       },
       {

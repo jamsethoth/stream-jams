@@ -190,7 +190,9 @@ export class DefaultAlertResolver implements AlertResolver {
         ...base,
         text: {
           text: this.#renderedTextTemplateRenderer.render({ template: layer.template, values: createAlertTemplateContext(match.event) }),
-          layout
+          layout,
+          textStyle: layer.textStyle,
+          boxStyle: layer.boxStyle
         }
       };
     }

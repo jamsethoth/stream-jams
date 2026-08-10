@@ -1,5 +1,9 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import type { OverlayComposition } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type OverlayComposition
+} from "@stream-jams/core";
 import { AudioActivationPrompt, OverlaySurface } from "./OverlaySurface.js";
 import {
   errorSafeOverlayComposition,
@@ -63,6 +67,83 @@ export const TextOnly: Story = {
     composition: textOnlyOverlayComposition,
     muted: false,
     resolveAssetUrl
+  }
+};
+
+export const CompatibilityTextStyle: Story = {
+  args: {
+    composition: styledTextComposition("landscape", compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle),
+    muted: false,
+    resolveAssetUrl
+  }
+};
+
+export const CustomSerifTextStyle: Story = {
+  args: {
+    composition: styledTextComposition(
+      "landscape",
+      {
+        ...compatibilityAlertTextStyle,
+        fontPreset: "serif",
+        fontSizePx: 64,
+        fontWeight: 700,
+        lineHeight: 1.3,
+        horizontalAlign: "left",
+        verticalAlign: "bottom",
+        color: "#FFCC00FF",
+        shadow: null
+      },
+      {
+        backgroundColor: "#102030BF",
+        paddingPx: 24,
+        cornerRadiusPx: 18,
+        shadow: { offsetX: 4, offsetY: 6, blur: 12, color: "#00000080" }
+      }
+    ),
+    muted: false,
+    resolveAssetUrl
+  }
+};
+
+export const RoundedVerticalTextStyle: Story = {
+  args: {
+    composition: styledTextComposition(
+      "vertical",
+      {
+        ...compatibilityAlertTextStyle,
+        fontPreset: "rounded-sans",
+        fontSizePx: 72,
+        color: "#9FFFEFFF"
+      },
+      {
+        backgroundColor: "#102030CC",
+        paddingPx: 32,
+        cornerRadiusPx: 32,
+        shadow: { offsetX: 0, offsetY: 8, blur: 24, color: "#00000080" }
+      }
+    ),
+    muted: false,
+    resolveAssetUrl
+  },
+  parameters: { viewport: { defaultViewport: "verticalCanonical" } }
+};
+
+export const InvalidTextStyleFailClosed: Story = {
+  args: {
+    composition: styledTextComposition(
+      "landscape",
+      { ...compatibilityAlertTextStyle, fontPreset: "remote-font" } as never,
+      compatibilityAlertTextBoxStyle
+    ),
+    muted: false,
+    resolveAssetUrl
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: "A forged unsupported preset renders no viewer-visible content and reports through playback diagnostics."
+      }
+    }
   }
 };
 
@@ -212,6 +293,44 @@ function profileComposition(profileId: "landscape" | "vertical"): OverlayComposi
           layout: vertical
             ? { x: 140, y: 820, width: 800, height: 180, zIndex: 10 }
             : { x: 560, y: 450, width: 800, height: 180, zIndex: 10 }
+        },
+        tts: null,
+        durationMs: 60_000
+      }]
+    }]
+  };
+}
+
+function styledTextComposition(
+  profileId: "landscape" | "vertical",
+  textStyle: NonNullable<OverlayComposition["modules"][number]["instructions"][number]["text"]>["textStyle"],
+  boxStyle: NonNullable<OverlayComposition["modules"][number]["instructions"][number]["text"]>["boxStyle"]
+): OverlayComposition {
+  const vertical = profileId === "vertical";
+  return {
+    overlayId: `overlay-alerts-style-${profileId}`,
+    purpose: "test",
+    scope: "module",
+    targetProfileId: profileId,
+    modules: [{
+      moduleId: "alerts",
+      enabled: true,
+      instructions: [{
+        id: `instruction-style-${profileId}`,
+        overlayId: `overlay-alerts-style-${profileId}`,
+        moduleId: "alerts",
+        purpose: "test",
+        scope: "module",
+        targetProfileId: profileId,
+        visual: null,
+        audio: null,
+        text: {
+          text: vertical ? "Rounded vertical alert" : "Styled alert preview",
+          layout: vertical
+            ? { x: 140, y: 820, width: 800, height: 320, zIndex: 10 }
+            : { x: 560, y: 390, width: 800, height: 300, zIndex: 10 },
+          textStyle,
+          boxStyle
         },
         tts: null,
         durationMs: 60_000

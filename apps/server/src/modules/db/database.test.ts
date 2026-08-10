@@ -1,10 +1,12 @@
 import { DatabaseSync } from "node:sqlite";
+import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, runInTransaction } from "./database.js";
 import { variantAlertEditorDocumentsMigration } from "./migrations/010-variant-alert-editor-documents.js";
 import { revokeUnsupportedOverlayKeysMigration } from "./migrations/012-revoke-unsupported-overlay-keys.js";
 import { alertVariantAssetForeignKeysMigration } from "./migrations/015-alert-variant-asset-foreign-keys.js";
 import { overlayKeyLookupIndexesMigration } from "./migrations/016-overlay-key-lookup-indexes.js";
+import { alertTextStyleDefaultsMigration } from "./migrations/017-alert-text-style-defaults.js";
 
 const expectedMigrations = [
   "001-initial-schema",
@@ -22,7 +24,8 @@ const expectedMigrations = [
   "013-alert-read-indexes",
   "014-diagnostic-order-indexes",
   "015-alert-variant-asset-foreign-keys",
-  "016-overlay-key-lookup-indexes"
+  "016-overlay-key-lookup-indexes",
+  "017-alert-text-style-defaults"
 ] as const;
 
 const expectedTables = [
@@ -47,6 +50,79 @@ const expectedTables = [
 ];
 
 describe("Stream Jams SQLite database", () => {
+  it("backfills text style defaults without overwriting explicit values or timestamps", () => {
+    const connection = new DatabaseSync(":memory:");
+    try {
+      connection.exec(`
+        CREATE TABLE alert_editor_documents (
+          alert_id TEXT PRIMARY KEY NOT NULL,
+          document_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+      `);
+      const customTextStyle = {
+        ...compatibilityAlertTextStyle,
+        fontPreset: "serif",
+        fontSizePx: 64,
+        color: "#FFCC00FF"
+      };
+      const documents = [
+        ["legacy", { layers: [{ id: "text", type: "text", template: "Hello" }] }],
+        ["partial", { layers: [{ id: "text", type: "text", template: "Hello", textStyle: customTextStyle }] }],
+        ["image", { layers: [{ id: "image", type: "image", assetId: "asset-1" }] }],
+        ["empty", { layers: [] }]
+      ] as const;
+      const insert = connection.prepare("INSERT INTO alert_editor_documents VALUES (?, ?, ?)");
+      for (const [id, document] of documents) {
+        insert.run(id, JSON.stringify(document), "2026-07-20T12:00:00.000Z");
+      }
+
+      connection.exec(alertTextStyleDefaultsMigration.sql);
+      const once = connection
+        .prepare("SELECT alert_id, document_json, updated_at FROM alert_editor_documents ORDER BY alert_id")
+        .all();
+      connection.exec(alertTextStyleDefaultsMigration.sql);
+      const twice = connection
+        .prepare("SELECT alert_id, document_json, updated_at FROM alert_editor_documents ORDER BY alert_id")
+        .all();
+
+      expect(twice).toEqual(once);
+      expect(once.every((row) => row.updated_at === "2026-07-20T12:00:00.000Z")).toBe(true);
+      const byId = new Map(once.map((row) => [String(row.alert_id), JSON.parse(String(row.document_json)) as {
+        layers: Record<string, unknown>[];
+      }]));
+      expect(byId.get("legacy")?.layers[0]).toMatchObject({
+        textStyle: compatibilityAlertTextStyle,
+        boxStyle: compatibilityAlertTextBoxStyle
+      });
+      expect(byId.get("partial")?.layers[0]).toMatchObject({
+        textStyle: customTextStyle,
+        boxStyle: compatibilityAlertTextBoxStyle
+      });
+      expect(byId.get("image")).toEqual(documents[2][1]);
+      expect(byId.get("empty")).toEqual(documents[3][1]);
+    } finally {
+      connection.close();
+    }
+  });
+
+  it("aborts the text style backfill on malformed editor JSON", () => {
+    const connection = new DatabaseSync(":memory:");
+    try {
+      connection.exec(`
+        CREATE TABLE alert_editor_documents (
+          alert_id TEXT PRIMARY KEY NOT NULL,
+          document_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO alert_editor_documents VALUES ('corrupt', '{', '2026-07-20T12:00:00.000Z');
+      `);
+      expect(() => connection.exec(alertTextStyleDefaultsMigration.sql)).toThrow(/malformed JSON/i);
+    } finally {
+      connection.close();
+    }
+  });
+
   it("initializes deterministic tables and records each migration once", () => {
     using database = createInMemoryStreamJamsDatabase();
 
@@ -326,7 +402,8 @@ describe("Stream Jams SQLite database", () => {
       CREATE INDEX overlay_keys_overlay_id_idx ON overlay_keys(overlay_id);
       CREATE INDEX overlay_keys_output_idx
         ON overlay_keys(overlay_id, scope, module_id, target_profile_id, purpose);
-      DELETE FROM schema_migrations WHERE id = '016-overlay-key-lookup-indexes';
+      DELETE FROM schema_migrations
+      WHERE id IN ('016-overlay-key-lookup-indexes', '017-alert-text-style-defaults');
     `);
 
     database.runMigrations();

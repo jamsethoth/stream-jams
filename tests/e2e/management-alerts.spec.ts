@@ -526,7 +526,15 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.setViewportSize({ width: 820, height: 768 });
   const savedDocuments: unknown[] = [];
   const testRequests: unknown[] = [];
-  const document = alertEditorDocument();
+  const initialDocument = alertEditorDocument();
+  let document: ReturnType<typeof alertEditorDocument> = {
+    ...initialDocument,
+    targetProfiles: initialDocument.targetProfiles.map((profile) => ({
+      ...profile,
+      enabled: true,
+      reviewState: "needs-review"
+    }))
+  };
   const overview = {
     id: "set-default",
     name: "Default",
@@ -535,8 +543,8 @@ test("focused alert editor saves layouts and separates preview from test deliver
     starterReviewState: "complete",
     enabledAlertCount: 1,
     targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
+      { id: "landscape", enabled: true, reviewState: "needs-review", blockerCount: 0, warningCount: 1 },
+      { id: "vertical", enabled: true, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
     ],
     validationIssues: [],
     outputs: []
@@ -552,7 +560,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
       kind: "default",
       enabled: true,
       reviewState: "ready",
-      targetProfileIds: ["landscape"],
+      targetProfileIds: ["landscape", "vertical"],
       previewText: "Thanks for following!"
     }],
     browserSources: []
@@ -563,7 +571,8 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.route("**/management/alerts/alert-follow/editor", async (route) => {
     expect(route.request().headers()["authorization"]).toBe("Bearer mgmt_e2e");
     if (route.request().method() === "PUT") {
-      const body = route.request().postDataJSON() as { readonly document: unknown };
+      const body = route.request().postDataJSON() as { readonly document: typeof document };
+      document = body.document;
       savedDocuments.push(body.document);
       await route.fulfill({ contentType: "application/json", json: body.document });
       return;
@@ -571,10 +580,16 @@ test("focused alert editor saves layouts and separates preview from test deliver
     await route.fulfill({ contentType: "application/json", json: document });
   });
   await page.route("**/management/alerts/alert-follow/editor/test", async (route) => {
-    testRequests.push(route.request().postDataJSON());
+    const request = route.request().postDataJSON() as { readonly targetProfileId: "landscape" | "vertical" };
+    testRequests.push(request);
     await route.fulfill({
       contentType: "application/json",
-      json: { status: "queued", targetProfileId: "landscape", referenceId: "ref-e2e-editor", test: true }
+      json: {
+        status: "queued",
+        targetProfileId: request.targetProfileId,
+        referenceId: `ref-e2e-editor-${request.targetProfileId}`,
+        test: true
+      }
     });
   });
 
@@ -592,26 +607,139 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.setViewportSize({ width: 1920, height: 1080 });
   const focusedContent = await page.locator(".management-route-content--focused").boundingBox();
   expect(focusedContent?.width).toBeGreaterThan(1280);
+  const landscapeReviewWarning = page.locator(".alert-editor-page__profile-warning");
+  await expect(landscapeReviewWarning).toContainText("Needs review");
+  await landscapeReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
+  await expect(page.getByText("Unsaved")).toBeVisible();
+  expect(savedDocuments).toHaveLength(0);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  expect(savedDocuments).toHaveLength(1);
+  expect(savedDocuments[0]).toMatchObject({
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready" },
+      { id: "vertical", enabled: true, reviewState: "needs-review" }
+    ]
+  });
+  await page.getByRole("tab", { name: "Layers" }).click();
+  const disclosures = [
+    ["Typography", "Font size"],
+    ["Text box", "Padding"],
+    ["Position and size", "X"],
+    ["Animation preset", "Animation duration (milliseconds)"]
+  ] as const;
+  const fontSize = page.getByLabel("Font size");
+  const collapsedControls = [];
+  for (const [label, controlLabel] of disclosures) {
+    const summary = page.locator("summary").filter({ hasText: label });
+    await expect(summary).toBeVisible();
+    const control = page.getByLabel(controlLabel, { exact: true });
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await expect(control).toBeHidden();
+    collapsedControls.push(control);
+    for (const collapsed of collapsedControls) await expect(collapsed).toBeHidden();
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  }
+  for (const [label, controlLabel] of [...disclosures].reverse()) {
+    const summary = page.locator("summary").filter({ hasText: label });
+    await summary.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByLabel(controlLabel, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  }
+  await expect(fontSize).toHaveValue("32");
   await page.getByRole("textbox", { name: "Message template" }).fill("Welcome, {actor.displayName}!");
+  await page.getByRole("button", { name: "100%" }).click();
+  await page.getByLabel("Font preset").selectOption("serif");
+  await fontSize.fill("48");
+  await page.getByLabel("Font weight").selectOption("700");
+  await page.getByLabel("Horizontal alignment").selectOption("right");
+  await page.getByLabel("Vertical alignment").selectOption("bottom");
+  await page.getByLabel("Background color color").fill("#102030");
+  await page.getByLabel("Background color opacity").fill("75");
+  await page.getByLabel("Padding").fill("16");
+  await page.getByLabel("Corner radius").fill("18");
+  const styledCanvasText = page.getByRole("region", { name: "Landscape alert canvas" }).getByText("Welcome, James!");
+  await expect(styledCanvasText).toHaveCSS("font-size", "48px");
+  await expect(styledCanvasText).toHaveCSS("justify-content", "flex-end");
+  await expect(styledCanvasText).toHaveCSS("padding", "16px");
   await page.getByRole("button", { name: "Save" }).click();
   const saveDialog = page.getByRole("dialog", { name: "Save changes to active alert?" });
   await expect(saveDialog.getByText("Follow events")).toBeVisible();
   await expect(saveDialog.getByText("Landscape")).toBeVisible();
   await saveDialog.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
-  expect(savedDocuments).toHaveLength(1);
-  expect(savedDocuments[0]).toMatchObject({ layers: [{ template: "Welcome, {actor.displayName}!" }] });
+  expect(savedDocuments).toHaveLength(2);
+  expect(savedDocuments[1]).toMatchObject({
+    layers: [{
+      template: "Welcome, {actor.displayName}!",
+      textStyle: {
+        fontPreset: "serif",
+        fontSizePx: 48,
+        fontWeight: 700,
+        horizontalAlign: "right",
+        verticalAlign: "bottom"
+      },
+      boxStyle: {
+        backgroundColor: "#102030BF",
+        paddingPx: 16,
+        cornerRadiusPx: 18
+      }
+    }]
+  });
 
+  await page.reload();
+  await expect(page.getByLabel("Font preset")).toHaveValue("serif");
+  await expect(page.getByLabel("Font size")).toHaveValue("48");
+  await expect(page.getByLabel("Padding")).toHaveValue("16");
   await page.getByRole("button", { name: "Preview" }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
   expect(testRequests).toHaveLength(0);
   await page.getByRole("button", { name: "Send test" }).click();
-  await expect(page.getByText(/Queued on Landscape.*ref-e2e-editor/u)).toBeVisible();
+  await expect(page.getByText(/Queued on Landscape.*ref-e2e-editor-landscape/u)).toBeVisible();
   expect(testRequests).toHaveLength(1);
 
   await page.getByRole("button", { name: /Vertical/u }).click();
   await expect(page.getByRole("button", { name: "Send test" })).toBeDisabled();
-  await expect(page.getByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
+  const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
+  await expect(verticalCanvas).toBeVisible();
+  const verticalStyledText = verticalCanvas.getByText("Welcome, James!");
+  await expect(verticalStyledText).toBeVisible();
+  await expect(page.getByLabel("Font size")).toHaveValue("48");
+  await expect(page.getByLabel("Padding")).toHaveValue("16");
+  const verticalReviewWarning = page.locator(".alert-editor-page__profile-warning");
+  await expect(verticalReviewWarning).toContainText("Needs review");
+  await verticalReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+
+  const verticalEditorUrl = new URL(page.url());
+  verticalEditorUrl.searchParams.set("profile", "vertical");
+  await page.goto(verticalEditorUrl.toString());
+  await page.reload();
+  await expect(page).toHaveURL(/profile=vertical/u);
+  await expect(verticalCanvas).toBeVisible();
+  await expect(verticalStyledText).toBeVisible();
+  await expect(page.getByLabel("Font size")).toHaveValue("48");
+  await expect(page.getByLabel("Padding")).toHaveValue("16");
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByText("Local preview is running.")).toBeVisible();
+  await page.getByRole("button", { name: "Send test" }).click();
+  await expect(page.getByText(/Queued on Vertical.*ref-e2e-editor-vertical/u)).toBeVisible();
+  expect(testRequests).toHaveLength(2);
+  expect(testRequests).toEqual([
+    expect.objectContaining({ targetProfileId: "landscape" }),
+    expect.objectContaining({ targetProfileId: "vertical" })
+  ]);
+  const latestSavedDocument = savedDocuments.at(-1) as ReturnType<typeof alertEditorDocument>;
+  expect(latestSavedDocument.layers[0]).toMatchObject({
+    textStyle: { fontPreset: "serif", fontSizePx: 48 },
+    boxStyle: { paddingPx: 16, cornerRadiusPx: 18 }
+  });
+  expect(latestSavedDocument.targetProfiles[0]?.layerLayouts).not.toEqual(
+    latestSavedDocument.targetProfiles[1]?.layerLayouts
+  );
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole("heading", { name: "Alert editor requires a larger screen" })).toBeVisible();
@@ -710,6 +838,15 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
   await page.reload();
 
   await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
+  const liveTtsSummary = page.locator("summary").filter({ hasText: "Live TTS" });
+  const enabled = page.getByRole("checkbox", { name: "Enable TTS for this alert" });
+  await liveTtsSummary.focus();
+  await page.keyboard.press("Enter");
+  await expect(enabled).toBeHidden();
+  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  await page.keyboard.press("Enter");
+  await expect(enabled).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   await page.getByRole("textbox", { name: "TTS template" }).fill("Hello {actor.displayName}");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
@@ -738,6 +875,22 @@ function alertEditorDocument() {
       visible: true,
       order: 0,
       template: "Thanks, {actor.displayName}!",
+      textStyle: {
+        fontPreset: "system-sans",
+        fontSizePx: 32,
+        fontWeight: 800,
+        lineHeight: 1.15,
+        horizontalAlign: "center",
+        verticalAlign: "center",
+        color: "#FFFFFFFF",
+        shadow: { offsetX: 0, offsetY: 2, blur: 8, color: "#000000B8" }
+      },
+      boxStyle: {
+        backgroundColor: "#00000000",
+        paddingPx: 0,
+        cornerRadiusPx: 0,
+        shadow: null
+      },
       animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
     }],
     targetProfiles: [
