@@ -78,3 +78,10 @@ The focused editor SHALL expose style controls only for a selected text layer us
 - **WHEN** an alert already has multiple enabled profiles marked `Needs review`
 - **THEN** the user can mark and save each profile as reviewed incrementally
 - **AND** the system still rejects newly enabling any profile that remains `Needs review`
+
+#### Scenario: Selected profile requires review
+- **WHEN** the selected target profile is marked `Needs review`
+- **THEN** its warning bar above the canvas exposes a keyboard-accessible `Mark reviewed` action
+- **AND** activating the action updates only the selected profile's draft review state
+- **AND** the editor remains unsaved until the user invokes the existing `Save` action
+- **AND** the warning and inline action are hidden after the profile is marked reviewed

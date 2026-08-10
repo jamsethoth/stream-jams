@@ -62,6 +62,12 @@ Save validation permits a profile that was already enabled and `Needs review` to
 
 Alternative considered: automatically disable other unreviewed profiles when one profile is marked reviewed. Rejected because saving one review decision must not silently change live-profile enablement.
 
+### Surface review beside the selected-profile warning
+
+When the selected target profile is `Needs review`, its warning bar above the canvas includes a `Mark reviewed` action. Activating it changes only the draft review state for the selected profile, makes the editor dirty, and leaves persistence to the existing explicit `Save` action. The warning and inline action disappear once the profile is marked reviewed. The Alert tab retains its existing review control as a secondary path.
+
+Alternative considered: place the action among the global header controls. Rejected because review belongs to the selected target profile and a global placement obscures that relationship. Placing it inside the profile selector was also rejected because it would crowd a navigation control with a state-changing action.
+
 ## Risks / Trade-offs
 
 - [OBS and management browsers render a font preset differently] -> Use only local fallback stacks; gate exact shared-mapper output, computed browser CSS, and fixed-viewport outer-box geometry. Keep screenshots optional for human review and use an OBS/Cef browser source as a manual smoke check rather than a pixel-diff gate.

@@ -44,3 +44,9 @@
 
 - [x] 7.1 Add a failing service regression and Playwright coverage for incrementally reviewing an alert whose landscape and vertical profiles are both already enabled and `Needs review`.
 - [x] 7.2 Make save validation transition-aware, retain rejection for newly enabled unreviewed profiles, run required gates, rebuild and restart the app, verify the live workflow, and update the pull request.
+
+## 8. Review Action Discoverability
+
+- [ ] 8.1 Add failing component, Storybook, and Playwright coverage for a selected-profile warning that exposes `Mark reviewed`, updates only the draft profile state, and still requires explicit `Save`.
+- [ ] 8.2 Add the inline action to the existing profile warning using the current button and warning patterns, while retaining the Alert-tab action as a secondary path.
+- [ ] 8.3 Run focused and repository frontend gates, strict OpenSpec validation, rebuild and restart the app, verify the live workflow, and update the pull request UX note.
