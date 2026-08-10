@@ -52,6 +52,33 @@ const rule: AlertRule = {
 };
 
 describe("AlertEditorService", () => {
+  it("rejects construction without the required aggregate save dependency", () => {
+    const options = {
+      documents: {
+        find: async () => null,
+        findMany: async () => new Map(),
+        save: async (document: AlertEditorDocument) => document,
+        delete: async () => undefined
+      },
+      rules: {
+        findRuleById: async () => null,
+        listRules: async () => [],
+        listCollections: async () => [],
+        saveRule: async (savedRule: AlertRule) => savedRule
+      },
+      metadata: {
+        findRule: async () => null,
+        saveRule: async (savedMetadata: AlertRuleManagementMetadata) => savedMetadata
+      },
+      hasConnectedOutput: async () => false,
+      enqueueTest: async () => undefined,
+      generateId: () => "generated",
+      generateReferenceId: () => "reference"
+    } as unknown as AlertEditorServiceOptions;
+
+    expect(() => new AlertEditorService(options)).toThrow("requires an atomic aggregate save dependency");
+  });
+
   it("projects stable sibling authoring context from default and variation route IDs", async () => {
     const variationRule: AlertRule = {
       ...rule,
@@ -576,6 +603,32 @@ describe("AlertEditorService", () => {
     expect(harness.saveAtomically).not.toHaveBeenCalled();
   });
 
+  it.each(["rule", "variation"] as const)(
+    "does not grandfather a formerly supported %s condition after the event type changes",
+    async (scope) => {
+      const savedRule: AlertRule = {
+        ...createConditionRule(),
+        eventType: "cheer",
+        conditions: [{ field: "cheerAmount", operator: "min", value: 100 }],
+        variants: createConditionRule().variants.map((variant, index) => index === 1
+          ? { ...variant, conditions: [{ field: "cheerAmount", operator: "min", value: 200 }] }
+          : variant)
+      };
+      const harness = createAtomicHarness(savedRule);
+      const document = await harness.service.getDocument("variant-special");
+      const candidate = {
+        ...document,
+        eventType: "follow" as const,
+        ...(scope === "rule" ? { variantConditions: [] } : { conditions: [] })
+      };
+
+      await expect(harness.service.saveDocument("variant-special", candidate)).rejects.toBeInstanceOf(
+        AlertEditorValidationError
+      );
+      expect(harness.saveAtomically).not.toHaveBeenCalled();
+    }
+  );
+
   it("uses the parent rule and selected variation identities for variation tests", async () => {
     const variationRule: AlertRule = {
       ...rule,
@@ -911,6 +964,11 @@ function createHarness(
     ...(findAssetMediaType === undefined ? {} : { findAssetMediaType }),
     generateId: () => `generated-${++nextId}`,
     generateReferenceId: () => "ref-test-1",
+    async saveAtomically(input) {
+      await rules.saveRule(input.rule);
+      await metadata.saveRule(input.metadata);
+      return documents.save(input.document);
+    },
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, hasConnectedOutput, enqueueTest };
@@ -946,6 +1004,11 @@ function createHarnessWithRule(ruleFixture: AlertRule, storedDocument: AlertEdit
     enqueueTest,
     generateId: () => "generated",
     generateReferenceId: () => "reference",
+    async saveAtomically(input) {
+      await rules.saveRule(input.rule);
+      await metadata.saveRule(input.metadata);
+      return documents.save(input.document);
+    },
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, enqueueTest };

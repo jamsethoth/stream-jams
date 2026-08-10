@@ -58,7 +58,7 @@ export interface AlertEditorServiceOptions {
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
   readonly now?: () => Date;
-  readonly saveAtomically?: (input: AlertEditorAtomicSaveInput) => Promise<AlertEditorDocument>;
+  readonly saveAtomically: (input: AlertEditorAtomicSaveInput) => Promise<AlertEditorDocument>;
 }
 
 export class AlertEditorNotFoundError extends Error {
@@ -103,6 +103,9 @@ export class AlertEditorService {
   readonly #now: () => Date;
 
   constructor(options: AlertEditorServiceOptions) {
+    if (typeof options.saveAtomically !== "function") {
+      throw new Error("AlertEditorService requires an atomic aggregate save dependency.");
+    }
     this.#options = options;
     this.#now = options.now ?? (() => new Date());
   }
@@ -163,12 +166,14 @@ export class AlertEditorService {
     const saveDocument = alertEditorDocumentSchema.parse({ ...document, priority: selectedPriority });
     validateDocumentForSave(saveDocument, current);
     validateConditionChanges(
+      resolved.rule.eventType,
       saveDocument.eventType,
       "Rule",
       saveDocument.conditions,
       resolved.rule.conditions
     );
     validateConditionChanges(
+      resolved.rule.eventType,
       saveDocument.eventType,
       "Variation",
       saveDocument.variantConditions,
@@ -214,17 +219,12 @@ export class AlertEditorService {
       }
     }
     const projectedMetadata = ruleMetadataFromDocument(saveDocument, resolved.rule.id);
-    if (this.#options.saveAtomically !== undefined) {
-      return this.#options.saveAtomically({
-        document: saveDocument,
-        expectedRule: resolved.rule,
-        metadata: projectedMetadata,
-        rule: projectedRule
-      });
-    }
-    await this.#options.rules.saveRule(projectedRule);
-    await this.#options.metadata.saveRule(projectedMetadata);
-    return this.#options.documents.save(saveDocument);
+    return this.#options.saveAtomically({
+      document: saveDocument,
+      expectedRule: resolved.rule,
+      metadata: projectedMetadata,
+      rule: projectedRule
+    });
   }
 
   async sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
@@ -578,18 +578,19 @@ function validatePriorityAssignments(
 }
 
 function validateConditionChanges(
-  eventType: AlertEditorDocument["eventType"],
+  savedEventType: AlertEditorDocument["eventType"],
+  candidateEventType: AlertEditorDocument["eventType"],
   scope: "Rule" | "Variation",
   candidateConditions: readonly AlertCondition[],
   savedConditions: readonly AlertCondition[]
 ): void {
   const unchangedUnsupported = savedConditions
-    .filter((condition) => hasUnsupportedConditionIssue(eventType, condition))
+    .filter((condition) => hasUnsupportedConditionIssue(savedEventType, condition))
     .map(serializeCondition);
   const issues: string[] = [];
 
   candidateConditions.forEach((condition, conditionIndex) => {
-    const validationIssues = validateAuthoredAlertConditions(eventType, [condition]);
+    const validationIssues = validateAuthoredAlertConditions(candidateEventType, [condition]);
     if (validationIssues.length === 0) return;
     const onlyUnsupported = validationIssues.every(
       ({ code }) => code === "unsupported-field" || code === "unsupported-operator"

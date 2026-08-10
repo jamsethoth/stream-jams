@@ -367,6 +367,7 @@ function createFixture() {
   });
   const metadataRepository = new InMemoryAlertSetMetadataRepository(alertService);
   const documents = new InMemoryAlertEditorDocumentRepository();
+  const mutationStore = createInMemoryMutationStore(alertRepository, metadataRepository, documents);
   const alertEditorService = new AlertEditorService({
     documents,
     rules: alertRepository,
@@ -374,7 +375,16 @@ function createFixture() {
     hasConnectedOutput: async () => true,
     enqueueTest: async () => undefined,
     generateId: () => `editor-${(nextId += 1)}`,
-    generateReferenceId: () => `reference-${(nextId += 1)}`
+    generateReferenceId: () => `reference-${(nextId += 1)}`,
+    saveAtomically(input) {
+      mutationStore.commit({
+        expectedRules: [input.expectedRule],
+        saveRules: [input.rule],
+        saveRuleMetadata: [input.metadata],
+        saveDocuments: [input.document]
+      });
+      return Promise.resolve(input.document);
+    }
   });
   const service = new AlertSetManagementService({
     alertService,
@@ -382,7 +392,7 @@ function createFixture() {
     documents,
     getEditorDocument: (editorId) => alertEditorService.getDocument(editorId),
     generateId,
-    mutationStore: createInMemoryMutationStore(alertRepository, metadataRepository, documents),
+    mutationStore,
     listBrowserSources: async () => [
       {
         id: "module:alerts:landscape:live",
