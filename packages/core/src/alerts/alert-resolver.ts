@@ -13,6 +13,10 @@ import { DefaultModerationService, type ModerationService } from "../moderation/
 import { SafeTemplateRenderer } from "../templates/safe-template-renderer.js";
 import { DefaultTemplateRenderer, type TemplateRenderer } from "../templates/template-renderer.js";
 import type { AlertTtsConfig, AlertVariant } from "./types.js";
+import {
+  chooseWeightedAlertVariation,
+  projectAlertVariationSelection
+} from "./variation-authoring.js";
 import type {
   AlertEditorDocument,
   AlertLayer,
@@ -247,30 +251,18 @@ export class DefaultAlertResolver implements AlertResolver {
   }
 
   #selectVariant(match: AlertMatch): AlertVariant {
-    const matchingVariants = match.rule.variants.filter(
-      (variant) =>
-        variant.enabled &&
-        (variant.conditions ?? []).every((condition) => this.#conditionEvaluator.evaluate(condition, match.event))
+    const projection = projectAlertVariationSelection(
+      match.event,
+      match.rule.variants,
+      this.#conditionEvaluator
     );
-    if (matchingVariants.length === 0) {
+    if (projection.matching.length === 0) {
       throw new AlertVariantSelectionError(match.rule.id);
     }
 
-    const highestPriority = Math.max(...matchingVariants.map((variant) => variant.priority ?? 0));
-    const topPriorityVariants = matchingVariants.filter((variant) => (variant.priority ?? 0) === highestPriority);
-    const totalWeight = topPriorityVariants.reduce((sum, variant) => sum + variant.weight, 0);
-    const randomValue = clampRandom(this.#random());
-    const threshold = randomValue * totalWeight;
-    let cumulativeWeight = 0;
-
-    for (const variant of topPriorityVariants) {
-      cumulativeWeight += variant.weight;
-      if (threshold < cumulativeWeight) {
-        return variant;
-      }
-    }
-
-    return topPriorityVariants[topPriorityVariants.length - 1]!;
+    const selected = chooseWeightedAlertVariation(projection, clampRandom(this.#random()));
+    if (selected === null) throw new AlertVariantSelectionError(match.rule.id);
+    return selected;
   }
 
   #createOverlayInstruction(

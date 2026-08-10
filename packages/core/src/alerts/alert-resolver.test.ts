@@ -294,6 +294,19 @@ describe("DefaultAlertResolver", () => {
     ]);
   });
 
+  it("clamps and consumes exactly one random draw for each weighted selection", () => {
+    const event = createCheerEvent();
+    const rule = createRule({
+      variants: [createVariant({ id: "first", weight: 1 }), createVariant({ id: "second", weight: 1 })]
+    });
+    let randomDraws = 0;
+    const resolver = createResolver({ randomValues: [-10, 10], onRandom: () => randomDraws++ });
+
+    expect(resolver.resolveMatches({ matches: [createMatch(rule, event)], target })[0]?.variantId).toBe("first");
+    expect(resolver.resolveMatches({ matches: [createMatch(rule, event)], target })[0]?.variantId).toBe("second");
+    expect(randomDraws).toBe(2);
+  });
+
   it("ignores disabled variants and fails closed when every variant is disabled", () => {
     const event = createCheerEvent();
     const mixedRule = createRule({
@@ -473,13 +486,20 @@ const layout = {
   zIndex: 1
 };
 
-function createResolver(options: { readonly randomValues?: readonly number[]; readonly moderationService?: DefaultModerationService } = {}): DefaultAlertResolver {
+function createResolver(options: {
+  readonly randomValues?: readonly number[];
+  readonly moderationService?: DefaultModerationService;
+  readonly onRandom?: () => void;
+} = {}): DefaultAlertResolver {
   let nextId = 1;
   let nextRandom = 0;
 
   return new DefaultAlertResolver({
     generateId: (kind) => `${kind}-${nextId++}`,
-    random: () => options.randomValues?.[nextRandom++] ?? 0,
+    random: () => {
+      options.onRandom?.();
+      return options.randomValues?.[nextRandom++] ?? 0;
+    },
     moderationService: options.moderationService
   });
 }
