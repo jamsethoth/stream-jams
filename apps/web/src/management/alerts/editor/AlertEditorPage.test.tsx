@@ -438,6 +438,65 @@ describe("AlertEditorPage", () => {
     expect(screen.getByText("Saved")).toBeVisible();
   });
 
+  it("shows an unsaved selected variation rename and toggle consistently", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-draft", name: "Saved variation", priority: 5 });
+    renderVariationSelectionEditor(selected, []);
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    const name = screen.getByRole("textbox", { name: "Alert name" });
+    await user.clear(name);
+    await user.type(name, "Draft variation");
+    await user.click(screen.getByRole("checkbox", { name: "Alert enabled" }));
+    expect(screen.getByRole("heading", { name: "Draft variation" })).toBeVisible();
+    expect(screen.getByText("Alert disabled")).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    const groups = screen.getByRole("region", { name: "Priority groups" });
+    const group = within(groups).getByRole("group", { name: "Priority group 1" });
+    expect(group).toHaveTextContent("Draft variation");
+    expect(group).toHaveTextContent("Disabled");
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("Draft variation");
+    expect(explanation).toHaveTextContent("Disabled — not a candidate.");
+    expect(explanation).not.toHaveTextContent("Saved variation");
+  });
+
+  it("shows an unsaved selected default rename and toggle consistently", async () => {
+    const user = userEvent.setup();
+    const selected = {
+      ...editorDocument(),
+      id: "alert-raid",
+      eventType: "raid" as const,
+      name: "Saved default",
+      samplePayloads: [{
+        id: "normal",
+        label: "Normal raid",
+        kind: "built-in" as const,
+        payload: { userName: "Raider", raidViewers: 50, amount: 50 }
+      }]
+    };
+    renderVariationSelectionEditor(selected, [variationCandidate("variant-sibling", "Sibling")]);
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    const name = screen.getByRole("textbox", { name: "Alert name" });
+    await user.clear(name);
+    await user.type(name, "Draft default");
+    await user.click(screen.getByRole("checkbox", { name: "Alert enabled" }));
+    expect(screen.getByRole("heading", { name: "Draft default" })).toBeVisible();
+    expect(screen.getByText("Alert disabled")).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    const groups = screen.getByRole("region", { name: "Priority groups" });
+    const fallback = within(groups).getByRole("group", { name: "Fallback" });
+    expect(fallback).toHaveTextContent("Draft default");
+    expect(fallback).toHaveTextContent("Disabled default alert");
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("Draft default");
+    expect(explanation).toHaveTextContent("Disabled — not a candidate.");
+    expect(explanation).not.toHaveTextContent("Saved default");
+  });
+
   it("retains priority membership and condition drafts after a failed atomic save, then sends exact assignments", async () => {
     const user = userEvent.setup();
     const selected = raidVariationDocument({ id: "variant-high", name: "High", priority: 10 });
@@ -571,6 +630,25 @@ describe("AlertEditorPage", () => {
       for (const copy of scenario.expected) expect(explanation).toHaveTextContent(copy);
       view.unmount();
     }
+  });
+
+  it("names only failing shared rule conditions in the sample diagnostic", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({
+      id: "variant-mixed-rule",
+      name: "Mixed rule",
+      conditions: [
+        { field: "raidViewers", operator: "min", value: 20 },
+        { field: "raidViewers", operator: "max", value: 40 }
+      ]
+    });
+    renderVariationSelectionEditor(selected, []);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("No alert plays for this sample.");
+    expect(explanation).toHaveTextContent("Raid viewers is at most 40");
+    expect(explanation).not.toHaveTextContent("Raid viewers is at least 20");
   });
 
   it("suppresses stale selection percentages while sample or condition input needs correction", async () => {
@@ -2502,7 +2580,7 @@ function variationContext(
     editorId: ruleId,
     variantId: `${ruleId}-default-resolver`,
     kind: "default" as const,
-    name: "Default",
+    name: document.kind === "default" ? document.name : "Default",
     enabled: document.kind === "default" ? document.enabled : true,
     conditions: [],
     weight: document.kind === "default" ? document.weight : 1,

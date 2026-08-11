@@ -314,6 +314,24 @@ describe("alert variation selection projection", () => {
     })).toMatchObject({ ruleMatches: true, outcome: "no-enabled-candidate", highestEligiblePriority: null });
   });
 
+  it("identifies only the failing shared rule conditions", () => {
+    const evaluation = evaluateAlertVariationSample({
+      event,
+      ruleConditions: [
+        { field: "cheerAmount", operator: "min", value: 50 },
+        { field: "cheerAmount", operator: "max", value: 75 }
+      ],
+      candidates: [candidate("default")],
+      defaultCandidateId: "default"
+    });
+
+    expect(evaluation).toMatchObject({
+      ruleMatches: false,
+      failedRuleConditionIndexes: [1],
+      outcome: "rule-no-match"
+    });
+  });
+
   it("explains default fallback and a single conditional candidate at 100 percent", () => {
     const fallback = evaluateAlertVariationSample({
       event,

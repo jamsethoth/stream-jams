@@ -69,6 +69,7 @@ export interface AlertVariationSampleEvaluationCandidate {
 
 export interface AlertVariationSampleEvaluation {
   readonly ruleMatches: boolean;
+  readonly failedRuleConditionIndexes: readonly number[];
   readonly outcome:
     | "rule-no-match"
     | "no-enabled-candidate"
@@ -544,7 +545,10 @@ export function evaluateAlertVariationSample(input: {
   readonly conditionEvaluator?: AlertConditionEvaluator;
 }): AlertVariationSampleEvaluation {
   const conditionEvaluator = input.conditionEvaluator ?? new DefaultAlertConditionEvaluator();
-  const ruleMatches = input.ruleConditions.every((condition) => conditionEvaluator.evaluate(condition, input.event));
+  const failedRuleConditionIndexes = input.ruleConditions.flatMap((condition, index) => (
+    conditionEvaluator.evaluate(condition, input.event) ? [] : [index]
+  ));
+  const ruleMatches = failedRuleConditionIndexes.length === 0;
   const projection = projectAlertVariationSelection(input.event, input.candidates, conditionEvaluator);
   const highestEligible = ruleMatches ? projection.topPriority : [];
   const highestEligibleSet = new Set(highestEligible);
@@ -560,6 +564,7 @@ export function evaluateAlertVariationSample(input: {
 
   return {
     ruleMatches,
+    failedRuleConditionIndexes,
     outcome,
     highestEligiblePriority: ruleMatches ? projection.highestPriority : null,
     legacyDefaultTie,
