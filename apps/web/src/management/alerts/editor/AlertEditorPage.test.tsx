@@ -1827,7 +1827,8 @@ describe("AlertEditorPage", () => {
     const user = userEvent.setup();
     const variation: AlertEditorDocument = {
       ...editorDocument(), id: "variant-range-raid", eventType: "raid", kind: "variation", parentAlertId: "alert-raid",
-      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }]
+      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Raider", raidViewers: 50, amount: 50 } }]
     };
     render(
       <DirtyNavigationProvider>
@@ -1863,6 +1864,91 @@ describe("AlertEditorPage", () => {
     await user.selectOptions(operator, "min");
     expect(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers value" })).toHaveValue(1);
     expect(conditions).toHaveTextContent("Raid viewers is at least 1");
+  });
+
+  it("discards invalid range drafts and restores saved values on Revert", async () => {
+    const user = userEvent.setup();
+    const document: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "alert-range-revert",
+      eventType: "raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Raider", raidViewers: 50, amount: 50 } }]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={document.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    const maximum = within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" });
+    await user.clear(maximum);
+    await user.type(maximum, "25");
+    await user.clear(maximum);
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers requires a finite numeric value.");
+    expect(screen.getByRole("button", { name: "Revert" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Revert" }));
+
+    const restoredConditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(restoredConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Minimum" })).toHaveValue(10);
+    expect(within(restoredConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" })).toHaveValue(20);
+    expect(within(restoredConditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
+  });
+
+  it("does not carry invalid range drafts to a newly loaded alert document", async () => {
+    const user = userEvent.setup();
+    const first: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "alert-range-first",
+      eventType: "raid",
+      name: "First raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "First", raidViewers: 50, amount: 50 } }]
+    };
+    const second: AlertEditorDocument = {
+      ...first,
+      id: "alert-range-second",
+      name: "Second raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [30, 40] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Second", raidViewers: 60, amount: 60 } }]
+    };
+    const getAlertEditorDocument = vi.fn(async (alertId: string) => alertId === first.id ? first : second);
+    const managementApi = {
+      getAlertEditorDocument, getAlertSet: vi.fn(async () => alertSetDetail(false)), listRegisteredProviders: vi.fn(async () => []),
+      getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []), deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(),
+      saveAlertEditorDocument: vi.fn(async (_id: string, saved: AlertEditorDocument) => saved), sendAlertEditorTest: vi.fn()
+    };
+    const view = render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={first.id} assetApi={assetApi} managementApi={managementApi} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const firstConditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.clear(within(firstConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" }));
+    expect(within(firstConditions).getByRole("alert")).toBeInTheDocument();
+
+    view.rerender(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={second.id} assetApi={assetApi} managementApi={managementApi} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByRole("heading", { name: "Second raid" })).toBeInTheDocument();
+    const secondConditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(secondConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Minimum" })).toHaveValue(30);
+    expect(within(secondConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" })).toHaveValue(40);
+    expect(within(secondConditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
   });
 
   it("copies only design fields from another alert", async () => {

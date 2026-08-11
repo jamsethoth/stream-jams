@@ -113,6 +113,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [sampleDraft, setSampleDraft] = useState("{}");
   const [sampleError, setSampleError] = useState<string | null>(null);
   const [conditionDraftError, setConditionDraftError] = useState<string | null>(null);
+  const [eventInspectorRevision, setEventInspectorRevision] = useState(0);
   const [sendIncludeAudio, setSendIncludeAudio] = useState(true);
   const [sendIncludeTts, setSendIncludeTts] = useState(true);
   const [previewIncludeAudio, setPreviewIncludeAudio] = useState(false);
@@ -137,6 +138,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     event: null
   });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
+  const resetEventInspectorDraft = useCallback(() => {
+    setConditionDraftError(null);
+    setEventInspectorRevision((current) => current + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -148,6 +153,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
+    resetEventInspectorDraft();
     const documentRequest = props.managementApi.getAlertEditorDocument(props.alertId);
     void Promise.all([
       documentRequest,
@@ -176,7 +182,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSampleId(firstSample?.id ?? null);
       setSampleDraft(JSON.stringify(firstSample?.payload ?? {}, null, 2));
       setSampleError(firstSample === null ? "No sample payload is available." : validateAlertSamplePayload(document.eventType, firstSample.payload));
-      setConditionDraftError(null);
       setSetDetail(loadedSetDetail);
     }).catch((cause: unknown) => {
       if (active) setError(actionableError("The alert editor could not be opened", cause, "Return to Alerts and choose the alert again."));
@@ -195,7 +200,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setTtsProvidersLoaded(true);
     });
     return () => { active = false; };
-  }, [props.alertId, props.managementApi, props.targetProfileId]);
+  }, [props.alertId, props.managementApi, props.targetProfileId, resetEventInspectorDraft]);
 
   const showActionError = useCallback((nextError: ReportableActionError) => {
     setNotice(null);
@@ -295,9 +300,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
+    resetEventInspectorDraft();
     setError(null);
     setNotice({ tone: "success", message: "Unsaved changes reverted." });
-  }, []);
+  }, [resetEventInspectorDraft]);
 
   const saveForNavigation = useCallback(async () => {
     if (await requiresLiveImpactConfirmation()) {
@@ -792,6 +798,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             ) : (
               <AlertEventInspector
                 document={document}
+                key={`${document.id}:${eventInspectorRevision}`}
                 previewIncludeAudio={previewIncludeAudio}
                 previewIncludeTts={previewIncludeTts}
                 sendIncludeAudio={sendIncludeAudio}
