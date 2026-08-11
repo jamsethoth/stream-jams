@@ -12,6 +12,8 @@ import {
   defaultOptionalAlertShadow,
   evaluateAlertVariationSample,
   getAlertEditorAffectedProfileIds,
+  moveAlertPriorityGroup,
+  moveAlertVariationToPriorityGroup,
   normalizeAlertPriorityGroups,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -41,6 +43,7 @@ import { RgbaColorControl } from "./RgbaColorControl.js";
 import {
   addLayer,
   applyEditorUpdate,
+  applyPriorityGroupUpdate,
   arePriorityGroupsDirty,
   copyAlertDesign,
   copyProfileLayout,
@@ -341,7 +344,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       ? null
       : evaluateAlertEditorDraftSample(editor, variationContext, samplePayload)
   ), [documentConditionError, editor, sampleError, samplePayload, variationContext]);
-  void variationEvaluation;
   const visibleAlerts = useMemo(() => {
     const query = search.trim().toLowerCase();
     return (setDetail?.inventory ?? []).filter((alert) => query === "" || `${alert.name} ${alert.eventType}`.toLowerCase().includes(query));
@@ -353,6 +355,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   function updateDocument(update: (document: AlertEditorDocument) => AlertEditorDocument) {
     setEditor((current) => current === null ? null : applyEditorUpdate(current, update));
+    setPreview(false);
+    setPreviewPlaying(false);
+    setPreviewElapsedMs(0);
+    setNotice(null);
+  }
+
+  function updatePriorityGroups(update: Parameters<typeof applyPriorityGroupUpdate>[1]) {
+    setEditor((current) => current === null ? null : applyPriorityGroupUpdate(current, update));
     setPreview(false);
     setPreviewPlaying(false);
     setPreviewElapsedMs(0);
@@ -621,7 +631,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     }
   }
 
-  if (document === null || editor === null || profile === null) {
+  if (document === null || editor === null || profile === null || variationContext === null) {
     return error === null
       ? <p className="management-empty" role="status">Loading alert editor...</p>
       : <div className="alert-editor-page alert-editor-page--load-error"><button className="alert-editor-page__back" onClick={() => props.onBack(loadedSetId)} type="button">Back to alerts</button><ManagementErrorBanner error={error} /></div>;
@@ -809,6 +819,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 onSendIncludeTts={setSendIncludeTts}
                 onChange={updateDocument}
                 onConditionDraftError={setConditionDraftError}
+                onMovePriorityGroup={(fromIndex, toIndex) => updatePriorityGroups((groups) => moveAlertPriorityGroup(groups, fromIndex, toIndex))}
+                onMoveVariation={(variationId, targetIndex) => updatePriorityGroups((groups) => moveAlertVariationToPriorityGroup(groups, variationId, targetIndex))}
                 onPreview={previewLocally}
                 onResetSample={() => sampleId === null ? undefined : chooseSample(sampleId)}
                 onSample={chooseSample}
@@ -825,7 +837,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 sampleError={sampleError}
                 sampleId={sampleId}
                 previewDisabled={sampleError !== null || documentConditionError !== null || documentStyleError !== null}
+                priorityGroups={editor.priorityGroups}
                 sendDisabled={!canSend}
+                selectionExplanationCorrection={sampleError !== null ? "sample" : documentConditionError !== null ? "condition" : null}
+                variationContext={variationContext}
+                variationEvaluation={variationEvaluation}
               />
             )}
           </div>

@@ -3,7 +3,10 @@ import {
   getAlertConditionFieldDefinitions,
   validateAuthoredAlertConditions,
   type AlertConditionFieldDefinition,
-  type AlertEditorDocument
+  type AlertEditorDocument,
+  type AlertPriorityGroup,
+  type AlertVariationAuthoringContext,
+  type AlertVariationSampleEvaluation
 } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
 
@@ -22,6 +25,8 @@ export interface AlertEventInspectorProps {
   readonly onSendIncludeAudio: (value: boolean) => void;
   readonly onSendIncludeTts: (value: boolean) => void;
   readonly onPreview: () => void;
+  readonly onMovePriorityGroup: (fromIndex: number, toIndex: number) => void;
+  readonly onMoveVariation: (variationId: string, targetIndex: number | "new-last") => void;
   readonly onResetSample: () => void;
   readonly onSample: (sampleId: string) => void;
   readonly onSampleDraft: (value: string) => void;
@@ -30,7 +35,11 @@ export interface AlertEventInspectorProps {
   readonly sampleError: string | null;
   readonly sampleId: string | null;
   readonly previewDisabled: boolean;
+  readonly priorityGroups: readonly AlertPriorityGroup[];
   readonly sendDisabled: boolean;
+  readonly selectionExplanationCorrection: "condition" | "sample" | null;
+  readonly variationContext: AlertVariationAuthoringContext;
+  readonly variationEvaluation: AlertVariationSampleEvaluation | null;
 }
 
 export function AlertEventInspector(props: AlertEventInspectorProps) {
@@ -60,6 +69,13 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
         <label><span>Cooldown (seconds)</span><input min="0" onChange={(event) => { const cooldownSeconds = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, cooldownSeconds })); }} type="number" value={props.document.cooldownSeconds} /></label>
         <label><span>Rule priority</span><input onChange={(event) => { const rulePriority = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, rulePriority })); }} type="number" value={props.document.rulePriority} /></label>
       </fieldset>
+      <PriorityGroups
+        context={props.variationContext}
+        document={props.document}
+        groups={props.priorityGroups}
+        onMoveGroup={props.onMovePriorityGroup}
+        onMoveVariation={props.onMoveVariation}
+      />
       {props.document.kind === "variation" ? (
         <fieldset className="alert-editor-inspector__impact">
           <legend>Affects this variation only</legend>
@@ -77,12 +93,190 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
       <label><span>Sample payload</span><select onChange={(event) => props.onSample(event.currentTarget.value)} value={props.sampleId ?? ""}>{props.document.samplePayloads.map((sample) => <option key={sample.id} value={sample.id}>{sample.label}</option>)}</select></label>
       <label><span>Session payload (JSON)</span><textarea aria-describedby={props.sampleError === null ? undefined : "alert-editor-sample-error"} aria-invalid={props.sampleError !== null} onChange={(event) => props.onSampleDraft(event.currentTarget.value)} rows={12} value={props.sampleDraft} /></label>
       {props.sampleError === null ? <p>Session edits are used only for preview and testing.</p> : <p className="alert-editor-inspector__field-error" id="alert-editor-sample-error" role="alert">{props.sampleError}</p>}
+      <SampleSelectionExplanation
+        context={props.variationContext}
+        correction={props.selectionExplanationCorrection}
+        document={props.document}
+        evaluation={props.variationEvaluation}
+      />
       <button className="button button--secondary" onClick={props.onResetSample} type="button">Reset sample</button>
       <fieldset className="alert-editor-inspector__audio"><legend>Local preview</legend><label className="alert-editor-inspector__check"><input checked={props.previewIncludeAudio} onChange={(event) => props.onPreviewIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Preview audio</span></label><label className="alert-editor-inspector__check"><input checked={props.previewIncludeTts} onChange={(event) => props.onPreviewIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Preview TTS</span></label></fieldset>
       <fieldset className="alert-editor-inspector__audio"><legend>Send test</legend><label className="alert-editor-inspector__check"><input checked={props.sendIncludeAudio} onChange={(event) => props.onSendIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Send audio</span></label><label className="alert-editor-inspector__check"><input checked={props.sendIncludeTts} onChange={(event) => props.onSendIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Send TTS</span></label></fieldset>
       <div className="alert-editor-inspector__actions"><button className="button button--secondary" disabled={props.previewDisabled} onClick={props.onPreview} type="button">Replay preview</button><button className="button button--primary" disabled={props.sendDisabled} onClick={props.onSend} type="button">Send test</button></div>
     </div>
   );
+}
+
+function PriorityGroups({ context, document, groups, onMoveGroup, onMoveVariation }: {
+  readonly context: AlertVariationAuthoringContext;
+  readonly document: AlertEditorDocument;
+  readonly groups: readonly AlertPriorityGroup[];
+  readonly onMoveGroup: (fromIndex: number, toIndex: number) => void;
+  readonly onMoveVariation: (variationId: string, targetIndex: number | "new-last") => void;
+}) {
+  const candidatesByEditorId = new Map(context.candidates.map((candidate) => [candidate.editorId, candidate]));
+  const fallback = context.candidates.find((candidate) => candidate.kind === "default");
+  return (
+    <section aria-labelledby="alert-editor-priority-groups-title" className="alert-editor-inspector__priority-groups">
+      <div>
+        <h3 id="alert-editor-priority-groups-title">Priority groups</h3>
+        <p>Earlier conditional groups are evaluated first. Variations in one group use their relative chances.</p>
+      </div>
+      <fieldset className="alert-editor-inspector__priority-fallback">
+        <legend>Fallback</legend>
+        <strong>{fallback?.name ?? "Default"}</strong>
+        <span>{fallback?.enabled === false ? "Disabled" : "Enabled"} default alert</span>
+      </fieldset>
+      {groups.map((group, groupIndex) => (
+        <fieldset className="alert-editor-inspector__priority-group" key={group.variationIds.join("|")}>
+          <legend>Priority group {groupIndex + 1}</legend>
+          <div className="alert-editor-inspector__priority-heading">
+            <span>{priorityGroupOrderCopy(groupIndex, groups.length)}</span>
+            <div>
+              <button className="button button--secondary button--compact" disabled={groupIndex === 0} onClick={() => onMoveGroup(groupIndex, groupIndex - 1)} type="button">Move group earlier</button>
+              <button className="button button--secondary button--compact" disabled={groupIndex === groups.length - 1} onClick={() => onMoveGroup(groupIndex, groupIndex + 1)} type="button">Move group later</button>
+            </div>
+          </div>
+          {group.variationIds.map((variationId) => {
+            const candidate = candidatesByEditorId.get(variationId);
+            const name = candidate?.name ?? variationId;
+            const enabled = variationId === document.id ? document.enabled : candidate?.enabled !== false;
+            return (
+              <div className="alert-editor-inspector__priority-variation" key={variationId}>
+                <div><strong>{name}</strong><span>{enabled ? "Enabled" : "Disabled"}</span></div>
+                <label>
+                  <span>Move to priority group</span>
+                  <select aria-label={`Move ${name} to priority group`} onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    onMoveVariation(variationId, value === "new-last" ? "new-last" : Number(value));
+                  }} value={String(groupIndex)}>
+                    {groups.map((_, optionIndex) => <option key={optionIndex} value={optionIndex}>Priority group {optionIndex + 1}</option>)}
+                    <option value="new-last">New lowest-priority group</option>
+                  </select>
+                </label>
+              </div>
+            );
+          })}
+        </fieldset>
+      ))}
+    </section>
+  );
+}
+
+function SampleSelectionExplanation({ context, correction, document, evaluation }: {
+  readonly context: AlertVariationAuthoringContext;
+  readonly correction: "condition" | "sample" | null;
+  readonly document: AlertEditorDocument;
+  readonly evaluation: AlertVariationSampleEvaluation | null;
+}) {
+  if (correction !== null || evaluation === null) {
+    return (
+      <section aria-labelledby="alert-editor-selection-explanation-title" aria-live="polite" className="alert-editor-inspector__selection-explanation">
+        <h3 id="alert-editor-selection-explanation-title">Sample selection explanation</h3>
+        <p>{correction === "condition" ? "Correct the event condition to explain selection." : "Correct the sample payload to explain selection."}</p>
+      </section>
+    );
+  }
+
+  const evaluationsById = new Map(evaluation.candidates.map((candidate) => [candidate.id, candidate]));
+  const defaultCandidate = context.candidates.find((candidate) => candidate.kind === "default");
+  const effectiveDefaultCandidate = defaultCandidate === undefined || document.kind !== "default"
+    ? defaultCandidate
+    : { ...defaultCandidate, enabled: document.enabled, weight: document.weight };
+  const conditionalCandidates = context.candidates
+    .filter((candidate) => candidate.kind === "variation")
+    .map((candidate) => candidate.editorId === document.id ? {
+      ...candidate,
+      enabled: document.enabled,
+      conditions: document.variantConditions,
+      weight: document.weight
+    } : candidate);
+  return (
+    <section aria-labelledby="alert-editor-selection-explanation-title" aria-live="polite" className="alert-editor-inspector__selection-explanation">
+      <h3 id="alert-editor-selection-explanation-title">Sample selection explanation</h3>
+      {evaluation.outcome === "rule-no-match" ? (
+        <div className="alert-editor-inspector__selection-summary">
+          <strong>No alert plays for this sample.</strong>
+          <p>The shared rule does not match: {document.conditions.map((condition) => formatAlertConditionSummary(document.eventType, condition)).join("; ")}.</p>
+        </div>
+      ) : evaluation.outcome === "no-enabled-candidate" ? (
+        <div className="alert-editor-inspector__selection-summary"><strong>No enabled alert can play for this sample.</strong></div>
+      ) : evaluation.outcome === "default-fallback" ? (
+        <div className="alert-editor-inspector__selection-summary"><strong>Default plays as the fallback for this sample.</strong></div>
+      ) : (
+        <div className="alert-editor-inspector__selection-summary">
+          <strong>{evaluation.candidates.filter((candidate) => candidate.inHighestEligibleGroup).length === 1 ? "One alert is eligible in the first matching group." : "Multiple alerts are eligible in the first matching group."}</strong>
+          <p>Live selection remains random.</p>
+        </div>
+      )}
+      {evaluation.legacyDefaultTie ? <p className="alert-editor-inspector__selection-note"><strong>Legacy priority tie.</strong> The default shares this group under current saved priorities. An explicit priority group edit will normalize conditional groups above it.</p> : null}
+      <fieldset className="alert-editor-inspector__selection-fallback">
+        <legend>Fallback</legend>
+        {effectiveDefaultCandidate === undefined ? null : <CandidateExplanation
+          candidate={effectiveDefaultCandidate}
+          evaluation={evaluationsById.get(effectiveDefaultCandidate.variantId)}
+          fallback
+          outcome={evaluation.outcome}
+        />}
+      </fieldset>
+      <div className="alert-editor-inspector__selection-candidates">
+        {conditionalCandidates.map((candidate) => <CandidateExplanation
+          candidate={candidate}
+          evaluation={evaluationsById.get(candidate.variantId)}
+          fallback={false}
+          key={candidate.variantId}
+          outcome={evaluation.outcome}
+        />)}
+      </div>
+    </section>
+  );
+}
+
+function CandidateExplanation({ candidate, evaluation, fallback, outcome }: {
+  readonly candidate: AlertVariationAuthoringContext["candidates"][number];
+  readonly evaluation: AlertVariationSampleEvaluation["candidates"][number] | undefined;
+  readonly fallback: boolean;
+  readonly outcome: AlertVariationSampleEvaluation["outcome"];
+}) {
+  return (
+    <div className="alert-editor-inspector__selection-candidate">
+      <strong>{candidate.name}</strong>
+      <span>{candidateExplanationCopy(candidate, evaluation, fallback, outcome)}</span>
+    </div>
+  );
+}
+
+function candidateExplanationCopy(
+  candidate: AlertVariationAuthoringContext["candidates"][number],
+  evaluation: AlertVariationSampleEvaluation["candidates"][number] | undefined,
+  fallback: boolean,
+  outcome: AlertVariationSampleEvaluation["outcome"]
+): string {
+  if (evaluation?.enabled === false || (evaluation === undefined && !candidate.enabled)) return "Disabled — not a candidate.";
+  if (outcome === "rule-no-match") return "The shared rule does not match, so this alert is not evaluated.";
+  if (evaluation?.conditionsMatch === false) return `Sample does not match ${conditionSummaryList(candidate.conditions)}.`;
+  if (evaluation?.relativeChance !== null && evaluation?.relativeChance !== undefined) {
+    const chance = evaluation.relativeChance;
+    return `${chance.weight}/${chance.totalWeight} weight · ${formatPercentage(chance.percentage)} relative chance.`;
+  }
+  if (fallback && outcome === "default-fallback") return "Default plays as the fallback.";
+  if (fallback) return "Fallback only; a matching conditional priority group is evaluated first.";
+  if (evaluation?.conditionsMatch === true) return "Matches, but a higher-priority group is evaluated first.";
+  return "Not a candidate for this sample.";
+}
+
+function priorityGroupOrderCopy(index: number, groupCount: number): string {
+  if (index === 0) return "evaluated first";
+  if (index === groupCount - 1) return "evaluated last";
+  return "evaluated next";
+}
+
+function conditionSummaryList(conditions: readonly EditorCondition[]): string {
+  return conditions.length === 0 ? "this variation's conditions" : "its variation conditions";
+}
+
+function formatPercentage(value: number): string {
+  return `${Number.isInteger(value) ? value : Number(value.toFixed(2))}%`;
 }
 
 function ConditionList({ conditions, eventType, heading, onChange, onDraftError }: {

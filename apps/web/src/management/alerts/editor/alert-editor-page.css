@@ -809,6 +809,102 @@
   margin: 0;
 }
 
+.alert-editor-inspector__priority-groups,
+.alert-editor-inspector__selection-explanation {
+  border-top: 1px solid var(--color-border);
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+}
+
+.alert-editor-inspector__priority-groups > div:first-child,
+.alert-editor-inspector__selection-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.alert-editor-inspector__priority-groups p,
+.alert-editor-inspector__selection-explanation p {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  margin: 0;
+}
+
+.alert-editor-inspector__priority-fallback,
+.alert-editor-inspector__selection-fallback {
+  background: var(--color-surface-subtle);
+}
+
+.alert-editor-inspector__priority-fallback > span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.alert-editor-inspector__priority-heading,
+.alert-editor-inspector__priority-variation,
+.alert-editor-inspector__selection-candidate {
+  display: grid;
+  gap: 6px;
+}
+
+.alert-editor-inspector__priority-heading > span,
+.alert-editor-inspector__priority-variation > div > span,
+.alert-editor-inspector__selection-candidate > span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+}
+
+.alert-editor-inspector__priority-heading > div {
+  display: grid;
+  gap: 6px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.alert-editor-inspector__priority-heading button {
+  min-width: 0;
+}
+
+.alert-editor-inspector__priority-variation {
+  border-top: 1px solid var(--color-border);
+  padding-top: 7px;
+}
+
+.alert-editor-inspector__priority-variation > div,
+.alert-editor-inspector__selection-candidate {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+}
+
+.alert-editor-inspector__priority-variation label {
+  gap: 4px;
+}
+
+.alert-editor-inspector__selection-summary,
+.alert-editor-inspector__selection-note {
+  background: var(--color-info-soft);
+  border: 1px solid var(--color-info);
+  padding: 8px;
+}
+
+.alert-editor-inspector__selection-note {
+  color: var(--color-text) !important;
+}
+
+.alert-editor-inspector__selection-candidates {
+  display: grid;
+  gap: 7px;
+}
+
+.alert-editor-inspector__selection-candidate {
+  border-bottom: 1px solid var(--color-border);
+  padding: 0 2px 7px;
+}
+
+.alert-editor-inspector__selection-candidate > span {
+  text-align: right;
+}
+
 .alert-editor-inspector__condition {
   align-items: end;
   display: grid;

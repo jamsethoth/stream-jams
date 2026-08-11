@@ -19,10 +19,10 @@
 
 ## 4. Focused Editor Experience
 
-- [ ] 4.1 Add failing editor and save-boundary tests for ordered priority groups, moving groups and variations, relative-chance copy, typed condition controls, summaries, sample eligibility, fallback, shared rule-impact warnings, complete sibling assignments, invalid or partial assignments, atomic assignment validation before mutation, and rollback.
-- [ ] 4.2 Replace raw priority and condition value fields with the grouped and typed controls, and extend the existing editor save request with complete sibling-priority assignments validated as one atomic set at the server boundary and applied in one whole-rule transaction with the selected document while preserving explicit save, dirty navigation, undo/redo, validation, and live-impact confirmation.
-- [ ] 4.3 Add production-component Storybook states for one candidate, weighted candidates, no-match fallback, invalid range, shared rule edit, expanded-event conditions, and stale or failed save.
-- [ ] 4.4 Add Playwright coverage for creating variations, grouping priorities, setting relative chance and a range condition, validating the non-enqueuing sample explanation, saving, reloading, and confirming Preview and Send test still target the selected alert.
+- [x] 4.1 Add failing editor and save-boundary tests for ordered priority groups, moving groups and variations, relative-chance copy, typed condition controls, summaries, sample eligibility, fallback, shared rule-impact warnings, complete sibling assignments, invalid or partial assignments, atomic assignment validation before mutation, and rollback.
+- [x] 4.2 Replace raw priority and condition value fields with the grouped and typed controls, and extend the existing editor save request with complete sibling-priority assignments validated as one atomic set at the server boundary and applied in one whole-rule transaction with the selected document while preserving explicit save, dirty navigation, undo/redo, validation, and live-impact confirmation.
+- [x] 4.3 Add production-component Storybook states for one candidate, weighted candidates, no-match fallback, invalid range, shared rule edit, expanded-event conditions, and stale or failed save.
+- [x] 4.4 Add Playwright coverage for creating variations, grouping priorities, setting relative chance and a range condition, validating the non-enqueuing sample explanation, saving, reloading, and confirming Preview and Send test still target the selected alert.
 
 ## 5. Verification
 

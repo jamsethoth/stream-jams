@@ -3,6 +3,7 @@ import {
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
   type AlertSetDetail,
+  type AlertVariationAuthoringContext,
   type RegisteredProviderView
 } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
@@ -14,13 +15,27 @@ import { AlertEditorPage } from "./AlertEditorPage.js";
 const document = editorDocument();
 const managementApi = createStoryManagementApi({
   getAlertEditorDocument: async () => document,
+  getAlertVariationAuthoringContext: async () => variationContext(document),
   getAlertSet: async () => alertSetDetail()
 });
 
 const meta = {
   title: "Management/Alerts/Focused editor",
   component: AlertEditorPage,
-  decorators: [(Story) => <DirtyNavigationProvider><Story /></DirtyNavigationProvider>],
+  decorators: [(Story, context) => {
+    const storyApi = context.args.managementApi;
+    const apiWithContext = {
+      ...storyApi,
+      async getAlertVariationAuthoringContext(alertId: string) {
+        try {
+          return await storyApi.getAlertVariationAuthoringContext(alertId);
+        } catch {
+          return variationContext(await storyApi.getAlertEditorDocument(alertId));
+        }
+      }
+    };
+    return <DirtyNavigationProvider><Story args={{ ...context.args, managementApi: apiWithContext }} /></DirtyNavigationProvider>;
+  }],
   args: {
     alertId: document.id,
     assetApi: createStoryAssetApi(),
@@ -348,10 +363,12 @@ export const CommunityGiftSamplesAndConditions: Story = {
     await expect((canvas.getByRole("textbox", { name: "Session payload (JSON)" }) as HTMLTextAreaElement).value).toContain("25");
 
     const conditions = within(canvas.getByRole("group", { name: "Rule conditions" }));
-    await userEvent.click(conditions.getByRole("button", { name: "Add gift tier" }));
-    await expect(conditions.getByRole("combobox", { name: "Rule conditions Gift tier" })).toHaveValue("1000");
-    await userEvent.click(conditions.getByRole("button", { name: "Add gift count minimum" }));
-    await expect(conditions.getByRole("spinbutton", { name: "Rule conditions Gift count minimum" })).toHaveValue(5);
+    await userEvent.click(conditions.getByRole("button", { name: "Add condition" }));
+    await expect(conditions.getByRole("combobox", { name: "Rule conditions Subscription tier value" })).toHaveValue("prime");
+    await userEvent.click(conditions.getByRole("button", { name: "Add condition" }));
+    await userEvent.selectOptions(conditions.getByRole("combobox", { name: "Rule conditions condition 2 field" }), "giftCount");
+    await userEvent.selectOptions(conditions.getByRole("combobox", { name: "Rule conditions Gift count operator" }), "min");
+    await expect(conditions.getByRole("spinbutton", { name: "Rule conditions Gift count value" })).toHaveValue(1);
   }
 };
 
@@ -467,37 +484,190 @@ export const NoActiveTtsProvider: Story = {
 export const VariationAuthoring: Story = {
   args: {
     alertId: "variant-large-raid",
-    managementApi: createStoryManagementApi({
-      getAlertEditorDocument: async () => variationDocument(),
-      getAlertSet: async () => alertSetDetail()
-    })
+    managementApi: variationStoryApi(variationDocument(), [
+      variationCandidate("variant-medium-raid", "Medium raid", { priority: 3 }),
+      variationCandidate("variant-disabled-raid", "Disabled raid", { enabled: false, priority: 3 })
+    ])
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
     await expect(canvas.getByRole("group", { name: "Variation conditions" })).toBeVisible();
-    await expect(canvas.getByRole("spinbutton", { name: "Variation weight" })).toHaveValue(2);
-    await expect(canvas.getByText("Rule controls are shared by the default and every variation for this event.")).toBeVisible();
+    await expect(canvas.getByRole("spinbutton", { name: "Relative chance" })).toHaveValue(2);
+    await expect(canvas.getByRole("region", { name: "Priority groups" })).toBeVisible();
+    await expect(canvas.getByText("These rule controls are shared by the default and every variation for this event.")).toBeVisible();
   }
 };
 
 export const InvalidConditionInput: Story = {
   args: {
     alertId: "variant-large-raid",
-    managementApi: createStoryManagementApi({
-      getAlertEditorDocument: async () => ({
-        ...variationDocument(),
-        variantConditions: [{ field: "raidViewers", operator: "min", value: 0 }]
-      }),
-      getAlertSet: async () => alertSetDetail()
+    managementApi: variationStoryApi({
+      ...variationDocument(),
+      variantConditions: [{ field: "raidViewers", operator: "min", value: 0 }]
     })
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
     const conditions = within(canvas.getByRole("group", { name: "Variation conditions" }));
-    await expect(conditions.getByRole("alert")).toHaveTextContent("Raid viewer minimum must be 1 or greater.");
+    await expect(conditions.getByRole("alert")).toHaveTextContent("Raid viewers must be at least 1.");
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+    await expect(canvas.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent("Correct the event condition to explain selection.");
+  }
+};
+
+export const SingleEligibleVariation: Story = {
+  args: {
+    alertId: "variant-single-raid",
+    managementApi: variationStoryApi(selectionVariation({ id: "variant-single-raid", name: "Single eligible raid", priority: 5 }))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const explanation = canvas.getByRole("region", { name: "Sample selection explanation" });
+    await expect(explanation).toHaveTextContent("Single eligible raid");
+    await expect(explanation).toHaveTextContent("1/1 weight · 100% relative chance");
+  }
+};
+
+export const WeightedTopGroup: Story = {
+  args: {
+    alertId: "variant-quarter-raid",
+    managementApi: variationStoryApi(
+      selectionVariation({ id: "variant-quarter-raid", name: "Quarter chance raid", priority: 8, weight: 1 }),
+      [variationCandidate("variant-three-quarter-raid", "Three-quarter chance raid", { priority: 8, weight: 3 })]
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const explanation = canvas.getByRole("region", { name: "Sample selection explanation" });
+    await expect(explanation).toHaveTextContent("1/4 weight · 25% relative chance");
+    await expect(explanation).toHaveTextContent("3/4 weight · 75% relative chance");
+    await expect(explanation).toHaveTextContent("Live selection remains random.");
+  }
+};
+
+export const DefaultFallback: Story = {
+  args: {
+    alertId: "variant-no-match-raid",
+    managementApi: variationStoryApi(selectionVariation({
+      id: "variant-no-match-raid",
+      name: "Raid over one hundred",
+      priority: 5,
+      variantConditions: [{ field: "raidViewers", operator: "min", value: 100 }]
+    }))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const explanation = canvas.getByRole("region", { name: "Sample selection explanation" });
+    await expect(explanation).toHaveTextContent("Default plays as the fallback");
+    await expect(explanation).toHaveTextContent("Sample does not match");
+  }
+};
+
+export const LegacyDefaultTie: Story = {
+  args: {
+    alertId: "variant-legacy-tie",
+    managementApi: variationStoryApi(
+      selectionVariation({ id: "variant-legacy-tie", name: "Legacy tied raid", priority: 0, weight: 1 }),
+      [],
+      { priority: 0, weight: 3 }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const explanation = canvas.getByRole("region", { name: "Sample selection explanation" });
+    await expect(explanation).toHaveTextContent("Legacy priority tie");
+    await expect(explanation).toHaveTextContent("3/4 weight · 75% relative chance");
+    await expect(explanation).toHaveTextContent("1/4 weight · 25% relative chance");
+  }
+};
+
+export const InvalidRange: Story = {
+  args: {
+    alertId: "variant-invalid-range",
+    managementApi: variationStoryApi(selectionVariation({
+      id: "variant-invalid-range",
+      name: "Invalid range raid",
+      variantConditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }]
+    }))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const conditions = within(canvas.getByRole("group", { name: "Variation conditions" }));
+    const maximum = conditions.getByRole("spinbutton", { name: "Variation conditions Raid viewers Maximum" });
+    await userEvent.clear(maximum);
+    await userEvent.type(maximum, "5");
+    await expect(conditions.getByRole("alert")).toHaveTextContent("Raid viewers range minimum cannot exceed its maximum.");
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Send test" })[0]).toBeDisabled();
+  }
+};
+
+export const SharedRuleImpact: Story = {
+  args: {
+    alertId: "variant-shared-rule",
+    managementApi: variationStoryApi(selectionVariation({ id: "variant-shared-rule", name: "Shared rule raid" }))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const shared = canvas.getByRole("group", { name: "Affects default and all variations" });
+    await expect(shared).toHaveTextContent("shared by the default and every variation");
+    await userEvent.clear(within(shared).getByRole("spinbutton", { name: "Cooldown (seconds)" }));
+    await userEvent.type(within(shared).getByRole("spinbutton", { name: "Cooldown (seconds)" }), "15");
+    await expect(canvas.getByText("Unsaved")).toBeVisible();
+  }
+};
+
+export const ExpandedConditionCatalog: Story = {
+  args: {
+    alertId: "alert-community-gift",
+    managementApi: variationStoryApi(communityGiftDocument())
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const conditions = within(canvas.getByRole("group", { name: "Rule conditions" }));
+    await userEvent.click(conditions.getByRole("button", { name: "Add condition" }));
+    const field = conditions.getByRole("combobox", { name: "Rule conditions condition 1 field" });
+    await expect(within(field).getByRole("option", { name: "Subscription tier" })).toBeVisible();
+    await expect(within(field).getByRole("option", { name: "Gift count" })).toBeVisible();
+    await expect(within(field).getByRole("option", { name: "Anonymous gift" })).toBeVisible();
+  }
+};
+
+export const PrioritySaveFailure: Story = {
+  args: {
+    alertId: "variant-priority-failure",
+    managementApi: variationStoryApi(
+      selectionVariation({ id: "variant-priority-failure", name: "Priority failure raid", priority: 8 }),
+      [variationCandidate("variant-lower-priority", "Lower priority raid", { priority: 3 })],
+      {},
+      {
+        saveAlertEditorDocument: async () => {
+          throw new Error("Priority update failed. (INTERNAL_SERVER_ERROR, err_story_priority_save)");
+        }
+      }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const groups = canvas.getByRole("region", { name: "Priority groups" });
+    await userEvent.click(within(within(groups).getByRole("group", { name: "Priority group 2" })).getByRole("button", { name: "Move group earlier" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Save" }));
+    const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Save changes to active alert?" }));
+    await userEvent.click(dialog.getByRole("button", { name: "Save changes" }));
+    await expect(await canvas.findByText("The alert was not saved")).toBeVisible();
+    await expect(within(groups).getByRole("group", { name: "Priority group 1" })).toHaveTextContent("Lower priority raid");
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeEnabled();
   }
 };
 
@@ -613,6 +783,82 @@ function styledEditorDocument(): AlertEditorDocument {
         }
       : layer)
   };
+}
+
+function selectionVariation(
+  overrides: Partial<AlertEditorDocument> & Pick<AlertEditorDocument, "id" | "name">
+): AlertEditorDocument {
+  return {
+    ...variationDocument(),
+    enabled: true,
+    conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: 5,
+    ...overrides
+  };
+}
+
+function variationCandidate(
+  editorId: string,
+  name: string,
+  overrides: Partial<AlertVariationAuthoringContext["candidates"][number]> = {}
+): AlertVariationAuthoringContext["candidates"][number] {
+  return {
+    editorId,
+    variantId: `${editorId}-resolver`,
+    kind: "variation",
+    name,
+    enabled: true,
+    conditions: [],
+    weight: 1,
+    priority: 5,
+    ...overrides
+  };
+}
+
+function variationContext(
+  document: AlertEditorDocument,
+  siblings: AlertVariationAuthoringContext["candidates"] = [],
+  defaultOverrides: Partial<AlertVariationAuthoringContext["candidates"][number]> = {}
+): AlertVariationAuthoringContext {
+  const ruleId = document.kind === "default" ? document.id : document.parentAlertId!;
+  const defaultCandidate = {
+    editorId: ruleId,
+    variantId: `${ruleId}-default-resolver`,
+    kind: "default" as const,
+    name: "Default",
+    enabled: document.kind === "default" ? document.enabled : true,
+    conditions: [],
+    weight: document.kind === "default" ? document.weight : 1,
+    priority: document.kind === "default" ? document.priority : null,
+    ...defaultOverrides
+  };
+  const selectedCandidate = document.kind === "default" ? [] : [{
+    editorId: document.id,
+    variantId: `${document.id}-resolver`,
+    kind: "variation" as const,
+    name: document.name,
+    enabled: document.enabled,
+    conditions: document.variantConditions,
+    weight: document.weight,
+    priority: document.priority
+  }];
+  return { ruleId, eventType: document.eventType, candidates: [defaultCandidate, ...selectedCandidate, ...siblings] };
+}
+
+function variationStoryApi(
+  document: AlertEditorDocument,
+  siblings: AlertVariationAuthoringContext["candidates"] = [],
+  defaultOverrides: Partial<AlertVariationAuthoringContext["candidates"][number]> = {},
+  overrides: Parameters<typeof createStoryManagementApi>[0] = {}
+) {
+  return createStoryManagementApi({
+    getAlertEditorDocument: async () => document,
+    getAlertVariationAuthoringContext: async () => variationContext(document, siblings, defaultOverrides),
+    getAlertSet: async () => alertSetDetail(),
+    ...overrides
+  });
 }
 
 function variationDocument(): AlertEditorDocument {
