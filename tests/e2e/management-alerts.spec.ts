@@ -567,7 +567,14 @@ test("alert variation can be created edited duplicated and selectively deleted",
   const priorityGroups = page.getByRole("region", { name: "Priority groups" });
   await priorityGroups.getByRole("group", { name: "Priority group 2" }).getByRole("button", { name: "Move group earlier" }).click();
   await priorityGroups.getByRole("combobox", { name: "Move Large raid to priority group" }).selectOption("0");
-  await page.getByRole("spinbutton", { name: "Relative chance" }).fill("1");
+  const relativeChance = page.getByRole("spinbutton", { name: "Relative chance" });
+  await relativeChance.fill("0");
+  await expect(relativeChance).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Relative chance must be a positive whole number.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
+  await relativeChance.fill("1");
   const variationConditions = page.getByRole("group", { name: "Variation conditions" });
   await variationConditions.getByRole("button", { name: "Add condition" }).click();
   await variationConditions.getByRole("combobox", { name: "Variation conditions Raid viewers operator" }).selectOption("range");

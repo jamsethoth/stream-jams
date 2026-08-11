@@ -669,7 +669,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
       {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
-      {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event condition needs correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
+      {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event settings need correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
       {validationIssues.length === 0 ? null : (
         <section aria-label="Validation issues" className="alert-editor-page__validation">
           <div>
@@ -818,7 +818,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 onSendIncludeAudio={setSendIncludeAudio}
                 onSendIncludeTts={setSendIncludeTts}
                 onChange={updateDocument}
-                onConditionDraftError={setConditionDraftError}
+                onDraftError={setConditionDraftError}
                 onMovePriorityGroup={(fromIndex, toIndex) => updatePriorityGroups((groups) => moveAlertPriorityGroup(groups, fromIndex, toIndex))}
                 onMoveVariation={(variationId, targetIndex) => updatePriorityGroups((groups) => moveAlertVariationToPriorityGroup(groups, variationId, targetIndex))}
                 onPreview={previewLocally}
@@ -839,7 +839,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 previewDisabled={sampleError !== null || documentConditionError !== null || documentStyleError !== null}
                 priorityGroups={editor.priorityGroups}
                 sendDisabled={!canSend}
-                selectionExplanationCorrection={sampleError !== null ? "sample" : documentConditionError !== null ? "condition" : null}
+                selectionExplanationCorrection={sampleError !== null ? "sample" : documentConditionError !== null ? "event" : null}
                 variationContext={variationContext}
                 variationEvaluation={variationEvaluation}
               />

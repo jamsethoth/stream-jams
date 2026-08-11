@@ -569,6 +569,36 @@ describe("AlertEditorPage", () => {
     expect(explanation).not.toHaveTextContent("Legacy priority tie");
   });
 
+  it("blocks invalid relative chance drafts until a positive whole number is restored", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-chance", name: "Chance", priority: 8, weight: 1 });
+    renderVariationSelectionEditor(selected, []);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const chance = screen.getByRole("spinbutton", { name: "Relative chance" });
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("1/1 weight · 100% relative chance");
+
+    for (const invalidValue of ["", "0", "-1", "1.5"]) {
+      fireEvent.change(chance, { target: { value: invalidValue } });
+
+      expect(chance).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByText("Relative chance must be a positive whole number.", { selector: "#alert-editor-relative-chance-error" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+      expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+      expect(explanation).toHaveTextContent("Correct the event settings to explain selection.");
+      expect(explanation).not.toHaveTextContent(/relative chance|live selection|fallback/iu);
+    }
+
+    fireEvent.change(chance, { target: { value: "4" } });
+
+    expect(chance).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Relative chance must be a positive whole number.", { selector: "#alert-editor-relative-chance-error" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(explanation).toHaveTextContent("4/4 weight · 100% relative chance");
+  });
+
   it("explains rule mismatch, one candidate, fallback, no enabled candidate, and legacy ties", async () => {
     const scenarios: readonly {
       readonly document: AlertEditorDocument;
@@ -673,7 +703,7 @@ describe("AlertEditorPage", () => {
     await user.clear(value);
     await user.type(value, "0");
     const invalidCondition = screen.getByRole("region", { name: "Sample selection explanation" });
-    expect(invalidCondition).toHaveTextContent("Correct the event condition to explain selection.");
+    expect(invalidCondition).toHaveTextContent("Correct the event settings to explain selection.");
     expect(invalidCondition).not.toHaveTextContent(/relative chance|live selection|fallback/iu);
   });
 

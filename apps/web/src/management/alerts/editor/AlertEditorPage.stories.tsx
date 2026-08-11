@@ -513,7 +513,7 @@ export const InvalidConditionInput: Story = {
     const conditions = within(canvas.getByRole("group", { name: "Variation conditions" }));
     await expect(conditions.getByRole("alert")).toHaveTextContent("Raid viewers must be at least 1.");
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
-    await expect(canvas.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent("Correct the event condition to explain selection.");
+    await expect(canvas.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent("Correct the event settings to explain selection.");
   }
 };
 
@@ -607,6 +607,34 @@ export const InvalidRange: Story = {
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
     await expect(canvas.getAllByRole("button", { name: "Send test" })[0]).toBeDisabled();
+  }
+};
+
+export const InvalidRelativeChance: Story = {
+  args: {
+    alertId: "variant-invalid-relative-chance",
+    managementApi: variationStoryApi(selectionVariation({
+      id: "variant-invalid-relative-chance",
+      name: "Invalid relative chance raid",
+      weight: 1
+    }))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const relativeChance = canvas.getByRole("spinbutton", { name: "Relative chance" });
+    await userEvent.clear(relativeChance);
+    await userEvent.type(relativeChance, "0");
+    await expect(relativeChance).toHaveAttribute("aria-invalid", "true");
+    await expect(canvas.getByText("Relative chance must be a positive whole number.", {
+      selector: "#alert-editor-relative-chance-error"
+    })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Send test" })[0]).toBeDisabled();
+    await expect(canvas.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent(
+      "Correct the event settings to explain selection."
+    );
   }
 };
 

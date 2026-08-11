@@ -20,7 +20,7 @@ export interface AlertEventInspectorProps {
   readonly sendIncludeAudio: boolean;
   readonly sendIncludeTts: boolean;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
-  readonly onConditionDraftError: (error: string | null) => void;
+  readonly onDraftError: (error: string | null) => void;
   readonly onPreviewIncludeAudio: (value: boolean) => void;
   readonly onPreviewIncludeTts: (value: boolean) => void;
   readonly onSendIncludeAudio: (value: boolean) => void;
@@ -38,7 +38,7 @@ export interface AlertEventInspectorProps {
   readonly previewDisabled: boolean;
   readonly priorityGroups: readonly AlertPriorityGroup[];
   readonly sendDisabled: boolean;
-  readonly selectionExplanationCorrection: "condition" | "sample" | null;
+  readonly selectionExplanationCorrection: "event" | "sample" | null;
   readonly variationContext: AlertVariationAuthoringContext;
   readonly variationEvaluation: AlertVariationSampleEvaluation | null;
 }
@@ -46,13 +46,17 @@ export interface AlertEventInspectorProps {
 export function AlertEventInspector(props: AlertEventInspectorProps) {
   const [ruleDraftError, setRuleDraftError] = useState<string | null>(null);
   const [variationDraftError, setVariationDraftError] = useState<string | null>(null);
-  const conditionDraftError = ruleDraftError ?? variationDraftError;
+  const [relativeChanceDraft, setRelativeChanceDraft] = useState<string | null>(null);
+  const relativeChanceError = relativeChanceDraft === null
+    ? null
+    : "Relative chance must be a positive whole number.";
+  const eventDraftError = ruleDraftError ?? variationDraftError ?? relativeChanceError;
 
   useEffect(() => {
-    props.onConditionDraftError(conditionDraftError);
-  }, [conditionDraftError, props.onConditionDraftError]);
+    props.onDraftError(eventDraftError);
+  }, [eventDraftError, props.onDraftError]);
 
-  useEffect(() => () => props.onConditionDraftError(null), [props.onConditionDraftError]);
+  useEffect(() => () => props.onDraftError(null), [props.onDraftError]);
 
   const candidatePresentations = selectedCandidatePresentations(props.variationContext, props.document);
 
@@ -88,7 +92,17 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
             onChange={(variantConditions) => props.onChange((document) => ({ ...document, variantConditions: [...variantConditions] }))}
             onDraftError={setVariationDraftError}
           />
-          <label><span>Relative chance</span><input min="1" onChange={(event) => { const weight = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, weight })); }} type="number" value={props.document.weight} /></label>
+          <label><span>Relative chance</span><input aria-describedby={relativeChanceError === null ? undefined : "alert-editor-relative-chance-error"} aria-invalid={relativeChanceError === null ? undefined : true} min="1" onChange={(event) => {
+            const value = event.currentTarget.value;
+            const weight = Number(value);
+            if (value.trim() === "" || !Number.isInteger(weight) || weight <= 0) {
+              setRelativeChanceDraft(value);
+              return;
+            }
+            setRelativeChanceDraft(null);
+            props.onChange((document) => ({ ...document, weight }));
+          }} step="1" type="number" value={relativeChanceDraft ?? props.document.weight} /></label>
+          {relativeChanceError === null ? null : <p className="alert-editor-inspector__field-error" id="alert-editor-relative-chance-error" role="alert">{relativeChanceError}</p>}
         </fieldset>
       ) : null}
       <h3>Event sample</h3>
@@ -166,7 +180,7 @@ function PriorityGroups({ candidates, groups, onMoveGroup, onMoveVariation }: {
 
 function SampleSelectionExplanation({ candidates, correction, document, evaluation }: {
   readonly candidates: readonly VariationCandidatePresentation[];
-  readonly correction: "condition" | "sample" | null;
+  readonly correction: "event" | "sample" | null;
   readonly document: AlertEditorDocument;
   readonly evaluation: AlertVariationSampleEvaluation | null;
 }) {
@@ -174,7 +188,7 @@ function SampleSelectionExplanation({ candidates, correction, document, evaluati
     return (
       <section aria-labelledby="alert-editor-selection-explanation-title" aria-live="polite" className="alert-editor-inspector__selection-explanation">
         <h3 id="alert-editor-selection-explanation-title">Sample selection explanation</h3>
-        <p>{correction === "condition" ? "Correct the event condition to explain selection." : "Correct the sample payload to explain selection."}</p>
+        <p>{correction === "event" ? "Correct the event settings to explain selection." : "Correct the sample payload to explain selection."}</p>
       </section>
     );
   }
