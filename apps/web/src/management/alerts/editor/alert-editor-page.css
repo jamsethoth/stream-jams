@@ -803,11 +803,27 @@
   margin: 0;
 }
 
+.alert-editor-inspector__impact > p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
 .alert-editor-inspector__condition {
   align-items: end;
   display: grid;
   gap: 6px;
   grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.alert-editor-inspector__condition-controls,
+.alert-editor-inspector__range {
+  display: grid;
+  gap: 6px;
+}
+
+.alert-editor-inspector__range {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .alert-editor-inspector__condition p {

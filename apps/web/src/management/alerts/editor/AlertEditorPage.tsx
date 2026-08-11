@@ -36,6 +36,7 @@ import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
+import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventInspector.js";
 import { RgbaColorControl } from "./RgbaColorControl.js";
 import {
   addLayer,
@@ -85,7 +86,6 @@ export interface AlertEditorPageProps {
 
 type InspectorTab = "layers" | "alert" | "event";
 type PickerState = { readonly layerId: string | null; readonly type: "image" | "video" | "audio" };
-type EditorCondition = AlertEditorDocument["conditions"][number];
 type ReportableActionError = ActionableManagementError & { readonly referenceId: string };
 type SaveWarningState = {
   readonly rejectNavigation?: (cause: unknown) => void;
@@ -112,6 +112,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [sampleId, setSampleId] = useState<string | null>(null);
   const [sampleDraft, setSampleDraft] = useState("{}");
   const [sampleError, setSampleError] = useState<string | null>(null);
+  const [conditionDraftError, setConditionDraftError] = useState<string | null>(null);
   const [sendIncludeAudio, setSendIncludeAudio] = useState(true);
   const [sendIncludeTts, setSendIncludeTts] = useState(true);
   const [previewIncludeAudio, setPreviewIncludeAudio] = useState(false);
@@ -175,6 +176,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSampleId(firstSample?.id ?? null);
       setSampleDraft(JSON.stringify(firstSample?.payload ?? {}, null, 2));
       setSampleError(firstSample === null ? "No sample payload is available." : validateAlertSamplePayload(document.eventType, firstSample.payload));
+      setConditionDraftError(null);
       setSetDetail(loadedSetDetail);
     }).catch((cause: unknown) => {
       if (active) setError(actionableError("The alert editor could not be opened", cause, "Return to Alerts and choose the alert again."));
@@ -228,6 +230,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null || variationContext === null) return;
+    if (sampleError !== null || parseSample(sampleDraft) === null) {
+      throw new Error(sampleError ?? "Sample payload must be a valid JSON object.");
+    }
+    const conditionError = conditionDraftError ?? alertDocumentConditionError(editor.document);
+    if (conditionError !== null) throw new Error(conditionError);
     const styleError = alertDocumentTextStyleError(editor.document);
     if (styleError !== null) throw new Error(styleError);
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
@@ -268,7 +275,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     } finally {
       setBusy(false);
     }
-  }, [activeTtsProvider, editor, props.alertId, props.managementApi, showActionError, variationContext]);
+  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, sampleDraft, sampleError, showActionError, variationContext]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
     if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor, setDetail, variationContext).length === 0) return false;
@@ -320,14 +327,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const profile = document?.targetProfiles.find((candidate) => candidate.id === profileId) ?? null;
   const storedCanvasView = canvasViews[profileId];
   const canvasView = storedCanvasView ?? DEFAULT_CANVAS_VIEW;
-  const documentConditionError = document === null ? null : alertDocumentConditionError(document);
+  const documentConditionError = conditionDraftError ?? (document === null ? null : alertDocumentConditionError(document));
   const documentStyleError = document === null ? null : alertDocumentTextStyleError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
   const variationEvaluation = useMemo(() => (
-    editor === null || variationContext === null || samplePayload === null || sampleError !== null
+    editor === null || variationContext === null || samplePayload === null || sampleError !== null || documentConditionError !== null
       ? null
       : evaluateAlertEditorDraftSample(editor, variationContext, samplePayload)
-  ), [editor, sampleError, samplePayload, variationContext]);
+  ), [documentConditionError, editor, sampleError, samplePayload, variationContext]);
   void variationEvaluation;
   const visibleAlerts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -635,7 +642,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           {preview ? <button className="button button--secondary" onClick={() => previewPlaying ? setPreviewPlaying(false) : previewLocally()} type="button">{previewPlaying ? "Pause preview" : "Replay preview"}</button> : null}
           {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => { setPreviewPlaying(false); setPreviewElapsedMs(Math.max(0, Math.min(document.durationMs, Number(event.currentTarget.value)))); }} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
-          <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
+          <button className="button button--primary" disabled={!isEditorDirty(editor) || samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
         </div>
       </header>
 
@@ -783,7 +790,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
             ) : (
-              <EventInspector
+              <AlertEventInspector
                 document={document}
                 previewIncludeAudio={previewIncludeAudio}
                 previewIncludeTts={previewIncludeTts}
@@ -794,6 +801,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 onSendIncludeAudio={setSendIncludeAudio}
                 onSendIncludeTts={setSendIncludeTts}
                 onChange={updateDocument}
+                onConditionDraftError={setConditionDraftError}
                 onPreview={previewLocally}
                 onResetSample={() => sampleId === null ? undefined : chooseSample(sampleId)}
                 onSample={chooseSample}
@@ -809,7 +817,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 sampleDraft={sampleDraft}
                 sampleError={sampleError}
                 sampleId={sampleId}
-                previewDisabled={sampleError !== null || documentStyleError !== null}
+                previewDisabled={sampleError !== null || documentConditionError !== null || documentStyleError !== null}
                 sendDisabled={!canSend}
               />
             )}
@@ -1487,246 +1495,6 @@ function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout,
       <dl className="alert-editor-inspector__facts"><div><dt>Provider type</dt><dd>{document.providerKind}</dd></div><div><dt>Event</dt><dd>{formatEventType(document.eventType)}</dd></div><div><dt>Conditions</dt><dd>{document.conditions.length}</dd></div></dl>
     </div>
   );
-}
-
-function EventInspector(props: {
-  readonly document: AlertEditorDocument;
-  readonly previewIncludeAudio: boolean;
-  readonly previewIncludeTts: boolean;
-  readonly sendIncludeAudio: boolean;
-  readonly sendIncludeTts: boolean;
-  readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
-  readonly onPreviewIncludeAudio: (value: boolean) => void;
-  readonly onPreviewIncludeTts: (value: boolean) => void;
-  readonly onSendIncludeAudio: (value: boolean) => void;
-  readonly onSendIncludeTts: (value: boolean) => void;
-  readonly onPreview: () => void;
-  readonly onResetSample: () => void;
-  readonly onSample: (sampleId: string) => void;
-  readonly onSampleDraft: (value: string) => void;
-  readonly onSend: () => void;
-  readonly sampleDraft: string;
-  readonly sampleError: string | null;
-  readonly sampleId: string | null;
-  readonly previewDisabled: boolean;
-  readonly sendDisabled: boolean;
-}) {
-  return (
-    <div className="alert-editor-inspector alert-editor-inspector__controls">
-      <h3>Matching and playback</h3>
-      <p>Rule controls are shared by the default and every variation for this event.</p>
-      <ConditionList
-        conditions={props.document.conditions}
-        eventType={props.document.eventType}
-        heading="Rule conditions"
-        onChange={(conditions) => props.onChange((document) => ({ ...document, conditions: [...conditions] }))}
-      />
-      {props.document.kind === "variation" ? (
-        <>
-          <ConditionList
-            conditions={props.document.variantConditions}
-            eventType={props.document.eventType}
-            heading="Variation conditions"
-            onChange={(variantConditions) => props.onChange((document) => ({ ...document, variantConditions: [...variantConditions] }))}
-          />
-          <label><span>Variation weight</span><input min="1" onChange={(event) => { const weight = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, weight })); }} type="number" value={props.document.weight} /></label>
-          <label><span>Variation priority</span><input onChange={(event) => { const priority = event.currentTarget.value === "" ? null : Number(event.currentTarget.value); props.onChange((document) => ({ ...document, priority })); }} placeholder="Use default priority" type="number" value={props.document.priority ?? ""} /></label>
-        </>
-      ) : null}
-      <label><span>Cooldown (seconds)</span><input min="0" onChange={(event) => { const cooldownSeconds = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, cooldownSeconds })); }} type="number" value={props.document.cooldownSeconds} /></label>
-      <label><span>Rule priority</span><input onChange={(event) => { const rulePriority = Number(event.currentTarget.value); props.onChange((document) => ({ ...document, rulePriority })); }} type="number" value={props.document.rulePriority} /></label>
-      <h3>Event sample</h3>
-      <label><span>Sample payload</span><select onChange={(event) => props.onSample(event.currentTarget.value)} value={props.sampleId ?? ""}>{props.document.samplePayloads.map((sample) => <option key={sample.id} value={sample.id}>{sample.label}</option>)}</select></label>
-      <label><span>Session payload (JSON)</span><textarea aria-invalid={props.sampleError !== null} onChange={(event) => props.onSampleDraft(event.currentTarget.value)} rows={12} value={props.sampleDraft} /></label>
-      {props.sampleError === null ? <p>Session edits are used only for preview and testing.</p> : <p className="alert-editor-inspector__field-error" role="alert">{props.sampleError}</p>}
-      <button className="button button--secondary" onClick={props.onResetSample} type="button">Reset sample</button>
-      <fieldset className="alert-editor-inspector__audio"><legend>Local preview</legend><label className="alert-editor-inspector__check"><input checked={props.previewIncludeAudio} onChange={(event) => props.onPreviewIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Preview audio</span></label><label className="alert-editor-inspector__check"><input checked={props.previewIncludeTts} onChange={(event) => props.onPreviewIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Preview TTS</span></label></fieldset>
-      <fieldset className="alert-editor-inspector__audio"><legend>Send test</legend><label className="alert-editor-inspector__check"><input checked={props.sendIncludeAudio} onChange={(event) => props.onSendIncludeAudio(event.currentTarget.checked)} type="checkbox" /><span>Send audio</span></label><label className="alert-editor-inspector__check"><input checked={props.sendIncludeTts} onChange={(event) => props.onSendIncludeTts(event.currentTarget.checked)} type="checkbox" /><span>Send TTS</span></label></fieldset>
-      <div className="alert-editor-inspector__actions"><button className="button button--secondary" disabled={props.previewDisabled} onClick={props.onPreview} type="button">Replay preview</button><button className="button button--primary" disabled={props.sendDisabled} onClick={props.onSend} type="button">Send test</button></div>
-    </div>
-  );
-}
-
-interface ConditionDefinition {
-  readonly field: string;
-  readonly label: string;
-  readonly operator: EditorCondition["operator"];
-  readonly defaultValue: string | number;
-  readonly minimum?: number;
-  readonly options?: readonly { readonly label: string; readonly value: string }[];
-}
-
-function ConditionList({ conditions, eventType, heading, onChange }: {
-  readonly conditions: readonly EditorCondition[];
-  readonly eventType: AlertEditorDocument["eventType"];
-  readonly heading: string;
-  readonly onChange: (conditions: readonly EditorCondition[]) => void;
-}) {
-  const definitions = conditionDefinitions(eventType);
-  const available = definitions.filter((definition) => !conditions.some((condition) => condition.field === definition.field));
-  return (
-    <fieldset className="alert-editor-inspector__conditions">
-      <legend>{heading}</legend>
-      {conditions.length === 0 ? <p>No conditions. Every matching {formatEventType(eventType).toLowerCase()} event is eligible.</p> : null}
-      {conditions.map((condition, index) => {
-        const knownDefinition = definitions.find((candidate) => candidate.field === condition.field);
-        const definition = knownDefinition
-          ?? { field: condition.field, label: condition.field, operator: condition.operator, defaultValue: condition.value as string | number };
-        const validationMessage = knownDefinition === undefined ? null : conditionValidationMessage(definition, condition.value);
-        return (
-          <div className="alert-editor-inspector__condition" key={`${condition.field}-${index}`}>
-            {knownDefinition === undefined ? (
-              <div className="alert-editor-inspector__unknown-condition"><strong>{condition.field}</strong><code>{condition.operator} {JSON.stringify(condition.value)}</code></div>
-            ) : (
-              <label>
-                <span>{definition.label}</span>
-                {definition.options === undefined ? (
-                <input aria-invalid={validationMessage !== null} aria-label={`${heading} ${definition.label}`} min={definition.minimum} onChange={(event) => onChange(replaceCondition(conditions, index, { ...condition, value: Number(event.currentTarget.value) }))} type="number" value={typeof condition.value === "number" ? condition.value : 0} />
-                ) : (
-                  <select aria-label={`${heading} ${definition.label}`} onChange={(event) => onChange(replaceCondition(conditions, index, { ...condition, value: event.currentTarget.value }))} value={String(condition.value)}>{definition.options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
-                )}
-              </label>
-            )}
-            <button aria-label={`Remove ${definition.label} from ${heading}`} className="button button--danger-quiet button--compact" onClick={() => onChange(conditions.filter((_, candidateIndex) => candidateIndex !== index))} type="button">Remove</button>
-            {validationMessage === null ? null : <p className="alert-editor-inspector__field-error" role="alert">{validationMessage}</p>}
-          </div>
-        );
-      })}
-      {available.length === 0 ? null : (
-        <div className="alert-editor-inspector__condition-actions">
-          {available.map((definition) => (
-            <button className="button button--secondary button--compact" key={definition.field} onClick={() => onChange([...conditions, { field: definition.field, operator: definition.operator, value: definition.defaultValue }])} type="button">Add {definition.label.toLowerCase()}</button>
-          ))}
-        </div>
-      )}
-    </fieldset>
-  );
-}
-
-function conditionDefinitions(eventType: AlertEditorDocument["eventType"]): readonly ConditionDefinition[] {
-  const ingestProvider: ConditionDefinition = {
-    field: "ingestProvider",
-    label: "Ingest provider restriction",
-    operator: "equals",
-    defaultValue: "twitch",
-    options: [
-      { label: "Direct Twitch", value: "twitch" },
-      { label: "Streamer.bot", value: "streamerbot" }
-    ]
-  };
-  switch (eventType) {
-    case "raid":
-      return [{ field: "raidViewers", label: "Raid viewer minimum", operator: "min", defaultValue: 10, minimum: 1 }, ingestProvider];
-    case "cheer":
-      return [{ field: "cheerAmount", label: "Cheer bits minimum", operator: "min", defaultValue: 100, minimum: 1 }, ingestProvider];
-    case "subscription":
-      return [{ field: "tier", label: "Subscription tier", operator: "equals", defaultValue: "1000", options: subscriptionTierOptions }, ingestProvider];
-    case "resubscription":
-      return [
-        { field: "tier", label: "Subscription tier", operator: "equals", defaultValue: "1000", options: subscriptionTierOptions },
-        { field: "tenureMonths", label: "Subscription months minimum", operator: "min", defaultValue: 2, minimum: 1 },
-        ingestProvider
-      ];
-    case "gift_subscription":
-      return [{ field: "tier", label: "Gift tier", operator: "equals", defaultValue: "1000", options: subscriptionTierOptions }, ingestProvider];
-    case "community_gift":
-      return [
-        { field: "tier", label: "Gift tier", operator: "equals", defaultValue: "1000", options: subscriptionTierOptions },
-        { field: "amount", label: "Gift count minimum", operator: "min", defaultValue: 5, minimum: 1 },
-        ingestProvider
-      ];
-    case "hype_train_start":
-    case "hype_train_progress":
-    case "hype_train_end":
-      return [
-        { field: "level", label: "Level minimum", operator: "min", defaultValue: 1, minimum: 1 },
-        { field: "progress", label: "Progress minimum", operator: "min", defaultValue: 100, minimum: 0 },
-        { field: "total", label: "Total minimum", operator: "min", defaultValue: 100, minimum: 0 },
-        ingestProvider
-      ];
-    case "poll_start":
-    case "poll_progress":
-      return [{ field: "totalVotes", label: "Total votes minimum", operator: "min", defaultValue: 10, minimum: 0 }, ingestProvider];
-    case "poll_end":
-      return [
-        { field: "totalVotes", label: "Total votes minimum", operator: "min", defaultValue: 10, minimum: 0 },
-        { field: "status", label: "Terminal status", operator: "equals", defaultValue: "completed", options: pollTerminalStatusOptions },
-        ingestProvider
-      ];
-    case "prediction_start":
-    case "prediction_progress":
-    case "prediction_lock":
-      return [
-        { field: "totalPoints", label: "Total points minimum", operator: "min", defaultValue: 1_000, minimum: 0 },
-        { field: "totalUsers", label: "Participant minimum", operator: "min", defaultValue: 10, minimum: 0 },
-        ingestProvider
-      ];
-    case "prediction_end":
-      return [
-        { field: "totalPoints", label: "Total points minimum", operator: "min", defaultValue: 1_000, minimum: 0 },
-        { field: "totalUsers", label: "Participant minimum", operator: "min", defaultValue: 10, minimum: 0 },
-        { field: "status", label: "Terminal status", operator: "equals", defaultValue: "resolved", options: predictionTerminalStatusOptions },
-        ingestProvider
-      ];
-    case "stream_online":
-      return [{ field: "streamType", label: "Stream type", operator: "equals", defaultValue: "live", options: streamTypeOptions }, ingestProvider];
-    case "stream_offline":
-      return [ingestProvider];
-    default:
-      return [ingestProvider];
-  }
-}
-
-const subscriptionTierOptions = [
-  { label: "Prime", value: "prime" },
-  { label: "Tier 1", value: "1000" },
-  { label: "Tier 2", value: "2000" },
-  { label: "Tier 3", value: "3000" }
-] as const;
-
-const pollTerminalStatusOptions = [
-  { label: "Completed", value: "completed" },
-  { label: "Archived", value: "archived" },
-  { label: "Terminated", value: "terminated" }
-] as const;
-
-const predictionTerminalStatusOptions = [
-  { label: "Resolved", value: "resolved" },
-  { label: "Canceled", value: "canceled" }
-] as const;
-
-const streamTypeOptions = [
-  { label: "Live", value: "live" },
-  { label: "Watch party", value: "watch_party" },
-  { label: "Premiere", value: "premiere" },
-  { label: "Rerun", value: "rerun" }
-] as const;
-
-function replaceCondition(
-  conditions: readonly EditorCondition[],
-  index: number,
-  condition: EditorCondition
-): readonly EditorCondition[] {
-  return conditions.map((candidate, candidateIndex) => candidateIndex === index ? condition : candidate);
-}
-
-function conditionValidationMessage(
-  definition: Pick<ConditionDefinition, "label" | "minimum">,
-  value: EditorCondition["value"]
-): string | null {
-  return definition.minimum !== undefined && (typeof value !== "number" || !Number.isFinite(value) || value < definition.minimum)
-    ? `${definition.label} must be ${definition.minimum} or greater.`
-    : null;
-}
-
-function alertDocumentConditionError(document: AlertEditorDocument): string | null {
-  for (const condition of [...document.conditions, ...document.variantConditions]) {
-    const definition = conditionDefinitions(document.eventType).find((candidate) => candidate.field === condition.field);
-    if (definition === undefined) continue;
-    const message = conditionValidationMessage(definition, condition.value);
-    if (message !== null) return message;
-  }
-  return null;
 }
 
 function alertDocumentTextStyleError(document: AlertEditorDocument): string | null {

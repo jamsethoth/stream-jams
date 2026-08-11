@@ -1165,6 +1165,7 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Raid viewer count must be a positive number.");
     expect(screen.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
 
@@ -1519,7 +1520,13 @@ describe("AlertEditorPage", () => {
       parentAlertId: "alert-raid",
       name: "Large raid",
       weight: 2,
-      priority: 5
+      priority: 5,
+      samplePayloads: [{
+        id: "normal",
+        label: "Normal example",
+        kind: "built-in",
+        payload: { userName: "Raider", raidViewers: 50, amount: 50 }
+      }]
     };
     const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
     render(
@@ -1545,20 +1552,33 @@ describe("AlertEditorPage", () => {
     );
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
-    const variationConditions = screen.getByRole("group", { name: "Variation conditions" });
-    await user.click(within(variationConditions).getByRole("button", { name: "Add raid viewer minimum" }));
-    const viewerMinimum = within(variationConditions).getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" });
+    const sharedControls = screen.getByRole("group", { name: "Affects default and all variations" });
+    expect(within(sharedControls).getByRole("group", { name: "Rule conditions" })).toBeInTheDocument();
+    expect(within(sharedControls).getByRole("spinbutton", { name: "Cooldown (seconds)" })).toBeInTheDocument();
+    expect(within(sharedControls).getByRole("spinbutton", { name: "Rule priority" })).toBeInTheDocument();
+    const variationControls = screen.getByRole("group", { name: "Affects this variation only" });
+    const variationConditions = within(variationControls).getByRole("group", { name: "Variation conditions" });
+    await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
+    expect(within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 1 field" })).toHaveFocus();
+    const viewerMinimum = within(variationConditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers value" });
+    await user.selectOptions(
+      within(variationConditions).getByRole("combobox", { name: "Variation conditions Raid viewers operator" }),
+      "min"
+    );
     await user.clear(viewerMinimum);
     await user.type(viewerMinimum, "25");
-    await user.click(within(variationConditions).getByRole("button", { name: "Add ingest provider restriction" }));
+    await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions Ingest provider restriction" }),
+      within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 2 field" }),
+      "ingestProvider"
+    );
+    await user.selectOptions(
+      within(variationConditions).getByRole("combobox", { name: "Variation conditions Event source value" }),
       "streamerbot"
     );
-    await user.clear(screen.getByRole("spinbutton", { name: "Variation weight" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Variation weight" }), "4");
-    await user.clear(screen.getByRole("spinbutton", { name: "Variation priority" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Variation priority" }), "8");
+    await user.clear(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }));
+    await user.type(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }), "4");
+    expect(within(variationControls).queryByRole("spinbutton", { name: "Variation priority" })).not.toBeInTheDocument();
     await user.clear(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }));
     await user.type(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }), "15");
     await user.clear(screen.getByRole("spinbutton", { name: "Rule priority" }));
@@ -1569,7 +1589,7 @@ describe("AlertEditorPage", () => {
       variation.id,
       expect.objectContaining({
         weight: 4,
-        priority: 8,
+        priority: 5,
         cooldownSeconds: 15,
         rulePriority: 3,
         variantConditions: [
@@ -1587,13 +1607,13 @@ describe("AlertEditorPage", () => {
       readonly expected: readonly string[];
       readonly absent?: string;
     }[] = [
-      { eventType: "gift_subscription", expected: ["Add gift tier"] },
-      { eventType: "community_gift", expected: ["Add gift tier", "Add gift count minimum"] },
-      { eventType: "hype_train_progress", expected: ["Add level minimum", "Add progress minimum", "Add total minimum"] },
-      { eventType: "poll_end", expected: ["Add total votes minimum", "Add terminal status"] },
-      { eventType: "prediction_end", expected: ["Add total points minimum", "Add participant minimum", "Add terminal status"] },
-      { eventType: "stream_online", expected: ["Add stream type"] },
-      { eventType: "stream_offline", expected: ["Add ingest provider restriction"], absent: "Add stream type" }
+      { eventType: "gift_subscription", expected: ["Subscription tier"] },
+      { eventType: "community_gift", expected: ["Subscription tier", "Gift count", "Anonymous gift"] },
+      { eventType: "hype_train_progress", expected: ["Hype Train level", "Hype Train progress", "Hype Train total"] },
+      { eventType: "poll_end", expected: ["Poll votes", "Terminal status"] },
+      { eventType: "prediction_end", expected: ["Prediction points", "Total users", "Terminal status"] },
+      { eventType: "stream_online", expected: ["Stream type"] },
+      { eventType: "stream_offline", expected: ["Event source"], absent: "Stream type" }
     ];
 
     for (const { eventType, expected, absent } of cases) {
@@ -1623,8 +1643,11 @@ describe("AlertEditorPage", () => {
 
       await user.click(await screen.findByRole("tab", { name: "Event" }));
       const conditions = screen.getByRole("group", { name: "Rule conditions" });
-      for (const label of expected) expect(within(conditions).getByRole("button", { name: label })).toBeInTheDocument();
-      if (absent !== undefined) expect(within(conditions).queryByRole("button", { name: absent })).not.toBeInTheDocument();
+      await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+      const field = within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" });
+      for (const label of expected) expect(within(field).getByRole("option", { name: label })).toBeInTheDocument();
+      if (absent !== undefined) expect(within(field).queryByRole("option", { name: absent })).not.toBeInTheDocument();
+      expect(within(field).queryByRole("option", { name: /metadata|actor|provider id/iu })).not.toBeInTheDocument();
       view.unmount();
     }
   });
@@ -1656,8 +1679,9 @@ describe("AlertEditorPage", () => {
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
     const conditions = screen.getByRole("group", { name: "Rule conditions" });
-    await user.click(within(conditions).getByRole("button", { name: "Add terminal status" }));
-    const status = within(conditions).getByRole("combobox", { name: "Rule conditions Terminal status" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" }), "terminalStatus");
+    const status = within(conditions).getByRole("combobox", { name: "Rule conditions Terminal status value" });
     await user.selectOptions(status, "terminated");
 
     expect(status).toHaveValue("terminated");
@@ -1698,13 +1722,14 @@ describe("AlertEditorPage", () => {
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
     const conditions = screen.getByRole("group", { name: "Variation conditions" });
-    await user.click(within(conditions).getByRole("button", { name: "Add raid viewer minimum" }));
-    const input = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(conditions).getByRole("combobox", { name: "Variation conditions Raid viewers operator" }), "min");
+    const input = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers value" });
     await user.clear(input);
     await user.type(input, "0");
 
     expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewer minimum must be 1 or greater.");
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers must be at least 1.");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
@@ -1712,7 +1737,10 @@ describe("AlertEditorPage", () => {
     const user = userEvent.setup();
     const document: AlertEditorDocument = {
       ...editorDocument(),
-      conditions: [{ field: "providerId", operator: "equals", value: "twitch" }]
+      conditions: [
+        { field: "providerId", operator: "equals", value: "twitch" },
+        { field: "ingestProvider", operator: "equals", value: "twitch" }
+      ]
     };
     render(
       <DirtyNavigationProvider>
@@ -1738,8 +1766,103 @@ describe("AlertEditorPage", () => {
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
     const conditions = screen.getByRole("group", { name: "Rule conditions" });
-    expect(conditions).toHaveTextContent('providerIdequals "twitch"');
+    expect(conditions).toHaveTextContent("Legacy condition");
+    expect(conditions).toHaveTextContent("providerId equals twitch");
     expect(within(conditions).queryByRole("spinbutton", { name: /providerId/u })).not.toBeInTheDocument();
+    expect(within(conditions).queryByRole("textbox", { name: /field|path|json/iu })).not.toBeInTheDocument();
+    await user.click(within(conditions).getByRole("button", { name: "Remove providerId from Rule conditions" }));
+    expect(within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" })).toHaveFocus();
+    await user.click(within(conditions).getByRole("button", { name: "Remove Event source from Rule conditions" }));
+    expect(within(conditions).getByRole("button", { name: "Add condition" })).toHaveFocus();
+  });
+
+  it("renders every typed condition value kind and approved operator with readable summaries", async () => {
+    const user = userEvent.setup();
+    const document = { ...editorDocument(), id: "alert-community-gift", eventType: "community_gift" as const };
+    const view = render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={document.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    expect(within(conditions).getByRole("combobox", { name: "Rule conditions Subscription tier value" })).toBeInTheDocument();
+    expect(conditions).toHaveTextContent("Subscription tier is Prime");
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(conditions).getByRole("combobox", { name: "Rule conditions condition 2 field" }), "anonymous");
+    await user.click(within(conditions).getByRole("checkbox", { name: "Rule conditions Anonymous gift value" }));
+    expect(conditions).toHaveTextContent("Anonymous gift is true");
+    view.unmount();
+
+    const redemption = { ...editorDocument(), id: "alert-redemption", eventType: "channel_point_redemption" as const };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={redemption.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => redemption), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const textConditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(textConditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(textConditions).getByRole("combobox", { name: "Rule conditions condition 1 field" }), "rewardTitle");
+    const textOperator = within(textConditions).getByRole("combobox", { name: "Rule conditions Reward title operator" });
+    expect(within(textOperator).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["equals", "includes"]);
+    await user.selectOptions(textOperator, "includes");
+    const textValue = within(textConditions).getByRole("textbox", { name: "Rule conditions Reward title value" });
+    await user.clear(textValue);
+    await user.type(textValue, "Hydrate");
+    expect(textConditions).toHaveTextContent("Reward title contains Hydrate");
+  });
+
+  it("resets operator values and retains invalid range drafts while blocking editor actions", async () => {
+    const user = userEvent.setup();
+    const variation: AlertEditorDocument = {
+      ...editorDocument(), id: "variant-range-raid", eventType: "raid", kind: "variation", parentAlertId: "alert-raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={variation.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => variation), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    const operator = within(conditions).getByRole("combobox", { name: "Rule conditions Raid viewers operator" });
+    expect(within(operator).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["equals", "min", "max", "range"]);
+    const minimum = within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Minimum" });
+    const maximum = within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" });
+    await user.clear(maximum);
+    expect(maximum).toHaveValue(null);
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers requires a finite numeric value.");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    await user.type(maximum, "5");
+    expect(minimum).toHaveValue(10);
+    expect(maximum).toHaveValue(5);
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers range minimum cannot exceed its maximum.");
+    await user.clear(maximum);
+    await user.type(maximum, "25");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+    expect(conditions).toHaveTextContent("Raid viewers is between 10 and 25");
+    await user.selectOptions(operator, "min");
+    expect(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers value" })).toHaveValue(1);
+    expect(conditions).toHaveTextContent("Raid viewers is at least 1");
   });
 
   it("copies only design fields from another alert", async () => {
