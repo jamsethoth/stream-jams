@@ -668,6 +668,24 @@ describe("AlertEditorService", () => {
     expect(harness.documents.save).not.toHaveBeenCalled();
   });
 
+  it("rejects a document when every enabled profile still needs review", async () => {
+    const generated = await createHarness().service.getDocument(rule.id);
+    const stored: AlertEditorDocument = {
+      ...generated,
+      targetProfiles: generated.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "needs-review"
+      }))
+    };
+    const harness = createHarnessWithRule(rule, stored);
+
+    await expect(
+      harness.service.saveDocument(rule.id, { ...stored, name: "Still needs review" })
+    ).rejects.toThrow("Finish reviewing at least one enabled target profile before saving.");
+    expect(harness.documents.save).not.toHaveBeenCalled();
+  });
+
   it("saves one reviewed profile while another already-enabled profile still needs review", async () => {
     const generated = await createHarness().service.getDocument(rule.id);
     const stored: AlertEditorDocument = {

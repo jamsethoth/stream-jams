@@ -516,6 +516,9 @@ function validateDocumentForSave(document: AlertEditorDocument, current: AlertEd
   const issues = layerIds.length === new Set(layerIds).size ? [] : ["Layer names must identify unique layers."];
   const enabledProfiles = document.targetProfiles.filter((profile) => profile.enabled);
   if (enabledProfiles.length === 0) issues.push("Enable at least one target profile before saving.");
+  if (!enabledProfiles.some((profile) => profile.reviewState === "ready")) {
+    issues.push("Finish reviewing at least one enabled target profile before saving.");
+  }
   for (const profile of enabledProfiles) {
     const currentProfile = current.targetProfiles.find((candidate) => candidate.id === profile.id);
     if (

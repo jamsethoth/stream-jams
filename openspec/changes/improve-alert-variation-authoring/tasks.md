@@ -26,6 +26,6 @@
 
 ## 5. Verification
 
-- [ ] 5.1 Run focused core selector/evaluator, management service, editor, Storybook, and Playwright tests, then repository lint, typecheck, full tests, build, and required frontend gates.
-- [ ] 5.2 Reconcile every requirement against code and tests, run `openspec.cmd validate improve-alert-variation-authoring --strict`, and complete an independent frontend review.
-- [ ] 5.3 Rebuild and restart affected services, wait for health, reload the editor, and verify priority groups, chance calculations, typed conditions, sample explanations, saved test, and live weighted selection evidence.
+- [x] 5.1 Run focused core selector/evaluator, management service, editor, Storybook, and Playwright tests, then repository lint, typecheck, full tests, build, and required frontend gates.
+- [x] 5.2 Reconcile every requirement against code and tests, run `openspec.cmd validate improve-alert-variation-authoring --strict`, and complete an independent frontend review.
+- [x] 5.3 Rebuild and restart affected services, wait for health, reload the editor, and verify priority groups, chance calculations, typed conditions, sample explanations, saved test, and live weighted selection evidence.
