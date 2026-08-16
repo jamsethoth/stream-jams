@@ -154,6 +154,9 @@ export class AlertEditorService {
     }
 
     const resolved = await this.#resolveEditorItem(alertId);
+    if (document.eventType !== resolved.rule.eventType) {
+      throw new AlertEditorValidationError(["The alert event type does not match the selected alert."]);
+    }
     const metadata = await this.#options.metadata.findRule(resolved.rule.id);
     const stored = await this.#options.documents.find(alertId);
     const current = stored === null
@@ -167,14 +170,12 @@ export class AlertEditorService {
     validateDocumentForSave(saveDocument, current);
     validateConditionChanges(
       resolved.rule.eventType,
-      saveDocument.eventType,
       "Rule",
       saveDocument.conditions,
       resolved.rule.conditions
     );
     validateConditionChanges(
       resolved.rule.eventType,
-      saveDocument.eventType,
       "Variation",
       saveDocument.variantConditions,
       resolved.variant.conditions ?? []
@@ -183,34 +184,16 @@ export class AlertEditorService {
       projectDocumentToRule(saveDocument, resolved),
       assignments
     );
-    const affectedProfileIds = new Set(getAlertEditorAffectedProfileIds(current, saveDocument));
-    if (assignments.size > 0) {
-      const siblingIds = resolved.rule.variants.slice(1).map((variant) => variant.id);
-      const storedSiblings = await this.#options.documents.findMany(siblingIds);
-      for (const [variantIndex, variant] of resolved.rule.variants.entries()) {
-        if (variantIndex === 0) continue;
-        const assignment = assignments.get(variant.id);
-        if (assignment === undefined) continue;
-        const siblingResolved: ResolvedEditorItem = {
-          rule: resolved.rule,
-          variant,
-          variantIndex,
-          editorId: variant.id,
-          kind: "variation"
-        };
-        const storedSibling = storedSiblings.get(variant.id);
-        const currentSibling = storedSibling === undefined
-          ? createDocumentFromRule(siblingResolved, metadata)
-          : hydrateDocument(storedSibling, siblingResolved, metadata);
-        const changedSibling = alertEditorDocumentSchema.parse({
-          ...currentSibling,
-          priority: assignment
-        });
-        for (const profileId of getAlertEditorAffectedProfileIds(currentSibling, changedSibling)) {
-          affectedProfileIds.add(profileId);
-        }
-      }
-    }
+    const projectedMetadata = ruleMetadataFromDocument(saveDocument, resolved.rule.id);
+    const affectedProfileIds = await this.#getAffectedProfileIds({
+      current,
+      currentMetadata: metadata,
+      currentRule: resolved.rule,
+      projected: saveDocument,
+      projectedMetadata,
+      projectedRule,
+      selectedEditorId: resolved.editorId
+    });
     if (!confirmLiveImpact && affectedProfileIds.size > 0) {
       const collections = await this.#options.rules.listCollections();
       const activeSetIds = new Set(collections.filter((collection) => collection.enabled).map((collection) => collection.id));
@@ -218,13 +201,48 @@ export class AlertEditorService {
         throw new AlertEditorLiveImpactConfirmationRequiredError([...affectedProfileIds]);
       }
     }
-    const projectedMetadata = ruleMetadataFromDocument(saveDocument, resolved.rule.id);
     return this.#options.saveAtomically({
       document: saveDocument,
       expectedRule: resolved.rule,
       metadata: projectedMetadata,
       rule: projectedRule
     });
+  }
+
+  async #getAffectedProfileIds(input: {
+    readonly current: AlertEditorDocument;
+    readonly currentMetadata: AlertRuleManagementMetadata | null;
+    readonly currentRule: AlertRule;
+    readonly projected: AlertEditorDocument;
+    readonly projectedMetadata: AlertRuleManagementMetadata;
+    readonly projectedRule: AlertRule;
+    readonly selectedEditorId: string;
+  }): Promise<Set<TargetProfileId>> {
+    const siblingEditorIds = input.currentRule.variants.flatMap((variant, variantIndex) => {
+      const editorId = variantIndex === 0 ? input.currentRule.id : variant.id;
+      return editorId === input.selectedEditorId ? [] : [editorId];
+    });
+    const storedSiblings = await this.#options.documents.findMany(siblingEditorIds);
+    const affectedProfileIds = new Set<TargetProfileId>();
+
+    for (const [variantIndex, currentVariant] of input.currentRule.variants.entries()) {
+      const projectedVariant = input.projectedRule.variants[variantIndex];
+      if (projectedVariant === undefined) continue;
+      const currentResolved = resolvedEditorItem(input.currentRule, currentVariant, variantIndex);
+      const projectedResolved = resolvedEditorItem(input.projectedRule, projectedVariant, variantIndex);
+      const currentDocument = currentResolved.editorId === input.selectedEditorId
+        ? input.current
+        : hydrateOrCreateDocument(storedSiblings.get(currentResolved.editorId), currentResolved, input.currentMetadata);
+      const projectedDocument = projectedResolved.editorId === input.selectedEditorId
+        ? input.projected
+        : hydrateOrCreateDocument(storedSiblings.get(projectedResolved.editorId), projectedResolved, input.projectedMetadata);
+
+      for (const profileId of getAlertEditorAffectedProfileIds(currentDocument, projectedDocument)) {
+        affectedProfileIds.add(profileId);
+      }
+    }
+
+    return affectedProfileIds;
   }
 
   async sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
@@ -359,6 +377,30 @@ interface ResolvedEditorItem {
   readonly variantIndex: number;
   readonly editorId: string;
   readonly kind: "default" | "variation";
+}
+
+function resolvedEditorItem(
+  rule: AlertRule,
+  variant: AlertRule["variants"][number],
+  variantIndex: number
+): ResolvedEditorItem {
+  return {
+    rule,
+    variant,
+    variantIndex,
+    editorId: variantIndex === 0 ? rule.id : variant.id,
+    kind: variantIndex === 0 ? "default" : "variation"
+  };
+}
+
+function hydrateOrCreateDocument(
+  stored: AlertEditorDocument | undefined,
+  resolved: ResolvedEditorItem,
+  metadata: AlertRuleManagementMetadata | null
+): AlertEditorDocument {
+  return stored === undefined
+    ? createDocumentFromRule(resolved, metadata)
+    : hydrateDocument(stored, resolved, metadata);
 }
 
 function createDocumentFromRule(
@@ -581,19 +623,18 @@ function validatePriorityAssignments(
 }
 
 function validateConditionChanges(
-  savedEventType: AlertEditorDocument["eventType"],
-  candidateEventType: AlertEditorDocument["eventType"],
+  eventType: AlertEditorDocument["eventType"],
   scope: "Rule" | "Variation",
   candidateConditions: readonly AlertCondition[],
   savedConditions: readonly AlertCondition[]
 ): void {
   const unchangedUnsupported = savedConditions
-    .filter((condition) => hasUnsupportedConditionIssue(savedEventType, condition))
+    .filter((condition) => hasUnsupportedConditionIssue(eventType, condition))
     .map(serializeCondition);
   const issues: string[] = [];
 
   candidateConditions.forEach((condition, conditionIndex) => {
-    const validationIssues = validateAuthoredAlertConditions(candidateEventType, [condition]);
+    const validationIssues = validateAuthoredAlertConditions(eventType, [condition]);
     if (validationIssues.length === 0) return;
     const onlyUnsupported = validationIssues.every(
       ({ code }) => code === "unsupported-field" || code === "unsupported-operator"

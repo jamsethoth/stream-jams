@@ -486,6 +486,53 @@ describe("AlertEditorService", () => {
   });
 
   it.each([
+    ["conditions", (document: AlertEditorDocument): AlertEditorDocument => ({
+      ...document,
+      conditions: [{ field: "ingestProvider", operator: "equals", value: "twitch" }]
+    })],
+    ["cooldown", (document: AlertEditorDocument): AlertEditorDocument => ({
+      ...document,
+      cooldownSeconds: 15
+    })],
+    ["rule priority", (document: AlertEditorDocument): AlertEditorDocument => ({
+      ...document,
+      rulePriority: 3
+    })]
+  ] as const)("requires live-impact confirmation when a disabled variation changes shared %s", async (_label, edit) => {
+    const priorityRule = createPriorityRule();
+    const variationRule: AlertRule = {
+      ...priorityRule,
+      variants: priorityRule.variants.map((variant) =>
+        variant.id === "variant-low" ? { ...variant, enabled: false } : variant
+      )
+    };
+    const harness = createAtomicHarness(variationRule, true);
+    const document = await harness.service.getDocument("variant-low");
+
+    await expect(harness.service.saveDocument("variant-low", edit(document))).rejects.toEqual(
+      new AlertEditorLiveImpactConfirmationRequiredError(["landscape"])
+    );
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+  });
+
+  it("rejects an event type that does not belong to the selected alert before mutation", async () => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule);
+    const document = await harness.service.getDocument("variant-high");
+
+    await expect(harness.service.saveDocument("variant-high", {
+      ...document,
+      eventType: "raid",
+      conditions: [{ field: "raidViewers", operator: "min", value: 25 }]
+    })).rejects.toThrow("event type does not match the selected alert");
+
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+    expect(harness.rules.saveRule).not.toHaveBeenCalled();
+    expect(harness.metadata.saveRule).not.toHaveBeenCalled();
+    expect(harness.documents.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
     ["default rule ID", [{ variationId: "alert-priority", priority: 6 }, { variationId: "variant-low", priority: 7 }]],
     ["default variant ID", [{ variationId: "variant-default", priority: 6 }, { variationId: "variant-low", priority: 7 }]],
     ["unknown ID", [{ variationId: "variant-high", priority: 6 }, { variationId: "variant-unknown", priority: 7 }]],
