@@ -369,6 +369,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setNotice(null);
   }
 
+  function undo() {
+    setEditor((current) => current === null ? null : undoEditorUpdate(current));
+    resetEventInspectorDraft();
+  }
+
+  function redo() {
+    setEditor((current) => current === null ? null : redoEditorUpdate(current));
+    resetEventInspectorDraft();
+  }
+
   const updateCurrentCanvasView = useCallback((next: CanvasViewState) => {
     setCanvasViews((current) => ({ ...current, [profileId]: next }));
   }, [profileId]);
@@ -721,8 +731,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               ))}
             </div>
             <div className="alert-editor-page__canvas-tools">
-              <button aria-label="Undo" className="button button--secondary button--compact" disabled={editor.past.length === 0} onClick={() => setEditor(undoEditorUpdate(editor))} type="button">Undo</button>
-              <button aria-label="Redo" className="button button--secondary button--compact" disabled={editor.future.length === 0} onClick={() => setEditor(redoEditorUpdate(editor))} type="button">Redo</button>
+              <button aria-label="Undo" className="button button--secondary button--compact" disabled={editor.past.length === 0} onClick={undo} type="button">Undo</button>
+              <button aria-label="Redo" className="button button--secondary button--compact" disabled={editor.future.length === 0} onClick={redo} type="button">Redo</button>
               <button aria-label="Toggle safe area and center guides" aria-pressed={showSafeArea} className="button button--secondary button--compact" onClick={() => setShowSafeArea((current) => !current)} type="button">Guides</button>
               <button aria-label="Toggle canvas grid" aria-pressed={showGrid} className="button button--secondary button--compact" onClick={() => setShowGrid((current) => !current)} type="button">Grid</button>
               <label className="alert-editor-page__canvas-background"><span>Canvas background</span><select aria-label="Canvas background" onChange={(event) => { const mode = event.currentTarget.value as CanvasBackground["mode"]; setCanvasBackground((current) => ({ ...current, mode })); }} value={canvasBackground.mode}><option value="checkerboard">Checkerboard</option><option value="neutral">Neutral</option><option value="test">Test color</option></select></label>

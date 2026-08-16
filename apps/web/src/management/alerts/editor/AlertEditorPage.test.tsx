@@ -2175,6 +2175,52 @@ describe("AlertEditorPage", () => {
     expect(conditions).toHaveTextContent("Raid viewers is at least 1");
   });
 
+  it("discards invalid range drafts when toolbar history restores configuration snapshots", async () => {
+    const user = userEvent.setup();
+    const document: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "alert-range-history",
+      eventType: "raid",
+      conditions: [],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Raider", raidViewers: 50, amount: 50 } }]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={document.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    let conditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(
+      within(conditions).getByRole("combobox", { name: "Rule conditions Raid viewers operator" }),
+      "range"
+    );
+    await user.clear(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" }));
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers requires a finite numeric value.");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    conditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(conditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers value" })).toHaveValue(1);
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    conditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(conditions).toHaveTextContent("No conditions.");
+    expect(screen.getByRole("button", { name: "Revert" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Preview$/u })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    conditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(conditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers value" })).toHaveValue(1);
+  });
+
   it("discards invalid range drafts and restores saved values on Revert", async () => {
     const user = userEvent.setup();
     const document: AlertEditorDocument = {
