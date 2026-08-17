@@ -401,6 +401,10 @@ export const InvalidSample: Story = {
     await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
     await expect(canvas.getByRole("alert")).toHaveTextContent("Raid viewer count must be a positive number.");
     await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
+    const cooldown = canvas.getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    await userEvent.clear(cooldown);
+    await userEvent.type(cooldown, "15");
+    await expect(canvas.getByRole("button", { name: "Save" })).toBeEnabled();
   }
 };
 

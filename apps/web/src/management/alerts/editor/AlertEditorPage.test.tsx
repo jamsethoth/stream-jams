@@ -10,6 +10,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
+import { ManagementHttpError } from "../../management-http-client.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
 import {
   AlertEditorPage as ProductionAlertEditorPage,
@@ -273,6 +274,33 @@ describe("AlertEditorPage", () => {
     expect(affectedProfileLabelsForEditor(disabledSelected, noEnabledCandidates, context)).toEqual([]);
   });
 
+  it("includes enabled sibling target profiles when a disabled variation changes shared rule settings", () => {
+    const selected = raidVariationDocument({
+      id: "variant-editor-disabled",
+      name: "Disabled variation",
+      enabled: false
+    });
+    const context = variationContext(selected, [
+      variationCandidate("variant-editor-vertical", "Vertical sibling")
+    ]);
+    const changed = applyEditorUpdate(
+      createEditorState(selected, [
+        { variationIds: ["variant-editor-disabled", "variant-editor-vertical"] }
+      ]),
+      (document) => ({ ...document, cooldownSeconds: 15 })
+    );
+    const detail: AlertSetDetail = {
+      ...alertSetDetail(true),
+      inventory: [
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-disabled", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Disabled variation", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Disabled" },
+        { id: "variant-editor-vertical", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Vertical sibling", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Vertical" }
+      ]
+    };
+
+    expect(affectedProfileLabelsForEditor(changed, detail, context)).toEqual(["Landscape", "Vertical"]);
+  });
+
   it("preserves document and group edits made while an earlier save is pending", () => {
     const selected = editorDocument();
     const initialGroups = [
@@ -396,6 +424,24 @@ describe("AlertEditorPage", () => {
         { id: "variant-resolver-low", conditionsMatch: true, inHighestEligibleGroup: true }
       ]
     });
+  });
+
+  it("uses the selected document provider when a built-in sample omits the event source", () => {
+    const selected = raidVariationDocument({
+      id: "variant-streamerbot",
+      name: "Streamer.bot raid",
+      providerKind: "streamerbot",
+      conditions: [{ field: "ingestProvider", operator: "equals", value: "streamerbot" }]
+    });
+
+    const evaluation = evaluateAlertEditorDraftSample(
+      createEditorState(selected, [{ variationIds: [selected.id] }]),
+      variationContext(selected),
+      { userName: "Raider", raidViewers: 50, amount: 50 }
+    );
+
+    expect(evaluation.ruleMatches).toBe(true);
+    expect(evaluation.outcome).toBe("weighted-candidates");
   });
 
   it("authors ordered priority groups without implying within-group order or mixing in the fallback", async () => {
@@ -705,6 +751,66 @@ describe("AlertEditorPage", () => {
     const invalidCondition = screen.getByRole("region", { name: "Sample selection explanation" });
     expect(invalidCondition).toHaveTextContent("Correct the event settings to explain selection.");
     expect(invalidCondition).not.toHaveTextContent(/relative chance|live selection|fallback/iu);
+  });
+
+  it("keeps Save available for valid persisted edits when the session sample is invalid", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-invalid-sample", name: "Invalid sample" });
+    const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>(
+      async (_alertId, document) => document
+    );
+    renderVariationSelectionEditor(selected, [], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Relative chance" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Session payload (JSON)" }), { target: { value: "{" } });
+
+    expect(screen.getAllByRole("button", { name: /preview/iu }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      selected.id,
+      expect.objectContaining({ weight: 2 }),
+      false
+    ));
+  });
+
+  it("turns a server-required live-impact response into a retryable confirmation", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({
+      id: "variant-server-impact",
+      name: "Server impact",
+      enabled: false
+    });
+    const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>()
+      .mockRejectedValueOnce(new ManagementHttpError(
+        "Saving can change active live output for landscape.",
+        "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED",
+        null
+      ))
+      .mockImplementation(async (_alertId, document) => document);
+    renderVariationSelectionEditor(selected, [], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const cooldown = screen.getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    await user.clear(cooldown);
+    await user.type(cooldown, "15");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    const confirmation = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
+    expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      selected.id,
+      expect.objectContaining({ cooldownSeconds: 15 }),
+      false
+    );
+    await user.click(within(confirmation).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenLastCalledWith(
+      selected.id,
+      expect.objectContaining({ cooldownSeconds: 15 }),
+      true
+    ));
   });
 
   it("edits and validates text-only typography and box styles", async () => {
@@ -1474,7 +1580,7 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Raid viewer count must be a positive number.");
     expect(screen.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
 

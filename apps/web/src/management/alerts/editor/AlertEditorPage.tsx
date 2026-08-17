@@ -36,6 +36,7 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { ModalSurface } from "../../foundation/ModalSurface.js";
 import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
+import { ManagementHttpError } from "../../management-http-client.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
 import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventInspector.js";
@@ -238,9 +239,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null || variationContext === null) return;
-    if (sampleError !== null || parseSample(sampleDraft) === null) {
-      throw new Error(sampleError ?? "Sample payload must be a valid JSON object.");
-    }
     const conditionError = conditionDraftError ?? alertDocumentConditionError(editor.document);
     if (conditionError !== null) throw new Error(conditionError);
     const styleError = alertDocumentTextStyleError(editor.document);
@@ -278,12 +276,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         : updateVariationContextAfterSave(current, saved, priorityAssignments ?? []));
       setNotice({ tone: "success", message: "Alert saved." });
     } catch (cause) {
+      if (!confirmLiveImpact && isLiveImpactConfirmationRequired(cause)) throw cause;
       showActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
       throw cause;
     } finally {
       setBusy(false);
     }
-  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, sampleDraft, sampleError, showActionError, variationContext]);
+  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, showActionError, variationContext]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
     if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor, setDetail, variationContext).length === 0) return false;
@@ -315,8 +314,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         resolveNavigation: resolve
       }));
     }
-    await save(false);
-    return true;
+    try {
+      await save(false);
+      return true;
+    } catch (cause) {
+      if (!isLiveImpactConfirmationRequired(cause)) throw cause;
+      return new Promise<boolean>((resolve, reject) => setSaveWarning({
+        rejectNavigation: reject,
+        resolveNavigation: resolve
+      }));
+    }
   }, [requiresLiveImpactConfirmation, save]);
 
   useDirtyNavigationSource({
@@ -525,7 +532,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         return;
       }
       await save(false);
-    } catch {
+    } catch (cause) {
+      if (isLiveImpactConfirmationRequired(cause)) setSaveWarning({});
       // Save and status-check failures are rendered through the page error banner.
     }
   }
@@ -668,7 +676,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           {preview ? <button className="button button--secondary" onClick={() => previewPlaying ? setPreviewPlaying(false) : previewLocally()} type="button">{previewPlaying ? "Pause preview" : "Replay preview"}</button> : null}
           {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => { setPreviewPlaying(false); setPreviewElapsedMs(Math.max(0, Math.min(document.durationMs, Number(event.currentTarget.value)))); }} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
-          <button className="button button--primary" disabled={!isEditorDirty(editor) || samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
+          <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
         </div>
       </header>
 
@@ -983,7 +991,13 @@ export function evaluateAlertEditorDraftSample(
   return evaluateAlertVariationSample({
     event: createNormalizedAlertSampleEvent({
       eventType: editor.document.eventType,
-      ingestProvider: samplePayload.ingestProvider === "streamerbot" ? "streamerbot" : "twitch",
+      ingestProvider: samplePayload.ingestProvider === "streamerbot"
+        ? "streamerbot"
+        : samplePayload.ingestProvider === "twitch"
+          ? "twitch"
+          : editor.document.providerKind === "streamerbot"
+            ? "streamerbot"
+            : "twitch",
       payload: samplePayload,
       id: "alert-editor-sample",
       occurredAt: "2000-01-01T00:00:00.000Z"
@@ -1047,7 +1061,7 @@ function affectedProfileIds(
   context: AlertVariationAuthoringContext | null
 ): TargetProfileId[] {
   const profileIds = new Set(getAlertEditorAffectedProfileIds(editor.savedDocument, editor.document));
-  if (arePriorityGroupsDirty(editor) && context !== null) {
+  if ((arePriorityGroupsDirty(editor) || areSharedRuleSettingsDirty(editor)) && context !== null) {
     const candidateEditorIds = new Set(context.candidates.map((candidate) => candidate.editorId));
     for (const alert of setDetail?.inventory ?? []) {
       if (!candidateEditorIds.has(alert.id)) continue;
@@ -1057,6 +1071,19 @@ function affectedProfileIds(
     }
   }
   return [...profileIds];
+}
+
+function areSharedRuleSettingsDirty(editor: AlertEditorState): boolean {
+  const saved = editor.savedDocument;
+  const candidate = editor.document;
+  return saved.cooldownSeconds !== candidate.cooldownSeconds
+    || saved.rulePriority !== candidate.rulePriority
+    || JSON.stringify(saved.conditions) !== JSON.stringify(candidate.conditions);
+}
+
+function isLiveImpactConfirmationRequired(cause: unknown): boolean {
+  return cause instanceof ManagementHttpError
+    && cause.code === "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED";
 }
 
 export function affectedProfileLabelsForEditor(

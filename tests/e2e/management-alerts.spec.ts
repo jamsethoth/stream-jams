@@ -583,6 +583,11 @@ test("alert variation can be created edited duplicated and selectively deleted",
   const explanation = page.getByRole("region", { name: "Sample selection explanation" });
   await expect(explanation).toContainText("1/4 weight · 25% relative chance");
   await expect(explanation).toContainText("3/4 weight · 75% relative chance");
+  await page.getByRole("textbox", { name: "Session payload (JSON)" }).fill("{");
+  await expect(explanation).toContainText("Correct the sample payload to explain selection.");
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   await page.getByRole("button", { name: "Save" }).click();
   await page.getByRole("dialog", { name: "Save changes to active alert?" }).getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
