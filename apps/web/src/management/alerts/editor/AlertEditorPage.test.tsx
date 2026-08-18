@@ -3,14 +3,45 @@ import {
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
   type AlertSetDetail,
+  type AlertVariationAuthoringContext,
   type RegisteredProviderView
 } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
+import { ManagementHttpError } from "../../management-http-client.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
-import { AlertEditorPage, type AlertEditorPageApi } from "./AlertEditorPage.js";
+import {
+  AlertEditorPage as ProductionAlertEditorPage,
+  affectedProfileLabelsForEditor,
+  completeAlertEditorSave,
+  evaluateAlertEditorDraftSample,
+  priorityAssignmentsForEditor,
+  type AlertEditorPageApi,
+  type AlertEditorPageProps
+} from "./AlertEditorPage.js";
+import {
+  applyEditorUpdate,
+  applyPriorityGroupUpdate,
+  createEditorState,
+  isEditorDirty,
+  undoEditorUpdate
+} from "./editor-state.js";
+
+type TestAlertEditorPageProps = Omit<AlertEditorPageProps, "managementApi"> & {
+  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext"> &
+    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext">>;
+};
+
+function AlertEditorPage(props: TestAlertEditorPageProps) {
+  const getAlertVariationAuthoringContext = props.managementApi.getAlertVariationAuthoringContext
+    ?? (async (alertId: string) => variationContext(await props.managementApi.getAlertEditorDocument(alertId)));
+  return <ProductionAlertEditorPage
+    {...props}
+    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext }}
+  />;
+}
 
 afterEach(() => {
   cleanup();
@@ -20,6 +51,768 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("waits for valid variation context and blocks the editor when context loading fails", async () => {
+    let resolveContext: ((context: AlertVariationAuthoringContext) => void) | undefined;
+    const contextResult = new Promise<AlertVariationAuthoringContext>((resolve) => { resolveContext = resolve; });
+    const document = editorDocument();
+    const commonApi = {
+      getAlertEditorDocument: vi.fn(async () => document),
+      getAlertSet: vi.fn(async () => alertSetDetail(false)),
+      listRegisteredProviders: vi.fn(async () => []),
+      getAssetChangeImpact: vi.fn(),
+      listAssetLibraryItems: vi.fn(async () => []),
+      deleteAsset: vi.fn(),
+      updateAssetMetadata: vi.fn(),
+      saveAlertEditorDocument: vi.fn(),
+      sendAlertEditorTest: vi.fn()
+    };
+    const view = render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            ...commonApi,
+            getAlertVariationAuthoringContext: vi.fn(() => contextResult)
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("Loading alert editor...")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+    await act(async () => { resolveContext?.(variationContext(document)); });
+    expect(await screen.findByRole("heading", { name: document.name })).toBeInTheDocument();
+    view.unmount();
+
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            ...commonApi,
+            getAlertVariationAuthoringContext: vi.fn(async () => { throw new Error("context unavailable"); })
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+  });
+
+  it("rejects a variation context belonging to another rule", async () => {
+    const document: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-raid-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid"
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertVariationAuthoringContext: vi.fn(async () => ({
+              ...variationContext(document),
+              ruleId: "alert-another-rule"
+            })),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+  });
+
+  it("rejects a default context whose rule ID is not the document ID", async () => {
+    const document = editorDocument();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertVariationAuthoringContext: vi.fn(async () => ({
+              ...variationContext(document),
+              ruleId: "alert-another-rule"
+            })),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByText("The alert editor could not be opened")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: document.name })).not.toBeInTheDocument();
+  });
+
+  it("builds complete assignments only for changed groups and maps editor IDs to resolver variant IDs", () => {
+    const selected: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-editor-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid",
+      priority: 9
+    };
+    const context = variationContext(selected, [{
+      editorId: "variant-editor-low",
+      variantId: "variant-resolver-low",
+      kind: "variation",
+      name: "Low",
+      enabled: true,
+      conditions: [],
+      weight: 1,
+      priority: 3
+    }]);
+    const initialGroups = [
+      { variationIds: ["variant-editor-high"] },
+      { variationIds: ["variant-editor-low"] }
+    ] as const;
+    const initial = createEditorState(selected, initialGroups);
+
+    expect(priorityAssignmentsForEditor(initial, context)).toBeUndefined();
+
+    const changed = applyPriorityGroupUpdate(initial, (groups) => [groups[1]!, groups[0]!]);
+    expect(priorityAssignmentsForEditor(changed, context)).toEqual([
+      { variationId: "variant-resolver-low", priority: 2 },
+      { variationId: "variant-editor-high-resolver", priority: 1 }
+    ]);
+
+    const sameMembership = createEditorState(selected, [{
+      variationIds: ["variant-editor-high", "variant-editor-low"]
+    }]);
+    const reorderedMembership = applyPriorityGroupUpdate(sameMembership, () => [{
+      variationIds: ["variant-editor-low", "variant-editor-high"]
+    }]);
+    expect(reorderedMembership).toBe(sameMembership);
+    expect(priorityAssignmentsForEditor(reorderedMembership, context)).toBeUndefined();
+  });
+
+  it("excludes disabled sibling profiles from a group-only dirty draft impact", () => {
+    const selected: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-editor-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid"
+    };
+    const context = variationContext(selected, [{
+      editorId: "variant-editor-low",
+      variantId: "variant-resolver-low",
+      kind: "variation",
+      name: "Low",
+      enabled: true,
+      conditions: [],
+      weight: 1,
+      priority: 3
+    }]);
+    const changed = applyPriorityGroupUpdate(
+      createEditorState(selected, [
+        { variationIds: ["variant-editor-high"] },
+        { variationIds: ["variant-editor-low"] }
+      ]),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+    const detail = alertSetDetail(true);
+    const siblingDetail: AlertSetDetail = {
+      ...detail,
+      inventory: [
+        ...detail.inventory,
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+      ]
+    };
+
+    expect(affectedProfileLabelsForEditor(changed, siblingDetail, context)).toEqual(["Landscape"]);
+
+    const disabledSelected = applyPriorityGroupUpdate(
+      createEditorState({ ...selected, enabled: false }, [
+        { variationIds: ["variant-editor-high"] },
+        { variationIds: ["variant-editor-low"] }
+      ]),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+    const noEnabledCandidates: AlertSetDetail = {
+      ...detail,
+      inventory: [
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+      ]
+    };
+    expect(affectedProfileLabelsForEditor(disabledSelected, noEnabledCandidates, context)).toEqual([]);
+  });
+
+  it("includes enabled sibling target profiles when a disabled variation changes shared rule settings", () => {
+    const selected = raidVariationDocument({
+      id: "variant-editor-disabled",
+      name: "Disabled variation",
+      enabled: false
+    });
+    const context = variationContext(selected, [
+      variationCandidate("variant-editor-vertical", "Vertical sibling")
+    ]);
+    const changed = applyEditorUpdate(
+      createEditorState(selected, [
+        { variationIds: ["variant-editor-disabled", "variant-editor-vertical"] }
+      ]),
+      (document) => ({ ...document, cooldownSeconds: 15 })
+    );
+    const detail: AlertSetDetail = {
+      ...alertSetDetail(true),
+      inventory: [
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-disabled", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Disabled variation", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Disabled" },
+        { id: "variant-editor-vertical", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Vertical sibling", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Vertical" }
+      ]
+    };
+
+    expect(affectedProfileLabelsForEditor(changed, detail, context)).toEqual(["Landscape", "Vertical"]);
+  });
+
+  it("preserves document and group edits made while an earlier save is pending", () => {
+    const selected = editorDocument();
+    const initialGroups = [
+      { variationIds: ["variant-high"] },
+      { variationIds: ["variant-low"] }
+    ] as const;
+    const submitted = applyPriorityGroupUpdate(
+      createEditorState(selected, initialGroups),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+    const pending = applyPriorityGroupUpdate(
+      { ...submitted, document: { ...submitted.document, name: "Newer local edit" } },
+      (groups) => [{ variationIds: [...groups[0]!.variationIds, "variant-new"] }, groups[1]!]
+    );
+    const savedDocument = { ...selected, name: "Saved response" };
+
+    const completed = completeAlertEditorSave(
+      pending,
+      submitted.document,
+      submitted.priorityGroups,
+      savedDocument
+    );
+
+    expect(completed.document.name).toBe("Newer local edit");
+    expect(completed.priorityGroups[0]?.variationIds).toContain("variant-new");
+    expect(completed.savedDocument).toBe(savedDocument);
+    expect(completed.savedPriorityGroups).toBe(submitted.priorityGroups);
+  });
+
+  it("settles unchanged groups while preserving a document-only edit made during save", () => {
+    const selected = editorDocument();
+    const initial = createEditorState(selected, [{ variationIds: ["variant-high"] }]);
+    const submitted = applyEditorUpdate(initial, (document) => ({ ...document, name: "Submitted" }));
+    const pending = applyEditorUpdate(submitted, (document) => ({ ...document, name: "Newer local edit" }));
+    const savedDocument = { ...submitted.document, name: "Saved response" };
+
+    const completed = completeAlertEditorSave(
+      pending,
+      submitted.document,
+      submitted.priorityGroups,
+      savedDocument
+    );
+
+    expect(completed.document.name).toBe("Newer local edit");
+    expect(completed.savedDocument).toBe(savedDocument);
+    expect(completed.priorityGroups).toBe(submitted.priorityGroups);
+    expect(completed.savedPriorityGroups).toBe(submitted.priorityGroups);
+    expect(completed.past).toEqual([{ document: savedDocument, priorityGroups: submitted.priorityGroups }]);
+    expect(isEditorDirty(completed)).toBe(true);
+    expect(isEditorDirty(undoEditorUpdate(completed))).toBe(false);
+  });
+
+  it("settles the saved document while preserving a group-only edit made during save", () => {
+    const selected = editorDocument();
+    const initial = createEditorState(selected, [
+      { variationIds: ["variant-high"] },
+      { variationIds: ["variant-low"] }
+    ]);
+    const submitted = applyEditorUpdate(initial, (document) => ({ ...document, name: "Submitted" }));
+    const pending = applyPriorityGroupUpdate(submitted, (groups) => [groups[1]!, groups[0]!]);
+    const savedDocument = { ...submitted.document, name: "Saved response" };
+
+    const completed = completeAlertEditorSave(
+      pending,
+      submitted.document,
+      submitted.priorityGroups,
+      savedDocument
+    );
+
+    expect(completed.document).toBe(savedDocument);
+    expect(completed.savedDocument).toBe(savedDocument);
+    expect(completed.priorityGroups).toBe(pending.priorityGroups);
+    expect(completed.savedPriorityGroups).toBe(submitted.priorityGroups);
+    expect(completed.past).toEqual([{ document: savedDocument, priorityGroups: submitted.priorityGroups }]);
+    expect(isEditorDirty(completed)).toBe(true);
+    expect(isEditorDirty(undoEditorUpdate(completed))).toBe(false);
+  });
+
+  it("evaluates the current selected draft with normalized group assignments and resolver IDs", () => {
+    const selected: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "variant-editor-high",
+      parentAlertId: "alert-raid",
+      kind: "variation",
+      eventType: "raid",
+      enabled: true,
+      variantConditions: [{ field: "raidViewers", operator: "min", value: 20 }],
+      weight: 4,
+      priority: 9
+    };
+    const context = variationContext(selected, [{
+      editorId: "variant-editor-low",
+      variantId: "variant-resolver-low",
+      kind: "variation",
+      name: "Low",
+      enabled: true,
+      conditions: [],
+      weight: 1,
+      priority: 3
+    }]);
+    const editor = applyPriorityGroupUpdate(
+      createEditorState(selected, [
+        { variationIds: ["variant-editor-high"] },
+        { variationIds: ["variant-editor-low"] }
+      ]),
+      (groups) => [groups[1]!, groups[0]!]
+    );
+
+    const evaluation = evaluateAlertEditorDraftSample(editor, context, {
+      userName: "Raider",
+      raidViewers: 25,
+      amount: 25
+    });
+
+    expect(evaluation).toMatchObject({
+      outcome: "weighted-candidates",
+      highestEligiblePriority: 2,
+      candidates: [
+        { id: "alert-raid-default-resolver", inHighestEligibleGroup: false },
+        { id: "variant-editor-high-resolver", conditionsMatch: true, inHighestEligibleGroup: false },
+        { id: "variant-resolver-low", conditionsMatch: true, inHighestEligibleGroup: true }
+      ]
+    });
+  });
+
+  it("uses the selected document provider when a built-in sample omits the event source", () => {
+    const selected = raidVariationDocument({
+      id: "variant-streamerbot",
+      name: "Streamer.bot raid",
+      providerKind: "streamerbot",
+      conditions: [{ field: "ingestProvider", operator: "equals", value: "streamerbot" }]
+    });
+
+    const evaluation = evaluateAlertEditorDraftSample(
+      createEditorState(selected, [{ variationIds: [selected.id] }]),
+      variationContext(selected),
+      { userName: "Raider", raidViewers: 50, amount: 50 }
+    );
+
+    expect(evaluation.ruleMatches).toBe(true);
+    expect(evaluation.outcome).toBe("weighted-candidates");
+  });
+
+  it("authors ordered priority groups without implying within-group order or mixing in the fallback", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-high", name: "High", priority: 10 });
+    renderVariationSelectionEditor(selected, [
+      variationCandidate("variant-mid", "Middle", { priority: 5, weight: 3 }),
+      variationCandidate("variant-disabled", "Disabled", { enabled: false, priority: 5 })
+    ]);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const groups = screen.getByRole("region", { name: "Priority groups" });
+    const fallback = within(groups).getByRole("group", { name: "Fallback" });
+    expect(fallback).toHaveTextContent("Default");
+    expect(within(fallback).queryByRole("combobox")).not.toBeInTheDocument();
+
+    const first = within(groups).getByRole("group", { name: "Priority group 1" });
+    const second = within(groups).getByRole("group", { name: "Priority group 2" });
+    expect(first).toHaveTextContent("evaluated first");
+    expect(second).toHaveTextContent("evaluated last");
+    expect(within(first).getByRole("button", { name: "Move group earlier" })).toBeDisabled();
+    expect(within(first).getByRole("button", { name: "Move group later" })).toBeEnabled();
+    expect(within(second).getByRole("button", { name: "Move group earlier" })).toBeEnabled();
+    expect(within(second).getByRole("button", { name: "Move group later" })).toBeDisabled();
+    expect(within(groups).queryByRole("button", { name: /move (high|middle|disabled) (earlier|later)/iu })).not.toBeInTheDocument();
+    expect(second).toHaveTextContent("Disabled");
+
+    await user.selectOptions(within(first).getByRole("combobox", { name: "Move High to priority group" }), "1");
+    expect(within(groups).queryByRole("group", { name: "Priority group 2" })).not.toBeInTheDocument();
+    const joined = within(groups).getByRole("group", { name: "Priority group 1" });
+    expect(joined).toHaveTextContent("High");
+    expect(joined).toHaveTextContent("Middle");
+
+    await user.selectOptions(within(joined).getByRole("combobox", { name: "Move Middle to priority group" }), "new-last");
+    expect(within(groups).getByRole("group", { name: "Priority group 2" })).toHaveTextContent("Middle");
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(within(groups).queryByRole("group", { name: "Priority group 2" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Revert" }));
+    expect(within(screen.getByRole("region", { name: "Priority groups" })).getByRole("group", { name: "Priority group 2" })).toHaveTextContent("Middle");
+    expect(screen.getByText("Saved")).toBeVisible();
+  });
+
+  it("shows an unsaved selected variation rename and toggle consistently", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-draft", name: "Saved variation", priority: 5 });
+    renderVariationSelectionEditor(selected, []);
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    const name = screen.getByRole("textbox", { name: "Alert name" });
+    await user.clear(name);
+    await user.type(name, "Draft variation");
+    await user.click(screen.getByRole("checkbox", { name: "Alert enabled" }));
+    expect(screen.getByRole("heading", { name: "Draft variation" })).toBeVisible();
+    expect(screen.getByText("Alert disabled")).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    const groups = screen.getByRole("region", { name: "Priority groups" });
+    const group = within(groups).getByRole("group", { name: "Priority group 1" });
+    expect(group).toHaveTextContent("Draft variation");
+    expect(group).toHaveTextContent("Disabled");
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("Draft variation");
+    expect(explanation).toHaveTextContent("Disabled — not a candidate.");
+    expect(explanation).not.toHaveTextContent("Saved variation");
+  });
+
+  it("shows an unsaved selected default rename and toggle consistently", async () => {
+    const user = userEvent.setup();
+    const selected = {
+      ...editorDocument(),
+      id: "alert-raid",
+      eventType: "raid" as const,
+      name: "Saved default",
+      samplePayloads: [{
+        id: "normal",
+        label: "Normal raid",
+        kind: "built-in" as const,
+        payload: { userName: "Raider", raidViewers: 50, amount: 50 }
+      }]
+    };
+    renderVariationSelectionEditor(selected, [variationCandidate("variant-sibling", "Sibling")]);
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    const name = screen.getByRole("textbox", { name: "Alert name" });
+    await user.clear(name);
+    await user.type(name, "Draft default");
+    await user.click(screen.getByRole("checkbox", { name: "Alert enabled" }));
+    expect(screen.getByRole("heading", { name: "Draft default" })).toBeVisible();
+    expect(screen.getByText("Alert disabled")).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    const groups = screen.getByRole("region", { name: "Priority groups" });
+    const fallback = within(groups).getByRole("group", { name: "Fallback" });
+    expect(fallback).toHaveTextContent("Draft default");
+    expect(fallback).toHaveTextContent("Disabled default alert");
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("Draft default");
+    expect(explanation).toHaveTextContent("Disabled — not a candidate.");
+    expect(explanation).not.toHaveTextContent("Saved default");
+  });
+
+  it("retains priority membership and condition drafts after a failed atomic save, then sends exact assignments", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-high", name: "High", priority: 10 });
+    const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>()
+      .mockRejectedValueOnce(new Error("Database write failed. Reference ref-priority-save."))
+      .mockImplementation(async (_alertId, document) => document);
+    renderVariationSelectionEditor(selected, [
+      variationCandidate("variant-low", "Low", { priority: 5 })
+    ], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const groups = screen.getByRole("region", { name: "Priority groups" });
+    await user.click(within(within(groups).getByRole("group", { name: "Priority group 2" }))
+      .getByRole("button", { name: "Move group earlier" }));
+    const conditions = screen.getByRole("group", { name: "Variation conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(
+      within(conditions).getByRole("combobox", { name: "Variation conditions Raid viewers operator" }),
+      "range"
+    );
+    const minimum = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers Minimum" });
+    const maximum = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers Maximum" });
+    await user.clear(maximum);
+    await user.type(maximum, "50");
+    await user.clear(minimum);
+    await user.type(minimum, "10");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("The alert was not saved")).toBeVisible();
+    expect(within(groups).getByRole("group", { name: "Priority group 1" })).toHaveTextContent("Low");
+    expect(minimum).toHaveValue(10);
+    expect(maximum).toHaveValue(50);
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenLastCalledWith(
+      selected.id,
+      expect.objectContaining({
+        variantConditions: [{ field: "raidViewers", operator: "range", value: [10, 50] }]
+      }),
+      false,
+      [
+        { variationId: "variant-low-resolver", priority: 2 },
+        { variationId: "variant-high-resolver", priority: 1 }
+      ]
+    ));
+    expect(screen.getByText("Saved")).toBeVisible();
+  });
+
+  it("explains weighted top candidates, lower groups, disabled siblings, and a legacy default tie from core evaluation", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-quarter", name: "Quarter", priority: 8, weight: 1 });
+    renderVariationSelectionEditor(selected, [
+      variationCandidate("variant-three-quarters", "Three quarters", { priority: 8, weight: 3 }),
+      variationCandidate("variant-lower", "Lower", { priority: 3 }),
+      variationCandidate("variant-disabled", "Disabled", { enabled: false, priority: 8 })
+    ]);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("Quarter");
+    expect(explanation).toHaveTextContent("1/4 weight · 25% relative chance");
+    expect(explanation).toHaveTextContent("Three quarters");
+    expect(explanation).toHaveTextContent("3/4 weight · 75% relative chance");
+    expect(explanation).toHaveTextContent("Live selection remains random.");
+    expect(explanation).toHaveTextContent("Lower");
+    expect(explanation).toHaveTextContent("higher-priority group");
+    expect(explanation).toHaveTextContent("Disabled");
+    expect(explanation).toHaveTextContent("Disabled — not a candidate.");
+    expect(explanation).toHaveTextContent("Fallback only");
+    expect(explanation).not.toHaveTextContent("Legacy priority tie");
+  });
+
+  it("blocks invalid relative chance drafts until a positive whole number is restored", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-chance", name: "Chance", priority: 8, weight: 1 });
+    renderVariationSelectionEditor(selected, []);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const chance = screen.getByRole("spinbutton", { name: "Relative chance" });
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("1/1 weight · 100% relative chance");
+
+    for (const invalidValue of ["", "0", "-1", "1.5"]) {
+      fireEvent.change(chance, { target: { value: invalidValue } });
+
+      expect(chance).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByText("Relative chance must be a positive whole number.", { selector: "#alert-editor-relative-chance-error" })).toBeVisible();
+      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+      expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+      expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+      expect(explanation).toHaveTextContent("Correct the event settings to explain selection.");
+      expect(explanation).not.toHaveTextContent(/relative chance|live selection|fallback/iu);
+    }
+
+    fireEvent.change(chance, { target: { value: "4" } });
+
+    expect(chance).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Relative chance must be a positive whole number.", { selector: "#alert-editor-relative-chance-error" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(explanation).toHaveTextContent("4/4 weight · 100% relative chance");
+  });
+
+  it("explains rule mismatch, one candidate, fallback, no enabled candidate, and legacy ties", async () => {
+    const scenarios: readonly {
+      readonly document: AlertEditorDocument;
+      readonly siblings: readonly AlertVariationAuthoringContext["candidates"][number][];
+      readonly defaultEnabled?: boolean;
+      readonly defaultPriority?: number | null;
+      readonly defaultWeight?: number;
+      readonly expected: readonly string[];
+    }[] = [
+      {
+        document: raidVariationDocument({
+          id: "variant-rule-mismatch",
+          name: "Rule mismatch",
+          priority: 5,
+          conditions: [{ field: "raidViewers", operator: "min" as const, value: 100 }]
+        }),
+        siblings: [],
+        expected: ["No alert plays", "Raid viewers is at least 100"]
+      },
+      {
+        document: raidVariationDocument({ id: "variant-only", name: "Only candidate", priority: 5 }),
+        siblings: [],
+        expected: ["Only candidate", "1/1 weight · 100% relative chance"]
+      },
+      {
+        document: raidVariationDocument({
+          id: "variant-no-match",
+          name: "Does not match",
+          priority: 5,
+          variantConditions: [{ field: "raidViewers", operator: "min" as const, value: 100 }]
+        }),
+        siblings: [],
+        expected: ["Default plays as the fallback", "Does not match", "Sample does not match"]
+      },
+      {
+        document: raidVariationDocument({ id: "variant-disabled-only", name: "Disabled only", enabled: false, priority: 5 }),
+        siblings: [],
+        defaultEnabled: false,
+        expected: ["No enabled alert can play", "Disabled only"]
+      },
+      {
+        document: raidVariationDocument({ id: "variant-tied", name: "Tied variation", priority: 0, weight: 1 }),
+        siblings: [],
+        defaultPriority: 0,
+        defaultWeight: 3,
+        expected: ["Legacy priority tie", "Default", "3/4 weight · 75% relative chance", "Tied variation", "1/4 weight · 25% relative chance", "explicit priority group edit"]
+      }
+    ];
+
+    for (const scenario of scenarios) {
+      const user = userEvent.setup();
+      const view = renderVariationSelectionEditor(scenario.document, scenario.siblings, {
+        ...(scenario.defaultEnabled === undefined ? {} : { defaultEnabled: scenario.defaultEnabled }),
+        ...(scenario.defaultPriority === undefined ? {} : { defaultPriority: scenario.defaultPriority }),
+        ...(scenario.defaultWeight === undefined ? {} : { defaultWeight: scenario.defaultWeight })
+      });
+      await user.click(await screen.findByRole("tab", { name: "Event" }));
+      const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+      for (const copy of scenario.expected) expect(explanation).toHaveTextContent(copy);
+      view.unmount();
+    }
+  });
+
+  it("names only failing shared rule conditions in the sample diagnostic", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({
+      id: "variant-mixed-rule",
+      name: "Mixed rule",
+      conditions: [
+        { field: "raidViewers", operator: "min", value: 20 },
+        { field: "raidViewers", operator: "max", value: 40 }
+      ]
+    });
+    renderVariationSelectionEditor(selected, []);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("No alert plays for this sample.");
+    expect(explanation).toHaveTextContent("Raid viewers is at most 40");
+    expect(explanation).not.toHaveTextContent("Raid viewers is at least 20");
+  });
+
+  it("suppresses stale selection percentages while sample or condition input needs correction", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-quarter", name: "Quarter", priority: 8, weight: 1 });
+    renderVariationSelectionEditor(selected, [
+      variationCandidate("variant-three-quarters", "Three quarters", { priority: 8, weight: 3 })
+    ]);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    expect(screen.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent("25% relative chance");
+    const sample = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    fireEvent.change(sample, { target: { value: "{" } });
+    const invalidSample = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(invalidSample).toHaveTextContent("Correct the sample payload to explain selection.");
+    expect(invalidSample).not.toHaveTextContent(/relative chance|live selection|fallback/iu);
+
+    fireEvent.change(sample, { target: { value: JSON.stringify({ userName: "Raider", raidViewers: 50, amount: 50 }) } });
+    const conditions = screen.getByRole("group", { name: "Variation conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    const value = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers value" });
+    await user.clear(value);
+    await user.type(value, "0");
+    const invalidCondition = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(invalidCondition).toHaveTextContent("Correct the event settings to explain selection.");
+    expect(invalidCondition).not.toHaveTextContent(/relative chance|live selection|fallback/iu);
+  });
+
+  it("keeps Save available for valid persisted edits when the session sample is invalid", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({ id: "variant-invalid-sample", name: "Invalid sample" });
+    const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>(
+      async (_alertId, document) => document
+    );
+    renderVariationSelectionEditor(selected, [], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Relative chance" }), { target: { value: "2" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Session payload (JSON)" }), { target: { value: "{" } });
+
+    expect(screen.getAllByRole("button", { name: /preview/iu }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      selected.id,
+      expect.objectContaining({ weight: 2 }),
+      false
+    ));
+  });
+
+  it("turns a server-required live-impact response into a retryable confirmation", async () => {
+    const user = userEvent.setup();
+    const selected = raidVariationDocument({
+      id: "variant-server-impact",
+      name: "Server impact",
+      enabled: false
+    });
+    const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>()
+      .mockRejectedValueOnce(new ManagementHttpError(
+        "Saving can change active live output for landscape.",
+        "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED",
+        null
+      ))
+      .mockImplementation(async (_alertId, document) => document);
+    renderVariationSelectionEditor(selected, [], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const cooldown = screen.getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    await user.clear(cooldown);
+    await user.type(cooldown, "15");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    const confirmation = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
+    expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      selected.id,
+      expect.objectContaining({ cooldownSeconds: 15 }),
+      false
+    );
+    await user.click(within(confirmation).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenLastCalledWith(
+      selected.id,
+      expect.objectContaining({ cooldownSeconds: 15 }),
+      true
+    ));
+  });
+
   it("edits and validates text-only typography and box styles", async () => {
     const user = userEvent.setup();
     const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
@@ -45,32 +838,26 @@ describe("AlertEditorPage", () => {
       </DirtyNavigationProvider>
     );
 
-    const typography = await screen.findByRole("group", { name: "Typography" });
-    const textBox = screen.getByRole("group", { name: "Text box" });
+    await screen.findByText("Typography", { selector: "summary" });
     const disclosures = [
       ["Typography", "Font size"],
       ["Text box", "Padding"],
       ["Position and size", "X"],
       ["Animation preset", "Animation duration (milliseconds)"]
     ] as const;
-    const initialFontSize = within(typography).getByLabelText("Font size");
-    const collapsedControls: HTMLElement[] = [];
     for (const [label, controlLabel] of disclosures) {
       const summary = screen.getByText(label, { selector: "summary" });
-      expect(summary.closest("details")).toHaveAttribute("open");
-      const control = screen.getByLabelText(controlLabel);
-      await user.click(summary);
       expect(summary.closest("details")).not.toHaveAttribute("open");
+      const control = screen.getByLabelText(controlLabel);
       expect(control).not.toBeVisible();
-      collapsedControls.push(control);
-      for (const collapsed of collapsedControls) expect(collapsed).not.toBeVisible();
+      await user.click(summary);
+      expect(summary.closest("details")).toHaveAttribute("open");
+      expect(control).toBeVisible();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     }
-    for (const [label, controlLabel] of [...disclosures].reverse()) {
-      await user.click(screen.getByText(label, { selector: "summary" }));
-      expect(screen.getByLabelText(controlLabel)).toBeVisible();
-      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    }
+    const typography = screen.getByRole("group", { name: "Typography" });
+    const textBox = screen.getByRole("group", { name: "Text box" });
+    const initialFontSize = within(typography).getByLabelText("Font size");
     expect(initialFontSize).toHaveValue(32);
 
     await user.click(screen.getByRole("button", { name: "100%" }));
@@ -348,6 +1135,7 @@ describe("AlertEditorPage", () => {
     }));
     const managementApi = {
       getAlertEditorDocument: vi.fn(async () => editorDocument()),
+      getAlertVariationAuthoringContext: vi.fn(async () => variationContext(editorDocument())),
       getAlertSet: vi.fn(async () => alertSetDetail(false)),
       listRegisteredProviders: vi.fn(async () => []),
       getAssetChangeImpact: vi.fn(),
@@ -712,6 +1500,7 @@ describe("AlertEditorPage", () => {
     );
 
     await screen.findByRole("region", { name: "Landscape alert canvas" });
+    await user.click(screen.getByText("Animation preset", { selector: "summary" }));
     await user.clear(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }));
     await user.type(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }), "650");
     await user.clear(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }));
@@ -786,6 +1575,7 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Raid viewer count must be a positive number.");
     expect(screen.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
 
@@ -896,16 +1686,16 @@ describe("AlertEditorPage", () => {
       </DirtyNavigationProvider>
     );
 
-    expect(await screen.findByText("Studio Speaker.bot")).toBeInTheDocument();
-    expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeInTheDocument();
-    const liveTtsSummary = screen.getByText("Live TTS", { selector: "summary" });
-    expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
+    const liveTtsSummary = await screen.findByText("Live TTS", { selector: "summary" });
+    expect(liveTtsSummary.closest("details")).not.toHaveAttribute("open");
     const enabled = screen.getByRole("checkbox", { name: "Enable TTS for this alert" });
-    await user.click(liveTtsSummary);
     expect(enabled).not.toBeVisible();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     await user.click(liveTtsSummary);
+    expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     expect(enabled).toBeVisible();
+    expect(screen.getByText("Studio Speaker.bot")).toBeVisible();
+    expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     expect(enabled).toBeChecked();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     await user.click(enabled);
@@ -1140,7 +1930,13 @@ describe("AlertEditorPage", () => {
       parentAlertId: "alert-raid",
       name: "Large raid",
       weight: 2,
-      priority: 5
+      priority: 5,
+      samplePayloads: [{
+        id: "normal",
+        label: "Normal example",
+        kind: "built-in",
+        payload: { userName: "Raider", raidViewers: 50, amount: 50 }
+      }]
     };
     const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
     render(
@@ -1166,20 +1962,33 @@ describe("AlertEditorPage", () => {
     );
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
-    const variationConditions = screen.getByRole("group", { name: "Variation conditions" });
-    await user.click(within(variationConditions).getByRole("button", { name: "Add raid viewer minimum" }));
-    const viewerMinimum = within(variationConditions).getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" });
+    const sharedControls = screen.getByRole("group", { name: "Affects default and all variations" });
+    expect(within(sharedControls).getByRole("group", { name: "Rule conditions" })).toBeInTheDocument();
+    expect(within(sharedControls).getByRole("spinbutton", { name: "Cooldown (seconds)" })).toBeInTheDocument();
+    expect(within(sharedControls).getByRole("spinbutton", { name: "Rule priority" })).toBeInTheDocument();
+    const variationControls = screen.getByRole("group", { name: "Affects this variation only" });
+    const variationConditions = within(variationControls).getByRole("group", { name: "Variation conditions" });
+    await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
+    expect(within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 1 field" })).toHaveFocus();
+    const viewerMinimum = within(variationConditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers value" });
+    await user.selectOptions(
+      within(variationConditions).getByRole("combobox", { name: "Variation conditions Raid viewers operator" }),
+      "min"
+    );
     await user.clear(viewerMinimum);
     await user.type(viewerMinimum, "25");
-    await user.click(within(variationConditions).getByRole("button", { name: "Add ingest provider restriction" }));
+    await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions Ingest provider restriction" }),
+      within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 2 field" }),
+      "ingestProvider"
+    );
+    await user.selectOptions(
+      within(variationConditions).getByRole("combobox", { name: "Variation conditions Event source value" }),
       "streamerbot"
     );
-    await user.clear(screen.getByRole("spinbutton", { name: "Variation weight" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Variation weight" }), "4");
-    await user.clear(screen.getByRole("spinbutton", { name: "Variation priority" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Variation priority" }), "8");
+    await user.clear(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }));
+    await user.type(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }), "4");
+    expect(within(variationControls).queryByRole("spinbutton", { name: "Variation priority" })).not.toBeInTheDocument();
     await user.clear(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }));
     await user.type(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }), "15");
     await user.clear(screen.getByRole("spinbutton", { name: "Rule priority" }));
@@ -1190,7 +1999,7 @@ describe("AlertEditorPage", () => {
       variation.id,
       expect.objectContaining({
         weight: 4,
-        priority: 8,
+        priority: 5,
         cooldownSeconds: 15,
         rulePriority: 3,
         variantConditions: [
@@ -1208,13 +2017,13 @@ describe("AlertEditorPage", () => {
       readonly expected: readonly string[];
       readonly absent?: string;
     }[] = [
-      { eventType: "gift_subscription", expected: ["Add gift tier"] },
-      { eventType: "community_gift", expected: ["Add gift tier", "Add gift count minimum"] },
-      { eventType: "hype_train_progress", expected: ["Add level minimum", "Add progress minimum", "Add total minimum"] },
-      { eventType: "poll_end", expected: ["Add total votes minimum", "Add terminal status"] },
-      { eventType: "prediction_end", expected: ["Add total points minimum", "Add participant minimum", "Add terminal status"] },
-      { eventType: "stream_online", expected: ["Add stream type"] },
-      { eventType: "stream_offline", expected: ["Add ingest provider restriction"], absent: "Add stream type" }
+      { eventType: "gift_subscription", expected: ["Subscription tier"] },
+      { eventType: "community_gift", expected: ["Subscription tier", "Gift count", "Anonymous gift"] },
+      { eventType: "hype_train_progress", expected: ["Hype Train level", "Hype Train progress", "Hype Train total"] },
+      { eventType: "poll_end", expected: ["Poll votes", "Terminal status"] },
+      { eventType: "prediction_end", expected: ["Prediction points", "Total users", "Terminal status"] },
+      { eventType: "stream_online", expected: ["Stream type"] },
+      { eventType: "stream_offline", expected: ["Event source"], absent: "Stream type" }
     ];
 
     for (const { eventType, expected, absent } of cases) {
@@ -1244,8 +2053,11 @@ describe("AlertEditorPage", () => {
 
       await user.click(await screen.findByRole("tab", { name: "Event" }));
       const conditions = screen.getByRole("group", { name: "Rule conditions" });
-      for (const label of expected) expect(within(conditions).getByRole("button", { name: label })).toBeInTheDocument();
-      if (absent !== undefined) expect(within(conditions).queryByRole("button", { name: absent })).not.toBeInTheDocument();
+      await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+      const field = within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" });
+      for (const label of expected) expect(within(field).getByRole("option", { name: label })).toBeInTheDocument();
+      if (absent !== undefined) expect(within(field).queryByRole("option", { name: absent })).not.toBeInTheDocument();
+      expect(within(field).queryByRole("option", { name: /metadata|actor|provider id/iu })).not.toBeInTheDocument();
       view.unmount();
     }
   });
@@ -1277,8 +2089,9 @@ describe("AlertEditorPage", () => {
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
     const conditions = screen.getByRole("group", { name: "Rule conditions" });
-    await user.click(within(conditions).getByRole("button", { name: "Add terminal status" }));
-    const status = within(conditions).getByRole("combobox", { name: "Rule conditions Terminal status" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" }), "terminalStatus");
+    const status = within(conditions).getByRole("combobox", { name: "Rule conditions Terminal status value" });
     await user.selectOptions(status, "terminated");
 
     expect(status).toHaveValue("terminated");
@@ -1319,13 +2132,14 @@ describe("AlertEditorPage", () => {
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
     const conditions = screen.getByRole("group", { name: "Variation conditions" });
-    await user.click(within(conditions).getByRole("button", { name: "Add raid viewer minimum" }));
-    const input = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(conditions).getByRole("combobox", { name: "Variation conditions Raid viewers operator" }), "min");
+    const input = within(conditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers value" });
     await user.clear(input);
     await user.type(input, "0");
 
     expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewer minimum must be 1 or greater.");
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers must be at least 1.");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
@@ -1333,7 +2147,10 @@ describe("AlertEditorPage", () => {
     const user = userEvent.setup();
     const document: AlertEditorDocument = {
       ...editorDocument(),
-      conditions: [{ field: "providerId", operator: "equals", value: "twitch" }]
+      conditions: [
+        { field: "providerId", operator: "equals", value: "twitch" },
+        { field: "ingestProvider", operator: "equals", value: "twitch" }
+      ]
     };
     render(
       <DirtyNavigationProvider>
@@ -1359,8 +2176,235 @@ describe("AlertEditorPage", () => {
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
     const conditions = screen.getByRole("group", { name: "Rule conditions" });
-    expect(conditions).toHaveTextContent('providerIdequals "twitch"');
+    expect(conditions).toHaveTextContent("Legacy condition");
+    expect(conditions).toHaveTextContent("providerId equals twitch");
     expect(within(conditions).queryByRole("spinbutton", { name: /providerId/u })).not.toBeInTheDocument();
+    expect(within(conditions).queryByRole("textbox", { name: /field|path|json/iu })).not.toBeInTheDocument();
+    await user.click(within(conditions).getByRole("button", { name: "Remove providerId from Rule conditions" }));
+    expect(within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" })).toHaveFocus();
+    await user.click(within(conditions).getByRole("button", { name: "Remove Event source from Rule conditions" }));
+    expect(within(conditions).getByRole("button", { name: "Add condition" })).toHaveFocus();
+  });
+
+  it("renders every typed condition value kind and approved operator with readable summaries", async () => {
+    const user = userEvent.setup();
+    const document = { ...editorDocument(), id: "alert-community-gift", eventType: "community_gift" as const };
+    const view = render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={document.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    expect(within(conditions).getByRole("combobox", { name: "Rule conditions Subscription tier value" })).toBeInTheDocument();
+    expect(conditions).toHaveTextContent("Subscription tier is Prime");
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(conditions).getByRole("combobox", { name: "Rule conditions condition 2 field" }), "anonymous");
+    await user.click(within(conditions).getByRole("checkbox", { name: "Rule conditions Anonymous gift value" }));
+    expect(conditions).toHaveTextContent("Anonymous gift is true");
+    view.unmount();
+
+    const redemption = { ...editorDocument(), id: "alert-redemption", eventType: "channel_point_redemption" as const };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={redemption.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => redemption), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const textConditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(textConditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(within(textConditions).getByRole("combobox", { name: "Rule conditions condition 1 field" }), "rewardTitle");
+    const textOperator = within(textConditions).getByRole("combobox", { name: "Rule conditions Reward title operator" });
+    expect(within(textOperator).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["equals", "includes"]);
+    await user.selectOptions(textOperator, "includes");
+    const textValue = within(textConditions).getByRole("textbox", { name: "Rule conditions Reward title value" });
+    await user.clear(textValue);
+    await user.type(textValue, "Hydrate");
+    expect(textConditions).toHaveTextContent("Reward title contains Hydrate");
+  });
+
+  it("resets operator values and retains invalid range drafts while blocking editor actions", async () => {
+    const user = userEvent.setup();
+    const variation: AlertEditorDocument = {
+      ...editorDocument(), id: "variant-range-raid", eventType: "raid", kind: "variation", parentAlertId: "alert-raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Raider", raidViewers: 50, amount: 50 } }]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={variation.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => variation), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    const operator = within(conditions).getByRole("combobox", { name: "Rule conditions Raid viewers operator" });
+    expect(within(operator).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["equals", "min", "max", "range"]);
+    const minimum = within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Minimum" });
+    const maximum = within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" });
+    await user.clear(maximum);
+    expect(maximum).toHaveValue(null);
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers requires a finite numeric value.");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    await user.type(maximum, "5");
+    expect(minimum).toHaveValue(10);
+    expect(maximum).toHaveValue(5);
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers range minimum cannot exceed its maximum.");
+    await user.clear(maximum);
+    await user.type(maximum, "25");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+    expect(conditions).toHaveTextContent("Raid viewers is between 10 and 25");
+    await user.selectOptions(operator, "min");
+    expect(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers value" })).toHaveValue(1);
+    expect(conditions).toHaveTextContent("Raid viewers is at least 1");
+  });
+
+  it("discards invalid range drafts when toolbar history restores configuration snapshots", async () => {
+    const user = userEvent.setup();
+    const document: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "alert-range-history",
+      eventType: "raid",
+      conditions: [],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Raider", raidViewers: 50, amount: 50 } }]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={document.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    let conditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    await user.selectOptions(
+      within(conditions).getByRole("combobox", { name: "Rule conditions Raid viewers operator" }),
+      "range"
+    );
+    await user.clear(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" }));
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers requires a finite numeric value.");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    conditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(conditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers value" })).toHaveValue(1);
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    conditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(conditions).toHaveTextContent("No conditions.");
+    expect(screen.getByRole("button", { name: "Revert" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Preview$/u })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    conditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(conditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers value" })).toHaveValue(1);
+  });
+
+  it("discards invalid range drafts and restores saved values on Revert", async () => {
+    const user = userEvent.setup();
+    const document: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "alert-range-revert",
+      eventType: "raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Raider", raidViewers: 50, amount: 50 } }]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={document.id} assetApi={assetApi} managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document), getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []), getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(), saveAlertEditorDocument: vi.fn(async (_id, saved) => saved), sendAlertEditorTest: vi.fn()
+        }} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    const maximum = within(conditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" });
+    await user.clear(maximum);
+    await user.type(maximum, "25");
+    await user.clear(maximum);
+    expect(within(conditions).getByRole("alert")).toHaveTextContent("Raid viewers requires a finite numeric value.");
+    expect(screen.getByRole("button", { name: "Revert" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Revert" }));
+
+    const restoredConditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(restoredConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Minimum" })).toHaveValue(10);
+    expect(within(restoredConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" })).toHaveValue(20);
+    expect(within(restoredConditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
+  });
+
+  it("does not carry invalid range drafts to a newly loaded alert document", async () => {
+    const user = userEvent.setup();
+    const first: AlertEditorDocument = {
+      ...editorDocument(),
+      id: "alert-range-first",
+      eventType: "raid",
+      name: "First raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [10, 20] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "First", raidViewers: 50, amount: 50 } }]
+    };
+    const second: AlertEditorDocument = {
+      ...first,
+      id: "alert-range-second",
+      name: "Second raid",
+      conditions: [{ field: "raidViewers", operator: "range", value: [30, 40] }],
+      samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "Second", raidViewers: 60, amount: 60 } }]
+    };
+    const getAlertEditorDocument = vi.fn(async (alertId: string) => alertId === first.id ? first : second);
+    const managementApi = {
+      getAlertEditorDocument, getAlertSet: vi.fn(async () => alertSetDetail(false)), listRegisteredProviders: vi.fn(async () => []),
+      getAssetChangeImpact: vi.fn(), listAssetLibraryItems: vi.fn(async () => []), deleteAsset: vi.fn(), updateAssetMetadata: vi.fn(),
+      saveAlertEditorDocument: vi.fn(async (_id: string, saved: AlertEditorDocument) => saved), sendAlertEditorTest: vi.fn()
+    };
+    const view = render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={first.id} assetApi={assetApi} managementApi={managementApi} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const firstConditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.clear(within(firstConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" }));
+    expect(within(firstConditions).getByRole("alert")).toBeInTheDocument();
+
+    view.rerender(
+      <DirtyNavigationProvider>
+        <AlertEditorPage alertId={second.id} assetApi={assetApi} managementApi={managementApi} onBack={() => undefined} onOpenAlert={() => undefined} />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByRole("heading", { name: "Second raid" })).toBeInTheDocument();
+    const secondConditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(secondConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Minimum" })).toHaveValue(30);
+    expect(within(secondConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" })).toHaveValue(40);
+    expect(within(secondConditions).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
   });
 
   it("copies only design fields from another alert", async () => {
@@ -1615,5 +2659,123 @@ function alertSetDetail(active = true): AlertSetDetail {
       { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
+  };
+}
+
+function raidVariationDocument(
+  overrides: Partial<AlertEditorDocument> & Pick<AlertEditorDocument, "id" | "name">
+): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    eventType: "raid",
+    kind: "variation",
+    parentAlertId: "alert-raid",
+    enabled: true,
+    conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: 5,
+    samplePayloads: [{
+      id: "normal",
+      label: "Normal raid",
+      kind: "built-in",
+      payload: { userName: "Raider", raidViewers: 50, amount: 50 }
+    }],
+    ...overrides
+  };
+}
+
+function variationCandidate(
+  editorId: string,
+  name: string,
+  overrides: Partial<AlertVariationAuthoringContext["candidates"][number]> = {}
+): AlertVariationAuthoringContext["candidates"][number] {
+  return {
+    editorId,
+    variantId: `${editorId}-resolver`,
+    kind: "variation",
+    name,
+    enabled: true,
+    conditions: [],
+    weight: 1,
+    priority: 5,
+    ...overrides
+  };
+}
+
+function renderVariationSelectionEditor(
+  document: AlertEditorDocument,
+  siblings: readonly AlertVariationAuthoringContext["candidates"][number][],
+  options: {
+    readonly defaultEnabled?: boolean;
+    readonly defaultPriority?: number | null;
+    readonly defaultWeight?: number;
+    readonly saveAlertEditorDocument?: AlertEditorPageApi["saveAlertEditorDocument"];
+  } = {}
+) {
+  const context = variationContext(document, siblings);
+  const authoringContext: AlertVariationAuthoringContext = {
+    ...context,
+    candidates: context.candidates.map((candidate) => candidate.kind === "default" ? {
+      ...candidate,
+      enabled: options.defaultEnabled ?? candidate.enabled,
+      priority: options.defaultPriority ?? candidate.priority,
+      weight: options.defaultWeight ?? candidate.weight
+    } : candidate)
+  };
+  return render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId={document.id}
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document),
+          getAlertVariationAuthoringContext: vi.fn(async () => authoringContext),
+          getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument: options.saveAlertEditorDocument
+            ?? vi.fn(async (_alertId, saved) => saved),
+          sendAlertEditorTest: vi.fn()
+        }}
+        onBack={() => undefined}
+        onOpenAlert={() => undefined}
+      />
+    </DirtyNavigationProvider>
+  );
+}
+
+function variationContext(
+  document: AlertEditorDocument,
+  siblings: readonly AlertVariationAuthoringContext["candidates"][number][] = []
+): AlertVariationAuthoringContext {
+  const ruleId = document.kind === "default" ? document.id : document.parentAlertId!;
+  const defaultCandidate = {
+    editorId: ruleId,
+    variantId: `${ruleId}-default-resolver`,
+    kind: "default" as const,
+    name: document.kind === "default" ? document.name : "Default",
+    enabled: document.kind === "default" ? document.enabled : true,
+    conditions: [],
+    weight: document.kind === "default" ? document.weight : 1,
+    priority: document.kind === "default" ? document.priority : null
+  };
+  const selectedCandidate = document.kind === "default" ? [] : [{
+    editorId: document.id,
+    variantId: `${document.id}-resolver`,
+    kind: "variation" as const,
+    name: document.name,
+    enabled: document.enabled,
+    conditions: document.variantConditions,
+    weight: document.weight,
+    priority: document.priority
+  }];
+  return {
+    ruleId,
+    eventType: document.eventType,
+    candidates: [defaultCandidate, ...selectedCandidate, ...siblings]
   };
 }

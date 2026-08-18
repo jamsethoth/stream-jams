@@ -424,6 +424,10 @@
   flex-wrap: nowrap;
 }
 
+.alert-sets-page__toggle-action {
+  min-width: 78px;
+}
+
 .alert-sets-page__narrow-action {
   display: none;
 }
@@ -442,15 +446,11 @@
 }
 
 .alert-sets-page__action-menu summary {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-strong);
-  border-radius: 6px;
-  color: var(--color-text);
+  align-items: center;
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
+  display: inline-flex;
+  justify-content: center;
   list-style: none;
-  padding: 6px 9px;
 }
 
 .alert-sets-page__action-menu summary::-webkit-details-marker {

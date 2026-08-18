@@ -1,7 +1,58 @@
 import { describe, expect, it, vi } from "vitest";
+import { alertEditorDocumentSchema } from "@stream-jams/core";
 import { createHttpManagementApi } from "./management-api.js";
 
 describe("createHttpManagementApi", () => {
+  it("loads and validates encoded variation sibling context URLs", async () => {
+    const context = variationAuthoringContext();
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/management/alerts/alert%2Ffollow/editor/variation-context") return jsonResponse(context);
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getAlertVariationAuthoringContext("alert/follow")).resolves.toEqual(context);
+    expect(fetcher).toHaveBeenCalledWith(
+      "/management/alerts/alert%2Ffollow/editor/variation-context",
+      expect.objectContaining({ headers: { authorization: "Bearer mgmt_session" } })
+    );
+  });
+
+  it("rejects an invalid variation sibling context response", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/auth/management/sessions") return jsonResponse(managementSession());
+      return jsonResponse({ ...variationAuthoringContext(), candidates: [] });
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getAlertVariationAuthoringContext("alert-follow")).rejects.toThrow();
+  });
+
+  it("sends complete sibling priority assignments through the existing editor save request", async () => {
+    const document = alertEditorDocumentSchema.parse(editorDocument());
+    const assignments = [
+      { variationId: "variant-vip", priority: 3 },
+      { variationId: "variant-raid", priority: 2 }
+    ];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/management/alerts/alert-follow/editor") {
+        expect(init).toMatchObject({
+          method: "PUT",
+          body: JSON.stringify({ document, confirmLiveImpact: true, priorityAssignments: assignments })
+        });
+        return jsonResponse(document);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.saveAlertEditorDocument("alert-follow", document, true, assignments)).resolves.toMatchObject(document);
+  });
+
   it("loads runtime-validated UI refactor contracts through the existing client", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
@@ -913,6 +964,35 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
+function variationAuthoringContext() {
+  return {
+    ruleId: "alert-follow",
+    eventType: "follow" as const,
+    candidates: [
+      {
+        editorId: "alert-follow",
+        variantId: "variant-follow",
+        kind: "default" as const,
+        name: "New follower",
+        enabled: true,
+        conditions: [],
+        weight: 1,
+        priority: null
+      },
+      {
+        editorId: "variant-vip",
+        variantId: "variant-vip",
+        kind: "variation" as const,
+        name: "VIP follower",
+        enabled: false,
+        conditions: [{ field: "actor.displayName", operator: "equals" as const, value: "James" }],
+        weight: 3,
+        priority: 7
+      }
+    ]
+  };
+}
+
 function managementSession(): { readonly id: string; readonly csrfToken: string } {
   return {
     id: "mgmt_session",
@@ -927,7 +1007,12 @@ interface UiContractManagementApi {
   getTtsProviderSafetySettings(providerId: string): Promise<unknown>;
   listAlertSets(): Promise<readonly unknown[]>;
   getAlertEditorDocument(alertId: string): Promise<unknown>;
-  saveAlertEditorDocument(alertId: string, document: ReturnType<typeof editorDocument>): Promise<unknown>;
+  saveAlertEditorDocument(
+    alertId: string,
+    document: ReturnType<typeof editorDocument>,
+    confirmLiveImpact?: boolean,
+    priorityAssignments?: readonly { readonly variationId: string; readonly priority: number }[]
+  ): Promise<unknown>;
   sendAlertEditorTest(alertId: string, request: {
     readonly document: ReturnType<typeof editorDocument>;
     readonly targetProfileId: "landscape" | "vertical";

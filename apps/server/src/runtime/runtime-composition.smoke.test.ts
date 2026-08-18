@@ -44,6 +44,54 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("wires the authenticated variation sibling context through the real runtime", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    await composition.app.inject({ method: "GET", url: "/management/home", headers: authHeaders });
+    const rules = (await composition.app.inject({
+      method: "GET",
+      url: "/alerts/rules",
+      headers: authHeaders
+    })).json() as AlertRule[];
+    const followRule = rules.find((candidate) => candidate.eventType === "follow")!;
+
+    const response = await composition.app.inject({
+      method: "GET",
+      url: `/management/alerts/${followRule.id}/editor/variation-context`,
+      headers: authHeaders
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    const context = response.json() as {
+      readonly ruleId: string;
+      readonly eventType: string;
+      readonly candidates: readonly Record<string, unknown>[];
+    };
+    expect(context).toMatchObject({
+      ruleId: followRule.id,
+      eventType: followRule.eventType
+    });
+    expect(context.candidates[0]).toMatchObject({
+      editorId: followRule.id,
+      variantId: followRule.variants[0]!.id,
+      kind: "default",
+      name: followRule.name
+    });
+    expect(context.candidates).toHaveLength(followRule.variants.length);
+  });
+
   it("restores playback protections before serving commands and persists later changes", async () => {
     const testRoot = await createTemporaryDirectory();
     const configStore = new StaticConfigStore(createConfig(testRoot, {

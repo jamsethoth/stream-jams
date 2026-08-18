@@ -185,9 +185,25 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(sourceCard.getByText("1920 x 1080", { exact: true })).toBeVisible();
   await expect(sourceCard.getByText(/Add a Browser source in OBS at 1920 x 1080/u)).toBeVisible();
   const alertRow = page.getByRole("row", { name: /New follower/u });
-  await expect(alertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();
+  const editAction = alertRow.getByRole("button", { name: "Edit New follower" });
+  await expect(editAction).toBeVisible();
   await expect(alertRow.getByRole("button", { name: "Test New follower" })).toBeVisible();
-  await expect(alertRow.getByRole("button", { name: "Enable New follower" })).toBeVisible();
+  const moreAction = alertRow.locator("summary[aria-label='More actions for New follower']");
+  const compactControlMetrics = async (locator: typeof editAction) => locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      borderRadius: style.borderRadius,
+      fontSize: style.fontSize,
+      height: element.getBoundingClientRect().height,
+      paddingLeft: style.paddingLeft,
+      paddingRight: style.paddingRight
+    };
+  });
+  expect(await compactControlMetrics(moreAction)).toEqual(await compactControlMetrics(editAction));
+  const enableToggle = alertRow.getByRole("button", { name: "Enable New follower" });
+  await expect(enableToggle).toBeVisible();
+  const enableBox = await enableToggle.boundingBox();
+  expect(enableBox).not.toBeNull();
   expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   listening = false;
   await expect(sourceCard.getByText(/Not listening\. Last seen/u)).toBeVisible({ timeout: 7_000 });
@@ -199,7 +215,12 @@ test("management alerts reviews the starter set and safely manages its landscape
   await page.getByRole("button", { name: "Hide Landscape URL" }).click();
   await expect(sourceCard.getByRole("textbox", { name: "Landscape browser source" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Enable New follower" }).click();
+  await enableToggle.click();
+  const disableToggle = alertRow.getByRole("button", { name: "Disable New follower" });
+  await expect(disableToggle).toBeVisible();
+  const disableBox = await disableToggle.boundingBox();
+  expect(disableBox).not.toBeNull();
+  expect(disableBox!.width).toBe(enableBox!.width);
   await expect(page.locator(".management-toast--success")).toContainText("New follower enabled.");
   await page.getByRole("button", { name: "Mark starter review done" }).click();
   const reviewWarning = page.locator(".management-toast--warning");
@@ -345,6 +366,16 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
       ]
     }
   }));
+  await page.route("**/management/alerts/alert-community-gift/editor/variation-context", (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext({
+      id: "alert-community-gift",
+      eventType: "community_gift",
+      enabled: false,
+      weight: 1,
+      priority: null
+    })
+  }));
   await page.route("**/management/alerts/alert-community-gift/editor/test", async (route) => {
     testRequests.push(route.request().postDataJSON());
     await route.fulfill({ contentType: "application/json", json: { status: "queued", targetProfileId: "landscape", referenceId: "ref-community-gift", test: true } });
@@ -362,13 +393,18 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
   await page.getByRole("tab", { name: "Event" }).click();
   await expect(page.getByRole("combobox", { name: "Sample payload" })).toHaveValue("normal");
-  await expect(page.getByRole("button", { name: "Add gift count minimum" })).toBeVisible();
+  const ruleConditions = page.getByRole("group", { name: "Rule conditions" });
+  await ruleConditions.getByRole("button", { name: "Add condition" }).click();
+  await ruleConditions.getByRole("combobox", { name: "Rule conditions condition 1 field" }).selectOption("giftCount");
+  await ruleConditions.getByRole("combobox", { name: "Rule conditions Gift count operator" }).selectOption("min");
+  await expect(ruleConditions.getByRole("spinbutton", { name: "Rule conditions Gift count value" })).toBeVisible();
   await page.getByLabel("Alert inspector").getByRole("button", { name: "Send test" }).click();
   await expect(page.getByText(/Queued on Landscape.*ref-community-gift/u)).toBeVisible();
   expect(testRequests).toEqual([expect.objectContaining({
     targetProfileId: "landscape",
     samplePayload: expect.objectContaining({ amount: 5, tier: "1000" })
   })]);
+  await page.getByRole("button", { name: "Revert" }).click();
   await page.getByRole("button", { name: "Back to alerts" }).click();
   const createdRow = page.getByRole("row", { name: /Community gift received/u });
   await expect(createdRow).toContainText("Disabled");
@@ -418,15 +454,27 @@ test("alert variation can be created edited duplicated and selectively deleted",
     conditions: [],
     variantConditions: [],
     weight: 1,
-    priority: null,
+    priority: 5,
     cooldownSeconds: 0,
     rulePriority: 0,
     targetProfiles: alertEditorDocument().targetProfiles.map((profile) => ({
       ...profile,
       enabled: false,
       reviewState: "needs-review" as const
-    }))
+    })),
+    samplePayloads: [{
+      id: "normal",
+      label: "Normal raid",
+      kind: "built-in",
+      payload: { userName: "Raider", raidViewers: 25, amount: 25 }
+    }]
   };
+  let siblingCandidates = [
+    { editorId: "variant-weighted-raid", variantId: "variant-weighted-raid-resolver", kind: "variation", name: "Weighted raid", enabled: true, conditions: [{ field: "raidViewers", operator: "range", value: [10, 100] }], weight: 3, priority: 3 },
+    { editorId: "variant-lower-raid", variantId: "variant-lower-raid-resolver", kind: "variation", name: "Lower raid", enabled: true, conditions: [], weight: 1, priority: 1 }
+  ];
+  let failNextSave = false;
+  const testRequests: unknown[] = [];
   const detail = () => ({ overview, inventory, browserSources: [] });
 
   await page.route("**/management/alert-sets", (route) => route.fulfill({ contentType: "application/json", json: [overview] }));
@@ -450,11 +498,59 @@ test("alert variation can be created edited duplicated and selectively deleted",
   });
   await page.route("**/management/alerts/variant-large-raid/editor", async (route) => {
     if (route.request().method() === "PUT") {
-      const body = route.request().postDataJSON() as { readonly document: typeof variationDocument; readonly confirmLiveImpact: boolean };
-      variationDocument = body.document;
+      expect(route.request().headers()["authorization"]).toBe("Bearer mgmt_e2e");
+      expect(route.request().headers()["x-stream-jams-csrf"]).toBe("csrf_e2e");
+      const body = route.request().postDataJSON() as {
+        readonly document: typeof variationDocument;
+        readonly confirmLiveImpact: boolean;
+        readonly priorityAssignments?: readonly { readonly variationId: string; readonly priority: number }[];
+      };
+      if (failNextSave) {
+        failNextSave = false;
+        requests.push({ command: "save-failed", id: variationDocument.id, body });
+        await route.fulfill({ contentType: "application/json", status: 500, json: { message: "Priority update failed. Reference ref-priority-save." } });
+        return;
+      }
+      const priorities = new Map(body.priorityAssignments?.map((assignment) => [assignment.variationId, assignment.priority]));
+      variationDocument = {
+        ...body.document,
+        priority: priorities.get("variant-large-raid-resolver") ?? body.document.priority
+      };
+      siblingCandidates = siblingCandidates.map((candidate) => ({
+        ...candidate,
+        priority: priorities.get(candidate.variantId) ?? candidate.priority
+      }));
       requests.push({ command: "save", id: variationDocument.id, body });
     }
     await route.fulfill({ contentType: "application/json", json: variationDocument });
+  });
+  await page.route("**/management/alerts/variant-large-raid/editor/variation-context", async (route) => {
+    expect(route.request().headers()["authorization"]).toBe("Bearer mgmt_e2e");
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        ruleId: "alert-raid",
+        eventType: "raid",
+        candidates: [
+          { editorId: "alert-raid", variantId: "alert-raid-default-resolver", kind: "default", name: "Default", enabled: true, conditions: [], weight: 1, priority: 0 },
+          { editorId: variationDocument.id, variantId: "variant-large-raid-resolver", kind: "variation", name: variationDocument.name, enabled: variationDocument.enabled, conditions: variationDocument.variantConditions, weight: variationDocument.weight, priority: variationDocument.priority },
+          ...siblingCandidates
+        ]
+      }
+    });
+  });
+  await page.route("**/management/alerts/variant-large-raid/editor/test", async (route) => {
+    expect(route.request().headers()["authorization"]).toBe("Bearer mgmt_e2e");
+    expect(route.request().headers()["x-stream-jams-csrf"]).toBe("csrf_e2e");
+    testRequests.push(route.request().postDataJSON());
+    await route.fulfill({
+      contentType: "application/json",
+      json: { status: "queued", targetProfileId: "landscape", referenceId: "ref-variation-selected", test: true }
+    });
+  });
+  await page.route("**/management/alerts/variant-large-raid/editor/errors", async (route) => {
+    const body = route.request().postDataJSON() as { readonly error: { readonly referenceId: string } };
+    await route.fulfill({ contentType: "application/json", json: { referenceId: body.error.referenceId } });
   });
   await page.route("**/management/alerts/variant-large-raid/duplicate", async (route) => {
     const duplicate: AlertInventoryFixture = {
@@ -485,14 +581,85 @@ test("alert variation can be created edited duplicated and selectively deleted",
 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/variant-large-raid/u);
   await page.getByRole("tab", { name: "Alert" }).click();
+  await page.getByRole("checkbox", { name: "Alert enabled" }).check();
   await page.getByRole("button", { name: "Mark profile reviewed" }).click();
   await page.getByRole("checkbox", { name: "Use this profile for live alerts" }).check();
   await page.getByRole("tab", { name: "Event" }).click();
+  const priorityGroups = page.getByRole("region", { name: "Priority groups" });
+  await priorityGroups.getByRole("group", { name: "Priority group 2" }).getByRole("button", { name: "Move group earlier" }).click();
+  await priorityGroups.getByRole("combobox", { name: "Move Large raid to priority group" }).selectOption("0");
+  const relativeChance = page.getByRole("spinbutton", { name: "Relative chance" });
+  await relativeChance.fill("0");
+  await expect(relativeChance).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByText("Relative chance must be a positive whole number.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
+  await relativeChance.fill("1");
   const variationConditions = page.getByRole("group", { name: "Variation conditions" });
-  await variationConditions.getByRole("button", { name: "Add raid viewer minimum" }).click();
-  await variationConditions.getByRole("spinbutton", { name: "Variation conditions Raid viewer minimum" }).fill("25");
+  await variationConditions.getByRole("button", { name: "Add condition" }).click();
+  await variationConditions.getByRole("combobox", { name: "Variation conditions Raid viewers operator" }).selectOption("range");
+  await variationConditions.getByRole("spinbutton", { name: "Variation conditions Raid viewers Maximum" }).fill("100");
+  await variationConditions.getByRole("spinbutton", { name: "Variation conditions Raid viewers Minimum" }).fill("10");
+  const explanation = page.getByRole("region", { name: "Sample selection explanation" });
+  await expect(explanation).toContainText("1/4 weight · 25% relative chance");
+  await expect(explanation).toContainText("3/4 weight · 75% relative chance");
+  await page.getByRole("textbox", { name: "Session payload (JSON)" }).fill("{");
+  await expect(explanation).toContainText("Correct the sample payload to explain selection.");
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog", { name: "Save changes to active alert?" }).getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
+
+  const firstSave = requests.find((request) => request.command === "save");
+  expect(firstSave?.body).toEqual(expect.objectContaining({
+    confirmLiveImpact: true,
+    document: expect.objectContaining({
+      id: "variant-large-raid",
+      weight: 1,
+      variantConditions: [{ field: "raidViewers", operator: "range", value: [10, 100] }]
+    }),
+    priorityAssignments: [
+      { variationId: "variant-weighted-raid-resolver", priority: 2 },
+      { variationId: "variant-large-raid-resolver", priority: 2 },
+      { variationId: "variant-lower-raid-resolver", priority: 1 }
+    ]
+  }));
+
+  await page.reload();
+  await page.getByRole("tab", { name: "Event" }).click();
+  await expect(page.getByRole("region", { name: "Priority groups" }).getByRole("group", { name: "Priority group 1" })).toContainText("Large raid");
+  await expect(page.getByRole("region", { name: "Priority groups" }).getByRole("group", { name: "Priority group 1" })).toContainText("Weighted raid");
+  await page.getByLabel("Alert inspector").getByRole("button", { name: "Send test" }).click();
+  await expect(page.getByText(/Queued on Landscape.*ref-variation-selected/u)).toBeVisible();
+  expect(testRequests).toEqual([expect.objectContaining({
+    targetProfileId: "landscape",
+    samplePayload: expect.objectContaining({ raidViewers: 25 })
+  })]);
+
+  const reloadedConditions = page.getByRole("group", { name: "Variation conditions" });
+  const reloadedMinimum = reloadedConditions.getByRole("spinbutton", { name: "Variation conditions Raid viewers Minimum" });
+  const reloadedMaximum = reloadedConditions.getByRole("spinbutton", { name: "Variation conditions Raid viewers Maximum" });
+  await reloadedMinimum.fill("110");
+  await expect(reloadedConditions.getByRole("alert")).toContainText("Raid viewers range minimum cannot exceed its maximum.");
+  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  const headerActions = page.locator(".alert-editor-page__header-actions");
+  await expect(headerActions.getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
+  await expect(headerActions.getByRole("button", { name: "Send test" })).toBeDisabled();
+  await reloadedMinimum.fill("20");
+  await reloadedMaximum.fill("60");
+  const reloadedGroups = page.getByRole("region", { name: "Priority groups" });
+  await reloadedGroups.getByRole("combobox", { name: "Move Lower raid to priority group" }).selectOption("0");
+  failNextSave = true;
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog", { name: "Save changes to active alert?" }).getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("The alert was not saved")).toBeVisible();
+  await expect(reloadedGroups.getByRole("group", { name: "Priority group 1" })).toContainText("Lower raid");
+  await expect(reloadedMinimum).toHaveValue("20");
+  await expect(reloadedMaximum).toHaveValue("60");
+  await page.getByRole("button", { name: "Revert" }).click();
   await page.getByRole("button", { name: "Back to alerts" }).click();
 
   await page.locator("summary[aria-label='More actions for Large raid']").click();
@@ -508,14 +675,8 @@ test("alert variation can be created edited duplicated and selectively deleted",
 
   expect(requests).toEqual([
     { command: "create", id: "alert-raid", body: { name: "Large raid" } },
-    {
-      command: "save",
-      id: "variant-large-raid",
-      body: expect.objectContaining({
-        confirmLiveImpact: false,
-        document: expect.objectContaining({ variantConditions: [{ field: "raidViewers", operator: "min", value: 25 }] })
-      })
-    },
+    expect.objectContaining({ command: "save", id: "variant-large-raid" }),
+    expect.objectContaining({ command: "save-failed", id: "variant-large-raid" }),
     { command: "duplicate", id: "variant-large-raid", body: null },
     { command: "delete", id: "variant-large-raid-copy", body: { confirmLiveImpact: true } }
   ]);
@@ -579,6 +740,10 @@ test("focused alert editor saves layouts and separates preview from test deliver
     }
     await route.fulfill({ contentType: "application/json", json: document });
   });
+  await page.route("**/management/alerts/alert-follow/editor/variation-context", (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext(document)
+  }));
   await page.route("**/management/alerts/alert-follow/editor/test", async (route) => {
     const request = route.request().postDataJSON() as { readonly targetProfileId: "landscape" | "vertical" };
     testRequests.push(request);
@@ -629,23 +794,14 @@ test("focused alert editor saves layouts and separates preview from test deliver
     ["Animation preset", "Animation duration (milliseconds)"]
   ] as const;
   const fontSize = page.getByLabel("Font size");
-  const collapsedControls = [];
   for (const [label, controlLabel] of disclosures) {
     const summary = page.locator("summary").filter({ hasText: label });
     await expect(summary).toBeVisible();
     const control = page.getByLabel(controlLabel, { exact: true });
-    await summary.focus();
-    await page.keyboard.press("Enter");
     await expect(control).toBeHidden();
-    collapsedControls.push(control);
-    for (const collapsed of collapsedControls) await expect(collapsed).toBeHidden();
-    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-  }
-  for (const [label, controlLabel] of [...disclosures].reverse()) {
-    const summary = page.locator("summary").filter({ hasText: label });
     await summary.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByLabel(controlLabel, { exact: true })).toBeVisible();
+    await expect(control).toBeVisible();
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   }
   await expect(fontSize).toHaveValue("32");
@@ -802,9 +958,14 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
     }
     await route.fulfill({ contentType: "application/json", json: document });
   });
+  await page.route("**/management/alerts/alert-follow/editor/variation-context", (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext(document)
+  }));
 
   await page.goto("/manage/modules/alerts/editor/alert-follow?profile=landscape");
   await page.getByRole("button", { name: "TTS" }).click();
+  await page.locator("summary").filter({ hasText: "Live TTS" }).click();
   await expect(page.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeDisabled();
   await expect(page.getByRole("link", { name: "Set up a TTS provider" })).toHaveAttribute("href", "/manage/tts-providers");
 
@@ -837,15 +998,13 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
   };
   await page.reload();
 
-  await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
   const liveTtsSummary = page.locator("summary").filter({ hasText: "Live TTS" });
   const enabled = page.getByRole("checkbox", { name: "Enable TTS for this alert" });
+  await expect(enabled).toBeHidden();
   await liveTtsSummary.focus();
   await page.keyboard.press("Enter");
-  await expect(enabled).toBeHidden();
-  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-  await page.keyboard.press("Enter");
   await expect(enabled).toBeVisible();
+  await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   await page.getByRole("textbox", { name: "TTS template" }).fill("Hello {actor.displayName}");
   await page.getByRole("button", { name: "Save" }).click();
@@ -898,5 +1057,28 @@ function alertEditorDocument() {
       { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [{ layerId: "layer-text", x: 190, y: 1180, width: 700, height: 160, zIndex: 0 }] }
     ],
     samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { actor: { displayName: "James" } } }]
+  };
+}
+
+function defaultVariationContext(document: {
+  readonly id: string;
+  readonly eventType: string;
+  readonly enabled: boolean;
+  readonly weight?: number;
+  readonly priority?: number | null;
+}) {
+  return {
+    ruleId: document.id,
+    eventType: document.eventType,
+    candidates: [{
+      editorId: document.id,
+      variantId: `${document.id}-default-resolver`,
+      kind: "default",
+      name: "Default",
+      enabled: document.enabled,
+      conditions: [],
+      weight: document.weight ?? 1,
+      priority: document.priority ?? null
+    }]
   };
 }

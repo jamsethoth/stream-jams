@@ -589,9 +589,46 @@ export const alertEditorDocumentSchema = z.object({
   samplePayloads: z.array(alertSamplePayloadSchema).min(1)
 });
 
+export const alertVariationAuthoringCandidateSchema = z.object({
+  editorId: nonEmptyStringSchema,
+  variantId: nonEmptyStringSchema,
+  kind: z.enum(["default", "variation"]),
+  name: nonEmptyStringSchema,
+  enabled: z.boolean(),
+  conditions: z.array(alertConditionSchema),
+  weight: positiveIntegerSchema,
+  priority: z.number().int().nullable()
+});
+
+export const alertVariationAuthoringContextSchema = z.object({
+  ruleId: nonEmptyStringSchema,
+  eventType: streamEventTypeSchema,
+  candidates: z.array(alertVariationAuthoringCandidateSchema).min(1)
+}).superRefine((context, refinement) => {
+  const defaults = context.candidates.filter(
+    (candidate) => candidate.kind === "default"
+  );
+  if (
+    defaults.length !== 1
+    || context.candidates[0]?.kind !== "default"
+    || defaults[0]?.editorId !== context.ruleId
+  ) {
+    refinement.addIssue({
+      code: "custom",
+      message: "Variation context requires one first default candidate keyed by the rule ID"
+    });
+  }
+});
+
+export const alertVariationPriorityAssignmentSchema = z.object({
+  variationId: nonEmptyStringSchema,
+  priority: z.number().int()
+});
+
 export const alertEditorSaveInputSchema = z.object({
   document: alertEditorDocumentSchema,
-  confirmLiveImpact: z.boolean().default(false)
+  confirmLiveImpact: z.boolean().default(false),
+  priorityAssignments: z.array(alertVariationPriorityAssignmentSchema).default([])
 });
 
 export const alertEditorTestRequestSchema = z.object({
@@ -1016,6 +1053,9 @@ export type AlertTargetProfileDocument = z.infer<typeof alertTargetProfileDocume
 export type AlertSamplePayload = z.infer<typeof alertSamplePayloadSchema>;
 export type AlertTemplateVariable = z.infer<typeof alertTemplateVariableSchema>;
 export type AlertEditorDocument = z.infer<typeof alertEditorDocumentSchema>;
+export type AlertVariationAuthoringCandidate = z.infer<typeof alertVariationAuthoringCandidateSchema>;
+export type AlertVariationAuthoringContext = z.infer<typeof alertVariationAuthoringContextSchema>;
+export type AlertVariationPriorityAssignment = z.infer<typeof alertVariationPriorityAssignmentSchema>;
 export type AlertEditorSaveInput = z.infer<typeof alertEditorSaveInputSchema>;
 export type AlertEditorTestRequest = z.infer<typeof alertEditorTestRequestSchema>;
 export type AlertEditorTestResult = z.infer<typeof alertEditorTestResultSchema>;

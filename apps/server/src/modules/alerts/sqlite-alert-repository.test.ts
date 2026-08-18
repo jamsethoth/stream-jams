@@ -74,6 +74,49 @@ describe("SqliteAlertRepository", () => {
     });
   });
 
+  it("round-trips sibling order and conditions while mapping stored zero priority to the optional compatibility form", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
+    const collection = createCollection("collection-1", "Main Alerts");
+    const rule = createRule("rule-1", [collection.id]);
+    const defaultVariant = {
+      ...rule.variants[0]!,
+      id: "variant-z-default",
+      priority: 0,
+      conditions: [
+        { field: "metadata.default", operator: "equals" as const, value: true },
+        { field: "actor.displayName", operator: "includes" as const, value: "Jam" }
+      ]
+    };
+    const variation = {
+      ...rule.variants[0]!,
+      id: "variant-a-special",
+      priority: 2,
+      conditions: [{ field: "metadata.vip", operator: "equals" as const, value: true }]
+    };
+
+    await repository.saveCollection(collection);
+    await repository.saveRule({
+      ...rule,
+      conditions: [
+        { field: "metadata.first", operator: "equals", value: 1 },
+        { field: "metadata.second", operator: "equals", value: 2 }
+      ],
+      variants: [defaultVariant, variation]
+    });
+
+    const loaded = await repository.findRuleById(rule.id);
+    expect(loaded?.conditions).toEqual([
+      { field: "metadata.first", operator: "equals", value: 1 },
+      { field: "metadata.second", operator: "equals", value: 2 }
+    ]);
+    expect(loaded?.variants.map(({ id }) => id)).toEqual(["variant-z-default", "variant-a-special"]);
+    expect(loaded?.variants[0]).toMatchObject({ conditions: defaultVariant.conditions });
+    expect(loaded?.variants[0]?.priority).toBeUndefined();
+    expect(loaded?.variants[1]).toMatchObject({ conditions: variation.conditions, priority: 2 });
+  });
+
   it("removes deleted collections from persisted rule collection ids", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);

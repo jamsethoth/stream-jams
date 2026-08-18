@@ -52,6 +52,22 @@ export type * from "./alerts/alert-matcher.js";
 export { DefaultAlertMatcher } from "./alerts/alert-matcher.js";
 export type * from "./alerts/alert-resolver.js";
 export { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alerts/alert-resolver.js";
+export type * from "./alerts/variation-authoring.js";
+export type { AlertVariationPriorityAssignment } from "./alerts/variation-authoring.js";
+export {
+  areAlertPriorityGroupsEqual,
+  buildAlertPriorityGroups,
+  chooseWeightedAlertVariation,
+  createNormalizedAlertSampleEvent,
+  evaluateAlertVariationSample,
+  formatAlertConditionSummary,
+  getAlertConditionFieldDefinitions,
+  moveAlertPriorityGroup,
+  moveAlertVariationToPriorityGroup,
+  normalizeAlertPriorityGroups,
+  projectAlertVariationSelection,
+  validateAuthoredAlertConditions
+} from "./alerts/variation-authoring.js";
 export {
   AlertCollectionNotFoundError,
   LastActiveAlertCollectionError,

@@ -1,4 +1,10 @@
-import { targetProfileDefinitions, type AlertEditorDocument, type AlertLayer } from "@stream-jams/core";
+import {
+  areAlertPriorityGroupsEqual,
+  targetProfileDefinitions,
+  type AlertEditorDocument,
+  type AlertLayer,
+  type AlertPriorityGroup
+} from "@stream-jams/core";
 
 type LayerLayout = AlertEditorDocument["targetProfiles"][number]["layerLayouts"][number];
 export type TargetProfileId = AlertEditorDocument["targetProfiles"][number]["id"];
@@ -12,11 +18,18 @@ export interface CanvasViewState {
   readonly scrollTop: number;
 }
 
+export interface AlertEditorSnapshot {
+  readonly document: AlertEditorDocument;
+  readonly priorityGroups: readonly AlertPriorityGroup[];
+}
+
 export interface AlertEditorState {
   readonly document: AlertEditorDocument;
   readonly savedDocument: AlertEditorDocument;
-  readonly past: readonly AlertEditorDocument[];
-  readonly future: readonly AlertEditorDocument[];
+  readonly priorityGroups: readonly AlertPriorityGroup[];
+  readonly savedPriorityGroups: readonly AlertPriorityGroup[];
+  readonly past: readonly AlertEditorSnapshot[];
+  readonly future: readonly AlertEditorSnapshot[];
   readonly historyLimit: number;
 }
 
@@ -25,10 +38,26 @@ export interface SnapOptions {
   readonly threshold?: number;
 }
 
-export function createEditorState(document: AlertEditorDocument, historyLimit = 50): AlertEditorState {
+export function createEditorState(document: AlertEditorDocument, historyLimit?: number): AlertEditorState;
+export function createEditorState(
+  document: AlertEditorDocument,
+  priorityGroups: readonly AlertPriorityGroup[],
+  historyLimit?: number
+): AlertEditorState;
+export function createEditorState(
+  document: AlertEditorDocument,
+  priorityGroupsOrHistoryLimit: readonly AlertPriorityGroup[] | number = [],
+  suppliedHistoryLimit = 50
+): AlertEditorState {
+  const priorityGroups = typeof priorityGroupsOrHistoryLimit === "number" ? [] : priorityGroupsOrHistoryLimit;
+  const historyLimit = typeof priorityGroupsOrHistoryLimit === "number"
+    ? priorityGroupsOrHistoryLimit
+    : suppliedHistoryLimit;
   return {
     document,
     savedDocument: document,
+    priorityGroups,
+    savedPriorityGroups: priorityGroups,
     past: [],
     future: [],
     historyLimit: Math.max(1, Math.trunc(historyLimit))
@@ -47,35 +76,52 @@ export function applyEditorUpdate(
   return {
     ...state,
     document,
-    past: [...state.past, state.document].slice(-state.historyLimit),
+    past: [...state.past, currentSnapshot(state)].slice(-state.historyLimit),
+    future: []
+  };
+}
+
+export function applyPriorityGroupUpdate(
+  state: AlertEditorState,
+  update: (groups: readonly AlertPriorityGroup[]) => readonly AlertPriorityGroup[]
+): AlertEditorState {
+  const priorityGroups = update(state.priorityGroups);
+  if (areAlertPriorityGroupsEqual(priorityGroups, state.priorityGroups)) {
+    return state;
+  }
+
+  return {
+    ...state,
+    priorityGroups,
+    past: [...state.past, currentSnapshot(state)].slice(-state.historyLimit),
     future: []
   };
 }
 
 export function undoEditorUpdate(state: AlertEditorState): AlertEditorState {
-  const document = state.past.at(-1);
-  if (document === undefined) {
+  const snapshot = state.past.at(-1);
+  if (snapshot === undefined) {
     return state;
   }
 
   return {
     ...state,
-    document,
+    ...snapshot,
     past: state.past.slice(0, -1),
-    future: [state.document, ...state.future].slice(0, state.historyLimit)
+    future: [currentSnapshot(state), ...state.future].slice(0, state.historyLimit)
   };
 }
 
 export function redoEditorUpdate(state: AlertEditorState): AlertEditorState {
-  const document = state.future[0];
-  if (document === undefined) {
+  const snapshot = state.future[0];
+  if (snapshot === undefined) {
     return state;
   }
 
   return {
     ...state,
-    document,
-    past: [...state.past, state.document].slice(-state.historyLimit),
+    ...snapshot,
+    past: [...state.past, currentSnapshot(state)].slice(-state.historyLimit),
     future: state.future.slice(1)
   };
 }
@@ -84,17 +130,27 @@ export function markEditorSaved(state: AlertEditorState): AlertEditorState {
   return {
     ...state,
     savedDocument: state.document,
+    savedPriorityGroups: state.priorityGroups,
     past: [],
     future: []
   };
 }
 
 export function revertEditorChanges(state: AlertEditorState): AlertEditorState {
-  return createEditorState(state.savedDocument, state.historyLimit);
+  return createEditorState(state.savedDocument, state.savedPriorityGroups, state.historyLimit);
 }
 
 export function isEditorDirty(state: AlertEditorState): boolean {
-  return state.document !== state.savedDocument;
+  return state.document !== state.savedDocument
+    || arePriorityGroupsDirty(state);
+}
+
+export function arePriorityGroupsDirty(state: AlertEditorState): boolean {
+  return !areAlertPriorityGroupsEqual(state.priorityGroups, state.savedPriorityGroups);
+}
+
+function currentSnapshot(state: AlertEditorState): AlertEditorSnapshot {
+  return { document: state.document, priorityGroups: state.priorityGroups };
 }
 
 export function copyAlertDesign(

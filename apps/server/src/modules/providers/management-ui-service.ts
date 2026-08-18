@@ -11,6 +11,8 @@ import {
   type AlertSetDetail,
   type AlertInventoryRow,
   type AlertVariationCreateInput,
+  type AlertVariationAuthoringContext,
+  type AlertVariationPriorityAssignment,
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AssetLibraryItem,
@@ -80,10 +82,12 @@ export interface ManagementUiServiceOptions {
   readonly getTwitchAuthorization: () => Promise<TwitchConnectionStatus>;
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
+  readonly getAlertVariationAuthoringContext: (alertId: string) => Promise<AlertVariationAuthoringContext>;
   readonly saveAlertEditorDocument: (
     alertId: string,
     document: AlertEditorDocument,
-    confirmLiveImpact: boolean
+    confirmLiveImpact: boolean,
+    priorityAssignments: readonly AlertVariationPriorityAssignment[]
   ) => Promise<AlertEditorDocument>;
   readonly sendAlertEditorTest: (alertId: string, request: AlertEditorTestRequest) => Promise<AlertEditorTestResult>;
   readonly reportAlertEditorError: (alertId: string, input: AlertEditorErrorReportInput) => Promise<AlertEditorErrorReportResult>;
@@ -253,12 +257,17 @@ export class ManagementUiService {
     return this.#options.getAlertEditorDocument(alertId);
   }
 
+  getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext> {
+    return this.#options.getAlertVariationAuthoringContext(alertId);
+  }
+
   saveAlertEditorDocument(
     alertId: string,
     document: AlertEditorDocument,
-    confirmLiveImpact: boolean
+    confirmLiveImpact: boolean,
+    priorityAssignments: readonly AlertVariationPriorityAssignment[] = []
   ): Promise<AlertEditorDocument> {
-    return this.#options.saveAlertEditorDocument(alertId, document, confirmLiveImpact);
+    return this.#options.saveAlertEditorDocument(alertId, document, confirmLiveImpact, priorityAssignments);
   }
 
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult> {

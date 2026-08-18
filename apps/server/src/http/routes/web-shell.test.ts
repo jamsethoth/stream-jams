@@ -110,6 +110,47 @@ describe("web shell routes", () => {
     expect(source.statusCode).toBe(404);
   });
 
+  it("does not let non-canonical static paths bypass authenticated asset routes", async () => {
+    const webBuildDirectory = await createWebBuildFixture();
+    const collidingAssetDirectory = join(webBuildDirectory, "assets", "asset_1");
+    await mkdir(collidingAssetDirectory, { recursive: true });
+    await writeFile(join(collidingAssetDirectory, "file"), "static route must not bypass auth", "utf8");
+    const app = createServerApp({
+      metadata: {
+        appName: "stream-jams",
+        version: "1.2.3"
+      },
+      webBuildDirectory,
+      assetRepository: {
+        async list() {
+          return [];
+        },
+        async findById() {
+          return null;
+        }
+      },
+      mediaImportPipeline: {
+        async importMedia() {
+          throw new Error("Unused asset import dependency");
+        }
+      },
+      assetStore: {
+        async read() {
+          throw new Error("Unused asset store dependency");
+        }
+      },
+      managementAuthPreHandler: async (_request, reply) => reply.status(401).send(),
+      managementRateLimitPreHandler: async () => undefined
+    });
+
+    for (const url of ["/assets/public/../asset_1/file", "/assets/public/%2E%2E/asset_1/file"]) {
+      const response = await app.inject({ method: "GET", url });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.body).not.toContain("static route must not bypass auth");
+    }
+  });
+
   it("returns a safe error envelope and logs details when the web build is unavailable", async () => {
     const webBuildDirectory = await createTemporaryDirectory();
     const serverErrors: ServerErrorLogEntry[] = [];

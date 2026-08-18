@@ -500,6 +500,9 @@ function createManagementApi(): ManagementApi {
     getAlertEditorDocument: vi.fn(async () => {
       throw new Error("not called");
     }),
+    getAlertVariationAuthoringContext: vi.fn(async () => {
+      throw new Error("not called");
+    }),
     saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
     sendAlertEditorTest: vi.fn(async (_alertId, request) => ({
       status: "queued" as const,

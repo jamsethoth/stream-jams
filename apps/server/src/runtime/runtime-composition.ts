@@ -747,8 +747,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           output.copyableUrlStatus === "available"
       ),
     getAlertEditorDocument: (alertId) => alertEditorService.getDocument(alertId),
-    saveAlertEditorDocument: (alertId, document, confirmLiveImpact) =>
-      alertEditorService.saveDocument(alertId, document, confirmLiveImpact),
+    getAlertVariationAuthoringContext: (alertId) => alertEditorService.getVariationContext(alertId),
+    saveAlertEditorDocument: (alertId, document, confirmLiveImpact, priorityAssignments) =>
+      alertEditorService.saveDocument(alertId, document, confirmLiveImpact, priorityAssignments),
     sendAlertEditorTest: (alertId, request) => alertEditorService.sendTest(alertId, request),
     async reportAlertEditorError(alertId, input) {
       await runtimeLogger.error(input.error.cause ?? input.error.summary, {

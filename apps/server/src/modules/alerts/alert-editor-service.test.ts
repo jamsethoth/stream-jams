@@ -12,8 +12,10 @@ import {
 import {
   AlertEditorDeliveryBlockedError,
   AlertEditorLiveImpactConfirmationRequiredError,
+  AlertEditorNotFoundError,
   AlertEditorService,
   AlertEditorValidationError,
+  createAlertEditorDocumentFromRule,
   type AlertEditorDocumentRepository,
   type AlertEditorServiceOptions
 } from "./alert-editor-service.js";
@@ -50,6 +52,107 @@ const rule: AlertRule = {
 };
 
 describe("AlertEditorService", () => {
+  it("rejects construction without the required aggregate save dependency", () => {
+    const options = {
+      documents: {
+        find: async () => null,
+        findMany: async () => new Map(),
+        save: async (document: AlertEditorDocument) => document,
+        delete: async () => undefined
+      },
+      rules: {
+        findRuleById: async () => null,
+        listRules: async () => [],
+        listCollections: async () => [],
+        saveRule: async (savedRule: AlertRule) => savedRule
+      },
+      metadata: {
+        findRule: async () => null,
+        saveRule: async (savedMetadata: AlertRuleManagementMetadata) => savedMetadata
+      },
+      hasConnectedOutput: async () => false,
+      enqueueTest: async () => undefined,
+      generateId: () => "generated",
+      generateReferenceId: () => "reference"
+    } as unknown as AlertEditorServiceOptions;
+
+    expect(() => new AlertEditorService(options)).toThrow("requires an atomic aggregate save dependency");
+  });
+
+  it("projects stable sibling authoring context from default and variation route IDs", async () => {
+    const variationRule: AlertRule = {
+      ...rule,
+      conditions: [{ field: "actor.displayName", operator: "includes", value: "VIP" }],
+      variants: [
+        { ...rule.variants[0]!, id: "variant-default", weight: 2, priority: 4 },
+        {
+          ...rule.variants[0]!,
+          id: "variant-disabled",
+          name: "Disabled VIP",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          weight: 3,
+          priority: 9
+        },
+        {
+          ...rule.variants[0]!,
+          id: "variant-weighted",
+          name: "Weighted VIP",
+          conditions: [{ field: "actor.displayName", operator: "includes", value: "Jam" }],
+          weight: 7
+        }
+      ]
+    };
+    const harness = createHarnessWithRule(variationRule);
+    const expected = {
+      ruleId: variationRule.id,
+      eventType: "follow",
+      candidates: [
+        {
+          editorId: variationRule.id,
+          variantId: "variant-default",
+          kind: "default",
+          name: variationRule.name,
+          enabled: true,
+          conditions: [],
+          weight: 2,
+          priority: 4
+        },
+        {
+          editorId: "variant-disabled",
+          variantId: "variant-disabled",
+          kind: "variation",
+          name: "Disabled VIP",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          weight: 3,
+          priority: 9
+        },
+        {
+          editorId: "variant-weighted",
+          variantId: "variant-weighted",
+          kind: "variation",
+          name: "Weighted VIP",
+          enabled: true,
+          conditions: [{ field: "actor.displayName", operator: "includes", value: "Jam" }],
+          weight: 7,
+          priority: null
+        }
+      ]
+    } as const;
+
+    await expect(harness.service.getVariationContext(variationRule.id)).resolves.toEqual(expected);
+    await expect(harness.service.getVariationContext("variant-weighted")).resolves.toEqual(expected);
+  });
+
+  it("rejects variation context requests for an unknown editor ID", async () => {
+    const harness = createHarnessWithRule(rule);
+
+    await expect(harness.service.getVariationContext("missing-alert")).rejects.toEqual(
+      new AlertEditorNotFoundError("missing-alert")
+    );
+  });
+
   it("creates a deterministic editor document for a legacy alert", async () => {
     const harness = createHarness();
 
@@ -272,7 +375,7 @@ describe("AlertEditorService", () => {
     const edited: AlertEditorDocument = {
       ...document,
       name: "VIP updated",
-      variantConditions: [{ field: "metadata.vip", operator: "equals", value: true }],
+      variantConditions: [{ field: "ingestProvider", operator: "equals", value: "twitch" }],
       weight: 5,
       priority: 30,
       layers: document.layers.map((layer) => layer.type === "text" ? { ...layer, template: "VIP updated text" } : layer)
@@ -289,13 +392,289 @@ describe("AlertEditorService", () => {
           name: "VIP updated",
           conditions: edited.variantConditions,
           weight: 5,
-          priority: 30,
+          priority: undefined,
           textTemplate: "VIP updated text"
         })
       ]
     }));
     expect(harness.metadata.saveRule).toHaveBeenCalledWith(expect.objectContaining({ ruleId: variationRule.id }));
   });
+
+  it("saves one complete sibling priority assignment set and hydrates the selected document priority", async () => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule);
+    const document = await harness.service.getDocument("variant-high");
+
+    await expect(harness.service.saveDocument("variant-high", document, false, [
+      { variationId: "variant-high", priority: 6 },
+      { variationId: "variant-low", priority: 7 }
+    ])).resolves.toMatchObject({ id: "variant-high", priority: 6 });
+
+    expect(harness.saveAtomically).toHaveBeenCalledOnce();
+    expect(harness.saveAtomically.mock.calls[0]![0]).toMatchObject({
+      document: { id: "variant-high", priority: 6 },
+      rule: {
+        variants: [
+          { id: "variant-default", priority: 5 },
+          { id: "variant-high", priority: 6 },
+          { id: "variant-low", priority: 7 }
+        ]
+      }
+    });
+  });
+
+  it("lets sibling variations join one normalized priority group", async () => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule);
+    const document = await harness.service.getDocument("variant-low");
+
+    await harness.service.saveDocument("variant-low", document, false, [
+      { variationId: "variant-high", priority: 6 },
+      { variationId: "variant-low", priority: 6 }
+    ]);
+
+    expect(harness.saveAtomically.mock.calls[0]![0].rule.variants).toMatchObject([
+      { id: "variant-default", priority: 5 },
+      { id: "variant-high", priority: 6 },
+      { id: "variant-low", priority: 6 }
+    ]);
+  });
+
+  it("preserves every stored priority when assignments are empty", async () => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule);
+    const document = await harness.service.getDocument("variant-high");
+
+    await expect(harness.service.saveDocument(
+      "variant-high",
+      { ...document, priority: 99 },
+      false,
+      []
+    )).resolves.toMatchObject({ priority: 7 });
+
+    expect(harness.saveAtomically.mock.calls[0]![0]).toMatchObject({
+      document: { priority: 7 },
+      rule: {
+        variants: [
+          { id: "variant-default", priority: 5 },
+          { id: "variant-high", priority: 7 },
+          { id: "variant-low", priority: 6 }
+        ]
+      }
+    });
+  });
+
+  it("requires live-impact confirmation when only sibling priorities change in an active set", async () => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule, true);
+    const document = await harness.service.getDocument(variationRule.id);
+    const assignments = [
+      { variationId: "variant-high", priority: 6 },
+      { variationId: "variant-low", priority: 7 }
+    ];
+
+    await expect(harness.service.saveDocument(variationRule.id, document, false, assignments)).rejects.toEqual(
+      new AlertEditorLiveImpactConfirmationRequiredError(["landscape"])
+    );
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+
+    await expect(harness.service.saveDocument(variationRule.id, document, true, assignments)).resolves.toMatchObject({
+      id: variationRule.id,
+      priority: 5
+    });
+    expect(harness.saveAtomically).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["conditions", (document: AlertEditorDocument): AlertEditorDocument => ({
+      ...document,
+      conditions: [{ field: "ingestProvider", operator: "equals", value: "twitch" }]
+    })],
+    ["cooldown", (document: AlertEditorDocument): AlertEditorDocument => ({
+      ...document,
+      cooldownSeconds: 15
+    })],
+    ["rule priority", (document: AlertEditorDocument): AlertEditorDocument => ({
+      ...document,
+      rulePriority: 3
+    })]
+  ] as const)("requires live-impact confirmation when a disabled variation changes shared %s", async (_label, edit) => {
+    const priorityRule = createPriorityRule();
+    const variationRule: AlertRule = {
+      ...priorityRule,
+      variants: priorityRule.variants.map((variant) =>
+        variant.id === "variant-low" ? { ...variant, enabled: false } : variant
+      )
+    };
+    const harness = createAtomicHarness(variationRule, true);
+    const document = await harness.service.getDocument("variant-low");
+
+    await expect(harness.service.saveDocument("variant-low", edit(document))).rejects.toEqual(
+      new AlertEditorLiveImpactConfirmationRequiredError(["landscape"])
+    );
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+  });
+
+  it("rejects an event type that does not belong to the selected alert before mutation", async () => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule);
+    const document = await harness.service.getDocument("variant-high");
+
+    await expect(harness.service.saveDocument("variant-high", {
+      ...document,
+      eventType: "raid",
+      conditions: [{ field: "raidViewers", operator: "min", value: 25 }]
+    })).rejects.toThrow("event type does not match the selected alert");
+
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+    expect(harness.rules.saveRule).not.toHaveBeenCalled();
+    expect(harness.metadata.saveRule).not.toHaveBeenCalled();
+    expect(harness.documents.save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["default rule ID", [{ variationId: "alert-priority", priority: 6 }, { variationId: "variant-low", priority: 7 }]],
+    ["default variant ID", [{ variationId: "variant-default", priority: 6 }, { variationId: "variant-low", priority: 7 }]],
+    ["unknown ID", [{ variationId: "variant-high", priority: 6 }, { variationId: "variant-unknown", priority: 7 }]],
+    ["duplicate ID", [{ variationId: "variant-high", priority: 6 }, { variationId: "variant-high", priority: 7 }]],
+    ["missing sibling", [{ variationId: "variant-high", priority: 6 }]],
+    ["non-integer priority", [{ variationId: "variant-high", priority: 6.5 }, { variationId: "variant-low", priority: 7 }]],
+    ["priority equal to default", [{ variationId: "variant-high", priority: 5 }, { variationId: "variant-low", priority: 6 }]],
+    ["priority below default", [{ variationId: "variant-high", priority: 4 }, { variationId: "variant-low", priority: 6 }]],
+    ["non-contiguous groups", [{ variationId: "variant-high", priority: 6 }, { variationId: "variant-low", priority: 8 }]]
+  ] as const)("rejects an invalid sibling assignment set containing a %s before mutation", async (_label, assignments) => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule);
+    const document = await harness.service.getDocument("variant-high");
+
+    await expect(harness.service.saveDocument("variant-high", document, false, assignments)).rejects.toBeInstanceOf(
+      AlertEditorValidationError
+    );
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+    expect(harness.rules.saveRule).not.toHaveBeenCalled();
+    expect(harness.metadata.saveRule).not.toHaveBeenCalled();
+    expect(harness.documents.save).not.toHaveBeenCalled();
+  });
+
+  it("saves valid catalog conditions and preserves or removes unchanged unsupported saved conditions", async () => {
+    const conditionRule = createConditionRule();
+    const preservedHarness = createAtomicHarness(conditionRule);
+    const preserved = await preservedHarness.service.getDocument("variant-special");
+
+    await expect(preservedHarness.service.saveDocument("variant-special", {
+      ...preserved,
+      conditions: [
+        ...preserved.conditions,
+        { field: "cheerAmount", operator: "range", value: [100, 500] }
+      ],
+      variantConditions: [
+        ...preserved.variantConditions,
+        { field: "ingestProvider", operator: "equals", value: "twitch" }
+      ]
+    })).resolves.toMatchObject({
+      conditions: [
+        conditionRule.conditions[0],
+        { field: "cheerAmount", operator: "range", value: [100, 500] }
+      ],
+      variantConditions: [
+        conditionRule.variants[1]!.conditions![0],
+        { field: "ingestProvider", operator: "equals", value: "twitch" }
+      ]
+    });
+    expect(preservedHarness.saveAtomically.mock.calls[0]![0].rule).toMatchObject({
+      conditions: [
+        conditionRule.conditions[0],
+        { field: "cheerAmount", operator: "range", value: [100, 500] }
+      ],
+      variants: [
+        expect.anything(),
+        expect.objectContaining({
+          conditions: [
+            conditionRule.variants[1]!.conditions![0],
+            { field: "ingestProvider", operator: "equals", value: "twitch" }
+          ]
+        })
+      ]
+    });
+
+    const removalHarness = createAtomicHarness(conditionRule);
+    const removal = await removalHarness.service.getDocument("variant-special");
+    await expect(removalHarness.service.saveDocument("variant-special", {
+      ...removal,
+      conditions: [],
+      variantConditions: []
+    })).resolves.toMatchObject({ conditions: [], variantConditions: [] });
+  });
+
+  it.each([
+    ["reversed rule range", "rule", [{ field: "cheerAmount", operator: "range", value: [500, 100] }]],
+    ["invalid variation range", "variation", [{ field: "cheerAmount", operator: "range", value: [0, 100] }]],
+    ["new unsupported rule condition", "rule", [{ field: "metadata.new", operator: "equals", value: true }]],
+    ["modified unsupported rule condition", "rule", [{ field: "metadata.saved", operator: "equals", value: false }]],
+    ["duplicated unsupported rule condition", "rule", [
+      { field: "metadata.saved", operator: "equals", value: true },
+      { field: "metadata.saved", operator: "equals", value: true }
+    ]],
+    ["new unsupported variation condition", "variation", [{ field: "metadata.new", operator: "equals", value: true }]],
+    ["modified unsupported variation condition", "variation", [{ field: "metadata.variant", operator: "equals", value: false }]],
+    ["duplicated unsupported variation condition", "variation", [
+      { field: "metadata.variant", operator: "equals", value: true },
+      { field: "metadata.variant", operator: "equals", value: true }
+    ]]
+  ] as const)("rejects %s before any persistence mutation", async (_label, scope, conditions) => {
+    const conditionRule = createConditionRule();
+    const harness = createAtomicHarness(conditionRule);
+    const document = await harness.service.getDocument("variant-special");
+    const candidate = scope === "rule"
+      ? { ...document, conditions }
+      : { ...document, variantConditions: conditions };
+
+    await expect(harness.service.saveDocument("variant-special", candidate as unknown as AlertEditorDocument)).rejects.toBeInstanceOf(
+      AlertEditorValidationError
+    );
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+    expect(harness.rules.saveRule).not.toHaveBeenCalled();
+    expect(harness.metadata.saveRule).not.toHaveBeenCalled();
+    expect(harness.documents.save).not.toHaveBeenCalled();
+  });
+
+  it("rejects a known catalog field with an invalid enum value before mutation", async () => {
+    const subscriptionRule: AlertRule = { ...createConditionRule(), eventType: "subscription" };
+    const harness = createAtomicHarness(subscriptionRule);
+    const document = await harness.service.getDocument("variant-special");
+
+    await expect(harness.service.saveDocument("variant-special", {
+      ...document,
+      conditions: [{ field: "tier", operator: "equals", value: "4000" }]
+    })).rejects.toBeInstanceOf(AlertEditorValidationError);
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+  });
+
+  it.each(["rule", "variation"] as const)(
+    "does not grandfather a formerly supported %s condition after the event type changes",
+    async (scope) => {
+      const savedRule: AlertRule = {
+        ...createConditionRule(),
+        eventType: "cheer",
+        conditions: [{ field: "cheerAmount", operator: "min", value: 100 }],
+        variants: createConditionRule().variants.map((variant, index) => index === 1
+          ? { ...variant, conditions: [{ field: "cheerAmount", operator: "min", value: 200 }] }
+          : variant)
+      };
+      const harness = createAtomicHarness(savedRule);
+      const document = await harness.service.getDocument("variant-special");
+      const candidate = {
+        ...document,
+        eventType: "follow" as const,
+        ...(scope === "rule" ? { variantConditions: [] } : { conditions: [] })
+      };
+
+      await expect(harness.service.saveDocument("variant-special", candidate)).rejects.toBeInstanceOf(
+        AlertEditorValidationError
+      );
+      expect(harness.saveAtomically).not.toHaveBeenCalled();
+    }
+  );
 
   it("uses the parent rule and selected variation identities for variation tests", async () => {
     const variationRule: AlertRule = {
@@ -333,6 +712,24 @@ describe("AlertEditorService", () => {
         targetProfiles: document.targetProfiles.map((profile) => ({ ...profile, enabled: false }))
       })
     ).rejects.toBeInstanceOf(AlertEditorValidationError);
+    expect(harness.documents.save).not.toHaveBeenCalled();
+  });
+
+  it("rejects a document when every enabled profile still needs review", async () => {
+    const generated = await createHarness().service.getDocument(rule.id);
+    const stored: AlertEditorDocument = {
+      ...generated,
+      targetProfiles: generated.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "needs-review"
+      }))
+    };
+    const harness = createHarnessWithRule(rule, stored);
+
+    await expect(
+      harness.service.saveDocument(rule.id, { ...stored, name: "Still needs review" })
+    ).rejects.toThrow("Finish reviewing at least one enabled target profile before saving.");
     expect(harness.documents.save).not.toHaveBeenCalled();
   });
 
@@ -632,6 +1029,11 @@ function createHarness(
     ...(findAssetMediaType === undefined ? {} : { findAssetMediaType }),
     generateId: () => `generated-${++nextId}`,
     generateReferenceId: () => "ref-test-1",
+    async saveAtomically(input) {
+      await rules.saveRule(input.rule);
+      await metadata.saveRule(input.metadata);
+      return documents.save(input.document);
+    },
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, hasConnectedOutput, enqueueTest };
@@ -667,7 +1069,85 @@ function createHarnessWithRule(ruleFixture: AlertRule, storedDocument: AlertEdit
     enqueueTest,
     generateId: () => "generated",
     generateReferenceId: () => "reference",
+    async saveAtomically(input) {
+      await rules.saveRule(input.rule);
+      await metadata.saveRule(input.metadata);
+      return documents.save(input.document);
+    },
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, enqueueTest };
+}
+
+function createPriorityRule(): AlertRule {
+  return {
+    ...rule,
+    id: "alert-priority",
+    variants: [
+      { ...rule.variants[0]!, id: "variant-default", priority: 5 },
+      { ...rule.variants[0]!, id: "variant-high", name: "High", priority: 7 },
+      { ...rule.variants[0]!, id: "variant-low", name: "Low", priority: 6 }
+    ]
+  };
+}
+
+function createConditionRule(): AlertRule {
+  return {
+    ...rule,
+    id: "alert-conditions",
+    eventType: "cheer",
+    conditions: [{ field: "metadata.saved", operator: "equals", value: true }],
+    variants: [
+      { ...rule.variants[0]!, id: "variant-default" },
+      {
+        ...rule.variants[0]!,
+        id: "variant-special",
+        name: "Special",
+        conditions: [{ field: "metadata.variant", operator: "equals", value: true }]
+      }
+    ]
+  };
+}
+
+function createAtomicHarness(ruleFixture: AlertRule, activeSet = false) {
+  const storedDocuments = new Map(
+    ruleFixture.variants.map((_, index) => {
+      const document = createAlertEditorDocumentFromRule(ruleFixture, index, null);
+      return [document.id, document] as const;
+    })
+  );
+  const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
+    find: vi.fn(async (editorId: string) => storedDocuments.get(editorId) ?? null),
+    findMany: vi.fn(async (editorIds: readonly string[]) => new Map(
+      editorIds.flatMap((editorId) => {
+        const document = storedDocuments.get(editorId);
+        return document === undefined ? [] : [[editorId, document] as const];
+      })
+    )),
+    save: vi.fn(async (document: AlertEditorDocument) => document),
+    delete: vi.fn(async () => undefined)
+  };
+  const rules = {
+    findRuleById: vi.fn(async (ruleId: string) => ruleId === ruleFixture.id ? ruleFixture : null),
+    listRules: vi.fn(async () => [ruleFixture]),
+    listCollections: vi.fn(async () => [{ id: "set-default", name: "Default", enabled: activeSet }]),
+    saveRule: vi.fn(async (savedRule: AlertRule) => savedRule)
+  };
+  const metadata = {
+    findRule: vi.fn(async () => null),
+    saveRule: vi.fn(async (value: AlertRuleManagementMetadata) => value)
+  };
+  const saveAtomically = vi.fn(async (input: Parameters<NonNullable<AlertEditorServiceOptions["saveAtomically"]>>[0]) => input.document);
+  const service = new AlertEditorService({
+    documents,
+    rules,
+    metadata,
+    hasConnectedOutput: async () => true,
+    enqueueTest: async () => undefined,
+    generateId: () => "generated",
+    generateReferenceId: () => "reference",
+    saveAtomically,
+    now: () => new Date("2026-07-15T12:00:00.000Z")
+  });
+  return { service, documents, rules, metadata, saveAtomically };
 }

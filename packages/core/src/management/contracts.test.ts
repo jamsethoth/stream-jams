@@ -287,11 +287,13 @@ describe("management alert contracts and rules", () => {
     const saveInput = schema("alertEditorSaveInputSchema");
     expect(saveInput.parse({ document })).toEqual({
       document: editorDocument.parse(document),
-      confirmLiveImpact: false
+      confirmLiveImpact: false,
+      priorityAssignments: []
     });
     expect(saveInput.parse({ document, confirmLiveImpact: true })).toEqual({
       document: editorDocument.parse(document),
-      confirmLiveImpact: true
+      confirmLiveImpact: true,
+      priorityAssignments: []
     });
 
     const affectedProfiles = exportedFunction("getAlertEditorAffectedProfileIds");
@@ -738,5 +740,77 @@ describe("management asset diagnostics home and backup contracts", () => {
         warnings: []
       }).success
     ).toBe(true);
+  });
+});
+
+describe("alert variation authoring management contracts", () => {
+  const defaultCandidate = {
+    editorId: "rule-follow",
+    variantId: "variant-default",
+    kind: "default",
+    name: "New follower",
+    enabled: true,
+    conditions: [],
+    weight: 1,
+    priority: 0
+  } as const;
+  const variationCandidate = {
+    editorId: "variant-vip",
+    variantId: "variant-vip",
+    kind: "variation",
+    name: "VIP follower",
+    enabled: true,
+    conditions: [{ field: "ingestProvider", operator: "equals", value: "twitch" }],
+    weight: 3,
+    priority: 2
+  } as const;
+
+  it("validates a context with exactly one first default keyed by the rule ID", () => {
+    const context = schema("alertVariationAuthoringContextSchema");
+    const valid = {
+      ruleId: "rule-follow",
+      eventType: "follow",
+      candidates: [defaultCandidate, variationCandidate]
+    };
+
+    expect(context.parse(valid)).toEqual(valid);
+    expect(context.safeParse({ ...valid, candidates: [] }).success).toBe(false);
+    expect(context.safeParse({ ...valid, candidates: [variationCandidate] }).success).toBe(false);
+    expect(context.safeParse({ ...valid, candidates: [variationCandidate, defaultCandidate] }).success).toBe(false);
+    expect(context.safeParse({ ...valid, candidates: [defaultCandidate, { ...defaultCandidate, variantId: "other" }] }).success).toBe(false);
+    expect(context.safeParse({ ...valid, candidates: [{ ...defaultCandidate, editorId: "variant-default" }, variationCandidate] }).success).toBe(false);
+  });
+
+  it("adds complete priority assignments to editor saves with an empty default", () => {
+    const saveInput = schema("alertEditorSaveInputSchema");
+    const priorityAssignment = schema("alertVariationPriorityAssignmentSchema");
+    const document = {
+      id: "alert-follow",
+      setId: "set-default",
+      providerKind: "twitch",
+      eventType: "follow",
+      kind: "default",
+      parentAlertId: null,
+      name: "New follower",
+      enabled: true,
+      conditions: [],
+      durationMs: 5000,
+      layers: [],
+      targetProfiles: [
+        { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [] },
+        { id: "vertical", enabled: true, reviewState: "ready", layerLayouts: [] }
+      ],
+      samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: {} }]
+    };
+
+    expect(priorityAssignment.parse({ variationId: "variant-vip", priority: -2 })).toEqual({
+      variationId: "variant-vip",
+      priority: -2
+    });
+    expect(saveInput.parse({ document })).toMatchObject({ priorityAssignments: [] });
+    expect(saveInput.parse({
+      document,
+      priorityAssignments: [{ variationId: "variant-vip", priority: 2 }]
+    })).toMatchObject({ priorityAssignments: [{ variationId: "variant-vip", priority: 2 }] });
   });
 });

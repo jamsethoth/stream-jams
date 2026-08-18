@@ -17,9 +17,8 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | --- | --- | --- | --- | --- |
 | BL-002 | Alert typography and simple text-container style controls | P0 | None; UI refactor prerequisites are complete | [`add-alert-visual-style-controls`](../openspec/changes/add-alert-visual-style-controls/proposal.md) |
 | BL-003 | Simple solid-fill shape-layer authoring | P1 | BL-002 | [`add-alert-shape-layer-authoring`](../openspec/changes/add-alert-shape-layer-authoring/proposal.md) |
-| BL-004 | Understandable variation priority groups, relative chance, conditions, and sample explanations | P1 | None; normalized Twitch events and UI prerequisites are complete | [`improve-alert-variation-authoring`](../openspec/changes/improve-alert-variation-authoring/proposal.md) |
 | BL-005 | Durable rendered-text and TTS moderation controls | P1 | None; Speaker.bot and UI prerequisites are complete | [`add-durable-alert-moderation-controls`](../openspec/changes/add-durable-alert-moderation-controls/proposal.md) |
-| BL-039 | Collapsible event-type grouping for alert inventory and focused-editor navigation | P1 | BL-004 | [`group-alerts-by-event-type`](../openspec/changes/group-alerts-by-event-type/proposal.md) |
+| BL-039 | Collapsible event-type grouping for alert inventory and focused-editor navigation | P1 | Variation authoring contract implemented | [`group-alerts-by-event-type`](../openspec/changes/group-alerts-by-event-type/proposal.md) |
 
 ## Alert Authoring And Assets
 

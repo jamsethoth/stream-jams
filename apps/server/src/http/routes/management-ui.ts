@@ -8,6 +8,7 @@ import {
   alertEditorSaveInputSchema,
   alertEditorTestRequestSchema,
   alertEditorTestResultSchema,
+  alertVariationAuthoringContextSchema,
   alertSetActivationImpactSchema,
   alertSetActivationResultSchema,
   alertSetDetailSchema,
@@ -47,6 +48,8 @@ import {
   type AlertSetMutationInput,
   type AlertSetOverview,
   type AlertVariationCreateInput,
+  type AlertVariationAuthoringContext,
+  type AlertVariationPriorityAssignment,
   type AssetLibraryItem,
   type AssetChangeImpact,
   type AssetMediaType,
@@ -126,10 +129,12 @@ export interface ManagementUiQueryService {
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
+  getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext>;
   saveAlertEditorDocument(
     alertId: string,
     document: AlertEditorDocument,
-    confirmLiveImpact: boolean
+    confirmLiveImpact: boolean,
+    priorityAssignments: readonly AlertVariationPriorityAssignment[]
   ): Promise<AlertEditorDocument>;
   sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
   reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult>;
@@ -459,6 +464,24 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
     }
   });
 
+  app.get("/management/alerts/:alertId/editor/variation-context", { preHandler }, async (request, reply) => {
+    const alertId = readParam(request.params, "alertId");
+    try {
+      return alertVariationAuthoringContextSchema.parse(
+        await service.getAlertVariationAuthoringContext(alertId)
+      );
+    } catch (error) {
+      return sendAlertEditorCommandError(reply, error, {
+        service,
+        generateErrorId,
+        alertId,
+        setId: null,
+        summary: "The alert variation context could not be opened",
+        nextStep: "Return to Alerts and choose the alert again."
+      });
+    }
+  });
+
   app.put("/management/alerts/:alertId/editor", { preHandler }, async (request, reply) => {
     const alertId = readParam(request.params, "alertId");
     const input = alertEditorSaveInputSchema.safeParse(request.body);
@@ -477,7 +500,8 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
         await service.saveAlertEditorDocument(
           alertId,
           input.data.document,
-          input.data.confirmLiveImpact
+          input.data.confirmLiveImpact,
+          input.data.priorityAssignments
         )
       );
     } catch (error) {

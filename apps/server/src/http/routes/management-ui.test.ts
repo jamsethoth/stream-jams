@@ -167,7 +167,11 @@ describe("management UI contract routes", () => {
       method: "PUT",
       url: "/management/alerts/alert-follow/editor",
       headers: authHeaders,
-      payload: { document: { ...document, name: "Follower welcome" }, confirmLiveImpact: true }
+      payload: {
+        document: { ...document, name: "Follower welcome" },
+        confirmLiveImpact: true,
+        priorityAssignments: [{ variationId: "variant-vip", priority: 2 }]
+      }
     });
     const sent = await app.inject({
       method: "POST",
@@ -187,9 +191,79 @@ describe("management UI contract routes", () => {
     expect(sent.statusCode).toBe(200);
     expect(sent.json()).toEqual({ status: "queued", targetProfileId: "landscape", referenceId: "ref-editor-test", test: true });
     expect(service.editorCommands).toEqual([
-      ["save", "alert-follow", "Follower welcome", true],
+      ["save", "alert-follow", "Follower welcome", true, [{ variationId: "variant-vip", priority: 2 }]],
       ["test", "alert-follow", "landscape"]
     ]);
+  });
+
+  it("protects and validates sibling variation context for default and variation editor IDs", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const unauthorized = await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor/variation-context"
+    });
+    const defaultResponse = await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor/variation-context",
+      headers: authHeaders
+    });
+    const variationResponse = await app.inject({
+      method: "GET",
+      url: "/management/alerts/variant-vip/editor/variation-context",
+      headers: authHeaders
+    });
+
+    expect(unauthorized.statusCode).toBe(401);
+    expect(defaultResponse.statusCode).toBe(200);
+    expect(defaultResponse.json()).toEqual(variationResponse.json());
+    expect(defaultResponse.json()).toEqual({
+      ruleId: "alert-follow",
+      eventType: "follow",
+      candidates: [
+        {
+          editorId: "alert-follow",
+          variantId: "variant-follow",
+          kind: "default",
+          name: "New follower",
+          enabled: true,
+          conditions: [],
+          weight: 1,
+          priority: null
+        },
+        {
+          editorId: "variant-vip",
+          variantId: "variant-vip",
+          kind: "variation",
+          name: "VIP follower",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          weight: 3,
+          priority: 7
+        }
+      ]
+    });
+    expect(service.editorCommands).toEqual([
+      ["variation-context", "alert-follow"],
+      ["variation-context", "variant-vip"]
+    ]);
+  });
+
+  it("fails closed when the variation context service returns a malformed projection", async () => {
+    const { app, authHeaders, service } = await createApp();
+    vi.spyOn(service, "getAlertVariationAuthoringContext").mockResolvedValue({
+      ruleId: "alert-follow",
+      eventType: "follow",
+      candidates: []
+    } as never);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/management/alerts/alert-follow/editor/variation-context",
+      headers: authHeaders
+    });
+
+    expect(response.statusCode).toBe(500);
   });
 
   it("rejects an unknown alert font before calling the save command", async () => {
@@ -771,13 +845,44 @@ class StubManagementUiQueryService {
     };
   }
 
+  async getAlertVariationAuthoringContext(alertId: string) {
+    this.editorCommands.push(["variation-context", alertId]);
+    return {
+      ruleId: "alert-follow",
+      eventType: "follow" as const,
+      candidates: [
+        {
+          editorId: "alert-follow",
+          variantId: "variant-follow",
+          kind: "default" as const,
+          name: "New follower",
+          enabled: true,
+          conditions: [],
+          weight: 1,
+          priority: null
+        },
+        {
+          editorId: "variant-vip",
+          variantId: "variant-vip",
+          kind: "variation" as const,
+          name: "VIP follower",
+          enabled: false,
+          conditions: [{ field: "actor.displayName", operator: "equals" as const, value: "James" }],
+          weight: 3,
+          priority: 7
+        }
+      ]
+    };
+  }
+
   async saveAlertEditorDocument(
     alertId: string,
     document: Awaited<ReturnType<StubManagementUiQueryService["getAlertEditorDocument"]>>,
-    confirmLiveImpact: boolean
+    confirmLiveImpact: boolean,
+    priorityAssignments: readonly { readonly variationId: string; readonly priority: number }[]
   ) {
     if (!confirmLiveImpact) throw new AlertEditorLiveImpactConfirmationRequiredError(["landscape"]);
-    this.editorCommands.push(["save", alertId, document.name, confirmLiveImpact]);
+    this.editorCommands.push(["save", alertId, document.name, confirmLiveImpact, priorityAssignments]);
     return document;
   }
 

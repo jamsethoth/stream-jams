@@ -815,9 +815,9 @@ function AlertInventory({
                       <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" onClick={() => onPreview(alert)} type="button">Preview</button>
                       <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
                       {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
-                      <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
+                      <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
                       <details className="alert-sets-page__action-menu">
-                        <summary aria-label={`More actions for ${alert.name}`}>More</summary>
+                        <summary aria-label={`More actions for ${alert.name}`} className="button button--secondary button--compact">More</summary>
                         <div role="group" aria-label={`Additional actions for ${alert.name}`}>
                           <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" onClick={() => onPreview(alert)} type="button">Preview</button>
                           {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
