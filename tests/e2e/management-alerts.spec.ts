@@ -185,9 +185,25 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(sourceCard.getByText("1920 x 1080", { exact: true })).toBeVisible();
   await expect(sourceCard.getByText(/Add a Browser source in OBS at 1920 x 1080/u)).toBeVisible();
   const alertRow = page.getByRole("row", { name: /New follower/u });
-  await expect(alertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();
+  const editAction = alertRow.getByRole("button", { name: "Edit New follower" });
+  await expect(editAction).toBeVisible();
   await expect(alertRow.getByRole("button", { name: "Test New follower" })).toBeVisible();
-  await expect(alertRow.getByRole("button", { name: "Enable New follower" })).toBeVisible();
+  const moreAction = alertRow.locator("summary[aria-label='More actions for New follower']");
+  const compactControlMetrics = async (locator: typeof editAction) => locator.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      borderRadius: style.borderRadius,
+      fontSize: style.fontSize,
+      height: element.getBoundingClientRect().height,
+      paddingLeft: style.paddingLeft,
+      paddingRight: style.paddingRight
+    };
+  });
+  expect(await compactControlMetrics(moreAction)).toEqual(await compactControlMetrics(editAction));
+  const enableToggle = alertRow.getByRole("button", { name: "Enable New follower" });
+  await expect(enableToggle).toBeVisible();
+  const enableBox = await enableToggle.boundingBox();
+  expect(enableBox).not.toBeNull();
   expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   listening = false;
   await expect(sourceCard.getByText(/Not listening\. Last seen/u)).toBeVisible({ timeout: 7_000 });
@@ -199,7 +215,12 @@ test("management alerts reviews the starter set and safely manages its landscape
   await page.getByRole("button", { name: "Hide Landscape URL" }).click();
   await expect(sourceCard.getByRole("textbox", { name: "Landscape browser source" })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Enable New follower" }).click();
+  await enableToggle.click();
+  const disableToggle = alertRow.getByRole("button", { name: "Disable New follower" });
+  await expect(disableToggle).toBeVisible();
+  const disableBox = await disableToggle.boundingBox();
+  expect(disableBox).not.toBeNull();
+  expect(disableBox!.width).toBe(enableBox!.width);
   await expect(page.locator(".management-toast--success")).toContainText("New follower enabled.");
   await page.getByRole("button", { name: "Mark starter review done" }).click();
   const reviewWarning = page.locator(".management-toast--warning");
