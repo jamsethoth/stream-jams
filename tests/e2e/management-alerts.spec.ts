@@ -965,6 +965,7 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
 
   await page.goto("/manage/modules/alerts/editor/alert-follow?profile=landscape");
   await page.getByRole("button", { name: "TTS" }).click();
+  await page.locator("summary").filter({ hasText: "Live TTS" }).click();
   await expect(page.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeDisabled();
   await expect(page.getByRole("link", { name: "Set up a TTS provider" })).toHaveAttribute("href", "/manage/tts-providers");
 
@@ -997,15 +998,13 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
   };
   await page.reload();
 
-  await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
   const liveTtsSummary = page.locator("summary").filter({ hasText: "Live TTS" });
   const enabled = page.getByRole("checkbox", { name: "Enable TTS for this alert" });
+  await expect(enabled).toBeHidden();
   await liveTtsSummary.focus();
   await page.keyboard.press("Enter");
-  await expect(enabled).toBeHidden();
-  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-  await page.keyboard.press("Enter");
   await expect(enabled).toBeVisible();
+  await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   await page.getByRole("textbox", { name: "TTS template" }).fill("Hello {actor.displayName}");
   await page.getByRole("button", { name: "Save" }).click();
