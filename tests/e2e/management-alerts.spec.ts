@@ -794,23 +794,14 @@ test("focused alert editor saves layouts and separates preview from test deliver
     ["Animation preset", "Animation duration (milliseconds)"]
   ] as const;
   const fontSize = page.getByLabel("Font size");
-  const collapsedControls = [];
   for (const [label, controlLabel] of disclosures) {
     const summary = page.locator("summary").filter({ hasText: label });
     await expect(summary).toBeVisible();
     const control = page.getByLabel(controlLabel, { exact: true });
-    await summary.focus();
-    await page.keyboard.press("Enter");
     await expect(control).toBeHidden();
-    collapsedControls.push(control);
-    for (const collapsed of collapsedControls) await expect(collapsed).toBeHidden();
-    await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
-  }
-  for (const [label, controlLabel] of [...disclosures].reverse()) {
-    const summary = page.locator("summary").filter({ hasText: label });
     await summary.focus();
     await page.keyboard.press("Enter");
-    await expect(page.getByLabel(controlLabel, { exact: true })).toBeVisible();
+    await expect(control).toBeVisible();
     await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   }
   await expect(fontSize).toHaveValue("32");

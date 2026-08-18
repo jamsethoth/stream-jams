@@ -53,10 +53,12 @@ type Story = StoryObj<typeof meta>;
 export const CompatibilityTextStyle: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Typography", { selector: "summary" }));
     const typography = within(await canvas.findByRole("group", { name: "Typography" }));
     await expect(typography.getByLabelText("Font preset")).toHaveValue("system-sans");
     await expect(typography.getByLabelText("Font size")).toHaveValue(32);
     await expect(typography.getByLabelText("Font weight")).toHaveValue("800");
+    await userEvent.click(canvas.getByText("Text box", { selector: "summary" }));
     await expect(canvas.getByRole("group", { name: "Text box" })).toBeVisible();
   }
 };
@@ -64,27 +66,21 @@ export const CompatibilityTextStyle: Story = {
 export const CollapsibleLayerSections: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await canvas.findByLabelText("Font size");
+    await canvas.findByText("Typography", { selector: "summary" });
     const disclosures = [
       ["Typography", "Font size"],
       ["Text box", "Padding"],
       ["Position and size", "X"],
       ["Animation preset", "Animation duration (milliseconds)"]
     ] as const;
-    const collapsedControls: HTMLElement[] = [];
     for (const [label, controlLabel] of disclosures) {
       const summary = canvas.getByText(label, { selector: "summary" });
-      await expect(summary.closest("details")).toHaveAttribute("open");
+      await expect(summary.closest("details")).not.toHaveAttribute("open");
       const control = canvas.getByLabelText(controlLabel);
-      await userEvent.click(summary);
       await expect(control).not.toBeVisible();
-      collapsedControls.push(control);
-      for (const collapsed of collapsedControls) await expect(collapsed).not.toBeVisible();
-      await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
-    }
-    for (const [label, controlLabel] of [...disclosures].reverse()) {
-      await userEvent.click(canvas.getByText(label, { selector: "summary" }));
-      await expect(canvas.getByLabelText(controlLabel)).toBeVisible();
+      await userEvent.click(summary);
+      await expect(summary.closest("details")).toHaveAttribute("open");
+      await expect(control).toBeVisible();
       await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     }
     await expect(canvas.getByLabelText("Font size")).toHaveValue(32);
@@ -100,8 +96,10 @@ export const ContrastingCustomTextStyle: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Typography", { selector: "summary" }));
     await expect(await canvas.findByLabelText("Font preset")).toHaveValue("serif");
     await expect(canvas.getByLabelText("Font size")).toHaveValue(64);
+    await userEvent.click(canvas.getByText("Text box", { selector: "summary" }));
     await expect(canvas.getByLabelText("Background color opacity")).toHaveValue("75");
   }
 };
@@ -117,6 +115,7 @@ export const VerticalCustomTextStyle: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
+    await userEvent.click(canvas.getByText("Typography", { selector: "summary" }));
     await expect(canvas.getByLabelText("Font preset")).toHaveValue("serif");
   }
 };
@@ -135,6 +134,7 @@ export const InvalidTextStyle: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Typography", { selector: "summary" }));
     await expect(await canvas.findByText("Font size must be between 8 and 512.")).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Preview" })).toBeDisabled();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
@@ -163,6 +163,7 @@ export const ReducedMotionStyleAuthoring: Story = {
   parameters: { reducedMotion: "reduce" },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Typography", { selector: "summary" }));
     await expect(await canvas.findByRole("group", { name: "Typography" })).toBeVisible();
     await expect(canvas.queryByText("Preview playing")).not.toBeInTheDocument();
   }
@@ -445,16 +446,17 @@ export const ActiveSpeakerBotTts: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByText("Studio Speaker.bot")).toBeVisible();
-    await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
+    const liveTtsSummary = await canvas.findByText("Live TTS", { selector: "summary" });
+    await expect(liveTtsSummary.closest("details")).not.toHaveAttribute("open");
     const enabled = canvas.getByRole("checkbox", { name: "Enable TTS for this alert" });
-    await expect(enabled).toBeChecked();
-    const liveTtsSummary = canvas.getByText("Live TTS", { selector: "summary" });
-    await userEvent.click(liveTtsSummary);
     await expect(enabled).not.toBeVisible();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     await userEvent.click(liveTtsSummary);
+    await expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     await expect(enabled).toBeVisible();
+    await expect(enabled).toBeChecked();
+    await expect(canvas.getByText("Studio Speaker.bot")).toBeVisible();
+    await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     const template = canvas.getByRole("textbox", { name: "TTS template" });
     await userEvent.clear(template);
@@ -479,6 +481,9 @@ export const NoActiveTtsProvider: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const liveTtsSummary = await canvas.findByText("Live TTS", { selector: "summary" });
+    await expect(liveTtsSummary.closest("details")).not.toHaveAttribute("open");
+    await userEvent.click(liveTtsSummary);
     await expect(await canvas.findByText("An active TTS provider is required before this layer can be used live.")).toBeVisible();
     await expect(canvas.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeDisabled();
     await expect(canvas.getByRole("link", { name: "Set up a TTS provider" })).toHaveAttribute("href", "/manage/tts-providers");

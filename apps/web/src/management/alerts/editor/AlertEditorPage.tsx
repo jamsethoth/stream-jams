@@ -1145,7 +1145,7 @@ function LayerInspector({
           <h3>{selectedLayer.name}</h3>
           <label><span>Layer name</span><input onChange={(event) => { const value = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, name: value }))); }} value={selectedLayer.name} /></label>
           {selectedLayer.type === "tts" ? (
-            <details className="alert-editor-inspector__disclosure" open>
+            <details className="alert-editor-inspector__disclosure">
               <summary>Live TTS</summary>
               <fieldset aria-label="Live TTS">
                 {activeTtsProvider !== null ? (
@@ -1207,7 +1207,7 @@ function LayerInspector({
             <label><span>Volume {Math.round(selectedLayer.volume * 100)}%</span><input max="1" min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer)); }} step="0.05" type="range" value={selectedLayer.volume} /></label>
           ) : null}
           {layout === undefined ? null : (
-            <details className="alert-editor-inspector__disclosure" open>
+            <details className="alert-editor-inspector__disclosure">
               <summary>Position and size</summary>
               <fieldset aria-label="Position and size" className="alert-editor-inspector__geometry">
                 {(["x", "y", "width", "height"] as const).map((field) => (
@@ -1216,7 +1216,7 @@ function LayerInspector({
               </fieldset>
             </details>
           )}
-          <details className="alert-editor-inspector__disclosure" open>
+          <details className="alert-editor-inspector__disclosure">
             <summary>Animation preset</summary>
             <fieldset aria-label="Animation preset" className="alert-editor-inspector__animation">
             <label><span>Entrance</span><select onChange={(event) => { const entrance = event.currentTarget.value; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => ({ ...layer, animation: { ...layer.animation, entrance } }))); }} value={selectedLayer.animation.entrance}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-up">Slide up</option></select></label>
@@ -1248,7 +1248,7 @@ function TextStyleControls({ layer, onChange }: {
   const boxShadow = layer.boxStyle.shadow;
   return (
     <>
-      <details className="alert-editor-inspector__disclosure" open>
+      <details className="alert-editor-inspector__disclosure">
         <summary>Typography</summary>
         <fieldset aria-label="Typography" className="alert-editor-inspector__style">
         <label>
@@ -1365,7 +1365,7 @@ function TextStyleControls({ layer, onChange }: {
         )}
         </fieldset>
       </details>
-      <details className="alert-editor-inspector__disclosure" open>
+      <details className="alert-editor-inspector__disclosure">
         <summary>Text box</summary>
         <fieldset aria-label="Text box" className="alert-editor-inspector__style">
         <RgbaColorControl

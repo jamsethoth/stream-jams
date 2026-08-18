@@ -838,32 +838,26 @@ describe("AlertEditorPage", () => {
       </DirtyNavigationProvider>
     );
 
-    const typography = await screen.findByRole("group", { name: "Typography" });
-    const textBox = screen.getByRole("group", { name: "Text box" });
+    await screen.findByText("Typography", { selector: "summary" });
     const disclosures = [
       ["Typography", "Font size"],
       ["Text box", "Padding"],
       ["Position and size", "X"],
       ["Animation preset", "Animation duration (milliseconds)"]
     ] as const;
-    const initialFontSize = within(typography).getByLabelText("Font size");
-    const collapsedControls: HTMLElement[] = [];
     for (const [label, controlLabel] of disclosures) {
       const summary = screen.getByText(label, { selector: "summary" });
-      expect(summary.closest("details")).toHaveAttribute("open");
-      const control = screen.getByLabelText(controlLabel);
-      await user.click(summary);
       expect(summary.closest("details")).not.toHaveAttribute("open");
+      const control = screen.getByLabelText(controlLabel);
       expect(control).not.toBeVisible();
-      collapsedControls.push(control);
-      for (const collapsed of collapsedControls) expect(collapsed).not.toBeVisible();
+      await user.click(summary);
+      expect(summary.closest("details")).toHaveAttribute("open");
+      expect(control).toBeVisible();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     }
-    for (const [label, controlLabel] of [...disclosures].reverse()) {
-      await user.click(screen.getByText(label, { selector: "summary" }));
-      expect(screen.getByLabelText(controlLabel)).toBeVisible();
-      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    }
+    const typography = screen.getByRole("group", { name: "Typography" });
+    const textBox = screen.getByRole("group", { name: "Text box" });
+    const initialFontSize = within(typography).getByLabelText("Font size");
     expect(initialFontSize).toHaveValue(32);
 
     await user.click(screen.getByRole("button", { name: "100%" }));
@@ -1506,6 +1500,7 @@ describe("AlertEditorPage", () => {
     );
 
     await screen.findByRole("region", { name: "Landscape alert canvas" });
+    await user.click(screen.getByText("Animation preset", { selector: "summary" }));
     await user.clear(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }));
     await user.type(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }), "650");
     await user.clear(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }));
@@ -1691,16 +1686,16 @@ describe("AlertEditorPage", () => {
       </DirtyNavigationProvider>
     );
 
-    expect(await screen.findByText("Studio Speaker.bot")).toBeInTheDocument();
-    expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeInTheDocument();
-    const liveTtsSummary = screen.getByText("Live TTS", { selector: "summary" });
-    expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
+    const liveTtsSummary = await screen.findByText("Live TTS", { selector: "summary" });
+    expect(liveTtsSummary.closest("details")).not.toHaveAttribute("open");
     const enabled = screen.getByRole("checkbox", { name: "Enable TTS for this alert" });
-    await user.click(liveTtsSummary);
     expect(enabled).not.toBeVisible();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     await user.click(liveTtsSummary);
+    expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     expect(enabled).toBeVisible();
+    expect(screen.getByText("Studio Speaker.bot")).toBeVisible();
+    expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     expect(enabled).toBeChecked();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     await user.click(enabled);
