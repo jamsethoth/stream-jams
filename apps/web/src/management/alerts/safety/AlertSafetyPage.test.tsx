@@ -1,10 +1,11 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
 import type {
   ManagementApi,
   ModerationPreviewInputView,
+  ModerationPreviewResultView,
   ModerationSettingsView
 } from "../../management-api.js";
 import { AlertSafetyPage } from "./AlertSafetyPage.js";
@@ -185,6 +186,50 @@ describe("AlertSafetyPage", () => {
     expect(screen.getByLabelText("Rendered text maximum length")).toHaveValue(300);
   });
 
+  it("does not land an in-flight preview after the sample and candidate change", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    const resolvers: Array<(result: ModerationPreviewResultView) => void> = [];
+    vi.mocked(api.previewModeration).mockImplementation(() => new Promise((resolve) => {
+      resolvers.push((result) => resolve(result));
+    }));
+    renderPage(api);
+    await screen.findByRole("group", { name: "Rendered text" });
+    const originalExample = (screen.getByLabelText("Moderation example") as HTMLTextAreaElement).value;
+    await user.click(screen.getByRole("button", { name: "Preview example" }));
+    await waitFor(() => expect(api.previewModeration).toHaveBeenCalledTimes(2));
+
+    await replaceNumber(user, "Rendered text maximum length", "300");
+    await user.clear(screen.getByLabelText("Moderation example"));
+    await user.type(screen.getByLabelText("Moderation example"), "Changed while previewing");
+    resolvers[0]!(previewResult("rendered", originalExample, savedSettings.renderedText));
+    resolvers[1]!(previewResult("tts", originalExample, savedSettings.ttsText));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Preview example" })).toBeEnabled());
+    expect(screen.queryByRole("region", { name: "Rendered text preview" })).not.toBeInTheDocument();
+    expect(screen.queryByText(originalExample)).not.toBeInTheDocument();
+  });
+
+  it("clears successful results after candidate edits and keeps them cleared when the next preview fails", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    renderPage(api);
+    await screen.findByRole("group", { name: "Rendered text" });
+    await user.click(screen.getByRole("button", { name: "Preview example" }));
+    expect(await screen.findByRole("region", { name: "Rendered text preview" })).toBeInTheDocument();
+
+    await replaceNumber(user, "Rendered text maximum length", "300");
+    expect(screen.queryByRole("region", { name: "Rendered text preview" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Preview example" }));
+    expect(await screen.findByRole("region", { name: "Rendered text preview" })).toBeInTheDocument();
+
+    vi.mocked(api.previewModeration).mockRejectedValue(new Error("Preview unavailable (ref_preview_after_success)"));
+    await user.click(screen.getByRole("button", { name: "Preview example" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("ref_preview_after_success");
+    expect(screen.queryByRole("region", { name: "Rendered text preview" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "TTS text preview" })).not.toBeInTheDocument();
+  });
+
   it("shows a blocking actionable initial-load failure", async () => {
     const api = createApi();
     vi.mocked(api.getModerationSettings).mockRejectedValue(new Error("Unavailable (ref_moderation_load)"));
@@ -217,4 +262,12 @@ async function replaceNumber(user: ReturnType<typeof userEvent.setup>, label: st
   const input = screen.getByLabelText(label);
   await user.clear(input);
   await user.type(input, value);
+}
+
+function previewResult(
+  target: "rendered" | "tts",
+  text: string,
+  settings: ModerationSettingsView["renderedText"]
+): ModerationPreviewResultView {
+  return { target, text, settings, actions: [] };
 }

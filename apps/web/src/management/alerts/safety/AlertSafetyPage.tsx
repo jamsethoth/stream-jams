@@ -1,5 +1,5 @@
 import type { ActionableManagementError } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../../foundation/ManagementToast.js";
 import type {
@@ -45,8 +45,16 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
   const [initialLoadError, setInitialLoadError] = useState<ActionableManagementError | null>(null);
   const [actionError, setActionError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
+  const previewGeneration = useRef(0);
+
+  const invalidatePreview = useCallback(() => {
+    previewGeneration.current += 1;
+    setPreviews(null);
+    return previewGeneration.current;
+  }, []);
 
   const load = useCallback(async () => {
+    invalidatePreview();
     setLoading(true);
     setInitialLoadError(null);
     try {
@@ -62,7 +70,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
     } finally {
       setLoading(false);
     }
-  }, [managementApi]);
+  }, [invalidatePreview, managementApi]);
 
   useEffect(() => { void load(); }, [load]);
 
@@ -71,6 +79,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
 
   const save = useCallback(async (): Promise<DirtyNavigationSaveResult> => {
     if (draft === null) return false;
+    invalidatePreview();
     const validation = validateDraft(draft);
     setErrors(validation.errors);
     if (validation.settings === null) {
@@ -97,16 +106,16 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
     } finally {
       setBusy(null);
     }
-  }, [draft, managementApi]);
+  }, [draft, invalidatePreview, managementApi]);
 
   const revert = useCallback(() => {
     if (saved === null) return;
     setDraft(toDraft(saved));
     setErrors({});
-    setPreviews(null);
+    invalidatePreview();
     setActionError(null);
     setNotice(null);
-  }, [saved]);
+  }, [invalidatePreview, saved]);
 
   useDirtyNavigationSource({
     id: "alert-safety",
@@ -123,6 +132,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
 
   async function preview() {
     if (draft === null) return;
+    const requestGeneration = invalidatePreview();
     const validation = validateDraft(draft);
     setErrors(validation.errors);
     if (validation.settings === null) return;
@@ -135,13 +145,16 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
         managementApi.previewModeration({ target: "rendered", text: example, settings: validation.settings.renderedText }),
         managementApi.previewModeration({ target: "tts", text: example, settings: validation.settings.ttsText })
       ]);
-      setPreviews(results);
+      if (previewGeneration.current === requestGeneration) setPreviews(results);
     } catch (cause) {
-      setActionError(actionable(
-        "The moderation example could not be previewed",
-        cause,
-        "Review the candidate settings and try the preview again."
-      ));
+      if (previewGeneration.current === requestGeneration) {
+        setPreviews(null);
+        setActionError(actionable(
+          "The moderation example could not be previewed",
+          cause,
+          "Review the candidate settings and try the preview again."
+        ));
+      }
     } finally {
       setBusy(null);
     }
@@ -174,7 +187,10 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
           draft={draft.renderedText}
           error={errors["renderedText.maxLength"]}
           label="Rendered text"
-          onChange={(next) => setDraft({ ...draft, renderedText: next })}
+          onChange={(next) => {
+            invalidatePreview();
+            setDraft({ ...draft, renderedText: next });
+          }}
           target="renderedText"
         />
         <TargetFieldset
@@ -182,7 +198,10 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
           draft={draft.ttsText}
           error={errors["ttsText.maxLength"]}
           label="TTS text"
-          onChange={(next) => setDraft({ ...draft, ttsText: next })}
+          onChange={(next) => {
+            invalidatePreview();
+            setDraft({ ...draft, ttsText: next });
+          }}
           target="ttsText"
         />
         <div className="alert-safety-page__actions">
@@ -196,7 +215,10 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
           <div><h3 id="example-heading">Try an example</h3><p>This sample is kept only for this browser session and is never saved with the policy.</p></div>
           <button disabled={busy !== null} onClick={() => void preview()} type="button">{busy === "preview" ? "Previewing..." : "Preview example"}</button>
         </div>
-        <label><span>Moderation example</span><textarea onChange={(event) => setExample(event.currentTarget.value)} rows={4} value={example} /></label>
+        <label><span>Moderation example</span><textarea onChange={(event) => {
+          invalidatePreview();
+          setExample(event.currentTarget.value);
+        }} rows={4} value={example} /></label>
         {previews === null ? null : (
           <div className="alert-safety-page__previews">
             <PreviewResult label="Rendered text" result={previews[0]} />
