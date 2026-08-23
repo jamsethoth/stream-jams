@@ -17,6 +17,8 @@ const defaultPolicy: ModerationSettings = {
   ttsText: { maxLength: 180, blockedTerms: [], stripUrls: true }
 };
 
+const moderationExample = "SPOILER spoiler NOISE https://viewer.example/path followed by over-limit words";
+
 test("Alert safety previews, saves, reloads, validates, and guards dirty navigation", async ({ page }) => {
   const moderation = await mockModerationApi(page, defaultPolicy);
 
@@ -28,7 +30,11 @@ test("Alert safety previews, saves, reloads, validates, and guards dirty navigat
 
   await expect(page).toHaveURL(/\/manage\/modules\/alerts\/safety$/u);
   await expect(page.getByLabel("Rendered text maximum length")).toHaveValue("240");
+  await expect(page.getByLabel("Rendered text blocked terms")).toHaveValue("");
+  await expect(page.getByRole("checkbox", { name: "Rendered text strip web links" })).not.toBeChecked();
   await expect(page.getByLabel("TTS text maximum length")).toHaveValue("180");
+  await expect(page.getByLabel("TTS text blocked terms")).toHaveValue("");
+  await expect(page.getByRole("checkbox", { name: "TTS text strip web links" })).toBeChecked();
 
   await page.getByLabel("Rendered text maximum length").fill("18");
   await page.getByLabel("Rendered text blocked terms").fill("Spoiler\nspoiler\nSPOILER");
@@ -37,9 +43,7 @@ test("Alert safety previews, saves, reloads, validates, and guards dirty navigat
   await page.getByLabel("TTS text blocked terms").fill("Noise");
   await page.getByRole("checkbox", { name: "TTS text strip web links" }).uncheck();
 
-  await page.getByLabel("Moderation example").fill(
-    "SPOILER spoiler NOISE https://viewer.example/path followed by over-limit words"
-  );
+  await page.getByLabel("Moderation example").fill(moderationExample);
   await page.getByRole("button", { name: "Preview example" }).click();
 
   const renderedPreview = page.getByRole("region", { name: "Rendered text preview" });
@@ -64,8 +68,10 @@ test("Alert safety previews, saves, reloads, validates, and guards dirty navigat
   await page.reload();
   await expect(page.getByLabel("Rendered text maximum length")).toHaveValue("18");
   await expect(page.getByLabel("Rendered text blocked terms")).toHaveValue("spoiler");
+  await expect(page.getByRole("checkbox", { name: "Rendered text strip web links" })).toBeChecked();
   await expect(page.getByLabel("TTS text maximum length")).toHaveValue("24");
   await expect(page.getByLabel("TTS text blocked terms")).toHaveValue("noise");
+  await expect(page.getByRole("checkbox", { name: "TTS text strip web links" })).not.toBeChecked();
 
   await page.getByLabel("Rendered text maximum length").fill("19");
   await navigation.getByRole("link", { name: "Home", exact: true }).click();
@@ -122,13 +128,25 @@ test("schema-18 restore reloads the saved moderation policy through Settings", a
     await route.fulfill({ contentType: "application/json", json: backupSummary() });
   });
   await page.route("**/management/settings/backup/preflight", async (route) => {
-    const requestArchive = route.request().postDataJSON() as { readonly manifest?: { readonly schemaVersion?: number } };
-    expect(requestArchive.manifest?.schemaVersion).toBe(18);
+    const requestArchive = route.request().postDataJSON();
+    expect(requestArchive).toEqual(archive);
     await route.fulfill({ contentType: "application/json", json: backupPreflight() });
   });
   await page.route("**/management/settings/backup/restore", async (route) => {
-    restoreRequests.push(route.request().postDataJSON());
-    moderation.policy = restoredPolicy;
+    const request = route.request().postDataJSON() as {
+      readonly archive: ReturnType<typeof schema18Backup>;
+      readonly archiveId: string;
+      readonly confirmation: string;
+      readonly regenerateRouteKeys: boolean;
+    };
+    restoreRequests.push(request);
+    expect(request).toEqual({
+      archive,
+      archiveId: backupPreflight().archiveId,
+      confirmation: "RESTORE",
+      regenerateRouteKeys: true
+    });
+    moderation.policy = moderationPolicyFromSchema18Archive(request.archive);
     await route.fulfill({
       contentType: "application/json",
       json: {
@@ -207,6 +225,25 @@ async function mockModerationApi(page: Page, initialPolicy: ModerationSettings) 
       readonly settings: ModerationTargetSettings;
     };
     state.previewRequests.push(input);
+    expect(input).toEqual(input.target === "rendered"
+      ? {
+          target: "rendered",
+          text: moderationExample,
+          settings: {
+            maxLength: 18,
+            blockedTerms: ["Spoiler", "spoiler", "SPOILER"],
+            stripUrls: true
+          }
+        }
+      : {
+          target: "tts",
+          text: moderationExample,
+          settings: {
+            maxLength: 24,
+            blockedTerms: ["Noise"],
+            stripUrls: false
+          }
+        });
     const settings = normalizeTarget(input.settings);
     await route.fulfill({
       contentType: "application/json",
@@ -311,5 +348,34 @@ function schema18Backup(policy: ModerationSettings) {
       overlayOutputs: []
     },
     assets: []
+  };
+}
+
+function moderationPolicyFromSchema18Archive(archive: ReturnType<typeof schema18Backup>): ModerationSettings {
+  const [row] = archive.configuration.tables.alert_moderation_settings;
+  if (row === undefined || archive.configuration.tables.alert_moderation_settings.length !== 1 || row.id !== 1) {
+    throw new TypeError("Schema-18 moderation backup must contain exactly one canonical row");
+  }
+  const renderedBlockedTerms = JSON.parse(row.rendered_blocked_terms_json) as unknown;
+  const ttsBlockedTerms = JSON.parse(row.tts_blocked_terms_json) as unknown;
+  if (
+    !Array.isArray(renderedBlockedTerms)
+    || renderedBlockedTerms.some((term) => typeof term !== "string")
+    || !Array.isArray(ttsBlockedTerms)
+    || ttsBlockedTerms.some((term) => typeof term !== "string")
+  ) {
+    throw new TypeError("Schema-18 moderation backup contains invalid blocked terms");
+  }
+  return {
+    renderedText: {
+      maxLength: row.rendered_max_length,
+      blockedTerms: renderedBlockedTerms,
+      stripUrls: row.rendered_strip_urls === 1
+    },
+    ttsText: {
+      maxLength: row.tts_max_length,
+      blockedTerms: ttsBlockedTerms,
+      stripUrls: row.tts_strip_urls === 1
+    }
   };
 }

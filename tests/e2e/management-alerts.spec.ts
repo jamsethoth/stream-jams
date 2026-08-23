@@ -760,17 +760,22 @@ test("focused alert editor saves layouts and separates preview from test deliver
   });
   await page.route("**/moderation/preview", async (route) => {
     const request = route.request().postDataJSON() as { readonly target: "rendered" | "tts"; readonly text: string };
+    const removableSample = "Welcome, blocked-viewer https://viewer.example/path!";
+    const expectedText = previewRequests.length === 0 ? removableSample : "Welcome, James!";
+    expect(request).toEqual({ target: "rendered", text: expectedText });
     previewRequests.push(request);
     await route.fulfill({
       contentType: "application/json",
       json: {
-        target: request.target,
+        target: "rendered",
         settings: { maxLength: 240, blockedTerms: ["blocked-viewer"], stripUrls: true },
-        text: "Welcome, Safe viewer!",
-        actions: [
-          { type: "url-stripped", count: 1 },
-          { type: "blocked-term-replaced", count: 1 }
-        ]
+        text: request.text === removableSample ? "Welcome, Safe viewer!" : request.text,
+        actions: request.text === removableSample
+          ? [
+              { type: "url-stripped", count: 1 },
+              { type: "blocked-term-replaced", count: 1 }
+            ]
+          : []
       }
     });
   });
