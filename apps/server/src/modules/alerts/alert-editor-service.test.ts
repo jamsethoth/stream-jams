@@ -853,6 +853,9 @@ describe("AlertEditorService", () => {
     const harness = createHarnessWithRule(variationRule, null, moderationService);
     const document = await harness.service.getDocument("variant-moderated");
     const textLayer = document.layers.find((layer) => layer.type === "text")!;
+    const textLayout = document.targetProfiles
+      .find((profile) => profile.id === "landscape")!
+      .layerLayouts.find((layout) => layout.layerId === textLayer.id)!;
     const candidate: AlertEditorDocument = {
       ...document,
       layers: [
@@ -893,6 +896,7 @@ describe("AlertEditorService", () => {
           animation: textLayer.animation,
           text: expect.objectContaining({
             text: "[moderated] [link removed]",
+            layout: textLayout,
             textStyle: textLayer.textStyle,
             boxStyle: textLayer.boxStyle
           })
@@ -1030,6 +1034,55 @@ describe("AlertEditorService", () => {
         })
       ])
     }));
+  });
+
+  it("omits configured audio and TTS layers when both test inclusion flags are disabled", async () => {
+    const harness = createHarness();
+    const document = await harness.service.getDocument(rule.id);
+    const textLayer = document.layers.find((layer) => layer.type === "text")!;
+    const configuredLayers = [
+      textLayer,
+      {
+        id: "layer-audio",
+        name: "Celebration sound",
+        type: "audio" as const,
+        visible: true,
+        order: textLayer.order + 1,
+        animation: textLayer.animation,
+        assetId: "asset-audio",
+        volume: 0.65
+      },
+      {
+        id: "layer-tts",
+        name: "Text to speech",
+        type: "tts" as const,
+        visible: true,
+        order: textLayer.order + 2,
+        animation: textLayer.animation,
+        enabled: true,
+        providerId: "speakerbot",
+        template: "Welcome {userName}"
+      }
+    ];
+
+    await harness.service.sendTest(rule.id, {
+      document: { ...document, layers: configuredLayers },
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James", actor: { displayName: "James" } },
+      includeAudio: false,
+      includeTts: false
+    });
+
+    const playback = harness.enqueueTest.mock.calls[0]?.[0] as AlertEditorTestPlayback | undefined;
+    expect(playback?.alerts).toHaveLength(1);
+    expect(playback?.alerts[0]?.overlayInstruction).toMatchObject({
+      text: expect.objectContaining({ text: "Thanks, James!" }),
+      audio: null,
+      tts: null
+    });
+    expect(playback?.alerts.some(({ overlayInstruction }) =>
+      overlayInstruction.audio !== null || overlayInstruction.tts !== null
+    )).toBe(false);
   });
 
   it("rolls back rule, metadata, and document writes when the final save fails", async () => {

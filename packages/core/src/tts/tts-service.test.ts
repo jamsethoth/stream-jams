@@ -192,8 +192,10 @@ describe("DefaultTtsService", () => {
     expect(result.instruction.text).toBe("[moderated] [l");
     expect(JSON.stringify(result.moderationActions)).not.toContain("badword");
     expect(JSON.stringify(result.moderationActions)).not.toContain("example.test");
+    expect(JSON.stringify(result.moderationActions)).not.toContain("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
     expect(JSON.stringify(receivedInput?.metadata)).not.toContain("badword");
     expect(JSON.stringify(receivedInput?.metadata)).not.toContain("example.test");
+    expect(JSON.stringify(receivedInput?.metadata)).not.toContain("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
   });
 
   it("wraps provider failures without exposing provider internals to callers", async () => {
