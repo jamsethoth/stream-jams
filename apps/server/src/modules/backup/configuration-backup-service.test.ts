@@ -3,15 +3,19 @@ import {
   configurationBackupLimits,
   type AppConfig,
   type AppConfigUpdate,
-  type AssetRecord
+  type AssetRecord,
+  type ModerationSettings
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryStreamJamsDatabase, currentSchemaVersion, type StreamJamsDatabase } from "../db/database.js";
+import { SqliteModerationSettingsRepository } from "../moderation/sqlite-moderation-settings-repository.js";
 import {
   ConfigurationBackupService,
   ConfigurationRestoreBlockedError,
   type ConfigurationBackupServiceOptions,
   type ConfigurationSnapshotRepository
 } from "./configuration-backup-service.js";
+import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
 
 const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
@@ -209,61 +213,90 @@ describe("ConfigurationBackupService", () => {
     expect(steps).toEqual(["replace", "config", "reload"]);
   });
 
-  const restoreFailureCases: readonly ["replacement" | "config update" | "runtime reload", () => void][] = [
-    ["replacement", (): void => { throw new Error("replace failed"); }],
-    ["config update", (): void => undefined],
-    ["runtime reload", (): void => undefined]
-  ];
-  it.each(restoreFailureCases)("restores the prior runtime policy when %s fails", async (failure, operation) => {
-    const restoreRestorePoint = vi.fn(() => undefined);
-    let reloadCount = 0;
-    const reloadRuntimeConfiguration = vi.fn(() => {
-      reloadCount += 1;
-      if (failure === "runtime reload" && reloadCount === 1) {
-        throw new Error("reload failed");
+  const restoreFailureCases = ["replacement", "config update", "runtime reload"] as const;
+  it.each(restoreFailureCases)("restores the persisted and active runtime policy when %s fails", async (failure) => {
+    const backupPolicy: ModerationSettings = {
+      renderedText: { maxLength: 200, blockedTerms: ["backup-rendered"], stripUrls: true },
+      ttsText: { maxLength: 160, blockedTerms: ["backup-tts"], stripUrls: false }
+    };
+    const previousPolicy: ModerationSettings = {
+      renderedText: { maxLength: 333, blockedTerms: ["previous-rendered"], stripUrls: false },
+      ttsText: { maxLength: 222, blockedTerms: ["previous-tts"], stripUrls: true }
+    };
+    const source = createRealService({ initialPolicy: backupPolicy });
+    const target = createRealService({ initialPolicy: previousPolicy });
+    try {
+      const archive = await source.service.exportArchive();
+      const observedRuntimePolicies: ModerationSettings[] = [];
+      let reloadCount = 0;
+      const updateConfig = failure === "config update"
+        ? async (): Promise<AppConfig> => { throw new Error("config failed"); }
+        : async (): Promise<AppConfig> => appConfig;
+      target.service = createRealService({
+        database: target.database,
+        updateConfig,
+        reloadRuntimeConfiguration: () => {
+          const active = target.moderationSettingsRepository.read();
+          if (active === null) throw new Error("Active moderation policy is missing");
+          observedRuntimePolicies.push(active);
+          reloadCount += 1;
+          if (failure === "runtime reload" && reloadCount === 1) throw new Error("reload failed");
+        }
+      }).service;
+      if (failure === "replacement") {
+        target.database.connection.exec(`
+          CREATE TRIGGER reject_backup_policy
+          BEFORE INSERT ON alert_moderation_settings
+          WHEN NEW.rendered_max_length = 200
+          BEGIN SELECT RAISE(FAIL, 'replace failed'); END;
+        `);
       }
-    });
-    const { service } = createService({
-      replace: failure === "replacement" ? operation : replacementMock(),
-      updateConfig: failure === "config update" ? async () => {
-        operation();
-        throw new Error("config failed");
-      } : async () => appConfig,
-      reloadRuntimeConfiguration,
-      restoreRestorePoint
-    });
-    const archive = await service.exportArchive();
-    const preflight = await service.preflight(archive);
+      const preflight = await target.service.preflight(archive);
 
-    await expect(service.restore({
-      archive,
-      archiveId: preflight.archiveId!,
-      confirmation: "RESTORE",
-      regenerateRouteKeys: true
-    })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
+      await expect(target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
 
-    expect(restoreRestorePoint).toHaveBeenCalledOnce();
-    expect(reloadRuntimeConfiguration).toHaveBeenCalledTimes(failure === "config update" ? 1 : failure === "replacement" ? 1 : 2);
+      expect(target.moderationSettingsRepository.read()).toEqual(previousPolicy);
+      expect(observedRuntimePolicies.at(-1)).toEqual(previousPolicy);
+      expect(observedRuntimePolicies).toEqual(
+        failure === "runtime reload" ? [backupPolicy, previousPolicy] : [previousPolicy]
+      );
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
   });
 
   it("blocks an invalid moderation policy in preflight before replacement", async () => {
-    const source = createService();
-    const archive = await source.service.exportArchive();
-    const replace = replacementMock();
-    const target = createService({
-      replace,
-      validate: () => ["alert_moderation_settings[0] contains invalid moderation settings."]
-    });
-    const preflight = await target.service.preflight(archive);
+    const source = createRealService();
+    const target = createRealService();
+    try {
+      const archive = await source.service.exportArchive();
+      const [policy] = archive.configuration.tables.alert_moderation_settings ?? [];
+      if (policy === undefined) throw new Error("Archived moderation policy is required");
+      archive.configuration.tables.alert_moderation_settings = [{ ...policy, rendered_blocked_terms_json: "[1]" }];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const replace = vi.spyOn(target.snapshotRepository, "replace");
+      const previousPolicy = target.moderationSettingsRepository.read();
+      const preflight = await target.service.preflight(archive);
 
-    expect(preflight.state).toBe("invalid");
-    await expect(target.service.restore({
-      archive,
-      archiveId: preflight.archiveId!,
-      confirmation: "RESTORE",
-      regenerateRouteKeys: true
-    })).rejects.toMatchObject({ code: "RESTORE_PREFLIGHT_REQUIRED" });
-    expect(replace).not.toHaveBeenCalled();
+      expect(preflight.state).toBe("invalid");
+      await expect(target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      })).rejects.toMatchObject({ code: "RESTORE_PREFLIGHT_REQUIRED" });
+      expect(replace).not.toHaveBeenCalled();
+      expect(target.moderationSettingsRepository.read()).toEqual(previousPolicy);
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
   });
 
   it("restores the complete operational database state when config replacement fails", async () => {
@@ -422,6 +455,55 @@ function createService(overrides: {
     ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration })
   };
   return { service: new ConfigurationBackupService(options), replace };
+}
+
+function createRealService(overrides: {
+  readonly database?: StreamJamsDatabase;
+  readonly initialPolicy?: ModerationSettings;
+  readonly updateConfig?: ConfigurationBackupServiceOptions["configStore"]["updateConfig"];
+  readonly reloadRuntimeConfiguration?: () => void;
+} = {}) {
+  const database = overrides.database ?? createInMemoryStreamJamsDatabase();
+  if (overrides.database === undefined) {
+    database.connection.prepare("INSERT INTO alert_collections (id, name, enabled) VALUES (?, ?, ?)")
+      .run("set-default", "Everyday", 1);
+  }
+  const moderationSettingsRepository = new SqliteModerationSettingsRepository(database.connection);
+  if (overrides.initialPolicy !== undefined) {
+    moderationSettingsRepository.replace(overrides.initialPolicy);
+  }
+  const snapshotRepository = new SqliteConfigurationSnapshotRepository(database.connection);
+  const options: ConfigurationBackupServiceOptions = {
+    appVersion: "1.2.3",
+    schemaVersion: currentSchemaVersion,
+    now: () => new Date("2026-07-15T05:00:00.000Z"),
+    generateReferenceId: () => "ref-backup-test",
+    configStore: {
+      readConfig: async () => appConfig,
+      updateConfig: overrides.updateConfig ?? (async () => appConfig)
+    },
+    snapshotRepository,
+    assetRepository: { list: async () => [] },
+    assetStore: {
+      read: async () => Buffer.alloc(0),
+      write: async (input) => ({ storagePath: `image/${input.assetId}-${input.storageVersion}.png` }),
+      delete: async () => undefined
+    },
+    assetValidator: {
+      validate: () => ({ accepted: true, reason: null, mediaType: "image", normalizedExtension: ".png" })
+    },
+    getRuntime: async () => ({ intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 }),
+    getAvailableBytes: async () => 1_000_000,
+    safetyBackupStore: { write: async () => "C:/safe/pre-restore.streamjams-backup" },
+    regenerateOutput: async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` }),
+    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration })
+  };
+  return {
+    service: new ConfigurationBackupService(options),
+    database,
+    moderationSettingsRepository,
+    snapshotRepository
+  };
 }
 
 function checksum(bytes: Uint8Array): string {
