@@ -299,6 +299,55 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
+  it("canonicalizes blocked terms while restoring a validated moderation policy", async () => {
+    const source = createRealService();
+    const target = createRealService();
+    try {
+      const archive = await source.service.exportArchive();
+      const [policy] = archive.configuration.tables.alert_moderation_settings ?? [];
+      if (policy === undefined) throw new Error("Archived moderation policy is required");
+      archive.configuration.tables.alert_moderation_settings = [{
+        ...policy,
+        rendered_blocked_terms_json: '["  Alpha  ","alpha","BETA"," beta "]',
+        tts_blocked_terms_json: '["  TTS alpha  ","tts ALPHA"]'
+      }];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+
+      expect(preflight.state).toBe("valid");
+      await expect(target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      })).resolves.toMatchObject({ state: "completed" });
+
+      expect(target.moderationSettingsRepository.read()).toEqual({
+        renderedText: { maxLength: 240, blockedTerms: ["Alpha", "BETA"], stripUrls: false },
+        ttsText: { maxLength: 180, blockedTerms: ["TTS alpha"], stripUrls: true }
+      });
+      expect(target.database.connection.prepare(
+        "SELECT rendered_blocked_terms_json, tts_blocked_terms_json FROM alert_moderation_settings WHERE id = 1"
+      ).get()).toEqual({
+        rendered_blocked_terms_json: '["Alpha","BETA"]',
+        tts_blocked_terms_json: '["TTS alpha"]'
+      });
+      const rebackup = await target.service.exportArchive();
+      expect(rebackup.configuration.tables.alert_moderation_settings).toEqual([{
+        id: 1,
+        rendered_max_length: 240,
+        rendered_blocked_terms_json: '["Alpha","BETA"]',
+        rendered_strip_urls: 0,
+        tts_max_length: 180,
+        tts_blocked_terms_json: '["TTS alpha"]',
+        tts_strip_urls: 1
+      }]);
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
+  });
+
   it("restores the complete operational database state when config replacement fails", async () => {
     const restorePoint = { providerSecret: "credential/provider-token", routeKeyHash: "route-hash" };
     const restoreRestorePoint = vi.fn();

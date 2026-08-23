@@ -15,7 +15,8 @@ import {
   registeredProviderDetailSchema,
   targetProfileIdSchema,
   type ConfigurationBackupArchive,
-  type ConfigurationBackupOutput
+  type ConfigurationBackupOutput,
+  type ModerationSettings
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
 import type { ConfigurationSnapshotRepository } from "./configuration-backup-service.js";
@@ -218,7 +219,16 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
             `INSERT INTO alert_moderation_settings (${definition.columns.join(", ")}, updated_at) VALUES (${placeholders}, CURRENT_TIMESTAMP)`
           );
           for (const row of input.tables.alert_moderation_settings ?? []) {
-            statement.run(...definition.columns.map((column) => row[column] as SQLInputValue));
+            const settings = normalizeModerationSettingsRow(row);
+            statement.run(
+              row.id as SQLInputValue,
+              settings.renderedText.maxLength,
+              JSON.stringify(settings.renderedText.blockedTerms),
+              settings.renderedText.stripUrls ? 1 : 0,
+              settings.ttsText.maxLength,
+              JSON.stringify(settings.ttsText.blockedTerms),
+              settings.ttsText.stripUrls ? 1 : 0
+            );
           }
           continue;
         }
@@ -332,18 +342,7 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
       continue;
     }
     try {
-      normalizeModerationSettings({
-        renderedText: {
-          maxLength: row.rendered_max_length as number,
-          blockedTerms: renderedBlockedTerms,
-          stripUrls: row.rendered_strip_urls === 1
-        },
-        ttsText: {
-          maxLength: row.tts_max_length as number,
-          blockedTerms: ttsBlockedTerms,
-          stripUrls: row.tts_strip_urls === 1
-        }
-      });
+      normalizeModerationSettingsRow(row);
     } catch {
       errors.push(`alert_moderation_settings[${index}] contains invalid moderation settings.`);
     }
@@ -498,6 +497,21 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
   }
 
   return errors;
+}
+
+function normalizeModerationSettingsRow(row: BackupRow): ModerationSettings {
+  return normalizeModerationSettings({
+    renderedText: {
+      maxLength: row.rendered_max_length as number,
+      blockedTerms: parseJsonValue(row.rendered_blocked_terms_json) as readonly string[],
+      stripUrls: row.rendered_strip_urls === 1
+    },
+    ttsText: {
+      maxLength: row.tts_max_length as number,
+      blockedTerms: parseJsonValue(row.tts_blocked_terms_json) as readonly string[],
+      stripUrls: row.tts_strip_urls === 1
+    }
+  });
 }
 
 function validateUniqueConstraints(tables: BackupConfiguration["tables"]): readonly string[] {
