@@ -90,8 +90,16 @@ describe("DefaultModerationService", () => {
   });
 
   it("normalizes a repository-backed update before persisting and activating it", () => {
-    const repository = new RecordingModerationSettingsRepository(defaultModerationSettings);
+    const repository = new RecordingModerationSettingsRepository({
+      renderedText: { maxLength: 320, blockedTerms: [" Initial "], stripUrls: true },
+      ttsText: { maxLength: 220, blockedTerms: [], stripUrls: false }
+    });
     const service = new DefaultModerationService({ repository });
+
+    expect(service.getSettings()).toEqual({
+      renderedText: { maxLength: 320, blockedTerms: ["Initial"], stripUrls: true },
+      ttsText: { maxLength: 220, blockedTerms: [], stripUrls: false }
+    });
 
     expect(
       service.updateSettings({
@@ -140,6 +148,30 @@ describe("DefaultModerationService", () => {
 
     expect(second.getSettings()).toEqual(defaultModerationSettings);
     expect(repository.read()).toEqual(defaultModerationSettings);
+  });
+
+  it("activates a non-default policy persisted by a prior service", () => {
+    const repository = new RecordingModerationSettingsRepository(defaultModerationSettings);
+    const first = new DefaultModerationService({ repository });
+    const persisted = first.updateSettings({
+      renderedText: { maxLength: 96, blockedTerms: ["First"], stripUrls: true },
+      ttsText: { maxLength: 84, blockedTerms: ["Second"], stripUrls: false }
+    });
+
+    const second = new DefaultModerationService({ repository });
+
+    expect(second.getSettings()).toEqual(persisted);
+  });
+
+  it("retains the active policy when a missing-row reload repair fails", () => {
+    const repository = new RecordingModerationSettingsRepository(defaultModerationSettings);
+    const service = new DefaultModerationService({ repository });
+    const active = service.updateSettings({ renderedText: { maxLength: 99, blockedTerms: ["Active"] } });
+    repository.value = null;
+    repository.replaceError = new Error("failed for viewer-secret-text");
+
+    expect(() => service.reloadSettings()).toThrow("Unable to save moderation settings");
+    expect(service.getSettings()).toEqual(active);
   });
 });
 

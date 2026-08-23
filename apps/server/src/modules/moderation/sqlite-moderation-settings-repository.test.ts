@@ -40,6 +40,9 @@ describe("SqliteModerationSettingsRepository", () => {
 
     expect(() => repository.read()).toThrow("Invalid moderation settings");
 
+    database.connection.prepare("UPDATE alert_moderation_settings SET rendered_blocked_terms_json = ?").run("[1]");
+    expect(() => repository.read()).toThrow("Invalid moderation settings");
+
     expect(() =>
       repository.replace({
         renderedText: { maxLength: 0, blockedTerms: [], stripUrls: false },

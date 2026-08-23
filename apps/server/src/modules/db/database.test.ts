@@ -445,6 +445,25 @@ describe("Stream Jams SQLite database", () => {
       ]
     });
     expect(database.connection.prepare("SELECT COUNT(*) AS total FROM alert_moderation_settings").get()).toEqual({ total: 1 });
+    expect(
+      database.connection
+        .prepare(
+          `SELECT id, rendered_max_length, rendered_blocked_terms_json, rendered_strip_urls,
+                  tts_max_length, tts_blocked_terms_json, tts_strip_urls
+           FROM alert_moderation_settings`
+        )
+        .all()
+    ).toEqual([
+      {
+        id: 1,
+        rendered_max_length: 240,
+        rendered_blocked_terms_json: "[]",
+        rendered_strip_urls: 0,
+        tts_max_length: 180,
+        tts_blocked_terms_json: "[]",
+        tts_strip_urls: 1
+      }
+    ]);
   });
 
   it("allows editor documents for rules or variants and removes them with their owner", () => {
