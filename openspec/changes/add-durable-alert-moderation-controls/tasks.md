@@ -1,7 +1,7 @@
 ## 1. Prerequisite Gate
 
-- [ ] 1.1 Fetch `origin/main` and verify `refactor-management-ui-ux`, `improve-management-ui-ux-audit-followups`, and `add-speakerbot-tts-provider` are complete, validated, and present before implementation starts.
-- [ ] 1.2 Reconcile the core moderation service, resolver, safe template renderer, TTS service, protected routes, management client, backup allowlist, and current navigation against this proposal.
+- [x] 1.1 Fetch `origin/main` and verify `refactor-management-ui-ux`, `improve-management-ui-ux-audit-followups`, and `add-speakerbot-tts-provider` are complete, validated, and present before implementation starts.
+- [x] 1.2 Reconcile the core moderation service, resolver, safe template renderer, TTS service, protected routes, management client, backup allowlist, and current navigation against this proposal.
 
 ## 2. Durable Moderation Repository
 
