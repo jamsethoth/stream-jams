@@ -21,6 +21,7 @@ interface AlertCanvasProps {
   readonly preview: boolean;
   readonly previewElapsedMs?: number;
   readonly previewRunId?: number;
+  readonly previewTextByLayerId?: Readonly<Record<string, string>>;
   readonly profileId: TargetProfileId;
   readonly samplePayload: Record<string, unknown>;
   readonly selectedLayerId: string | null;
@@ -188,6 +189,9 @@ export function AlertCanvas(props: AlertCanvasProps) {
                   <CanvasLayer
                     assetApi={props.assetApi}
                     layer={layer}
+                    {...(props.preview && layer.type === "text"
+                      ? { previewText: props.previewTextByLayerId?.[layer.id] ?? "" }
+                      : {})}
                     scale={viewState.zoom / 100}
                     templateContext={templateContext}
                   />
@@ -218,11 +222,13 @@ export function AlertCanvas(props: AlertCanvasProps) {
 function CanvasLayer({
   assetApi,
   layer,
+  previewText,
   scale,
   templateContext
 }: {
   readonly assetApi: AssetApi;
   readonly layer: AlertLayer;
+  readonly previewText?: string;
   readonly scale: number;
   readonly templateContext: Record<string, unknown>;
 }) {
@@ -230,7 +236,7 @@ function CanvasLayer({
     const style = alertTextLayerStyle({ textStyle: layer.textStyle, boxStyle: layer.boxStyle, scale });
     return style === null ? null : (
       <span className="alert-canvas__text alert-text-layer" style={style}>
-        {renderTemplate(layer.template, templateContext)}
+        {previewText ?? renderTemplate(layer.template, templateContext)}
       </span>
     );
   }

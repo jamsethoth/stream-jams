@@ -179,6 +179,49 @@ export const ReadyLandscape: Story = {
   }
 };
 
+export const ModeratedLocalPreview: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertVariationAuthoringContext: async () => variationContext(document),
+      getAlertSet: async () => alertSetDetail(),
+      previewModeration: async (input) => ({
+        target: input.target,
+        settings: { maxLength: 240, blockedTerms: ["James"], stripUrls: true },
+        text: input.target === "rendered" ? "Thanks, [blocked]!" : "[blocked]",
+        actions: [{ type: "blocked-term-replaced", count: 1 }]
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Preview" }));
+    await expect(await canvas.findByText("Thanks, [blocked]!")).toBeInTheDocument();
+    await expect(canvas.queryByText("Thanks, James!")).not.toBeInTheDocument();
+    await expect(canvas.getByText("Local preview is running.")).toBeVisible();
+  }
+};
+
+export const SafeLocalPreviewFailure: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertVariationAuthoringContext: async () => variationContext(document),
+      getAlertSet: async () => alertSetDetail(),
+      previewModeration: async () => {
+        throw new Error("Moderation preview unavailable. ref_story_moderation");
+      }
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Preview" }));
+    await expect(await canvas.findByText("Local preview could not be prepared")).toBeVisible();
+    await expect(canvas.getAllByText(/ref_story_moderation/u).length).toBeGreaterThan(0);
+    await expect(canvas.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
+  }
+};
+
 export const TabletWorkspace: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
