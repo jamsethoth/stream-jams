@@ -879,10 +879,10 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Landscape alert canvas" }).getByText("Welcome, Safe viewer!", { exact: true })).toBeVisible();
-  expect(previewRequests.some((request) => {
-    if (typeof request !== "object" || request === null || !("target" in request) || !("text" in request)) return false;
-    return request.target === "rendered" && typeof request.text === "string" && request.text.includes("https://viewer.example/path");
-  })).toBe(true);
+  expect(previewRequests).toContainEqual({
+    target: "rendered",
+    text: "Welcome, blocked-viewer https://viewer.example/path!"
+  });
   expect(testRequests).toHaveLength(0);
   await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
   await expect(page.getByText(/Queued on Landscape.*ref-e2e-editor-landscape/u)).toBeVisible();
