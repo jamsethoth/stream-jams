@@ -96,9 +96,21 @@ function parseTargetSettings(value: unknown): ModerationTargetSettings {
   }
 
   const candidate = value as { readonly maxLength?: unknown; readonly blockedTerms?: unknown; readonly stripUrls?: unknown };
+  if (
+    typeof candidate.maxLength !== "number"
+    || !Number.isInteger(candidate.maxLength)
+    || candidate.maxLength < 1
+    || candidate.maxLength > 10_000
+    || !Array.isArray(candidate.blockedTerms)
+    || !candidate.blockedTerms.every((blockedTerm) => typeof blockedTerm === "string")
+    || typeof candidate.stripUrls !== "boolean"
+  ) {
+    throw new InvalidModerationSettingsError();
+  }
+
   return {
-    maxLength: candidate.maxLength as number,
-    blockedTerms: candidate.blockedTerms as readonly string[],
-    stripUrls: candidate.stripUrls as boolean
+    maxLength: candidate.maxLength,
+    blockedTerms: candidate.blockedTerms,
+    stripUrls: candidate.stripUrls
   };
 }

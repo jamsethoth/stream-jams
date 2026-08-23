@@ -764,6 +764,27 @@ describe("createHttpManagementApi", () => {
 
     await expect(api.previewModeration(input)).resolves.toEqual(result);
   });
+
+  it("rejects a truncation action that disagrees with the preview policy", async () => {
+    const fetcher = vi.fn(async (request: RequestInfo | URL) => {
+      const url = String(request);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/moderation/preview") {
+        return jsonResponse({
+          target: "rendered",
+          settings: { maxLength: 100, blockedTerms: [], stripUrls: false },
+          text: "safe",
+          actions: [{ type: "max-length-truncated", maxLength: 101 }]
+        });
+      }
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.previewModeration({ target: "rendered", text: "safe" })).rejects.toThrow(
+      "Invalid moderation preview response"
+    );
+  });
   it("loads diagnostics and redacted exports with management headers and limits", async () => {
     const diagnostics = {
       eventLogs: [],

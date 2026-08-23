@@ -168,12 +168,46 @@ describe("moderation routes", () => {
     expect(moderationService.updateCount).toBe(0);
   });
 
+  it("returns 400 for invalid preview input without moderation work", async () => {
+    const { app, authHeaders, moderationService } = await createAppWithModeration();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/moderation/preview",
+      headers: authHeaders,
+      payload: {
+        target: "rendered",
+        text: "secret",
+        settings: { maxLength: 0, blockedTerms: [], stripUrls: false }
+      }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INVALID_MODERATION_SETTINGS",
+        message: "Invalid moderation settings"
+      }
+    });
+    expect(moderationService.previewCount).toBe(0);
+  });
+
   it("rejects missing management sessions and overlay keys before moderation settings or preview work", async () => {
     const { app, moderationService } = await createAppWithModeration();
 
     const missingSession = await app.inject({
       method: "GET",
       url: "/moderation/settings"
+    });
+    const missingSessionPatch = await app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      payload: { renderedText: { stripUrls: true } }
+    });
+    const overlayKeyGet = await app.inject({
+      method: "GET",
+      url: "/moderation/settings",
+      headers: { authorization: "Bearer ovl_not-management" }
     });
     const overlayKey = await app.inject({
       method: "PATCH",
@@ -200,6 +234,8 @@ describe("moderation routes", () => {
     });
 
     expect(missingSession.statusCode).toBe(401);
+    expect(missingSessionPatch.statusCode).toBe(401);
+    expect(overlayKeyGet.statusCode).toBe(401);
     expect(overlayKey.statusCode).toBe(401);
     expect(previewWithoutSession.statusCode).toBe(401);
     expect(previewWithOverlayKey.statusCode).toBe(401);

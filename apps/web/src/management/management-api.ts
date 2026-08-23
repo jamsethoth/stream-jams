@@ -782,23 +782,24 @@ interface RuntimeContract<T> {
 
 const moderationPreviewResultContract: RuntimeContract<ModerationPreviewResultView> = {
   parse(input) {
+    const settings = isRecord(input) ? input.settings : undefined;
     if (
       !hasExactKeys(input, ["target", "settings", "text", "actions"])
       || (input.target !== "rendered" && input.target !== "tts")
       || typeof input.text !== "string"
-      || !isModerationTargetSettings(input.settings)
+      || !isModerationTargetSettings(settings)
       || !Array.isArray(input.actions)
     ) {
       throw new TypeError("Invalid moderation preview response");
     }
 
-    const actions = input.actions.map(parseModerationAction);
+    const actions = input.actions.map((action) => parseModerationAction(action, settings.maxLength));
     return {
       target: input.target,
       settings: {
-        maxLength: input.settings.maxLength,
-        blockedTerms: [...input.settings.blockedTerms],
-        stripUrls: input.settings.stripUrls
+        maxLength: settings.maxLength,
+        blockedTerms: [...settings.blockedTerms],
+        stripUrls: settings.stripUrls
       },
       text: input.text,
       actions
@@ -816,7 +817,7 @@ function isModerationTargetSettings(input: unknown): input is ModerationTargetSe
     && typeof input.stripUrls === "boolean";
 }
 
-function parseModerationAction(input: unknown): ModerationActionView {
+function parseModerationAction(input: unknown, settingsMaxLength: number): ModerationActionView {
   if (!isRecord(input) || typeof input.type !== "string") {
     throw new TypeError("Invalid moderation preview response");
   }
@@ -837,6 +838,7 @@ function parseModerationAction(input: unknown): ModerationActionView {
     && typeof input.maxLength === "number"
     && Number.isInteger(input.maxLength)
     && input.maxLength >= 1
+    && input.maxLength === settingsMaxLength
   ) {
     return { type: "max-length-truncated", maxLength: input.maxLength };
   }
