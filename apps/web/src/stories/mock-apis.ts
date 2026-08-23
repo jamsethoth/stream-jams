@@ -10,6 +10,7 @@ import {
   storyAssets,
   storyDiagnostics,
   storyModerationSettings,
+  storyModerationExample,
   storyServerConfig,
 } from "./story-fixtures.js";
 
@@ -221,6 +222,9 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
       return input;
     },
     async previewModeration(input) {
+      if (input.text === storyModerationExample.sample) {
+        return input.target === "rendered" ? storyModerationExample.rendered : storyModerationExample.tts;
+      }
       return {
         target: input.target,
         settings: input.settings ?? storyModerationSettings.renderedText,

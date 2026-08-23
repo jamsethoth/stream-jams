@@ -2,6 +2,7 @@ import { useMemo, type MouseEvent } from "react";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
+import { AlertSafetyPage } from "./alerts/safety/AlertSafetyPage.js";
 import { AlertEditorPage } from "./alerts/editor/AlertEditorPage.js";
 import { DiagnosticsPanel } from "./diagnostics/DiagnosticsPanel.js";
 import { PageHeader } from "./foundation/PageHeader.js";
@@ -124,6 +125,8 @@ function RouteContent({
       return <TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
     case "modules-alerts":
       return <AlertSetsPage initialSetId={route.setId} managementApi={managementApi} onEditAlert={(alert) => onNavigate({ id: "alert-editor", alertId: alert.id, setId: alert.setId, eventType: alert.eventType, targetProfileId: alert.targetProfileIds[0] ?? "landscape" })} />;
+    case "alert-safety":
+      return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":
       return route.alertId === undefined ? null : (
         <AlertEditorPage

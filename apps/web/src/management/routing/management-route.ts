@@ -3,6 +3,7 @@ export type ManagementRouteId =
   | "event-sources"
   | "tts-providers"
   | "modules-alerts"
+  | "alert-safety"
   | "alert-editor"
   | "assets"
   | "diagnostics"
@@ -54,6 +55,14 @@ const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
     "Configure alert sets, browser-source outputs, and alert behavior.",
     ["Modules", "Alerts"]
   ),
+  "alert-safety": route(
+    "alert-safety",
+    "Safety",
+    "/manage/modules/alerts/safety",
+    "Alert safety",
+    "Configure shared rendered-text and text-to-speech moderation.",
+    ["Modules", "Alerts", "Safety"]
+  ),
   "alert-editor": route(
     "alert-editor",
     "Alert editor",
@@ -86,7 +95,8 @@ routeDefinitions["modules-alerts"] = {
       ...routeDefinitions["modules-alerts"],
       label: "Alerts",
       childRoutes: []
-    }
+    },
+    routeDefinitions["alert-safety"]
   ]
 };
 

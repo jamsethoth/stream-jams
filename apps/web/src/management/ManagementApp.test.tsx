@@ -43,6 +43,63 @@ describe("ManagementApp", () => {
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
   });
 
+  it("opens alert safety through its stable nested route and follows its internal provider link", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/modules/alerts/safety");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+
+    expect(await screen.findByRole("group", { name: "Rendered text" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Safety" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlertsSafety");
+    await user.click(screen.getByRole("link", { name: "Review TTS provider settings" }));
+    expect(window.location.pathname).toBe("/manage/tts-providers");
+  });
+
+  it("saves dirty alert safety settings before leaving", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    window.history.replaceState(null, "", "/manage/modules/alerts/safety");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+    const maximum = await screen.findByLabelText("Rendered text maximum length");
+    await user.clear(maximum);
+    await user.type(maximum, "300");
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    expect(screen.getByRole("dialog", { name: "Leave with unsaved changes?" })).toHaveTextContent("Alert safety settings have unsaved changes.");
+    await user.click(screen.getByRole("button", { name: "Save and leave" }));
+    expect(managementApi.updateModerationSettings).toHaveBeenCalledWith(expect.objectContaining({
+      renderedText: expect.objectContaining({ maxLength: 300 })
+    }));
+    expect(window.location.pathname).toBe("/manage/assets");
+  });
+
+  it("discards dirty alert safety settings when leaving", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    window.history.replaceState(null, "", "/manage/modules/alerts/safety");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+    const maximum = await screen.findByLabelText("Rendered text maximum length");
+    await user.clear(maximum);
+    await user.type(maximum, "300");
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+    expect(managementApi.updateModerationSettings).not.toHaveBeenCalled();
+    expect(window.location.pathname).toBe("/manage/assets");
+  });
+
+  it("cancels dirty alert safety navigation and keeps the draft", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/modules/alerts/safety");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+    const maximum = await screen.findByLabelText("Rendered text maximum length");
+    await user.clear(maximum);
+    await user.type(maximum, "300");
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Leave with unsaved changes?" })).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe("/manage/modules/alerts/safety");
+    expect(screen.getByLabelText("Rendered text maximum length")).toHaveValue(300);
+  });
+
   it("returns former legacy routes to Home", async () => {
     window.history.replaceState(null, "", "/legacy/playback");
     render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
