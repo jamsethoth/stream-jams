@@ -77,13 +77,6 @@ export class InvalidModerationSettingsError extends Error {
   }
 }
 
-export class ModerationSettingsPersistenceError extends Error {
-  constructor() {
-    super("Unable to save moderation settings");
-    this.name = "ModerationSettingsPersistenceError";
-  }
-}
-
 export class DefaultModerationService implements ModerationService {
   #settings: ModerationSettings;
   readonly #repository: ModerationSettingsRepository | undefined;
@@ -150,15 +143,7 @@ export class DefaultModerationService implements ModerationService {
   }
 
   #replaceSettings(next: ModerationSettings): void {
-    if (this.#repository === undefined) {
-      return;
-    }
-
-    try {
-      this.#repository.replace(next);
-    } catch {
-      throw new ModerationSettingsPersistenceError();
-    }
+    this.#repository?.replace(next);
   }
 }
 

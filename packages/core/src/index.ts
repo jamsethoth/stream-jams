@@ -215,7 +215,6 @@ export type * from "./moderation/repository.js";
 export {
   DefaultModerationService,
   InvalidModerationSettingsError,
-  ModerationSettingsPersistenceError,
   normalizeModerationSettings
 } from "./moderation/moderation-service.js";
 export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplacement } from "./moderation/default-rules.js";

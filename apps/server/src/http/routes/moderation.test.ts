@@ -79,16 +79,17 @@ describe("moderation routes", () => {
     expect(moderationService.repository.value).toEqual(patchResponse.json());
   });
 
-  it("returns the standard 500 and retains active policy when persistence fails", async () => {
-    const { app, authHeaders, moderationService } = await createAppWithModeration();
-    const active = moderationService.getSettings();
-    moderationService.repository.replaceError = new Error("database unavailable");
+  it("returns a generic 500, retains active policy, and preserves a safe diagnostic cause when persistence fails", async () => {
+    const { app, authHeaders, moderationService, serverErrors } = await createAppWithModeration();
+    const active = moderationService.updateSettings({ renderedText: { blockedTerms: ["active-policy-secret"] } });
+    const repositoryError = new Error("SQLITE_READONLY: database is read-only");
+    moderationService.repository.replaceError = repositoryError;
 
     const response = await app.inject({
       method: "PATCH",
       url: "/moderation/settings",
       headers: authHeaders,
-      payload: { renderedText: { maxLength: 80 } }
+      payload: { renderedText: { maxLength: 80, blockedTerms: ["candidate-policy-secret"] } }
     });
 
     expect(response.statusCode).toBe(500);
@@ -100,6 +101,11 @@ describe("moderation routes", () => {
       }
     });
     expect(moderationService.getSettings()).toEqual(active);
+    expect(serverErrors).toHaveLength(1);
+    expect(serverErrors[0]?.error).toBe(repositoryError);
+    expect((serverErrors[0]?.error as Error).message).toBe("SQLITE_READONLY: database is read-only");
+    expect(JSON.stringify(response.json())).not.toContain("policy-secret");
+    expect((serverErrors[0]?.error as Error).message).not.toContain("policy-secret");
   });
 
   it("previews active and unsaved candidate settings without returning removed input", async () => {
@@ -166,6 +172,33 @@ describe("moderation routes", () => {
       }
     });
     expect(moderationService.updateCount).toBe(0);
+  });
+
+  it.each([
+    ["maxLength", null],
+    ["maxLength", "80"],
+    ["blockedTerms", null],
+    ["blockedTerms", "spoiler"],
+    ["stripUrls", null],
+    ["stripUrls", "true"]
+  ] as const)("rejects present invalid %s value %j at the PATCH boundary", async (field, value) => {
+    const { app, authHeaders, moderationService } = await createAppWithModeration();
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers: authHeaders,
+      payload: { renderedText: { [field]: value } }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INVALID_MODERATION_SETTINGS",
+        message: "Invalid moderation settings"
+      }
+    });
+    expect(moderationService.updateAttemptCount).toBe(0);
   });
 
   it("returns 400 for invalid preview input without moderation work", async () => {
@@ -278,6 +311,7 @@ describe("moderation routes", () => {
 
 async function createAppWithModeration(options: { readonly maxManagementRequests?: number } = {}) {
   const moderationService = new RecordingModerationService();
+  const serverErrors: Parameters<NonNullable<Parameters<typeof createServerApp>[0]["serverErrorLogger"]>>[0][] = [];
   const managementSessionService = new LocalManagementSessionService({
     clock: () => new Date("2026-05-30T12:00:00.000Z"),
     generateId: () => "mgmt_moderation-session",
@@ -297,12 +331,14 @@ async function createAppWithModeration(options: { readonly maxManagementRequests
     moderationService,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
-    generateServerErrorId: () => "err_moderation_update"
+    generateServerErrorId: () => "err_moderation_update",
+    serverErrorLogger: (entry) => serverErrors.push(entry)
   });
 
   return {
     app,
     moderationService,
+    serverErrors,
     authHeaders: {
       authorization: `Bearer ${session.id}`
     }
@@ -311,6 +347,7 @@ async function createAppWithModeration(options: { readonly maxManagementRequests
 
 class RecordingModerationService extends DefaultModerationService {
   readCount = 0;
+  updateAttemptCount = 0;
   updateCount = 0;
   previewCount = 0;
   readonly repository: RecordingModerationSettingsRepository;
@@ -327,6 +364,7 @@ class RecordingModerationService extends DefaultModerationService {
   }
 
   override updateSettings(input: Parameters<DefaultModerationService["updateSettings"]>[0]) {
+    this.updateAttemptCount += 1;
     const settings = super.updateSettings(input);
     this.updateCount += 1;
     return settings;

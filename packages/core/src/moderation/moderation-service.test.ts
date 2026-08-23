@@ -143,17 +143,24 @@ describe("DefaultModerationService", () => {
     });
   });
 
-  it("retains the active policy and redacts viewer text when persistence fails", () => {
+  it("retains the active policy and preserves the repository failure as the diagnostic cause", () => {
     const repository = new RecordingModerationSettingsRepository(defaultModerationSettings);
     const service = new DefaultModerationService({ repository });
-    const before = service.getSettings();
-    repository.replaceError = new Error("failed for viewer-secret-text");
+    const before = service.updateSettings({ renderedText: { blockedTerms: ["active-policy-secret"] } });
+    const repositoryError = new Error("SQLITE_READONLY: database is read-only");
+    repository.replaceError = repositoryError;
 
-    expect(() => service.updateSettings({ renderedText: { maxLength: 42 } })).toThrow(
-      "Unable to save moderation settings"
-    );
+    let thrown: unknown;
+    try {
+      service.updateSettings({ renderedText: { maxLength: 42, blockedTerms: ["candidate-policy-secret"] } });
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBe(repositoryError);
+    expect((thrown as Error).message).toBe("SQLITE_READONLY: database is read-only");
+    expect((thrown as Error).message).not.toContain("policy-secret");
     expect(service.getSettings()).toEqual(before);
-    expect(() => service.updateSettings({ renderedText: { maxLength: 42 } })).not.toThrow("viewer-secret-text");
   });
 
   it("reloads persisted settings and repairs a missing row for a second service", () => {
@@ -198,9 +205,10 @@ describe("DefaultModerationService", () => {
     const service = new DefaultModerationService({ repository });
     const active = service.updateSettings({ renderedText: { maxLength: 99, blockedTerms: ["Active"] } });
     repository.value = null;
-    repository.replaceError = new Error("failed for viewer-secret-text");
+    const repositoryError = new Error("SQLITE_READONLY: database is read-only");
+    repository.replaceError = repositoryError;
 
-    expect(() => service.reloadSettings()).toThrow("Unable to save moderation settings");
+    expect(() => service.reloadSettings()).toThrow(repositoryError);
     expect(service.getSettings()).toEqual(active);
   });
 });

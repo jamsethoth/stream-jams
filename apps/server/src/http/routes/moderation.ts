@@ -65,11 +65,27 @@ function parseTargetSettingsUpdate(value: unknown): NonNullable<ModerationSettin
     throw new InvalidModerationSettingsError();
   }
 
-  const candidate = value as NonNullable<ModerationSettingsUpdate["renderedText"]>;
+  const candidate = value as { readonly maxLength?: unknown; readonly blockedTerms?: unknown; readonly stripUrls?: unknown };
+  if (
+    (Object.hasOwn(candidate, "maxLength") && (
+      typeof candidate.maxLength !== "number"
+      || !Number.isInteger(candidate.maxLength)
+      || candidate.maxLength < 1
+      || candidate.maxLength > 10_000
+    ))
+    || (Object.hasOwn(candidate, "blockedTerms") && (
+      !Array.isArray(candidate.blockedTerms)
+      || !candidate.blockedTerms.every((blockedTerm) => typeof blockedTerm === "string")
+    ))
+    || (Object.hasOwn(candidate, "stripUrls") && typeof candidate.stripUrls !== "boolean")
+  ) {
+    throw new InvalidModerationSettingsError();
+  }
+
   return {
-    maxLength: candidate.maxLength,
-    blockedTerms: candidate.blockedTerms,
-    stripUrls: candidate.stripUrls
+    maxLength: candidate.maxLength as number | undefined,
+    blockedTerms: candidate.blockedTerms as readonly string[] | undefined,
+    stripUrls: candidate.stripUrls as boolean | undefined
   };
 }
 

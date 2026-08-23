@@ -206,8 +206,8 @@ Add `POST /moderation/preview` under the existing management rate-limit and auth
 
 - Keep GET and PATCH paths, response shape, auth behavior, and partial PATCH semantics.
 - The new UI submits both complete target objects so explicit save is atomic from the user's perspective.
-- Migration 017 seeds existing databases with current defaults, so upgrading does not change output.
-- Keep archive version 2 because the archive envelope does not change. The manifest schema version advances to 17.
+- Migration 018 seeds existing databases with current defaults, so upgrading does not change output.
+- Keep archive version 2 because the archive envelope does not change. The manifest schema version advances to 18.
 - Preserve the existing exact-schema restore rule: schema-17 backups remain blocked by preflight with the current actionable compatibility error instead of being silently rewritten. A newly exported schema-18 backup contains the moderation row.
 - Keep all provider-registration TTS fields unchanged. BL-005 does not redefine provider-specific limits or migrate provider settings into the global policy.
 
