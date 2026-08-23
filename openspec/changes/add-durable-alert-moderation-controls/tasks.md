@@ -5,9 +5,9 @@
 
 ## 2. Durable Moderation Repository
 
-- [ ] 2.1 Add a failing migration test for a single canonical moderation-policy row and upgrade defaults matching current rendered-text and TTS behavior.
-- [ ] 2.2 Add a typed moderation repository interface and SQLite adapter with validated read and transactional replace behavior.
-- [ ] 2.3 Add failing service tests proving normalization, persist-before-swap, previous-policy retention on write failure, restart recovery, and no original viewer text in errors.
+- [x] 2.1 Add a failing migration test for a single canonical moderation-policy row and upgrade defaults matching current rendered-text and TTS behavior.
+- [x] 2.2 Add a typed moderation repository interface and SQLite adapter with validated read and transactional replace behavior.
+- [x] 2.3 Add failing service tests proving normalization, persist-before-swap, previous-policy retention on write failure, restart recovery, and no original viewer text in errors.
 - [ ] 2.4 Compose one durable moderation service shared by resolver, safe template rendering, TTS, and management routes before event intake starts.
 
 ## 3. Backup And Runtime Consistency
