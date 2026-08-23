@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { createStoryManagementApi } from "../../../stories/mock-apis.js";
-import { storyModerationExample, storyModerationSettings } from "../../../stories/story-fixtures.js";
+import { storyModerationExample } from "../../../stories/story-fixtures.js";
 import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
 import { AlertSafetyPage } from "./AlertSafetyPage.js";
 

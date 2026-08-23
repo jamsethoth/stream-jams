@@ -1152,7 +1152,7 @@ function createHarness(
     saveRule: vi.fn(async (value: AlertRuleManagementMetadata) => value)
   };
   const hasConnectedOutput = vi.fn(async () => true);
-  const enqueueTest = vi.fn(async (_playback: AlertEditorTestPlayback) => undefined);
+  const enqueueTest = vi.fn(async () => undefined);
   let nextId = 0;
   const service = new AlertEditorService({
     documents,
@@ -1199,7 +1199,7 @@ function createHarnessWithRule(
     findRule: vi.fn(async () => null),
     saveRule: vi.fn(async (value: AlertRuleManagementMetadata) => value)
   };
-  const enqueueTest = vi.fn(async (_playback: AlertEditorTestPlayback) => undefined);
+  const enqueueTest = vi.fn(async () => undefined);
   const service = new AlertEditorService({
     documents,
     rules,
