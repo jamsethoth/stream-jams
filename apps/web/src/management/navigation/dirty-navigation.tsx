@@ -17,9 +17,14 @@ import {
 export interface DirtyNavigationSource {
   readonly id: string;
   readonly summary: string;
-  readonly save: (() => Promise<boolean | void> | boolean | void) | null;
+  readonly save: (() => Promise<DirtyNavigationSaveResult> | DirtyNavigationSaveResult) | null;
   readonly discard: () => Promise<void> | void;
 }
+
+export type DirtyNavigationSaveResult = boolean | void | {
+  readonly saved: false;
+  readonly error: string;
+};
 
 interface DirtyNavigationContextValue {
   readonly source: DirtyNavigationSource | null;
@@ -149,6 +154,11 @@ export function useManagementNavigation() {
     try {
       const saved = await context.source?.save?.();
       if (saved === false) {
+        setGuardError("Unable to save changes before leaving. Resolve the validation errors or cancel to continue editing.");
+        return;
+      }
+      if (typeof saved === "object" && saved.saved === false) {
+        setGuardError(saved.error);
         return;
       }
       finishPending();

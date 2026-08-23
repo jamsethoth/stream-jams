@@ -148,6 +148,29 @@ describe("AlertSafetyPage", () => {
     expect(alert).toHaveTextContent("Try saving again");
   });
 
+  it("prevents policy edits while a save response is pending", async () => {
+    const user = userEvent.setup();
+    const api = createApi();
+    let resolveSave!: (value: ModerationSettingsView) => void;
+    vi.mocked(api.updateModerationSettings).mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+    renderPage(api);
+    await screen.findByRole("group", { name: "Rendered text" });
+    await replaceNumber(user, "Rendered text maximum length", "300");
+    await user.click(screen.getByRole("button", { name: "Save safety settings" }));
+
+    const maximum = screen.getByLabelText("Rendered text maximum length");
+    expect(maximum).toBeDisabled();
+    expect(screen.getByLabelText("Rendered text blocked terms")).toBeDisabled();
+    expect(screen.getByLabelText("Rendered text strip web links")).toBeDisabled();
+    await user.type(maximum, "1");
+    expect(maximum).toHaveValue(300);
+
+    resolveSave({ ...savedSettings, renderedText: { ...savedSettings.renderedText, maxLength: 300 } });
+    expect(await screen.findByRole("status")).toHaveTextContent("Safety settings saved");
+    expect(maximum).toBeEnabled();
+    expect(maximum).toHaveValue(300);
+  });
+
   it("shows a safe actionable preview failure without changing the draft", async () => {
     const user = userEvent.setup();
     const api = createApi();

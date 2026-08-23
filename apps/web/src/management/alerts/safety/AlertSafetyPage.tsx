@@ -9,7 +9,7 @@ import type {
   ModerationSettingsView,
   ModerationTargetSettingsView
 } from "../../management-api.js";
-import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
+import { useDirtyNavigationSource, type DirtyNavigationSaveResult } from "../../navigation/dirty-navigation.js";
 import "./alert-safety-page.css";
 
 type AlertSafetyApi = Pick<ManagementApi, "getModerationSettings" | "updateModerationSettings" | "previewModeration">;
@@ -69,11 +69,13 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
   const candidate = useMemo(() => draft === null ? null : toCandidate(draft), [draft]);
   const dirty = saved !== null && candidate !== null && !samePolicy(saved, candidate);
 
-  const save = useCallback(async (): Promise<boolean> => {
+  const save = useCallback(async (): Promise<DirtyNavigationSaveResult> => {
     if (draft === null) return false;
     const validation = validateDraft(draft);
     setErrors(validation.errors);
-    if (validation.settings === null) return false;
+    if (validation.settings === null) {
+      return { saved: false, error: formatValidationFailure(validation.errors) };
+    }
 
     setBusy("save");
     setActionError(null);
@@ -85,12 +87,13 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
       setNotice({ tone: "success", message: "Safety settings saved.", detail: "New alerts and previews now use this policy." });
       return true;
     } catch (cause) {
-      setActionError(actionable(
+      const error = actionable(
         "Safety settings were not saved",
         cause,
         "Try saving again. If the problem continues, open Diagnostics."
-      ));
-      return false;
+      );
+      setActionError(error);
+      return { saved: false, error: formatSaveFailure(error) };
     } finally {
       setBusy(null);
     }
@@ -167,6 +170,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
 
       <form className="alert-safety-page__form" noValidate onSubmit={(event) => void submit(event)}>
         <TargetFieldset
+          disabled={busy === "save"}
           draft={draft.renderedText}
           error={errors["renderedText.maxLength"]}
           label="Rendered text"
@@ -174,6 +178,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
           target="renderedText"
         />
         <TargetFieldset
+          disabled={busy === "save"}
           draft={draft.ttsText}
           error={errors["ttsText.maxLength"]}
           label="TTS text"
@@ -203,7 +208,8 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
   );
 }
 
-function TargetFieldset({ draft, error, label, onChange, target }: {
+function TargetFieldset({ disabled, draft, error, label, onChange, target }: {
+  readonly disabled: boolean;
   readonly draft: TargetDraft;
   readonly error: string | undefined;
   readonly label: string;
@@ -212,7 +218,7 @@ function TargetFieldset({ draft, error, label, onChange, target }: {
 }) {
   const errorId = `${target}-max-length-error`;
   return (
-    <fieldset className="alert-safety-page__fieldset">
+    <fieldset className="alert-safety-page__fieldset" disabled={disabled}>
       <legend>{label}</legend>
       <p>Sanitize this output independently before it reaches an alert surface.</p>
       <label>
@@ -309,6 +315,19 @@ function validateDraft(draft: PolicyDraft): { readonly settings: ModerationSetti
 
 function validMaxLength(value: number): boolean {
   return Number.isInteger(value) && value >= 1 && value <= 10_000;
+}
+
+function formatValidationFailure(errors: FieldErrors): string {
+  const details = [
+    errors["renderedText.maxLength"] === undefined ? null : `Rendered text maximum length: ${errors["renderedText.maxLength"]}`,
+    errors["ttsText.maxLength"] === undefined ? null : `TTS text maximum length: ${errors["ttsText.maxLength"]}`
+  ].filter((detail): detail is string => detail !== null);
+  return `Safety settings were not saved. ${details.join(" ")} Correct the values or cancel to continue editing.`;
+}
+
+function formatSaveFailure(error: ActionableManagementError): string {
+  const reference = error.referenceId === null ? "" : ` Reference ID: ${error.referenceId}.`;
+  return `${error.summary}. ${error.nextStep}${reference}`;
 }
 
 function samePolicy(left: ModerationSettingsView, right: ModerationSettingsView): boolean {

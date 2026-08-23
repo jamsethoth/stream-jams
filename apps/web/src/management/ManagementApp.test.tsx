@@ -72,6 +72,40 @@ describe("ManagementApp", () => {
     expect(window.location.pathname).toBe("/manage/assets");
   });
 
+  it("keeps the dirty-navigation dialog open with validation guidance when alert safety cannot save", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/manage/modules/alerts/safety");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={createManagementApi()} />);
+    const maximum = await screen.findByLabelText("Rendered text maximum length");
+    await user.clear(maximum);
+    await user.type(maximum, "0");
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    const dialog = screen.getByRole("dialog", { name: "Leave with unsaved changes?" });
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Rendered text maximum length");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("whole number from 1 to 10000");
+    expect(window.location.pathname).toBe("/manage/modules/alerts/safety");
+  });
+
+  it("keeps the dirty-navigation dialog open with an actionable reference when alert safety persistence fails", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    vi.mocked(managementApi.updateModerationSettings).mockRejectedValue(new Error("Storage failed (err_navigation_save_7)"));
+    window.history.replaceState(null, "", "/manage/modules/alerts/safety");
+    render(<ManagementApp assetApi={createAssetApi()} managementApi={managementApi} />);
+    const maximum = await screen.findByLabelText("Rendered text maximum length");
+    await user.clear(maximum);
+    await user.type(maximum, "300");
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    const dialog = screen.getByRole("dialog", { name: "Leave with unsaved changes?" });
+    await user.click(within(dialog).getByRole("button", { name: "Save and leave" }));
+    const alert = await within(dialog).findByRole("alert");
+    expect(alert).toHaveTextContent("Safety settings were not saved");
+    expect(alert).toHaveTextContent("Try saving again");
+    expect(alert).toHaveTextContent("err_navigation_save_7");
+    expect(window.location.pathname).toBe("/manage/modules/alerts/safety");
+  });
+
   it("discards dirty alert safety settings when leaving", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
