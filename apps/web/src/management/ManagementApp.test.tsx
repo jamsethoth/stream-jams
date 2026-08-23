@@ -557,6 +557,16 @@ function createManagementApi(): ManagementApi {
       }
     })),
     updateModerationSettings: vi.fn(async (input) => input),
+    previewModeration: vi.fn(async (input) => ({
+      target: input.target,
+      settings: input.settings ?? {
+        maxLength: input.target === "rendered" ? 240 : 180,
+        blockedTerms: [],
+        stripUrls: input.target === "tts"
+      },
+      text: input.text,
+      actions: []
+    })),
     createOverlayOutputKey: vi.fn(async () => ({
       keyId: "overlay-key-created",
       url: "http://127.0.0.1:39187/overlay/unified/test/ovl_created",

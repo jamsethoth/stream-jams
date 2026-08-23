@@ -44,6 +44,58 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("restores the saved moderation policy before event intake synchronization can begin", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const configStore = new StaticConfigStore(createConfig(testRoot));
+    const firstComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore,
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(firstComposition);
+    const firstSession = await firstComposition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const firstHeaders = managementAuthHeaders(firstSession);
+    const saved = await firstComposition.app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers: firstHeaders,
+      payload: {
+        renderedText: { maxLength: 96, blockedTerms: ["Spoiler"], stripUrls: true },
+        ttsText: { maxLength: 72, blockedTerms: ["Loud"], stripUrls: false }
+      }
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await firstComposition.close();
+    runtimeCompositions.splice(runtimeCompositions.indexOf(firstComposition), 1);
+
+    const secondComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore,
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(secondComposition);
+    const secondSession = await secondComposition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const restored = await secondComposition.app.inject({
+      method: "GET",
+      url: "/moderation/settings",
+      headers: managementAuthHeaders(secondSession)
+    });
+
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json()).toEqual(saved.json());
+    await expect(secondComposition.syncEventSourceRuntime()).resolves.toBeUndefined();
+  });
+
   it("wires the authenticated variation sibling context through the real runtime", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({

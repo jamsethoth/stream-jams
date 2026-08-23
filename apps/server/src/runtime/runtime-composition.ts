@@ -65,6 +65,7 @@ import { LogConfigService } from "../modules/diagnostics/log-config-service.js";
 import { LogRetentionService } from "../modules/diagnostics/log-retention-service.js";
 import { RuntimeJsonlLogger } from "../modules/diagnostics/runtime-jsonl-logger.js";
 import { SqliteDiagnosticsLogRepository } from "../modules/diagnostics/sqlite-log-repository.js";
+import { SqliteModerationSettingsRepository } from "../modules/moderation/sqlite-moderation-settings-repository.js";
 import {
   EventIngestionService,
   type EventIngestionDiagnostic
@@ -176,6 +177,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const logConfigService = new LogConfigService(configStore);
   const logSettings = await logConfigService.getSettings();
   const database = openStreamJamsDatabase(join(initialConfig.storage.dataDirectory, "stream-jams.sqlite"));
+  const moderationSettingsRepository = new SqliteModerationSettingsRepository(database.connection);
+  const moderationService = new DefaultModerationService({ repository: moderationSettingsRepository });
   const diagnosticsLogRepository = new SqliteDiagnosticsLogRepository(database.connection);
   const alertRepository = new SqliteAlertRepository(database.connection);
   const alertEditorDocumentRepository = new SqliteAlertEditorDocumentRepository(database.connection, now);
@@ -262,7 +265,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayModuleConfigService,
     secretStore
   });
-  const moderationService = new DefaultModerationService();
   const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
   const speakerBotSocketFactory = options.speakerBotSocketFactory ?? createNodeProviderWebSocket;
   const ttsProviderRegistry = createDefaultTtsProviderRegistry({

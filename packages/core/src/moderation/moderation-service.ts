@@ -49,11 +49,23 @@ export interface ModerationResult {
   readonly actions: readonly ModerationAction[];
 }
 
+export interface ModerationPreviewInput {
+  readonly target: ModerationTarget;
+  readonly text: string;
+  readonly settings?: ModerationTargetSettings | undefined;
+}
+
+export interface ModerationPreviewResult extends ModerationResult {
+  readonly target: ModerationTarget;
+  readonly settings: ModerationTargetSettings;
+}
+
 export interface ModerationService {
   getSettings(): ModerationSettings;
   updateSettings(input: ModerationSettingsUpdate): ModerationSettings;
   reloadSettings(): ModerationSettings;
   moderate(input: ModerationInput): ModerationResult;
+  preview(input: ModerationPreviewInput): ModerationPreviewResult;
 }
 
 export class InvalidModerationSettingsError extends Error {
@@ -113,8 +125,46 @@ export class DefaultModerationService implements ModerationService {
 
   moderate(input: ModerationInput): ModerationResult {
     const settings = input.target === "rendered" ? this.#settings.renderedText : this.#settings.ttsText;
+    return moderateText(input.text, settings);
+  }
+
+  preview(input: ModerationPreviewInput): ModerationPreviewResult {
+    const activeSettings = input.target === "rendered" ? this.#settings.renderedText : this.#settings.ttsText;
+    const settings = input.settings === undefined ? activeSettings : normalizeTargetSettings(input.settings);
+    return {
+      target: input.target,
+      settings: cloneTargetSettings(settings),
+      ...moderateText(input.text, settings)
+    };
+  }
+
+  #readOrRepairSettings(): ModerationSettings {
+    const persisted = this.#repository?.read();
+    if (persisted !== null && persisted !== undefined) {
+      return normalizeModerationSettings(persisted);
+    }
+
+    const defaults = normalizeModerationSettings(defaultModerationSettings);
+    this.#replaceSettings(defaults);
+    return defaults;
+  }
+
+  #replaceSettings(next: ModerationSettings): void {
+    if (this.#repository === undefined) {
+      return;
+    }
+
+    try {
+      this.#repository.replace(next);
+    } catch {
+      throw new ModerationSettingsPersistenceError();
+    }
+  }
+}
+
+function moderateText(textInput: string, settings: ModerationTargetSettings): ModerationResult {
     const actions: ModerationAction[] = [];
-    let text = input.text;
+    let text = textInput;
 
     if (settings.stripUrls) {
       const result = replaceUrls(text);
@@ -150,30 +200,6 @@ export class DefaultModerationService implements ModerationService {
       text,
       actions
     };
-  }
-
-  #readOrRepairSettings(): ModerationSettings {
-    const persisted = this.#repository?.read();
-    if (persisted !== null && persisted !== undefined) {
-      return normalizeModerationSettings(persisted);
-    }
-
-    const defaults = normalizeModerationSettings(defaultModerationSettings);
-    this.#replaceSettings(defaults);
-    return defaults;
-  }
-
-  #replaceSettings(next: ModerationSettings): void {
-    if (this.#repository === undefined) {
-      return;
-    }
-
-    try {
-      this.#repository.replace(next);
-    } catch {
-      throw new ModerationSettingsPersistenceError();
-    }
-  }
 }
 
 function mergeTargetSettings(
@@ -269,16 +295,16 @@ function escapeRegExp(value: string): string {
 
 function cloneSettings(settings: ModerationSettings): ModerationSettings {
   return {
-    renderedText: {
-      maxLength: settings.renderedText.maxLength,
-      blockedTerms: [...settings.renderedText.blockedTerms],
-      stripUrls: settings.renderedText.stripUrls
-    },
-    ttsText: {
-      maxLength: settings.ttsText.maxLength,
-      blockedTerms: [...settings.ttsText.blockedTerms],
-      stripUrls: settings.ttsText.stripUrls
-    }
+    renderedText: cloneTargetSettings(settings.renderedText),
+    ttsText: cloneTargetSettings(settings.ttsText)
+  };
+}
+
+function cloneTargetSettings(settings: ModerationTargetSettings): ModerationTargetSettings {
+  return {
+    maxLength: settings.maxLength,
+    blockedTerms: [...settings.blockedTerms],
+    stripUrls: settings.stripUrls
   };
 }
 

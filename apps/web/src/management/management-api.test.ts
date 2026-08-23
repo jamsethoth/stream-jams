@@ -730,6 +730,40 @@ describe("createHttpManagementApi", () => {
     await expect(api.getModerationSettings()).resolves.toEqual(settings);
     await expect(api.updateModerationSettings(settings)).resolves.toEqual(settings);
   });
+
+  it("previews moderation with management authentication and CSRF headers", async () => {
+    const input = {
+      target: "rendered" as const,
+      text: "Spoiler https://example.test",
+      settings: { maxLength: 100, blockedTerms: [" spoiler "], stripUrls: true }
+    };
+    const result = {
+      target: "rendered" as const,
+      settings: { maxLength: 100, blockedTerms: ["spoiler"], stripUrls: true },
+      text: "[moderated] [link removed]",
+      actions: [
+        { type: "url-stripped" as const, count: 1 },
+        { type: "blocked-term-replaced" as const, count: 1 }
+      ]
+    };
+    const fetcher = vi.fn(async (request: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(request);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/moderation/preview") {
+        expect(init).toMatchObject({ method: "POST", body: JSON.stringify(input) });
+        expect(init?.headers).toMatchObject({
+          authorization: "Bearer mgmt_session",
+          "content-type": "application/json",
+          "x-stream-jams-csrf": "csrf_session"
+        });
+        return jsonResponse(result);
+      }
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.previewModeration(input)).resolves.toEqual(result);
+  });
   it("loads diagnostics and redacted exports with management headers and limits", async () => {
     const diagnostics = {
       eventLogs: [],

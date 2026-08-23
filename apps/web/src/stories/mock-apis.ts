@@ -220,6 +220,14 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async updateModerationSettings(input) {
       return input;
     },
+    async previewModeration(input) {
+      return {
+        target: input.target,
+        settings: input.settings ?? storyModerationSettings.renderedText,
+        text: input.text,
+        actions: []
+      };
+    },
     async createOverlayOutputKey(input) {
       return overlayKeyResult(input);
     },

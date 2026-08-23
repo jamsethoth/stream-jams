@@ -211,6 +211,18 @@ function createManagementApi(): ManagementApi {
     async updateModerationSettings(input) {
       return input;
     },
+    async previewModeration(input) {
+      return {
+        target: input.target,
+        settings: input.settings ?? {
+          maxLength: 240,
+          blockedTerms: [],
+          stripUrls: false
+        },
+        text: input.text,
+        actions: []
+      };
+    },
     async createOverlayOutputKey() {
       throw new Error("Not implemented in test mock");
     },

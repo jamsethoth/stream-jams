@@ -68,6 +68,36 @@ describe("DefaultModerationService", () => {
     expect(JSON.stringify(result.actions)).not.toContain("token-secret");
   });
 
+  it("previews a normalized candidate policy without changing the active policy", () => {
+    const service = new DefaultModerationService({
+      settings: {
+        renderedText: { maxLength: 240, blockedTerms: ["active-only"], stripUrls: false },
+        ttsText: { maxLength: 180, blockedTerms: [], stripUrls: true }
+      }
+    });
+
+    const preview = service.preview({
+      target: "rendered",
+      text: "Spoiler https://example.test",
+      settings: { maxLength: 100, blockedTerms: [" spoiler "], stripUrls: true }
+    });
+
+    expect(preview).toEqual({
+      target: "rendered",
+      settings: { maxLength: 100, blockedTerms: ["spoiler"], stripUrls: true },
+      text: "[moderated] [link removed]",
+      actions: [
+        { type: "url-stripped", count: 1 },
+        { type: "blocked-term-replaced", count: 1 }
+      ]
+    });
+    expect(service.getSettings().renderedText).toEqual({
+      maxLength: 240,
+      blockedTerms: ["active-only"],
+      stripUrls: false
+    });
+  });
+
   it("rejects invalid moderation settings", () => {
     const service = new DefaultModerationService();
 

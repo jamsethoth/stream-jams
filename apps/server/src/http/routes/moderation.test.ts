@@ -1,4 +1,9 @@
-import { DefaultModerationService } from "@stream-jams/core";
+import {
+  defaultModerationSettings,
+  DefaultModerationService,
+  type ModerationSettings,
+  type ModerationSettingsRepository
+} from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
@@ -48,6 +53,97 @@ describe("moderation routes", () => {
     expect(moderationService.updateCount).toBe(1);
   });
 
+  it("returns stored normalized policy and persists a complete merged partial update", async () => {
+    const { app, authHeaders, moderationService } = await createAppWithModeration();
+    moderationService.updateSettings({
+      renderedText: { maxLength: 320, blockedTerms: [" Stored "], stripUrls: true },
+      ttsText: { maxLength: 120, blockedTerms: ["Speech"], stripUrls: false }
+    });
+
+    const getResponse = await app.inject({ method: "GET", url: "/moderation/settings", headers: authHeaders });
+    const patchResponse = await app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers: authHeaders,
+      payload: { renderedText: { maxLength: 80 } }
+    });
+
+    expect(getResponse.json()).toEqual({
+      renderedText: { maxLength: 320, blockedTerms: ["Stored"], stripUrls: true },
+      ttsText: { maxLength: 120, blockedTerms: ["Speech"], stripUrls: false }
+    });
+    expect(patchResponse.json()).toEqual({
+      renderedText: { maxLength: 80, blockedTerms: ["Stored"], stripUrls: true },
+      ttsText: { maxLength: 120, blockedTerms: ["Speech"], stripUrls: false }
+    });
+    expect(moderationService.repository.value).toEqual(patchResponse.json());
+  });
+
+  it("returns the standard 500 and retains active policy when persistence fails", async () => {
+    const { app, authHeaders, moderationService } = await createAppWithModeration();
+    const active = moderationService.getSettings();
+    moderationService.repository.replaceError = new Error("database unavailable");
+
+    const response = await app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers: authHeaders,
+      payload: { renderedText: { maxLength: 80 } }
+    });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        id: "err_moderation_update",
+        message: "A server error occurred. Use the error ID to find details in backend logs."
+      }
+    });
+    expect(moderationService.getSettings()).toEqual(active);
+  });
+
+  it("previews active and unsaved candidate settings without returning removed input", async () => {
+    const { app, authHeaders, moderationService } = await createAppWithModeration();
+    moderationService.updateSettings({ renderedText: { blockedTerms: ["Spoiler"], stripUrls: true } });
+
+    const activePreview = await app.inject({
+      method: "POST",
+      url: "/moderation/preview",
+      headers: authHeaders,
+      payload: { target: "rendered", text: "Spoiler https://example.test" }
+    });
+    const candidatePreview = await app.inject({
+      method: "POST",
+      url: "/moderation/preview",
+      headers: authHeaders,
+      payload: {
+        target: "rendered",
+        text: "Spoiler https://example.test",
+        settings: { maxLength: 100, blockedTerms: [" spoiler "], stripUrls: true }
+      }
+    });
+
+    expect(activePreview.json()).toMatchObject({
+      target: "rendered",
+      text: "[moderated] [link removed]",
+      actions: [
+        { type: "url-stripped", count: 1 },
+        { type: "blocked-term-replaced", count: 1 }
+      ]
+    });
+    expect(candidatePreview.json()).toEqual({
+      target: "rendered",
+      settings: { maxLength: 100, blockedTerms: ["spoiler"], stripUrls: true },
+      text: "[moderated] [link removed]",
+      actions: [
+        { type: "url-stripped", count: 1 },
+        { type: "blocked-term-replaced", count: 1 }
+      ]
+    });
+    expect(JSON.stringify(candidatePreview.json())).not.toContain("Spoiler");
+    expect(moderationService.previewCount).toBe(2);
+  });
+
   it("returns 400 for invalid settings without mutating current settings", async () => {
     const { app, authHeaders, moderationService } = await createAppWithModeration();
 
@@ -72,7 +168,7 @@ describe("moderation routes", () => {
     expect(moderationService.updateCount).toBe(0);
   });
 
-  it("rejects missing management sessions and overlay keys before moderation settings work", async () => {
+  it("rejects missing management sessions and overlay keys before moderation settings or preview work", async () => {
     const { app, moderationService } = await createAppWithModeration();
 
     const missingSession = await app.inject({
@@ -91,11 +187,25 @@ describe("moderation routes", () => {
         }
       }
     });
+    const previewWithoutSession = await app.inject({
+      method: "POST",
+      url: "/moderation/preview",
+      payload: { target: "rendered", text: "secret" }
+    });
+    const previewWithOverlayKey = await app.inject({
+      method: "POST",
+      url: "/moderation/preview",
+      headers: { authorization: "Bearer ovl_not-management" },
+      payload: { target: "rendered", text: "secret" }
+    });
 
     expect(missingSession.statusCode).toBe(401);
     expect(overlayKey.statusCode).toBe(401);
+    expect(previewWithoutSession.statusCode).toBe(401);
+    expect(previewWithOverlayKey.statusCode).toBe(401);
     expect(moderationService.readCount).toBe(0);
     expect(moderationService.updateCount).toBe(0);
+    expect(moderationService.previewCount).toBe(0);
   });
 
   it("rate limits repeated moderation settings reads before service work", async () => {
@@ -107,6 +217,26 @@ describe("moderation routes", () => {
 
     expect(rejected.statusCode).toBe(429);
     expect(moderationService.readCount).toBe(2);
+  });
+
+  it("rate limits moderation preview before service work", async () => {
+    const { app, authHeaders, moderationService } = await createAppWithModeration({ maxManagementRequests: 1 });
+
+    expect((await app.inject({
+      method: "POST",
+      url: "/moderation/preview",
+      headers: authHeaders,
+      payload: { target: "rendered", text: "first" }
+    })).statusCode).toBe(200);
+    const rejected = await app.inject({
+      method: "POST",
+      url: "/moderation/preview",
+      headers: authHeaders,
+      payload: { target: "rendered", text: "secret" }
+    });
+
+    expect(rejected.statusCode).toBe(429);
+    expect(moderationService.previewCount).toBe(1);
   });
 });
 
@@ -130,7 +260,8 @@ async function createAppWithModeration(options: { readonly maxManagementRequests
     },
     moderationService,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
-    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
+    managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
+    generateServerErrorId: () => "err_moderation_update"
   });
 
   return {
@@ -145,6 +276,14 @@ async function createAppWithModeration(options: { readonly maxManagementRequests
 class RecordingModerationService extends DefaultModerationService {
   readCount = 0;
   updateCount = 0;
+  previewCount = 0;
+  readonly repository: RecordingModerationSettingsRepository;
+
+  constructor() {
+    const repository = new RecordingModerationSettingsRepository(defaultModerationSettings);
+    super({ repository });
+    this.repository = repository;
+  }
 
   override getSettings() {
     this.readCount += 1;
@@ -155,5 +294,31 @@ class RecordingModerationService extends DefaultModerationService {
     const settings = super.updateSettings(input);
     this.updateCount += 1;
     return settings;
+  }
+
+  override preview(input: Parameters<DefaultModerationService["preview"]>[0]) {
+    this.previewCount += 1;
+    return super.preview(input);
+  }
+}
+
+class RecordingModerationSettingsRepository implements ModerationSettingsRepository {
+  value: ModerationSettings | null;
+  replaceError: Error | null = null;
+
+  constructor(settings: ModerationSettings | null) {
+    this.value = settings;
+  }
+
+  read(): ModerationSettings | null {
+    return this.value;
+  }
+
+  replace(settings: ModerationSettings): void {
+    if (this.replaceError !== null) {
+      throw this.replaceError;
+    }
+
+    this.value = settings;
   }
 }
