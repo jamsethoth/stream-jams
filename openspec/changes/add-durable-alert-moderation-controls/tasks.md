@@ -14,7 +14,7 @@
 
 - [x] 3.1 Add failing configuration backup/preflight/restore tests for moderation policy inclusion, invalid-policy blocking, viewer-text exclusion, and post-restore runtime reload.
 - [x] 3.2 Add the moderation table to the allowlisted snapshot and restore transaction and reload the shared service only after successful replacement.
-- [ ] 3.3 Extend preview, Send test, live resolver, browser speech, and Speaker.bot tests to prove independent rendered/TTS policy is consistently enforced.
+- [x] 3.3 Extend preview, Send test, live resolver, browser speech, and Speaker.bot tests to prove independent rendered/TTS policy is consistently enforced.
 
 ## 4. Alert Safety Management Route
 
