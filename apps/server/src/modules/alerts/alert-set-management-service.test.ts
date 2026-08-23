@@ -1,5 +1,6 @@
 import {
   DefaultAlertService,
+  DefaultModerationService,
   streamEventTypes,
   type AlertCollection,
   type AlertEditorDocument,
@@ -374,6 +375,7 @@ function createFixture() {
     metadata: metadataRepository,
     hasConnectedOutput: async () => true,
     enqueueTest: async () => undefined,
+    moderationService: new DefaultModerationService(),
     generateId: () => `editor-${(nextId += 1)}`,
     generateReferenceId: () => `reference-${(nextId += 1)}`,
     saveAtomically(input) {

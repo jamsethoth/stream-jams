@@ -5,6 +5,7 @@ import {
   validateAlertSamplePayload,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
+  DefaultModerationService,
   AlertEditorDocument,
   AlertRule,
   AlertEditorTestRequest
@@ -17,6 +18,7 @@ import {
   AlertEditorValidationError,
   createAlertEditorDocumentFromRule,
   type AlertEditorDocumentRepository,
+  type AlertEditorTestPlayback,
   type AlertEditorServiceOptions
 } from "./alert-editor-service.js";
 import type { AlertRuleManagementMetadata } from "./alert-set-management-service.js";
@@ -834,6 +836,83 @@ describe("AlertEditorService", () => {
     expect(harness.enqueueTest).toHaveBeenCalledTimes(1);
   });
 
+  it("sanitizes editor test rendered and TTS layers independently without changing presentation metadata", async () => {
+    const moderationService = new DefaultModerationService({
+      settings: {
+        renderedText: { maxLength: 26, blockedTerms: ["badword"], stripUrls: true },
+        ttsText: { maxLength: 15, blockedTerms: ["badword"], stripUrls: true }
+      }
+    });
+    const variationRule: AlertRule = {
+      ...rule,
+      variants: [
+        rule.variants[0]!,
+        { ...rule.variants[0]!, id: "variant-moderated", name: "Moderated variation" }
+      ]
+    };
+    const harness = createHarnessWithRule(variationRule, null, moderationService);
+    const document = await harness.service.getDocument("variant-moderated");
+    const textLayer = document.layers.find((layer) => layer.type === "text")!;
+    const candidate: AlertEditorDocument = {
+      ...document,
+      layers: [
+        { ...textLayer, template: "{actor.displayName}" },
+        {
+          id: "layer-tts",
+          name: "Text to speech",
+          type: "tts",
+          visible: true,
+          order: textLayer.order + 1,
+          animation: textLayer.animation,
+          enabled: true,
+          providerId: "speakerbot",
+          template: "Speak {actor.displayName}"
+        }
+      ]
+    };
+    const raw = "badword https://example.test/secret ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+    await harness.service.sendTest(document.id, {
+      document: candidate,
+      targetProfileId: "landscape",
+      samplePayload: { actor: { id: "viewer-1", displayName: raw }, userName: raw },
+      includeAudio: false,
+      includeTts: true
+    });
+
+    const playback = harness.enqueueTest.mock.calls[0]?.[0] as AlertEditorTestPlayback | undefined;
+    expect(playback).toBeDefined();
+    const alerts = playback!.alerts;
+    expect(alerts).toEqual([
+      expect.objectContaining({
+        ruleId: variationRule.id,
+        variantId: "variant-moderated",
+        overlayInstruction: expect.objectContaining({
+          targetProfileId: "landscape",
+          durationMs: candidate.durationMs,
+          animation: textLayer.animation,
+          text: expect.objectContaining({
+            text: "[moderated] [link removed]",
+            textStyle: textLayer.textStyle,
+            boxStyle: textLayer.boxStyle
+          })
+        })
+      }),
+      expect.objectContaining({
+        ruleId: variationRule.id,
+        variantId: "variant-moderated",
+        overlayInstruction: expect.objectContaining({
+          targetProfileId: "landscape",
+          durationMs: candidate.durationMs,
+          tts: expect.objectContaining({ text: "Speak [moderate" })
+        })
+      })
+    ]);
+    expect(JSON.stringify(alerts)).not.toContain("badword");
+    expect(JSON.stringify(alerts)).not.toContain("example.test");
+    expect(JSON.stringify(alerts)).not.toContain("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+  });
+
   it("renders approved event aliases through the same normalized context used by live playback", async () => {
     const communityRule: AlertRule = {
       ...rule,
@@ -972,6 +1051,7 @@ describe("AlertEditorService", () => {
       metadata,
       hasConnectedOutput: async () => true,
       enqueueTest: async () => undefined,
+      moderationService: new DefaultModerationService(),
       generateId: () => "generated",
       generateReferenceId: () => "reference",
       saveAtomically(input: Parameters<NonNullable<AlertEditorServiceOptions["saveAtomically"]>>[0]) {
@@ -999,7 +1079,8 @@ describe("AlertEditorService", () => {
 
 function createHarness(
   activeSet = false,
-  findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>
+  findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>,
+  moderationService = new DefaultModerationService()
 ) {
   const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
     find: vi.fn(async () => null),
@@ -1018,7 +1099,7 @@ function createHarness(
     saveRule: vi.fn(async (value: AlertRuleManagementMetadata) => value)
   };
   const hasConnectedOutput = vi.fn(async () => true);
-  const enqueueTest = vi.fn(async () => undefined);
+  const enqueueTest = vi.fn(async (_playback: AlertEditorTestPlayback) => undefined);
   let nextId = 0;
   const service = new AlertEditorService({
     documents,
@@ -1026,6 +1107,7 @@ function createHarness(
     metadata,
     hasConnectedOutput,
     enqueueTest,
+    moderationService,
     ...(findAssetMediaType === undefined ? {} : { findAssetMediaType }),
     generateId: () => `generated-${++nextId}`,
     generateReferenceId: () => "ref-test-1",
@@ -1039,7 +1121,11 @@ function createHarness(
   return { service, documents, rules, metadata, hasConnectedOutput, enqueueTest };
 }
 
-function createHarnessWithRule(ruleFixture: AlertRule, storedDocument: AlertEditorDocument | null = null) {
+function createHarnessWithRule(
+  ruleFixture: AlertRule,
+  storedDocument: AlertEditorDocument | null = null,
+  moderationService = new DefaultModerationService()
+) {
   const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
     find: vi.fn(async (editorId: string) => editorId === storedDocument?.id ? storedDocument : null),
     findMany: vi.fn(async (editorIds: readonly string[]) =>
@@ -1060,13 +1146,14 @@ function createHarnessWithRule(ruleFixture: AlertRule, storedDocument: AlertEdit
     findRule: vi.fn(async () => null),
     saveRule: vi.fn(async (value: AlertRuleManagementMetadata) => value)
   };
-  const enqueueTest = vi.fn(async () => undefined);
+  const enqueueTest = vi.fn(async (_playback: AlertEditorTestPlayback) => undefined);
   const service = new AlertEditorService({
     documents,
     rules,
     metadata,
     hasConnectedOutput: async () => true,
     enqueueTest,
+    moderationService,
     generateId: () => "generated",
     generateReferenceId: () => "reference",
     async saveAtomically(input) {
@@ -1144,6 +1231,7 @@ function createAtomicHarness(ruleFixture: AlertRule, activeSet = false) {
     metadata,
     hasConnectedOutput: async () => true,
     enqueueTest: async () => undefined,
+    moderationService: new DefaultModerationService(),
     generateId: () => "generated",
     generateReferenceId: () => "reference",
     saveAtomically,

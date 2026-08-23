@@ -564,6 +564,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     async enqueueTest(playback) {
       playbackCoordinator.enqueueResolvedTest(playback);
     },
+    moderationService,
     async findAssetMediaType(assetId) {
       return (await assetRepository.findById(assetId))?.mediaType ?? null;
     },
