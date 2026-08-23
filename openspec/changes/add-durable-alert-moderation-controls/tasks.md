@@ -22,7 +22,7 @@
 - [x] 4.2 Add `/manage/modules/alerts/safety` as an Alerts child route with Rendered text and TTS sections, normalization preview, Save/Revert, and dirty-navigation protection.
 - [x] 4.3 Add failing component tests for loaded values, blocked-term normalization, independent URL stripping and length bounds, example preview, unsaved navigation, save failure, and provider-safety separation.
 - [x] 4.4 Add Storybook states for defaults, edited policy, normalized duplicates, moderated example, invalid bounds, save failure, and narrow viewport.
-- [ ] 4.5 Add Playwright coverage for changing policy, previewing sanitized output, saving, reloading, verifying an alert preview/test, and restoring the policy from backup.
+- [x] 4.5 Add Playwright coverage for changing policy, previewing sanitized output, saving, reloading, verifying an alert preview/test, and restoring the policy from backup.
 
 ## 5. Verification
 
