@@ -1,4 +1,5 @@
 import { blockedTermReplacement, defaultModerationSettings, strippedUrlReplacement } from "./default-rules.js";
+import type { ModerationSettingsRepository } from "./repository.js";
 
 export type ModerationTarget = "rendered" | "tts";
 
@@ -51,6 +52,7 @@ export interface ModerationResult {
 export interface ModerationService {
   getSettings(): ModerationSettings;
   updateSettings(input: ModerationSettingsUpdate): ModerationSettings;
+  reloadSettings(): ModerationSettings;
   moderate(input: ModerationInput): ModerationResult;
 }
 
@@ -63,11 +65,28 @@ export class InvalidModerationSettingsError extends Error {
   }
 }
 
+export class ModerationSettingsPersistenceError extends Error {
+  constructor() {
+    super("Unable to save moderation settings");
+    this.name = "ModerationSettingsPersistenceError";
+  }
+}
+
 export class DefaultModerationService implements ModerationService {
   #settings: ModerationSettings;
+  readonly #repository: ModerationSettingsRepository | undefined;
 
-  constructor(options: { readonly settings?: ModerationSettings | undefined } = {}) {
-    this.#settings = normalizeSettings(options.settings ?? defaultModerationSettings);
+  constructor(
+    options: {
+      readonly repository?: ModerationSettingsRepository | undefined;
+      readonly settings?: ModerationSettings | undefined;
+    } = {}
+  ) {
+    this.#repository = options.repository;
+    this.#settings = normalizeModerationSettings(options.settings ?? defaultModerationSettings);
+    if (this.#repository !== undefined) {
+      this.#settings = this.#readOrRepairSettings();
+    }
   }
 
   getSettings(): ModerationSettings {
@@ -75,10 +94,20 @@ export class DefaultModerationService implements ModerationService {
   }
 
   updateSettings(input: ModerationSettingsUpdate): ModerationSettings {
-    this.#settings = normalizeSettings({
+    const next = normalizeModerationSettings({
       renderedText: mergeTargetSettings(this.#settings.renderedText, input.renderedText),
       ttsText: mergeTargetSettings(this.#settings.ttsText, input.ttsText)
     });
+    this.#replaceSettings(next);
+    this.#settings = next;
+    return this.getSettings();
+  }
+
+  reloadSettings(): ModerationSettings {
+    const next = this.#repository === undefined
+      ? normalizeModerationSettings(this.#settings)
+      : this.#readOrRepairSettings();
+    this.#settings = next;
     return this.getSettings();
   }
 
@@ -122,6 +151,29 @@ export class DefaultModerationService implements ModerationService {
       actions
     };
   }
+
+  #readOrRepairSettings(): ModerationSettings {
+    const persisted = this.#repository?.read();
+    if (persisted !== null && persisted !== undefined) {
+      return normalizeModerationSettings(persisted);
+    }
+
+    const defaults = normalizeModerationSettings(defaultModerationSettings);
+    this.#replaceSettings(defaults);
+    return defaults;
+  }
+
+  #replaceSettings(next: ModerationSettings): void {
+    if (this.#repository === undefined) {
+      return;
+    }
+
+    try {
+      this.#repository.replace(next);
+    } catch {
+      throw new ModerationSettingsPersistenceError();
+    }
+  }
 }
 
 function mergeTargetSettings(
@@ -139,7 +191,7 @@ function mergeTargetSettings(
   };
 }
 
-function normalizeSettings(settings: ModerationSettings): ModerationSettings {
+export function normalizeModerationSettings(settings: ModerationSettings): ModerationSettings {
   return {
     renderedText: normalizeTargetSettings(settings.renderedText),
     ttsText: normalizeTargetSettings(settings.ttsText)

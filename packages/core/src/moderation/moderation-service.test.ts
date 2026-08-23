@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { defaultModerationSettings } from "./default-rules.js";
+import type { ModerationSettingsRepository } from "./repository.js";
 import { DefaultModerationService } from "./moderation-service.js";
 
 describe("DefaultModerationService", () => {
@@ -77,4 +79,87 @@ describe("DefaultModerationService", () => {
       })
     ).toThrow("Invalid moderation settings");
   });
+
+  it("repairs missing repository settings and activates canonical defaults", () => {
+    const repository = new RecordingModerationSettingsRepository(null);
+
+    const service = new DefaultModerationService({ repository });
+
+    expect(service.getSettings()).toEqual(defaultModerationSettings);
+    expect(repository.read()).toEqual(defaultModerationSettings);
+  });
+
+  it("normalizes a repository-backed update before persisting and activating it", () => {
+    const repository = new RecordingModerationSettingsRepository(defaultModerationSettings);
+    const service = new DefaultModerationService({ repository });
+
+    expect(
+      service.updateSettings({
+        renderedText: { blockedTerms: ["  Alpha  ", "alpha", "", "Beta"], stripUrls: true }
+      })
+    ).toMatchObject({
+      renderedText: { blockedTerms: ["Alpha", "Beta"], stripUrls: true }
+    });
+    expect(repository.read()).toMatchObject({
+      renderedText: { blockedTerms: ["Alpha", "Beta"], stripUrls: true }
+    });
+  });
+
+  it("retains the active policy and redacts viewer text when persistence fails", () => {
+    const repository = new RecordingModerationSettingsRepository(defaultModerationSettings);
+    const service = new DefaultModerationService({ repository });
+    const before = service.getSettings();
+    repository.replaceError = new Error("failed for viewer-secret-text");
+
+    expect(() => service.updateSettings({ renderedText: { maxLength: 42 } })).toThrow(
+      "Unable to save moderation settings"
+    );
+    expect(service.getSettings()).toEqual(before);
+    expect(() => service.updateSettings({ renderedText: { maxLength: 42 } })).not.toThrow("viewer-secret-text");
+  });
+
+  it("reloads persisted settings and repairs a missing row for a second service", () => {
+    const repository = new RecordingModerationSettingsRepository({
+      renderedText: { maxLength: 320, blockedTerms: ["Initial"], stripUrls: false },
+      ttsText: { maxLength: 220, blockedTerms: [], stripUrls: true }
+    });
+    const first = new DefaultModerationService({ repository });
+
+    repository.value = {
+      renderedText: { maxLength: 160, blockedTerms: [" Reloaded "], stripUrls: true },
+      ttsText: { maxLength: 140, blockedTerms: ["Tts"], stripUrls: false }
+    };
+
+    expect(first.reloadSettings()).toEqual({
+      renderedText: { maxLength: 160, blockedTerms: ["Reloaded"], stripUrls: true },
+      ttsText: { maxLength: 140, blockedTerms: ["Tts"], stripUrls: false }
+    });
+
+    repository.value = null;
+    const second = new DefaultModerationService({ repository });
+
+    expect(second.getSettings()).toEqual(defaultModerationSettings);
+    expect(repository.read()).toEqual(defaultModerationSettings);
+  });
 });
+
+class RecordingModerationSettingsRepository implements ModerationSettingsRepository {
+  value: ReturnType<DefaultModerationService["getSettings"]> | null;
+  replaceError: Error | null = null;
+
+  constructor(settings: ReturnType<DefaultModerationService["getSettings"]> | null) {
+    this.value = settings;
+  }
+
+  read() {
+    return this.value;
+  }
+
+  replace(settings: ReturnType<DefaultModerationService["getSettings"]>): void {
+    if (this.replaceError !== null) {
+      throw this.replaceError;
+    }
+
+    this.value = settings;
+  }
+}
