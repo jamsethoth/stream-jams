@@ -27,5 +27,5 @@
 ## 5. Verification
 
 - [x] 5.1 Run focused migration, repository, moderation, resolver, TTS, backup, route, web, Storybook, and Playwright tests, then repository lint, typecheck, full tests, build, and required frontend gates.
-- [ ] 5.2 Reconcile every requirement against code and tests, run `openspec.cmd validate add-durable-alert-moderation-controls --strict`, and complete an independent frontend review.
+- [x] 5.2 Reconcile every requirement against code and tests, run `openspec.cmd validate add-durable-alert-moderation-controls --strict`, and complete an independent frontend review.
 - [ ] 5.3 Rebuild and restart affected services, wait for health, reload Alert safety, and verify restart durability, preview/test/live enforcement, provider TTS, backup, restore, privacy, and actionable failure paths.
