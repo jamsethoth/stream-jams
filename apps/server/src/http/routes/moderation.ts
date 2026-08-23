@@ -6,10 +6,12 @@ import {
   type ModerationSettingsUpdate
 } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
+import { RuntimeMaintenanceUnavailableError } from "../../modules/backup/runtime-maintenance-gate.js";
 import { sendHttpError } from "../errors.js";
 
 export interface ModerationRouteDependencies {
   readonly moderationService: Pick<ModerationService, "getSettings" | "updateSettings" | "preview">;
+  readonly runConfigurationMutation: <T>(work: () => T) => T;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
 }
@@ -21,7 +23,9 @@ export function registerModerationRoutes(app: FastifyInstance, dependencies: Mod
 
   app.patch("/moderation/settings", { preHandler }, async (request, reply) => {
     try {
-      return dependencies.moderationService.updateSettings(parseSettingsUpdate(request.body));
+      return dependencies.runConfigurationMutation(
+        () => dependencies.moderationService.updateSettings(parseSettingsUpdate(request.body))
+      );
     } catch (error) {
       return sendModerationError(reply, error);
     }
@@ -41,6 +45,13 @@ function sendModerationError(reply: Parameters<typeof sendHttpError>[0], error: 
     return sendHttpError(reply, 400, {
       code: error.code,
       message: error.message
+    });
+  }
+
+  if (error instanceof RuntimeMaintenanceUnavailableError) {
+    return sendHttpError(reply, 409, {
+      code: "CONFIGURATION_MAINTENANCE_ACTIVE",
+      message: "Configuration restore is active. Wait for it to finish, then save again."
     });
   }
 

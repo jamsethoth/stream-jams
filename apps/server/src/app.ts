@@ -219,6 +219,7 @@ function hasModerationRouteDependencies(
 ): dependencies is ServerAppDependencies & ModerationRouteDependencies {
   return (
     dependencies.moderationService !== undefined &&
+    dependencies.runConfigurationMutation !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

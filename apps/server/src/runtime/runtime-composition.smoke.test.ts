@@ -1268,6 +1268,15 @@ describe("runtime app composition smoke", () => {
       }
     });
     expect(safety.statusCode, safety.body).toBe(200);
+    const moderation = await composition.app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers: authHeaders,
+      payload: {
+        ttsText: { maxLength: 180, blockedTerms: ["badword", "rat"], stripUrls: true }
+      }
+    });
+    expect(moderation.statusCode, moderation.body).toBe(200);
 
     await composition.app.inject({ method: "GET", url: "/management/home", headers: authHeaders });
     const rules = (await composition.app.inject({
@@ -1296,7 +1305,7 @@ describe("runtime app composition smoke", () => {
           providerId: "speakerbot",
           order: document.layers.length,
           animation: document.layers[0]!.animation,
-          template: "Welcome {actor.displayName}"
+          template: "Welcome badword"
         }
       ],
       targetProfiles: document.targetProfiles.map((profile) => ({
@@ -1322,7 +1331,7 @@ describe("runtime app composition smoke", () => {
       expect.objectContaining({
         request: "Speak",
         voice: "EventVoice",
-        message: "Welcome Viewer",
+        message: "Welcome [moderated]",
         badWordFilter: true
       })
     ]);

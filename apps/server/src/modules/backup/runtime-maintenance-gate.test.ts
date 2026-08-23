@@ -23,4 +23,17 @@ describe("RuntimeMaintenanceGate", () => {
     release();
     await intake;
   });
+
+  it("blocks configuration mutations while maintenance is active", async () => {
+    const gate = new RuntimeMaintenanceGate();
+    let release!: () => void;
+    const pending = gate.runMaintenance(() => new Promise<void>((resolve) => { release = resolve; }));
+
+    expect(() => gate.runConfigurationMutation(() => "changed")).toThrow(
+      RuntimeMaintenanceUnavailableError
+    );
+    release();
+    await pending;
+    expect(gate.runConfigurationMutation(() => "changed")).toBe("changed");
+  });
 });

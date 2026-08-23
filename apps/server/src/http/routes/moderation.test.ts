@@ -7,6 +7,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
+import { RuntimeMaintenanceGate } from "../../modules/backup/runtime-maintenance-gate.js";
 import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
@@ -106,6 +107,36 @@ describe("moderation routes", () => {
     expect((serverErrors[0]?.error as Error).message).toBe("SQLITE_READONLY: database is read-only");
     expect(JSON.stringify(response.json())).not.toContain("policy-secret");
     expect((serverErrors[0]?.error as Error).message).not.toContain("policy-secret");
+  });
+
+  it("rejects a settings update while configuration restore owns the maintenance gate", async () => {
+    const maintenanceGate = new RuntimeMaintenanceGate();
+    let release!: () => void;
+    const pending = maintenanceGate.runMaintenance(
+      () => new Promise<void>((resolve) => { release = resolve; })
+    );
+    const { app, authHeaders, moderationService } = await createAppWithModeration({ mutationGate: maintenanceGate });
+
+    try {
+      const response = await app.inject({
+        method: "PATCH",
+        url: "/moderation/settings",
+        headers: authHeaders,
+        payload: { renderedText: { blockedTerms: ["candidate"] } }
+      });
+
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toEqual({
+        error: {
+          code: "CONFIGURATION_MAINTENANCE_ACTIVE",
+          message: "Configuration restore is active. Wait for it to finish, then save again."
+        }
+      });
+      expect(moderationService.updateCount).toBe(0);
+    } finally {
+      release();
+      await pending;
+    }
   });
 
   it("previews active and unsaved candidate settings without returning removed input", async () => {
@@ -309,7 +340,12 @@ describe("moderation routes", () => {
   });
 });
 
-async function createAppWithModeration(options: { readonly maxManagementRequests?: number } = {}) {
+async function createAppWithModeration(options: {
+  readonly maxManagementRequests?: number;
+  readonly mutationGate?: {
+    runConfigurationMutation<T>(work: () => T): T;
+  };
+} = {}) {
   const moderationService = new RecordingModerationService();
   const serverErrors: Parameters<NonNullable<Parameters<typeof createServerApp>[0]["serverErrorLogger"]>>[0][] = [];
   const managementSessionService = new LocalManagementSessionService({
@@ -323,17 +359,19 @@ async function createAppWithModeration(options: { readonly maxManagementRequests
     windowMs: 60_000,
     clock: () => new Date("2026-05-30T12:00:00.000Z")
   });
-  const app = createServerApp({
+  const dependencies: Parameters<typeof createServerApp>[0] = {
     metadata: {
       appName: "stream-jams",
       version: "1.2.3"
     },
     moderationService,
+    runConfigurationMutation: <T>(work: () => T) => options.mutationGate?.runConfigurationMutation(work) ?? work(),
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     generateServerErrorId: () => "err_moderation_update",
     serverErrorLogger: (entry) => serverErrors.push(entry)
-  });
+  };
+  const app = createServerApp(dependencies);
 
   return {
     app,

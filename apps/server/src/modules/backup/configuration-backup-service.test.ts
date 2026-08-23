@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  appConfigSchema,
   configurationBackupLimits,
   type AppConfig,
   type AppConfigUpdate,
@@ -211,6 +212,45 @@ describe("ConfigurationBackupService", () => {
     })).resolves.toMatchObject({ state: "completed" });
 
     expect(steps).toEqual(["replace", "config", "reload"]);
+  });
+
+  it("restores the previous app config when runtime reload fails after the restored config is written", async () => {
+    let persistedConfig = appConfig;
+    const updateConfig = vi.fn(async (patch: AppConfigUpdate): Promise<AppConfig> => {
+      persistedConfig = appConfigSchema.parse({
+        server: { ...persistedConfig.server, ...patch.server },
+        storage: { ...persistedConfig.storage, ...patch.storage },
+        logging: { ...persistedConfig.logging, ...patch.logging },
+        playback: { ...persistedConfig.playback, ...patch.playback }
+      });
+      return persistedConfig;
+    });
+    let reloadCount = 0;
+    const { service } = createService({
+      updateConfig,
+      reloadRuntimeConfiguration: () => {
+        reloadCount += 1;
+        if (reloadCount === 1) throw new Error("reload failed");
+      }
+    });
+    const archive = await service.exportArchive();
+    const archivedConfig = appConfigSchema.parse(archive.configuration.appConfig);
+    archive.configuration.appConfig = {
+      ...archivedConfig,
+      server: { ...archivedConfig.server, port: 40123 }
+    };
+    archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+    const preflight = await service.preflight(archive);
+
+    await expect(service.restore({
+      archive,
+      archiveId: preflight.archiveId!,
+      confirmation: "RESTORE",
+      regenerateRouteKeys: true
+    })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
+
+    expect(updateConfig).toHaveBeenCalledTimes(2);
+    expect(persistedConfig).toEqual(appConfig);
   });
 
   const restoreFailureCases = ["replacement", "config update", "runtime reload"] as const;

@@ -824,6 +824,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayModuleRegistry,
     overlayModuleConfigService,
     moderationService,
+    runConfigurationMutation: (work) => maintenanceGate.runConfigurationMutation(work),
     ttsService,
     twitchAuthService,
     twitchEventSubStatusService: twitchEventSubRuntimeService,

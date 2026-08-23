@@ -28,4 +28,7 @@
 
 - [x] 5.1 Run focused migration, repository, moderation, resolver, TTS, backup, route, web, Storybook, and Playwright tests, then repository lint, typecheck, full tests, build, and required frontend gates.
 - [x] 5.2 Reconcile every requirement against code and tests, run `openspec.cmd validate add-durable-alert-moderation-controls --strict`, and complete an independent frontend review.
-- [ ] 5.3 Rebuild and restart affected services, wait for health, reload Alert safety, and verify restart durability, preview/test/live enforcement, provider TTS, backup, restore, privacy, and actionable failure paths.
+- [x] 5.3 Prevent moderation-policy writes from racing configuration restore and add regression coverage for the rejected concurrent update.
+- [x] 5.4 Keep application config, durable moderation policy, and live moderation policy unchanged when post-restore runtime reload fails.
+- [x] 5.5 Dispatch already-moderated live alert TTS without applying the active policy a second time, while retaining moderation for direct provider/test input.
+- [x] 5.6 Rebuild and restart affected services, wait for health, reload Alert safety, and verify restart durability, preview/test/live enforcement, provider TTS, backup, restore, privacy, and actionable failure paths.

@@ -455,7 +455,7 @@ describe("PlaybackCoordinator", () => {
       ],
       findEditorDocument: async () => document,
       ttsService: {
-        async createPlaybackInstruction(input) {
+        async createPlaybackInstructionFromModeratedText(input) {
           calls.push(`tts:${input.providerId}:${input.text}:${String(input.metadata?.layerId)}`);
           return {
             instruction: { mode: "remote-trigger", text: input.text, audioAssetId: null, providerPayload: null },
@@ -486,8 +486,8 @@ describe("PlaybackCoordinator", () => {
 
   it("waits to dispatch remote TTS until playback starts and suppresses items that start muted", async () => {
     const dispatched: string[] = [];
-    const ttsService: Pick<TtsService, "createPlaybackInstruction"> = {
-      async createPlaybackInstruction(input) {
+    const ttsService: Pick<TtsService, "createPlaybackInstructionFromModeratedText"> = {
+      async createPlaybackInstructionFromModeratedText(input) {
         dispatched.push(input.text);
         return {
           instruction: { mode: "remote-trigger", text: input.text, audioAssetId: null, providerPayload: null },
@@ -552,7 +552,7 @@ describe("PlaybackCoordinator", () => {
     const coordinator = createCoordinator({
       alertService: new RecordingAlertService([rule]),
       ttsService: {
-        async createPlaybackInstruction() {
+        async createPlaybackInstructionFromModeratedText() {
           throw new Error("ws://127.0.0.1:7680/?token=secret failed");
         }
       },
@@ -722,7 +722,7 @@ function createCoordinator(
     readonly queue?: PlaybackQueue;
     readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
     readonly findEditorDocument?: (alertId: string) => Promise<AlertEditorDocument | null>;
-    readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
+    readonly ttsService?: Pick<TtsService, "createPlaybackInstructionFromModeratedText">;
     readonly logger?: Pick<Logger, "error">;
     readonly generateReferenceId?: () => string;
     readonly persistPlaybackSafetyState?: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
