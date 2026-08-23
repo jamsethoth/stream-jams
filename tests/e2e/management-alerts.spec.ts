@@ -686,6 +686,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await mockManagementShell(page);
   await page.setViewportSize({ width: 820, height: 768 });
   const savedDocuments: unknown[] = [];
+  const previewRequests: unknown[] = [];
   const testRequests: unknown[] = [];
   const initialDocument = alertEditorDocument();
   let document: ReturnType<typeof alertEditorDocument> = {
@@ -754,6 +755,22 @@ test("focused alert editor saves layouts and separates preview from test deliver
         targetProfileId: request.targetProfileId,
         referenceId: `ref-e2e-editor-${request.targetProfileId}`,
         test: true
+      }
+    });
+  });
+  await page.route("**/moderation/preview", async (route) => {
+    const request = route.request().postDataJSON() as { readonly target: "rendered" | "tts"; readonly text: string };
+    previewRequests.push(request);
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        target: request.target,
+        settings: { maxLength: 240, blockedTerms: ["blocked-viewer"], stripUrls: true },
+        text: "Welcome, Safe viewer!",
+        actions: [
+          { type: "url-stripped", count: 1 },
+          { type: "blocked-term-replaced", count: 1 }
+        ]
       }
     });
   });
@@ -849,19 +866,29 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(page.getByLabel("Font preset")).toHaveValue("serif");
   await expect(page.getByLabel("Font size")).toHaveValue("48");
   await expect(page.getByLabel("Padding")).toHaveValue("16");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("tab", { name: "Event" }).click();
+  await page.getByRole("textbox", { name: "Session payload (JSON)" }).fill(JSON.stringify({
+    actor: { displayName: "blocked-viewer https://viewer.example/path" }
+  }));
+  const editorHeaderActions = page.locator(".alert-editor-page__header-actions");
+  await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Landscape alert canvas" }).getByText("Welcome, Safe viewer!", { exact: true })).toBeVisible();
+  expect(previewRequests.some((request) => {
+    if (typeof request !== "object" || request === null || !("target" in request) || !("text" in request)) return false;
+    return request.target === "rendered" && typeof request.text === "string" && request.text.includes("https://viewer.example/path");
+  })).toBe(true);
   expect(testRequests).toHaveLength(0);
-  await page.getByRole("button", { name: "Send test" }).click();
+  await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
   await expect(page.getByText(/Queued on Landscape.*ref-e2e-editor-landscape/u)).toBeVisible();
   expect(testRequests).toHaveLength(1);
 
+  await page.getByRole("tab", { name: "Layers" }).click();
   await page.getByRole("button", { name: /Vertical/u }).click();
-  await expect(page.getByRole("button", { name: "Send test" })).toBeDisabled();
+  await expect(editorHeaderActions.getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
   const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
   await expect(verticalCanvas).toBeVisible();
-  const verticalStyledText = verticalCanvas.getByText("Welcome, James!");
-  await expect(verticalStyledText).toBeVisible();
+  await expect(verticalCanvas.getByText("Welcome, Safe viewer!", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Font size")).toHaveValue("48");
   await expect(page.getByLabel("Padding")).toHaveValue("16");
   const verticalReviewWarning = page.locator(".alert-editor-page__profile-warning");
@@ -876,12 +903,12 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await page.reload();
   await expect(page).toHaveURL(/profile=vertical/u);
   await expect(verticalCanvas).toBeVisible();
-  await expect(verticalStyledText).toBeVisible();
+  await expect(verticalCanvas.getByText("Welcome, James!", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Font size")).toHaveValue("48");
   await expect(page.getByLabel("Padding")).toHaveValue("16");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
-  await page.getByRole("button", { name: "Send test" }).click();
+  await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
   await expect(page.getByText(/Queued on Vertical.*ref-e2e-editor-vertical/u)).toBeVisible();
   expect(testRequests).toHaveLength(2);
   expect(testRequests).toEqual([
