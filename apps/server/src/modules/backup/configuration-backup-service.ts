@@ -61,6 +61,7 @@ export interface ConfigurationBackupServiceOptions {
   readonly getAvailableBytes: () => Promise<number>;
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
+  readonly reloadRuntimeConfiguration?: () => void;
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
     deleteTokenSecrets(accountId: string): Promise<void>;
@@ -432,10 +433,12 @@ export class ConfigurationBackupService {
         logging: restoredConfig.logging,
         playback: restoredConfig.playback
       });
+      this.#options.reloadRuntimeConfiguration?.();
     } catch (cause) {
       let rollbackFailure: unknown;
       try {
         this.#options.snapshotRepository.restoreRestorePoint(restorePoint);
+        this.#options.reloadRuntimeConfiguration?.();
       } catch (error) {
         rollbackFailure = error;
       }

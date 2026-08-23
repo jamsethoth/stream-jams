@@ -32,7 +32,8 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "alert_set_metadata",
       "alert_rule_management_metadata",
       "asset_library_metadata",
-      "alert_editor_documents"
+      "alert_editor_documents",
+      "alert_moderation_settings"
     ]);
     expect(snapshot.tables.provider_registrations?.[0]).toMatchObject({
       id: "provider-twitch",
@@ -44,6 +45,15 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     });
     expect(snapshot.tables.provider_registrations?.[0]).not.toHaveProperty("secret_ref_json");
     expect(snapshot.tables.asset_metadata?.[0]).not.toHaveProperty("storage_path");
+    expect(snapshot.tables.alert_moderation_settings).toEqual([{
+      id: 1,
+      rendered_max_length: 240,
+      rendered_blocked_terms_json: "[]",
+      rendered_strip_urls: 0,
+      tts_max_length: 180,
+      tts_blocked_terms_json: "[]",
+      tts_strip_urls: 1
+    }]);
     expect(snapshot.overlayOutputs).toEqual([
       { overlayId: "default", scope: "module", moduleId: "alerts", purpose: "live", targetProfileId: "landscape" }
     ]);
@@ -140,7 +150,8 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     const snapshot = new SqliteConfigurationSnapshotRepository(database.connection).snapshot();
     const intentionallyExcludedColumns = new Map([
       ["asset_metadata", new Set(["storage_path"])],
-      ["provider_registrations", new Set(["secret_ref_json"])]
+      ["provider_registrations", new Set(["secret_ref_json"])],
+      ["alert_moderation_settings", new Set(["updated_at"])]
     ]);
 
     for (const [tableName, rows] of Object.entries(snapshot.tables)) {
@@ -193,6 +204,37 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       expect.stringContaining("missing-asset"),
       expect.stringContaining("accessToken")
     ]));
+  });
+
+  it("rejects missing, duplicate, malformed, and secret-shaped moderation policy rows", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const [policy] = snapshot.tables.alert_moderation_settings ?? [];
+    if (policy === undefined) throw new Error("Seeded moderation policy is required");
+    const configuration: ConfigurationBackupArchive["configuration"] = {
+      appConfig: {},
+      ...snapshot,
+      tables: {
+        ...snapshot.tables,
+        alert_moderation_settings: [
+          { ...policy, id: 2, rendered_max_length: 10_001, rendered_strip_urls: 2, rendered_blocked_terms_json: "[1]", credential: "viewer-secret" },
+          { ...policy, tts_max_length: 1.5, tts_strip_urls: -1, tts_blocked_terms_json: "{}" }
+        ]
+      }
+    };
+
+    expect(repository.validate(configuration)).toEqual(expect.arrayContaining([
+      expect.stringContaining("unsupported columns: credential"),
+      expect.stringContaining("must contain exactly one row"),
+      expect.stringContaining("id must equal 1"),
+      expect.stringContaining("invalid moderation settings")
+    ]));
+
+    const missing = {
+      ...configuration,
+      tables: { ...configuration.tables, alert_moderation_settings: [] }
+    };
+    expect(repository.validate(missing)).toContain("alert_moderation_settings must contain exactly one row.");
   });
 
   it("rejects negative and duplicate per-rule variant order values", () => {
@@ -378,6 +420,46 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     expect(database.connection.prepare("SELECT key_hash, route_key_secret_ref_json FROM overlay_keys").get()).toEqual({
       key_hash: "route-hash",
       route_key_secret_ref_json: '{"namespace":"overlay-route-key","name":"key-live"}'
+    });
+  });
+
+  it("replaces moderation policy with configuration rows and restores its prior row from a rollback point", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const restorePoint = repository.captureRestorePoint();
+    const snapshot = repository.snapshot();
+    const tables = structuredClone(snapshot.tables);
+    tables.alert_moderation_settings = [{
+      id: 1,
+      rendered_max_length: 320,
+      rendered_blocked_terms_json: '["rendered-blocked"]',
+      rendered_strip_urls: 1,
+      tts_max_length: 200,
+      tts_blocked_terms_json: '["tts-blocked"]',
+      tts_strip_urls: 0
+    }];
+
+    repository.replace({ tables, assets: [seededAsset()] });
+    expect(database.connection.prepare(
+      "SELECT rendered_max_length, rendered_blocked_terms_json, rendered_strip_urls, tts_max_length, tts_blocked_terms_json, tts_strip_urls FROM alert_moderation_settings"
+    ).get()).toEqual({
+      rendered_max_length: 320,
+      rendered_blocked_terms_json: '["rendered-blocked"]',
+      rendered_strip_urls: 1,
+      tts_max_length: 200,
+      tts_blocked_terms_json: '["tts-blocked"]',
+      tts_strip_urls: 0
+    });
+
+    repository.restoreRestorePoint(restorePoint);
+    expect(database.connection.prepare(
+      "SELECT rendered_max_length, rendered_blocked_terms_json, rendered_strip_urls, tts_max_length, tts_blocked_terms_json, tts_strip_urls FROM alert_moderation_settings"
+    ).get()).toEqual({
+      rendered_max_length: 240,
+      rendered_blocked_terms_json: "[]",
+      rendered_strip_urls: 0,
+      tts_max_length: 180,
+      tts_blocked_terms_json: "[]",
+      tts_strip_urls: 1
     });
   });
 });

@@ -707,6 +707,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       );
       return { label: regenerated.output.label, url: regenerated.url };
     },
+    reloadRuntimeConfiguration: () => {
+      moderationService.reloadSettings();
+    },
     twitchCredentials: {
       async findConnectedAccountId() {
         return (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null;
