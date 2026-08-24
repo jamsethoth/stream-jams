@@ -15,15 +15,14 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 | ID | Feature | Priority | Dependencies | OpenSpec |
 | --- | --- | --- | --- | --- |
-| BL-002 | Alert typography and simple text-container style controls | P0 | None; UI refactor prerequisites are complete | [`add-alert-visual-style-controls`](../openspec/changes/add-alert-visual-style-controls/proposal.md) |
-| BL-003 | Simple solid-fill shape-layer authoring | P1 | BL-002 | [`add-alert-shape-layer-authoring`](../openspec/changes/add-alert-shape-layer-authoring/proposal.md) |
+| BL-003 | Simple solid-fill shape-layer authoring | P1 | Text-style contract implemented | [`add-alert-shape-layer-authoring`](../openspec/changes/add-alert-shape-layer-authoring/proposal.md) |
 | BL-039 | Collapsible event-type grouping for alert inventory and focused-editor navigation | P1 | Variation authoring contract implemented | [`group-alerts-by-event-type`](../openspec/changes/group-alerts-by-event-type/proposal.md) |
 
 ## Alert Authoring And Assets
 
 | ID | Feature | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
-| BL-006 | Curated bundled starter themes | Deferred | P1 | BL-002 and BL-003 | Start with local bundled themes; no marketplace. |
+| BL-006 | Curated bundled starter themes | Deferred | P1 | Implemented text-style contract and BL-003 | Start with local bundled themes; no marketplace. |
 | BL-007 | Bulk alert and asset operations | Deferred | P2 | Stable list selection and impact-summary contracts | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-008 | Versioned alert and alert-set package import/export | Deferred | P2 | Stable styled-alert schema and asset packaging | [Product plan](product-plan.md) |
 | BL-009 | User-created alert templates and `Save as template` | Deferred | P2 | BL-006 and BL-008 | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
@@ -35,7 +34,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | BL-015 | Asset version history and restore | Deferred | P3 | BL-014 recovery model | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-016 | Responsive units, richer snapping, custom profiles, and optional cross-profile layout assistance | Deferred | P3 | Measured need beyond fixed landscape and vertical profiles | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-017 | Translation-ready management UI, selected locales, contrast checks, and alert reduced-motion guidance | Deferred | P3 | Named target locales and accessibility acceptance criteria | Product decision, 2026-07-20 |
-| BL-018 | Constrained per-layer timeline and keyframe editor | Long-term | P3 | Preset animations prove insufficient; BL-002 and BL-013 are stable | Must remain schema-validated and exclude arbitrary code. |
+| BL-018 | Constrained per-layer timeline and keyframe editor | Long-term | P3 | Preset animations prove insufficient; the implemented text-style contract and BL-013 are stable | Must remain schema-validated and exclude arbitrary code. |
 | BL-019 | Full provider-event simulation and persisted custom sample library | Deferred | P3 | Stable normalized catalogs and Diagnostics simulation boundary | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 
 ## Events, Providers, And Integrations
