@@ -204,10 +204,20 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     const element = target.alertId === null
       ? document.getElementById(eventGroupButtonId(target.groupKey))
       : document.getElementById(alertRowFocusId(target.alertId));
-    if (element === null) return;
+    if (element === null && target.alertId !== null && detail?.inventory.some(({ id }) => id === target.alertId)) return;
     pendingFocus.current = null;
-    element.focus();
+    (element
+      ?? document.getElementById(eventGroupButtonId(target.groupKey))
+      ?? document.getElementById("alert-inventory-add"))?.focus();
   }, [detail, expandedEventKeys]);
+
+  function revealMutationTarget(groupKey: string) {
+    setQuery("");
+    setEventFilter("all");
+    setStatusFilter("all");
+    setProfileFilter("all");
+    setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
+  }
 
   async function toggleSet(setId: string) {
     if (setId === expandedSetId) {
@@ -327,9 +337,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         name: createAlertName.trim()
       });
       const groupKey = `event:${created.eventType}`;
+      revealMutationTarget(groupKey);
+      await refresh(created.setId);
       pendingFocus.current = { alertId: created.id, groupKey };
       setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
-      await refresh(created.setId);
       setCreateAlertOpen(false);
       setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
@@ -357,9 +368,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     try {
       const created = await managementApi.createAlertVariation(variationParent.id, { name: variationName.trim() });
       const groupKey = `event:${created.eventType}`;
+      revealMutationTarget(groupKey);
+      await refresh(created.setId);
       pendingFocus.current = { alertId: created.id, groupKey };
       setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
-      await refresh(created.setId);
       setVariationParent(null);
       setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
@@ -380,9 +392,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     try {
       const created = await managementApi.duplicateManagedAlert(alert.id);
       const groupKey = `event:${created.eventType}`;
+      revealMutationTarget(groupKey);
+      await refresh(created.setId);
       pendingFocus.current = { alertId: created.id, groupKey };
       setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
-      await refresh(created.setId);
       setNotice({ tone: "warning", message: `${created.name} duplicated disabled and marked Needs review.` });
     } catch (cause) {
       setError(toActionableError("The alert was not duplicated", cause, "Review the alert and try again."));
@@ -403,9 +416,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         await managementApi.resetManagedAlert(alert.id, true);
       } else {
         await managementApi.deleteManagedAlert(alert.id, true);
-        pendingFocus.current = deleteFocus;
+        if (deleteFocus !== null) revealMutationTarget(deleteFocus.groupKey);
       }
       await refresh(alert.setId);
+      if (deleteFocus !== null) {
+        pendingFocus.current = deleteFocus;
+        setManualExpandedEventKeys((current) => new Set([...current, deleteFocus.groupKey]));
+      }
       setNotice({
         tone: action === "reset" ? "warning" : "success",
         message: action === "reset" ? `${alert.name} reset to its event default and marked Needs review.` : `${alert.name} deleted.`
@@ -844,7 +861,7 @@ function AlertInventory({
 }) {
   return (
     <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__inventory">
-      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p></div><button disabled={busy} onClick={onAdd} type="button">Add alert</button></div>
+      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p></div><button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</button></div>
       <div className="alert-sets-page__filters">
         <label><span>Search</span><input aria-label="Search" onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} /></label>
         <label><span>Event</span><select onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</select></label>

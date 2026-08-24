@@ -234,6 +234,36 @@ describe("AlertSetsPage", () => {
     expect(onEditAlert).not.toHaveBeenCalled();
   });
 
+  it("reveals and focuses a created alert when the active filters would hide it", async () => {
+    const source = detail();
+    const created = {
+      ...source.inventory[0]!,
+      id: "alert-filtered-cheer",
+      eventType: "cheer" as const,
+      name: "Filtered cheer",
+      enabled: false
+    };
+    const getAlertSet = vi.fn<AlertSetsApi["getAlertSet"]>()
+      .mockResolvedValueOnce(source)
+      .mockResolvedValue({ ...source, inventory: [...source.inventory, created] });
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      createAlert: vi.fn(async () => created),
+      getAlertSet
+    })} onEditAlert={vi.fn()} />);
+
+    await user.selectOptions(await screen.findByLabelText("Status"), "enabled");
+    await user.click(screen.getByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.type(within(dialog).getByLabelText("Alert name"), created.name);
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit Filtered cheer" })).toHaveFocus());
+    expect(screen.getByLabelText("Status")).toHaveValue("all");
+  });
+
   it("renders canonical event disclosures, unknown events, and labelled orphan variations", async () => {
     const source = detail();
     const follow = source.inventory[0]!;

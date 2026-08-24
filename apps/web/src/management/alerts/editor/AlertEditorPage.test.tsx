@@ -1160,6 +1160,11 @@ describe("AlertEditorPage", () => {
     expect(screen.getByText("Variation of New raid")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
 
+    await user.click(screen.getByRole("button", { name: /Collapse Follow/u }));
+    expect(screen.getByRole("button", { name: /Expand Follow/u })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "New follower" })).not.toBeInTheDocument();
+    expect(onOpenAlert).not.toHaveBeenCalled();
+
     await user.click(screen.getByRole("button", { name: /Collapse Raid/u }));
     await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "large raid");
     expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");

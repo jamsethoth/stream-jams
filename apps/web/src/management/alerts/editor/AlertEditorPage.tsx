@@ -113,6 +113,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [search, setSearch] = useState("");
   const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(new Set());
   const disclosureSetId = useRef<string | null>(null);
+  const selectedDisclosureToken = useRef<string | null>(null);
   const [canvasViews, setCanvasViews] = useState<Partial<Record<TargetProfileId, CanvasViewState>>>({});
   const [fitRequestId, setFitRequestId] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(true);
@@ -383,9 +384,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const selectedEventKey = document === null ? null : `event:${document.eventType}`;
   const expandedEventKeys = useMemo(() => new Set([
     ...manualExpandedEventKeys,
-    ...filteredEventGroups.forcedOpenKeys,
-    ...(selectedEventKey === null ? [] : [selectedEventKey])
-  ]), [filteredEventGroups.forcedOpenKeys, manualExpandedEventKeys, selectedEventKey]);
+    ...filteredEventGroups.forcedOpenKeys
+  ]), [filteredEventGroups.forcedOpenKeys, manualExpandedEventKeys]);
   useEffect(() => {
     const setId = setDetail?.overview.id;
     if (setId === undefined || disclosureSetId.current === setId) return;
@@ -394,6 +394,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       .filter((group) => group.defaultCount + group.variationCount > 0)
       .map(({ key }) => key)));
   }, [eventGroups, setDetail?.overview.id]);
+  useEffect(() => {
+    if (selectedEventKey === null || setDetail === null) return;
+    const token = `${setDetail.overview.id}:${props.alertId}:${selectedEventKey}`;
+    if (selectedDisclosureToken.current === token) return;
+    selectedDisclosureToken.current = token;
+    setManualExpandedEventKeys((current) => new Set([...current, selectedEventKey]));
+  }, [props.alertId, selectedEventKey, setDetail]);
   const validationIssues = useMemo(() => (setDetail?.overview.validationIssues ?? []).filter((issue) =>
     (issue.alertId === null || issue.alertId === props.alertId) &&
     (issue.targetProfileId === null || issue.targetProfileId === profileId)
