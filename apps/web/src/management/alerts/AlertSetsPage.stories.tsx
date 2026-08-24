@@ -183,6 +183,35 @@ export const CreateAlert: Story = {
   }
 };
 
+export const CreateAlertFailure: Story = {
+  beforeEach: () => {
+    const reportError = console.error;
+    console.error = fn();
+    return () => { console.error = reportError; };
+  },
+  args: {
+    managementApi: {
+      ...api([activeSet], detail(activeSet)),
+      createAlert: fn(async () => { throw new Error("Local persistence failed. ref_story_create_alert"); })
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
+    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    await userEvent.selectOptions(dialog.getByLabelText("Event type"), "cheer");
+    await userEvent.click(dialog.getByRole("button", { name: "Create alert" }));
+
+    const failure = await dialog.findByRole("alert");
+    await expect(failure).toHaveTextContent("The alert was not created");
+    await expect(failure).toHaveTextContent("Local persistence failed");
+    await expect(failure).toHaveTextContent("Review the event type and alert name, then try again.");
+    await expect(failure).toHaveTextContent("ref_story_create_alert");
+    await expect(dialog.getByLabelText("Alert name")).toHaveValue("New cheer");
+    await expect(dialog.getByRole("button", { name: "Create alert" })).toBeEnabled();
+  }
+};
+
 export const GroupedEventPicker: Story = {
   args: {
     managementApi: { ...api([activeSet], detail(activeSet)), createAlert },

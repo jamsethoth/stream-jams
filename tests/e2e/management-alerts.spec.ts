@@ -893,7 +893,9 @@ test("focused alert editor saves layouts and separates preview from test deliver
 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-follow\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
-  await expect(page.getByRole("button", { name: /Collapse Follow alerts/u })).toHaveAttribute("aria-expanded", "true");
+  const selectedEvent = page.getByRole("button", { name: "Follow alerts, selected event" });
+  await expect(selectedEvent).toHaveAttribute("aria-expanded", "true");
+  await expect(selectedEvent).toBeDisabled();
   const raidDisclosure = page.getByRole("button", { name: /Collapse Raid alerts/u });
   await expect(raidDisclosure).toHaveAttribute("aria-expanded", "true");
   await expect(page.getByText("Variation of New raid")).toBeVisible();

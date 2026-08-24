@@ -1007,6 +1007,16 @@
   padding: 10px 3px;
 }
 
+.alert-editor-page__no-matches {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+}
+
+.alert-editor-page__no-matches p {
+  margin: 0;
+}
+
 @media (max-width: 1280px) {
   .alert-editor-page__workspace {
     grid-template-columns: 190px minmax(400px, 1fr) 280px;

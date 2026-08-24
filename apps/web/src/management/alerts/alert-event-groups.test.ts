@@ -84,6 +84,23 @@ describe("buildAlertEventGroups", () => {
     expect(groups.find(({ eventType }) => eventType === "subscription")?.status).toBe("valid");
   });
 
+  it("gives alert identity precedence over event identity for sibling row status", () => {
+    const groups = buildAlertEventGroups([
+      row("follow-target", "follow", "Target follow"),
+      row("follow-sibling", "follow", "Sibling follow")
+    ], [issue("target-blocker", "blocker", {
+      alertId: "follow-target",
+      eventType: "follow"
+    })]);
+    const follow = groups.find(({ eventType }) => eventType === "follow");
+
+    expect(follow?.statusByAlertId).toEqual({
+      "follow-target": "blocker",
+      "follow-sibling": "valid"
+    });
+    expect(follow?.status).toBe("blocker");
+  });
+
   it("reuses saved condition and priority data without calculating a probability", () => {
     const defaultAlert = row("cheer-default", "cheer", "Cheer");
     const high = row("cheer-high", "cheer", "High cheer", {

@@ -189,13 +189,32 @@ export const GroupedEventNavigation: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole("button", { name: /Collapse Follow/u })).toHaveAttribute("aria-expanded", "true");
+    await expect(await canvas.findByRole("button", { name: "Follow alerts, selected event" })).toHaveAttribute("aria-expanded", "true");
     await waitFor(() => expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
     await expect(canvas.getByText("Variation of New raid")).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
     await userEvent.click(canvas.getByRole("button", { name: /Collapse Raid/u }));
     await userEvent.type(canvas.getByLabelText("Search alerts"), "large raid");
     await expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");
+  }
+};
+
+export const NoMatchingEventNavigation: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertVariationAuthoringContext: async () => variationContext(document),
+      getAlertSet: async () => groupedAlertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const search = await canvas.findByLabelText("Search alerts");
+    await userEvent.type(search, "not-an-alert");
+    await expect(canvas.getByText("No matching alerts.")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Clear filters" }));
+    await expect(search).toHaveValue("");
+    await expect(canvas.getByRole("button", { name: "Follow alerts, selected event" })).toBeVisible();
   }
 };
 

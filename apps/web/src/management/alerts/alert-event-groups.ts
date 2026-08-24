@@ -104,7 +104,9 @@ export function buildAlertEventGroups(
       highestStatus([
         row.reviewState === "needs-review" ? "needs-review" : "valid",
         ...relevantIssues
-          .filter((issue) => issue.alertId === row.id || issue.eventType === definition.eventType)
+          .filter((issue) => issue.alertId !== null
+            ? issue.alertId === row.id
+            : issue.eventType === definition.eventType)
           .map(({ severity }) => severity)
       ])
     ]));

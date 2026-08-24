@@ -113,7 +113,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [search, setSearch] = useState("");
   const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(new Set());
   const disclosureSetId = useRef<string | null>(null);
-  const selectedDisclosureToken = useRef<string | null>(null);
   const [canvasViews, setCanvasViews] = useState<Partial<Record<TargetProfileId, CanvasViewState>>>({});
   const [fitRequestId, setFitRequestId] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(true);
@@ -384,8 +383,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const selectedEventKey = document === null ? null : `event:${document.eventType}`;
   const expandedEventKeys = useMemo(() => new Set([
     ...manualExpandedEventKeys,
-    ...filteredEventGroups.forcedOpenKeys
-  ]), [filteredEventGroups.forcedOpenKeys, manualExpandedEventKeys]);
+    ...filteredEventGroups.forcedOpenKeys,
+    ...(selectedEventKey === null ? [] : [selectedEventKey])
+  ]), [filteredEventGroups.forcedOpenKeys, manualExpandedEventKeys, selectedEventKey]);
   useEffect(() => {
     const setId = setDetail?.overview.id;
     if (setId === undefined || disclosureSetId.current === setId) return;
@@ -394,13 +394,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       .filter((group) => group.defaultCount + group.variationCount > 0)
       .map(({ key }) => key)));
   }, [eventGroups, setDetail?.overview.id]);
-  useEffect(() => {
-    if (selectedEventKey === null || setDetail === null) return;
-    const token = `${setDetail.overview.id}:${props.alertId}:${selectedEventKey}`;
-    if (selectedDisclosureToken.current === token) return;
-    selectedDisclosureToken.current = token;
-    setManualExpandedEventKeys((current) => new Set([...current, selectedEventKey]));
-  }, [props.alertId, selectedEventKey, setDetail]);
   const validationIssues = useMemo(() => (setDetail?.overview.validationIssues ?? []).filter((issue) =>
     (issue.alertId === null || issue.alertId === props.alertId) &&
     (issue.targetProfileId === null || issue.targetProfileId === profileId)
@@ -794,14 +787,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <nav aria-label="Alert editor selection" className="alert-editor-page__event-navigation">
             {filteredEventGroups.groups.map((group) => {
               const expanded = expandedEventKeys.has(group.key);
+              const selected = group.key === selectedEventKey;
               const contentId = editorEventGroupContentId(group.key);
               return (
                 <section className="alert-editor-page__event-group" key={group.key}>
                   <button
                     aria-controls={contentId}
                     aria-expanded={expanded}
-                    aria-label={`${expanded ? "Collapse" : "Expand"} ${group.label} alerts`}
+                    aria-label={selected ? `${group.label} alerts, selected event` : `${expanded ? "Collapse" : "Expand"} ${group.label} alerts`}
                     className="alert-editor-page__event-toggle"
+                    disabled={selected}
                     onClick={() => setManualExpandedEventKeys((current) => {
                       const next = new Set(current);
                       if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
@@ -831,7 +826,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                       ))}
                       {group.orphanVariations.length === 0 ? null : (
                         <section aria-label="Orphan variations" className="alert-editor-page__orphan-variations">
-                          <h4>Orphan variations</h4>
+                          <h3>Orphan variations</h3>
                           {group.orphanVariations.map((alert) => (
                             <AlertNavigationButton alert={alert} currentAlertId={document.id} key={alert.id} onOpen={() => props.onOpenAlert(alert.id, profileId)} />
                           ))}
@@ -843,7 +838,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               );
             })}
           </nav>
-          {filteredEventGroups.groups.length === 0 ? <p className="alert-editor-page__empty">No matching alerts.</p> : null}
+          {filteredEventGroups.groups.length === 0 ? (
+            <div className="alert-editor-page__empty alert-editor-page__no-matches">
+              <p>No matching alerts.</p>
+              <button className="button button--secondary button--compact" onClick={() => setSearch("")} type="button">Clear filters</button>
+            </div>
+          ) : null}
         </aside>
 
         <main className="alert-editor-page__stage">

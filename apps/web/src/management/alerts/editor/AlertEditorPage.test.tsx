@@ -1131,6 +1131,7 @@ describe("AlertEditorPage", () => {
       ]
     };
     const onOpenAlert = vi.fn();
+    const getAlertSet = vi.fn(async () => detail);
     render(
       <DirtyNavigationProvider>
         <AlertEditorPage
@@ -1138,7 +1139,7 @@ describe("AlertEditorPage", () => {
           assetApi={assetApi}
           managementApi={{
             getAlertEditorDocument: vi.fn(async () => document),
-            getAlertSet: vi.fn(async () => detail),
+            getAlertSet,
             listRegisteredProviders: vi.fn(async () => []),
             getAssetChangeImpact: vi.fn(),
             listAssetLibraryItems: vi.fn(async () => []),
@@ -1153,17 +1154,26 @@ describe("AlertEditorPage", () => {
       </DirtyNavigationProvider>
     );
 
-    expect(await screen.findByRole("button", { name: /Collapse Follow/u })).toHaveAttribute("aria-expanded", "true");
+    const selectedEvent = await screen.findByRole("button", { name: "Follow alerts, selected event" });
+    expect(selectedEvent).toHaveAttribute("aria-expanded", "true");
+    expect(selectedEvent).toBeDisabled();
     await waitFor(() => expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
     expect(screen.getByRole("button", { name: /Expand Resubscription/u })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: /Collapse future_celebration/u })).toBeInTheDocument();
     expect(screen.getByText("Variation of New raid")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
 
-    await user.click(screen.getByRole("button", { name: /Collapse Follow/u }));
-    expect(screen.getByRole("button", { name: /Expand Follow/u })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByRole("button", { name: "New follower" })).not.toBeInTheDocument();
+    await user.click(selectedEvent);
+    expect(screen.getByRole("button", { name: "Follow alerts, selected event" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /New follower/u })).toHaveAttribute("aria-current", "page");
     expect(onOpenAlert).not.toHaveBeenCalled();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "not-an-alert");
+    expect(screen.getByText("No matching alerts.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByRole("searchbox", { name: "Search alerts" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Follow alerts, selected event" })).toBeVisible();
+    expect(getAlertSet).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: /Collapse Raid/u }));
     await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "large raid");
