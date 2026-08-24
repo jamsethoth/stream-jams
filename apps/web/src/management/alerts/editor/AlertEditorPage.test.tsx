@@ -256,8 +256,8 @@ describe("AlertEditorPage", () => {
       ...detail,
       inventory: [
         ...detail.inventory,
-        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
-        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
       ]
     };
 
@@ -273,9 +273,9 @@ describe("AlertEditorPage", () => {
     const noEnabledCandidates: AlertSetDetail = {
       ...detail,
       inventory: [
-        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
-        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
-        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: false, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
       ]
     };
     expect(affectedProfileLabelsForEditor(disabledSelected, noEnabledCandidates, context)).toEqual([]);
@@ -299,9 +299,9 @@ describe("AlertEditorPage", () => {
     const detail: AlertSetDetail = {
       ...alertSetDetail(true),
       inventory: [
-        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
-        { id: "variant-editor-disabled", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Disabled variation", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Disabled" },
-        { id: "variant-editor-vertical", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Vertical sibling", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Vertical" }
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-disabled", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Disabled variation", kind: "variation", enabled: false, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Disabled" },
+        { id: "variant-editor-vertical", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Vertical sibling", kind: "variation", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Vertical" }
       ]
     };
 
@@ -2765,8 +2765,8 @@ function alertSetDetail(active = true): AlertSetDetail {
       outputs: []
     },
     inventory: [
-      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
-      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
+      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
+      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
   };

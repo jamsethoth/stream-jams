@@ -428,6 +428,9 @@ function alert(
     name,
     kind: "default" as const,
     enabled,
+    conditions: [],
+    weight: 1,
+    priority: null,
     reviewState,
     targetProfileIds: ["landscape" as const],
     previewText: `${name} sample preview`

@@ -164,7 +164,14 @@ describe("management alert contracts and rules", () => {
         targetProfileIds: ["landscape"],
         previewText: "Thanks for following!"
       })
-    ).toMatchObject({ id: "rule-follow", kind: "default", parentAlertId: null });
+    ).toMatchObject({
+      id: "rule-follow",
+      kind: "default",
+      parentAlertId: null,
+      conditions: [],
+      weight: 1,
+      priority: null
+    });
 
     expect(
       inventoryRow.parse({
@@ -180,7 +187,39 @@ describe("management alert contracts and rules", () => {
         targetProfileIds: ["landscape", "vertical"],
         previewText: "Welcome back!"
       })
-    ).toMatchObject({ id: "variant-vip-follow", kind: "variation", parentAlertId: "rule-follow" });
+    ).toMatchObject({
+      id: "variant-vip-follow",
+      kind: "variation",
+      parentAlertId: "rule-follow",
+      conditions: [],
+      weight: 1,
+      priority: null
+    });
+  });
+
+  it("accepts unknown event values only at the defensive inventory boundary", () => {
+    const inventoryRow = schema("alertInventoryRowSchema");
+    const createAlert = schema("alertCreateInputSchema");
+    const unknownInventory = {
+      id: "rule-future-event",
+      setId: "set-default",
+      providerKind: "twitch",
+      eventType: "future_provider_event",
+      name: "Future event",
+      kind: "default",
+      enabled: false,
+      reviewState: "needs-review",
+      targetProfileIds: ["landscape"],
+      previewText: "Future event"
+    };
+
+    expect(inventoryRow.parse(unknownInventory)).toMatchObject({
+      eventType: "future_provider_event",
+      conditions: [],
+      weight: 1,
+      priority: null
+    });
+    expect(createAlert.safeParse({ eventType: "future_provider_event", name: "Future event" }).success).toBe(false);
   });
 
   it("validates variation creation and live-impact confirmation inputs", () => {
@@ -280,6 +319,7 @@ describe("management alert contracts and rules", () => {
       rulePriority: 10
     });
     expect(editorDocument.safeParse({ ...document, targetProfiles: [document.targetProfiles[0]] }).success).toBe(false);
+    expect(editorDocument.safeParse({ ...document, eventType: "future_provider_event" }).success).toBe(false);
     expect(
       editorDocument.safeParse({ ...document, targetProfiles: [document.targetProfiles[0], document.targetProfiles[0]] }).success
     ).toBe(false);

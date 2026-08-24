@@ -595,6 +595,9 @@ function alert(id: string, name: string, eventType: StreamEventType) {
     name,
     kind: "default" as const,
     enabled: false,
+    conditions: [],
+    weight: 1,
+    priority: null,
     reviewState: "needs-review" as const,
     targetProfileIds: ["landscape" as const],
     previewText: `${name} preview`

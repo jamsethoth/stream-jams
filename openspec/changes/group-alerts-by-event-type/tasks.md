@@ -1,12 +1,12 @@
 ## 1. Prerequisite And Contract Reconciliation
 
-- [ ] 1.1 Fetch `origin/main` and verify `improve-alert-variation-authoring` is complete, strictly validated, and present before implementation begins.
-- [ ] 1.2 Reconcile its final condition/priority summary exports plus current `AlertInventoryRow`, `alertStarterTemplates`, validation issues, Alert Sets filters, focused-editor navigation, mutation responses, and responsive requirements against this design.
+- [x] 1.1 Fetch `origin/main` and verify `improve-alert-variation-authoring` is complete, strictly validated, and present before implementation begins.
+- [x] 1.2 Reconcile its final condition/priority summary exports plus current `AlertInventoryRow`, `alertStarterTemplates`, validation issues, Alert Sets filters, focused-editor navigation, mutation responses, and responsive requirements against this design.
 
 ## 2. Pure Event Hierarchy And Filtering
 
-- [ ] 2.1 Add failing management-contract and service tests for inventory-only unknown event strings plus saved conditions, weight, and priority defaults/population while canonical creation, persistence, editor, and runtime boundaries remain unchanged.
-- [ ] 2.2 Additively expand `AlertInventoryRow` and existing set-detail assembly without adding an endpoint, nested transport model, migration, or runtime matcher change.
+- [x] 2.1 Add failing management-contract and service tests for inventory-only unknown event strings plus saved conditions, weight, and priority defaults/population while canonical creation, persistence, editor, and runtime boundaries remain unchanged.
+- [x] 2.2 Additively expand `AlertInventoryRow` and existing set-detail assembly without adding an endpoint, nested transport model, migration, or runtime matcher change.
 - [ ] 2.3 Add failing `alert-event-groups` tests for canonical order, multiple defaults, attached variations, empty events, unknown events, orphan retention, counts, enabled totals, and worst validation status.
 - [ ] 2.4 Implement `buildAlertEventGroups` over the existing catalog, rows, and issues without adding a management API or persisted group model.
 - [ ] 2.5 Add failing filter tests for event/default/variation matches, owning-default retention, status/profile filters, matching-versus-total counts, no-match state, and manual disclosure restoration inputs.

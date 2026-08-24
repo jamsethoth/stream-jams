@@ -1043,8 +1043,8 @@ function alertSetDetail(): AlertSetDetail {
       outputs: []
     },
     inventory: [
-      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
-      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
+      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
+      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
   };

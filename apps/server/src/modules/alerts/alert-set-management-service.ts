@@ -1,6 +1,7 @@
 import {
   alertCreateInputSchema,
   alertCollectionSchema,
+  alertInventoryRowSchema,
   alertRuleSchema,
   alertVariantSchema,
   alertVariationCreateInputSchema,
@@ -659,7 +660,7 @@ export class AlertSetManagementService {
       const reviewState = document?.targetProfiles.some((profile) => profile.reviewState === "needs-review") === true
         ? "needs-review" as const
         : metadata.reviewState;
-      return {
+      return alertInventoryRowSchema.parse({
         id: editorId,
         parentAlertId: index === 0 ? null : rule.id,
         setId,
@@ -668,10 +669,13 @@ export class AlertSetManagementService {
         name: index === 0 ? rule.name : variant.name,
         kind: index === 0 ? "default" as const : "variation" as const,
         enabled: variant.enabled,
+        conditions: index === 0 ? rule.conditions : variant.conditions ?? [],
+        weight: variant.weight,
+        priority: variant.priority ?? null,
         reviewState,
         targetProfileIds,
         previewText: variant.textTemplate
-      };
+      });
     });
   }
 
