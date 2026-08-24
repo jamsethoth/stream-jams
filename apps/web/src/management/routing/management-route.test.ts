@@ -12,6 +12,7 @@ describe("management route model", () => {
     ["/manage/event-sources", "event-sources"],
     ["/manage/tts-providers", "tts-providers"],
     ["/manage/modules/alerts", "modules-alerts"],
+    ["/manage/modules/alerts/safety", "alert-safety"],
     ["/manage/assets", "assets"],
     ["/manage/diagnostics", "diagnostics"],
     ["/manage/settings", "settings"]
@@ -45,6 +46,18 @@ describe("management route model", () => {
       "assets",
       "diagnostics",
       "settings"
+    ]);
+  });
+
+  it("formats the nested alert safety route and exposes its breadcrumbs", () => {
+    expect(formatManagementRoute({ id: "alert-safety" })).toBe("/manage/modules/alerts/safety");
+    expect(getManagementRouteDefinition({ id: "alert-safety" })).toMatchObject({
+      id: "alert-safety",
+      breadcrumbs: ["Modules", "Alerts", "Safety"]
+    });
+    expect(managementPrimaryRoutes.find((route) => route.id === "modules-alerts")?.childRoutes.map((route) => route.id)).toEqual([
+      "modules-alerts",
+      "alert-safety"
     ]);
   });
 

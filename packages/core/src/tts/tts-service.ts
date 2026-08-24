@@ -30,6 +30,7 @@ export interface TtsService {
   listProviders(): Promise<readonly TtsProviderDescriptor[]>;
   testProvider(input: TtsProviderTestInput): Promise<TtsProviderTestResult>;
   createPlaybackInstruction(input: TtsProviderTestInput): Promise<TtsProviderTestResult>;
+  createPlaybackInstructionFromModeratedText(input: TtsProviderTestInput): Promise<TtsProviderTestResult>;
 }
 
 export class UnknownTtsProviderError extends Error {
@@ -95,16 +96,28 @@ export class DefaultTtsService implements TtsService {
   }
 
   async createPlaybackInstruction(input: TtsProviderTestInput): Promise<TtsProviderTestResult> {
+    return this.#createPlaybackInstruction(input, true);
+  }
+
+  async createPlaybackInstructionFromModeratedText(
+    input: TtsProviderTestInput
+  ): Promise<TtsProviderTestResult> {
+    return this.#createPlaybackInstruction(input, false);
+  }
+
+  async #createPlaybackInstruction(
+    input: TtsProviderTestInput,
+    applyModeration: boolean
+  ): Promise<TtsProviderTestResult> {
     const provider = this.#registry.getProvider(input.providerId);
     if (provider === null) {
       throw new UnknownTtsProviderError(input.providerId);
     }
 
     await validateProviderOptions(provider, input);
-    const moderationResult = this.#moderationService.moderate({
-      target: "tts",
-      text: input.text
-    });
+    const moderationResult = applyModeration
+      ? this.#moderationService.moderate({ target: "tts", text: input.text })
+      : { text: input.text, actions: [] as const };
     const playbackInput: TtsProviderPlaybackInput = {
       providerId: provider.id,
       text: moderationResult.text,

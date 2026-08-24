@@ -30,16 +30,23 @@ import {
 } from "./editor-state.js";
 
 type TestAlertEditorPageProps = Omit<AlertEditorPageProps, "managementApi"> & {
-  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext"> &
-    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext">>;
+  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "previewModeration"> &
+    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "previewModeration">>;
 };
 
 function AlertEditorPage(props: TestAlertEditorPageProps) {
   const getAlertVariationAuthoringContext = props.managementApi.getAlertVariationAuthoringContext
     ?? (async (alertId: string) => variationContext(await props.managementApi.getAlertEditorDocument(alertId)));
+  const previewModeration: AlertEditorPageApi["previewModeration"] = props.managementApi.previewModeration
+    ?? (async (input) => ({
+      target: input.target,
+      settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+      text: input.text,
+      actions: []
+    }));
   return <ProductionAlertEditorPage
     {...props}
-    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext }}
+    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext, previewModeration }}
   />;
 }
 
@@ -999,6 +1006,12 @@ describe("AlertEditorPage", () => {
       referenceId: "ref-editor-test",
       test: true as const
     }));
+    const previewModeration = vi.fn(async (input: { readonly target: "rendered" | "tts"; readonly text: string }) => ({
+      target: input.target,
+      settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+      text: "Moderated canvas text",
+      actions: []
+    }));
     const onOpenAlert = vi.fn();
     const onBack = vi.fn();
     render(
@@ -1015,7 +1028,8 @@ describe("AlertEditorPage", () => {
             deleteAsset: vi.fn(),
             updateAssetMetadata: vi.fn(),
             saveAlertEditorDocument,
-            sendAlertEditorTest
+            sendAlertEditorTest,
+            previewModeration
           }}
           onBack={onBack}
           onOpenAlert={onOpenAlert}
@@ -1053,7 +1067,7 @@ describe("AlertEditorPage", () => {
     expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
-    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
+    const canvas = within(screen.getByRole("region", { name: "Landscape alert canvas" }));
     expect(screen.getByRole("button", { name: /Landscape/ })).toHaveAttribute("aria-pressed", "true");
 
     const template = screen.getByRole("textbox", { name: "Message template" });
@@ -1074,10 +1088,17 @@ describe("AlertEditorPage", () => {
 
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("Local preview is running.")).toBeInTheDocument();
+    expect(canvas.getByText("Moderated canvas text")).toBeInTheDocument();
+    expect(canvas.queryByText("Welcome, James!")).not.toBeInTheDocument();
     expect(sendAlertEditorTest).not.toHaveBeenCalled();
     const firstPreviewLayer = screen.getByRole("button", { name: "Message layer" });
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByRole("button", { name: "Message layer" })).not.toBe(firstPreviewLayer);
+    await user.type(template, " again");
+    expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
+    expect(canvas.queryByText("Moderated canvas text")).not.toBeInTheDocument();
+    expect(canvas.getByText("Welcome, James! again")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Revert" }));
 
     await user.click(screen.getByRole("button", { name: "Send test" }));
     await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith(
@@ -1146,6 +1167,12 @@ describe("AlertEditorPage", () => {
         .mockRejectedValueOnce(new Error("Database write failed."))
         .mockRejectedValue(new Error("Database write failed. (INTERNAL_SERVER_ERROR, err_editor_save)")),
       sendAlertEditorTest: vi.fn(),
+      previewModeration: vi.fn(async (input) => ({
+        target: input.target,
+        settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+        text: input.text,
+        actions: []
+      })),
       reportAlertEditorError
     } as AlertEditorPageApi & { readonly reportAlertEditorError: typeof reportAlertEditorError };
     render(
@@ -1597,6 +1624,12 @@ describe("AlertEditorPage", () => {
       ]
     };
     const sendAlertEditorTest = vi.fn();
+    const previewModeration = vi.fn(async (input: { readonly target: "rendered" | "tts"; readonly text: string }) => ({
+      target: input.target,
+      settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+      text: input.target === "rendered" ? "Thanks, [blocked]!" : "Hello [blocked]",
+      actions: []
+    }));
     render(
       <DirtyNavigationProvider>
         <AlertEditorPage
@@ -1611,7 +1644,8 @@ describe("AlertEditorPage", () => {
             deleteAsset: vi.fn(),
             updateAssetMetadata: vi.fn(),
             saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
-            sendAlertEditorTest
+            sendAlertEditorTest,
+            previewModeration
           }}
           onBack={() => undefined}
           onOpenAlert={() => undefined}
@@ -1638,11 +1672,87 @@ describe("AlertEditorPage", () => {
 
     await waitFor(() => expect(getAssetFile).toHaveBeenCalledWith("asset-audio"));
     expect(speak).toHaveBeenCalledOnce();
-    expect(speak.mock.calls[0]?.[0]).toMatchObject({ text: "Hello James" });
+    expect(speak.mock.calls[0]?.[0]).toMatchObject({ text: "Hello [blocked]" });
+    expect(previewModeration).toHaveBeenCalledWith({ target: "tts", text: "Hello James" });
     expect(sendAlertEditorTest).not.toHaveBeenCalled();
     const seek = screen.getByRole("slider", { name: "Preview position" });
     fireEvent.change(seek, { target: { value: "1200" } });
     expect(seek).toHaveValue("1200");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sample payload" }), "edge");
+    expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Thanks, [blocked]!")).not.toBeInTheDocument();
+  });
+
+  it("waits for every moderation response and fails closed before timing or media starts", async () => {
+    const user = userEvent.setup();
+    const play = vi.fn(async () => undefined);
+    const speak = vi.fn();
+    const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
+    vi.stubGlobal("Audio", class { volume = 1; play = play; });
+    vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
+    vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
+    let rejectTts: ((cause: unknown) => void) | undefined;
+    const ttsResult = new Promise<never>((_resolve, reject) => { rejectTts = reject; });
+    const previewModeration = vi.fn((input: { readonly target: "rendered" | "tts"; readonly text: string }) => {
+      if (input.target === "tts") return ttsResult;
+      return Promise.resolve({
+        target: input.target,
+        settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+        text: "Welcome [blocked]",
+        actions: []
+      });
+    });
+    const previewDocument: AlertEditorDocument = {
+      ...editorDocument(),
+      layers: [
+        ...editorDocument().layers,
+        { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-audio", volume: 0.5, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
+        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 3, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+      ]
+    };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={previewDocument.id}
+          assetApi={{ ...assetApi, getAssetFile }}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => previewDocument),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, current) => current),
+            sendAlertEditorTest: vi.fn(),
+            previewModeration
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("region", { name: "Landscape alert canvas" });
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview TTS" }));
+    await user.click(screen.getAllByRole("button", { name: "Preview" })[0]!);
+
+    await waitFor(() => expect(previewModeration).toHaveBeenCalledTimes(2));
+    expect(screen.queryByText("Local preview is running.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
+    expect(getAssetFile).not.toHaveBeenCalledWith("asset-audio");
+    expect(play).not.toHaveBeenCalled();
+    expect(speak).not.toHaveBeenCalled();
+
+    await act(async () => rejectTts?.(new Error("raw-unmoderated-name ref_preview_failed")));
+
+    expect(await screen.findByText("Local preview could not be prepared")).toBeInTheDocument();
+    expect(screen.queryByText(/raw-unmoderated-name/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
+    expect(getAssetFile).not.toHaveBeenCalledWith("asset-audio");
+    expect(speak).not.toHaveBeenCalled();
   });
 
   it("shows the active TTS provider and persists its runtime provider id", async () => {

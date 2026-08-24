@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   configurationBackupLimits,
@@ -112,7 +112,7 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel managementApi={createManagementApi()} />);
 
     expect(await screen.findByRole("heading", { name: "Backup and restore" })).toBeVisible();
-    expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" });
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" }));
   });
 
   it("downloads a versioned backup and reports completion", async () => {

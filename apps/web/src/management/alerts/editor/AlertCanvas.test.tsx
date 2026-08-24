@@ -1,4 +1,5 @@
 import {
+  compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument
 } from "@stream-jams/core";
@@ -172,6 +173,53 @@ describe("AlertCanvas", () => {
     expect(styledText.style.padding).toBe("12px");
     expect(styledText.style.textAlign).toBe("left");
     expect(styledText.style.textShadow).toBe("none");
+  });
+
+  it("interpolates templates while authoring and uses moderated text while previewing", () => {
+    const textDocument: AlertEditorDocument = {
+      ...editorDocument,
+      layers: [{
+        id: "layer-text",
+        name: "Message",
+        type: "text",
+        visible: true,
+        order: 0,
+        template: "Welcome {userName}",
+        textStyle: compatibilityAlertTextStyle,
+        boxStyle: compatibilityAlertTextBoxStyle,
+        animation: editorDocument.layers[0]!.animation
+      }],
+      targetProfiles: editorDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        layerLayouts: profile.id === "landscape"
+          ? [{ layerId: "layer-text", x: 100, y: 100, width: 800, height: 160, zIndex: 1 }]
+          : []
+      }))
+    };
+    const props = {
+      assetApi,
+      document: textDocument,
+      onGeometryChange: vi.fn(),
+      onSelectLayer: vi.fn(),
+      profileId: "landscape" as const,
+      samplePayload: { userName: "unmoderated-name" },
+      selectedLayerId: null,
+      viewState: { zoom: 100, scrollLeft: 0, scrollTop: 0 }
+    };
+    const { rerender } = render(<AlertCanvas {...props} preview={false} />);
+
+    expect(screen.getByText("Welcome unmoderated-name")).toBeInTheDocument();
+
+    rerender(
+      <AlertCanvas
+        {...props}
+        preview
+        previewTextByLayerId={{ "layer-text": "Welcome [blocked]" }}
+      />
+    );
+
+    expect(screen.getByText("Welcome [blocked]")).toBeInTheDocument();
+    expect(screen.queryByText("Welcome unmoderated-name")).not.toBeInTheDocument();
   });
 
   it("selects a focused layer with Enter or Space and exposes pressed state", async () => {

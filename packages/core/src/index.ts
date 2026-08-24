@@ -211,7 +211,12 @@ export {
 } from "./shared/schemas.js";
 
 export type * from "./moderation/moderation-service.js";
-export { DefaultModerationService, InvalidModerationSettingsError } from "./moderation/moderation-service.js";
+export type * from "./moderation/repository.js";
+export {
+  DefaultModerationService,
+  InvalidModerationSettingsError,
+  normalizeModerationSettings
+} from "./moderation/moderation-service.js";
 export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplacement } from "./moderation/default-rules.js";
 
 export * from "./management/contracts.js";

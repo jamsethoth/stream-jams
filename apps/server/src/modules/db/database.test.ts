@@ -25,13 +25,15 @@ const expectedMigrations = [
   "014-diagnostic-order-indexes",
   "015-alert-variant-asset-foreign-keys",
   "016-overlay-key-lookup-indexes",
-  "017-alert-text-style-defaults"
+  "017-alert-text-style-defaults",
+  "018-alert-moderation-settings"
 ] as const;
 
 const expectedTables = [
   "alert_collections",
   "alert_editor_documents",
   "alert_match_logs",
+  "alert_moderation_settings",
   "alert_rule_collections",
   "alert_rule_conditions",
   "alert_rule_management_metadata",
@@ -136,6 +138,24 @@ describe("Stream Jams SQLite database", () => {
     expect(
       database.connection.prepare("PRAGMA table_info(overlay_keys)").all().map((column) => String(column.name))
     ).toContain("target_profile_id");
+    expect(
+      database.connection
+        .prepare(
+          `SELECT rendered_max_length, rendered_blocked_terms_json, rendered_strip_urls,
+                  tts_max_length, tts_blocked_terms_json, tts_strip_urls
+           FROM alert_moderation_settings`
+        )
+        .all()
+    ).toEqual([
+      {
+        rendered_max_length: 240,
+        rendered_blocked_terms_json: "[]",
+        rendered_strip_urls: 0,
+        tts_max_length: 180,
+        tts_blocked_terms_json: "[]",
+        tts_strip_urls: 1
+      }
+    ]);
   });
 
   it("enforces foreign keys for child records", () => {
@@ -394,26 +414,56 @@ describe("Stream Jams SQLite database", () => {
     expect(Number(countStatement.get()?.count)).toBe(countBefore);
   });
 
-  it("upgrades a valid migration prefix and reopens idempotently", () => {
+  it("recovers a valid schema-17 prefix without losing its text-style document changes", () => {
     using database = createInMemoryStreamJamsDatabase();
     database.connection.exec(`
-      DROP INDEX overlay_keys_key_hash_unique;
-      DROP INDEX overlay_keys_output_history_idx;
-      CREATE INDEX overlay_keys_overlay_id_idx ON overlay_keys(overlay_id);
-      CREATE INDEX overlay_keys_output_idx
-        ON overlay_keys(overlay_id, scope, module_id, target_profile_id, purpose);
-      DELETE FROM schema_migrations
-      WHERE id IN ('016-overlay-key-lookup-indexes', '017-alert-text-style-defaults');
+      INSERT INTO alert_rules (id, name, event_type, enabled, cooldown_seconds, priority)
+      VALUES ('text-style', 'Text style', 'follow', 1, 0, 0);
+      INSERT INTO alert_editor_documents (alert_id, document_json, updated_at)
+      VALUES ('text-style', '{"layers":[{"id":"text","type":"text","template":"Hello"}]}', '2026-07-26T00:00:00.000Z');
+    `);
+    database.connection.exec(alertTextStyleDefaultsMigration.sql);
+    database.connection.exec(`
+      DROP TABLE alert_moderation_settings;
+      DELETE FROM schema_migrations WHERE id = '018-alert-moderation-settings';
     `);
 
     database.runMigrations();
     database.runMigrations();
 
     expect(listAppliedMigrations(database.connection)).toEqual(expectedMigrations);
-    expect(database.connection.prepare("PRAGMA index_list(overlay_keys)").all()).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "overlay_keys_key_hash_unique", unique: 1 }),
-      expect.objectContaining({ name: "overlay_keys_output_history_idx" })
-    ]));
+    const restored = database.connection.prepare("SELECT document_json FROM alert_editor_documents WHERE alert_id = ?").get("text-style");
+    expect(JSON.parse(String(restored?.document_json))).toEqual({
+      layers: [
+        {
+          id: "text",
+          type: "text",
+          template: "Hello",
+          textStyle: compatibilityAlertTextStyle,
+          boxStyle: compatibilityAlertTextBoxStyle
+        }
+      ]
+    });
+    expect(database.connection.prepare("SELECT COUNT(*) AS total FROM alert_moderation_settings").get()).toEqual({ total: 1 });
+    expect(
+      database.connection
+        .prepare(
+          `SELECT id, rendered_max_length, rendered_blocked_terms_json, rendered_strip_urls,
+                  tts_max_length, tts_blocked_terms_json, tts_strip_urls
+           FROM alert_moderation_settings`
+        )
+        .all()
+    ).toEqual([
+      {
+        id: 1,
+        rendered_max_length: 240,
+        rendered_blocked_terms_json: "[]",
+        rendered_strip_urls: 0,
+        tts_max_length: 180,
+        tts_blocked_terms_json: "[]",
+        tts_strip_urls: 1
+      }
+    ]);
   });
 
   it("allows editor documents for rules or variants and removes them with their owner", () => {

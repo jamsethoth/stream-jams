@@ -55,6 +55,26 @@ export const NestedAlerts: Story = {
   }
 };
 
+export const AlertSafetyFullShell: Story = {
+  args: {
+    assetApi: createStoryAssetApi(),
+    managementApi: createStoryManagementApi()
+  },
+  render: (args) => <ManagementAppAtRoute args={args} path="/manage/modules/alerts/safety" />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.findByRole("group", { name: "Rendered text" })).resolves.toBeVisible();
+    await expect(canvas.getByRole("link", { name: "Safety" })).toHaveAttribute("aria-current", "page");
+  },
+  parameters: {
+    docs: {
+      description: {
+        story: "Full management shell at the durable alert safety route."
+      }
+    }
+  }
+};
+
 function ManagementAppAtRoute({ args, path }: { readonly args: ManagementAppProps; readonly path: string }) {
   const [ready, setReady] = useState(false);
   useEffect(() => {

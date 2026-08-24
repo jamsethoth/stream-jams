@@ -40,3 +40,15 @@ export const Sidebar: Story = {
     }
   }
 };
+
+export const AlertSafetySelected: Story = {
+  args: {
+    activeRoute: { id: "alert-safety" },
+    onNavigate: () => undefined
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByRole("link", { name: "Safety" })).toHaveAttribute("aria-current", "page");
+    await expect(canvas.getByRole("link", { name: "Alerts" })).not.toHaveAttribute("aria-current");
+  }
+};

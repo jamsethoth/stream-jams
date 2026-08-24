@@ -83,6 +83,26 @@ export interface ModerationSettingsView {
   readonly ttsText: ModerationTargetSettingsView;
 }
 
+export type ModerationTargetView = "rendered" | "tts";
+
+export type ModerationActionView =
+  | { readonly type: "url-stripped"; readonly count: number }
+  | { readonly type: "blocked-term-replaced"; readonly count: number }
+  | { readonly type: "max-length-truncated"; readonly maxLength: number };
+
+export interface ModerationPreviewInputView {
+  readonly target: ModerationTargetView;
+  readonly text: string;
+  readonly settings?: ModerationTargetSettingsView | undefined;
+}
+
+export interface ModerationPreviewResultView {
+  readonly target: ModerationTargetView;
+  readonly settings: ModerationTargetSettingsView;
+  readonly text: string;
+  readonly actions: readonly ModerationActionView[];
+}
+
 export interface OverlayOutputUrl {
   readonly id: string;
   readonly label: string;
@@ -280,6 +300,7 @@ export interface ManagementApi {
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
   getModerationSettings(): Promise<ModerationSettingsView>;
   updateModerationSettings(input: ModerationSettingsView): Promise<ModerationSettingsView>;
+  previewModeration(input: ModerationPreviewInputView): Promise<ModerationPreviewResultView>;
   createOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
   regenerateOverlayOutputKey(input: OverlayOutputKeyRequestView): Promise<OverlayOutputKeyResultView>;
   exportDiagnostics(input?: DiagnosticsRequestView): Promise<DiagnosticsExportView>;
@@ -721,6 +742,15 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       return client.patchJson<ModerationSettingsView>("/moderation/settings", input, "Unable to update moderation settings.");
     },
 
+    previewModeration(input) {
+      return postContract(
+        "/moderation/preview",
+        input,
+        moderationPreviewResultContract,
+        "Unable to preview moderation."
+      );
+    },
+
     async createOverlayOutputKey(input) {
       return postOverlayOutputKey("/management/overlay-outputs/keys", input);
     },
@@ -748,6 +778,72 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
 interface RuntimeContract<T> {
   parse(input: unknown): T;
+}
+
+const moderationPreviewResultContract: RuntimeContract<ModerationPreviewResultView> = {
+  parse(input) {
+    const settings = isRecord(input) ? input.settings : undefined;
+    if (
+      !hasExactKeys(input, ["target", "settings", "text", "actions"])
+      || (input.target !== "rendered" && input.target !== "tts")
+      || typeof input.text !== "string"
+      || !isModerationTargetSettings(settings)
+      || !Array.isArray(input.actions)
+    ) {
+      throw new TypeError("Invalid moderation preview response");
+    }
+
+    const actions = input.actions.map((action) => parseModerationAction(action, settings.maxLength));
+    return {
+      target: input.target,
+      settings: {
+        maxLength: settings.maxLength,
+        blockedTerms: [...settings.blockedTerms],
+        stripUrls: settings.stripUrls
+      },
+      text: input.text,
+      actions
+    };
+  }
+};
+
+function isModerationTargetSettings(input: unknown): input is ModerationTargetSettingsView {
+  return hasExactKeys(input, ["maxLength", "blockedTerms", "stripUrls"])
+    && typeof input.maxLength === "number"
+    && Number.isInteger(input.maxLength)
+    && input.maxLength >= 1
+    && input.maxLength <= 10_000
+    && isStringArray(input.blockedTerms)
+    && typeof input.stripUrls === "boolean";
+}
+
+function parseModerationAction(input: unknown, settingsMaxLength: number): ModerationActionView {
+  if (!isRecord(input) || typeof input.type !== "string") {
+    throw new TypeError("Invalid moderation preview response");
+  }
+
+  if (
+    (input.type === "url-stripped" || input.type === "blocked-term-replaced")
+    && hasExactKeys(input, ["type", "count"])
+    && typeof input.count === "number"
+    && Number.isInteger(input.count)
+    && input.count > 0
+  ) {
+    return { type: input.type, count: input.count };
+  }
+
+  if (
+    input.type === "max-length-truncated"
+    && hasExactKeys(input, ["type", "maxLength"])
+    && typeof input.maxLength === "number"
+    && Number.isInteger(input.maxLength)
+    && input.maxLength >= 1
+    && input.maxLength === settingsMaxLength
+  ) {
+    return { type: "max-length-truncated", maxLength: input.maxLength };
+  }
+
+  throw new TypeError("Invalid moderation preview response");
 }
 
 const twitchConnectionStatusContract: RuntimeContract<TwitchConnectionStatusView> = {

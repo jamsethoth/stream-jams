@@ -10,6 +10,7 @@ import {
   storyAssets,
   storyDiagnostics,
   storyModerationSettings,
+  storyModerationExample,
   storyServerConfig,
 } from "./story-fixtures.js";
 
@@ -219,6 +220,17 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     },
     async updateModerationSettings(input) {
       return input;
+    },
+    async previewModeration(input) {
+      if (input.text === storyModerationExample.sample) {
+        return input.target === "rendered" ? storyModerationExample.rendered : storyModerationExample.tts;
+      }
+      return {
+        target: input.target,
+        settings: input.settings ?? storyModerationSettings.renderedText,
+        text: input.text,
+        actions: []
+      };
     },
     async createOverlayOutputKey(input) {
       return overlayKeyResult(input);

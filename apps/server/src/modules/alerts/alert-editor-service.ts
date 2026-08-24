@@ -1,5 +1,6 @@
 import {
   DefaultTemplateRenderer,
+  SafeTemplateRenderer,
   alertEditorDocumentSchema,
   alertEditorTestRequestSchema,
   getAlertTemplateVariableCatalog,
@@ -22,7 +23,9 @@ import {
   type NormalizedStreamEvent,
   type OverlayElementLayout,
   type ResolvedAlert,
-  type TargetProfileId
+  type TargetProfileId,
+  type ModerationService,
+  type TemplateRenderer
 } from "@stream-jams/core";
 import type {
   AlertRuleManagementMetadata,
@@ -54,6 +57,7 @@ export interface AlertEditorServiceOptions {
   readonly metadata: Pick<AlertSetMetadataRepository, "findRule" | "saveRule">;
   readonly hasConnectedOutput: (targetProfileId: TargetProfileId) => Promise<boolean>;
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
+  readonly moderationService: ModerationService;
   readonly findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>;
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
@@ -100,6 +104,8 @@ export class AlertEditorLiveImpactConfirmationRequiredError extends Error {
 export class AlertEditorService {
   readonly #options: AlertEditorServiceOptions;
   readonly #templateRenderer = new DefaultTemplateRenderer();
+  readonly #renderedTextTemplateRenderer: SafeTemplateRenderer;
+  readonly #ttsTemplateRenderer: SafeTemplateRenderer;
   readonly #now: () => Date;
 
   constructor(options: AlertEditorServiceOptions) {
@@ -107,6 +113,16 @@ export class AlertEditorService {
       throw new Error("AlertEditorService requires an atomic aggregate save dependency.");
     }
     this.#options = options;
+    this.#renderedTextTemplateRenderer = new SafeTemplateRenderer({
+      moderationService: options.moderationService,
+      templateRenderer: this.#templateRenderer,
+      target: "rendered"
+    });
+    this.#ttsTemplateRenderer = new SafeTemplateRenderer({
+      moderationService: options.moderationService,
+      templateRenderer: this.#templateRenderer,
+      target: "tts"
+    });
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -327,7 +343,8 @@ export class AlertEditorService {
         request.document.durationMs,
         request.targetProfileId,
         context,
-        this.#templateRenderer,
+        this.#renderedTextTemplateRenderer,
+        this.#ttsTemplateRenderer,
         this.#options.generateId(),
         visualAssetMediaTypes
       );
@@ -862,7 +879,8 @@ function createLayerInstruction(
   durationMs: number,
   targetProfileId: TargetProfileId,
   context: Record<string, unknown>,
-  renderer: DefaultTemplateRenderer,
+  renderedTextTemplateRenderer: TemplateRenderer,
+  ttsTemplateRenderer: TemplateRenderer,
   instructionId: string,
   visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>
 ): ResolvedAlert["overlayInstruction"] | null {
@@ -877,6 +895,7 @@ function createLayerInstruction(
     visual: null,
     audio: null,
     text: null,
+    animation: layer.animation,
     tts: null,
     durationMs
   };
@@ -884,7 +903,7 @@ function createLayerInstruction(
     return {
       ...base,
       text: {
-        text: renderer.render({ template: layer.template, values: context }),
+        text: renderedTextTemplateRenderer.render({ template: layer.template, values: context }),
         layout,
         textStyle: layer.textStyle,
         boxStyle: layer.boxStyle
@@ -905,7 +924,7 @@ function createLayerInstruction(
       ...base,
       tts: {
         mode: "browser-speech",
-        text: renderer.render({ template: layer.template, values: context }),
+        text: ttsTemplateRenderer.render({ template: layer.template, values: context }),
         audioAssetId: null,
         providerPayload: null
       }

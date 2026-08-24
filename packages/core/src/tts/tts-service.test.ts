@@ -150,14 +150,20 @@ describe("DefaultTtsService", () => {
     expect(result.moderationActions.map((action) => action.type)).toEqual(["url-stripped", "blocked-term-replaced"]);
   });
 
-  it("uses the same moderated provider path for live playback", async () => {
-    let receivedInput: TtsProviderPlaybackInput | null = null;
+  it("sanitizes raw speakerbot input and keeps raw text out of provider metadata and moderation actions", async () => {
+    const receivedInputs: TtsProviderPlaybackInput[] = [];
     const service = createService({
+      moderationService: new DefaultModerationService({
+        settings: {
+          renderedText: { maxLength: 240, blockedTerms: [], stripUrls: false },
+          ttsText: { maxLength: 14, blockedTerms: ["badword"], stripUrls: true }
+        }
+      }),
       providers: [
         createProvider({
           id: "speakerbot",
           async createPlaybackInstruction(input) {
-            receivedInput = input;
+            receivedInputs.push(input);
             return {
               mode: "remote-trigger",
               text: input.text,
@@ -171,17 +177,61 @@ describe("DefaultTtsService", () => {
 
     const result = await service.createPlaybackInstruction({
       providerId: "speakerbot",
-      text: "Welcome Viewer",
-      metadata: { layerId: "layer-tts" }
+      text: "badword https://example.test/secret ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+      metadata: { layerId: "layer-tts", sourceEventId: "event-1" }
     });
+    const receivedInput = receivedInputs[0];
 
     expect(receivedInput).toMatchObject({
       providerId: "speakerbot",
-      text: "Welcome Viewer",
+      text: "[moderated] [l",
       voiceId: null,
-      metadata: { layerId: "layer-tts" }
+      metadata: { layerId: "layer-tts", sourceEventId: "event-1" }
     });
     expect(result.instruction.mode).toBe("remote-trigger");
+    expect(result.instruction.text).toBe("[moderated] [l");
+    expect(JSON.stringify(result.moderationActions)).not.toContain("badword");
+    expect(JSON.stringify(result.moderationActions)).not.toContain("example.test");
+    expect(JSON.stringify(result.moderationActions)).not.toContain("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    expect(JSON.stringify(receivedInput?.metadata)).not.toContain("badword");
+    expect(JSON.stringify(receivedInput?.metadata)).not.toContain("example.test");
+    expect(JSON.stringify(receivedInput?.metadata)).not.toContain("ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+  });
+
+  it("passes already-moderated alert text to the provider without transforming it again", async () => {
+    const receivedInputs: TtsProviderPlaybackInput[] = [];
+    const service = createService({
+      moderationService: new DefaultModerationService({
+        settings: {
+          renderedText: { maxLength: 240, blockedTerms: [], stripUrls: false },
+          ttsText: { maxLength: 180, blockedTerms: ["badword", "rat"], stripUrls: true }
+        }
+      }),
+      providers: [
+        createProvider({
+          id: "speakerbot",
+          async createPlaybackInstruction(input) {
+            receivedInputs.push(input);
+            return {
+              mode: "remote-trigger",
+              text: input.text,
+              audioAssetId: null,
+              providerPayload: { providerId: input.providerId }
+            };
+          }
+        })
+      ]
+    });
+
+    const result = await service.createPlaybackInstructionFromModeratedText({
+      providerId: "speakerbot",
+      text: "Welcome [moderated]",
+      metadata: { sourceEventId: "event-1" }
+    });
+
+    expect(receivedInputs[0]?.text).toBe("Welcome [moderated]");
+    expect(result.instruction.text).toBe("Welcome [moderated]");
+    expect(result.moderationActions).toEqual([]);
   });
 
   it("wraps provider failures without exposing provider internals to callers", async () => {

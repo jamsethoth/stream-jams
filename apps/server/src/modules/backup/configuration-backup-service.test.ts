@@ -1,17 +1,22 @@
 import { createHash } from "node:crypto";
 import {
+  appConfigSchema,
   configurationBackupLimits,
   type AppConfig,
   type AppConfigUpdate,
-  type AssetRecord
+  type AssetRecord,
+  type ModerationSettings
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryStreamJamsDatabase, currentSchemaVersion, type StreamJamsDatabase } from "../db/database.js";
+import { SqliteModerationSettingsRepository } from "../moderation/sqlite-moderation-settings-repository.js";
 import {
   ConfigurationBackupService,
   ConfigurationRestoreBlockedError,
   type ConfigurationBackupServiceOptions,
   type ConfigurationSnapshotRepository
 } from "./configuration-backup-service.js";
+import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
 
 const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
@@ -51,6 +56,8 @@ describe("ConfigurationBackupService", () => {
       dataBase64: pngBytes.toString("base64")
     });
     expect(JSON.stringify(archive)).not.toMatch(/oauth|accessToken|secret_ref|route_key|key_hash/iu);
+    expect(JSON.stringify(archive)).toContain("configured-blocked-term");
+    expect(JSON.stringify(archive)).not.toMatch(/preview sample|original viewer text|credentials|route keys|sessions|raw provider payloads|operational logs/iu);
   });
 
   it("rejects version-one archives because they did not capture variant order", async () => {
@@ -112,7 +119,7 @@ describe("ConfigurationBackupService", () => {
 
     await expect(ready.service.preflight(archive)).resolves.toMatchObject({
       state: "valid",
-      impact: { configurationRecords: 3, providers: 1, alertSets: 1, assets: 1, preferences: 1, browserOutputs: 1 }
+      impact: { configurationRecords: 4, providers: 1, alertSets: 1, assets: 1, preferences: 1, browserOutputs: 1 }
     });
 
     const live = createService({ runtime: { intakeActive: true, playbackActive: false, queuedPlaybackCount: 0 } });
@@ -182,6 +189,203 @@ describe("ConfigurationBackupService", () => {
       regeneratedOutputs: [{ label: "Landscape live", url: "http://127.0.0.1:40123/new-key" }],
       reconnectProviders: ["Twitch"]
     });
+  });
+
+  it("reloads runtime moderation only after the database replacement and config update succeed", async () => {
+    const steps: string[] = [];
+    const { service } = createService({
+      replace: () => steps.push("replace"),
+      updateConfig: async () => {
+        steps.push("config");
+        return appConfig;
+      },
+      reloadRuntimeConfiguration: () => steps.push("reload")
+    });
+    const archive = await service.exportArchive();
+    const preflight = await service.preflight(archive);
+
+    await expect(service.restore({
+      archive,
+      archiveId: preflight.archiveId!,
+      confirmation: "RESTORE",
+      regenerateRouteKeys: true
+    })).resolves.toMatchObject({ state: "completed" });
+
+    expect(steps).toEqual(["replace", "config", "reload"]);
+  });
+
+  it("restores the previous app config when runtime reload fails after the restored config is written", async () => {
+    let persistedConfig = appConfig;
+    const updateConfig = vi.fn(async (patch: AppConfigUpdate): Promise<AppConfig> => {
+      persistedConfig = appConfigSchema.parse({
+        server: { ...persistedConfig.server, ...patch.server },
+        storage: { ...persistedConfig.storage, ...patch.storage },
+        logging: { ...persistedConfig.logging, ...patch.logging },
+        playback: { ...persistedConfig.playback, ...patch.playback }
+      });
+      return persistedConfig;
+    });
+    let reloadCount = 0;
+    const { service } = createService({
+      updateConfig,
+      reloadRuntimeConfiguration: () => {
+        reloadCount += 1;
+        if (reloadCount === 1) throw new Error("reload failed");
+      }
+    });
+    const archive = await service.exportArchive();
+    const archivedConfig = appConfigSchema.parse(archive.configuration.appConfig);
+    archive.configuration.appConfig = {
+      ...archivedConfig,
+      server: { ...archivedConfig.server, port: 40123 }
+    };
+    archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+    const preflight = await service.preflight(archive);
+
+    await expect(service.restore({
+      archive,
+      archiveId: preflight.archiveId!,
+      confirmation: "RESTORE",
+      regenerateRouteKeys: true
+    })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
+
+    expect(updateConfig).toHaveBeenCalledTimes(2);
+    expect(persistedConfig).toEqual(appConfig);
+  });
+
+  const restoreFailureCases = ["replacement", "config update", "runtime reload"] as const;
+  it.each(restoreFailureCases)("restores the persisted and active runtime policy when %s fails", async (failure) => {
+    const backupPolicy: ModerationSettings = {
+      renderedText: { maxLength: 200, blockedTerms: ["backup-rendered"], stripUrls: true },
+      ttsText: { maxLength: 160, blockedTerms: ["backup-tts"], stripUrls: false }
+    };
+    const previousPolicy: ModerationSettings = {
+      renderedText: { maxLength: 333, blockedTerms: ["previous-rendered"], stripUrls: false },
+      ttsText: { maxLength: 222, blockedTerms: ["previous-tts"], stripUrls: true }
+    };
+    const source = createRealService({ initialPolicy: backupPolicy });
+    const target = createRealService({ initialPolicy: previousPolicy });
+    try {
+      const archive = await source.service.exportArchive();
+      const observedRuntimePolicies: ModerationSettings[] = [];
+      let reloadCount = 0;
+      const updateConfig = failure === "config update"
+        ? async (): Promise<AppConfig> => { throw new Error("config failed"); }
+        : async (): Promise<AppConfig> => appConfig;
+      target.service = createRealService({
+        database: target.database,
+        updateConfig,
+        reloadRuntimeConfiguration: () => {
+          const active = target.moderationSettingsRepository.read();
+          if (active === null) throw new Error("Active moderation policy is missing");
+          observedRuntimePolicies.push(active);
+          reloadCount += 1;
+          if (failure === "runtime reload" && reloadCount === 1) throw new Error("reload failed");
+        }
+      }).service;
+      if (failure === "replacement") {
+        target.database.connection.exec(`
+          CREATE TRIGGER reject_backup_policy
+          BEFORE INSERT ON alert_moderation_settings
+          WHEN NEW.rendered_max_length = 200
+          BEGIN SELECT RAISE(FAIL, 'replace failed'); END;
+        `);
+      }
+      const preflight = await target.service.preflight(archive);
+
+      await expect(target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
+
+      expect(target.moderationSettingsRepository.read()).toEqual(previousPolicy);
+      expect(observedRuntimePolicies.at(-1)).toEqual(previousPolicy);
+      expect(observedRuntimePolicies).toEqual(
+        failure === "runtime reload" ? [backupPolicy, previousPolicy] : [previousPolicy]
+      );
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
+  });
+
+  it("blocks an invalid moderation policy in preflight before replacement", async () => {
+    const source = createRealService();
+    const target = createRealService();
+    try {
+      const archive = await source.service.exportArchive();
+      const [policy] = archive.configuration.tables.alert_moderation_settings ?? [];
+      if (policy === undefined) throw new Error("Archived moderation policy is required");
+      archive.configuration.tables.alert_moderation_settings = [{ ...policy, rendered_blocked_terms_json: "[1]" }];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const replace = vi.spyOn(target.snapshotRepository, "replace");
+      const previousPolicy = target.moderationSettingsRepository.read();
+      const preflight = await target.service.preflight(archive);
+
+      expect(preflight.state).toBe("invalid");
+      await expect(target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      })).rejects.toMatchObject({ code: "RESTORE_PREFLIGHT_REQUIRED" });
+      expect(replace).not.toHaveBeenCalled();
+      expect(target.moderationSettingsRepository.read()).toEqual(previousPolicy);
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
+  });
+
+  it("canonicalizes blocked terms while restoring a validated moderation policy", async () => {
+    const source = createRealService();
+    const target = createRealService();
+    try {
+      const archive = await source.service.exportArchive();
+      const [policy] = archive.configuration.tables.alert_moderation_settings ?? [];
+      if (policy === undefined) throw new Error("Archived moderation policy is required");
+      archive.configuration.tables.alert_moderation_settings = [{
+        ...policy,
+        rendered_blocked_terms_json: '["  Alpha  ","alpha","BETA"," beta "]',
+        tts_blocked_terms_json: '["  TTS alpha  ","tts ALPHA"]'
+      }];
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+
+      expect(preflight.state).toBe("valid");
+      await expect(target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      })).resolves.toMatchObject({ state: "completed" });
+
+      expect(target.moderationSettingsRepository.read()).toEqual({
+        renderedText: { maxLength: 240, blockedTerms: ["Alpha", "BETA"], stripUrls: false },
+        ttsText: { maxLength: 180, blockedTerms: ["TTS alpha"], stripUrls: true }
+      });
+      expect(target.database.connection.prepare(
+        "SELECT rendered_blocked_terms_json, tts_blocked_terms_json FROM alert_moderation_settings WHERE id = 1"
+      ).get()).toEqual({
+        rendered_blocked_terms_json: '["Alpha","BETA"]',
+        tts_blocked_terms_json: '["TTS alpha"]'
+      });
+      const rebackup = await target.service.exportArchive();
+      expect(rebackup.configuration.tables.alert_moderation_settings).toEqual([{
+        id: 1,
+        rendered_max_length: 240,
+        rendered_blocked_terms_json: '["Alpha","BETA"]',
+        rendered_strip_urls: 0,
+        tts_max_length: 180,
+        tts_blocked_terms_json: '["TTS alpha"]',
+        tts_strip_urls: 1
+      }]);
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
   });
 
   it("restores the complete operational database state when config replacement fails", async () => {
@@ -289,6 +493,8 @@ function createService(overrides: {
   readonly assetRecords?: readonly AssetRecord[];
   readonly findConnectedTwitchAccountId?: () => Promise<string | null>;
   readonly deleteTokenSecrets?: (accountId: string) => Promise<void>;
+  readonly reloadRuntimeConfiguration?: () => void;
+  readonly validate?: ConfigurationSnapshotRepository["validate"];
 } = {}) {
   const replace = overrides.replace ?? replacementMock();
   const options: ConfigurationBackupServiceOptions = {
@@ -305,12 +511,13 @@ function createService(overrides: {
         tables: {
           alert_collections: [{ id: "set-default", name: "Everyday", enabled: 1 }],
           asset_metadata: [{ id: asset.id, original_file_name: asset.originalFileName, media_type: asset.mediaType, mime_type: asset.mimeType, size_bytes: asset.sizeBytes, checksum: asset.checksum }],
-          provider_registrations: [{ id: "provider-twitch", name: "Twitch", kind: "twitch", capability: "event-source", non_secret_config_json: "{}", active: 0, connection_state: "disconnected", intake_state: "inactive", validated_at: null, error_json: null, available_voices_json: "[]", tts_safety_json: null, created_at: "2026-07-15T04:00:00.000Z", updated_at: "2026-07-15T04:00:00.000Z" }]
+          provider_registrations: [{ id: "provider-twitch", name: "Twitch", kind: "twitch", capability: "event-source", non_secret_config_json: "{}", active: 0, connection_state: "disconnected", intake_state: "inactive", validated_at: null, error_json: null, available_voices_json: "[]", tts_safety_json: null, created_at: "2026-07-15T04:00:00.000Z", updated_at: "2026-07-15T04:00:00.000Z" }],
+          alert_moderation_settings: [{ id: 1, rendered_max_length: 240, rendered_blocked_terms_json: '["configured-blocked-term"]', rendered_strip_urls: 0, tts_max_length: 180, tts_blocked_terms_json: '["configured-blocked-term"]', tts_strip_urls: 1 }]
         },
         providerReconnectMetadata: [{ id: "provider-twitch", name: "Twitch", kind: "twitch" }],
         overlayOutputs: [{ overlayId: "default", scope: "module", moduleId: "alerts", purpose: "live", targetProfileId: "landscape" }]
       }),
-      validate: () => [],
+      validate: overrides.validate ?? (() => []),
       replace,
       captureRestorePoint: overrides.captureRestorePoint ?? (() => ({ marker: "current" })),
       restoreRestorePoint: overrides.restoreRestorePoint ?? (() => undefined)
@@ -333,9 +540,59 @@ function createService(overrides: {
     twitchCredentials: {
       findConnectedAccountId: overrides.findConnectedTwitchAccountId ?? (async () => null),
       deleteTokenSecrets: overrides.deleteTokenSecrets ?? (async () => undefined)
-    }
+    },
+    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration })
   };
   return { service: new ConfigurationBackupService(options), replace };
+}
+
+function createRealService(overrides: {
+  readonly database?: StreamJamsDatabase;
+  readonly initialPolicy?: ModerationSettings;
+  readonly updateConfig?: ConfigurationBackupServiceOptions["configStore"]["updateConfig"];
+  readonly reloadRuntimeConfiguration?: () => void;
+} = {}) {
+  const database = overrides.database ?? createInMemoryStreamJamsDatabase();
+  if (overrides.database === undefined) {
+    database.connection.prepare("INSERT INTO alert_collections (id, name, enabled) VALUES (?, ?, ?)")
+      .run("set-default", "Everyday", 1);
+  }
+  const moderationSettingsRepository = new SqliteModerationSettingsRepository(database.connection);
+  if (overrides.initialPolicy !== undefined) {
+    moderationSettingsRepository.replace(overrides.initialPolicy);
+  }
+  const snapshotRepository = new SqliteConfigurationSnapshotRepository(database.connection);
+  const options: ConfigurationBackupServiceOptions = {
+    appVersion: "1.2.3",
+    schemaVersion: currentSchemaVersion,
+    now: () => new Date("2026-07-15T05:00:00.000Z"),
+    generateReferenceId: () => "ref-backup-test",
+    configStore: {
+      readConfig: async () => appConfig,
+      updateConfig: overrides.updateConfig ?? (async () => appConfig)
+    },
+    snapshotRepository,
+    assetRepository: { list: async () => [] },
+    assetStore: {
+      read: async () => Buffer.alloc(0),
+      write: async (input) => ({ storagePath: `image/${input.assetId}-${input.storageVersion}.png` }),
+      delete: async () => undefined
+    },
+    assetValidator: {
+      validate: () => ({ accepted: true, reason: null, mediaType: "image", normalizedExtension: ".png" })
+    },
+    getRuntime: async () => ({ intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 }),
+    getAvailableBytes: async () => 1_000_000,
+    safetyBackupStore: { write: async () => "C:/safe/pre-restore.streamjams-backup" },
+    regenerateOutput: async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` }),
+    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration })
+  };
+  return {
+    service: new ConfigurationBackupService(options),
+    database,
+    moderationSettingsRepository,
+    snapshotRepository
+  };
 }
 
 function checksum(bytes: Uint8Array): string {

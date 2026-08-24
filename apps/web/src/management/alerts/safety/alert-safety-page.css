@@ -1,0 +1,127 @@
+.alert-safety-page {
+  display: grid;
+  gap: 20px;
+}
+
+.alert-safety-page__section {
+  display: grid;
+  gap: 12px;
+  padding-block: 4px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.alert-safety-page__section h3,
+.alert-safety-page__section p {
+  margin: 0;
+}
+
+.alert-safety-page__form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.alert-safety-page__fieldset {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.alert-safety-page__fieldset legend {
+  padding-inline: 6px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.alert-safety-page__fieldset p {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.alert-safety-page label {
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.alert-safety-page input[type="number"],
+.alert-safety-page textarea {
+  width: 100%;
+}
+
+.alert-safety-page__checkbox {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+}
+
+.alert-safety-page__field-error {
+  color: var(--color-negative) !important;
+  font-weight: 600;
+}
+
+.alert-safety-page__actions,
+.alert-safety-page__section-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.alert-safety-page__actions {
+  grid-column: 1 / -1;
+  justify-content: flex-start;
+}
+
+.alert-safety-page__previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.alert-safety-page__preview {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface-subtle);
+}
+
+.alert-safety-page__preview h4 {
+  margin-block: 0 12px;
+}
+
+.alert-safety-page__preview dl,
+.alert-safety-page__preview ul {
+  display: grid;
+  gap: 8px;
+  margin-block: 0 12px;
+}
+
+.alert-safety-page__preview dt {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.alert-safety-page__preview dd {
+  margin: 2px 0 0;
+}
+
+.alert-safety-page__output {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 760px) {
+  .alert-safety-page__form,
+  .alert-safety-page__previews {
+    grid-template-columns: 1fr;
+  }
+}

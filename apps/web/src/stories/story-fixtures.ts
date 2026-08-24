@@ -1,6 +1,7 @@
 import type { AssetLibraryItem, OverlayComposition } from "@stream-jams/core";
 import type {
   DiagnosticsView,
+  ModerationPreviewResultView,
   ModerationSettingsView,
   OverlayOutputUrl,
   ServerConfigView
@@ -26,6 +27,32 @@ export const storyModerationSettings = {
     stripUrls: true
   }
 } satisfies ModerationSettingsView;
+
+export const storyModerationExample = {
+  sample: "Spoiler details: https://example.com/reveal",
+  rendered: {
+    target: "rendered",
+    settings: storyModerationSettings.renderedText,
+    text: "[blocked] details: [link removed]",
+    actions: [
+      { type: "url-stripped", count: 1 },
+      { type: "blocked-term-replaced", count: 1 }
+    ]
+  },
+  tts: {
+    target: "tts",
+    settings: storyModerationSettings.ttsText,
+    text: "[blocked] details: [link removed]",
+    actions: [
+      { type: "url-stripped", count: 1 },
+      { type: "blocked-term-replaced", count: 1 }
+    ]
+  }
+} satisfies {
+  readonly sample: string;
+  readonly rendered: ModerationPreviewResultView;
+  readonly tts: ModerationPreviewResultView;
+};
 
 export const liveAlertsOutput = {
   id: "output-alerts-live",

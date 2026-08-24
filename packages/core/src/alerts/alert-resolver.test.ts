@@ -205,7 +205,7 @@ describe("DefaultAlertResolver", () => {
     expect(resolved?.overlayInstruction.text?.text).toBe("Gift recipient||Gift recipient|1");
   });
 
-  it("moderates rendered and TTS text before playback instructions leave the resolver", () => {
+  it("applies independent rendered and provider TTS policies before playback instructions leave the resolver", () => {
     const event = createCheerEvent({
       message: "badword https://example.test/secret"
     });
@@ -215,7 +215,7 @@ describe("DefaultAlertResolver", () => {
           textTemplate: "{message} extra",
           ttsConfig: {
             enabled: true,
-            providerId: "browser-speech",
+            providerId: "speakerbot",
             voiceId: null,
             template: "Read {message}",
             minimumAmount: null
@@ -227,12 +227,12 @@ describe("DefaultAlertResolver", () => {
       moderationService: new DefaultModerationService({
         settings: {
           renderedText: {
-            maxLength: 80,
+            maxLength: 26,
             blockedTerms: ["badword"],
             stripUrls: true
           },
           ttsText: {
-            maxLength: 80,
+            maxLength: 14,
             blockedTerms: ["badword"],
             stripUrls: true
           }
@@ -242,8 +242,12 @@ describe("DefaultAlertResolver", () => {
 
     const resolved = resolver.resolveMatches({ matches: [createMatch(rule, event)], target });
 
-    expect(resolved[0]?.overlayInstruction.text?.text).toBe("[moderated] [link removed] extra");
-    expect(resolved[0]?.overlayInstruction.tts?.text).toBe("Read [moderated] [link removed]");
+    expect(resolved[0]?.overlayInstruction.text?.text).toBe("[moderated] [link removed]");
+    expect(resolved[0]?.overlayInstruction.tts).toMatchObject({
+      mode: "remote-trigger",
+      text: "Read [moderate",
+      providerPayload: { providerId: "speakerbot" }
+    });
   });
 
   it("selects the highest-priority matching variant before applying weighted randomness", () => {

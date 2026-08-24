@@ -77,6 +77,7 @@ export type AlertEditorPageApi = Pick<
   | "updateAssetMetadata"
   | "saveAlertEditorDocument"
   | "sendAlertEditorTest"
+  | "previewModeration"
 > & Partial<Pick<ManagementApi, "reportAlertEditorError">>;
 
 export interface AlertEditorPageProps {
@@ -126,7 +127,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewElapsedMs, setPreviewElapsedMs] = useState(0);
   const [previewRunId, setPreviewRunId] = useState(0);
+  const [previewTextByLayerId, setPreviewTextByLayerId] = useState<Readonly<Record<string, string>>>({});
   const previewFrameRef = useRef<number | null>(null);
+  const previewRequestIdRef = useRef(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
@@ -146,6 +149,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setConditionDraftError(null);
     setEventInspectorRevision((current) => current + 1);
   }, []);
+  const resetLocalPreview = useCallback(() => {
+    setPreview(false);
+    setPreviewPlaying(false);
+    setPreviewElapsedMs(0);
+    setPreviewTextByLayerId({});
+    previewRequestIdRef.current += 1;
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -157,6 +167,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
+    resetLocalPreview();
     resetEventInspectorDraft();
     const documentRequest = props.managementApi.getAlertEditorDocument(props.alertId);
     void Promise.all([
@@ -203,8 +214,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       ));
       setTtsProvidersLoaded(true);
     });
-    return () => { active = false; };
-  }, [props.alertId, props.managementApi, props.targetProfileId, resetEventInspectorDraft]);
+    return () => {
+      active = false;
+      previewRequestIdRef.current += 1;
+    };
+  }, [props.alertId, props.managementApi, props.targetProfileId, resetEventInspectorDraft, resetLocalPreview]);
 
   const showActionError = useCallback((nextError: ReportableActionError) => {
     setNotice(null);
@@ -274,6 +288,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setVariationContext((current) => current === null
         ? null
         : updateVariationContextAfterSave(current, saved, priorityAssignments ?? []));
+      resetLocalPreview();
       setNotice({ tone: "success", message: "Alert saved." });
     } catch (cause) {
       if (!confirmLiveImpact && isLiveImpactConfirmationRequired(cause)) throw cause;
@@ -282,7 +297,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     } finally {
       setBusy(false);
     }
-  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, showActionError, variationContext]);
+  }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, resetLocalPreview, showActionError, variationContext]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
     if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor, setDetail, variationContext).length === 0) return false;
@@ -302,10 +317,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
+    resetLocalPreview();
     resetEventInspectorDraft();
     setError(null);
     setNotice({ tone: "success", message: "Unsaved changes reverted." });
-  }, [resetEventInspectorDraft]);
+  }, [resetEventInspectorDraft, resetLocalPreview]);
 
   const saveForNavigation = useCallback(async () => {
     if (await requiresLiveImpactConfirmation()) {
@@ -362,27 +378,25 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   function updateDocument(update: (document: AlertEditorDocument) => AlertEditorDocument) {
     setEditor((current) => current === null ? null : applyEditorUpdate(current, update));
-    setPreview(false);
-    setPreviewPlaying(false);
-    setPreviewElapsedMs(0);
+    resetLocalPreview();
     setNotice(null);
   }
 
   function updatePriorityGroups(update: Parameters<typeof applyPriorityGroupUpdate>[1]) {
     setEditor((current) => current === null ? null : applyPriorityGroupUpdate(current, update));
-    setPreview(false);
-    setPreviewPlaying(false);
-    setPreviewElapsedMs(0);
+    resetLocalPreview();
     setNotice(null);
   }
 
   function undo() {
     setEditor((current) => current === null ? null : undoEditorUpdate(current));
+    resetLocalPreview();
     resetEventInspectorDraft();
   }
 
   function redo() {
     setEditor((current) => current === null ? null : redoEditorUpdate(current));
+    resetLocalPreview();
     resetEventInspectorDraft();
   }
 
@@ -443,12 +457,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setSampleId(sample.id);
     setSampleDraft(JSON.stringify(sample.payload, null, 2));
     setSampleError(validateAlertSamplePayload(document.eventType, sample.payload));
-    setPreview(false);
-    setPreviewPlaying(false);
-    setPreviewElapsedMs(0);
+    resetLocalPreview();
   }
 
-  function previewLocally() {
+  async function previewLocally() {
     if (samplePayload === null || document === null) {
       setSampleError("Sample payload must be a valid JSON object.");
       return;
@@ -459,17 +471,54 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSampleError(validationError);
       return;
     }
-    setPreview(true);
-    setPreviewPlaying(true);
-    setPreviewElapsedMs(0);
-    setPreviewRunId((current) => current + 1);
-    setNotice({ tone: "success", message: "Local preview is running." });
-    void playPreviewMedia(document, samplePayload);
+    resetLocalPreview();
+    const requestId = previewRequestIdRef.current;
+    setError(null);
+    setNotice(null);
+    const templateContext = createAlertTemplateContext({ eventType: document.eventType, samplePayload });
+    const textLayers = document.layers.filter(
+      (layer): layer is Extract<AlertLayer, { type: "text" }> => layer.visible && layer.type === "text"
+    );
+    const ttsLayers = previewIncludeTts
+      ? document.layers.filter(
+          (layer): layer is Extract<AlertLayer, { type: "tts" }> => layer.visible && layer.type === "tts" && layer.enabled
+        )
+      : [];
+    try {
+      const [textResults, ttsResults] = await Promise.all([
+        Promise.all(textLayers.map(async (layer) => ({
+          layerId: layer.id,
+          text: (await props.managementApi.previewModeration({
+            target: "rendered",
+            text: renderTemplateValue(layer.template, templateContext)
+          })).text
+        }))),
+        Promise.all(ttsLayers.map(async (layer) => ({
+          layerId: layer.id,
+          text: (await props.managementApi.previewModeration({
+            target: "tts",
+            text: renderTemplateValue(layer.template, templateContext)
+          })).text
+        })))
+      ]);
+      if (previewRequestIdRef.current !== requestId) return;
+      const nextPreviewTextByLayerId = Object.fromEntries(textResults.map((result) => [result.layerId, result.text]));
+      const previewTtsByLayerId = Object.fromEntries(ttsResults.map((result) => [result.layerId, result.text]));
+      setPreviewTextByLayerId(nextPreviewTextByLayerId);
+      setPreview(true);
+      setPreviewPlaying(true);
+      setPreviewRunId((current) => current + 1);
+      setNotice({ tone: "success", message: "Local preview is running." });
+      void playPreviewMedia(document, previewTtsByLayerId);
+    } catch (cause) {
+      if (previewRequestIdRef.current !== requestId) return;
+      resetLocalPreview();
+      showActionError(moderationPreviewError(cause));
+    }
   }
 
-  async function playPreviewMedia(currentDocument: AlertEditorDocument, payload: Record<string, unknown>) {
+  async function playPreviewMedia(currentDocument: AlertEditorDocument, previewTtsByLayerId: Readonly<Record<string, string>>) {
     try {
-      const templateContext = createAlertTemplateContext({ eventType: currentDocument.eventType, samplePayload: payload });
       if (previewIncludeAudio) {
         const audioLayers = currentDocument.layers.filter(
           (layer): layer is Extract<AlertLayer, { type: "audio" }> => layer.visible && layer.type === "audio"
@@ -491,7 +540,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         currentDocument.layers.filter(
           (layer): layer is Extract<AlertLayer, { type: "tts" }> => layer.visible && layer.type === "tts" && layer.enabled
         ).forEach((layer) => {
-          speechSynthesis.speak(new SpeechSynthesisUtterance(renderTemplateValue(layer.template, templateContext)));
+          speechSynthesis.speak(new SpeechSynthesisUtterance(previewTtsByLayerId[layer.id] ?? ""));
         });
       }
     } catch (cause) {
@@ -770,6 +819,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             preview={preview}
             previewElapsedMs={previewElapsedMs}
             previewRunId={previewRunId}
+            previewTextByLayerId={previewTextByLayerId}
             profileId={profileId}
             samplePayload={samplePayload ?? {}}
             selectedLayerId={selectedLayerId}
@@ -846,9 +896,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                   setSampleDraft(value);
                   const parsed = parseSample(value);
                   setSampleError(parsed === null ? "Sample payload must be a valid JSON object." : validateAlertSamplePayload(document.eventType, parsed));
-                  setPreview(false);
-                  setPreviewPlaying(false);
-                  setPreviewElapsedMs(0);
+                  resetLocalPreview();
                 }}
                 onSend={() => void sendTest()}
                 sampleDraft={sampleDraft}
@@ -1699,6 +1747,23 @@ function actionableError(summary: string, cause: unknown, nextStep: string): Rep
     severity: "error",
     occurredAt: new Date().toISOString(),
     referenceId,
+    correction: null
+  };
+}
+
+function moderationPreviewError(cause: unknown): ReportableActionError {
+  const referenceId = cause instanceof ManagementHttpError && cause.referenceId !== null
+    ? cause.referenceId
+    : cause instanceof Error
+      ? /\b(?:ref|err)[_-][A-Za-z0-9_-]+\b/u.exec(cause.message)?.[0] ?? null
+      : null;
+  return {
+    summary: "Local preview could not be prepared",
+    cause: "The moderation service did not return a safe preview.",
+    nextStep: "Confirm the local service is running, then replay the preview.",
+    severity: "error",
+    occurredAt: new Date().toISOString(),
+    referenceId: referenceId ?? `ui_${globalThis.crypto?.randomUUID?.() ?? Date.now().toString(36)}`,
     correction: null
   };
 }

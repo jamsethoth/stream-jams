@@ -61,6 +61,7 @@ export interface ConfigurationBackupServiceOptions {
   readonly getAvailableBytes: () => Promise<number>;
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
+  readonly reloadRuntimeConfiguration?: () => void;
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
     deleteTokenSecrets(accountId: string): Promise<void>;
@@ -387,14 +388,18 @@ export class ConfigurationBackupService {
     const restorePoint = this.#options.snapshotRepository.captureRestorePoint();
     const currentAssets = await this.#options.assetRepository.list();
     let safetyBackupPath: string;
+    let previousConfig: AppConfig;
     try {
-      safetyBackupPath = await this.#options.safetyBackupStore.write(await this.exportArchive());
+      const safetyArchive = await this.exportArchive();
+      previousConfig = appConfigSchema.parse(safetyArchive.configuration.appConfig);
+      safetyBackupPath = await this.#options.safetyBackupStore.write(safetyArchive);
     } catch (cause) {
       throw this.#restoreError("SAFETY_BACKUP_FAILED", "Safety backup could not be created", cause instanceof Error ? cause.message : "The backup location could not be written.", "Check storage permissions and free space, then try restore again.", cause);
     }
 
     const stagedAssets: AssetRecord[] = [];
     const restoredConfig = appConfigSchema.parse(request.archive.configuration.appConfig);
+    let appConfigUpdated = false;
     try {
       for (const asset of request.archive.assets) {
         const bytes = Buffer.from(asset.dataBase64, "base64");
@@ -432,27 +437,45 @@ export class ConfigurationBackupService {
         logging: restoredConfig.logging,
         playback: restoredConfig.playback
       });
+      appConfigUpdated = true;
+      this.#options.reloadRuntimeConfiguration?.();
     } catch (cause) {
-      let rollbackFailure: unknown;
+      const rollbackFailures: string[] = [];
       try {
         this.#options.snapshotRepository.restoreRestorePoint(restorePoint);
       } catch (error) {
-        rollbackFailure = error;
+        rollbackFailures.push(`Operational database rollback failed: ${errorMessage(error)}`);
+      }
+      if (appConfigUpdated) {
+        try {
+          await this.#options.configStore.updateConfig({
+            server: previousConfig.server,
+            logging: previousConfig.logging,
+            playback: previousConfig.playback
+          });
+        } catch (error) {
+          rollbackFailures.push(`Application config rollback failed: ${errorMessage(error)}`);
+        }
+      }
+      try {
+        this.#options.reloadRuntimeConfiguration?.();
+      } catch (error) {
+        rollbackFailures.push(`Runtime configuration rollback failed: ${errorMessage(error)}`);
       }
       const cleanupFailures = settledFailures(
         await Promise.allSettled(stagedAssets.map((record) => this.#options.assetStore.delete(record.storagePath)))
       );
       const failureDetails = [
         cause instanceof Error ? cause.message : "Configuration replacement did not complete.",
-        ...(rollbackFailure === undefined ? [] : [`Operational database rollback also failed: ${errorMessage(rollbackFailure)}`]),
+        ...rollbackFailures,
         ...(cleanupFailures.length === 0 ? [] : [`${cleanupFailures.length} staged asset file(s) could not be removed.`])
       ];
       throw this.#restoreError(
         "RESTORE_FAILED",
         "Configuration restore failed",
         failureDetails.join(" "),
-        rollbackFailure === undefined
-          ? `The previous database state was restored. Resolve the reported cause, then validate and retry. Safety backup: ${safetyBackupPath}.`
+        rollbackFailures.length === 0
+          ? `The previous database and application config state was restored. Resolve the reported cause, then validate and retry. Safety backup: ${safetyBackupPath}.`
           : `Stop Stream Jams and preserve its data directory. Use the reference ID with Diagnostics before attempting manual recovery from ${safetyBackupPath}.`,
         cause
       );

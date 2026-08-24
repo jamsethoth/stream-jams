@@ -42,11 +42,15 @@ Alternative considered: restore the old Settings form. Rejected because the appr
 
 The UI can submit a session-only sample to the same pure moderation function and display the sanitized result plus action types/counts. Neither server logs nor persistence retain the sample or original viewer text. Existing preview, Send test, live resolver, and TTS provider paths all use the same active service instance.
 
+The live alert resolver owns moderation before instructions leave the core resolution boundary. Playback dispatch uses an explicit already-moderated TTS service operation for those resolved instructions, so provider validation and execution do not apply the policy a second time. Direct provider previews and tests continue to moderate their raw input through the normal TTS service operation.
+
 Alternative considered: implement a separate browser filter. Rejected because it would drift from live enforcement.
 
 ### Include policy in configuration backup
 
 The new table joins the existing allowlisted snapshot and restore transaction. It contains configuration, not credentials or viewer data. Restore validates the policy before mutation and the runtime reloads it after successful replacement.
+
+Restore holds the runtime maintenance gate for the whole operation, and moderation-policy writes are rejected with a retryable conflict while that gate is active. The pre-restore safety archive also supplies the app-config rollback value; if the final runtime reload fails, database state, application config, and live moderation state are each restored before failure is reported.
 
 ## Risks / Trade-offs
 

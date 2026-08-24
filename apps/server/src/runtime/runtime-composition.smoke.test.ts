@@ -44,6 +44,114 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("restores the saved moderation policy before event intake synchronization can begin", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const configStore = new StaticConfigStore(createConfig(testRoot));
+    const firstComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore,
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(firstComposition);
+    const firstSession = await firstComposition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const firstHeaders = managementAuthHeaders(firstSession);
+    const saved = await firstComposition.app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers: firstHeaders,
+      payload: {
+        renderedText: { maxLength: 96, blockedTerms: ["Spoiler"], stripUrls: true },
+        ttsText: { maxLength: 72, blockedTerms: ["Loud"], stripUrls: false }
+      }
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await firstComposition.close();
+    runtimeCompositions.splice(runtimeCompositions.indexOf(firstComposition), 1);
+
+    const secondComposition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore,
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(secondComposition);
+    const secondSession = await secondComposition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const restored = await secondComposition.app.inject({
+      method: "GET",
+      url: "/moderation/settings",
+      headers: managementAuthHeaders(secondSession)
+    });
+
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(restored.json()).toEqual(saved.json());
+    await expect(secondComposition.syncEventSourceRuntime()).resolves.toBeUndefined();
+  });
+
+  it("reloads the restored moderation policy without restarting the runtime", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const headers = managementAuthHeaders(session);
+    const collection = await composition.app.inject({
+      method: "POST",
+      url: "/alert-collections",
+      headers,
+      payload: { name: "Backup policy", enabled: true }
+    });
+    const backup = await composition.app.inject({ method: "GET", url: "/management/settings/backup", headers });
+    const changed = await composition.app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers,
+      payload: {
+        renderedText: { maxLength: 96, blockedTerms: ["Changed"], stripUrls: true },
+        ttsText: { maxLength: 72, blockedTerms: ["Changed TTS"], stripUrls: false }
+      }
+    });
+    expect(collection.statusCode, collection.body).toBe(201);
+    expect(backup.statusCode, backup.body).toBe(200);
+    expect(changed.statusCode, changed.body).toBe(200);
+    const preflight = await composition.app.inject({
+      method: "POST",
+      url: "/management/settings/backup/preflight",
+      headers,
+      payload: backup.json()
+    });
+    const preflightBody = preflight.json() as { readonly archiveId: string };
+    const restored = await composition.app.inject({
+      method: "POST",
+      url: "/management/settings/backup/restore",
+      headers,
+      payload: { archive: backup.json(), archiveId: preflightBody.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true }
+    });
+    const active = await composition.app.inject({ method: "GET", url: "/moderation/settings", headers });
+
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(active.json()).toEqual({
+      renderedText: { maxLength: 240, blockedTerms: [], stripUrls: false },
+      ttsText: { maxLength: 180, blockedTerms: [], stripUrls: true }
+    });
+  });
+
   it("wires the authenticated variation sibling context through the real runtime", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({
@@ -1160,6 +1268,15 @@ describe("runtime app composition smoke", () => {
       }
     });
     expect(safety.statusCode, safety.body).toBe(200);
+    const moderation = await composition.app.inject({
+      method: "PATCH",
+      url: "/moderation/settings",
+      headers: authHeaders,
+      payload: {
+        ttsText: { maxLength: 180, blockedTerms: ["badword", "rat"], stripUrls: true }
+      }
+    });
+    expect(moderation.statusCode, moderation.body).toBe(200);
 
     await composition.app.inject({ method: "GET", url: "/management/home", headers: authHeaders });
     const rules = (await composition.app.inject({
@@ -1188,7 +1305,7 @@ describe("runtime app composition smoke", () => {
           providerId: "speakerbot",
           order: document.layers.length,
           animation: document.layers[0]!.animation,
-          template: "Welcome {actor.displayName}"
+          template: "Welcome badword"
         }
       ],
       targetProfiles: document.targetProfiles.map((profile) => ({
@@ -1214,7 +1331,7 @@ describe("runtime app composition smoke", () => {
       expect.objectContaining({
         request: "Speak",
         voice: "EventVoice",
-        message: "Welcome Viewer",
+        message: "Welcome [moderated]",
         badWordFilter: true
       })
     ]);

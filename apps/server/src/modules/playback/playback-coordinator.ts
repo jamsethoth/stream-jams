@@ -65,7 +65,7 @@ export interface PlaybackCoordinatorDependencies {
   readonly assetRepository?: Pick<AssetRepository, "findManyByIds">;
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
   readonly findEditorDocuments?: (alertIds: readonly string[]) => Promise<ReadonlyMap<string, AlertEditorDocument>>;
-  readonly ttsService?: Pick<TtsService, "createPlaybackInstruction">;
+  readonly ttsService?: Pick<TtsService, "createPlaybackInstructionFromModeratedText">;
   readonly logger?: Pick<Logger, "error">;
   readonly generateReferenceId?: () => string;
   readonly persistPlaybackSafetyState?: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
@@ -84,7 +84,7 @@ export class PlaybackCoordinator {
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
   readonly #findEditorDocuments:
     ((alertIds: readonly string[]) => Promise<ReadonlyMap<string, AlertEditorDocument>>) | null;
-  readonly #ttsService: Pick<TtsService, "createPlaybackInstruction"> | null;
+  readonly #ttsService: Pick<TtsService, "createPlaybackInstructionFromModeratedText"> | null;
   readonly #logger: Pick<Logger, "error"> | null;
   readonly #generateReferenceId: (() => string) | null;
   readonly #persistPlaybackSafetyState: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
@@ -210,7 +210,7 @@ export class PlaybackCoordinator {
         continue;
       }
       try {
-        await this.#ttsService.createPlaybackInstruction({
+        await this.#ttsService.createPlaybackInstructionFromModeratedText({
           providerId,
           text: tts.text,
           metadata: {

@@ -4,6 +4,7 @@ import {
   alertEditorDocumentSchema,
   alertRuleSchema,
   assetMetadataUpdateInputSchema,
+  normalizeModerationSettings,
   assetRecordSchema,
   overlayPurposeSchema,
   overlayModuleConfigSchema,
@@ -14,7 +15,8 @@ import {
   registeredProviderDetailSchema,
   targetProfileIdSchema,
   type ConfigurationBackupArchive,
-  type ConfigurationBackupOutput
+  type ConfigurationBackupOutput,
+  type ModerationSettings
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
 import type { ConfigurationSnapshotRepository } from "./configuration-backup-service.js";
@@ -53,7 +55,21 @@ const tableDefinitions = [
   table("alert_set_metadata", ["set_id", "starter", "starter_review_state", "landscape_enabled", "landscape_review_state", "vertical_enabled", "vertical_review_state"], ["set_id"]),
   table("alert_rule_management_metadata", ["rule_id", "provider_kind", "review_state", "target_profile_ids_json"], ["rule_id"], ["target_profile_ids_json"]),
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
-  table("alert_editor_documents", ["alert_id", "document_json", "updated_at"], ["alert_id"], ["document_json"])
+  table("alert_editor_documents", ["alert_id", "document_json", "updated_at"], ["alert_id"], ["document_json"]),
+  table(
+    "alert_moderation_settings",
+    [
+      "id",
+      "rendered_max_length",
+      "rendered_blocked_terms_json",
+      "rendered_strip_urls",
+      "tts_max_length",
+      "tts_blocked_terms_json",
+      "tts_strip_urls"
+    ],
+    ["id"],
+    ["rendered_blocked_terms_json", "tts_blocked_terms_json"]
+  )
 ] as const satisfies readonly TableDefinition[];
 
 const definitionsByName = new Map(tableDefinitions.map((definition) => [definition.name, definition]));
@@ -197,6 +213,25 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
           }
           continue;
         }
+        if (definition.name === "alert_moderation_settings") {
+          const placeholders = definition.columns.map(() => "?").join(", ");
+          const statement = this.connection.prepare(
+            `INSERT INTO alert_moderation_settings (${definition.columns.join(", ")}, updated_at) VALUES (${placeholders}, CURRENT_TIMESTAMP)`
+          );
+          for (const row of input.tables.alert_moderation_settings ?? []) {
+            const settings = normalizeModerationSettingsRow(row);
+            statement.run(
+              row.id as SQLInputValue,
+              settings.renderedText.maxLength,
+              JSON.stringify(settings.renderedText.blockedTerms),
+              settings.renderedText.stripUrls ? 1 : 0,
+              settings.ttsText.maxLength,
+              JSON.stringify(settings.ttsText.blockedTerms),
+              settings.ttsText.stripUrls ? 1 : 0
+            );
+          }
+          continue;
+        }
         const placeholders = definition.columns.map(() => "?").join(", ");
         const statement = this.connection.prepare(`INSERT INTO ${definition.name} (${definition.columns.join(", ")}) VALUES (${placeholders})`);
         for (const row of input.tables[definition.name] ?? []) {
@@ -285,6 +320,33 @@ function visitJson(value: unknown, path: readonly string[]): string | null {
 
 function validateDomainRows(tables: BackupConfiguration["tables"]): readonly string[] {
   const errors: string[] = [];
+
+  const moderationRows = tables.alert_moderation_settings ?? [];
+  if (moderationRows.length !== 1) {
+    errors.push("alert_moderation_settings must contain exactly one row.");
+  }
+  for (const [index, row] of moderationRows.entries()) {
+    const renderedBlockedTerms = parseJsonValue(row.rendered_blocked_terms_json);
+    const ttsBlockedTerms = parseJsonValue(row.tts_blocked_terms_json);
+    if (
+      row.id !== 1 ||
+      row.rendered_strip_urls !== 0 && row.rendered_strip_urls !== 1 ||
+      row.tts_strip_urls !== 0 && row.tts_strip_urls !== 1 ||
+      !Array.isArray(renderedBlockedTerms) ||
+      renderedBlockedTerms.some((term) => typeof term !== "string") ||
+      !Array.isArray(ttsBlockedTerms) ||
+      ttsBlockedTerms.some((term) => typeof term !== "string")
+    ) {
+      errors.push(`alert_moderation_settings[${index}] contains invalid moderation settings.`);
+      if (row.id !== 1) errors.push(`alert_moderation_settings[${index}].id must equal 1.`);
+      continue;
+    }
+    try {
+      normalizeModerationSettingsRow(row);
+    } catch {
+      errors.push(`alert_moderation_settings[${index}] contains invalid moderation settings.`);
+    }
+  }
 
   for (const [index, row] of (tables.overlay_module_config ?? []).entries()) {
     pushSchemaError(errors, `overlay_module_config[${index}]`, overlayModuleConfigSchema.safeParse({
@@ -435,6 +497,21 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
   }
 
   return errors;
+}
+
+function normalizeModerationSettingsRow(row: BackupRow): ModerationSettings {
+  return normalizeModerationSettings({
+    renderedText: {
+      maxLength: row.rendered_max_length as number,
+      blockedTerms: parseJsonValue(row.rendered_blocked_terms_json) as readonly string[],
+      stripUrls: row.rendered_strip_urls === 1
+    },
+    ttsText: {
+      maxLength: row.tts_max_length as number,
+      blockedTerms: parseJsonValue(row.tts_blocked_terms_json) as readonly string[],
+      stripUrls: row.tts_strip_urls === 1
+    }
+  });
 }
 
 function validateUniqueConstraints(tables: BackupConfiguration["tables"]): readonly string[] {

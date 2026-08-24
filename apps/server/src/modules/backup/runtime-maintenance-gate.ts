@@ -25,6 +25,16 @@ export class RuntimeMaintenanceGate {
     }
   }
 
+  runConfigurationMutation<T>(work: () => T): T {
+    if (this.#maintenanceActive) {
+      throw new RuntimeMaintenanceUnavailableError(
+        "Configuration maintenance is active; configuration changes are temporarily blocked."
+      );
+    }
+
+    return work();
+  }
+
   async runMaintenance<T>(work: () => Promise<T>): Promise<T> {
     if (this.#maintenanceActive || this.#activeIntakeCount > 0) {
       throw new RuntimeMaintenanceUnavailableError("Configuration maintenance cannot start while event intake is active.");
