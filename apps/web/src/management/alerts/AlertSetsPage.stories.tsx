@@ -177,7 +177,9 @@ export const CreateAlert: Story = {
     await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
     await expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create alert" }));
-    await waitFor(() => expect(args.onEditAlert).toHaveBeenCalledWith(expect.objectContaining({ id: "alert-cheer" })));
+    await waitFor(() => expect(createAlert).toHaveBeenCalled());
+    await expect(args.onEditAlert).not.toHaveBeenCalled();
+    await expect(canvas.getByText("New cheer created in Cheer.")).toBeVisible();
   }
 };
 
@@ -205,6 +207,20 @@ export const DefaultWithVariations: Story = {
     const variation = await canvas.findByRole("row", { name: /Large raid/u });
     await expect(variation).toHaveClass("alert-sets-page__variation-row");
     await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
+  }
+};
+
+export const GroupedInventoryStates: Story = {
+  args: { managementApi: api([activeSet], detailWithGroupedInventory()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: /Collapse Follow/u })).toHaveTextContent("2 defaults");
+    await expect(canvas.getByText("Weight 3 within the matching priority group; observed selection depends on the matching sample.")).toBeVisible();
+    await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: /Collapse Future celebration/u })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /Add alert for Future celebration/u })).not.toBeInTheDocument();
+    await userEvent.type(canvas.getByLabelText("Search alerts"), "large community");
+    await expect(canvas.getByRole("button", { name: /Collapse Community gift/u })).toHaveAttribute("aria-expanded", "true");
   }
 };
 
@@ -390,6 +406,40 @@ function detailWithVariation(): AlertSetDetail {
       raid,
       { ...raid, id: "variant-large-raid", parentAlertId: raid.id, name: "Large raid", kind: "variation", enabled: false, reviewState: "needs-review" },
       ...source.inventory.slice(2)
+    ]
+  };
+}
+
+function detailWithGroupedInventory(): AlertSetDetail {
+  const source = detail(activeSet);
+  const follow = source.inventory[0]!;
+  const raid = source.inventory[1]!;
+  const community = alert("alert-community", "Community gift", "community_gift", activeSet.id, true, "ready");
+  return {
+    ...source,
+    overview: {
+      ...source.overview,
+      validationIssues: [{
+        ...issue("community-warning", "warning", "Review the large community variation."),
+        eventType: "community_gift"
+      }]
+    },
+    inventory: [
+      ...source.inventory,
+      { ...follow, id: "alert-follow-secondary", name: "Backup follower" },
+      community,
+      {
+        ...community,
+        id: "variant-large-community",
+        parentAlertId: community.id,
+        name: "Large community gift",
+        kind: "variation",
+        conditions: [{ field: "total", operator: "min", value: 10 }],
+        weight: 3,
+        priority: 1
+      },
+      { ...raid, id: "variant-orphan-raid", parentAlertId: "missing-raid", name: "Orphan raid", kind: "variation" },
+      { ...follow, id: "alert-future", eventType: "future_celebration", name: "Future celebration" }
     ]
   };
 }

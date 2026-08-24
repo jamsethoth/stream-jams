@@ -14,9 +14,9 @@
 
 ## 3. Alert Sets Event Disclosures
 
-- [ ] 3.1 Add failing Alert Sets tests for disclosure semantics, initial non-empty expansion, known empty-event Add alert, unknown-event display without Add, group counts/status, no event toggle, every existing row action, mutation focus restoration, loading/error/empty/no-match states, and filter-state restoration.
-- [ ] 3.2 Replace the flat inventory table with event sections that use the pure projections, existing mutation/dialog callbacks, native disclosure controls, and stable row IDs; successful global and event-scoped creation stays on Alert Sets and restores row focus.
-- [ ] 3.3 Update Alert Sets styles and stories for multiple defaults, conditional variations, empty and unknown events, collapsed validation summaries, filtering, narrow stacked rows, request failure, and creation failure using existing tokens and components.
+- [x] 3.1 Add failing Alert Sets tests for disclosure semantics, initial non-empty expansion, known empty-event Add alert, unknown-event display without Add, group counts/status, no event toggle, every existing row action, mutation focus restoration, loading/error/empty/no-match states, and filter-state restoration.
+- [x] 3.2 Replace the flat inventory table with event sections that use the pure projections, existing mutation/dialog callbacks, native disclosure controls, and stable row IDs; successful global and event-scoped creation stays on Alert Sets and restores row focus.
+- [x] 3.3 Update Alert Sets styles and stories for multiple defaults, conditional variations, empty and unknown events, collapsed validation summaries, filtering, narrow stacked rows, request failure, and creation failure using existing tokens and components.
 
 ## 4. Focused Editor Event Navigation
 
