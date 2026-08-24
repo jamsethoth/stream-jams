@@ -1116,6 +1116,69 @@ describe("AlertEditorPage", () => {
     expect(onOpenAlert).toHaveBeenCalledWith("alert-raid", "vertical");
   });
 
+  it("groups editor navigation by event while preserving disclosure, search, and route identity", async () => {
+    const user = userEvent.setup();
+    const document = editorDocument();
+    const source = alertSetDetail();
+    const raid = source.inventory[1]!;
+    const detail: AlertSetDetail = {
+      ...source,
+      inventory: [
+        ...source.inventory,
+        { ...raid, id: "variant-large-raid", parentAlertId: raid.id, name: "Large raid", kind: "variation" },
+        { ...raid, id: "variant-orphan-raid", parentAlertId: "missing-raid", name: "Orphan raid", kind: "variation" },
+        { ...source.inventory[0]!, id: "alert-future", eventType: "future_celebration", name: "Future celebration" }
+      ]
+    };
+    const onOpenAlert = vi.fn();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertSet: vi.fn(async () => detail),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={onOpenAlert}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    expect(await screen.findByRole("button", { name: /Collapse Follow/u })).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
+    expect(screen.getByRole("button", { name: /Expand Resubscription/u })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: /Collapse future_celebration/u })).toBeInTheDocument();
+    expect(screen.getByText("Variation of New raid")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Collapse Raid/u }));
+    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "large raid");
+    expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");
+    await user.clear(screen.getByRole("searchbox", { name: "Search alerts" }));
+    expect(screen.getByRole("button", { name: /Expand Raid/u })).toHaveAttribute("aria-expanded", "false");
+
+    await user.type(screen.getByRole("textbox", { name: "Message template" }), " unsaved");
+    const emptyDisclosure = screen.getByRole("button", { name: /Expand Resubscription/u });
+    emptyDisclosure.focus();
+    await user.keyboard("{Enter}");
+    expect(emptyDisclosure).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("dialog", { name: /unsaved changes/u })).not.toBeInTheDocument();
+    expect(onOpenAlert).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /Expand Raid/u }));
+    await user.click(screen.getByRole("button", { name: /Large raid/u }));
+    expect(onOpenAlert).toHaveBeenCalledWith("variant-large-raid", "landscape");
+  });
+
   it("uses the loaded document set when set-detail loading fails", async () => {
     const onBack = vi.fn();
     render(

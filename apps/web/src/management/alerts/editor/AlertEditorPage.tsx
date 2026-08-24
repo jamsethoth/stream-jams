@@ -18,6 +18,7 @@ import {
   validateAlertSamplePayload,
   type ActionableManagementError,
   type AlertEditorDocument,
+  type AlertInventoryRow,
   type AlertLayer,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
@@ -38,6 +39,7 @@ import { StatusBadge } from "../../foundation/StatusBadge.js";
 import type { ManagementApi } from "../../management-api.js";
 import { ManagementHttpError } from "../../management-http-client.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
+import { buildAlertEventGroups, filterAlertEventGroups } from "../alert-event-groups.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
 import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventInspector.js";
 import { RgbaColorControl } from "./RgbaColorControl.js";
@@ -109,6 +111,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTab>("layers");
   const [search, setSearch] = useState("");
+  const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(new Set());
+  const disclosureSetId = useRef<string | null>(null);
   const [canvasViews, setCanvasViews] = useState<Partial<Record<TargetProfileId, CanvasViewState>>>({});
   const [fitRequestId, setFitRequestId] = useState(0);
   const [showSafeArea, setShowSafeArea] = useState(true);
@@ -367,10 +371,29 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       ? null
       : evaluateAlertEditorDraftSample(editor, variationContext, samplePayload)
   ), [documentConditionError, editor, sampleError, samplePayload, variationContext]);
-  const visibleAlerts = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return (setDetail?.inventory ?? []).filter((alert) => query === "" || `${alert.name} ${alert.eventType}`.toLowerCase().includes(query));
-  }, [search, setDetail]);
+  const eventGroups = useMemo(() => buildAlertEventGroups(
+    setDetail?.inventory ?? [],
+    setDetail?.overview.validationIssues ?? []
+  ), [setDetail]);
+  const filteredEventGroups = useMemo(() => filterAlertEventGroups(eventGroups, { query: search }), [eventGroups, search]);
+  const filteredAlerts = useMemo(() => filteredEventGroups.groups.flatMap((group) => [
+    ...group.defaults.flatMap(({ alert, variations }) => [alert, ...variations]),
+    ...group.orphanVariations
+  ]), [filteredEventGroups.groups]);
+  const selectedEventKey = document === null ? null : `event:${document.eventType}`;
+  const expandedEventKeys = useMemo(() => new Set([
+    ...manualExpandedEventKeys,
+    ...filteredEventGroups.forcedOpenKeys,
+    ...(selectedEventKey === null ? [] : [selectedEventKey])
+  ]), [filteredEventGroups.forcedOpenKeys, manualExpandedEventKeys, selectedEventKey]);
+  useEffect(() => {
+    const setId = setDetail?.overview.id;
+    if (setId === undefined || disclosureSetId.current === setId) return;
+    disclosureSetId.current = setId;
+    setManualExpandedEventKeys(new Set(eventGroups
+      .filter((group) => group.defaultCount + group.variationCount > 0)
+      .map(({ key }) => key)));
+  }, [eventGroups, setDetail?.overview.id]);
   const validationIssues = useMemo(() => (setDetail?.overview.validationIssues ?? []).filter((issue) =>
     (issue.alertId === null || issue.alertId === props.alertId) &&
     (issue.targetProfileId === null || issue.targetProfileId === profileId)
@@ -761,20 +784,59 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <div><strong>{setDetail?.overview.name ?? "Alert set"}</strong><span>{setDetail?.inventory.length ?? 0} alerts</span></div>
           </div>
           <label className="alert-editor-page__search"><span>Search alerts</span><input aria-label="Search alerts" onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
-          <nav aria-label="Alert editor selection">
-            {visibleAlerts.map((alert) => (
-              <button
-                aria-current={alert.id === document.id ? "page" : undefined}
-                key={alert.id}
-                onClick={() => props.onOpenAlert(alert.id, profileId)}
-                type="button"
-              >
-                <span>{alert.name}</span>
-                <small>{formatEventType(alert.eventType)} / {alert.enabled ? "Enabled" : "Disabled"}</small>
-              </button>
-            ))}
+          <nav aria-label="Alert editor selection" className="alert-editor-page__event-navigation">
+            {filteredEventGroups.groups.map((group) => {
+              const expanded = expandedEventKeys.has(group.key);
+              const contentId = editorEventGroupContentId(group.key);
+              return (
+                <section className="alert-editor-page__event-group" key={group.key}>
+                  <button
+                    aria-controls={contentId}
+                    aria-expanded={expanded}
+                    aria-label={`${expanded ? "Collapse" : "Expand"} ${group.label} alerts`}
+                    className="alert-editor-page__event-toggle"
+                    onClick={() => setManualExpandedEventKeys((current) => {
+                      const next = new Set(current);
+                      if (next.has(group.key)) next.delete(group.key); else next.add(group.key);
+                      return next;
+                    })}
+                    type="button"
+                  >
+                    <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                    <span><strong>{group.label}</strong><small>{group.defaultCount} defaults · {group.variationCount} variations</small></span>
+                  </button>
+                  {expanded ? (
+                    <div className="alert-editor-page__event-content" id={contentId}>
+                      {group.defaults.length === 0 && group.orphanVariations.length === 0 ? <p className="alert-editor-page__empty">No alerts configured.</p> : null}
+                      {group.defaults.map(({ alert, variations }) => (
+                        <div className="alert-editor-page__default-group" key={alert.id}>
+                          <AlertNavigationButton alert={alert} currentAlertId={document.id} onOpen={() => props.onOpenAlert(alert.id, profileId)} />
+                          {variations.map((variation) => (
+                            <AlertNavigationButton
+                              alert={variation}
+                              currentAlertId={document.id}
+                              key={variation.id}
+                              onOpen={() => props.onOpenAlert(variation.id, profileId)}
+                              parentName={alert.name}
+                            />
+                          ))}
+                        </div>
+                      ))}
+                      {group.orphanVariations.length === 0 ? null : (
+                        <section aria-label="Orphan variations" className="alert-editor-page__orphan-variations">
+                          <h4>Orphan variations</h4>
+                          {group.orphanVariations.map((alert) => (
+                            <AlertNavigationButton alert={alert} currentAlertId={document.id} key={alert.id} onOpen={() => props.onOpenAlert(alert.id, profileId)} />
+                          ))}
+                        </section>
+                      )}
+                    </div>
+                  ) : null}
+                </section>
+              );
+            })}
           </nav>
-          {visibleAlerts.length === 0 ? <p className="alert-editor-page__empty">No matching alerts.</p> : null}
+          {filteredEventGroups.groups.length === 0 ? <p className="alert-editor-page__empty">No matching alerts.</p> : null}
         </aside>
 
         <main className="alert-editor-page__stage">
@@ -870,7 +932,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               />
             ) : tab === "alert" ? (
               <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
-                setCopyDesignSourceId(visibleAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
+                setCopyDesignSourceId(filteredAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
             ) : (
@@ -1694,6 +1756,29 @@ function layerTypeLabel(type: AlertLayer["type"]): string {
 
 function formatEventType(value: string): string {
   return value.split("_").map(capitalize).join(" ");
+}
+
+function AlertNavigationButton({ alert, currentAlertId, onOpen, parentName }: {
+  readonly alert: AlertInventoryRow;
+  readonly currentAlertId: string;
+  readonly onOpen: () => void;
+  readonly parentName?: string;
+}) {
+  return (
+    <button
+      aria-current={alert.id === currentAlertId ? "page" : undefined}
+      className={alert.kind === "variation" ? "alert-editor-page__variation-link" : undefined}
+      onClick={onOpen}
+      type="button"
+    >
+      <span>{alert.name}</span>
+      <small>{parentName === undefined ? (alert.enabled ? "Enabled" : "Disabled") : `Variation of ${parentName}`}</small>
+    </button>
+  );
+}
+
+function editorEventGroupContentId(groupKey: string): string {
+  return `alert-editor-${groupKey.replace(/[^a-zA-Z0-9_-]/gu, "-")}`;
 }
 
 function profileLabel(profileId: TargetProfileId): string {

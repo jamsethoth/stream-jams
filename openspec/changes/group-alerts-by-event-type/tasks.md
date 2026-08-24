@@ -20,8 +20,8 @@
 
 ## 4. Focused Editor Event Navigation
 
-- [ ] 4.1 Add failing focused-editor tests for grouped navigation, selected-event forced expansion, route identity, search context, empty/unknown events, disclosure keyboard behavior, unsaved row switching, and disclosure toggling without a dirty-navigation prompt.
-- [ ] 4.2 Replace the flat navigation map with event disclosures derived from the shared projections while preserving current selection, copy-design choices, route switching, and the supported larger-screen requirement.
+- [x] 4.1 Add failing focused-editor tests for grouped navigation, selected-event forced expansion, route identity, search context, empty/unknown events, disclosure keyboard behavior, unsaved row switching, and disclosure toggling without a dirty-navigation prompt.
+- [x] 4.2 Replace the flat navigation map with event disclosures derived from the shared projections while preserving current selection, copy-design choices, route switching, and the supported larger-screen requirement.
 - [ ] 4.3 Update focused-editor stories and `management-alerts` Playwright coverage for grouped selection, variation parent context, filter clearing, create/duplicate/delete focus, set switching, and unsupported narrow viewport behavior.
 
 ## 5. Verification And Rollout

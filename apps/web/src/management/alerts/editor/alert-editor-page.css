@@ -223,13 +223,54 @@
   width: 100%;
 }
 
-.alert-editor-page__alerts nav {
+.alert-editor-page__event-navigation {
   display: grid;
-  gap: 2px;
+  gap: 6px;
   margin-top: 10px;
 }
 
-.alert-editor-page__alerts nav button {
+.alert-editor-page__event-group {
+  border-bottom: 1px solid var(--color-border);
+  display: grid;
+}
+
+.alert-editor-page__event-toggle {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: var(--color-text);
+  cursor: pointer;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: 16px minmax(0, 1fr);
+  min-height: 42px;
+  padding: 6px 3px;
+  text-align: left;
+  width: 100%;
+}
+
+.alert-editor-page__event-toggle > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.alert-editor-page__event-toggle small {
+  color: var(--color-text-muted);
+}
+
+.alert-editor-page__event-content,
+.alert-editor-page__default-group,
+.alert-editor-page__orphan-variations {
+  display: grid;
+  gap: 2px;
+}
+
+.alert-editor-page__event-content {
+  padding: 0 0 7px 16px;
+}
+
+.alert-editor-page__default-group > button,
+.alert-editor-page__orphan-variations > button {
   background: transparent;
   border: 1px solid transparent;
   border-left-width: 3px;
@@ -243,13 +284,31 @@
   width: 100%;
 }
 
-.alert-editor-page__alerts nav button:hover {
+.alert-editor-page__event-toggle:hover,
+.alert-editor-page__default-group > button:hover,
+.alert-editor-page__orphan-variations > button:hover {
   background: var(--color-surface-subtle);
 }
 
-.alert-editor-page__alerts nav button[aria-current="page"] {
+.alert-editor-page__default-group > button[aria-current="page"],
+.alert-editor-page__orphan-variations > button[aria-current="page"] {
   background: var(--color-accent-soft);
   border-left-color: var(--color-accent);
+}
+
+.alert-editor-page__variation-link {
+  margin-left: 10px;
+}
+
+.alert-editor-page__orphan-variations {
+  border-left: 2px solid var(--color-warning);
+  margin-top: 5px;
+  padding-left: 6px;
+}
+
+.alert-editor-page__orphan-variations h4 {
+  font-size: 12px;
+  margin: 4px 7px;
 }
 
 .alert-editor-page__stage {
