@@ -5,15 +5,17 @@
 
 ## 2. Pure Event Hierarchy And Filtering
 
-- [ ] 2.1 Add failing `alert-event-groups` tests for canonical order, multiple defaults, attached variations, empty events, unknown events, orphan retention, counts, enabled totals, and worst validation status.
-- [ ] 2.2 Implement `buildAlertEventGroups` over the existing catalog, rows, and issues without adding a management API or persisted group model.
-- [ ] 2.3 Add failing filter tests for event/default/variation matches, owning-default retention, status/profile filters, matching-versus-total counts, no-match state, and manual disclosure restoration inputs.
-- [ ] 2.4 Implement `filterAlertEventGroups` and the smallest shared summary helpers while reusing BL-004 matcher summaries instead of copying selection logic.
+- [ ] 2.1 Add failing management-contract and service tests for inventory-only unknown event strings plus saved conditions, weight, and priority defaults/population while canonical creation, persistence, editor, and runtime boundaries remain unchanged.
+- [ ] 2.2 Additively expand `AlertInventoryRow` and existing set-detail assembly without adding an endpoint, nested transport model, migration, or runtime matcher change.
+- [ ] 2.3 Add failing `alert-event-groups` tests for canonical order, multiple defaults, attached variations, empty events, unknown events, orphan retention, counts, enabled totals, and worst validation status.
+- [ ] 2.4 Implement `buildAlertEventGroups` over the existing catalog, rows, and issues without adding a management API or persisted group model.
+- [ ] 2.5 Add failing filter tests for event/default/variation matches, owning-default retention, status/profile filters, matching-versus-total counts, no-match state, and manual disclosure restoration inputs.
+- [ ] 2.6 Implement `filterAlertEventGroups` and the smallest shared summary helpers by reusing `formatAlertConditionSummary` and `buildAlertPriorityGroups`, and describe saved weight without calculating another playback probability.
 
 ## 3. Alert Sets Event Disclosures
 
-- [ ] 3.1 Add failing Alert Sets tests for disclosure semantics, initial non-empty expansion, empty-event Add alert, group counts/status, no event toggle, every existing row action, mutation focus restoration, loading/error/empty/no-match states, and filter-state restoration.
-- [ ] 3.2 Replace the flat inventory table with event sections that use the pure projections, existing mutation/dialog callbacks, native disclosure controls, and stable row IDs.
+- [ ] 3.1 Add failing Alert Sets tests for disclosure semantics, initial non-empty expansion, known empty-event Add alert, unknown-event display without Add, group counts/status, no event toggle, every existing row action, mutation focus restoration, loading/error/empty/no-match states, and filter-state restoration.
+- [ ] 3.2 Replace the flat inventory table with event sections that use the pure projections, existing mutation/dialog callbacks, native disclosure controls, and stable row IDs; successful global and event-scoped creation stays on Alert Sets and restores row focus.
 - [ ] 3.3 Update Alert Sets styles and stories for multiple defaults, conditional variations, empty and unknown events, collapsed validation summaries, filtering, narrow stacked rows, request failure, and creation failure using existing tokens and components.
 
 ## 4. Focused Editor Event Navigation

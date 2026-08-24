@@ -18,6 +18,8 @@ Alert Sets and focused-editor navigation SHALL organize alert rows into collapsi
 - **WHEN** stored alert rows contain an event type absent from the current canonical catalog
 - **THEN** those rows remain visible under an `Other` catalog group
 - **AND** no default or variation is deleted or hidden because its event is unknown
+- **AND** the unknown group offers no event-scoped creation action
+- **AND** creation, persistence, editor documents, and runtime matching remain restricted to canonical event types
 
 ### Requirement: Event Headers Summarize Existing Alert State
 Each event header SHALL derive default, variation, enabled, and highest validation-status summaries from the current inventory rows and validation issues and SHALL NOT introduce event-level runtime enablement.
@@ -29,8 +31,16 @@ Each event header SHALL derive default, variation, enabled, and highest validati
 
 #### Scenario: Conditional variation summary is shown
 - **WHEN** a variation has condition, priority-group, or relative-chance context
-- **THEN** its row uses the structured summaries supplied by variation authoring
-- **AND** this grouping capability does not calculate a second matching or probability result
+- **THEN** its row formats saved conditions with the existing condition-summary function
+- **AND** derives saved sibling priority groups with the existing priority-group builder
+- **AND** displays saved relative weight with wording that the result depends on the sample's eligible alerts
+- **AND** this grouping capability does not calculate a second matching or playback-probability result
+
+#### Scenario: Management inventory supplies summary inputs
+- **WHEN** the set-detail inventory is returned
+- **THEN** each flat row includes saved conditions, weight, and priority with defaults of `[]`, `1`, and `null`
+- **AND** only the management inventory event value supports defensive unknown strings
+- **AND** no new endpoint, nested group model, migration, or persisted grouping record is introduced
 
 #### Scenario: User looks for event enablement
 - **WHEN** an event group header is rendered
@@ -60,6 +70,11 @@ Event grouping SHALL reuse current create, duplicate, reset, enable/disable, pre
 #### Scenario: Alert is created from an event group
 - **WHEN** a user chooses Add alert from an event group and creation succeeds
 - **THEN** the existing starter-template workflow creates the default for that event
+- **AND** the owning group expands and focus moves to the new row
+
+#### Scenario: Alert is created from the global action
+- **WHEN** a user chooses the global Add alert action and creation succeeds
+- **THEN** Alert Sets refreshes without navigating to the editor
 - **AND** the owning group expands and focus moves to the new row
 
 #### Scenario: Default or variation is duplicated

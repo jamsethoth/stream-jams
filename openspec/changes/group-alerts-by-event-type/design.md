@@ -1,10 +1,10 @@
 ## Context
 
-The implemented alert model is set → canonical event type → one or more default `AlertRule` records → zero or more owned `AlertVariant` records. The management set-detail response already exposes each editor identity as a flat `AlertInventoryRow` with `eventType`, `kind`, and `parentAlertId`; `alertStarterTemplates` supplies canonical event order, group, label, and empty-event coverage.
+The implemented alert model is set → canonical event type → one or more default `AlertRule` records → zero or more owned `AlertVariant` records. The management set-detail response already exposes each editor identity as a flat `AlertInventoryRow` with event, kind, and parent identity; `alertStarterTemplates` supplies canonical event order, group, label, and empty-event coverage. This change additively carries each row's saved conditions, weight, and priority across that existing boundary so grouped list rows can reuse BL-004 summaries without loading editor documents one at a time.
 
 `AlertSetsPage` currently filters then renders one flat table through `orderAlertRows`. The focused editor filters then maps the same flat rows directly to navigation buttons. This repeats event labels, hides empty event types, and makes sibling variations harder to scan. Runtime matching, persistence, IDs, mutation services, and routes already express the correct ownership and do not need another hierarchy.
 
-`improve-alert-variation-authoring` owns priority groups, relative chance, typed conditions, and readable matcher summaries. This change starts after it lands and only organizes those existing rows and summaries.
+`improve-alert-variation-authoring` owns priority groups, relative selection behavior, typed conditions, and readable matcher summaries. This change starts after it lands and only organizes saved values and those existing summary functions. It does not calculate a playback probability from inventory data.
 
 ## Goals / Non-Goals
 
@@ -19,6 +19,7 @@ The implemented alert model is set → canonical event type → one or more defa
 **Non-Goals:**
 
 - Persisted event groups, a nested server DTO, another endpoint, event-level enablement, bulk actions, or matcher changes.
+- Broadening `AlertCreateInput`, persisted `AlertRule`, editor documents, or runtime matching beyond canonical `StreamEventType`.
 - Priority/weight/condition authoring, sample evaluation, typography, shape, moderation, operator, media, animation, playback, or timeline work.
 - A mobile focused-editor workspace, localization framework, or new component dependency.
 
@@ -50,6 +51,8 @@ interface AlertDefaultGroup {
 
 Canonical events follow catalog order. Stored defaults and variations retain inventory order. Unknown event types are appended under `Other`; an unattached variation remains visible in its event group with a diagnostic-safe orphan label instead of being discarded.
 
+At the management boundary only, `AlertInventoryRow.eventType` is a non-empty `string`, `conditions` defaults to `[]`, `weight` defaults to `1`, and `priority` defaults to `null`. The server populates those fields from the already loaded persisted rule/variant. `AlertCreateInput`, `AlertEditorDocument`, persisted `AlertRule`, and runtime matchers keep `StreamEventType`. Unknown inventory event values are defensive display-only state: they appear under `Other`, expose no event-scoped creation action, and never enter creation or runtime parsing.
+
 Alternative considered: add a nested management response. Rejected because all required identities and relationships are already loaded in one response and groups have no runtime behavior.
 
 ### Share projections, not a generic renderer
@@ -74,7 +77,7 @@ Each header is a native button with `aria-expanded` and `aria-controls`. Expande
 
 ### Keep current mutation contracts and restore focus in the web client
 
-Event-scoped Add alert calls the existing create dialog with the event type fixed. Global Add alert retains the grouped picker. Duplicate, reset, enable/disable, preview, test, and delete keep existing service behavior and confirmations.
+Event-scoped Add alert calls the existing create dialog with a known canonical event type fixed. Unknown groups expose no event-scoped creation action. Global Add alert retains the grouped picker. Successful global and event-scoped default creation stays on Alert Sets, refreshes the selected set, expands the owning group, and focuses the returned row. Duplicate, reset, enable/disable, preview, test, and delete keep existing service behavior and confirmations.
 
 After create or duplicate, the owning group expands and focus moves to the returned row after refresh. Before deletion, the client records the next sibling, previous sibling, or group header as the focus target. The focused editor keeps existing dirty-navigation protection; toggling a disclosure does not trigger it.
 
@@ -84,7 +87,9 @@ Alert Sets replaces the single inventory table with event sections containing ro
 
 ### Reuse BL-004 summaries and existing copy boundaries
 
-Variation condition, priority-group, and relative-chance summaries come from `improve-alert-variation-authoring`. This change does not add inventory metadata or a second formatter. Event labels use the existing canonical catalog/formatter, and all persisted/routed values remain stable IDs. Translation infrastructure and selected locales remain BL-017.
+Variation condition summaries call `formatAlertConditionSummary` for canonical inventory event values. Priority-group summaries derive group membership by calling `buildAlertPriorityGroups` over the saved sibling candidates. Relative selection copy displays the saved weight and explicitly says the result depends on the sample's eligible alerts; it does not calculate or display another playback probability. Unknown event values use safe raw-condition fallback copy rather than being passed to the canonical formatter. Event labels use the existing canonical catalog/formatter, and all persisted/routed values remain stable IDs. Translation infrastructure and selected locales remain BL-017.
+
+This is an additive flat-row transport change, not a new endpoint or nested hierarchy DTO. Defaults are emitted with their rule conditions, weight, and priority; variations are emitted with their variant conditions, weight, and priority. The existing editor document remains the authoring boundary.
 
 ## Risks / Trade-offs
 
@@ -98,7 +103,7 @@ Variation condition, priority-group, and relative-chance summaries come from `im
 ## Migration Plan
 
 1. Complete, validate, and land `improve-alert-variation-authoring` on `origin/main`; reconcile its summary exports and final inventory contract.
-2. Add pure group/filter projections and fixture tests without changing server contracts.
+2. Add the management inventory summary fields with boundary tests, then add pure group/filter projections and fixture tests without adding an endpoint or nested contract.
 3. Replace Alert Sets flat inventory with event disclosures while preserving every row action and confirmation.
 4. Replace the focused-editor flat navigation with the same derived hierarchy while retaining dirty-navigation and large-screen behavior.
 5. Add stories, component tests, and Playwright coverage for populated, empty, unknown, filtered, narrow Alert Sets, and focus-restoration states.
