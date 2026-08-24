@@ -179,7 +179,7 @@ export const CreateAlert: Story = {
     await userEvent.click(within(dialog).getByRole("button", { name: "Create alert" }));
     await waitFor(() => expect(createAlert).toHaveBeenCalled());
     await expect(args.onEditAlert).not.toHaveBeenCalled();
-    await expect(canvas.getByText("New cheer created in Cheer.")).toBeVisible();
+    await expect(canvas.getByText("New cheer created disabled and marked Needs review.")).toBeVisible();
   }
 };
 
@@ -215,11 +215,11 @@ export const GroupedInventoryStates: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("button", { name: /Collapse Follow/u })).toHaveTextContent("2 defaults");
-    await expect(canvas.getByText("Weight 3 within the matching priority group; observed selection depends on the matching sample.")).toBeVisible();
+    await expect(canvas.getByText("Relative weight 3; the selected sample's result depends on eligible alerts.")).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: /Collapse Future celebration/u })).toBeVisible();
-    await expect(canvas.queryByRole("button", { name: /Add alert for Future celebration/u })).not.toBeInTheDocument();
-    await userEvent.type(canvas.getByLabelText("Search alerts"), "large community");
+    await expect(canvas.getByRole("button", { name: /Collapse future_celebration/u })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /Add alert for future_celebration/u })).not.toBeInTheDocument();
+    await userEvent.type(canvas.getByLabelText("Search"), "large community");
     await expect(canvas.getByRole("button", { name: /Collapse Community gift/u })).toHaveAttribute("aria-expanded", "true");
   }
 };

@@ -383,12 +383,20 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
 
   await page.goto("/manage/modules/alerts");
   const selectedSet = page.getByRole("region", { name: "Default alert set" });
-  await selectedSet.getByRole("button", { name: "Add alert" }).click();
+  await selectedSet.getByRole("button", { name: "Add alert for Community gift received" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add alert" });
-  await createDialog.getByLabel("Event type").selectOption("community_gift");
+  await expect(createDialog.getByLabel("Event type")).toBeDisabled();
+  await expect(createDialog.getByLabel("Event type")).toHaveValue("community_gift");
   await expect(createDialog.getByLabel("Alert name")).toHaveValue("Community gift received");
   await createDialog.getByRole("button", { name: "Create alert" }).click();
 
+  await expect(page).toHaveURL(/\/manage\/modules\/alerts$/u);
+  const createdRow = page.getByRole("row", { name: /Community gift received/u });
+  await expect(createdRow).toContainText("Disabled");
+  await expect(createdRow).toContainText("Needs review");
+  const editCreated = createdRow.getByRole("button", { name: "Edit Community gift received" });
+  await expect(editCreated).toBeFocused();
+  await editCreated.click();
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-community-gift\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
   await page.getByRole("tab", { name: "Event" }).click();
@@ -406,10 +414,70 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
   })]);
   await page.getByRole("button", { name: "Revert" }).click();
   await page.getByRole("button", { name: "Back to alerts" }).click();
-  const createdRow = page.getByRole("row", { name: /Community gift received/u });
   await expect(createdRow).toContainText("Disabled");
   await expect(createdRow).toContainText("Needs review");
   expect(createAlertRequests).toEqual([{ eventType: "community_gift", name: "Community gift received" }]);
+});
+
+test("management alerts resets event disclosures when switching alert sets", async ({ page }) => {
+  await mockManagementShell(page);
+  const overview = (id: string, name: string, active: boolean) => ({
+    id,
+    name,
+    active,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  });
+  const defaultOverview = overview("set-default", "Default", true);
+  const seasonalOverview = overview("set-seasonal", "Seasonal", false);
+  const detail = (setOverview: ReturnType<typeof overview>, eventType: "follow" | "raid", name: string) => ({
+    overview: setOverview,
+    inventory: [{
+      id: `alert-${eventType}`,
+      setId: setOverview.id,
+      providerKind: "twitch",
+      eventType,
+      name,
+      kind: "default",
+      enabled: true,
+      reviewState: "ready",
+      targetProfileIds: ["landscape"],
+      previewText: `${name} preview`
+    }],
+    browserSources: []
+  });
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({
+    contentType: "application/json",
+    json: [defaultOverview, seasonalOverview]
+  }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({
+    contentType: "application/json",
+    json: detail(defaultOverview, "follow", "New follower")
+  }));
+  await page.route("**/management/alert-sets/set-seasonal", (route) => route.fulfill({
+    contentType: "application/json",
+    json: detail(seasonalOverview, "raid", "Seasonal raid")
+  }));
+
+  await page.goto("/manage/modules/alerts");
+  await page.getByRole("button", { name: "Collapse Follow alerts" }).click();
+  await expect(page.getByRole("button", { name: "Expand Follow alerts" })).toHaveAttribute("aria-expanded", "false");
+
+  await page.getByRole("button", { name: "Expand Seasonal" }).click();
+  await expect(page.getByRole("button", { name: "Collapse Raid alerts" })).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: "Edit Seasonal raid" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Expand Default" }).click();
+  await expect(page.getByRole("button", { name: "Collapse Follow alerts" })).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByRole("button", { name: "Edit New follower" })).toBeVisible();
 });
 
 test("alert variation can be created edited duplicated and selectively deleted", async ({ page }) => {
@@ -665,6 +733,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await page.locator("summary[aria-label='More actions for Large raid']").click();
   await page.getByRole("button", { name: "Duplicate Large raid" }).click();
   await expect(page.getByText("Large raid copy duplicated disabled and marked Needs review.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Large raid copy" })).toBeFocused();
   await page.locator("summary[aria-label='More actions for Large raid']").click();
   await page.locator("summary[aria-label='More actions for Large raid copy']").click();
   await page.getByRole("button", { name: "Delete Large raid copy" }).click();
@@ -672,6 +741,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await expect(page.getByText("Large raid copy deleted.")).toBeVisible();
   await expect(page.getByRole("row", { name: /Large raid copy/u })).toHaveCount(0);
   await expect(page.getByRole("row", { name: /Large raid/u })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit Large raid" })).toBeFocused();
 
   expect(requests).toEqual([
     { command: "create", id: "alert-raid", body: { name: "Large raid" } },
@@ -713,18 +783,52 @@ test("focused alert editor saves layouts and separates preview from test deliver
   };
   const detail = {
     overview,
-    inventory: [{
-      id: "alert-follow",
-      setId: "set-default",
-      providerKind: "twitch",
-      eventType: "follow",
-      name: "New follower",
-      kind: "default",
-      enabled: true,
-      reviewState: "ready",
-      targetProfileIds: ["landscape", "vertical"],
-      previewText: "Thanks for following!"
-    }],
+    inventory: [
+      {
+        id: "alert-follow",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "follow",
+        name: "New follower",
+        kind: "default",
+        enabled: true,
+        reviewState: "ready",
+        targetProfileIds: ["landscape", "vertical"],
+        previewText: "Thanks for following!"
+      },
+      {
+        id: "alert-raid",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "raid",
+        parentAlertId: null,
+        name: "New raid",
+        kind: "default",
+        enabled: true,
+        conditions: [],
+        weight: 1,
+        priority: null,
+        reviewState: "ready",
+        targetProfileIds: ["landscape"],
+        previewText: "Raid preview"
+      },
+      {
+        id: "variant-large-raid",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "raid",
+        parentAlertId: "alert-raid",
+        name: "Large raid",
+        kind: "variation",
+        enabled: true,
+        conditions: [{ field: "raidViewers", operator: "min", value: 50 }],
+        weight: 2,
+        priority: 5,
+        reviewState: "ready",
+        targetProfileIds: ["landscape"],
+        previewText: "Large raid preview"
+      }
+    ],
     browserSources: []
   };
 
@@ -789,6 +893,17 @@ test("focused alert editor saves layouts and separates preview from test deliver
 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-follow\?.*profile=landscape/u);
   await expect(page.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Collapse Follow alerts/u })).toHaveAttribute("aria-expanded", "true");
+  const raidDisclosure = page.getByRole("button", { name: /Collapse Raid alerts/u });
+  await expect(raidDisclosure).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("Variation of New raid")).toBeVisible();
+  await raidDisclosure.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("button", { name: /Expand Raid alerts/u })).toHaveAttribute("aria-expanded", "false");
+  await page.getByLabel("Search alerts").fill("Large raid");
+  await expect(page.getByRole("button", { name: /Collapse Raid alerts/u })).toHaveAttribute("aria-expanded", "true");
+  await page.getByLabel("Search alerts").fill("");
+  await expect(page.getByRole("button", { name: /Expand Raid alerts/u })).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByRole("button", { name: "Fit" })).toBeVisible();
   expect(await page.evaluate(() => globalThis.document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.setViewportSize({ width: 1920, height: 1080 });
