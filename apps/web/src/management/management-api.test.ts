@@ -229,12 +229,20 @@ describe("createHttpManagementApi", () => {
 
   it("manages alert sets through runtime-validated commands", async () => {
     const overview = alertSetOverview();
-    const detail = { overview, inventory: [alertInventoryRow()], browserSources: [] };
+    const inventoryRowPayload = alertInventoryRow();
+    const normalizedInventoryRow = {
+      ...inventoryRowPayload,
+      conditions: [],
+      weight: 1,
+      priority: null
+    };
+    const detailPayload = { overview, inventory: [inventoryRowPayload], browserSources: [] };
+    const normalizedDetail = { overview, inventory: [normalizedInventoryRow], browserSources: [] };
     const impact = alertSetActivationImpact();
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
-      if (url === "/management/alert-sets/set-default" && init?.method === undefined) return jsonResponse(detail);
+      if (url === "/management/alert-sets/set-default" && init?.method === undefined) return jsonResponse(detailPayload);
       if (url === "/management/alert-sets" && init?.method === "POST") {
         expect(init.body).toBe(JSON.stringify({ name: "Seasonal" }));
         return jsonResponse({ ...overview, id: "set-seasonal", name: "Seasonal", active: false, starter: false });
@@ -257,7 +265,7 @@ describe("createHttpManagementApi", () => {
       if (url === "/management/alert-sets/set-default/starter-review") {
         return jsonResponse({ ...overview, starterReviewState: "complete" });
       }
-      if (url === "/management/alerts/alert-follow/enabled") return jsonResponse(detail);
+      if (url === "/management/alerts/alert-follow/enabled") return jsonResponse(detailPayload);
       if (url === "/management/alert-sets/set-seasonal" && init?.method === "DELETE") {
         return new Response(null, { status: 204 });
       }
@@ -265,47 +273,53 @@ describe("createHttpManagementApi", () => {
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
-    await expect(api.getAlertSet("set-default")).resolves.toEqual(detail);
+    await expect(api.getAlertSet("set-default")).resolves.toEqual(normalizedDetail);
     await expect(api.createAlertSet({ name: "Seasonal" })).resolves.toMatchObject({ id: "set-seasonal" });
     await expect(api.createAlert("set-default", { eventType: "cheer", name: "Big cheer" })).resolves.toMatchObject({
       id: "alert-cheer",
       enabled: false,
-      reviewState: "needs-review"
+      reviewState: "needs-review",
+      conditions: [],
+      weight: 1,
+      priority: null
     });
     await expect(api.renameAlertSet("set-default", { name: "Everyday" })).resolves.toMatchObject({ name: "Everyday" });
     await expect(api.duplicateAlertSet("set-default", { name: "Everyday copy" })).resolves.toMatchObject({ id: "set-copy" });
     await expect(api.getAlertSetActivationImpact("set-default")).resolves.toEqual(impact);
     await expect(api.activateAlertSet("set-default", true)).resolves.toMatchObject({ activeSet: { id: "set-default" } });
     await expect(api.markStarterAlertSetReviewComplete("set-default")).resolves.toMatchObject({ starterReviewState: "complete" });
-    await expect(api.setManagedAlertEnabled("alert-follow", true)).resolves.toEqual(detail);
+    await expect(api.setManagedAlertEnabled("alert-follow", true)).resolves.toEqual(normalizedDetail);
     await expect(api.deleteAlertSet("set-seasonal")).resolves.toBeUndefined();
   });
 
   it("manages alert variations through typed commands", async () => {
-    const variation = {
+    const variationPayload = {
       ...alertInventoryRow(),
       id: "variation-vip",
       kind: "variation" as const,
       parentAlertId: "alert/follow",
       name: "VIP follower"
     };
-    const duplicate = { ...variation, id: "variation-copy", name: "VIP follower copy" };
-    const reset = { ...variation, reviewState: "needs-review" as const };
+    const variation = { ...variationPayload, conditions: [], weight: 1, priority: null };
+    const duplicatePayload = { ...variationPayload, id: "variation-copy", name: "VIP follower copy" };
+    const duplicate = { ...duplicatePayload, conditions: [], weight: 1, priority: null };
+    const resetPayload = { ...variationPayload, reviewState: "needs-review" as const };
+    const reset = { ...resetPayload, conditions: [], weight: 1, priority: null };
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
       if (url === "/management/alerts/alert%2Ffollow/variations") {
         expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ name: "VIP follower" }) });
-        return jsonResponse(variation, { status: 201 });
+        return jsonResponse(variationPayload, { status: 201 });
       }
       if (url === "/management/alerts/variation-vip/duplicate") {
         expect(init?.method).toBe("POST");
         expect(init?.body).toBeUndefined();
-        return jsonResponse(duplicate, { status: 201 });
+        return jsonResponse(duplicatePayload, { status: 201 });
       }
       if (url === "/management/alerts/variation-vip/reset") {
         expect(init).toMatchObject({ method: "POST", body: JSON.stringify({ confirmLiveImpact: true }) });
-        return jsonResponse(reset);
+        return jsonResponse(resetPayload);
       }
       if (url === "/management/alerts/variation-vip" && init?.method === "DELETE") {
         expect(init.body).toBe(JSON.stringify({ confirmLiveImpact: true }));
