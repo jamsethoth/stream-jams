@@ -24,5 +24,5 @@
 ## 5. Verification
 
 - [x] 5.1 Run focused core, server, editor, overlay, Storybook, and Playwright tests, then repository lint, typecheck, full tests, build, and required frontend gates.
-- [ ] 5.2 Reconcile every requirement against code and tests, run `openspec.cmd validate add-alert-shape-layer-authoring --strict`, and complete an independent frontend review.
-- [ ] 5.3 Rebuild and restart affected services, wait for health, reload the editor and overlay, and verify shape add/edit/copy/backup plus landscape and vertical preview, test, and live playback.
+- [x] 5.2 Reconcile every requirement against code and tests, run `openspec.cmd validate add-alert-shape-layer-authoring --strict`, and complete an independent frontend review.
+- [x] 5.3 Rebuild and restart affected services, wait for health, reload the editor and overlay, and verify shape add/edit/copy/backup plus landscape and vertical preview, test, and live playback.
