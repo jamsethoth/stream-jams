@@ -300,6 +300,40 @@ describe("AlertSetsPage", () => {
     expect(screen.queryByRole("button", { name: "Add alert for future_provider_event" })).not.toBeInTheDocument();
   });
 
+  it("keeps an alert-specific blocker off sibling defaults in the same event", async () => {
+    const source = detail();
+    const follow = source.inventory[0]!;
+    source.inventory = [
+      follow,
+      { ...follow, id: "follow-second", name: "Second follow" },
+      ...source.inventory.slice(1)
+    ];
+    source.overview = {
+      ...source.overview,
+      validationIssues: [{
+        ...issue("follow-blocker", "blocker", "FOLLOW_BLOCKER", "Fix the first follow alert."),
+        eventType: "follow",
+        alertId: follow.id
+      }]
+    };
+
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source)
+    })} onEditAlert={vi.fn()} />);
+
+    const followGroup = await screen.findByRole("button", { name: "Collapse Follow alerts" });
+    const targetedRow = screen.getByRole("button", { name: "Edit New follower" }).closest("tr");
+    const siblingRow = screen.getByRole("button", { name: "Edit Second follow" }).closest("tr");
+
+    expect(followGroup).toHaveTextContent("Blocker");
+    expect(targetedRow).not.toBeNull();
+    expect(within(targetedRow!).getByText("1 blocker")).toBeInTheDocument();
+    expect(siblingRow).not.toBeNull();
+    expect(within(siblingRow!).queryByText(/blocker/u)).not.toBeInTheDocument();
+    expect(within(siblingRow!).getByText("Needs review")).toBeInTheDocument();
+  });
+
   it("creates from an empty known event and focuses the new row without unlocking the event", async () => {
     const source = detail();
     const created = {

@@ -1005,7 +1005,9 @@ function AlertRowsTable({
         <thead><tr><th scope="col">Alert</th><th scope="col">Profiles</th><th scope="col">State</th><th scope="col">Validation</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>
           {rows.map(({ alert, siblings }) => {
-            const alertIssues = issues.filter((issue) => issue.alertId === alert.id || issue.eventType === alert.eventType);
+            const alertIssues = issues.filter((issue) => issue.alertId !== null
+              ? issue.alertId === alert.id
+              : issue.eventType === alert.eventType);
             const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
