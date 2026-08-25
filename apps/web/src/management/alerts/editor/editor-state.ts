@@ -1,5 +1,6 @@
 import {
-  alertEditorDocumentSchema,
+  alertLayerLayoutSchema,
+  alertLayerSchema,
   areAlertPriorityGroupsEqual,
   targetProfileDefinitions,
   type AlertEditorDocument,
@@ -279,10 +280,51 @@ export function addShapeLayer(
     }
   );
   const candidate = reorderLayer(appended, layerId, insertIndex);
-  if (!alertEditorDocumentSchema.safeParse(candidate).success) {
+  if (!shapeAdditionIsSafe(document, candidate, layerId)) {
     throw new Error("Shape layer could not be created safely.");
   }
   return { document: candidate, layerId };
+}
+
+function shapeAdditionIsSafe(
+  source: AlertEditorDocument,
+  candidate: AlertEditorDocument,
+  layerId: string
+): boolean {
+  const shape = candidate.layers.find((layer) => layer.id === layerId);
+  const expectedProfileIds = targetProfileDefinitions.map(({ id }) => id);
+  const sourceProfileIds = new Set(source.targetProfiles.map(({ id }) => id));
+  const candidateProfileIds = new Set(candidate.targetProfiles.map(({ id }) => id));
+
+  return candidate.layers.length === source.layers.length + 1
+    && candidate.layers.filter((layer) => layer.id === layerId).length === 1
+    && candidate.layers.every((layer, index) => layer.order === index)
+    && shape?.type === "shape"
+    && alertLayerSchema.safeParse(shape).success
+    && source.targetProfiles.length === expectedProfileIds.length
+    && candidate.targetProfiles.length === expectedProfileIds.length
+    && expectedProfileIds.every((profileId) => (
+      sourceProfileIds.has(profileId)
+      && candidateProfileIds.has(profileId)
+      && shapeLayoutWasAddedSafely(source, candidate, profileId, layerId)
+    ));
+}
+
+function shapeLayoutWasAddedSafely(
+  source: AlertEditorDocument,
+  candidate: AlertEditorDocument,
+  profileId: TargetProfileId,
+  layerId: string
+): boolean {
+  const sourceProfile = source.targetProfiles.find((profile) => profile.id === profileId);
+  const candidateProfile = candidate.targetProfiles.find((profile) => profile.id === profileId);
+  const shapeLayouts = candidateProfile?.layerLayouts.filter((layout) => layout.layerId === layerId) ?? [];
+
+  return sourceProfile !== undefined
+    && candidateProfile !== undefined
+    && candidateProfile.layerLayouts.length === sourceProfile.layerLayouts.length + 1
+    && shapeLayouts.length === 1
+    && alertLayerLayoutSchema.safeParse(shapeLayouts[0]).success;
 }
 
 export function deleteLayer(document: AlertEditorDocument, layerId: string): AlertEditorDocument {

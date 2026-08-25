@@ -366,6 +366,25 @@ describe("alert editor layer operations", () => {
     ]);
   });
 
+  it("adds a shape without treating an unrelated invalid text-style draft as a creation failure", () => {
+    const invalidTextDraft = updateLayer(createDocument(), "layer-text", (layer) => layer.type === "text"
+      ? { ...layer, textStyle: { ...layer.textStyle, fontSizePx: 513 } }
+      : layer);
+
+    expect(alertEditorDocumentSchema.safeParse(invalidTextDraft).success).toBe(false);
+
+    const result = addShapeLayer(invalidTextDraft, "layer-text");
+
+    expect(result.document.layers.find((layer) => layer.id === result.layerId)).toMatchObject({
+      type: "shape",
+      fill: "#000000B8"
+    });
+    expect(result.document.layers.find((layer) => layer.id === "layer-text")).toMatchObject({
+      type: "text",
+      textStyle: expect.objectContaining({ fontSizePx: 513 })
+    });
+  });
+
   it("fails shape creation without exposing a partial document when invariants are broken", () => {
     const invalid = {
       ...createDocument(),

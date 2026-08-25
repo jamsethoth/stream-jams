@@ -996,6 +996,46 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("group", { name: "Text box" })).not.toBeInTheDocument();
   });
 
+  it("keeps Add Shape available during an unrelated invalid text-style draft", async () => {
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const typographySummary = await screen.findByText("Typography", { selector: "summary" });
+    await user.click(typographySummary);
+    fireEvent.change(screen.getByLabelText("Font size"), { target: { value: "513" } });
+
+    const visualStyleCorrection = screen.getByText(/^Visual styles need correction:/u);
+    expect(visualStyleCorrection).toHaveTextContent(
+      "Correct the selected layer's highlighted style fields before saving, previewing, or sending a test."
+    );
+    expect(visualStyleCorrection).not.toHaveTextContent("solid fill");
+
+    await user.click(screen.getByRole("button", { name: "Shape" }));
+
+    expect(screen.getByRole("heading", { name: "Shape" })).toBeVisible();
+    expect(screen.queryByText("The shape layer was not added")).not.toBeInTheDocument();
+  });
+
   it("adds and authors a solid-fill shape through the standard layer workflow", async () => {
     const user = userEvent.setup();
     const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
