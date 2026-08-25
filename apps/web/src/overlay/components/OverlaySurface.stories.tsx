@@ -191,7 +191,7 @@ export const AnimatedShape: Story = {
           visual: null,
           audio: null,
           text: null,
-          shape: { fill: "#45c4ae", layout: { x: 660, y: 390, width: 600, height: 300, zIndex: 4 } },
+          shape: { fill: "#45C4AEFF", layout: { x: 660, y: 390, width: 600, height: 300, zIndex: 4 } },
           animation: { mode: "preset", entrance: "scale", exit: "fade", durationMs: 600, delayMs: 250, easing: "ease-out" },
           tts: null,
           durationMs: 4_000

@@ -420,6 +420,31 @@ describe("management alert contracts and rules", () => {
     expect(layer.safeParse({ ...base, providerId: "" }).success).toBe(false);
   });
 
+  it("normalizes compatible shape fills and rejects arbitrary CSS", () => {
+    const layer = schema("alertLayerSchema");
+    const base = {
+      id: "layer-shape",
+      name: "Shape",
+      type: "shape",
+      visible: true,
+      order: 0,
+      animation: {
+        mode: "preset",
+        entrance: "fade",
+        exit: "fade",
+        durationMs: 300,
+        delayMs: 0,
+        easing: "ease-out"
+      }
+    } as const;
+
+    expect(layer.parse({ ...base, fill: "#abc" })).toEqual({ ...base, fill: "#AABBCCFF" });
+    expect(layer.parse({ ...base, fill: "#12345678" })).toEqual({ ...base, fill: "#12345678" });
+    for (const fill of ["red", "rgb(1, 2, 3)", "linear-gradient(red, blue)", "url(shape.svg)"]) {
+      expect(layer.safeParse({ ...base, fill }).success).toBe(false);
+    }
+  });
+
   it("provides event variables and validates normal and edge-case built-in samples", () => {
     const sample = schema("alertSamplePayloadSchema");
     const variableCatalog = exportedFunction("getAlertTemplateVariableCatalog") as unknown as (

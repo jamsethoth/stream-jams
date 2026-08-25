@@ -6,6 +6,7 @@ import {
   alertTextStyleSchema,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
+  compatibleRgbaColorSchema,
   rgbaColorSchema
 } from "./text-style.js";
 
@@ -14,6 +15,27 @@ describe("alert text styles", () => {
     expect(rgbaColorSchema.parse("#12ab34cd")).toBe("#12AB34CD");
     for (const value of ["#12AB34", "red", "rgb(1, 2, 3)", "url(font.woff2)", "var(--color)", 123]) {
       expect(rgbaColorSchema.safeParse(value).success).toBe(false);
+    }
+  });
+
+  it("normalizes legacy CSS hex colors for shape compatibility only", () => {
+    expect(compatibleRgbaColorSchema.parse("#abc")).toBe("#AABBCCFF");
+    expect(compatibleRgbaColorSchema.parse("#abcd")).toBe("#AABBCCDD");
+    expect(compatibleRgbaColorSchema.parse("#12ab34")).toBe("#12AB34FF");
+    expect(compatibleRgbaColorSchema.parse("#12ab34cd")).toBe("#12AB34CD");
+
+    for (const value of [
+      "#12",
+      "#12345",
+      "#1234567",
+      "red",
+      "rgb(1, 2, 3)",
+      "linear-gradient(red, blue)",
+      "url(shape.svg)",
+      "var(--color)",
+      123
+    ]) {
+      expect(compatibleRgbaColorSchema.safeParse(value).success).toBe(false);
     }
   });
 

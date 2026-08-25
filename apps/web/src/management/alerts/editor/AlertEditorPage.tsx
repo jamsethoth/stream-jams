@@ -15,6 +15,7 @@ import {
   moveAlertPriorityGroup,
   moveAlertVariationToPriorityGroup,
   normalizeAlertPriorityGroups,
+  rgbaColorSchema,
   validateAlertSamplePayload,
   type ActionableManagementError,
   type AlertEditorDocument,
@@ -45,6 +46,7 @@ import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventIn
 import { RgbaColorControl } from "./RgbaColorControl.js";
 import {
   addLayer,
+  addShapeLayer,
   applyEditorUpdate,
   applyPriorityGroupUpdate,
   arePriorityGroupsDirty,
@@ -259,7 +261,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     if (editor === null || variationContext === null) return;
     const conditionError = conditionDraftError ?? alertDocumentConditionError(editor.document);
     if (conditionError !== null) throw new Error(conditionError);
-    const styleError = alertDocumentTextStyleError(editor.document);
+    const styleError = alertDocumentVisualStyleError(editor.document);
     if (styleError !== null) throw new Error(styleError);
     if (hasEnabledTts(editor.document) && activeTtsProvider === null) {
       showActionError(missingActiveTtsProviderError());
@@ -364,7 +366,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const storedCanvasView = canvasViews[profileId];
   const canvasView = storedCanvasView ?? DEFAULT_CANVAS_VIEW;
   const documentConditionError = conditionDraftError ?? (document === null ? null : alertDocumentConditionError(document));
-  const documentStyleError = document === null ? null : alertDocumentTextStyleError(document);
+  const documentStyleError = document === null ? null : alertDocumentVisualStyleError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
   const variationEvaluation = useMemo(() => (
     editor === null || variationContext === null || samplePayload === null || sampleError !== null || documentConditionError !== null
@@ -488,7 +490,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setSampleError("Sample payload must be a valid JSON object.");
       return;
     }
-    if (alertDocumentTextStyleError(document) !== null) return;
+    if (alertDocumentVisualStyleError(document) !== null) return;
     const validationError = validateAlertSamplePayload(document.eventType, samplePayload);
     if (validationError !== null) {
       setSampleError(validationError);
@@ -573,7 +575,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   async function sendTest() {
     if (document === null || samplePayload === null || profile === null) return;
-    if (alertDocumentTextStyleError(document) !== null) return;
+    if (alertDocumentVisualStyleError(document) !== null) return;
     if (sendIncludeTts && hasEnabledTts(document) && activeTtsProvider === null) {
       showActionError(missingActiveTtsProviderError());
       return;
@@ -648,6 +650,22 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     updateDocument((current) => addLayer(current, layer, type === "text" ? defaultGeometryByProfile() : {}));
     setSelectedLayerId(id);
     setTab("layers");
+  }
+
+  function addShape() {
+    if (document === null) return;
+    try {
+      const added = addShapeLayer(document, selectedLayerId);
+      updateDocument(() => added.document);
+      setSelectedLayerId(added.layerId);
+      setTab("layers");
+    } catch (cause) {
+      showActionError(actionableError(
+        "The shape layer was not added",
+        cause,
+        "Reload the alert editor, then try adding Shape again."
+      ));
+    }
   }
 
   function applyAsset(assetId: string) {
@@ -760,6 +778,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event settings need correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
+      {documentStyleError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Visual styles need correction: {documentStyleError} Select the layer and choose a solid fill before saving, previewing, or sending a test.</p>}
       {validationIssues.length === 0 ? null : (
         <section aria-label="Validation issues" className="alert-editor-page__validation">
           <div>
@@ -928,6 +947,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 activeTtsProvider={activeTtsProvider}
                 document={document}
                 onAddAsset={(type) => setPicker({ layerId: null, type })}
+                onAddShape={addShape}
                 onAddSimple={addSimpleLayer}
                 onChange={updateDocument}
                 onChooseAsset={(layer) => setPicker({ layerId: layer.id, type: layer.type as "image" | "video" | "audio" })}
@@ -1215,6 +1235,7 @@ function LayerInspector({
   activeTtsProvider,
   document,
   onAddAsset,
+  onAddShape,
   onAddSimple,
   onChange,
   onChooseAsset,
@@ -1227,6 +1248,7 @@ function LayerInspector({
   readonly activeTtsProvider: RegisteredProviderView | null;
   readonly document: AlertEditorDocument;
   readonly onAddAsset: (type: "image" | "video" | "audio") => void;
+  readonly onAddShape: () => void;
   readonly onAddSimple: (type: "text" | "tts") => void;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
   readonly onChooseAsset: (layer: AlertLayer) => void;
@@ -1247,6 +1269,7 @@ function LayerInspector({
           <button onClick={() => onAddAsset("video")} type="button">Video/GIF</button>
           <button onClick={() => onAddAsset("audio")} type="button">Audio</button>
           <button onClick={() => onAddSimple("tts")} type="button">TTS</button>
+          <button onClick={onAddShape} type="button">Shape</button>
         </div>
         <div className="alert-editor-inspector__layer-list">
           {document.layers.map((layer) => (
@@ -1315,6 +1338,15 @@ function LayerInspector({
               onChange={(updatedLayer) => onChange((current) =>
                 updateLayer(current, selectedLayer.id, (layer) => layer.type === "text" ? updatedLayer : layer)
               )}
+            />
+          ) : null}
+          {selectedLayer.type === "shape" ? (
+            <RgbaColorControl
+              label="Fill"
+              onChange={(fill) => onChange((current) =>
+                updateLayer(current, selectedLayer.id, (layer) => layer.type === "shape" ? { ...layer, fill } : layer)
+              )}
+              value={selectedLayer.fill}
             />
           ) : null}
           {(selectedLayer.type === "image" || selectedLayer.type === "video" || selectedLayer.type === "audio") ? (
@@ -1674,8 +1706,11 @@ function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout,
   );
 }
 
-function alertDocumentTextStyleError(document: AlertEditorDocument): string | null {
+function alertDocumentVisualStyleError(document: AlertEditorDocument): string | null {
   for (const layer of document.layers) {
+    if (layer.type === "shape" && !rgbaColorSchema.safeParse(layer.fill).success) {
+      return `${layer.name} has an invalid solid fill.`;
+    }
     if (layer.type !== "text") continue;
     if (!alertTextStyleSchema.safeParse(layer.textStyle).success) {
       return `${layer.name} has invalid typography.`;

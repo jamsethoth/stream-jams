@@ -26,7 +26,7 @@ describe("OverlaySurface", () => {
         composition={composition({
           ...instruction(),
           shape: {
-            fill: "#123456",
+            fill: "#123456FF",
             layout: { x: 120, y: 80, width: 320, height: 240, zIndex: 5 }
           },
           animation: {
@@ -259,7 +259,7 @@ describe("OverlaySurface", () => {
             ...instruction(),
             targetProfileId: profileId,
             shape: {
-              fill: "#123456",
+              fill: "#123456FF",
               layout: { x: 120, y: 80, width: 320, height: 240, zIndex: 5 }
             }
           }, profileId)}
@@ -384,6 +384,44 @@ describe("OverlaySurface", () => {
       message: "Alert text style could not be rendered safely."
     }));
     expect(screen.queryByText("Do not render")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("overlay-visual-instruction-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("overlay-audio-instruction-1")).not.toBeInTheDocument();
+    expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "started" }));
+    expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
+  });
+
+  it("fails closed and transparent when a forged shape fill is unsafe", async () => {
+    const onPlaybackEvent = vi.fn();
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const unsafe = {
+      ...instruction(),
+      visual: {
+        assetId: "asset-image",
+        mediaType: "image",
+        layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }
+      },
+      audio: { assetId: "asset-audio", volume: 1 },
+      shape: {
+        fill: "url(https://example.test/shape.svg)",
+        layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 2 }
+      },
+      tts: { mode: "browser-speech", text: "Do not speak", audioAssetId: null, providerPayload: null }
+    } as unknown as OverlayInstruction;
+
+    render(
+      <OverlaySurface
+        composition={composition(unsafe)}
+        onPlaybackEvent={onPlaybackEvent}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith({
+      instructionId: "instruction-1",
+      status: "failed",
+      message: "Alert shape fill could not be rendered safely."
+    }));
+    expect(screen.queryByTestId("overlay-shape-instruction-1")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overlay-visual-instruction-1")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overlay-audio-instruction-1")).not.toBeInTheDocument();
     expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "started" }));

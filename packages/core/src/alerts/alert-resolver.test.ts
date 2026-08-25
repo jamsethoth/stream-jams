@@ -394,7 +394,7 @@ describe("DefaultAlertResolver", () => {
       providerPayload: { providerId: "speakerbot", layerId: "layer-tts" }
     });
     expect(resolved[4]?.overlayInstruction.shape).toEqual({
-      fill: "#fff",
+      fill: "#FFFFFFFF",
       layout: { layerId: "layer-shape", x: 0, y: 0, width: 100, height: 100, zIndex: 5 }
     });
     expect(resolved.map((alert) => alert.overlayInstruction.animation)).toEqual(Array(5).fill(animation));
@@ -414,6 +414,48 @@ describe("DefaultAlertResolver", () => {
     };
 
     expect(createResolver().resolveMatches(input)).toEqual([]);
+  });
+
+  it("resolves a shape behind text with independent vertical geometry", () => {
+    const rule = createRule();
+    const base = createEditorDocument(rule);
+    const document: AlertEditorDocument = {
+      ...base,
+      layers: base.layers.map((layer) => {
+        if (layer.id === "layer-shape") return { ...layer, order: 0 };
+        if (layer.id === "layer-text") return { ...layer, order: 1 };
+        return { ...layer, visible: false };
+      }),
+      targetProfiles: base.targetProfiles.map((profile) => profile.id === "vertical"
+        ? {
+            ...profile,
+            enabled: true,
+            reviewState: "ready",
+            layerLayouts: [
+              { layerId: "layer-shape", x: 90, y: 1200, width: 900, height: 240, zIndex: 0 },
+              { layerId: "layer-text", x: 190, y: 1240, width: 700, height: 160, zIndex: 1 }
+            ]
+          }
+        : profile)
+    };
+
+    const resolved = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent({ actor: { id: "viewer-1", displayName: "Vertical" } }))],
+      target: {
+        overlayId: "overlay-1",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "vertical"
+      },
+      editorDocuments: new Map([[rule.id, document]])
+    });
+
+    expect(resolved).toHaveLength(2);
+    expect(resolved[0]?.overlayInstruction.shape).toEqual({
+      fill: "#FFFFFFFF",
+      layout: { layerId: "layer-shape", x: 90, y: 1200, width: 900, height: 240, zIndex: 0 }
+    });
+    expect(resolved[1]?.overlayInstruction.text?.layout.zIndex).toBe(1);
   });
 
   it("renders the saved editor document for the selected variation", () => {
@@ -633,7 +675,7 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
         textStyle: structuredClone(compatibilityAlertTextStyle),
         boxStyle: structuredClone(compatibilityAlertTextBoxStyle)
       },
-      { id: "layer-shape", name: "Shape", type: "shape", visible: true, order: 5, animation, fill: "#fff" }
+      { id: "layer-shape", name: "Shape", type: "shape", visible: true, order: 5, animation, fill: "#FFFFFFFF" }
     ],
     targetProfiles: [
       {

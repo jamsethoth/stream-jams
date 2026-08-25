@@ -3,7 +3,8 @@ import {
   alertTextBoxStyleSchema,
   alertTextStyleSchema,
   compatibilityAlertTextBoxStyle,
-  compatibilityAlertTextStyle
+  compatibilityAlertTextStyle,
+  compatibleRgbaColorSchema
 } from "../alerts/text-style.js";
 import { ttsPlaybackInstructionSchema } from "../tts/schemas.js";
 import {
@@ -48,7 +49,7 @@ export const overlayTextInstructionSchema = z.object({
 });
 
 export const overlayShapeInstructionSchema = z.object({
-  fill: nonEmptyStringSchema,
+  fill: compatibleRgbaColorSchema,
   layout: overlayElementLayoutSchema
 });
 

@@ -4,7 +4,8 @@ import {
   alertTextBoxStyleSchema,
   alertTextStyleSchema,
   compatibilityAlertTextBoxStyle,
-  compatibilityAlertTextStyle
+  compatibilityAlertTextStyle,
+  compatibleRgbaColorSchema
 } from "../alerts/text-style.js";
 import { assetMediaTypeSchema } from "../assets/schemas.js";
 import {
@@ -378,7 +379,7 @@ export const alertLayerSchema = z.discriminatedUnion("type", [
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("shape"),
-    fill: nonEmptyStringSchema
+    fill: compatibleRgbaColorSchema
   })
 ]);
 

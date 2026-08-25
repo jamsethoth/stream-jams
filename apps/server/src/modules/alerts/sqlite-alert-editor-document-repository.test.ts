@@ -69,6 +69,43 @@ describe("SqliteAlertEditorDocumentRepository", () => {
         boxStyle: compatibilityAlertTextBoxStyle
       }]
     });
+
+    const legacyShape = {
+      ...document,
+      layers: [
+        ...document.layers,
+        {
+          id: "layer-shape",
+          name: "Legacy badge",
+          type: "shape" as const,
+          visible: true,
+          order: 1,
+          fill: "#0f08",
+          animation: document.layers[0]!.animation
+        }
+      ],
+      targetProfiles: document.targetProfiles.map((profile) => ({
+        ...profile,
+        layerLayouts: [
+          ...profile.layerLayouts,
+          { layerId: "layer-shape", x: 100, y: 200, width: 400, height: 120, zIndex: 1 }
+        ]
+      }))
+    };
+    database.connection
+      .prepare("UPDATE alert_editor_documents SET document_json = ? WHERE alert_id = ?")
+      .run(JSON.stringify(legacyShape), document.id);
+    const normalized = await repository.find(document.id);
+    expect(normalized?.layers.find((layer) => layer.type === "shape")).toMatchObject({
+      fill: "#00FF0088"
+    });
+    await repository.save(normalized!);
+    const persisted = database.connection
+      .prepare("SELECT document_json FROM alert_editor_documents WHERE alert_id = ?")
+      .get(document.id) as { readonly document_json: string };
+    expect(JSON.parse(persisted.document_json)).toMatchObject({
+      layers: expect.arrayContaining([expect.objectContaining({ type: "shape", fill: "#00FF0088" })])
+    });
   });
 
   it("stores and deletes a variation document by its variant identity", async () => {

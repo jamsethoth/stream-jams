@@ -286,7 +286,7 @@ const editorDocument: AlertEditorDocument = {
     type: "shape",
     visible: true,
     order: 0,
-    fill: "#123456",
+    fill: "#123456FF",
     animation: {
       mode: "preset",
       entrance: "slide-up",
