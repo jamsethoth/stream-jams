@@ -179,6 +179,45 @@ export const ReadyLandscape: Story = {
   }
 };
 
+export const GroupedEventNavigation: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertVariationAuthoringContext: async () => variationContext(document),
+      getAlertSet: async () => groupedAlertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: "Follow alerts, selected event" })).toHaveAttribute("aria-expanded", "true");
+    await waitFor(() => expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
+    await expect(canvas.getByText("Variation of New raid")).toBeVisible();
+    await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: /Collapse Raid/u }));
+    await userEvent.type(canvas.getByLabelText("Search alerts"), "large raid");
+    await expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");
+  }
+};
+
+export const NoMatchingEventNavigation: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => document,
+      getAlertVariationAuthoringContext: async () => variationContext(document),
+      getAlertSet: async () => groupedAlertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const search = await canvas.findByLabelText("Search alerts");
+    await userEvent.type(search, "not-an-alert");
+    await expect(canvas.getByText("No matching alerts.")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Clear filters" }));
+    await expect(search).toHaveValue("");
+    await expect(canvas.getByRole("button", { name: "Follow alerts, selected event" })).toBeVisible();
+  }
+};
+
 export const ModeratedLocalPreview: Story = {
   args: {
     managementApi: createStoryManagementApi({
@@ -1043,9 +1082,23 @@ function alertSetDetail(): AlertSetDetail {
       outputs: []
     },
     inventory: [
-      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
-      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
+      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
+      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
+  };
+}
+
+function groupedAlertSetDetail(): AlertSetDetail {
+  const source = alertSetDetail();
+  const raid = source.inventory[1]!;
+  return {
+    ...source,
+    inventory: [
+      ...source.inventory,
+      { ...raid, id: "variant-large-raid", parentAlertId: raid.id, name: "Large raid", kind: "variation", conditions: [{ field: "raidViewers", operator: "min", value: 50 }], weight: 2, priority: 5 },
+      { ...raid, id: "variant-orphan-raid", parentAlertId: "missing-raid", name: "Orphan raid", kind: "variation" },
+      { ...source.inventory[0]!, id: "future-alert", eventType: "future_celebration", name: "Future celebration" }
+    ]
   };
 }

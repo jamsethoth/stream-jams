@@ -256,8 +256,8 @@ describe("AlertEditorPage", () => {
       ...detail,
       inventory: [
         ...detail.inventory,
-        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
-        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
       ]
     };
 
@@ -273,9 +273,9 @@ describe("AlertEditorPage", () => {
     const noEnabledCandidates: AlertSetDetail = {
       ...detail,
       inventory: [
-        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
-        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
-        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: false, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-high", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "High", kind: "variation", enabled: true, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "High" },
+        { id: "variant-editor-low", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Low", kind: "variation", enabled: false, conditions: [], weight: 1, priority: 3, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Low" }
       ]
     };
     expect(affectedProfileLabelsForEditor(disabledSelected, noEnabledCandidates, context)).toEqual([]);
@@ -299,9 +299,9 @@ describe("AlertEditorPage", () => {
     const detail: AlertSetDetail = {
       ...alertSetDetail(true),
       inventory: [
-        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
-        { id: "variant-editor-disabled", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Disabled variation", kind: "variation", enabled: false, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Disabled" },
-        { id: "variant-editor-vertical", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Vertical sibling", kind: "variation", enabled: true, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Vertical" }
+        { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "Default", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Default" },
+        { id: "variant-editor-disabled", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Disabled variation", kind: "variation", enabled: false, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Disabled" },
+        { id: "variant-editor-vertical", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: "alert-raid", name: "Vertical sibling", kind: "variation", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["vertical"], previewText: "Vertical" }
       ]
     };
 
@@ -1114,6 +1114,84 @@ describe("AlertEditorPage", () => {
     await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "raid");
     await user.click(screen.getByRole("button", { name: /New raid/ }));
     expect(onOpenAlert).toHaveBeenCalledWith("alert-raid", "vertical");
+  });
+
+  it("groups editor navigation by event while preserving disclosure, search, and route identity", async () => {
+    const user = userEvent.setup();
+    const document = editorDocument();
+    const source = alertSetDetail();
+    const raid = source.inventory[1]!;
+    const detail: AlertSetDetail = {
+      ...source,
+      inventory: [
+        ...source.inventory,
+        { ...raid, id: "variant-large-raid", parentAlertId: raid.id, name: "Large raid", kind: "variation" },
+        { ...raid, id: "variant-orphan-raid", parentAlertId: "missing-raid", name: "Orphan raid", kind: "variation" },
+        { ...source.inventory[0]!, id: "alert-future", eventType: "future_celebration", name: "Future celebration" }
+      ]
+    };
+    const onOpenAlert = vi.fn();
+    const getAlertSet = vi.fn(async () => detail);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertSet,
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={onOpenAlert}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const selectedEvent = await screen.findByRole("button", { name: "Follow alerts, selected event" });
+    expect(selectedEvent).toHaveAttribute("aria-expanded", "true");
+    expect(selectedEvent).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
+    expect(screen.getByRole("button", { name: /Expand Resubscription/u })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: /Collapse future_celebration/u })).toBeInTheDocument();
+    expect(screen.getByText("Variation of New raid")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
+
+    await user.click(selectedEvent);
+    expect(screen.getByRole("button", { name: "Follow alerts, selected event" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: /New follower/u })).toHaveAttribute("aria-current", "page");
+    expect(onOpenAlert).not.toHaveBeenCalled();
+
+    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "not-an-alert");
+    expect(screen.getByText("No matching alerts.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.getByRole("searchbox", { name: "Search alerts" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Follow alerts, selected event" })).toBeVisible();
+    expect(getAlertSet).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: /Collapse Raid/u }));
+    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "large raid");
+    expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");
+    await user.clear(screen.getByRole("searchbox", { name: "Search alerts" }));
+    expect(screen.getByRole("button", { name: /Expand Raid/u })).toHaveAttribute("aria-expanded", "false");
+
+    await user.type(screen.getByRole("textbox", { name: "Message template" }), " unsaved");
+    const emptyDisclosure = screen.getByRole("button", { name: /Expand Resubscription/u });
+    emptyDisclosure.focus();
+    await user.keyboard("{Enter}");
+    expect(emptyDisclosure).toHaveAttribute("aria-expanded", "true");
+    expect(screen.queryByRole("dialog", { name: /unsaved changes/u })).not.toBeInTheDocument();
+    expect(onOpenAlert).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: /Expand Raid/u }));
+    await user.click(screen.getByRole("button", { name: /Large raid/u }));
+    expect(onOpenAlert).toHaveBeenCalledWith("variant-large-raid", "landscape");
   });
 
   it("uses the loaded document set when set-detail loading fails", async () => {
@@ -2765,8 +2843,8 @@ function alertSetDetail(active = true): AlertSetDetail {
       outputs: []
     },
     inventory: [
-      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
-      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
+      { id: "alert-follow", setId: "set-default", providerKind: "twitch", eventType: "follow", parentAlertId: null, name: "New follower", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Follow preview" },
+      { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
   };

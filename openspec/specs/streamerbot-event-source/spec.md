@@ -3,9 +3,7 @@
 ## Purpose
 
 Define the Streamer.bot event-source foundation: event source identity, external event contracts, secret namespace support, diagnostics compatibility, and provider-path alert conditions before Streamer.bot runtime, persistence, management APIs, or UI are introduced.
-
 ## Requirements
-
 ### Requirement: Normalized Event Source Identity
 
 Normalized stream events SHALL distinguish the viewer-facing source platform from the ingestion provider while preserving the existing `providerId` compatibility field.
@@ -103,3 +101,60 @@ Alert conditions SHALL be able to match normalized events by `providerId`, `sour
 - WHEN alert conditions evaluate `sourcePlatform` and `ingestProvider`
 - THEN a condition for `sourcePlatform == "twitch"` can match
 - AND a condition for `ingestProvider == "streamerbot"` can match
+
+### Requirement: Canonical Twitch Alert Compatibility Across Ingestion Providers
+
+Twitch-origin events normalized through Streamer.bot SHALL remain compatible with the same canonical alert rules as direct Twitch EventSub events unless a rule contains an explicit ingestion-provider condition.
+
+#### Scenario: Provider switch preserves canonical alert eligibility
+
+- **WHEN** an active event source switches between direct Twitch and Streamer.bot
+- **AND** both sources can emit a configured canonical Twitch event type
+- **THEN** the alert remains matched by event type and explicit conditions
+- **AND** management validation does not report an implicit provider-kind mismatch
+
+#### Scenario: Rule explicitly restricts ingestion provider
+
+- **WHEN** an alert rule contains a condition for `ingestProvider`
+- **THEN** direct Twitch and Streamer.bot events are distinguished according to that condition
+- **AND** no management metadata silently overrides the explicit condition
+
+#### Scenario: Provider metadata is used for management context
+
+- **WHEN** alert management stores a provider kind for event catalog, sample payload, or editor context
+- **THEN** that metadata does not become an implicit runtime eligibility condition
+- **AND** switching the active event-source registration does not require duplicate canonical alert rules
+
+### Requirement: Expanded Streamer.bot Twitch Event Parity
+The Streamer.bot event source SHALL normalize supported gift, Hype Train, poll, prediction, and stream lifecycle events to the same canonical event types and stable fields used by direct Twitch intake.
+
+#### Scenario: Supported expanded event is received
+- **WHEN** the active Streamer.bot source receives a valid supported Twitch event from the expanded catalog
+- **THEN** the event is normalized with `sourcePlatform` set to `twitch` and `ingestProvider` set to `streamerbot`
+- **AND** it enters the existing diagnostics, matching, resolution, and playback pipeline
+
+#### Scenario: Terminal variants are normalized
+- **WHEN** Streamer.bot reports a completed, archived, terminated, or canceled poll or prediction
+- **THEN** the event maps to the corresponding canonical end type
+- **AND** a normalized terminal status preserves the upstream outcome
+
+### Requirement: Expanded Streamer.bot Runtime Subscriptions
+The Streamer.bot runtime SHALL discover and subscribe to the exact available Twitch category event names needed for the expanded canonical catalog, excluding alternate events that would create duplicate canonical progress notifications.
+
+#### Scenario: Expanded Twitch events are available
+- **WHEN** Streamer.bot discovery returns the supported gift, lifecycle, and stream event names
+- **THEN** runtime subscription includes those exact discovered names with the existing canonical event selections
+
+#### Scenario: Required expanded event is unavailable
+- **WHEN** the active Streamer.bot instance omits one or more required expanded event names
+- **THEN** runtime status is degraded with a safe message naming the missing event names
+- **AND** available supported events remain subscribed
+
+### Requirement: Streamer.bot Expanded Event Diagnostics
+The Streamer.bot runtime SHALL distinguish unsupported events from malformed supported events in diagnostics for the expanded catalog.
+
+#### Scenario: Expanded supported event is malformed
+- **WHEN** a recognized expanded Twitch source/type pair lacks required normalized fields
+- **THEN** external-event diagnostics record normalization failure and a reference ID
+- **AND** no canonical event is forwarded
+- **AND** subsequent valid events remain processable

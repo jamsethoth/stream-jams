@@ -17,6 +17,14 @@ import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi } from "../management-api.js";
+import {
+  buildAlertEventGroups,
+  filterAlertEventGroups,
+  summarizeAlertInventoryRow,
+  type AlertEventGroup,
+  type FilteredAlertEventGroup,
+  type FilteredAlertEventGroups
+} from "./alert-event-groups.js";
 import "./alert-sets-page.css";
 
 export type AlertSetsPageApi = Pick<
@@ -83,6 +91,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [nameDialog, setNameDialog] = useState<NameDialogState | null>(null);
   const [nameDraft, setNameDraft] = useState("");
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
+  const [createAlertEventLocked, setCreateAlertEventLocked] = useState(false);
   const [createAlertEventType, setCreateAlertEventType] = useState<AlertCreateInput["eventType"]>(alertStarterTemplates[0].eventType);
   const [createAlertName, setCreateAlertName] = useState<string>(alertStarterTemplates[0].defaultName);
   const [createAlertError, setCreateAlertError] = useState<ActionableManagementError | null>(null);
@@ -106,8 +115,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [browserSourceStatusUpdatedAt, setBrowserSourceStatusUpdatedAt] = useState<string | null>(null);
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
+  const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(() => new Set());
   const browserSourceRefreshFailed = useRef(false);
   const effectLoadGeneration = useRef(0);
+  const disclosureSetId = useRef<string | null>(null);
+  const pendingFocus = useRef<{ readonly alertId: string | null; readonly groupKey: string } | null>(null);
 
   useEffect(() => {
     const generation = ++effectLoadGeneration.current;
@@ -162,15 +174,50 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     browserSources.scrollIntoView({ block: "start" });
   }, [detail]);
 
-  const filteredInventory = useMemo(() => {
-    const normalizedQuery = query.trim().toLocaleLowerCase();
-    return (detail?.inventory ?? []).filter((alert) =>
-      (normalizedQuery === "" || `${alert.name} ${alert.eventType} ${alert.providerKind}`.toLocaleLowerCase().includes(normalizedQuery)) &&
-      (eventFilter === "all" || alert.eventType === eventFilter) &&
-      (statusFilter === "all" || (statusFilter === "enabled" ? alert.enabled : !alert.enabled)) &&
-      (profileFilter === "all" || alert.targetProfileIds.includes(profileFilter as "landscape" | "vertical"))
-    );
-  }, [detail, eventFilter, profileFilter, query, statusFilter]);
+  const eventGroups = useMemo(() => buildAlertEventGroups(
+    detail?.inventory ?? [],
+    detail?.overview.validationIssues ?? []
+  ), [detail]);
+  const filteredEventGroups = useMemo(() => filterAlertEventGroups(eventGroups, {
+    query,
+    eventType: eventFilter,
+    ...(statusFilter === "all" ? {} : { status: statusFilter as "enabled" | "disabled" }),
+    ...(profileFilter === "all" ? {} : { profileId: profileFilter as TargetProfileId })
+  }), [eventFilter, eventGroups, profileFilter, query, statusFilter]);
+  const expandedEventKeys = useMemo(() => new Set([
+    ...manualExpandedEventKeys,
+    ...filteredEventGroups.forcedOpenKeys
+  ]), [filteredEventGroups.forcedOpenKeys, manualExpandedEventKeys]);
+
+  useEffect(() => {
+    const setId = detail?.overview.id ?? null;
+    if (setId === null || disclosureSetId.current === setId) return;
+    disclosureSetId.current = setId;
+    setManualExpandedEventKeys(new Set(eventGroups
+      .filter((group) => group.defaultCount + group.variationCount > 0)
+      .map(({ key }) => key)));
+  }, [detail?.overview.id, eventGroups]);
+
+  useEffect(() => {
+    const target = pendingFocus.current;
+    if (target === null) return;
+    const element = target.alertId === null
+      ? document.getElementById(eventGroupButtonId(target.groupKey))
+      : document.getElementById(alertRowFocusId(target.alertId));
+    if (element === null && target.alertId !== null && detail?.inventory.some(({ id }) => id === target.alertId)) return;
+    pendingFocus.current = null;
+    (element
+      ?? document.getElementById(eventGroupButtonId(target.groupKey))
+      ?? document.getElementById("alert-inventory-add"))?.focus();
+  }, [detail, expandedEventKeys]);
+
+  function revealMutationTarget(groupKey: string) {
+    setQuery("");
+    setEventFilter("all");
+    setStatusFilter("all");
+    setProfileFilter("all");
+    setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
+  }
 
   async function toggleSet(setId: string) {
     if (setId === expandedSetId) {
@@ -264,10 +311,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
-  function openCreateAlertDialog() {
-    const template = alertStarterTemplates[0];
+  function openCreateAlertDialog(eventType?: AlertCreateInput["eventType"]) {
+    const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
     setCreateAlertEventType(template.eventType);
     setCreateAlertName(template.defaultName);
+    setCreateAlertEventLocked(eventType !== undefined);
     setCreateAlertError(null);
     setCreateAlertOpen(true);
   }
@@ -288,8 +336,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         eventType: createAlertEventType,
         name: createAlertName.trim()
       });
+      const groupKey = `event:${created.eventType}`;
+      revealMutationTarget(groupKey);
+      await refresh(created.setId);
+      pendingFocus.current = { alertId: created.id, groupKey };
+      setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
       setCreateAlertOpen(false);
-      onEditAlert(created);
+      setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
       setCreateAlertError(toActionableError(
         "The alert was not created",
@@ -314,7 +367,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setVariationError(null);
     try {
       const created = await managementApi.createAlertVariation(variationParent.id, { name: variationName.trim() });
+      const groupKey = `event:${created.eventType}`;
+      revealMutationTarget(groupKey);
       await refresh(created.setId);
+      pendingFocus.current = { alertId: created.id, groupKey };
+      setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
       setVariationParent(null);
       setNotice({ tone: "warning", message: `${created.name} created disabled and marked Needs review.` });
     } catch (cause) {
@@ -334,7 +391,11 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setNotice(null);
     try {
       const created = await managementApi.duplicateManagedAlert(alert.id);
+      const groupKey = `event:${created.eventType}`;
+      revealMutationTarget(groupKey);
       await refresh(created.setId);
+      pendingFocus.current = { alertId: created.id, groupKey };
+      setManualExpandedEventKeys((current) => new Set([...current, groupKey]));
       setNotice({ tone: "warning", message: `${created.name} duplicated disabled and marked Needs review.` });
     } catch (cause) {
       setError(toActionableError("The alert was not duplicated", cause, "Review the alert and try again."));
@@ -346,6 +407,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   async function confirmAlertMutation() {
     if (alertMutation === null) return;
     const { action, alert } = alertMutation;
+    const deleteFocus = action === "delete" ? focusTargetAfterDelete(eventGroups, alert) : null;
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -354,8 +416,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         await managementApi.resetManagedAlert(alert.id, true);
       } else {
         await managementApi.deleteManagedAlert(alert.id, true);
+        if (deleteFocus !== null) revealMutationTarget(deleteFocus.groupKey);
       }
       await refresh(alert.setId);
+      if (deleteFocus !== null) {
+        pendingFocus.current = deleteFocus;
+        setManualExpandedEventKeys((current) => new Set([...current, deleteFocus.groupKey]));
+      }
       setNotice({
         tone: action === "reset" ? "warning" : "success",
         message: action === "reset" ? `${alert.name} reset to its event default and marked Needs review.` : `${alert.name} deleted.`
@@ -644,13 +711,16 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                   </div>
                   {expandedDetail === null ? null : (
                     <AlertInventory
-                      alerts={filteredInventory}
                       busy={busy}
                       eventFilter={eventFilter}
-                      eventTypes={[...new Set(expandedDetail.inventory.map((alert) => alert.eventType))]}
+                      eventTypes={eventGroups.map(({ eventType }) => eventType)}
+                      expandedKeys={expandedEventKeys}
+                      filtered={filteredEventGroups}
+                      groups={eventGroups}
                       issues={expandedDetail.overview.validationIssues}
                       onEventFilter={setEventFilter}
-                      onAdd={openCreateAlertDialog}
+                      onAdd={() => openCreateAlertDialog()}
+                      onAddForEvent={openCreateAlertDialog}
                       onCreateVariation={openVariationDialog}
                       onDelete={(alert) => setAlertMutation({ action: "delete", alert })}
                       onDuplicate={(alert) => void duplicateAlert(alert)}
@@ -663,12 +733,17 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       onTest={requestInlineTest}
                       onTestProfile={(alert, targetProfileId) => void sendInlineTest(alert, targetProfileId)}
                       onToggle={(alert) => void toggleAlert(alert)}
+                      onToggleGroup={(key) => setManualExpandedEventKeys((current) => {
+                        const next = new Set(current);
+                        if (next.has(key)) next.delete(key);
+                        else next.add(key);
+                        return next;
+                      })}
                       profileFilter={profileFilter}
                       query={query}
                       statusFilter={statusFilter}
                       testMenuAlertId={testMenuAlertId}
                       testingAlertId={testingAlertId}
-                      totalCount={expandedDetail.inventory.length}
                     />
                   )}
                 </article>
@@ -684,6 +759,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         busy={busy}
         error={createAlertError}
         eventType={createAlertEventType}
+        eventTypeLocked={createAlertEventLocked}
         name={createAlertName}
         onCancel={() => setCreateAlertOpen(false)}
         onEventType={selectAlertEventType}
@@ -725,12 +801,15 @@ function ValidationRollup({ detail, set }: { readonly detail: AlertSetDetail | n
 }
 
 function AlertInventory({
-  alerts,
   busy,
   eventFilter,
   eventTypes,
+  expandedKeys,
+  filtered,
+  groups,
   issues,
   onAdd,
+  onAddForEvent,
   onCreateVariation,
   onDelete,
   onDuplicate,
@@ -744,19 +823,22 @@ function AlertInventory({
   onTest,
   onTestProfile,
   onToggle,
+  onToggleGroup,
   profileFilter,
   query,
   statusFilter,
   testMenuAlertId,
   testingAlertId,
-  totalCount
 }: {
-  readonly alerts: readonly AlertInventoryRow[];
   readonly busy: boolean;
   readonly eventFilter: string;
   readonly eventTypes: readonly string[];
+  readonly expandedKeys: ReadonlySet<string>;
+  readonly filtered: FilteredAlertEventGroups;
+  readonly groups: readonly AlertEventGroup[];
   readonly issues: readonly AlertValidationIssue[];
   readonly onAdd: () => void;
+  readonly onAddForEvent: (eventType: AlertCreateInput["eventType"]) => void;
   readonly onCreateVariation: (alert: AlertInventoryRow) => void;
   readonly onDelete: (alert: AlertInventoryRow) => void;
   readonly onDuplicate: (alert: AlertInventoryRow) => void;
@@ -770,79 +852,204 @@ function AlertInventory({
   readonly onTest: (alert: AlertInventoryRow) => void;
   readonly onTestProfile: (alert: AlertInventoryRow, targetProfileId: TargetProfileId) => void;
   readonly onToggle: (alert: AlertInventoryRow) => void;
+  readonly onToggleGroup: (key: string) => void;
   readonly profileFilter: string;
   readonly query: string;
   readonly statusFilter: string;
   readonly testMenuAlertId: string | null;
   readonly testingAlertId: string | null;
-  readonly totalCount: number;
 }) {
-  const orderedAlerts = orderAlertRows(alerts);
   return (
     <section aria-labelledby="alert-inventory-heading" className="alert-sets-page__inventory">
-      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{alerts.length} of {totalCount} shown</p></div><button disabled={busy} onClick={onAdd} type="button">Add alert</button></div>
+      <div className="alert-sets-page__section-heading"><div><h3 id="alert-inventory-heading">Alerts</h3><p>{filtered.matchingAlertCount} of {filtered.totalAlertCount} shown</p></div><button disabled={busy} id="alert-inventory-add" onClick={onAdd} type="button">Add alert</button></div>
       <div className="alert-sets-page__filters">
-        <label><span>Search</span><input onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} /></label>
+        <label><span>Search</span><input aria-label="Search" onChange={(event) => onQuery(event.currentTarget.value)} placeholder="Name, event, or provider" type="search" value={query} /></label>
         <label><span>Event</span><select onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</select></label>
         <label><span>Status</span><select onChange={(event) => onStatusFilter(event.currentTarget.value)} value={statusFilter}><option value="all">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
         <label><span>Profile</span><select onChange={(event) => onProfileFilter(event.currentTarget.value)} value={profileFilter}><option value="all">All profiles</option><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label>
       </div>
-      <div className="alert-sets-page__table-wrap">
-        <table className="alert-sets-page__table alert-sets-page__table--inventory">
-          <thead><tr><th scope="col">Alert</th><th scope="col">Event</th><th scope="col">Profiles</th><th scope="col">State</th><th scope="col">Validation</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
-          <tbody>
-            {orderedAlerts.map((alert) => {
-              const alertIssues = issues.filter((issue) => issue.alertId === alert.id);
-              const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
-              const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
-              const testMenuOpen = testMenuAlertId === alert.id;
-              return (
-                <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
-                  <th scope="row"><span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"}</small></th>
-                  <td data-label="Event"><span>{formatEventType(alert.eventType)}</span><small>{formatProvider(alert.providerKind)} catalog</small></td>
-                  <td data-label="Profiles">{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
-                  <td data-label="State"><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
-                  <td data-label="Validation">
-                    <span className="alert-sets-page__alert-validation">
-                      {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, { one: "blocker", other: "blockers" })}</span> : null}
-                      {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, { one: "warning", other: "warnings" })}</span> : null}
-                      {alert.reviewState === "needs-review" ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">Needs review</span> : blockerCount === 0 && warningCount === 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--ready">Ready</span> : null}
-                    </span>
-                  </td>
-                  <td data-label="Actions">
-                    <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
-                      <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" onClick={() => onEdit(alert)} type="button">Edit</button>
-                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" onClick={() => onPreview(alert)} type="button">Preview</button>
-                      <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
-                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
-                      <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
-                      <details className="alert-sets-page__action-menu">
-                        <summary aria-label={`More actions for ${alert.name}`} className="button button--secondary button--compact">More</summary>
-                        <div role="group" aria-label={`Additional actions for ${alert.name}`}>
-                          <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" onClick={() => onPreview(alert)} type="button">Preview</button>
-                          {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
-                          <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
-                          <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
-                          <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
-                        </div>
-                      </details>
-                    </div>
-                    {testMenuOpen ? (
-                      <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">
-                        {alert.targetProfileIds.map((targetProfileId) => (
-                          <button aria-label={`Send ${alert.name} test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div className="alert-sets-page__event-groups">
+        {filtered.groups.map((group) => {
+          const expanded = expandedKeys.has(group.key);
+          const contentId = eventGroupContentId(group.key);
+          const fullGroup = groups.find(({ key }) => key === group.key) ?? group;
+          return (
+            <section className="alert-sets-page__event-group" data-catalog-group={group.catalogGroup} key={group.key}>
+              <header className="alert-sets-page__event-header">
+                <button
+                  aria-controls={contentId}
+                  aria-expanded={expanded}
+                  aria-label={`${expanded ? "Collapse" : "Expand"} ${group.label} alerts`}
+                  className="alert-sets-page__event-toggle"
+                  id={eventGroupButtonId(group.key)}
+                  onClick={() => onToggleGroup(group.key)}
+                  type="button"
+                >
+                  <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+                  <span className="alert-sets-page__event-identity"><strong>{group.label}</strong><small>{group.catalogGroup}</small></span>
+                  <span className="alert-sets-page__event-counts">
+                    {formatCount(group.defaultCount, { one: "default", other: "defaults" })}
+                    {" · "}{formatCount(group.variationCount, { one: "variation", other: "variations" })}
+                    {" · "}{group.enabledCount} enabled
+                    {filtered.hasActiveFilters ? ` · ${group.matchingDefaultCount + group.matchingVariationCount} matching` : ""}
+                  </span>
+                  <span className={`alert-sets-page__event-status alert-sets-page__event-status--${group.status}`}>{eventStatusLabel(group.status)}</span>
+                </button>
+                {group.known ? <button className="button button--secondary button--compact" disabled={busy} onClick={() => onAddForEvent(group.eventType as AlertCreateInput["eventType"])} type="button">Add alert for {group.label}</button> : null}
+              </header>
+              {expanded ? (
+                <div className="alert-sets-page__event-content" id={contentId}>
+                  {group.defaults.length === 0 && group.orphanVariations.length === 0 ? <p className="alert-sets-page__event-empty">No alerts configured for {group.label}.</p> : null}
+                  {group.defaults.length === 0 ? null : (
+                    <AlertRowsTable
+                      busy={busy}
+                      defaults={group.defaults}
+                      fullGroup={fullGroup}
+                      issues={issues}
+                      onCreateVariation={onCreateVariation}
+                      onDelete={onDelete}
+                      onDuplicate={onDuplicate}
+                      onEdit={onEdit}
+                      onPreview={onPreview}
+                      onReset={onReset}
+                      onTest={onTest}
+                      onTestProfile={onTestProfile}
+                      onToggle={onToggle}
+                      testMenuAlertId={testMenuAlertId}
+                      testingAlertId={testingAlertId}
+                    />
+                  )}
+                  {group.orphanVariations.length === 0 ? null : (
+                    <section aria-labelledby={`${contentId}-orphans`} className="alert-sets-page__orphans">
+                      <h4 id={`${contentId}-orphans`}>Orphan variations</h4>
+                      <p>These saved variations have no available owning default. They remain visible for diagnosis and recovery.</p>
+                      <AlertRowsTable
+                        busy={busy}
+                        defaults={[]}
+                        fullGroup={fullGroup}
+                        issues={issues}
+                        onCreateVariation={onCreateVariation}
+                        onDelete={onDelete}
+                        onDuplicate={onDuplicate}
+                        onEdit={onEdit}
+                        onPreview={onPreview}
+                        onReset={onReset}
+                        onTest={onTest}
+                        onTestProfile={onTestProfile}
+                        onToggle={onToggle}
+                        orphanVariations={group.orphanVariations}
+                        testMenuAlertId={testMenuAlertId}
+                        testingAlertId={testingAlertId}
+                      />
+                    </section>
+                  )}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
       </div>
-      {alerts.length === 0 ? <p className="alert-sets-page__empty-row">No alerts match these filters.</p> : null}
+      {filtered.groups.length === 0 ? <div className="alert-sets-page__empty-row"><p>No alerts match these filters.</p><button onClick={() => { onQuery(""); onEventFilter("all"); onStatusFilter("all"); onProfileFilter("all"); }} type="button">Clear filters</button></div> : null}
     </section>
+  );
+}
+
+function AlertRowsTable({
+  busy,
+  defaults,
+  fullGroup,
+  issues,
+  onCreateVariation,
+  onDelete,
+  onDuplicate,
+  onEdit,
+  onPreview,
+  onReset,
+  onTest,
+  onTestProfile,
+  onToggle,
+  orphanVariations = [],
+  testMenuAlertId,
+  testingAlertId
+}: {
+  readonly busy: boolean;
+  readonly defaults: FilteredAlertEventGroup["defaults"];
+  readonly fullGroup: AlertEventGroup;
+  readonly issues: readonly AlertValidationIssue[];
+  readonly onCreateVariation: (alert: AlertInventoryRow) => void;
+  readonly onDelete: (alert: AlertInventoryRow) => void;
+  readonly onDuplicate: (alert: AlertInventoryRow) => void;
+  readonly onEdit: (alert: AlertInventoryRow) => void;
+  readonly onPreview: (alert: AlertInventoryRow) => void;
+  readonly onReset: (alert: AlertInventoryRow) => void;
+  readonly onTest: (alert: AlertInventoryRow) => void;
+  readonly onTestProfile: (alert: AlertInventoryRow, targetProfileId: TargetProfileId) => void;
+  readonly onToggle: (alert: AlertInventoryRow) => void;
+  readonly orphanVariations?: readonly AlertInventoryRow[];
+  readonly testMenuAlertId: string | null;
+  readonly testingAlertId: string | null;
+}) {
+  const rows = [
+    ...defaults.flatMap(({ alert, variations }) => [
+      { alert, siblings: [] as readonly AlertInventoryRow[] },
+      ...variations.map((variation) => ({
+        alert: variation,
+        siblings: fullGroup.defaults.find(({ alert: candidate }) => candidate.id === alert.id)?.variations ?? variations
+      }))
+    ]),
+    ...orphanVariations.map((alert) => ({ alert, siblings: fullGroup.orphanVariations }))
+  ];
+  return (
+    <div className="alert-sets-page__table-wrap">
+      <table className="alert-sets-page__table alert-sets-page__table--inventory">
+        <thead><tr><th scope="col">Alert</th><th scope="col">Profiles</th><th scope="col">State</th><th scope="col">Validation</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+        <tbody>
+          {rows.map(({ alert, siblings }) => {
+            const alertIssues = issues.filter((issue) => issue.alertId !== null
+              ? issue.alertId === alert.id
+              : issue.eventType === alert.eventType);
+            const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
+            const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
+            const testMenuOpen = testMenuAlertId === alert.id;
+            const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known);
+            return (
+              <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
+                <th scope="row">
+                  <span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"} · {formatProvider(alert.providerKind)} catalog</small>
+                  {summary.conditionSummaries.map((condition) => <small key={condition}>{condition}</small>)}
+                  {summary.prioritySummary === null ? null : <small>{summary.prioritySummary}</small>}
+                  {summary.weightSummary === null ? null : <small>{summary.weightSummary}</small>}
+                </th>
+                <td data-label="Profiles">{alert.targetProfileIds.map(formatProfile).join(", ") || "None"}</td>
+                <td data-label="State"><StatusBadge label={alert.enabled ? "Enabled" : "Disabled"} tone={alert.enabled ? "positive" : "neutral"} /></td>
+                <td data-label="Validation"><span className="alert-sets-page__alert-validation">
+                  {blockerCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--blocker">{formatCount(blockerCount, { one: "blocker", other: "blockers" })}</span> : null}
+                  {warningCount > 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--warning">{formatCount(warningCount, { one: "warning", other: "warnings" })}</span> : null}
+                  {alert.reviewState === "needs-review" ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--review">Needs review</span> : blockerCount === 0 && warningCount === 0 ? <span className="alert-sets-page__validation-count alert-sets-page__validation-count--ready">Ready</span> : null}
+                </span></td>
+                <td data-label="Actions">
+                  <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
+                    <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</button>
+                    <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" onClick={() => onPreview(alert)} type="button">Preview</button>
+                    <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
+                    {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                    <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
+                    <details className="alert-sets-page__action-menu"><summary aria-label={`More actions for ${alert.name}`} className="button button--secondary button--compact">More</summary><div role="group" aria-label={`Additional actions for ${alert.name}`}>
+                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" onClick={() => onPreview(alert)} type="button">Preview</button>
+                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                      <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
+                      <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
+                      <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
+                    </div></details>
+                  </div>
+                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{alert.targetProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -948,10 +1155,11 @@ function NameDialog({ busy, draft, onCancel, onChange, onSubmit, state }: { read
   return <ModalSurface labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}><div><h2 id="alert-set-name-dialog-title">{title}</h2><p>Saving does not change which alert set is active.</p></div><label><span>Alert set name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required value={draft} /></label><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</button></div></form></ModalSurface>;
 }
 
-function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType, onName, onSubmit, open }: {
+function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, name, onCancel, onEventType, onName, onSubmit, open }: {
   readonly busy: boolean;
   readonly error: ActionableManagementError | null;
   readonly eventType: AlertCreateInput["eventType"];
+  readonly eventTypeLocked: boolean;
   readonly name: string;
   readonly onCancel: () => void;
   readonly onEventType: (eventType: AlertCreateInput["eventType"]) => void;
@@ -971,7 +1179,7 @@ function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType
         {error === null ? null : <ManagementErrorBanner error={error} />}
         <label>
           <span>Event type</span>
-          <select autoFocus onChange={(event) => onEventType(event.currentTarget.value as AlertCreateInput["eventType"])} value={eventType}>
+          <select autoFocus={!eventTypeLocked} disabled={eventTypeLocked} onChange={(event) => onEventType(event.currentTarget.value as AlertCreateInput["eventType"])} value={eventType}>
             {groups.map((group) => (
               <optgroup key={group} label={group}>
                 {alertStarterTemplates.filter((candidate) => candidate.group === group).map((candidate) => <option key={candidate.eventType} value={candidate.eventType}>{candidate.label}</option>)}
@@ -981,7 +1189,7 @@ function CreateAlertDialog({ busy, error, eventType, name, onCancel, onEventType
         </label>
         <label>
           <span>Alert name</span>
-          <input autoComplete="off" maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} />
+          <input autoComplete="off" autoFocus={eventTypeLocked} maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} />
         </label>
         <div className="alert-sets-page__template-preview">
           <span>Starter message</span>
@@ -1080,15 +1288,42 @@ function AlertMutationDialog({ busy, onCancel, onConfirm, state }: {
   );
 }
 
-function orderAlertRows(alerts: readonly AlertInventoryRow[]): readonly AlertInventoryRow[] {
-  const defaults = alerts.filter((alert) => alert.kind === "default");
-  const attachedIds = new Set<string>();
-  const ordered = defaults.flatMap((alert) => {
-    const variations = alerts.filter((candidate) => candidate.parentAlertId === alert.id);
-    variations.forEach((variation) => attachedIds.add(variation.id));
-    return [alert, ...variations];
-  });
-  return [...ordered, ...alerts.filter((alert) => alert.kind === "variation" && !attachedIds.has(alert.id))];
+function eventGroupButtonId(key: string): string {
+  return `alert-event-toggle-${domId(key)}`;
+}
+
+function eventGroupContentId(key: string): string {
+  return `alert-event-content-${domId(key)}`;
+}
+
+function alertRowFocusId(alertId: string): string {
+  return `alert-row-focus-${domId(alertId)}`;
+}
+
+function domId(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/gu, "-");
+}
+
+function eventStatusLabel(status: AlertEventGroup["status"]): string {
+  return status === "needs-review" ? "Needs review" : `${status[0]?.toUpperCase() ?? ""}${status.slice(1)}`;
+}
+
+function focusTargetAfterDelete(
+  groups: readonly AlertEventGroup[],
+  alert: AlertInventoryRow
+): { readonly alertId: string | null; readonly groupKey: string } {
+  const group = groups.find(({ eventType }) => eventType === alert.eventType);
+  const groupKey = group?.key ?? `event:${alert.eventType}`;
+  if (group === undefined) return { alertId: null, groupKey };
+  const siblings = alert.kind === "default"
+    ? group.defaults.map(({ alert: candidate }) => candidate)
+    : group.defaults.find(({ alert: candidate }) => candidate.id === alert.parentAlertId)?.variations
+      ?? group.orphanVariations;
+  const index = siblings.findIndex(({ id }) => id === alert.id);
+  return {
+    alertId: siblings[index + 1]?.id ?? siblings[index - 1]?.id ?? null,
+    groupKey
+  };
 }
 
 function outputRequest(source: AlertBrowserSourceView) {

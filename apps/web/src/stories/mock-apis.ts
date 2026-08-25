@@ -91,6 +91,9 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
         name: input.name,
         kind: "default" as const,
         enabled: false,
+        conditions: [],
+        weight: 1,
+        priority: null,
         reviewState: "needs-review" as const,
         targetProfileIds: ["landscape" as const, "vertical" as const],
         previewText: "Starter alert preview"

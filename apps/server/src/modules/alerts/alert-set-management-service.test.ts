@@ -224,6 +224,19 @@ describe("AlertSetManagementService", () => {
     const defaultAlert = initial.inventory[0]!;
 
     const variation = await fixture.service.createAlertVariation(defaultAlert.id, { name: "VIP follower" });
+    const rule = (await fixture.alertRepository.listRules()).find((candidate) => candidate.id === defaultAlert.id)!;
+    await fixture.alertRepository.saveRule({
+      ...rule,
+      conditions: [{ field: "actor.isFollower", operator: "equals", value: true }],
+      variants: rule.variants.map((candidate) => candidate.id === variation.id
+        ? {
+            ...candidate,
+            conditions: [{ field: "actor.displayName", operator: "includes", value: "VIP" }],
+            weight: 4,
+            priority: 7
+          }
+        : candidate)
+    });
     const detail = await fixture.service.getSet(starter!.id);
 
     expect(variation).toMatchObject({
@@ -238,6 +251,16 @@ describe("AlertSetManagementService", () => {
       { id: defaultAlert.id, parentAlertId: null, kind: "default" },
       { id: variation.id, parentAlertId: defaultAlert.id, kind: "variation" }
     ]);
+    expect(eventRows[0]).toMatchObject({
+      conditions: [{ field: "actor.isFollower", operator: "equals", value: true }],
+      weight: 1,
+      priority: null
+    });
+    expect(eventRows[1]).toMatchObject({
+      conditions: [{ field: "actor.displayName", operator: "includes", value: "VIP" }],
+      weight: 4,
+      priority: 7
+    });
     await expect(fixture.documents.find(variation.id)).resolves.toMatchObject({
       id: variation.id,
       parentAlertId: defaultAlert.id,
@@ -418,7 +441,7 @@ function createFixture() {
       }
     ]
   });
-  return { alertService, metadataRepository, documents, alertEditorService, service };
+  return { alertRepository, alertService, metadataRepository, documents, alertEditorService, service };
 }
 
 function createInMemoryMutationStore(

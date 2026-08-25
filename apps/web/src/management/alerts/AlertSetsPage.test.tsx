@@ -203,18 +203,22 @@ describe("AlertSetsPage", () => {
     );
   });
 
-  it("creates an alert in the expanded set and opens it in the focused editor", async () => {
+  it("creates an alert from the global action, stays on Alert Sets, and focuses the refreshed row", async () => {
+    const source = detail();
     const created = {
-      ...detail().inventory[0]!,
+      ...source.inventory[0]!,
       id: "alert-cheer",
       eventType: "cheer" as const,
       name: "New cheer",
       previewText: "Thanks for the cheer, {actor.displayName}!"
     };
     const createAlert = vi.fn(async () => created);
+    const getAlertSet = vi.fn<AlertSetsApi["getAlertSet"]>()
+      .mockResolvedValueOnce(source)
+      .mockResolvedValue({ ...source, inventory: [...source.inventory, created] });
     const onEditAlert = vi.fn();
     const user = userEvent.setup();
-    render(<AlertSetsPage managementApi={alertSetsApi({ createAlert })} onEditAlert={onEditAlert} />);
+    render(<AlertSetsPage managementApi={alertSetsApi({ createAlert, getAlertSet })} onEditAlert={onEditAlert} />);
 
     await user.click(await screen.findByRole("button", { name: "Add alert" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
@@ -226,7 +230,153 @@ describe("AlertSetsPage", () => {
       eventType: "cheer",
       name: "New cheer"
     }));
-    expect(onEditAlert).toHaveBeenCalledWith(created);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit New cheer" })).toHaveFocus());
+    expect(onEditAlert).not.toHaveBeenCalled();
+  });
+
+  it("reveals and focuses a created alert when the active filters would hide it", async () => {
+    const source = detail();
+    const created = {
+      ...source.inventory[0]!,
+      id: "alert-filtered-cheer",
+      eventType: "cheer" as const,
+      name: "Filtered cheer",
+      enabled: false
+    };
+    const getAlertSet = vi.fn<AlertSetsApi["getAlertSet"]>()
+      .mockResolvedValueOnce(source)
+      .mockResolvedValue({ ...source, inventory: [...source.inventory, created] });
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      createAlert: vi.fn(async () => created),
+      getAlertSet
+    })} onEditAlert={vi.fn()} />);
+
+    await user.selectOptions(await screen.findByLabelText("Status"), "enabled");
+    await user.click(screen.getByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.type(within(dialog).getByLabelText("Alert name"), created.name);
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit Filtered cheer" })).toHaveFocus());
+    expect(screen.getByLabelText("Status")).toHaveValue("all");
+  });
+
+  it("renders canonical event disclosures, unknown events, and labelled orphan variations", async () => {
+    const source = detail();
+    const follow = source.inventory[0]!;
+    source.inventory = [
+      follow,
+      { ...follow, id: "follow-second", name: "Second follow" },
+      { ...follow, id: "follow-vip", parentAlertId: follow.id, kind: "variation", name: "VIP follow" },
+      { ...follow, id: "follow-orphan", parentAlertId: "missing-follow", kind: "variation", name: "Orphan follow" },
+      ...source.inventory.slice(1),
+      { ...follow, id: "future-default", eventType: "future_provider_event", name: "Future event" }
+    ];
+    source.overview = {
+      ...source.overview,
+      validationIssues: [
+        { ...issue("follow-warning", "warning", "FOLLOW_WARNING", "Review follow alerts."), eventType: "follow" }
+      ]
+    };
+
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source)
+    })} onEditAlert={vi.fn()} />);
+
+    const followToggle = await screen.findByRole("button", { name: "Collapse Follow alerts" });
+    expect(followToggle).toHaveAttribute("aria-expanded", "true");
+    expect(followToggle).toHaveTextContent("2 defaults");
+    expect(followToggle).toHaveTextContent("2 variations");
+    expect(followToggle).toHaveTextContent("Warning");
+    expect(screen.getByRole("button", { name: "Expand Resubscription alerts" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Collapse future_provider_event alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeInTheDocument();
+    expect(screen.getByText("Orphan follow")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enable Follow event" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add alert for future_provider_event" })).not.toBeInTheDocument();
+  });
+
+  it("keeps an alert-specific blocker off sibling defaults in the same event", async () => {
+    const source = detail();
+    const follow = source.inventory[0]!;
+    source.inventory = [
+      follow,
+      { ...follow, id: "follow-second", name: "Second follow" },
+      ...source.inventory.slice(1)
+    ];
+    source.overview = {
+      ...source.overview,
+      validationIssues: [{
+        ...issue("follow-blocker", "blocker", "FOLLOW_BLOCKER", "Fix the first follow alert."),
+        eventType: "follow",
+        alertId: follow.id
+      }]
+    };
+
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source)
+    })} onEditAlert={vi.fn()} />);
+
+    const followGroup = await screen.findByRole("button", { name: "Collapse Follow alerts" });
+    const targetedRow = screen.getByRole("button", { name: "Edit New follower" }).closest("tr");
+    const siblingRow = screen.getByRole("button", { name: "Edit Second follow" }).closest("tr");
+
+    expect(followGroup).toHaveTextContent("Blocker");
+    expect(targetedRow).not.toBeNull();
+    expect(within(targetedRow!).getByText("1 blocker")).toBeInTheDocument();
+    expect(siblingRow).not.toBeNull();
+    expect(within(siblingRow!).queryByText(/blocker/u)).not.toBeInTheDocument();
+    expect(within(siblingRow!).getByText("Needs review")).toBeInTheDocument();
+  });
+
+  it("creates from an empty known event and focuses the new row without unlocking the event", async () => {
+    const source = detail();
+    const created = {
+      ...source.inventory[0]!,
+      id: "alert-resubscription",
+      eventType: "resubscription" as const,
+      name: "Member welcome"
+    };
+    const createAlert = vi.fn(async () => created);
+    const getAlertSet = vi.fn<AlertSetsApi["getAlertSet"]>()
+      .mockResolvedValueOnce(source)
+      .mockResolvedValue({ ...source, inventory: [...source.inventory, created] });
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ createAlert, getAlertSet })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert for Resubscription" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    expect(within(dialog).getByLabelText("Event type")).toBeDisabled();
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.type(within(dialog).getByLabelText("Alert name"), "Member welcome");
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
+      eventType: "resubscription",
+      name: "Member welcome"
+    }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Edit Member welcome" })).toHaveFocus());
+  });
+
+  it("restores manual disclosure state after filtering stops forcing matches open", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi()} onEditAlert={vi.fn()} />);
+
+    const follow = await screen.findByRole("button", { name: "Collapse Follow alerts" });
+    await user.click(follow);
+    expect(screen.getByRole("button", { name: "Expand Follow alerts" })).toHaveAttribute("aria-expanded", "false");
+
+    const search = screen.getByRole("searchbox", { name: "Search" });
+    await user.type(search, "New follower");
+    expect(screen.getByRole("button", { name: "Collapse Follow alerts" })).toHaveAttribute("aria-expanded", "true");
+    await user.clear(search);
+
+    expect(screen.getByRole("button", { name: "Expand Follow alerts" })).toHaveAttribute("aria-expanded", "false");
   });
 
   it("groups the canonical event picker and selects an event from each group", async () => {
@@ -595,6 +745,9 @@ function alert(id: string, name: string, eventType: StreamEventType) {
     name,
     kind: "default" as const,
     enabled: false,
+    conditions: [],
+    weight: 1,
+    priority: null,
     reviewState: "needs-review" as const,
     targetProfileIds: ["landscape" as const],
     previewText: `${name} preview`

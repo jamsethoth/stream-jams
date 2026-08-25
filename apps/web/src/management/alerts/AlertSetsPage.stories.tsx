@@ -177,7 +177,38 @@ export const CreateAlert: Story = {
     await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
     await expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
     await userEvent.click(within(dialog).getByRole("button", { name: "Create alert" }));
-    await waitFor(() => expect(args.onEditAlert).toHaveBeenCalledWith(expect.objectContaining({ id: "alert-cheer" })));
+    await waitFor(() => expect(createAlert).toHaveBeenCalled());
+    await expect(args.onEditAlert).not.toHaveBeenCalled();
+    await expect(canvas.getByText("New cheer created disabled and marked Needs review.")).toBeVisible();
+  }
+};
+
+export const CreateAlertFailure: Story = {
+  beforeEach: () => {
+    const reportError = console.error;
+    console.error = fn();
+    return () => { console.error = reportError; };
+  },
+  args: {
+    managementApi: {
+      ...api([activeSet], detail(activeSet)),
+      createAlert: fn(async () => { throw new Error("Local persistence failed. ref_story_create_alert"); })
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
+    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    await userEvent.selectOptions(dialog.getByLabelText("Event type"), "cheer");
+    await userEvent.click(dialog.getByRole("button", { name: "Create alert" }));
+
+    const failure = await dialog.findByRole("alert");
+    await expect(failure).toHaveTextContent("The alert was not created");
+    await expect(failure).toHaveTextContent("Local persistence failed");
+    await expect(failure).toHaveTextContent("Review the event type and alert name, then try again.");
+    await expect(failure).toHaveTextContent("ref_story_create_alert");
+    await expect(dialog.getByLabelText("Alert name")).toHaveValue("New cheer");
+    await expect(dialog.getByRole("button", { name: "Create alert" })).toBeEnabled();
   }
 };
 
@@ -205,6 +236,20 @@ export const DefaultWithVariations: Story = {
     const variation = await canvas.findByRole("row", { name: /Large raid/u });
     await expect(variation).toHaveClass("alert-sets-page__variation-row");
     await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
+  }
+};
+
+export const GroupedInventoryStates: Story = {
+  args: { managementApi: api([activeSet], detailWithGroupedInventory()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: /Collapse Follow/u })).toHaveTextContent("2 defaults");
+    await expect(canvas.getByText("Relative weight 3; the selected sample's result depends on eligible alerts.")).toBeVisible();
+    await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
+    await expect(canvas.getByRole("button", { name: /Collapse future_celebration/u })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /Add alert for future_celebration/u })).not.toBeInTheDocument();
+    await userEvent.type(canvas.getByLabelText("Search"), "large community");
+    await expect(canvas.getByRole("button", { name: /Collapse Community gift/u })).toHaveAttribute("aria-expanded", "true");
   }
 };
 
@@ -394,6 +439,40 @@ function detailWithVariation(): AlertSetDetail {
   };
 }
 
+function detailWithGroupedInventory(): AlertSetDetail {
+  const source = detail(activeSet);
+  const follow = source.inventory[0]!;
+  const raid = source.inventory[1]!;
+  const community = alert("alert-community", "Community gift", "community_gift", activeSet.id, true, "ready");
+  return {
+    ...source,
+    overview: {
+      ...source.overview,
+      validationIssues: [{
+        ...issue("community-warning", "warning", "Review the large community variation."),
+        eventType: "community_gift"
+      }]
+    },
+    inventory: [
+      ...source.inventory,
+      { ...follow, id: "alert-follow-secondary", name: "Backup follower" },
+      community,
+      {
+        ...community,
+        id: "variant-large-community",
+        parentAlertId: community.id,
+        name: "Large community gift",
+        kind: "variation",
+        conditions: [{ field: "total", operator: "min", value: 10 }],
+        weight: 3,
+        priority: 1
+      },
+      { ...raid, id: "variant-orphan-raid", parentAlertId: "missing-raid", name: "Orphan raid", kind: "variation" },
+      { ...follow, id: "alert-future", eventType: "future_celebration", name: "Future celebration" }
+    ]
+  };
+}
+
 function overview(id: string, name: string, active: boolean): AlertSetOverview {
   return {
     id,
@@ -428,6 +507,9 @@ function alert(
     name,
     kind: "default" as const,
     enabled,
+    conditions: [],
+    weight: 1,
+    priority: null,
     reviewState,
     targetProfileIds: ["landscape" as const],
     previewText: `${name} sample preview`
