@@ -104,6 +104,17 @@ type SaveWarningState = {
   readonly rejectNavigation?: (cause: unknown) => void;
   readonly resolveNavigation?: (saved: boolean) => void;
 };
+type StarterThemeReviewState = {
+  readonly active: boolean;
+  readonly editsAfterTheme: number;
+  readonly themedDocument: AlertEditorDocument;
+};
+
+const starterThemeAppliedNotice: ManagementToastNotice = {
+  tone: "warning",
+  message: "Starter theme applied.",
+  detail: "Review both Landscape and Vertical before saving or re-enabling."
+};
 
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editor, setEditor] = useState<AlertEditorState | null>(null);
@@ -149,7 +160,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [starterThemeOpen, setStarterThemeOpen] = useState(false);
   const [starterThemeId, setStarterThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
   const [starterThemeError, setStarterThemeError] = useState<ActionableManagementError | null>(null);
+  const [starterThemeReview, setStarterThemeReview] = useState<StarterThemeReviewState | null>(null);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
+  const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
   const tabRefs = useRef<Record<InspectorTab, HTMLButtonElement | null>>({
     layers: null,
@@ -176,6 +189,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setSetDetail(null);
     setLoadedSetId(undefined);
     setError(null);
+    setNotice(null);
+    setStarterThemeReview(null);
+    setPendingProfileId(null);
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
@@ -300,6 +316,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setVariationContext((current) => current === null
         ? null
         : updateVariationContextAfterSave(current, saved, priorityAssignments ?? []));
+      setStarterThemeReview(null);
       resetLocalPreview();
       setNotice({ tone: "success", message: "Alert saved." });
     } catch (cause) {
@@ -329,6 +346,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
+    setStarterThemeReview(null);
     resetLocalPreview();
     resetEventInspectorDraft();
     setError(null);
@@ -414,13 +432,29 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   ), [profileId, props.alertId, setDetail]);
 
   function updateDocument(update: (document: AlertEditorDocument) => AlertEditorDocument) {
-    setEditor((current) => current === null ? null : applyEditorUpdate(current, update));
+    if (editor === null) return;
+    const next = applyEditorUpdate(editor, update);
+    if (next === editor) return;
+    setEditor(next);
+    setStarterThemeReview((current) => current === null
+      ? null
+      : current.active
+        ? { ...current, editsAfterTheme: current.editsAfterTheme + 1 }
+        : null);
     resetLocalPreview();
     setNotice(null);
   }
 
   function updatePriorityGroups(update: Parameters<typeof applyPriorityGroupUpdate>[1]) {
-    setEditor((current) => current === null ? null : applyPriorityGroupUpdate(current, update));
+    if (editor === null) return;
+    const next = applyPriorityGroupUpdate(editor, update);
+    if (next === editor) return;
+    setEditor(next);
+    setStarterThemeReview((current) => current === null
+      ? null
+      : current.active
+        ? { ...current, editsAfterTheme: current.editsAfterTheme + 1 }
+        : null);
     resetLocalPreview();
     setNotice(null);
   }
@@ -437,20 +471,18 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   function applyStarterTheme() {
-    if (document === null) return;
+    if (document === null || editor === null) return;
     try {
       const themed = applyAlertStarterTheme(document, starterThemeId);
-      updateDocument(() => themed);
+      setEditor(applyEditorUpdate(editor, () => themed));
+      setStarterThemeReview({ active: true, editsAfterTheme: 0, themedDocument: themed });
+      resetLocalPreview();
       setSelectedLayerId((current) => themed.layers.some((layer) => layer.id === current)
         ? current
         : themed.layers.find((layer) => layer.type !== "audio" && layer.type !== "tts")?.id ?? null);
       setStarterThemeOpen(false);
       setStarterThemeError(null);
-      setNotice({
-        tone: "warning",
-        message: "Starter theme applied.",
-        detail: "Review both Landscape and Vertical before saving or re-enabling."
-      });
+      setNotice(starterThemeAppliedNotice);
     } catch (cause) {
       setStarterThemeError(actionableError(
         "The starter theme was not applied",
@@ -461,17 +493,38 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   function undo() {
-    setEditor((current) => current === null ? null : undoEditorUpdate(current));
+    if (editor === null) return;
+    const next = undoEditorUpdate(editor);
+    if (next === editor) return;
+    setEditor(next);
+    setStarterThemeReview((current) => current === null || !current.active
+      ? current
+      : current.editsAfterTheme > 0
+        ? { ...current, editsAfterTheme: current.editsAfterTheme - 1 }
+        : { ...current, active: false });
     resetLocalPreview();
     resetEventInspectorDraft();
     setNotice(null);
   }
 
   function redo() {
-    setEditor((current) => current === null ? null : redoEditorUpdate(current));
+    if (editor === null) return;
+    const next = redoEditorUpdate(editor);
+    if (next === editor) return;
+    const restoresTheme = starterThemeReview !== null
+      && !starterThemeReview.active
+      && next.document === starterThemeReview.themedDocument;
+    setEditor(next);
+    setStarterThemeReview((current) => current === null
+      ? null
+      : current.active
+        ? { ...current, editsAfterTheme: current.editsAfterTheme + 1 }
+        : next.document === current.themedDocument
+          ? { ...current, active: true, editsAfterTheme: 0 }
+          : current);
     resetLocalPreview();
     resetEventInspectorDraft();
-    setNotice(null);
+    setNotice(restoresTheme ? starterThemeAppliedNotice : null);
   }
 
   const updateCurrentCanvasView = useCallback((next: CanvasViewState) => {
@@ -480,7 +533,30 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   function requestProfileSwitch(nextProfileId: TargetProfileId) {
     if (nextProfileId === profileId) return;
+    if (editor !== null && isEditorDirty(editor) && starterThemeReview?.active !== true) {
+      setPendingProfileId(nextProfileId);
+      return;
+    }
     setProfileId(nextProfileId);
+  }
+
+  function discardAndSwitchProfile() {
+    if (pendingProfileId === null) return;
+    const nextProfileId = pendingProfileId;
+    discard();
+    setPendingProfileId(null);
+    setProfileId(nextProfileId);
+  }
+
+  async function saveAndSwitchProfile() {
+    if (pendingProfileId === null) return;
+    const nextProfileId = pendingProfileId;
+    setPendingProfileId(null);
+    try {
+      if (await saveForNavigation()) setProfileId(nextProfileId);
+    } catch {
+      // Save failures remain visible through the editor error banner.
+    }
   }
 
   function requestProfileCopy() {
@@ -1082,6 +1158,19 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div className="management-modal__actions">
             <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
             <button className="button button--primary" disabled={busy} onClick={() => void confirmSaveWarning()} type="button">Save changes</button>
+          </div>
+        </div>
+      </ModalSurface>
+      <ModalSurface labelledBy="profile-switch-warning-title" onCancel={() => setPendingProfileId(null)} open={pendingProfileId !== null}>
+        <div className="alert-editor-page__save-warning">
+          <div>
+            <h2 id="profile-switch-warning-title">Switch profiles with unsaved changes?</h2>
+            <p>Choose whether to save or discard the current alert changes before opening {pendingProfileId === null ? "the other profile" : profileLabel(pendingProfileId)}.</p>
+          </div>
+          <div className="management-modal__actions">
+            <button className="button button--secondary" onClick={() => setPendingProfileId(null)} type="button">Cancel</button>
+            <button className="button button--secondary" onClick={discardAndSwitchProfile} type="button">Discard and switch</button>
+            <button className="button button--primary" onClick={() => void saveAndSwitchProfile()} type="button">Save and switch</button>
           </div>
         </div>
       </ModalSurface>
