@@ -240,6 +240,22 @@ describe("AlertSetsPage", () => {
     expect(onEditAlert).not.toHaveBeenCalled();
   });
 
+  it("cancels Add alert without sending a create request", async () => {
+    const createAlert = vi.fn();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ createAlert })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "raid");
+    await user.type(within(dialog).getByLabelText("Alert name"), "Canceled raid");
+    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog", { name: "Add alert" })).not.toBeInTheDocument();
+    expect(createAlert).not.toHaveBeenCalled();
+  });
+
   it("reveals and focuses a created alert when the active filters would hide it", async () => {
     const source = detail();
     const created = {

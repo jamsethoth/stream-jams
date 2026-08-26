@@ -267,6 +267,17 @@ export const StarterThemeConfirmation: Story = {
     const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Apply starter theme?" }));
     await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
     await expect(dialog.getByRole("radio", { name: "Neon Terminal" })).toBeChecked();
+    await expect(dialog.getByRole("button", { name: "Apply theme" })).toBeVisible();
+  }
+};
+
+export const StarterThemeAppliedWarning: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Apply starter theme" }));
+    const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Apply starter theme?" }));
+    await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
     await userEvent.click(dialog.getByRole("button", { name: "Apply theme" }));
     await expect(canvas.getByText("Starter theme applied.")).toBeVisible();
     await expect(canvas.getByText("Alert disabled")).toBeVisible();
@@ -414,16 +425,16 @@ export const HiddenGuidesWithTestBackground: Story = {
   }
 };
 
-export const DirtyProfileSwitch: Story = {
+export const UnsavedProfileInspection: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const template = await canvas.findByRole("textbox", { name: "Message template" });
     await userEvent.clear(template);
     await userEvent.type(template, "Unsaved profile edit");
     await userEvent.click(canvas.getByRole("button", { name: /Vertical/ }));
-    const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Switch profiles with unsaved changes?" }));
-    await expect(dialog.getByRole("button", { name: "Save and switch" })).toBeVisible();
-    await expect(dialog.getByRole("button", { name: "Discard and switch" })).toBeVisible();
+    await expect(canvas.getByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
+    await expect(canvas.getByRole("textbox", { name: "Message template" })).toHaveValue("Unsaved profile edit");
+    await expect(within(globalThis.document.body).queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   }
 };
 

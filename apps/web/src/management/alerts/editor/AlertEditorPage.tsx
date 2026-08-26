@@ -150,7 +150,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [starterThemeId, setStarterThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
   const [starterThemeError, setStarterThemeError] = useState<ActionableManagementError | null>(null);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
-  const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
   const tabRefs = useRef<Record<InspectorTab, HTMLButtonElement | null>>({
     layers: null,
@@ -368,6 +367,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   });
 
   const document = editor?.document ?? null;
+  useEffect(() => {
+    if (document === null) return;
+    setSelectedLayerId((current) => current !== null && document.layers.some((layer) => layer.id === current)
+      ? current
+      : document.layers[0]?.id ?? null);
+  }, [document]);
   const selectedLayer = document?.layers.find((layer) => layer.id === selectedLayerId) ?? null;
   const profile = document?.targetProfiles.find((candidate) => candidate.id === profileId) ?? null;
   const storedCanvasView = canvasViews[profileId];
@@ -459,12 +464,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setEditor((current) => current === null ? null : undoEditorUpdate(current));
     resetLocalPreview();
     resetEventInspectorDraft();
+    setNotice(null);
   }
 
   function redo() {
     setEditor((current) => current === null ? null : redoEditorUpdate(current));
     resetLocalPreview();
     resetEventInspectorDraft();
+    setNotice(null);
   }
 
   const updateCurrentCanvasView = useCallback((next: CanvasViewState) => {
@@ -473,30 +480,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   function requestProfileSwitch(nextProfileId: TargetProfileId) {
     if (nextProfileId === profileId) return;
-    if (editor !== null && isEditorDirty(editor)) {
-      setPendingProfileId(nextProfileId);
-      return;
-    }
     setProfileId(nextProfileId);
-  }
-
-  function discardAndSwitchProfile() {
-    if (pendingProfileId === null) return;
-    const nextProfileId = pendingProfileId;
-    discard();
-    setPendingProfileId(null);
-    setProfileId(nextProfileId);
-  }
-
-  async function saveAndSwitchProfile() {
-    if (pendingProfileId === null) return;
-    const nextProfileId = pendingProfileId;
-    setPendingProfileId(null);
-    try {
-      if (await saveForNavigation()) setProfileId(nextProfileId);
-    } catch {
-      // Save failures remain visible through the editor error banner.
-    }
   }
 
   function requestProfileCopy() {
@@ -1099,12 +1083,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
             <button className="button button--primary" disabled={busy} onClick={() => void confirmSaveWarning()} type="button">Save changes</button>
           </div>
-        </div>
-      </ModalSurface>
-      <ModalSurface labelledBy="profile-switch-warning-title" onCancel={() => setPendingProfileId(null)} open={pendingProfileId !== null}>
-        <div className="alert-editor-page__save-warning">
-          <div><h2 id="profile-switch-warning-title">Switch profiles with unsaved changes?</h2><p>Choose whether to save or discard the current alert changes before opening {pendingProfileId === null ? "the other profile" : profileLabel(pendingProfileId)}.</p></div>
-          <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setPendingProfileId(null)} type="button">Cancel</button><button className="button button--danger-quiet" disabled={busy} onClick={discardAndSwitchProfile} type="button">Discard and switch</button><button className="button button--primary" disabled={busy} onClick={() => void saveAndSwitchProfile()} type="button">Save and switch</button></div>
         </div>
       </ModalSurface>
       <ModalSurface labelledBy="profile-copy-warning-title" onCancel={() => setProfileCopy(null)} open={profileCopy !== null}>

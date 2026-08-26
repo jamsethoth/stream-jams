@@ -58,3 +58,13 @@ GREEN:
 - Theme application remains ordinary alert-document materialization through the existing typed core operation and editor history boundary.
 - Task 6 retains Playwright end-to-end coverage, rebuilt-service live verification, final repository gates, and completion of OpenSpec section 5.
 - No blocking concerns. The only gate output of note was the standard Vite chunk-size advisory and routine Storybook deprecation warnings.
+
+## Independent review follow-up
+
+- Follow-up starting HEAD: `4f536c80eaccae954fec671760bdbfb262b4f38e`.
+- The review found that the existing dirty profile-switch dialog prevented the required post-theme inspection of both target profiles before saving. Target-profile selection is session view state over one shared draft, so Landscape and Vertical now switch immediately without saving or discarding. The regression applies a theme, inspects both canvases, then exercises the ordinary explicit Save and active-set live-impact confirmation.
+- The review found that document-history transitions could leave `selectedLayerId` referring to a visual layer removed by theme application. Selection now reconciles after every document transition, retaining a valid selection or choosing the first current layer, and the Layers inspector explicitly covers Undo, Redo, and Revert. Undo/Redo clear stale starter-theme guidance; Revert replaces it with the existing reverted-success notice.
+- The previous starter-theme story applied the choice before a reviewer could inspect the confirmation. `StarterThemeConfirmation` now remains open with Neon Terminal selected, while `StarterThemeAppliedWarning` separately shows the applied warning, disabled alert, and review state.
+- Add alert now has a direct regression proving Cancel closes the dialog without calling `createAlert`, independent of the existing failure/retry coverage.
+- Review-fix RED evidence: the focused Add alert/editor run produced four expected editor failures for the dirty profile guard and stale layer/notice behavior; the new Add alert cancel test passed. The first GREEN run exposed one older assertion that depended on a deleted stale layer ID. It was reconciled with the reviewed invariant by verifying Undo restores the deleted layer while the inspector selects a valid current layer.
+- Review-fix GREEN evidence: focused Add alert/editor Vitest passed 86/86; the final management API/Add alert/editor Vitest run passed 112/112; web typecheck, production build, focused ESLint, and Storybook static build passed; Storybook browser CI passed 15 suites and 163 tests with zero snapshots; strict OpenSpec validation and diff checks passed.
