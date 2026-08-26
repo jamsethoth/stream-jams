@@ -15,13 +15,13 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 | ID | Feature | Priority | Dependencies | OpenSpec |
 | --- | --- | --- | --- | --- |
+| BL-006 | Curated bundled starter themes | P1 | Implemented text-style contract and BL-003 | [Proposal](../openspec/changes/add-curated-alert-starter-themes/proposal.md) |
 | BL-039 | Collapsible event-type grouping for alert inventory and focused-editor navigation | P1 | Variation authoring contract implemented | [`group-alerts-by-event-type`](../openspec/changes/group-alerts-by-event-type/proposal.md) |
 
 ## Alert Authoring And Assets
 
 | ID | Feature | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
-| BL-006 | Curated bundled starter themes | Deferred | P1 | Implemented text-style contract and BL-003 | Start with local bundled themes; no marketplace. |
 | BL-007 | Bulk alert and asset operations | Deferred | P2 | Stable list selection and impact-summary contracts | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-008 | Versioned alert and alert-set package import/export | Deferred | P2 | Stable styled-alert schema and asset packaging | [Product plan](product-plan.md) |
 | BL-009 | User-created alert templates and `Save as template` | Deferred | P2 | BL-006 and BL-008 | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
