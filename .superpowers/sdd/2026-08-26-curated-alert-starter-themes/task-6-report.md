@@ -36,3 +36,13 @@
 - Changed only the focused E2E file, authorized plan/OpenSpec checkboxes, SDD progress/report evidence, and no production code.
 - Did not run or claim the root-owned full repository gates or live runtime checks.
 - Did not publish, push, open a PR, merge, sync or archive specs, or remove BL-006 from the backlog.
+
+## Typecheck integration follow-up
+
+- Follow-up starting HEAD: `30c319de86f076c5a9ecd6ab16a2030f15d41253`.
+- Root full-gate verification exposed TS6307 because the Task 6 E2E fixture imports `@stream-jams/core`, whose source path alias entered the composite E2E project without a declared project reference.
+- RED: `corepack.cmd pnpm exec tsc -b tests/e2e/tsconfig.json` consistently reported core source files were not listed in the E2E project.
+- Fix: added the same `../../packages/core` project reference used by the web and server TypeScript projects; imports, include boundaries, and compiler strictness remain unchanged.
+- GREEN: the focused E2E TypeScript build passed, the original `corepack.cmd pnpm typecheck` root command passed, core build passed, and the focused Playwright file passed 8/8 in 24.5 seconds.
+- Focused ESLint passed with no output, strict OpenSpec JSON validation reported 1/1 valid with zero issues, and `git diff --check` passed.
+- No production files changed.
