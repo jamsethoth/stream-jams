@@ -1,4 +1,5 @@
 import {
+  alertEditorDocumentSchema,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
@@ -8,6 +9,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   addLayer,
+  addShapeLayer,
   applyEditorUpdate,
   applyPriorityGroupUpdate,
   copyAlertDesign,
@@ -303,6 +305,131 @@ describe("alert editor layer operations", () => {
       ["layer-text", 0],
       ["layer-image", 1]
     ]);
+  });
+
+  it("adds a default shape immediately behind the selected visual layer in one undo step", () => {
+    const initial = createEditorState(createDocument());
+    const updated = applyEditorUpdate(initial, (document) => addShapeLayer(document, "layer-image").document);
+    const shape = updated.document.layers[1];
+
+    expect(shape).toMatchObject({
+      id: "layer-shape-3",
+      name: "Shape",
+      type: "shape",
+      visible: true,
+      order: 1,
+      fill: "#000000B8",
+      animation
+    });
+    expect(updated.document.layers.map(({ id, order }) => [id, order])).toEqual([
+      ["layer-text", 0],
+      ["layer-shape-3", 1],
+      ["layer-image", 2]
+    ]);
+    expect(profileLayout(updated.document, "landscape", "layer-shape-3")).toEqual({
+      layerId: "layer-shape-3",
+      x: 610,
+      y: 720,
+      width: 700,
+      height: 160,
+      zIndex: 1
+    });
+    expect(profileLayout(updated.document, "vertical", "layer-shape-3")).toEqual({
+      layerId: "layer-shape-3",
+      x: 190,
+      y: 1180,
+      width: 700,
+      height: 160,
+      zIndex: 1
+    });
+    expect(alertEditorDocumentSchema.safeParse(updated.document).success).toBe(true);
+    expect(updated.past).toHaveLength(1);
+    expect(undoEditorUpdate(updated).document).toBe(initial.document);
+  });
+
+  it("adds a shape at the back when the selection is not visual", () => {
+    const documentWithAudio = addLayer(createDocument(), {
+      ...layerBase("layer-audio", "Audio", 2),
+      type: "audio",
+      assetId: "asset-audio",
+      volume: 1
+    });
+
+    const result = addShapeLayer(documentWithAudio, "layer-audio");
+
+    expect(result.layerId).toBe("layer-shape-4");
+    expect(result.document.layers.map(({ id }) => id)).toEqual([
+      "layer-shape-4",
+      "layer-text",
+      "layer-image",
+      "layer-audio"
+    ]);
+  });
+
+  it("adds a shape without treating an unrelated invalid text-style draft as a creation failure", () => {
+    const invalidTextDraft = updateLayer(createDocument(), "layer-text", (layer) => layer.type === "text"
+      ? { ...layer, textStyle: { ...layer.textStyle, fontSizePx: 513 } }
+      : layer);
+
+    expect(alertEditorDocumentSchema.safeParse(invalidTextDraft).success).toBe(false);
+
+    const result = addShapeLayer(invalidTextDraft, "layer-text");
+
+    expect(result.document.layers.find((layer) => layer.id === result.layerId)).toMatchObject({
+      type: "shape",
+      fill: "#000000B8"
+    });
+    expect(result.document.layers.find((layer) => layer.id === "layer-text")).toMatchObject({
+      type: "text",
+      textStyle: expect.objectContaining({ fontSizePx: 513 })
+    });
+  });
+
+  it("fails shape creation without exposing a partial document when invariants are broken", () => {
+    const invalid = {
+      ...createDocument(),
+      targetProfiles: createDocument().targetProfiles.slice(0, 1)
+    } as AlertEditorDocument;
+
+    expect(() => addShapeLayer(invalid, null)).toThrow("Shape layer could not be created safely");
+    expect(invalid.layers).toHaveLength(2);
+    expect(invalid.targetProfiles).toHaveLength(1);
+  });
+
+  it("preserves shape data through design copy, profile copy, and layer duplication", () => {
+    const shaped = addShapeLayer(createDocument(), "layer-text").document;
+    const shape = shaped.layers.find((layer) => layer.type === "shape")!;
+    const source = updateLayer(shaped, shape.id, (layer) => layer.type === "shape"
+      ? { ...layer, name: "Badge", fill: "#336699CC" }
+      : layer);
+    const target = { ...createDocument(), id: "alert-target", name: "Target" };
+
+    const designCopy = copyAlertDesign(source, target);
+    const layerCopy = duplicateLayer(source, shape.id, "layer-shape-copy");
+    const profileCopy = copyProfileLayout(source, "landscape", "vertical");
+
+    expect(designCopy.layers.find((layer) => layer.type === "shape")).toMatchObject({
+      id: shape.id,
+      name: "Badge",
+      fill: "#336699CC"
+    });
+    expect(profileLayout(designCopy, "vertical", shape.id)).toEqual(profileLayout(source, "vertical", shape.id));
+    expect(layerCopy.layers.find((layer) => layer.id === "layer-shape-copy")).toMatchObject({
+      name: "Badge copy",
+      type: "shape",
+      fill: "#336699CC"
+    });
+    expect(profileLayout(layerCopy, "landscape", "layer-shape-copy")).toMatchObject({
+      ...profileLayout(source, "landscape", shape.id),
+      layerId: "layer-shape-copy",
+      zIndex: 1
+    });
+    expect(profileLayout(profileCopy, "vertical", shape.id)).toMatchObject({
+      x: 343,
+      y: 1280,
+      width: 394,
+      height: 284
+    });
   });
 });
 

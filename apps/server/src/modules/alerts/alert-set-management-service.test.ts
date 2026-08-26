@@ -312,6 +312,29 @@ describe("AlertSetManagementService", () => {
     const [starter] = await fixture.service.listSets();
     const defaultAlert = (await fixture.service.getSet(starter!.id)).inventory[0]!;
     const variation = await fixture.service.createAlertVariation(defaultAlert.id, { name: "VIP follower" });
+    const sourceDocument = (await fixture.documents.find(variation.id))!;
+    await fixture.documents.save({
+      ...sourceDocument,
+      layers: [
+        ...sourceDocument.layers,
+        {
+          id: "layer-shape",
+          name: "VIP badge",
+          type: "shape",
+          visible: true,
+          order: sourceDocument.layers.length,
+          fill: "#663399CC",
+          animation: sourceDocument.layers[0]!.animation
+        }
+      ],
+      targetProfiles: sourceDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        layerLayouts: [
+          ...profile.layerLayouts,
+          { layerId: "layer-shape", x: 120, y: 240, width: 480, height: 160, zIndex: sourceDocument.layers.length }
+        ]
+      })) as AlertEditorDocument["targetProfiles"]
+    });
 
     const variationCopy = await fixture.service.duplicateManagedAlert(variation.id);
     const defaultCopy = await fixture.service.duplicateManagedAlert(defaultAlert.id);
@@ -327,8 +350,17 @@ describe("AlertSetManagementService", () => {
     await expect(fixture.documents.find(variationCopy.id)).resolves.toMatchObject({
       id: variationCopy.id,
       enabled: false,
+      layers: expect.arrayContaining([
+        expect.objectContaining({ type: "shape", name: "VIP badge", fill: "#663399CC" })
+      ]),
       targetProfiles: [
-        expect.objectContaining({ enabled: false, reviewState: "needs-review" }),
+        expect.objectContaining({
+          enabled: false,
+          reviewState: "needs-review",
+          layerLayouts: expect.arrayContaining([
+            expect.objectContaining({ layerId: "layer-shape", x: 120, y: 240, width: 480, height: 160 })
+          ])
+        }),
         expect.objectContaining({ enabled: false, reviewState: "needs-review" })
       ]
     });

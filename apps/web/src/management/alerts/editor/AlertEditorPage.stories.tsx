@@ -141,6 +141,86 @@ export const InvalidTextStyle: Story = {
   }
 };
 
+export const ShapeBackground: Story = {
+  args: {
+    managementApi: shapeStoryApi(shapeEditorDocument("background"))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: "Background layer" })).toBeVisible();
+    await expect(canvas.getByLabelText("Fill color")).toHaveValue("#102030");
+    await expect(canvas.getByLabelText("Fill opacity")).toHaveValue("75");
+  }
+};
+
+export const ShapeBadge: Story = {
+  args: {
+    managementApi: shapeStoryApi(shapeEditorDocument("badge"))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click((await canvas.findByText("Badge")).closest("button")!);
+    await expect(canvas.getByRole("button", { name: "Badge layer" })).toBeVisible();
+    await expect(canvas.getByLabelText("Fill color")).toHaveValue("#45c4ae");
+  }
+};
+
+export const HiddenShape: Story = {
+  args: {
+    managementApi: shapeStoryApi(shapeEditorDocument("hidden"))
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("button", { name: "Show Hidden background" })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: "Hidden background layer" })).not.toBeInTheDocument();
+  }
+};
+
+export const VerticalShape: Story = {
+  args: {
+    managementApi: shapeStoryApi(shapeEditorDocument("badge")),
+    targetProfileId: "vertical"
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
+    await userEvent.click((await canvas.findByText("Badge")).closest("button")!);
+    await userEvent.click(canvas.getByText("Position and size", { selector: "summary" }));
+    await expect(within(canvas.getByRole("group", { name: "Position and size" })).getByLabelText("X")).toHaveValue(190);
+  }
+};
+
+export const InvalidShapeFill: Story = {
+  args: {
+    managementApi: shapeStoryApi({
+      ...shapeEditorDocument("badge"),
+      layers: shapeEditorDocument("badge").layers.map((layer) => layer.type === "shape"
+        ? { ...layer, fill: "linear-gradient(red, blue)" }
+        : layer)
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("Badge has an invalid solid fill.");
+    await expect(canvas.getByRole("button", { name: "Preview" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Send test" })).toBeDisabled();
+  }
+};
+
+export const ShapeCopyReviewState: Story = {
+  args: {
+    managementApi: shapeStoryApi(shapeEditorDocument("background")),
+    targetProfileId: "vertical"
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
+    await userEvent.click(canvas.getByRole("button", { name: "Copy layout from Landscape" }));
+    await expect(canvas.getByText("Landscape layout copied to Vertical.")).toBeVisible();
+    await expect(canvas.getAllByText("Needs review")).not.toHaveLength(0);
+  }
+};
+
 export const NarrowScreenStyleGuard: Story = {
   parameters: {
     viewport: {
@@ -902,6 +982,47 @@ function styledEditorDocument(): AlertEditorDocument {
         }
       : layer)
   };
+}
+
+function shapeEditorDocument(kind: "background" | "badge" | "hidden"): AlertEditorDocument {
+  const base = editorDocument();
+  const background = kind !== "badge";
+  const name = kind === "hidden" ? "Hidden background" : background ? "Background" : "Badge";
+  const shape = {
+    id: "layer-shape",
+    name,
+    type: "shape" as const,
+    visible: kind !== "hidden",
+    order: background ? 0 : base.layers.length,
+    fill: background ? "#102030BF" : "#45C4AEFF",
+    animation: base.layers[0]!.animation
+  };
+  const layers = background
+    ? [shape, ...base.layers.map((layer) => ({ ...layer, order: layer.order + 1 }))]
+    : [...base.layers, shape];
+  return {
+    ...base,
+    layers,
+    targetProfiles: base.targetProfiles.map((profile) => {
+      const shapeLayout = profile.id === "landscape"
+        ? { layerId: shape.id, x: background ? 420 : 720, y: background ? 650 : 650, width: background ? 1080 : 480, height: background ? 260 : 140, zIndex: shape.order }
+        : { layerId: shape.id, x: 190, y: background ? 1100 : 1050, width: 700, height: background ? 300 : 160, zIndex: shape.order };
+      return {
+        ...profile,
+        layerLayouts: background
+          ? [shapeLayout, ...profile.layerLayouts.map((layout) => ({ ...layout, zIndex: layout.zIndex + 1 }))]
+          : [...profile.layerLayouts, shapeLayout]
+      };
+    }) as AlertEditorDocument["targetProfiles"]
+  };
+}
+
+function shapeStoryApi(shapeDocument: AlertEditorDocument) {
+  return createStoryManagementApi({
+    getAlertEditorDocument: async () => shapeDocument,
+    getAlertVariationAuthoringContext: async () => variationContext(shapeDocument),
+    getAlertSet: async () => alertSetDetail()
+  });
 }
 
 function selectionVariation(

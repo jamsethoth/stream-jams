@@ -996,6 +996,232 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("group", { name: "Text box" })).not.toBeInTheDocument();
   });
 
+  it("keeps Add Shape available during an unrelated invalid text-style draft", async () => {
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const typographySummary = await screen.findByText("Typography", { selector: "summary" });
+    await user.click(typographySummary);
+    fireEvent.change(screen.getByLabelText("Font size"), { target: { value: "513" } });
+
+    const visualStyleCorrection = screen.getByText(/^Visual styles need correction:/u);
+    expect(visualStyleCorrection).toHaveTextContent(
+      "Correct the selected layer's highlighted style fields before saving, previewing, or sending a test."
+    );
+    expect(visualStyleCorrection).not.toHaveTextContent("solid fill");
+
+    await user.click(screen.getByRole("button", { name: "Shape" }));
+
+    expect(screen.getByRole("heading", { name: "Shape" })).toBeVisible();
+    expect(screen.queryByText("The shape layer was not added")).not.toBeInTheDocument();
+  });
+
+  it("adds and authors a solid-fill shape through the standard layer workflow", async () => {
+    const user = userEvent.setup();
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    const view = render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("heading", { name: "New follower" });
+    await user.click(screen.getByRole("button", { name: "Shape" }));
+
+    expect(screen.getByRole("heading", { name: "Shape" })).toBeVisible();
+    expect(screen.getByLabelText("Fill color")).toHaveValue("#000000");
+    expect(screen.getByLabelText("Fill opacity")).toHaveValue("72");
+    expect(view.container.querySelector(".alert-canvas__shape")).toHaveStyle({ background: "#000000B8" });
+
+    fireEvent.change(screen.getByLabelText("Fill color"), { target: { value: "#123456" } });
+    fireEvent.change(screen.getByLabelText("Fill opacity"), { target: { value: "50" } });
+    const layerName = screen.getByRole("textbox", { name: "Layer name" });
+    await user.clear(layerName);
+    await user.type(layerName, "Background");
+    await user.click(screen.getByRole("button", { name: "Hide Background" }));
+    expect(view.container.querySelector(".alert-canvas__shape")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Show Background" }));
+
+    await user.click(screen.getByText("Position and size", { selector: "summary" }));
+    const geometry = screen.getByRole("group", { name: "Position and size" });
+    fireEvent.change(within(geometry).getByLabelText("X"), { target: { value: "480" } });
+    await user.click(screen.getByText("Animation preset", { selector: "summary" }));
+    fireEvent.change(screen.getByLabelText("Animation duration (milliseconds)"), { target: { value: "650" } });
+    await user.click(screen.getByRole("button", { name: "Move down" }));
+    await user.click(screen.getByRole("button", { name: "Duplicate" }));
+    expect(screen.getByText("Background copy").closest("button")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(screen.queryByRole("heading", { name: "Background" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("heading", { name: "Background" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.queryByRole("heading", { name: "Background" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      "alert-follow",
+      expect.objectContaining({
+        layers: expect.arrayContaining([
+          expect.objectContaining({
+            name: "Background",
+            type: "shape",
+            fill: "#12345680",
+            visible: true,
+            animation: expect.objectContaining({ durationMs: 650 })
+          }),
+          expect.objectContaining({ name: "Background copy", type: "shape", fill: "#12345680" })
+        ]),
+        targetProfiles: expect.arrayContaining([
+          expect.objectContaining({
+            id: "landscape",
+            layerLayouts: expect.arrayContaining([
+              expect.objectContaining({ x: 480, width: 700, height: 160 })
+            ])
+          }),
+          expect.objectContaining({
+            id: "vertical",
+            layerLayouts: expect.arrayContaining([
+              expect.objectContaining({ x: 190, y: 1180, width: 700, height: 160 })
+            ])
+          })
+        ])
+      }),
+      false
+    ));
+  });
+
+  it("blocks invalid shape fills with an inline correction", async () => {
+    const user = userEvent.setup();
+    const base = editorDocument();
+    const document = {
+      ...base,
+      layers: [
+        ...base.layers,
+        {
+          id: "layer-shape",
+          name: "Unsafe shape",
+          type: "shape",
+          visible: true,
+          order: 2,
+          fill: "linear-gradient(red, blue)",
+          animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
+        }
+      ],
+      targetProfiles: base.targetProfiles.map((profile) => ({
+        ...profile,
+        layerLayouts: [...profile.layerLayouts, { layerId: "layer-shape", x: 100, y: 100, width: 400, height: 200, zIndex: 2 }]
+      }))
+    } as AlertEditorDocument;
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("heading", { name: "New follower" });
+    await user.click(screen.getByText("Unsafe shape").closest("button")!);
+    const name = screen.getByRole("textbox", { name: "Layer name" });
+    await user.type(name, " draft");
+
+    expect(screen.getByRole("alert", { name: "" })).toHaveTextContent(
+      "Visual styles need correction: Unsafe shape draft has an invalid solid fill."
+    );
+    expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
+
+  it("reports shape creation failures without retaining partial layouts", async () => {
+    const user = userEvent.setup();
+    const base = editorDocument();
+    const document = { ...base, targetProfiles: base.targetProfiles.slice(0, 1) } as AlertEditorDocument;
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("heading", { name: "New follower" });
+    await user.click(screen.getByRole("button", { name: "Shape" }));
+
+    const error = screen.getByRole("alert");
+    expect(error).toHaveTextContent("The shape layer was not added");
+    expect(error).toHaveTextContent("Shape layer could not be created safely.");
+    expect(error).toHaveTextContent("Reload the alert editor, then try adding Shape again.");
+    expect(within(error).getByText(/^ui_/u)).toBeVisible();
+    expect(screen.getByText("2")).toBeVisible();
+  });
+
   it("loads a focused canvas workspace and keeps Preview separate from Send test", async () => {
     const user = userEvent.setup();
     const document = editorDocument();

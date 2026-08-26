@@ -39,6 +39,18 @@ export const rgbaColorSchema = z
   .regex(/^#[0-9a-f]{8}$/iu, "Use an 8-digit RGBA hex color")
   .transform((value) => value.toUpperCase());
 
+export const compatibleRgbaColorSchema = z
+  .string()
+  .regex(/^#(?:[0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/iu, "Use a CSS hex color")
+  .transform((value) => {
+    const hex = value.slice(1).toUpperCase();
+    if (hex.length === 3 || hex.length === 4) {
+      const expanded = [...hex].map((character) => character.repeat(2)).join("");
+      return `#${expanded}${hex.length === 3 ? "FF" : ""}`;
+    }
+    return `#${hex}${hex.length === 6 ? "FF" : ""}`;
+  });
+
 export const alertShadowStyleSchema = z
   .object({
     offsetX: z

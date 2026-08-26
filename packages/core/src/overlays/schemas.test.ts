@@ -137,7 +137,7 @@ describe("overlay schemas", () => {
       durationMs: 5000
     });
 
-    expect(instruction.shape).toEqual({ fill: "#123456", layout });
+    expect(instruction.shape).toEqual({ fill: "#123456FF", layout });
     expect(instruction.animation).toEqual({
       mode: "preset",
       entrance: "scale",
@@ -146,5 +146,23 @@ describe("overlay schemas", () => {
       delayMs: 120,
       easing: "ease-in-out"
     });
+  });
+
+  it("rejects unsafe shape fills at the overlay boundary", () => {
+    expect(
+      overlayInstructionSchema.safeParse({
+        id: "instruction-unsafe-shape",
+        overlayId: "main",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        visual: null,
+        audio: null,
+        text: null,
+        shape: { fill: "linear-gradient(red, blue)", layout },
+        tts: null,
+        durationMs: 5000
+      }).success
+    ).toBe(false);
   });
 });

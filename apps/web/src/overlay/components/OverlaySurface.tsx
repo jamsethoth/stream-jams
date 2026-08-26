@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
-import { targetProfileDefinitions } from "@stream-jams/core";
+import { rgbaColorSchema, targetProfileDefinitions } from "@stream-jams/core";
 import type {
   OverlayComposition,
   OverlayElementLayout,
@@ -123,7 +123,13 @@ function OverlayInstructionLayer({
         textStyle: instruction.text.textStyle,
         boxStyle: instruction.text.boxStyle
       });
-  const presentationInvalid = instruction.text !== null && textPresentationStyle === null;
+  const textPresentationInvalid = instruction.text !== null && textPresentationStyle === null;
+  const shapePresentationInvalid = instruction.shape != null
+    && !rgbaColorSchema.safeParse(instruction.shape.fill).success;
+  const presentationInvalid = textPresentationInvalid || shapePresentationInvalid;
+  const presentationFailureMessage = textPresentationInvalid
+    ? "Alert text style could not be rendered safely."
+    : "Alert shape fill could not be rendered safely.";
   const completionReportedRef = useRef(false);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const speechConsideredRef = useRef(false);
@@ -169,8 +175,8 @@ function OverlayInstructionLayer({
   useEffect(() => {
     if (!presentationInvalid) return;
     onTestAudioBlockedChange(instruction.id, false);
-    reportFailure("Alert text style could not be rendered safely.");
-  }, [instruction.id, onTestAudioBlockedChange, presentationInvalid, reportFailure]);
+    reportFailure(presentationFailureMessage);
+  }, [instruction.id, onTestAudioBlockedChange, presentationFailureMessage, presentationInvalid, reportFailure]);
 
   useEffect(() => {
     if (

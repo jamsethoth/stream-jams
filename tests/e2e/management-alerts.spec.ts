@@ -988,6 +988,28 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(page.getByLabel("Font preset")).toHaveValue("serif");
   await expect(page.getByLabel("Font size")).toHaveValue("48");
   await expect(page.getByLabel("Padding")).toHaveValue("16");
+  await page.getByRole("button", { name: "Shape", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Shape", exact: true })).toBeVisible();
+  await page.getByLabel("Fill color").fill("#336699");
+  await page.getByLabel("Fill opacity").fill("80");
+  await page.getByRole("textbox", { name: "Layer name" }).fill("Background panel");
+  const shapePositionSummary = page.locator("summary").filter({ hasText: "Position and size" });
+  await shapePositionSummary.click();
+  await page.getByRole("group", { name: "Position and size" }).getByLabel("X", { exact: true }).fill("480");
+  await page.getByRole("button", { name: "Move down" }).click();
+  await page.getByRole("button", { name: "Move up" }).click();
+  await expect(page.getByRole("region", { name: "Landscape alert canvas" }).locator(".alert-canvas__shape")).toHaveCSS("background-color", "rgba(51, 102, 153, 0.8)");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog", { name: "Save changes to active alert?" }).getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  expect(savedDocuments).toHaveLength(3);
+
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Background panel" })).toBeVisible();
+  await expect(page.getByLabel("Fill color")).toHaveValue("#336699");
+  await expect(page.getByLabel("Fill opacity")).toHaveValue("80");
+  await shapePositionSummary.click();
+  await expect(page.getByRole("group", { name: "Position and size" }).getByLabel("X", { exact: true })).toHaveValue("480");
   await page.getByRole("tab", { name: "Event" }).click();
   await page.getByRole("textbox", { name: "Session payload (JSON)" }).fill(JSON.stringify({
     actor: { displayName: "blocked-viewer https://viewer.example/path" }
@@ -996,6 +1018,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Landscape alert canvas" }).getByText("Welcome, Safe viewer!", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Landscape alert canvas" }).locator(".alert-canvas__shape")).toBeVisible();
   expect(previewRequests).toContainEqual({
     target: "rendered",
     text: "Welcome, blocked-viewer https://viewer.example/path!"
@@ -1004,6 +1027,13 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
   await expect(page.getByText(/Queued on Landscape.*ref-e2e-editor-landscape/u)).toBeVisible();
   expect(testRequests).toHaveLength(1);
+  expect(testRequests[0]).toMatchObject({
+    document: {
+      layers: expect.arrayContaining([
+        expect.objectContaining({ type: "shape", name: "Background panel", fill: "#336699CC" })
+      ])
+    }
+  });
 
   await page.getByRole("tab", { name: "Layers" }).click();
   await page.getByRole("button", { name: /Vertical/u }).click();
@@ -1011,6 +1041,11 @@ test("focused alert editor saves layouts and separates preview from test deliver
   const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
   await expect(verticalCanvas).toBeVisible();
   await expect(verticalCanvas.getByText("Welcome, Safe viewer!", { exact: true })).toBeVisible();
+  await expect(verticalCanvas.locator(".alert-canvas__shape")).toBeVisible();
+  await expect(page.getByLabel("Fill color")).toHaveValue("#336699");
+  await shapePositionSummary.click();
+  await expect(page.getByRole("group", { name: "Position and size" }).getByLabel("X", { exact: true })).toHaveValue("190");
+  await page.getByText("Message", { exact: true }).click();
   await expect(page.getByLabel("Font size")).toHaveValue("48");
   await expect(page.getByLabel("Padding")).toHaveValue("16");
   const verticalReviewWarning = page.locator(".alert-editor-page__profile-warning");
@@ -1026,6 +1061,8 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(page).toHaveURL(/profile=vertical/u);
   await expect(verticalCanvas).toBeVisible();
   await expect(verticalCanvas.getByText("Welcome, James!", { exact: true })).toBeVisible();
+  await expect(verticalCanvas.locator(".alert-canvas__shape")).toBeVisible();
+  await page.getByText("Message", { exact: true }).click();
   await expect(page.getByLabel("Font size")).toHaveValue("48");
   await expect(page.getByLabel("Padding")).toHaveValue("16");
   await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
@@ -1038,7 +1075,8 @@ test("focused alert editor saves layouts and separates preview from test deliver
     expect.objectContaining({ targetProfileId: "vertical" })
   ]);
   const latestSavedDocument = savedDocuments.at(-1) as ReturnType<typeof alertEditorDocument>;
-  expect(latestSavedDocument.layers[0]).toMatchObject({
+  const latestTextLayer = latestSavedDocument.layers.find((layer) => layer.type === "text");
+  expect(latestTextLayer).toMatchObject({
     textStyle: { fontPreset: "serif", fontSizePx: 48 },
     boxStyle: { paddingPx: 16, cornerRadiusPx: 18 }
   });

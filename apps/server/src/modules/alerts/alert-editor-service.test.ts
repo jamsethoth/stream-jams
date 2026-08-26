@@ -836,6 +836,56 @@ describe("AlertEditorService", () => {
     expect(harness.enqueueTest).toHaveBeenCalledTimes(1);
   });
 
+  it("queues a shape for Send test with selected-profile geometry and preset animation", async () => {
+    const harness = createHarness();
+    const document = await harness.service.getDocument(rule.id);
+    const shape = {
+      id: "layer-shape",
+      name: "Badge",
+      type: "shape" as const,
+      visible: true,
+      order: document.layers.length,
+      fill: "#336699CC",
+      animation: { mode: "preset" as const, entrance: "scale", exit: "fade", durationMs: 450, delayMs: 120, easing: "ease-in-out" }
+    };
+    const candidate: AlertEditorDocument = {
+      ...document,
+      layers: [...document.layers, shape],
+      targetProfiles: document.targetProfiles.map((profile) => profile.id === "landscape"
+        ? {
+            ...profile,
+            layerLayouts: [
+              ...profile.layerLayouts,
+              { layerId: shape.id, x: 120, y: 80, width: 600, height: 240, zIndex: shape.order }
+            ]
+          }
+        : profile) as AlertEditorDocument["targetProfiles"]
+    };
+
+    await harness.service.sendTest(rule.id, {
+      document: candidate,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James" },
+      includeAudio: false,
+      includeTts: false
+    });
+
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      alerts: expect.arrayContaining([
+        expect.objectContaining({
+          overlayInstruction: expect.objectContaining({
+            targetProfileId: "landscape",
+            shape: {
+              fill: "#336699CC",
+              layout: { layerId: shape.id, x: 120, y: 80, width: 600, height: 240, zIndex: shape.order }
+            },
+            animation: shape.animation
+          })
+        })
+      ])
+    }));
+  });
+
   it("sanitizes editor test rendered and TTS layers independently without changing presentation metadata", async () => {
     const moderationService = new DefaultModerationService({
       settings: {

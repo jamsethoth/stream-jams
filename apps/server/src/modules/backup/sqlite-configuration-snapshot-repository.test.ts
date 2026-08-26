@@ -67,7 +67,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     });
   });
 
-  it("round-trips non-default text and box styles through a portable snapshot", () => {
+  it("round-trips non-default text, box, and shape styles through a portable snapshot", () => {
     const expected = styledEditorDocument();
     database.connection.prepare(
       "UPDATE alert_editor_documents SET document_json = ? WHERE alert_id = ?"
@@ -538,25 +538,43 @@ function styledEditorDocument() {
   const document = editorDocument();
   return {
     ...document,
-    layers: document.layers.map((layer) => layer.type === "text" ? {
-      ...layer,
-      textStyle: {
-        fontPreset: "serif" as const,
-        fontSizePx: 64,
-        fontWeight: 700 as const,
-        lineHeight: 1.3,
-        horizontalAlign: "left" as const,
-        verticalAlign: "bottom" as const,
-        color: "#FFCC00BF" as const,
-        shadow: { offsetX: -4, offsetY: 6, blur: 12, color: "#00000080" as const }
-      },
-      boxStyle: {
-        backgroundColor: "#102030BF" as const,
-        paddingPx: 24,
-        cornerRadiusPx: 18,
-        shadow: { offsetX: 4, offsetY: 8, blur: 20, color: "#ABCDEF66" as const }
+    layers: [
+      ...document.layers.map((layer) => layer.type === "text" ? {
+        ...layer,
+        textStyle: {
+          fontPreset: "serif" as const,
+          fontSizePx: 64,
+          fontWeight: 700 as const,
+          lineHeight: 1.3,
+          horizontalAlign: "left" as const,
+          verticalAlign: "bottom" as const,
+          color: "#FFCC00BF" as const,
+          shadow: { offsetX: -4, offsetY: 6, blur: 12, color: "#00000080" as const }
+        },
+        boxStyle: {
+          backgroundColor: "#102030BF" as const,
+          paddingPx: 24,
+          cornerRadiusPx: 18,
+          shadow: { offsetX: 4, offsetY: 8, blur: 20, color: "#ABCDEF66" as const }
+        }
+      } : layer),
+      {
+        id: "layer-shape",
+        name: "Badge",
+        type: "shape" as const,
+        visible: true,
+        order: 1,
+        fill: "#336699CC",
+        animation: document.layers[0]!.animation
       }
-    } : layer)
+    ],
+    targetProfiles: document.targetProfiles.map((profile) => ({
+      ...profile,
+      layerLayouts: [
+        ...profile.layerLayouts,
+        { layerId: "layer-shape", x: 100, y: 200, width: 400, height: 120, zIndex: 1 }
+      ]
+    }))
   };
 }
 

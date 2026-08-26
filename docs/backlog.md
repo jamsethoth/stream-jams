@@ -15,7 +15,6 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 | ID | Feature | Priority | Dependencies | OpenSpec |
 | --- | --- | --- | --- | --- |
-| BL-003 | Simple solid-fill shape-layer authoring | P1 | Text-style contract implemented | [`add-alert-shape-layer-authoring`](../openspec/changes/add-alert-shape-layer-authoring/proposal.md) |
 | BL-039 | Collapsible event-type grouping for alert inventory and focused-editor navigation | P1 | Variation authoring contract implemented | [`group-alerts-by-event-type`](../openspec/changes/group-alerts-by-event-type/proposal.md) |
 
 ## Alert Authoring And Assets
@@ -36,6 +35,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | BL-017 | Translation-ready management UI, selected locales, contrast checks, and alert reduced-motion guidance | Deferred | P3 | Named target locales and accessibility acceptance criteria | Product decision, 2026-07-20 |
 | BL-018 | Constrained per-layer timeline and keyframe editor | Long-term | P3 | Preset animations prove insufficient; the implemented text-style contract and BL-013 are stable | Must remain schema-validated and exclude arbitrary code. |
 | BL-019 | Full provider-event simulation and persisted custom sample library | Deferred | P3 | Stable normalized catalogs and Diagnostics simulation boundary | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
+| BL-040 | Shape border and drop-shadow appearance controls | Deferred | P2 | BL-003 | Add bounded border color/width and an optional drop shadow; gradients, rounded corners, additional primitives, masks, SVG, and general composition remain out of scope. |
 
 ## Events, Providers, And Integrations
 

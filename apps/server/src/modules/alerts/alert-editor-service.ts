@@ -895,6 +895,7 @@ function createLayerInstruction(
     visual: null,
     audio: null,
     text: null,
+    shape: null,
     animation: layer.animation,
     tts: null,
     durationMs
@@ -929,6 +930,9 @@ function createLayerInstruction(
         providerPayload: null
       }
     };
+  }
+  if (layer.type === "shape" && layout !== undefined) {
+    return { ...base, shape: { fill: layer.fill, layout } };
   }
   return null;
 }

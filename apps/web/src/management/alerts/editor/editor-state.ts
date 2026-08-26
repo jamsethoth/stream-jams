@@ -1,4 +1,6 @@
 import {
+  alertLayerLayoutSchema,
+  alertLayerSchema,
   areAlertPriorityGroupsEqual,
   targetProfileDefinitions,
   type AlertEditorDocument,
@@ -36,6 +38,11 @@ export interface AlertEditorState {
 export interface SnapOptions {
   readonly gridSize?: number;
   readonly threshold?: number;
+}
+
+export interface AddShapeLayerResult {
+  readonly document: AlertEditorDocument;
+  readonly layerId: string;
 }
 
 export function createEditorState(document: AlertEditorDocument, historyLimit?: number): AlertEditorState;
@@ -242,6 +249,84 @@ export function addLayer(
   return synchronizeLayerOrder(document, [...document.layers, layer], targetProfiles);
 }
 
+export function addShapeLayer(
+  document: AlertEditorDocument,
+  selectedLayerId: string | null
+): AddShapeLayerResult {
+  const layerId = nextLayerId(document, "shape");
+  const selectedIndex = document.layers.findIndex((layer) => layer.id === selectedLayerId && isVisualLayer(layer));
+  const insertIndex = selectedIndex < 0 ? 0 : selectedIndex;
+  const appended = addLayer(
+    document,
+    {
+      id: layerId,
+      name: "Shape",
+      type: "shape",
+      visible: true,
+      order: document.layers.length,
+      fill: "#000000B8",
+      animation: {
+        mode: "preset",
+        entrance: "fade",
+        exit: "fade",
+        durationMs: 300,
+        delayMs: 0,
+        easing: "ease-out"
+      }
+    },
+    {
+      landscape: { x: 610, y: 720, width: 700, height: 160 },
+      vertical: { x: 190, y: 1180, width: 700, height: 160 }
+    }
+  );
+  const candidate = reorderLayer(appended, layerId, insertIndex);
+  if (!shapeAdditionIsSafe(document, candidate, layerId)) {
+    throw new Error("Shape layer could not be created safely.");
+  }
+  return { document: candidate, layerId };
+}
+
+function shapeAdditionIsSafe(
+  source: AlertEditorDocument,
+  candidate: AlertEditorDocument,
+  layerId: string
+): boolean {
+  const shape = candidate.layers.find((layer) => layer.id === layerId);
+  const expectedProfileIds = targetProfileDefinitions.map(({ id }) => id);
+  const sourceProfileIds = new Set(source.targetProfiles.map(({ id }) => id));
+  const candidateProfileIds = new Set(candidate.targetProfiles.map(({ id }) => id));
+
+  return candidate.layers.length === source.layers.length + 1
+    && candidate.layers.filter((layer) => layer.id === layerId).length === 1
+    && candidate.layers.every((layer, index) => layer.order === index)
+    && shape?.type === "shape"
+    && alertLayerSchema.safeParse(shape).success
+    && source.targetProfiles.length === expectedProfileIds.length
+    && candidate.targetProfiles.length === expectedProfileIds.length
+    && expectedProfileIds.every((profileId) => (
+      sourceProfileIds.has(profileId)
+      && candidateProfileIds.has(profileId)
+      && shapeLayoutWasAddedSafely(source, candidate, profileId, layerId)
+    ));
+}
+
+function shapeLayoutWasAddedSafely(
+  source: AlertEditorDocument,
+  candidate: AlertEditorDocument,
+  profileId: TargetProfileId,
+  layerId: string
+): boolean {
+  const sourceProfile = source.targetProfiles.find((profile) => profile.id === profileId);
+  const candidateProfile = candidate.targetProfiles.find((profile) => profile.id === profileId);
+  const shapeLayouts = candidateProfile?.layerLayouts.filter((layout) => layout.layerId === layerId) ?? [];
+
+  return sourceProfile !== undefined
+    && candidateProfile !== undefined
+    && candidateProfile.layerLayouts.length === sourceProfile.layerLayouts.length + 1
+    && shapeLayouts.length === 1
+    && alertLayerLayoutSchema.safeParse(shapeLayouts[0]).success;
+}
+
 export function deleteLayer(document: AlertEditorDocument, layerId: string): AlertEditorDocument {
   if (!document.layers.some((layer) => layer.id === layerId)) {
     return document;
@@ -427,6 +512,16 @@ function sameGeometry(left: LayerGeometry, right: LayerGeometry): boolean {
     && left.y === right.y
     && left.width === right.width
     && left.height === right.height;
+}
+
+function isVisualLayer(layer: AlertLayer): boolean {
+  return layer.type === "text" || layer.type === "image" || layer.type === "video" || layer.type === "shape";
+}
+
+function nextLayerId(document: AlertEditorDocument, type: AlertLayer["type"]): string {
+  let suffix = document.layers.length + 1;
+  while (document.layers.some((layer) => layer.id === `layer-${type}-${suffix}`)) suffix += 1;
+  return `layer-${type}-${suffix}`;
 }
 
 function nearestSnap(value: number, candidates: readonly number[], threshold: number): number {
