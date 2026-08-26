@@ -284,11 +284,11 @@ git commit -m "feat(alerts): select and apply starter themes"
 **Interfaces:**
 - Consumes: completed create and re-theme workflows from Tasks 2–5.
 
-- [ ] **Step 1: Write the failing Playwright scenarios**
+- [x] **Step 1: Write the failing Playwright scenarios**
 
 Cover creating a Raid alert with Bold Pop and reviewing both previews, then applying Neon Terminal to an existing alert with custom message and TTS, saving, reloading, and verifying preserved nonvisual behavior plus reset review gates.
 
-- [ ] **Step 2: Run the focused Playwright file and verify the completed workflow**
+- [x] **Step 2: Run the focused Playwright file and verify the completed workflow**
 
 ```powershell
 corepack.cmd pnpm exec playwright test tests/e2e/management-alerts.spec.ts

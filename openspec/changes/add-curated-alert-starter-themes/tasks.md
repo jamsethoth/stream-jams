@@ -29,5 +29,5 @@
 
 ## 5. End-To-End Verification
 
-- [ ] 5.1 Add browser coverage for creating an event alert with a selected theme and for explicit re-theming with preserved nonvisual behavior and reset review gates.
+- [x] 5.1 Add browser coverage for creating an event alert with a selected theme and for explicit re-theming with preserved nonvisual behavior and reset review gates.
 - [ ] 5.2 Run focused Playwright coverage, relevant repository quality gates, and strict OpenSpec validation.

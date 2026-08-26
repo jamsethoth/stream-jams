@@ -1,3 +1,8 @@
+import {
+  alertEditorDocumentSchema,
+  materializeAlertStarterTheme,
+  type AlertEditorDocument
+} from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
 
@@ -416,7 +421,253 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
   await page.getByRole("button", { name: "Back to alerts" }).click();
   await expect(createdRow).toContainText("Disabled");
   await expect(createdRow).toContainText("Needs review");
-  expect(createAlertRequests).toEqual([{ eventType: "community_gift", name: "Community gift received" }]);
+  expect(createAlertRequests).toEqual([{
+    eventType: "community_gift",
+    name: "Community gift received",
+    themeId: "clean-signal"
+  }]);
+});
+
+test("management alerts creates a Raid alert from the selected Bold Pop theme", async ({ page }) => {
+  await mockManagementShell(page);
+  const createAlertRequests: unknown[] = [];
+  const createdDocument = boldPopRaidDocument();
+  let raidCreated = false;
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: false,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+  const detail = () => ({
+    overview,
+    inventory: [
+      {
+        id: "alert-follow",
+        setId: "set-default",
+        providerKind: "twitch",
+        eventType: "follow",
+        name: "New follower",
+        kind: "default",
+        enabled: true,
+        reviewState: "ready",
+        targetProfileIds: ["landscape"],
+        previewText: "Thanks for following!"
+      },
+      ...(raidCreated ? [{
+        id: createdDocument.id,
+        setId: createdDocument.setId,
+        providerKind: createdDocument.providerKind,
+        eventType: createdDocument.eventType,
+        name: createdDocument.name,
+        kind: createdDocument.kind,
+        enabled: createdDocument.enabled,
+        reviewState: "needs-review",
+        targetProfileIds: ["landscape", "vertical"],
+        previewText: "Welcome raiders from StreamSpark!"
+      }] : [])
+    ],
+    browserSources: []
+  });
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({ contentType: "application/json", json: [overview] }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({ contentType: "application/json", json: detail() }));
+  await page.route("**/management/alert-sets/set-default/alerts", async (route) => {
+    const body = route.request().postDataJSON();
+    createAlertRequests.push(body);
+    raidCreated = true;
+    await route.fulfill({
+      contentType: "application/json",
+      status: 201,
+      json: detail().inventory.at(-1)
+    });
+  });
+  await page.route(`**/management/alerts/${createdDocument.id}/editor`, (route) => route.fulfill({
+    contentType: "application/json",
+    json: createdDocument
+  }));
+  await page.route(`**/management/alerts/${createdDocument.id}/editor/variation-context`, (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext(createdDocument)
+  }));
+
+  await page.goto("/manage/modules/alerts");
+  const selectedSet = page.getByRole("region", { name: "Default alert set" });
+  await selectedSet.getByRole("button", { name: "Add alert for Raid" }).click();
+  const createDialog = page.getByRole("dialog", { name: "Add alert" });
+  const boldPopChoice = createDialog.getByRole("radio", { name: "Bold Pop" });
+  await boldPopChoice.click();
+  await expect(boldPopChoice).toBeChecked();
+
+  const themeChooser = createDialog.getByRole("radiogroup", { name: "Starter theme" });
+  const landscapePreview = themeChooser.getByRole("img", { name: "Bold Pop Landscape 16:9 preview" });
+  const verticalPreview = themeChooser.getByRole("img", { name: "Bold Pop Vertical 9:16 preview" });
+  await expect(landscapePreview).toBeVisible();
+  await expect(verticalPreview).toBeVisible();
+  await expect(landscapePreview).toContainText("Welcome raiders from StreamSpark!");
+  await expect(verticalPreview).toContainText("Welcome raiders from StreamSpark!");
+
+  await createDialog.getByRole("button", { name: "Create alert" }).click();
+  expect(createAlertRequests).toEqual([{
+    eventType: "raid",
+    name: "New raid",
+    themeId: "bold-pop"
+  }]);
+
+  const createdRow = page.getByRole("row", { name: /New raid/u });
+  await createdRow.getByRole("button", { name: "Edit New raid" }).click();
+  const landscapeCanvas = page.getByRole("region", { name: "Landscape alert canvas" });
+  await expect(landscapeCanvas).toBeVisible();
+  await expect(landscapeCanvas).toContainText("Welcome raiders from StreamSpark!");
+  await expect(landscapeCanvas.locator(".alert-canvas__shape")).toHaveCount(4);
+
+  await page.getByRole("button", { name: /^Vertical/u }).click();
+  const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
+  await expect(verticalCanvas).toBeVisible();
+  await expect(verticalCanvas).toContainText("Welcome raiders from StreamSpark!");
+  await expect(verticalCanvas.locator(".alert-canvas__shape")).toHaveCount(4);
+});
+
+test("focused alert editor applies Neon Terminal while preserving nonvisual behavior", async ({ page }) => {
+  await mockManagementShell(page);
+  let document = reThemeRaidDocument();
+  const savedDocuments: AlertEditorDocument[] = [];
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: false,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "ready", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+  const detail = {
+    overview,
+    inventory: [{
+      id: document.id,
+      setId: document.setId,
+      providerKind: document.providerKind,
+      eventType: document.eventType,
+      parentAlertId: document.parentAlertId,
+      name: document.name,
+      kind: document.kind,
+      enabled: document.enabled,
+      reviewState: "ready",
+      targetProfileIds: ["landscape", "vertical"],
+      previewText: "Custom raid from StreamSpark!"
+    }],
+    browserSources: []
+  };
+
+  await page.route("**/management/providers?capability=tts", (route) => route.fulfill({
+    contentType: "application/json",
+    json: [{
+      id: "provider-speakerbot",
+      name: "Studio Speaker.bot",
+      kind: "speakerbot",
+      capability: "tts",
+      active: true,
+      connectionState: "connected",
+      intakeState: null,
+      validatedAt: "2026-08-26T12:00:00.000Z",
+      error: null,
+      usedByAlertCount: 1
+    }]
+  }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({
+    contentType: "application/json",
+    json: detail
+  }));
+  await page.route(`**/management/alerts/${document.id}/editor`, async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { readonly document: AlertEditorDocument };
+      document = alertEditorDocumentSchema.parse(body.document);
+      savedDocuments.push(document);
+    }
+    await route.fulfill({ contentType: "application/json", json: document });
+  });
+  await page.route(`**/management/alerts/${document.id}/editor/variation-context`, (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext(document)
+  }));
+
+  await page.goto(`/manage/modules/alerts/editor/${document.id}?profile=landscape`);
+  await page.getByRole("tab", { name: "Layers" }).click();
+  await expect(page.locator(".alert-editor-inspector__layer-list").getByText("Message", { exact: true })).toBeVisible();
+  await expect(page.getByText("Old raid image", { exact: true })).toBeVisible();
+  await expect(page.getByText("Old raid video", { exact: true })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Alert" }).click();
+  await page.getByRole("button", { name: "Apply starter theme" }).click();
+  const dialog = page.getByRole("dialog", { name: "Apply starter theme?" });
+  await expect(dialog).toContainText("All text, shape, image, and video layers will be replaced.");
+  await expect(dialog).toContainText("The primary message, audio, TTS");
+  await expect(dialog).toContainText("The alert will be disabled.");
+  await expect(dialog).toContainText("both profiles return to Needs review.");
+  await dialog.getByRole("radio", { name: "Neon Terminal" }).click();
+  await dialog.getByRole("button", { name: "Apply theme" }).click();
+
+  const guidance = page.locator(".management-toast--warning");
+  await expect(guidance).toContainText("Starter theme applied.");
+  await expect(guidance).toContainText("Review both Landscape and Vertical before saving or re-enabling.");
+  await expect(page.getByText("Alert disabled")).toBeVisible();
+  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
+  await expect(page.getByRole("checkbox", { name: "Use this profile for live alerts" })).toBeChecked();
+
+  await page.getByRole("tab", { name: "Layers" }).click();
+  const landscapeCanvas = page.getByRole("region", { name: "Landscape alert canvas" });
+  await expect(landscapeCanvas).toContainText("Custom raid from StreamSpark!");
+  await expect(landscapeCanvas.locator(".alert-canvas__shape")).toHaveCount(2);
+  await expect(page.getByText("Old raid image", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Old raid video", { exact: true })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /^Vertical/u }).click();
+  const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
+  await expect(verticalCanvas).toBeVisible();
+  await expect(verticalCanvas).toContainText("Custom raid from StreamSpark!");
+  await expect(verticalCanvas.locator(".alert-canvas__shape")).toHaveCount(2);
+  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
+  await page.getByRole("tab", { name: "Alert" }).click();
+  await expect(page.getByRole("checkbox", { name: "Use this profile for live alerts" })).not.toBeChecked();
+
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  expect(savedDocuments).toHaveLength(1);
+  await page.reload();
+  await expect(page.getByText("Saved")).toBeVisible();
+  await expect(page.getByText("Alert disabled")).toBeVisible();
+  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
+
+  const saved = savedDocuments[0]!;
+  const savedTextLayers = saved.layers.filter((layer) => layer.type === "text");
+  const savedShapeLayers = saved.layers.filter((layer) => layer.type === "shape");
+  expect(saved.enabled).toBe(false);
+  expect(saved.targetProfiles).toMatchObject([
+    { id: "landscape", enabled: true, reviewState: "needs-review" },
+    { id: "vertical", enabled: false, reviewState: "needs-review" }
+  ]);
+  expect(saved.layers.some((layer) => layer.type === "image" || layer.type === "video")).toBe(false);
+  expect(saved.layers).toEqual(expect.arrayContaining([
+    expect.objectContaining({ id: "layer-audio", type: "audio", assetId: "asset-theme-audio", volume: 0.65 }),
+    expect.objectContaining({ id: "layer-tts", type: "tts", enabled: true, providerId: "speakerbot", template: "Raid incoming from {userName}" })
+  ]));
+  expect(savedTextLayers).toEqual(expect.arrayContaining([
+    expect.objectContaining({ name: "Message", template: "Custom raid from {userName}!", textStyle: expect.objectContaining({ fontPreset: "monospace" }) })
+  ]));
+  expect(savedShapeLayers.map((layer) => layer.fill)).toEqual(expect.arrayContaining(["#020805F2", "#31F577FF"]));
 });
 
 test("management alerts resets event disclosures when switching alert sets", async ({ page }) => {
@@ -1201,6 +1452,130 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
     layers: [{ type: "tts", enabled: true, providerId: "speakerbot", template: "Hello {actor.displayName}" }]
   });
 });
+
+function boldPopRaidDocument(): AlertEditorDocument {
+  const composition = materializeAlertStarterTheme({
+    documentId: "alert-raid-bold-pop",
+    eventType: "raid",
+    themeId: "bold-pop"
+  });
+  return alertEditorDocumentSchema.parse({
+    id: "alert-raid-bold-pop",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "raid",
+    kind: "default",
+    parentAlertId: null,
+    name: "New raid",
+    enabled: false,
+    conditions: [],
+    durationMs: 5_000,
+    layers: composition.layers,
+    targetProfiles: composition.targetProfiles,
+    samplePayloads: [{
+      id: "normal",
+      label: "Raid",
+      kind: "built-in",
+      payload: {
+        actor: { id: "sample-raid-user", displayName: "StreamSpark" },
+        userName: "StreamSpark",
+        amount: 125,
+        raidViewers: 125
+      }
+    }]
+  });
+}
+
+function reThemeRaidDocument(): AlertEditorDocument {
+  const animation = {
+    mode: "preset" as const,
+    entrance: "fade",
+    exit: "fade",
+    durationMs: 300,
+    delayMs: 0,
+    easing: "ease-out"
+  };
+  const visualLayouts = [
+    { layerId: "layer-message", x: 420, y: 690, width: 1_080, height: 180, zIndex: 0 },
+    { layerId: "layer-image", x: 120, y: 140, width: 480, height: 360, zIndex: 1 },
+    { layerId: "layer-video", x: 1_240, y: 140, width: 560, height: 315, zIndex: 2 }
+  ];
+  return alertEditorDocumentSchema.parse({
+    id: "alert-raid-retheme",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "raid",
+    kind: "default",
+    parentAlertId: null,
+    name: "Custom raid",
+    enabled: true,
+    conditions: [{ field: "raidViewers", operator: "min", value: 25 }],
+    cooldownSeconds: 15,
+    rulePriority: 4,
+    durationMs: 6_500,
+    layers: [
+      {
+        id: "layer-message",
+        name: "Message",
+        type: "text",
+        visible: true,
+        order: 0,
+        template: "Custom raid from {userName}!",
+        textStyle: {
+          fontPreset: "system-sans",
+          fontSizePx: 42,
+          fontWeight: 800,
+          lineHeight: 1.15,
+          horizontalAlign: "center",
+          verticalAlign: "center",
+          color: "#FFFFFFFF",
+          shadow: { offsetX: 0, offsetY: 2, blur: 8, color: "#000000B8" }
+        },
+        boxStyle: {
+          backgroundColor: "#00000000",
+          paddingPx: 0,
+          cornerRadiusPx: 0,
+          shadow: null
+        },
+        animation
+      },
+      { id: "layer-image", name: "Old raid image", type: "image", visible: true, order: 1, assetId: "asset-theme-image", animation },
+      { id: "layer-video", name: "Old raid video", type: "video", visible: true, order: 2, assetId: "asset-theme-video", animation },
+      { id: "layer-audio", name: "Raid soundtrack", type: "audio", visible: true, order: 3, assetId: "asset-theme-audio", volume: 0.65, animation },
+      { id: "layer-tts", name: "Raid voice", type: "tts", visible: true, order: 4, enabled: true, providerId: "speakerbot", template: "Raid incoming from {userName}", animation }
+    ],
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: visualLayouts },
+      {
+        id: "vertical",
+        enabled: false,
+        reviewState: "ready",
+        layerLayouts: visualLayouts.map((layout) => ({
+          ...layout,
+          x: Math.round(layout.x * 1080 / 1920),
+          y: Math.round(layout.y * 1920 / 1080),
+          width: Math.round(layout.width * 1080 / 1920),
+          height: Math.round(layout.height * 1920 / 1080)
+        }))
+      }
+    ],
+    templateVariables: [
+      { key: "userName", label: "User name", description: "Display name for the raiding channel." },
+      { key: "raidViewers", label: "Raid viewers", description: "Number of viewers in the raid." }
+    ],
+    samplePayloads: [{
+      id: "normal",
+      label: "Raid",
+      kind: "built-in",
+      payload: {
+        actor: { id: "sample-raid-user", displayName: "StreamSpark" },
+        userName: "StreamSpark",
+        amount: 125,
+        raidViewers: 125
+      }
+    }]
+  });
+}
 
 function alertEditorDocument() {
   return {
