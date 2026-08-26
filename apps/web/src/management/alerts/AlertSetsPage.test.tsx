@@ -222,13 +222,19 @@ describe("AlertSetsPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "Add alert" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+    expect(within(dialog).getAllByText("Thanks for following, StreamSpark!")).toHaveLength(6);
     await user.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
     expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
+    expect(within(dialog).getAllByText("Thanks for the cheer, StreamSpark!")).toHaveLength(6);
+    await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
+    expect(within(dialog).getByRole("radio", { name: "Bold Pop" })).toBeChecked();
     await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
 
     await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
       eventType: "cheer",
-      name: "New cheer"
+      name: "New cheer",
+      themeId: "bold-pop"
     }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Edit New cheer" })).toHaveFocus());
     expect(onEditAlert).not.toHaveBeenCalled();
@@ -352,13 +358,15 @@ describe("AlertSetsPage", () => {
     await user.click(await screen.findByRole("button", { name: "Add alert for Resubscription" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
     expect(within(dialog).getByLabelText("Event type")).toBeDisabled();
+    expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
     await user.clear(within(dialog).getByLabelText("Alert name"));
     await user.type(within(dialog).getByLabelText("Alert name"), "Member welcome");
     await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
 
     await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
       eventType: "resubscription",
-      name: "Member welcome"
+      name: "Member welcome",
+      themeId: "clean-signal"
     }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Edit Member welcome" })).toHaveFocus());
   });
@@ -469,13 +477,25 @@ describe("AlertSetsPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "Add alert" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "raid");
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.type(within(dialog).getByLabelText("Alert name"), "Retry raid");
+    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
     await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
 
     const failure = await within(dialog).findByRole("alert");
     expect(failure).toHaveTextContent("The alert was not created");
     expect(failure).toHaveTextContent("Local persistence failed");
-    expect(failure).toHaveTextContent("Review the event type and alert name, then try again.");
+    expect(failure).toHaveTextContent("Review the event type, alert name, and starter theme, then try again.");
+    expect(within(dialog).getByLabelText("Event type")).toHaveValue("raid");
+    expect(within(dialog).getByLabelText("Alert name")).toHaveValue("Retry raid");
+    expect(within(dialog).getByRole("radio", { name: "Neon Terminal" })).toBeChecked();
     expect(dialog).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(createAlert).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Add alert" }));
+    expect(within(screen.getByRole("dialog", { name: "Add alert" })).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
   });
 
   it("shows activation impact and requires explicit warning confirmation", async () => {

@@ -207,7 +207,7 @@ Reuse `alertTextLayerStyle`, delegate placeholder resolution to the existing exp
 
 Stories cover a Raid chooser with Clean Signal selected, Bold Pop selected, Neon Terminal selected, and disabled controls. Use production components and typed event/sample data.
 
-- [ ] **Step 5: Run focused tests, web typecheck, and Storybook build**
+- [x] **Step 5: Run focused tests, web typecheck, and Storybook build**
 
 ```powershell
 corepack.cmd pnpm exec vitest run apps/web/src/management/alerts/editor/template-preview.test.ts apps/web/src/management/alerts/AlertThemeChooser.test.tsx
@@ -237,29 +237,29 @@ git commit -m "feat(alerts): add starter theme chooser"
 - Consumes: `AlertThemeChooser`, `defaultAlertStarterThemeId`, `AlertStarterThemeId`, and `applyAlertStarterTheme`.
 - Produces: creation requests that always send `themeId`; editor draft application through the existing document updater/history mechanism. `ManagementApi.createAlert` accepts `AlertCreateRequestInput` as the transport/caller type so legacy callers may omit the field, while `AlertSetsPage` always constructs and sends its selected `themeId`.
 
-- [ ] **Step 1: Write failing Add alert tests**
+- [x] **Step 1: Write failing Add alert tests**
 
 Verify Clean Signal starts selected, changing to Bold Pop updates the selection, submission sends `{ eventType, name, themeId: "bold-pop" }`, server errors preserve inputs, and reopening resets the default.
 
-- [ ] **Step 2: Write failing editor tests**
+- [x] **Step 2: Write failing editor tests**
 
 Verify opening/canceling the dialog is non-mutating; applying Neon Terminal requires the explicit button; custom Message/audio/TTS and behavior survive; visual media is removed; the alert becomes disabled; both profiles become `needs-review`; the editor becomes dirty; undo restores the prior draft; and the warning toast instructs review and save.
 
-- [ ] **Step 3: Run focused integration tests and verify RED**
+- [x] **Step 3: Run focused integration tests and verify RED**
 
 ```powershell
 corepack.cmd pnpm exec vitest run apps/web/src/management/management-api.test.ts apps/web/src/management/alerts/AlertSetsPage.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx
 ```
 
-- [ ] **Step 4: Implement Add alert theme state and payload**
+- [x] **Step 4: Implement Add alert theme state and payload**
 
 Keep event and name behavior unchanged. Place the theme chooser after event selection, use the selected event sample, and restore Clean Signal whenever the dialog begins a fresh creation flow.
 
-- [ ] **Step 5: Implement editor application and confirmation**
+- [x] **Step 5: Implement editor application and confirmation**
 
 Add `Apply starter theme` in the Alert inspector. The modal must name the replacement/preservation consequences and use `Apply theme` as its explicit action. Apply to the current draft through the existing updater so history and save/live-impact behavior remain intact. Use the shared warning toast after application.
 
-- [ ] **Step 6: Run focused tests and affected-package checks**
+- [x] **Step 6: Run focused tests and affected-package checks**
 
 ```powershell
 corepack.cmd pnpm exec vitest run apps/web/src/management/management-api.test.ts apps/web/src/management/alerts/AlertSetsPage.test.tsx apps/web/src/management/alerts/editor/AlertEditorPage.test.tsx
@@ -267,7 +267,7 @@ corepack.cmd pnpm --filter @stream-jams/web typecheck
 corepack.cmd pnpm --filter @stream-jams/web build
 ```
 
-- [ ] **Step 7: Commit UI integration**
+- [x] **Step 7: Commit UI integration**
 
 ```powershell
 git add apps/web/src

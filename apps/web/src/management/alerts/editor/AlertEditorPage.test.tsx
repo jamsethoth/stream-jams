@@ -58,6 +58,152 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("applies a selected starter theme only on confirmation and preserves editor history and save", async () => {
+    const baseDocument = editorDocument();
+    const themedSource: AlertEditorDocument = {
+      ...baseDocument,
+      name: "Custom celebration",
+      cooldownSeconds: 12,
+      rulePriority: 7,
+      durationMs: 7_500,
+      templateVariables: [{ key: "userName", label: "User name", description: "Display name." }],
+      layers: [
+        ...baseDocument.layers.map((layer) => layer.type === "text" && layer.name === "Message"
+          ? { ...layer, template: "Custom hello, {userName}!" }
+          : layer),
+        { id: "layer-shape", name: "Backdrop", type: "shape", visible: true, order: 2, fill: "#112233FF", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+        { id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+        { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 4, assetId: "asset-audio", volume: 0.4, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
+        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 5, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+      ],
+      targetProfiles: baseDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: true,
+        reviewState: "ready" as const,
+        layerLayouts: [
+          ...profile.layerLayouts,
+          { layerId: "layer-shape", x: 100, y: 100, width: 300, height: 200, zIndex: 2 },
+          { layerId: "layer-video", x: 450, y: 100, width: 300, height: 200, zIndex: 3 }
+        ]
+      }))
+    };
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={themedSource.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => themedSource),
+            getAlertSet: vi.fn(async () => alertSetDetail(true)),
+            listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument,
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    let dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    expect(dialog).toHaveTextContent("text, shape, image, and video layers");
+    expect(dialog).toHaveTextContent("primary message, audio, TTS, identity, matching and variation behavior, cooldown, priority, duration, samples, and variables");
+    expect(dialog).toHaveTextContent("disabled");
+    expect(dialog).toHaveTextContent("both profiles");
+    expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
+    await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
+
+    expect(screen.getByText("Unsaved")).toBeInTheDocument();
+    expect(screen.getByText("Alert disabled")).toBeInTheDocument();
+    expect(screen.getAllByText("Needs review").length).toBeGreaterThanOrEqual(2);
+    const warning = screen.getByText("Starter theme applied.").closest(".management-toast");
+    expect(warning).toHaveClass("management-toast--warning");
+    expect(warning).toHaveTextContent("Review both Landscape and Vertical before saving or re-enabling.");
+    expect(screen.queryByRole("dialog", { name: "Apply starter theme?" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getAllByText("Alert enabled").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.getByText("Alert disabled")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Revert" }));
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    expect(screen.getAllByText("Alert enabled").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
+    await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const saveDialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    await user.click(within(saveDialog).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    const saved = saveAlertEditorDocument.mock.calls[0]![1];
+    expect(saved).toMatchObject({ name: "Custom celebration", enabled: false, cooldownSeconds: 12, rulePriority: 7, durationMs: 7_500 });
+    expect(saved.layers.map(({ id }) => id)).not.toEqual(expect.arrayContaining(["layer-text", "layer-image", "layer-shape", "layer-video"]));
+    expect(saved.layers.filter((layer) => ["image", "video"].includes(layer.type))).toEqual([]);
+    expect(saved.layers.find((layer) => layer.type === "text" && layer.name === "Message")).toMatchObject({ template: "Custom hello, {userName}!" });
+    expect(saved.layers.find((layer) => layer.type === "audio")).toMatchObject({ assetId: "asset-audio", volume: 0.4 });
+    expect(saved.layers.find((layer) => layer.type === "tts")).toMatchObject({ providerId: "speakerbot", template: "Speak {userName}" });
+    expect(saved.targetProfiles.map(({ enabled, reviewState }) => ({ enabled, reviewState }))).toEqual([
+      { enabled: true, reviewState: "needs-review" },
+      { enabled: true, reviewState: "needs-review" }
+    ]);
+  });
+
+  it("keeps an invalid transient draft intact when starter-theme application fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    const duration = screen.getByRole("spinbutton", { name: "Duration (milliseconds)" });
+    fireEvent.change(duration, { target: { value: "0" } });
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Apply starter theme?" })).getByRole("button", { name: "Apply theme" }));
+
+    expect(await screen.findByText("The starter theme was not applied")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Apply starter theme?" })).toBeInTheDocument();
+    expect(duration).toHaveValue(0);
+    expect(screen.getAllByText("Alert enabled").length).toBeGreaterThan(0);
+  });
   it("waits for valid variation context and blocks the editor when context loading fails", async () => {
     let resolveContext: ((context: AlertVariationAuthoringContext) => void) | undefined;
     const contextResult = new Promise<AlertVariationAuthoringContext>((resolve) => { resolveContext = resolve; });

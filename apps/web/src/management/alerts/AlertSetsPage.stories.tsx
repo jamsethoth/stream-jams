@@ -1,4 +1,4 @@
-import type { AlertCreateInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, StreamEventType } from "@stream-jams/core";
+import type { AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, StreamEventType } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -160,7 +160,7 @@ export const StarterNeedsReview: Story = {
   }
 };
 
-const createAlert = fn(async (setId: string, input: AlertCreateInput) => ({
+const createAlert = fn(async (setId: string, input: AlertCreateRequestInput) => ({
   ...alert("alert-cheer", input.name, input.eventType, setId, false, "needs-review"),
   targetProfileIds: ["landscape" as const, "vertical" as const]
 }));
@@ -176,10 +176,28 @@ export const CreateAlert: Story = {
     const dialog = await canvas.findByRole("dialog", { name: "Add alert" });
     await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
     await expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
+    await userEvent.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
+    await expect(within(dialog).getByRole("radio", { name: "Bold Pop" })).toBeChecked();
     await userEvent.click(within(dialog).getByRole("button", { name: "Create alert" }));
     await waitFor(() => expect(createAlert).toHaveBeenCalled());
     await expect(args.onEditAlert).not.toHaveBeenCalled();
     await expect(canvas.getByText("New cheer created disabled and marked Needs review.")).toBeVisible();
+  }
+};
+
+export const CreateAlertThemeSelection: Story = {
+  args: {
+    managementApi: { ...api([activeSet], detail(activeSet)), createAlert },
+    onEditAlert: fn()
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
+    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    await userEvent.selectOptions(dialog.getByLabelText("Event type"), "raid");
+    await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
+    await expect(dialog.getByRole("radio", { name: "Neon Terminal" })).toBeChecked();
+    await expect(dialog.getAllByText("Welcome raiders from StreamSpark!")).toHaveLength(6);
   }
 };
 
@@ -205,7 +223,7 @@ export const CreateAlertFailure: Story = {
     const failure = await dialog.findByRole("alert");
     await expect(failure).toHaveTextContent("The alert was not created");
     await expect(failure).toHaveTextContent("Local persistence failed");
-    await expect(failure).toHaveTextContent("Review the event type and alert name, then try again.");
+    await expect(failure).toHaveTextContent("Review the event type, alert name, and starter theme, then try again.");
     await expect(failure).toHaveTextContent("ref_story_create_alert");
     await expect(dialog.getByLabelText("Alert name")).toHaveValue("New cheer");
     await expect(dialog.getByRole("button", { name: "Create alert" })).toBeEnabled();
@@ -225,7 +243,8 @@ export const GroupedEventPicker: Story = {
       await expect(dialog.querySelector(`optgroup[label="${group}"]`)).not.toBeNull();
     }
     await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "community_gift");
-    await expect(within(dialog).getByText("One alert for each aggregate community gift, not each recipient.")).toBeVisible();
+    await expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+    await expect(within(dialog).getAllByText("StreamSpark gifted 5 Tier 1000 subscriptions!")).toHaveLength(6);
   }
 };
 

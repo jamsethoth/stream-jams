@@ -1,13 +1,15 @@
 import {
   alertStarterTemplates,
+  defaultAlertStarterThemeId,
   type ActionableManagementError,
   type AlertBrowserSourceView,
-  type AlertCreateInput,
   type AlertInventoryRow,
   type AlertSetActivationImpact,
   type AlertSetDetail,
   type AlertSetOverview,
+  type AlertStarterThemeId,
   type AlertValidationIssue,
+  type StreamEventType,
   type TargetProfileId
 } from "@stream-jams/core";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -17,6 +19,7 @@ import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi } from "../management-api.js";
+import { AlertThemeChooser } from "./AlertThemeChooser.js";
 import {
   buildAlertEventGroups,
   filterAlertEventGroups,
@@ -92,8 +95,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [nameDraft, setNameDraft] = useState("");
   const [createAlertOpen, setCreateAlertOpen] = useState(false);
   const [createAlertEventLocked, setCreateAlertEventLocked] = useState(false);
-  const [createAlertEventType, setCreateAlertEventType] = useState<AlertCreateInput["eventType"]>(alertStarterTemplates[0].eventType);
+  const [createAlertEventType, setCreateAlertEventType] = useState<StreamEventType>(alertStarterTemplates[0].eventType);
   const [createAlertName, setCreateAlertName] = useState<string>(alertStarterTemplates[0].defaultName);
+  const [createAlertThemeId, setCreateAlertThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
   const [createAlertError, setCreateAlertError] = useState<ActionableManagementError | null>(null);
   const [variationParent, setVariationParent] = useState<AlertInventoryRow | null>(null);
   const [variationName, setVariationName] = useState("");
@@ -311,16 +315,17 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
-  function openCreateAlertDialog(eventType?: AlertCreateInput["eventType"]) {
+  function openCreateAlertDialog(eventType?: StreamEventType) {
     const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
     setCreateAlertEventType(template.eventType);
     setCreateAlertName(template.defaultName);
+    setCreateAlertThemeId(defaultAlertStarterThemeId);
     setCreateAlertEventLocked(eventType !== undefined);
     setCreateAlertError(null);
     setCreateAlertOpen(true);
   }
 
-  function selectAlertEventType(eventType: AlertCreateInput["eventType"]) {
+  function selectAlertEventType(eventType: StreamEventType) {
     const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType);
     setCreateAlertEventType(eventType);
     if (template !== undefined) setCreateAlertName(template.defaultName);
@@ -334,7 +339,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     try {
       const created = await managementApi.createAlert(detail.overview.id, {
         eventType: createAlertEventType,
-        name: createAlertName.trim()
+        name: createAlertName.trim(),
+        themeId: createAlertThemeId
       });
       const groupKey = `event:${created.eventType}`;
       revealMutationTarget(groupKey);
@@ -347,7 +353,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       setCreateAlertError(toActionableError(
         "The alert was not created",
         cause,
-        "Review the event type and alert name, then try again."
+        "Review the event type, alert name, and starter theme, then try again."
       ));
     } finally {
       setBusy(false);
@@ -761,11 +767,13 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         eventType={createAlertEventType}
         eventTypeLocked={createAlertEventLocked}
         name={createAlertName}
+        onTheme={setCreateAlertThemeId}
         onCancel={() => setCreateAlertOpen(false)}
         onEventType={selectAlertEventType}
         onName={setCreateAlertName}
         onSubmit={submitCreateAlert}
         open={createAlertOpen}
+        themeId={createAlertThemeId}
       />
       <VariationDialog alert={variationParent} busy={busy} error={variationError} name={variationName} onCancel={() => setVariationParent(null)} onName={setVariationName} onSubmit={submitVariation} />
       <ActivationDialog busy={busy} impact={activationImpact} onCancel={() => { setActivationSet(null); setActivationImpact(null); }} onConfirm={() => void confirmActivation()} set={activationSet} />
@@ -838,7 +846,7 @@ function AlertInventory({
   readonly groups: readonly AlertEventGroup[];
   readonly issues: readonly AlertValidationIssue[];
   readonly onAdd: () => void;
-  readonly onAddForEvent: (eventType: AlertCreateInput["eventType"]) => void;
+  readonly onAddForEvent: (eventType: StreamEventType) => void;
   readonly onCreateVariation: (alert: AlertInventoryRow) => void;
   readonly onDelete: (alert: AlertInventoryRow) => void;
   readonly onDuplicate: (alert: AlertInventoryRow) => void;
@@ -895,7 +903,7 @@ function AlertInventory({
                   </span>
                   <span className={`alert-sets-page__event-status alert-sets-page__event-status--${group.status}`}>{eventStatusLabel(group.status)}</span>
                 </button>
-                {group.known ? <button className="button button--secondary button--compact" disabled={busy} onClick={() => onAddForEvent(group.eventType as AlertCreateInput["eventType"])} type="button">Add alert for {group.label}</button> : null}
+                {group.known ? <button className="button button--secondary button--compact" disabled={busy} onClick={() => onAddForEvent(group.eventType as StreamEventType)} type="button">Add alert for {group.label}</button> : null}
               </header>
               {expanded ? (
                 <div className="alert-sets-page__event-content" id={contentId}>
@@ -1155,23 +1163,24 @@ function NameDialog({ busy, draft, onCancel, onChange, onSubmit, state }: { read
   return <ModalSurface labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}><div><h2 id="alert-set-name-dialog-title">{title}</h2><p>Saving does not change which alert set is active.</p></div><label><span>Alert set name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required value={draft} /></label><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</button></div></form></ModalSurface>;
 }
 
-function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, name, onCancel, onEventType, onName, onSubmit, open }: {
+function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, name, onCancel, onEventType, onName, onSubmit, onTheme, open, themeId }: {
   readonly busy: boolean;
   readonly error: ActionableManagementError | null;
-  readonly eventType: AlertCreateInput["eventType"];
+  readonly eventType: StreamEventType;
   readonly eventTypeLocked: boolean;
   readonly name: string;
   readonly onCancel: () => void;
-  readonly onEventType: (eventType: AlertCreateInput["eventType"]) => void;
+  readonly onEventType: (eventType: StreamEventType) => void;
   readonly onName: (name: string) => void;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  readonly onTheme: (themeId: AlertStarterThemeId) => void;
   readonly open: boolean;
+  readonly themeId: AlertStarterThemeId;
 }) {
-  const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
   const groups = [...new Set(alertStarterTemplates.map((candidate) => candidate.group))];
   return (
     <ModalSurface labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
-      <form className="alert-sets-page__modal" onSubmit={onSubmit}>
+      <form className="alert-sets-page__modal alert-sets-page__theme-dialog" onSubmit={onSubmit}>
         <div>
           <h2 id="alert-create-dialog-title">Add alert</h2>
           <p>The alert starts disabled. Review both target profiles in the editor before enabling it.</p>
@@ -1179,7 +1188,7 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, name, onCa
         {error === null ? null : <ManagementErrorBanner error={error} />}
         <label>
           <span>Event type</span>
-          <select autoFocus={!eventTypeLocked} disabled={eventTypeLocked} onChange={(event) => onEventType(event.currentTarget.value as AlertCreateInput["eventType"])} value={eventType}>
+          <select autoFocus={!eventTypeLocked} disabled={eventTypeLocked || busy} onChange={(event) => onEventType(event.currentTarget.value as StreamEventType)} value={eventType}>
             {groups.map((group) => (
               <optgroup key={group} label={group}>
                 {alertStarterTemplates.filter((candidate) => candidate.group === group).map((candidate) => <option key={candidate.eventType} value={candidate.eventType}>{candidate.label}</option>)}
@@ -1189,13 +1198,9 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, name, onCa
         </label>
         <label>
           <span>Alert name</span>
-          <input autoComplete="off" autoFocus={eventTypeLocked} maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} />
+          <input autoComplete="off" autoFocus={eventTypeLocked} disabled={busy} maxLength={120} onChange={(event) => onName(event.currentTarget.value)} required value={name} />
         </label>
-        <div className="alert-sets-page__template-preview">
-          <span>Starter message</span>
-          <p>{template.text}</p>
-          <small>{template.description}</small>
-        </div>
+        <AlertThemeChooser disabled={busy} eventType={eventType} onChange={onTheme} value={themeId} />
         <div className="management-modal__actions">
           <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
           <button disabled={busy || name.trim() === ""} type="submit">{busy ? "Creating..." : "Create alert"}</button>

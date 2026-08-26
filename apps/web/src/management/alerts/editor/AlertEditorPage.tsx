@@ -1,4 +1,5 @@
 import {
+  applyAlertStarterTheme,
   alertFontPresets,
   alertFontWeights,
   alertTextBoxStyleSchema,
@@ -10,6 +11,7 @@ import {
   createAlertTemplateContext,
   createNormalizedAlertSampleEvent,
   defaultOptionalAlertShadow,
+  defaultAlertStarterThemeId,
   evaluateAlertVariationSample,
   getAlertEditorAffectedProfileIds,
   moveAlertPriorityGroup,
@@ -22,6 +24,7 @@ import {
   type AlertInventoryRow,
   type AlertLayer,
   type AlertSetDetail,
+  type AlertStarterThemeId,
   type AlertVariationAuthoringContext,
   type AlertVariationPriorityAssignment,
   type AlertVariationSampleEvaluation,
@@ -41,6 +44,7 @@ import type { ManagementApi } from "../../management-api.js";
 import { ManagementHttpError } from "../../management-http-client.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { buildAlertEventGroups, filterAlertEventGroups } from "../alert-event-groups.js";
+import { AlertThemeChooser } from "../AlertThemeChooser.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
 import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventInspector.js";
 import { RgbaColorControl } from "./RgbaColorControl.js";
@@ -142,6 +146,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [saveWarning, setSaveWarning] = useState<SaveWarningState | null>(null);
   const [copyDesignOpen, setCopyDesignOpen] = useState(false);
+  const [starterThemeOpen, setStarterThemeOpen] = useState(false);
+  const [starterThemeId, setStarterThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
+  const [starterThemeError, setStarterThemeError] = useState<ActionableManagementError | null>(null);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
@@ -411,6 +418,41 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setEditor((current) => current === null ? null : applyPriorityGroupUpdate(current, update));
     resetLocalPreview();
     setNotice(null);
+  }
+
+  function openStarterThemeDialog() {
+    setStarterThemeId(defaultAlertStarterThemeId);
+    setStarterThemeError(null);
+    setStarterThemeOpen(true);
+  }
+
+  function closeStarterThemeDialog() {
+    setStarterThemeOpen(false);
+    setStarterThemeError(null);
+  }
+
+  function applyStarterTheme() {
+    if (document === null) return;
+    try {
+      const themed = applyAlertStarterTheme(document, starterThemeId);
+      updateDocument(() => themed);
+      setSelectedLayerId((current) => themed.layers.some((layer) => layer.id === current)
+        ? current
+        : themed.layers.find((layer) => layer.type !== "audio" && layer.type !== "tts")?.id ?? null);
+      setStarterThemeOpen(false);
+      setStarterThemeError(null);
+      setNotice({
+        tone: "warning",
+        message: "Starter theme applied.",
+        detail: "Review both Landscape and Vertical before saving or re-enabling."
+      });
+    } catch (cause) {
+      setStarterThemeError(actionableError(
+        "The starter theme was not applied",
+        cause,
+        "Correct the invalid alert settings, then choose Apply theme again."
+      ));
+    }
   }
 
   function undo() {
@@ -958,7 +1000,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 ttsProvidersLoaded={ttsProvidersLoaded}
               />
             ) : tab === "alert" ? (
-              <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
+              <AlertInspector document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onCopyDesign={() => {
                 setCopyDesignSourceId(filteredAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
@@ -1026,6 +1068,21 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div><h2 id="copy-alert-design-title">Copy design from another alert?</h2><p>Layers, assets, animation, and both profile layouts will replace the current design. Matching, enablement, identity, and sample data stay unchanged.</p></div>
           <label><span>Source alert</span><select autoFocus onChange={(event) => setCopyDesignSourceId(event.currentTarget.value)} value={copyDesignSourceId}><option value="">Choose an alert</option>{(setDetail?.inventory ?? []).filter((alert) => alert.id !== document.id).map((alert) => <option key={alert.id} value={alert.id}>{alert.name} ({formatEventType(alert.eventType)})</option>)}</select></label>
           <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setCopyDesignOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy || copyDesignSourceId === ""} onClick={() => void applyCopiedDesign()} type="button">Copy design</button></div>
+        </div>
+      </ModalSurface>
+      <ModalSurface labelledBy="starter-theme-dialog-title" onCancel={closeStarterThemeDialog} open={starterThemeOpen}>
+        <div className="alert-editor-page__save-warning alert-editor-page__theme-dialog">
+          <div>
+            <h2 id="starter-theme-dialog-title">Apply starter theme?</h2>
+            <p>All text, shape, image, and video layers will be replaced. The primary message, audio, TTS, identity, matching and variation behavior, cooldown, priority, duration, samples, and variables remain.</p>
+            <p>The alert will be disabled. Landscape and Vertical remain available as configured, and both profiles return to Needs review.</p>
+          </div>
+          {starterThemeError === null ? null : <ManagementErrorBanner error={starterThemeError} />}
+          <AlertThemeChooser disabled={busy} eventType={document.eventType} onChange={setStarterThemeId} value={starterThemeId} />
+          <div className="management-modal__actions">
+            <button className="button button--secondary" disabled={busy} onClick={closeStarterThemeDialog} type="button">Cancel</button>
+            <button className="button button--primary" disabled={busy} onClick={applyStarterTheme} type="button">Apply theme</button>
+          </div>
         </div>
       </ModalSurface>
       <ModalSurface labelledBy="active-alert-save-warning-title" onCancel={cancelSaveWarning} open={saveWarning !== null}>
@@ -1680,8 +1737,9 @@ function boundedStyleError(
     : null;
 }
 
-function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
+function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
   readonly document: AlertEditorDocument;
+  readonly onApplyTheme: () => void;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
   readonly onCopyDesign: () => void;
   readonly onCopyProfileLayout: () => void;
@@ -1694,6 +1752,7 @@ function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout,
       <label><span>Alert name</span><input onChange={(event) => { const name = event.currentTarget.value; onChange((current) => ({ ...current, name })); }} value={document.name} /></label>
       <label><span>Duration (milliseconds)</span><input min="100" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => ({ ...current, durationMs })); }} type="number" value={document.durationMs} /></label>
       <label className="alert-editor-inspector__check"><input checked={document.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
+      <button className="button button--secondary" onClick={onApplyTheme} type="button">Apply starter theme</button>
       <button className="button button--secondary" onClick={onCopyDesign} type="button">Copy design from...</button>
       <button className="button button--secondary" onClick={onCopyProfileLayout} type="button">Copy layout from {profileId === "landscape" ? "Vertical" : "Landscape"}</button>
       <section className="alert-editor-inspector__profile-state">

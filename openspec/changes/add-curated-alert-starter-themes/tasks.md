@@ -17,15 +17,15 @@
 - [x] 3.1 Create a controlled accessible event-scoped theme chooser with all three options and disabled-state behavior.
 - [x] 3.2 Create shared read-only landscape and vertical theme previews that delegate non-HTML interpolation to the exported core `DefaultTemplateRenderer` and reuse validated materialized output.
 - [x] 3.3 Add production-component Storybook stories and focused chooser/preview/interpolation tests.
-- [ ] 3.4 Run affected web tests, typecheck, and Storybook build.
+- [x] 3.4 Run affected web tests, typecheck, and Storybook build.
 
 ## 4. Add Alert And Editor Re-theming Workflows
 
-- [ ] 4.1 Integrate the chooser into Add alert, reset a fresh flow to Clean Signal, and always submit the selected `themeId`.
-- [ ] 4.2 Add an explicit focused-editor starter-theme confirmation that describes visual replacement, behavior preservation, disabling, and review requirements.
-- [ ] 4.3 Apply confirmed themes through the existing draft updater/history path and show review-and-save guidance without changing cancel behavior.
-- [ ] 4.4 Add management API, Add alert, and editor tests for selection, error preservation, confirmation, undo, save/live-impact behavior, media removal, preserved audio/TTS, and review state.
-- [ ] 4.5 Run affected web tests, typecheck, and production build.
+- [x] 4.1 Integrate the chooser into Add alert, reset a fresh flow to Clean Signal, and always submit the selected `themeId`.
+- [x] 4.2 Add an explicit focused-editor starter-theme confirmation that describes visual replacement, behavior preservation, disabling, and review requirements.
+- [x] 4.3 Apply confirmed themes through the existing draft updater/history path and show review-and-save guidance without changing cancel behavior.
+- [x] 4.4 Add management API, Add alert, and editor tests for selection, error preservation, confirmation, undo, save/live-impact behavior, media removal, preserved audio/TTS, and review state.
+- [x] 4.5 Run affected web tests, typecheck, and production build.
 
 ## 5. End-To-End Verification
 
