@@ -5,7 +5,7 @@ import {
   type StreamEventType,
   type TargetProfileId
 } from "@stream-jams/core";
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { alertTextLayerStyle } from "../../overlay/components/alert-text-style.js";
 import { renderAlertTemplatePreview } from "./editor/template-preview.js";
 
@@ -26,12 +26,14 @@ export function AlertThemePreview(props: AlertThemePreviewProps) {
   });
   const profile = composition.targetProfiles.find((candidate) => candidate.id === props.profileId)!;
   const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
-  const textScale = props.profileId === "landscape" ? 0.15 : 0.1125;
+  const fallbackSurfaceWidth = props.profileId === "landscape" ? 288 : 112;
+  const [surfaceRef, textScale] = usePreviewTextScale(profileDefinition.width, fallbackSurfaceWidth);
 
   return (
-    <div
+    <span
       aria-label={`${props.themeLabel} ${profileDefinition.label} preview`}
       className={`alert-theme-preview alert-theme-preview--${props.profileId}`}
+      ref={surfaceRef}
       role="img"
     >
       {composition.layers
@@ -70,8 +72,35 @@ export function AlertThemePreview(props: AlertThemePreviewProps) {
             </span>
           );
         })}
-    </div>
+    </span>
   );
+}
+
+function usePreviewTextScale(profileWidth: number, fallbackSurfaceWidth: number) {
+  const surfaceRef = useRef<HTMLSpanElement>(null);
+  const fallbackScale = fallbackSurfaceWidth / profileWidth;
+  const [scale, setScale] = useState(fallbackScale);
+
+  useLayoutEffect(() => {
+    const surface = surfaceRef.current;
+    setScale(fallbackScale);
+    if (surface === null || typeof ResizeObserver === "undefined") return;
+
+    const updateScale = (surfaceWidth: number) => {
+      if (Number.isFinite(surfaceWidth) && surfaceWidth > 0) {
+        setScale(surfaceWidth / profileWidth);
+      }
+    };
+    updateScale(surface.getBoundingClientRect().width);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries.find((candidate) => candidate.target === surface);
+      if (entry !== undefined) updateScale(entry.contentRect.width);
+    });
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, [fallbackScale, profileWidth]);
+
+  return [surfaceRef, scale] as const;
 }
 
 function previewLayerStyle(

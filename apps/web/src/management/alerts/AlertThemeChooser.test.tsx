@@ -1,10 +1,43 @@
 import { alertStarterThemes, streamEventTypes, type AlertStarterThemeId } from "@stream-jams/core";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AlertThemeChooser } from "./AlertThemeChooser.js";
+import { AlertThemePreview } from "./AlertThemePreview.js";
 
-afterEach(cleanup);
+const resizeCallbacks = new Map<Element, ResizeObserverCallback>();
+const resizeObservers: PreviewResizeObserver[] = [];
+
+class PreviewResizeObserver implements ResizeObserver {
+  readonly disconnect = vi.fn(() => {
+    for (const [target, callback] of resizeCallbacks) {
+      if (callback === this.callback) resizeCallbacks.delete(target);
+    }
+  });
+
+  constructor(readonly callback: ResizeObserverCallback) {
+    resizeObservers.push(this);
+  }
+
+  observe(target: Element) {
+    resizeCallbacks.set(target, this.callback);
+  }
+
+  unobserve(target: Element) {
+    resizeCallbacks.delete(target);
+  }
+}
+
+beforeEach(() => {
+  vi.stubGlobal("ResizeObserver", PreviewResizeObserver);
+});
+
+afterEach(() => {
+  cleanup();
+  resizeCallbacks.clear();
+  resizeObservers.length = 0;
+  vi.unstubAllGlobals();
+});
 
 describe("AlertThemeChooser", () => {
   it("renders the exact catalog order as an accessible controlled radio group", () => {
@@ -66,6 +99,41 @@ describe("AlertThemeChooser", () => {
     expect(container.querySelector(".alert-theme-preview__shape")).toHaveStyle({
       backgroundColor: "rgba(7, 17, 29, 0.87)"
     });
+    expect(previews.every((preview) => preview.tagName === "SPAN")).toBe(true);
+  });
+
+  it("scales materialized text with narrow and wide preview surfaces", () => {
+    render(<AlertThemeChooser eventType="raid" onChange={vi.fn()} value="clean-signal" />);
+    const preview = screen.getByRole("img", { name: "Clean Signal Landscape 16:9 preview" });
+    const message = within(preview).getByText("Welcome raiders from StreamSpark!");
+
+    act(() => resizePreview(preview, 240));
+    const narrowFontSize = Number.parseFloat(message.style.fontSize);
+    act(() => resizePreview(preview, 480));
+    const wideFontSize = Number.parseFloat(message.style.fontSize);
+
+    expect(narrowFontSize).toBeGreaterThan(0);
+    expect(wideFontSize).toBeCloseTo(narrowFontSize * 2);
+  });
+
+  it("replaces and disconnects the surface observer when the profile changes", () => {
+    const props = {
+      eventType: "raid" as const,
+      templateContext: { userName: "StreamSpark" },
+      themeId: "clean-signal" as const,
+      themeLabel: "Clean Signal"
+    };
+    const { rerender, unmount } = render(<AlertThemePreview {...props} profileId="landscape" />);
+    const landscapeObserver = resizeObservers.at(-1)!;
+
+    rerender(<AlertThemePreview {...props} profileId="vertical" />);
+
+    expect(landscapeObserver.disconnect).toHaveBeenCalledOnce();
+    const verticalObserver = resizeObservers.at(-1)!;
+    expect(verticalObserver).not.toBe(landscapeObserver);
+
+    unmount();
+    expect(verticalObserver.disconnect).toHaveBeenCalledOnce();
   });
 
   it("provides resolved deterministic preview text for every canonical event", () => {
@@ -79,3 +147,13 @@ describe("AlertThemeChooser", () => {
     }
   });
 });
+
+function resizePreview(target: Element, width: number) {
+  const callback = resizeCallbacks.get(target);
+  if (callback === undefined) throw new Error("Preview surface is not being observed");
+  const observer = resizeObservers.find((candidate) => candidate.callback === callback)!;
+  callback([{
+    target,
+    contentRect: { width }
+  } as ResizeObserverEntry], observer);
+}

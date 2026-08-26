@@ -28,11 +28,17 @@ corepack.cmd pnpm exec vitest run apps/web/src/management/alerts/editor/template
 
 Result: PASS — 3 files, 12 tests, 0 failures. This includes nested/missing/object/unescaped interpolation, catalog order, native radio semantics, controlled selection, disabled controls, six profile surfaces, actual materialized shapes and text, all-event resolved sample text, existing AlertCanvas authoring interpolation, and the moderated-preview override.
 
+### Review follow-up RED/GREEN
+
+Review found that percentage geometry responded to wider cards while text and box styles retained a fixed scale, and that the preview used a block `div` within phrasing content. A focused chooser test run produced the intended RED result: 3 failures and 4 passes. The failures proved the roots were not `span` elements, no preview surface was observed, and no observer lifecycle existed.
+
+After the focused fix, the chooser suite passed 7/7. The regression drives a real `ResizeObserver` boundary at 240px and 480px and verifies the materialized message font size doubles. It also verifies profile changes disconnect and replace the observer and unmount disconnects the replacement.
+
 ## Accessibility and rendering decisions
 
 - The chooser exposes one `radiogroup` named `Starter theme` with three native radios in core catalog order. Each radio has the catalog label and description, controlled checked state, a native disabled state, and a token-based `:focus-visible` outline on its card.
-- Each card contains atomic read-only preview images named with the theme and `Landscape 16:9` or `Vertical 9:16` profile. Preview layers have no focus target, pointer handler, selection state, asset API, or editor history behavior.
-- `AlertThemePreview` calls core `materializeAlertStarterTheme`, uses its target-profile layouts as percentages, preserves `zIndex`, and renders only visible text and shape layers. `alertTextLayerStyle` supplies typography and box styling with a profile-specific preview scale.
+- Each card contains phrasing-safe `span` preview roots exposed as atomic read-only images named with the theme and `Landscape 16:9` or `Vertical 9:16` profile. Preview layers have no focus target, pointer handler, selection state, asset API, or editor history behavior.
+- `AlertThemePreview` calls core `materializeAlertStarterTheme`, uses its target-profile layouts as percentages, preserves `zIndex`, and renders only visible text and shape layers. A cleaned-up `ResizeObserver` derives the typography/box scale from actual surface width divided by the core profile width, so text and geometry respond together; a deterministic profile-sized fallback covers the first render and environments without the observer.
 - Management chrome uses semantic `--color-*` tokens. Theme colors enter the web output only from the materialized layer values.
 - A bounded `Record<StreamEventType, ...>` provides deterministic preview-only samples for every canonical event. The selected sample is converted with `createAlertTemplateContext`; Raid resolves to `Welcome raiders from StreamSpark!` with no raw placeholder.
 - `renderAlertTemplatePreview` delegates directly to one `DefaultTemplateRenderer` instance with `{ template, values: sample, escapeHtml: false }`. Both the theme preview and AlertCanvas authoring display use it. Existing moderated server preview text still overrides local interpolation.
@@ -51,9 +57,10 @@ Result: PASS — 3 files, 12 tests, 0 failures. This includes nested/missing/obj
 ## Verification evidence
 
 - `corepack.cmd pnpm --filter @stream-jams/core build` — PASS.
-- Focused Vitest command above — PASS, 12/12.
+- Focused Vitest command above — PASS, 14/14 after the review regressions.
 - Focused ESLint command from the Task 4 brief — PASS, no findings.
 - `corepack.cmd pnpm --filter @stream-jams/web build-storybook` — PASS; 229 modules transformed and static Storybook output completed successfully.
+- `corepack.cmd pnpm --filter @stream-jams/web test-storybook:ci` — PASS; Chromium ran 15 story suites and 160 browser/accessibility tests, including `AlertThemeChooser.stories.tsx`.
 - `corepack.cmd pnpm --filter @stream-jams/web typecheck` — BLOCKED only by `AlertSetsPage.tsx:335` and `management-api.test.ts:278`, whose calls omit `themeId` because the browser API still uses parsed `AlertCreateInput`. Task 5 explicitly owns changing that transport boundary to `AlertCreateRequestInput` and integrating Add alert. No Task 4 files remain in the error output.
 - `openspec.cmd validate add-curated-alert-starter-themes --strict` — PASS; change is valid.
 - `git -c safe.directory=C:/Users/James/.codex/worktrees/966c/stream-jams diff --check` — PASS; no whitespace errors.
@@ -62,5 +69,5 @@ Result: PASS — 3 files, 12 tests, 0 failures. This includes nested/missing/obj
 
 - Re-read the Task 4 brief, OpenSpec requirements, catalog materializer, core renderer/context boundary, existing canvas tests, frontend UX guidance, CSS tokens, and Storybook conventions against the diff.
 - Confirmed no server/core production, Add alert/editor application, persistence, routes, assets, dependencies, BL-039, archive, publishing, PR, or merge changes were introduced.
-- No Playwright or live-app check was added because Task 4 creates a standalone Storybook-visible component but does not yet integrate it into a routed browser workflow; Task 5 and Task 6 own that browser workflow coverage.
+- The available Storybook Chromium/accessibility gate passed. No routed-app Playwright or live-app check was added because Task 4 creates a standalone Storybook-visible component but does not yet integrate it into a routed browser workflow; Task 5 and Task 6 own that workflow coverage.
 - Remaining concern: the package typecheck cannot close until Task 5 repairs the create-request caller boundary. That dependency is recorded rather than hidden or repaired out of slice.
