@@ -189,21 +189,21 @@ git commit -m "feat(alerts): create themed alert documents"
 - Consumes: core theme summaries/materializer, canonical event starter metadata, and the exported core `DefaultTemplateRenderer`.
 - Produces: `AlertThemeChooser({ eventType, value, onChange, disabled? })` and shared `renderAlertTemplatePreview(template, sample)` that delegates to `new DefaultTemplateRenderer().render({ template, values: sample, escapeHtml: false })` for non-HTML preview text.
 
-- [ ] **Step 1: Write failing interpolation and chooser tests**
+- [x] **Step 1: Write failing interpolation and chooser tests**
 
 Verify accessible radiogroup/radios, exact three labels, controlled selection, disabled state, landscape and vertical previews per card, and resolved sample text rather than raw placeholders. Add interpolation coverage proving the helper delegates to `DefaultTemplateRenderer` with `escapeHtml: false` rather than implementing another placeholder formatter.
 
-- [ ] **Step 2: Run focused web tests and verify RED**
+- [x] **Step 2: Run focused web tests and verify RED**
 
 ```powershell
 corepack.cmd pnpm exec vitest run apps/web/src/management/alerts/editor/template-preview.test.ts apps/web/src/management/alerts/AlertThemeChooser.test.tsx
 ```
 
-- [ ] **Step 3: Extract interpolation and implement the preview renderer**
+- [x] **Step 3: Extract interpolation and implement the preview renderer**
 
 Reuse `alertTextLayerStyle`, delegate placeholder resolution to the existing exported core `DefaultTemplateRenderer` with non-HTML output, and render catalog materialization read-only. Do not create another placeholder formatter, reuse interactive canvas pointer/selection behavior, or introduce asset APIs. Management chrome must use semantic design tokens; fixed theme colors are permitted only inside preview output.
 
-- [ ] **Step 4: Implement the controlled chooser and focused stories**
+- [x] **Step 4: Implement the controlled chooser and focused stories**
 
 Stories cover a Raid chooser with Clean Signal selected, Bold Pop selected, Neon Terminal selected, and disabled controls. Use production components and typed event/sample data.
 
@@ -215,7 +215,7 @@ corepack.cmd pnpm --filter @stream-jams/web typecheck
 corepack.cmd pnpm --filter @stream-jams/web build-storybook
 ```
 
-- [ ] **Step 6: Commit the chooser and previews**
+- [x] **Step 6: Commit the chooser and previews**
 
 ```powershell
 git add apps/web/src/management/alerts

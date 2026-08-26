@@ -4,6 +4,7 @@ import type { AssetApi } from "../../assets/asset-api.js";
 import { alertTextLayerStyle } from "../../../overlay/components/alert-text-style.js";
 import { overlayPresetAnimationStyle } from "../../../overlay/components/OverlaySurface.js";
 import { snapLayerGeometry, type CanvasViewState, type LayerGeometry } from "./editor-state.js";
+import { renderAlertTemplatePreview } from "./template-preview.js";
 
 export interface CanvasBackground {
   readonly mode: "checkerboard" | "neutral" | "test";
@@ -236,7 +237,7 @@ function CanvasLayer({
     const style = alertTextLayerStyle({ textStyle: layer.textStyle, boxStyle: layer.boxStyle, scale });
     return style === null ? null : (
       <span className="alert-canvas__text alert-text-layer" style={style}>
-        {previewText ?? renderTemplate(layer.template, templateContext)}
+        {previewText ?? renderAlertTemplatePreview(layer.template, templateContext)}
       </span>
     );
   }
@@ -301,14 +302,6 @@ function constrainGeometry(
     width,
     height
   };
-}
-
-function renderTemplate(template: string, values: Record<string, unknown>): string {
-  return template.replace(/\{([^{}]+)\}/gu, (_match, path: string) => {
-    const value = path.trim().split(".").reduce<unknown>((current, segment) =>
-      typeof current === "object" && current !== null ? (current as Record<string, unknown>)[segment] : undefined, values);
-    return value === null || value === undefined || typeof value === "object" ? "" : String(value);
-  });
 }
 
 function profileLabel(profileId: TargetProfileId): string {

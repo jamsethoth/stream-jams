@@ -14,9 +14,9 @@
 
 ## 3. Management Theme Selection And Preview
 
-- [ ] 3.1 Create a controlled accessible event-scoped theme chooser with all three options and disabled-state behavior.
-- [ ] 3.2 Create shared read-only landscape and vertical theme previews that delegate non-HTML interpolation to the exported core `DefaultTemplateRenderer` and reuse validated materialized output.
-- [ ] 3.3 Add production-component Storybook stories and focused chooser/preview/interpolation tests.
+- [x] 3.1 Create a controlled accessible event-scoped theme chooser with all three options and disabled-state behavior.
+- [x] 3.2 Create shared read-only landscape and vertical theme previews that delegate non-HTML interpolation to the exported core `DefaultTemplateRenderer` and reuse validated materialized output.
+- [x] 3.3 Add production-component Storybook stories and focused chooser/preview/interpolation tests.
 - [ ] 3.4 Run affected web tests, typecheck, and Storybook build.
 
 ## 4. Add Alert And Editor Re-theming Workflows
