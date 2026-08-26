@@ -8,9 +8,9 @@
 
 ## 2. Server Creation Integration
 
-- [ ] 2.1 Parse optional wire input in the HTTP route, pass required `AlertCreateInput` through management services, and thread selected/default theme IDs through alert creation and lazy/default editor-document paths while keeping handlers thin.
-- [ ] 2.2 Add server and HTTP tests for explicit selection, omitted-theme compatibility, invalid input atomicity, and themed document creation.
-- [ ] 2.3 Run affected server tests and typecheck.
+- [x] 2.1 Parse optional wire input in the HTTP route, pass required `AlertCreateInput` through management services, and thread selected/default theme IDs through alert creation and lazy/default editor-document paths while keeping handlers thin.
+- [x] 2.2 Add server and HTTP tests for explicit selection, omitted-theme compatibility, invalid input atomicity, and themed document creation.
+- [x] 2.3 Run affected server tests and typecheck.
 
 ## 3. Management Theme Selection And Preview
 

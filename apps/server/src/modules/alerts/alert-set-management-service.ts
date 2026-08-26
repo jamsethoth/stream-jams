@@ -1,5 +1,4 @@
 import {
-  alertCreateInputSchema,
   alertCollectionSchema,
   alertInventoryRowSchema,
   alertRuleSchema,
@@ -164,13 +163,12 @@ export class AlertSetManagementService {
   }
 
   async createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow> {
-    const parsed = alertCreateInputSchema.parse(input);
     await this.#findCollection(setId);
-    const template = alertStarterTemplates.find((candidate) => candidate.eventType === parsed.eventType);
+    const template = alertStarterTemplates.find((candidate) => candidate.eventType === input.eventType);
     if (template === undefined) {
-      throw new Error(`No starter alert template exists for ${parsed.eventType}`);
+      throw new Error(`No starter alert template exists for ${input.eventType}`);
     }
-    const created = this.#materializeRule(starterRuleInput(setId, template, parsed.name));
+    const created = this.#materializeRule(starterRuleInput(setId, template, input.name));
     const metadata = {
       ruleId: created.id,
       providerKind: "twitch" as const,
@@ -182,7 +180,7 @@ export class AlertSetManagementService {
       missingRuleIds: [created.id],
       saveRules: [created],
       saveRuleMetadata: [metadata],
-      saveDocuments: [createAlertEditorDocumentFromRule(created, 0, metadata)]
+      saveDocuments: [createAlertEditorDocumentFromRule(created, 0, metadata, input.themeId)]
     });
     return (await this.#toInventoryRows(setId, created))[0]!;
   }

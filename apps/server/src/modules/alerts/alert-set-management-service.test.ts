@@ -1,4 +1,6 @@
 import {
+  alertCreateInputSchema,
+  alertEditorDocumentSchema,
   DefaultAlertService,
   DefaultModerationService,
   streamEventTypes,
@@ -60,6 +62,14 @@ describe("AlertSetManagementService", () => {
     ]);
     expect(detail.inventory.every((row) => !row.enabled && row.reviewState === "needs-review")).toBe(true);
     expect(detail.browserSources.map((output) => output.targetProfileId)).toEqual(["landscape", "vertical"]);
+    const lazyStarterDocument = await fixture.alertEditorService.getDocument(detail.inventory[0]!.id);
+    expect(alertEditorDocumentSchema.parse(lazyStarterDocument)).toEqual(lazyStarterDocument);
+    expect(lazyStarterDocument.layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: `${detail.inventory[0]!.id}:clean-signal:panel`,
+        fill: "#07111DDE"
+      })
+    ]));
   });
 
   it("bulk-loads set metadata, rule metadata, and editor documents for set detail", async () => {
@@ -95,10 +105,10 @@ describe("AlertSetManagementService", () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
 
-    const created = await fixture.service.createAlert(starter!.id, {
+    const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
       eventType: "cheer",
       name: "Big cheer"
-    });
+    }));
 
     expect(created).toMatchObject({
       setId: starter!.id,
@@ -113,7 +123,12 @@ describe("AlertSetManagementService", () => {
     });
     const persisted = await fixture.service.getSet(starter!.id);
     expect(persisted.inventory).toContainEqual(created);
-    await expect(fixture.documents.find(created.id)).resolves.toMatchObject({
+    const document = await fixture.documents.find(created.id);
+    expect(alertEditorDocumentSchema.parse(document)).toEqual(document);
+    expect(document).toMatchObject({
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: `${created.id}:clean-signal:panel`, fill: "#07111DDE" })
+      ]),
       targetProfiles: [
         expect.objectContaining({ id: "landscape", reviewState: "needs-review" }),
         expect.objectContaining({ id: "vertical", reviewState: "needs-review" })
@@ -121,15 +136,41 @@ describe("AlertSetManagementService", () => {
     });
   });
 
+  it("creates an explicit Bold Pop document in the same aggregate as its rule and metadata", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const commit = vi.spyOn(fixture.mutationStore, "commit");
+
+    const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
+      eventType: "raid",
+      name: "Big raid",
+      themeId: "bold-pop"
+    }));
+
+    expect(commit).toHaveBeenCalledOnce();
+    const mutation = commit.mock.calls[0]![0];
+    expect(mutation.saveRules).toEqual([expect.objectContaining({ id: created.id, eventType: "raid" })]);
+    expect(mutation.saveRuleMetadata).toEqual([
+      expect.objectContaining({ ruleId: created.id, reviewState: "needs-review" })
+    ]);
+    expect(mutation.saveDocuments).toHaveLength(1);
+    const document = mutation.saveDocuments![0]!;
+    expect(alertEditorDocumentSchema.parse(document)).toEqual(document);
+    expect(document.layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: `${created.id}:bold-pop:magenta-block`, fill: "#EF3F8FFF" }),
+      expect.objectContaining({ id: `${created.id}:bold-pop:panel`, fill: "#171321F2" })
+    ]));
+  });
+
   it("creates every canonical event without expanding the starter set", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
 
     for (const eventType of streamEventTypes) {
-      const created = await fixture.service.createAlert(starter!.id, {
+      const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
         eventType,
         name: `Alert for ${eventType}`
-      });
+      }));
       expect(created).toMatchObject({ eventType, enabled: false, reviewState: "needs-review" });
     }
 
@@ -173,7 +214,9 @@ describe("AlertSetManagementService", () => {
       id: copiedAlert.id,
       setId: duplicate.id,
       enabled: false,
-      layers: [expect.objectContaining({ type: "text", template: "Copied set design" })],
+      layers: expect.arrayContaining([
+        expect.objectContaining({ type: "text", name: "Message", template: "Copied set design" })
+      ]),
       targetProfiles: expect.arrayContaining([expect.objectContaining({ reviewState: "needs-review" })])
     });
 
@@ -384,6 +427,31 @@ describe("AlertSetManagementService", () => {
     await expect(fixture.documents.find(variation.id)).resolves.toBeNull();
   });
 
+  it("resets a default alert to a schema-valid Clean Signal document", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
+      eventType: "raid",
+      name: "Themed raid",
+      themeId: "bold-pop"
+    }));
+
+    await expect(fixture.documents.find(created.id)).resolves.toMatchObject({
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: `${created.id}:bold-pop:panel`, fill: "#171321F2" })
+      ])
+    });
+
+    await fixture.service.resetManagedAlert(created.id, false);
+
+    const resetDocument = await fixture.documents.find(created.id);
+    expect(alertEditorDocumentSchema.parse(resetDocument)).toEqual(resetDocument);
+    expect(resetDocument?.layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: `${created.id}:clean-signal:panel`, fill: "#07111DDE" })
+    ]));
+    expect(resetDocument?.layers.some((layer) => layer.id.includes(":bold-pop:"))).toBe(false);
+  });
+
   it("requires confirmation before resetting or deleting enabled active output", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
@@ -473,7 +541,7 @@ function createFixture() {
       }
     ]
   });
-  return { alertRepository, alertService, metadataRepository, documents, alertEditorService, service };
+  return { alertRepository, alertService, metadataRepository, documents, alertEditorService, mutationStore, service };
 }
 
 function createInMemoryMutationStore(

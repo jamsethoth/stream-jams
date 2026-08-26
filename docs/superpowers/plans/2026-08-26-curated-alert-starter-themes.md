@@ -145,28 +145,28 @@ git commit -m "feat(alerts): add starter theme catalog"
 - Produces: `createAlertEditorDocumentFromRule(rule, revision, metadata, themeId?)`, defaulting to Clean Signal.
 - Boundary: `apps/server/src/http/routes/management-ui.ts` parses unknown `request.body` with `alertCreateInputSchema`; its `input.data` is the required-theme `AlertCreateInput` passed to `ManagementUiService.createAlert`, then `AlertSetManagementService.createAlert`. Those service signatures use only parsed internal input. HTTP callers remain compatible because the route accepts the optional-theme schema input.
 
-- [ ] **Step 1: Add failing service tests**
+- [x] **Step 1: Add failing service tests**
 
 Test explicit Bold Pop creation, omitted-theme Clean Signal creation, lazy document creation, starter/default reset behavior, and atomic rejection/no mutation for an invalid ID.
 
-- [ ] **Step 2: Run the focused server tests and verify RED**
+- [x] **Step 2: Run the focused server tests and verify RED**
 
 ```powershell
 corepack.cmd pnpm exec vitest run apps/server/src/modules/alerts/alert-editor-service.test.ts apps/server/src/modules/alerts/alert-set-management-service.test.ts apps/server/src/http/routes/management-ui.test.ts
 ```
 
-- [ ] **Step 3: Thread the theme through existing boundaries**
+- [x] **Step 3: Thread the theme through existing boundaries**
 
 Add the optional helper parameter, create the compatibility document, then apply the selected/default theme. Keep `request.body` parsing in the HTTP route; pass the parsed required `themeId` through `ManagementUiService.createAlert` and the existing aggregate mutation, rather than re-parsing a wire-shaped value in services. Keep handlers thin and update invalid-input copy to mention supported starter themes without exposing internal IDs.
 
-- [ ] **Step 4: Re-run focused tests and server typecheck**
+- [x] **Step 4: Re-run focused tests and server typecheck**
 
 ```powershell
 corepack.cmd pnpm exec vitest run apps/server/src/modules/alerts/alert-editor-service.test.ts apps/server/src/modules/alerts/alert-set-management-service.test.ts apps/server/src/http/routes/management-ui.test.ts
 corepack.cmd pnpm --filter @stream-jams/server typecheck
 ```
 
-- [ ] **Step 5: Commit server integration**
+- [x] **Step 5: Commit server integration**
 
 ```powershell
 git add apps/server/src
