@@ -50,7 +50,7 @@ Alternative considered: preserve every existing visual layer. Rejected because i
 
 ### Keep creation compatible and re-theming explicit in the editor
 
-`themeId` is optional at the wire boundary and defaults to Clean Signal in parsed create input. Add alert always sends the currently selected event-scoped theme. Existing callers that omit it receive Clean Signal.
+`AlertCreateRequestInput = z.input<typeof alertCreateInputSchema>` is the caller/wire type and retains optional `themeId`; `AlertCreateInput = z.output<typeof alertCreateInputSchema>` is the parsed internal type and has required/defaulted `themeId`. `apps/server/src/http/routes/management-ui.ts` parses unknown `request.body` and passes parsed `input.data` through `ManagementUiService.createAlert` to `AlertSetManagementService.createAlert`; those service signatures use only `AlertCreateInput`. The browser `ManagementApi.createAlert` accepts `AlertCreateRequestInput` for transport compatibility, while `AlertSetsPage` always sends its selected theme. Existing callers that omit it receive Clean Signal.
 
 The editor exposes an `Apply starter theme` flow that opens a confirmation explaining visual replacement, preserved behavior, disabling, and review requirements. Only its `Apply theme` action updates the current draft through the existing updater/history path, retaining undo, save, dirty-state, and live-impact behavior. A warning toast tells the operator to review both profiles and save.
 
@@ -58,7 +58,7 @@ Alternative considered: applying on chooser selection. Rejected because the oper
 
 ### Preview the same bounded materialization in management UI
 
-The chooser has three accessible controlled options and read-only landscape and vertical previews using real catalog materialization and resolved event sample text. It uses semantic management tokens outside the preview; fixed blueprint colors are confined to preview output. Production and Storybook reuse real components, not synthetic HTML or interactive canvas controls.
+The chooser has three accessible controlled options and read-only landscape and vertical previews using real catalog materialization and resolved event sample text. Its preview helper delegates to the already exported core `DefaultTemplateRenderer` with `escapeHtml: false`; it does not implement a second placeholder formatter. It uses semantic management tokens outside the preview; fixed blueprint colors are confined to preview output. Production and Storybook reuse real components, not synthetic HTML or interactive canvas controls.
 
 ## Risks / Trade-offs
 

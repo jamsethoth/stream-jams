@@ -78,7 +78,7 @@ git commit -m "docs(alerts): plan curated starter themes"
 
 **Interfaces:**
 - Produces: `AlertStarterThemeId`, `alertStarterThemeIdSchema`, `defaultAlertStarterThemeId`, `alertStarterThemes`, `materializeAlertStarterTheme(input)`, and `applyAlertStarterTheme(document, themeId)`.
-- Produces: alert-create wire input `{ eventType, name, themeId?: AlertStarterThemeId }`, parsed with a Clean Signal default.
+- Produces: `AlertCreateRequestInput = z.input<typeof alertCreateInputSchema>` for caller/wire payloads, where `themeId` remains optional, and `AlertCreateInput = z.output<typeof alertCreateInputSchema>` for parsed internal input, where `themeId` is required after Clean Signal defaulting.
 
 - [ ] **Step 1: Write contract tests that fail because theme IDs and create-input defaulting do not exist**
 
@@ -102,7 +102,7 @@ Expected: failure because `themeId` and the exported catalog contract are absent
 
 - [ ] **Step 3: Add the exact theme ID schema, default, summary type, and create-input field**
 
-Use a Zod enum over the three literal IDs. Preserve HTTP compatibility by applying the Clean Signal default during parsing; exported parsed `AlertCreateInput` always has `themeId`.
+Use a Zod enum over the three literal IDs and apply the Clean Signal default during parsing. Export `AlertCreateRequestInput = z.input<typeof alertCreateInputSchema>` for wire/caller compatibility (`themeId?: AlertStarterThemeId`) and `AlertCreateInput = z.output<typeof alertCreateInputSchema>` only for parsed internal use (`themeId: AlertStarterThemeId`). Do not use the parsed type for a caller that may omit the field.
 
 - [ ] **Step 4: Write materialization and re-theme tests and verify RED**
 
@@ -143,6 +143,7 @@ git commit -m "feat(alerts): add starter theme catalog"
 **Interfaces:**
 - Consumes: `AlertStarterThemeId`, `defaultAlertStarterThemeId`, `applyAlertStarterTheme`, and parsed `AlertCreateInput.themeId` from Task 2.
 - Produces: `createAlertEditorDocumentFromRule(rule, revision, metadata, themeId?)`, defaulting to Clean Signal.
+- Boundary: `apps/server/src/http/routes/management-ui.ts` parses unknown `request.body` with `alertCreateInputSchema`; its `input.data` is the required-theme `AlertCreateInput` passed to `ManagementUiService.createAlert`, then `AlertSetManagementService.createAlert`. Those service signatures use only parsed internal input. HTTP callers remain compatible because the route accepts the optional-theme schema input.
 
 - [ ] **Step 1: Add failing service tests**
 
@@ -156,7 +157,7 @@ corepack.cmd pnpm exec vitest run apps/server/src/modules/alerts/alert-editor-se
 
 - [ ] **Step 3: Thread the theme through existing boundaries**
 
-Add the optional helper parameter, create the compatibility document, then apply the selected/default theme. Pass parsed `themeId` through the existing aggregate mutation. Keep handlers thin and update invalid-input copy to mention supported starter themes without exposing internal IDs.
+Add the optional helper parameter, create the compatibility document, then apply the selected/default theme. Keep `request.body` parsing in the HTTP route; pass the parsed required `themeId` through `ManagementUiService.createAlert` and the existing aggregate mutation, rather than re-parsing a wire-shaped value in services. Keep handlers thin and update invalid-input copy to mention supported starter themes without exposing internal IDs.
 
 - [ ] **Step 4: Re-run focused tests and server typecheck**
 
@@ -185,12 +186,12 @@ git commit -m "feat(alerts): create themed alert documents"
 - Modify: `apps/web/src/management/alerts/editor/AlertCanvas.tsx`
 
 **Interfaces:**
-- Consumes: core theme summaries/materializer and canonical event starter metadata.
-- Produces: `AlertThemeChooser({ eventType, value, onChange, disabled? })` and shared `renderAlertTemplatePreview(template, sample)`.
+- Consumes: core theme summaries/materializer, canonical event starter metadata, and the exported core `DefaultTemplateRenderer`.
+- Produces: `AlertThemeChooser({ eventType, value, onChange, disabled? })` and shared `renderAlertTemplatePreview(template, sample)` that delegates to `new DefaultTemplateRenderer().render({ template, values: sample, escapeHtml: false })` for non-HTML preview text.
 
 - [ ] **Step 1: Write failing interpolation and chooser tests**
 
-Verify accessible radiogroup/radios, exact three labels, controlled selection, disabled state, landscape and vertical previews per card, and resolved sample text rather than raw placeholders.
+Verify accessible radiogroup/radios, exact three labels, controlled selection, disabled state, landscape and vertical previews per card, and resolved sample text rather than raw placeholders. Add interpolation coverage proving the helper delegates to `DefaultTemplateRenderer` with `escapeHtml: false` rather than implementing another placeholder formatter.
 
 - [ ] **Step 2: Run focused web tests and verify RED**
 
@@ -200,7 +201,7 @@ corepack.cmd pnpm exec vitest run apps/web/src/management/alerts/editor/template
 
 - [ ] **Step 3: Extract interpolation and implement the preview renderer**
 
-Reuse `alertTextLayerStyle` and render catalog materialization read-only. Do not reuse interactive canvas pointer/selection behavior or introduce asset APIs. Management chrome must use semantic design tokens; fixed theme colors are permitted only inside preview output.
+Reuse `alertTextLayerStyle`, delegate placeholder resolution to the existing exported core `DefaultTemplateRenderer` with non-HTML output, and render catalog materialization read-only. Do not create another placeholder formatter, reuse interactive canvas pointer/selection behavior, or introduce asset APIs. Management chrome must use semantic design tokens; fixed theme colors are permitted only inside preview output.
 
 - [ ] **Step 4: Implement the controlled chooser and focused stories**
 
@@ -234,7 +235,7 @@ git commit -m "feat(alerts): add starter theme chooser"
 
 **Interfaces:**
 - Consumes: `AlertThemeChooser`, `defaultAlertStarterThemeId`, `AlertStarterThemeId`, and `applyAlertStarterTheme`.
-- Produces: creation requests that always send `themeId`; editor draft application through the existing document updater/history mechanism.
+- Produces: creation requests that always send `themeId`; editor draft application through the existing document updater/history mechanism. `ManagementApi.createAlert` accepts `AlertCreateRequestInput` as the transport/caller type so legacy callers may omit the field, while `AlertSetsPage` always constructs and sends its selected `themeId`.
 
 - [ ] **Step 1: Write failing Add alert tests**
 

@@ -30,7 +30,7 @@ The system SHALL materialize a selected starter theme deterministically and idem
 - **AND** each output validates as an alert editor document
 
 ### Requirement: Alert Creation Selects A Starter Theme Compatibly
-The management alert-create input SHALL accept an optional validated starter theme ID and SHALL parse an omitted value as `clean-signal`. The Add alert workflow SHALL show an event-scoped accessible chooser and SHALL always submit its selected theme.
+The management alert-create input SHALL accept an optional validated starter theme ID and SHALL parse an omitted value as `clean-signal`. `AlertCreateRequestInput` SHALL be the optional-theme caller/wire type derived with `z.input<typeof alertCreateInputSchema>`, and `AlertCreateInput` SHALL be the required-theme parsed internal type derived with `z.output<typeof alertCreateInputSchema>`. The HTTP route SHALL parse request bodies before passing required parsed input to management services. The Add alert workflow SHALL show an event-scoped accessible chooser and SHALL always submit its selected theme, while legacy callers remain permitted to omit it.
 
 #### Scenario: Existing caller omits theme
 - **WHEN** an existing create caller submits a valid event type and name without a theme ID
@@ -70,7 +70,7 @@ When applying a starter theme, the system SHALL choose the primary message from 
 - **AND** later catalog changes do not alter the saved materialized document
 
 ### Requirement: Theme Previews And Review Guidance Are Actionable
-The management UI SHALL render resolved read-only landscape and vertical previews for each chooser option and SHALL provide confirmation and post-application guidance that visual composition is replaced, nonvisual behavior is preserved, the alert is disabled, both profiles require review, and the draft must be saved.
+The management UI SHALL render resolved read-only landscape and vertical previews for each chooser option by delegating template interpolation to the exported core `DefaultTemplateRenderer` with `escapeHtml: false`, and SHALL NOT implement a second placeholder formatter. It SHALL provide confirmation and post-application guidance that visual composition is replaced, nonvisual behavior is preserved, the alert is disabled, both profiles require review, and the draft must be saved.
 
 #### Scenario: Operator views a theme chooser
 - **WHEN** an operator opens starter-theme selection for a canonical event
