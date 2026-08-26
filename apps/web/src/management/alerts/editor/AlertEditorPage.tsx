@@ -104,10 +104,10 @@ type SaveWarningState = {
   readonly rejectNavigation?: (cause: unknown) => void;
   readonly resolveNavigation?: (saved: boolean) => void;
 };
-type StarterThemeReviewState = {
-  readonly active: boolean;
-  readonly editsAfterTheme: number;
-  readonly themedDocument: AlertEditorDocument;
+type StarterThemeReviewHistory = {
+  readonly current: boolean;
+  readonly future: readonly boolean[];
+  readonly past: readonly boolean[];
 };
 
 const starterThemeAppliedNotice: ManagementToastNotice = {
@@ -115,6 +115,41 @@ const starterThemeAppliedNotice: ManagementToastNotice = {
   message: "Starter theme applied.",
   detail: "Review both Landscape and Vertical before saving or re-enabling."
 };
+const emptyStarterThemeReviewHistory: StarterThemeReviewHistory = { current: false, future: [], past: [] };
+
+function applyStarterThemeReviewUpdate(
+  history: StarterThemeReviewHistory,
+  current: boolean,
+  historyLimit: number
+): StarterThemeReviewHistory {
+  return {
+    current,
+    past: [...history.past, history.current].slice(-historyLimit),
+    future: []
+  };
+}
+
+function undoStarterThemeReviewUpdate(
+  history: StarterThemeReviewHistory,
+  historyLimit: number
+): StarterThemeReviewHistory {
+  return {
+    current: history.past.at(-1) ?? false,
+    past: history.past.slice(0, -1),
+    future: [history.current, ...history.future].slice(0, historyLimit)
+  };
+}
+
+function redoStarterThemeReviewUpdate(
+  history: StarterThemeReviewHistory,
+  historyLimit: number
+): StarterThemeReviewHistory {
+  return {
+    current: history.future[0] ?? false,
+    past: [...history.past, history.current].slice(-historyLimit),
+    future: history.future.slice(1)
+  };
+}
 
 export function AlertEditorPage(props: AlertEditorPageProps) {
   const [editor, setEditor] = useState<AlertEditorState | null>(null);
@@ -160,7 +195,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [starterThemeOpen, setStarterThemeOpen] = useState(false);
   const [starterThemeId, setStarterThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
   const [starterThemeError, setStarterThemeError] = useState<ActionableManagementError | null>(null);
-  const [starterThemeReview, setStarterThemeReview] = useState<StarterThemeReviewState | null>(null);
+  const [starterThemeReviewHistory, setStarterThemeReviewHistory] = useState<StarterThemeReviewHistory>(emptyStarterThemeReviewHistory);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
@@ -190,7 +225,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setLoadedSetId(undefined);
     setError(null);
     setNotice(null);
-    setStarterThemeReview(null);
+    setStarterThemeReviewHistory(emptyStarterThemeReviewHistory);
     setPendingProfileId(null);
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
@@ -316,7 +351,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       setVariationContext((current) => current === null
         ? null
         : updateVariationContextAfterSave(current, saved, priorityAssignments ?? []));
-      setStarterThemeReview(null);
+      setStarterThemeReviewHistory(emptyStarterThemeReviewHistory);
       resetLocalPreview();
       setNotice({ tone: "success", message: "Alert saved." });
     } catch (cause) {
@@ -346,7 +381,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   const discard = useCallback(() => {
     setEditor((current) => current === null ? null : revertEditorChanges(current));
-    setStarterThemeReview(null);
+    setStarterThemeReviewHistory(emptyStarterThemeReviewHistory);
     resetLocalPreview();
     resetEventInspectorDraft();
     setError(null);
@@ -436,11 +471,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const next = applyEditorUpdate(editor, update);
     if (next === editor) return;
     setEditor(next);
-    setStarterThemeReview((current) => current === null
-      ? null
-      : current.active
-        ? { ...current, editsAfterTheme: current.editsAfterTheme + 1 }
-        : null);
+    setStarterThemeReviewHistory((history) => applyStarterThemeReviewUpdate(
+      history,
+      history.current,
+      editor.historyLimit
+    ));
     resetLocalPreview();
     setNotice(null);
   }
@@ -450,11 +485,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const next = applyPriorityGroupUpdate(editor, update);
     if (next === editor) return;
     setEditor(next);
-    setStarterThemeReview((current) => current === null
-      ? null
-      : current.active
-        ? { ...current, editsAfterTheme: current.editsAfterTheme + 1 }
-        : null);
+    setStarterThemeReviewHistory((history) => applyStarterThemeReviewUpdate(
+      history,
+      history.current,
+      editor.historyLimit
+    ));
     resetLocalPreview();
     setNotice(null);
   }
@@ -475,7 +510,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     try {
       const themed = applyAlertStarterTheme(document, starterThemeId);
       setEditor(applyEditorUpdate(editor, () => themed));
-      setStarterThemeReview({ active: true, editsAfterTheme: 0, themedDocument: themed });
+      setStarterThemeReviewHistory((history) => applyStarterThemeReviewUpdate(history, true, editor.historyLimit));
       resetLocalPreview();
       setSelectedLayerId((current) => themed.layers.some((layer) => layer.id === current)
         ? current
@@ -496,35 +531,24 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     if (editor === null) return;
     const next = undoEditorUpdate(editor);
     if (next === editor) return;
+    const nextThemeReviewHistory = undoStarterThemeReviewUpdate(starterThemeReviewHistory, editor.historyLimit);
     setEditor(next);
-    setStarterThemeReview((current) => current === null || !current.active
-      ? current
-      : current.editsAfterTheme > 0
-        ? { ...current, editsAfterTheme: current.editsAfterTheme - 1 }
-        : { ...current, active: false });
+    setStarterThemeReviewHistory(nextThemeReviewHistory);
     resetLocalPreview();
     resetEventInspectorDraft();
-    setNotice(null);
+    setNotice(nextThemeReviewHistory.current ? starterThemeAppliedNotice : null);
   }
 
   function redo() {
     if (editor === null) return;
     const next = redoEditorUpdate(editor);
     if (next === editor) return;
-    const restoresTheme = starterThemeReview !== null
-      && !starterThemeReview.active
-      && next.document === starterThemeReview.themedDocument;
+    const nextThemeReviewHistory = redoStarterThemeReviewUpdate(starterThemeReviewHistory, editor.historyLimit);
     setEditor(next);
-    setStarterThemeReview((current) => current === null
-      ? null
-      : current.active
-        ? { ...current, editsAfterTheme: current.editsAfterTheme + 1 }
-        : next.document === current.themedDocument
-          ? { ...current, active: true, editsAfterTheme: 0 }
-          : current);
+    setStarterThemeReviewHistory(nextThemeReviewHistory);
     resetLocalPreview();
     resetEventInspectorDraft();
-    setNotice(restoresTheme ? starterThemeAppliedNotice : null);
+    setNotice(nextThemeReviewHistory.current ? starterThemeAppliedNotice : null);
   }
 
   const updateCurrentCanvasView = useCallback((next: CanvasViewState) => {
@@ -533,7 +557,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   function requestProfileSwitch(nextProfileId: TargetProfileId) {
     if (nextProfileId === profileId) return;
-    if (editor !== null && isEditorDirty(editor) && starterThemeReview?.active !== true) {
+    if (editor !== null && isEditorDirty(editor) && !starterThemeReviewHistory.current) {
       setPendingProfileId(nextProfileId);
       return;
     }

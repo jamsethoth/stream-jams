@@ -247,6 +247,104 @@ describe("AlertEditorPage", () => {
     expect(switchDialog).toBeInTheDocument();
   });
 
+  it("preserves theme review provenance across multiple theme applications and history", async () => {
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    let dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
+    await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
+    await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByText("Starter theme applied.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Vertical/u }));
+    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(screen.getByText("Starter theme applied.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Landscape/u }));
+    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
+  });
+
+  it("tracks same-theme reapplication through themed and ordinary history branches", async () => {
+    const user = userEvent.setup();
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    const initialMessage = await screen.findByRole("textbox", { name: "Message template" });
+    fireEvent.change(initialMessage, { target: { value: "Before themes" } });
+    await user.click(screen.getByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Apply starter theme?" })).getByRole("button", { name: "Apply theme" }));
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Apply starter theme?" })).getByRole("button", { name: "Apply theme" }));
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await user.click(screen.getByRole("tab", { name: "Layers" }));
+    await user.click(screen.getByText("Message", { selector: ".alert-editor-inspector__layer-list span" }).closest("button")!);
+    const themedMessage = screen.getByRole("textbox", { name: "Message template" });
+    fireEvent.change(themedMessage, { target: { value: "Themed branch" } });
+    expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /^Vertical/u }));
+    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Before themes");
+    fireEvent.change(screen.getByRole("textbox", { name: "Message template" }), { target: { value: "Before themes branched" } });
+    expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: /^Landscape/u }));
+    expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
+  });
+
   it("keeps an invalid transient draft intact when starter-theme application fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const user = userEvent.setup();
