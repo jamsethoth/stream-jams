@@ -76,6 +76,10 @@ git -c safe.directory=C:/Users/James/.codex/worktrees/966c/stream-jams diff --ch
 - Corrected one implementation regression found during GREEN: Bold Pop blocks initially rendered in front of the panel; layer ordering now places them behind it.
 - Corrected typecheck-only compatibility defects (`toSorted` target availability and overly narrow test type assertions) without changing behavior or weakening tests.
 
+## Review follow-up
+
+The post-commit review found one stale expectation in `packages/core/src/management/alert-set-contracts.test.ts`: its existing canonical-event/name-trimming assertion still expected parsed alert-create input without the new defaulted `themeId`. The broader management test run reproduced exactly one failure with received `themeId: "clean-signal"` (1 failed, 52 passed). The intended parsed-output expectation now includes `themeId: "clean-signal"` while retaining the canonical `cheer` event and trimmed `New cheer` name assertions. Re-running all four core management test files passed 53/53 tests. No production behavior changed.
+
 ## Concerns
 
 None within Task 2 scope. Server and web callers that consume the new required parsed `AlertCreateInput.themeId` remain intentionally assigned to later tasks and were not changed here.
