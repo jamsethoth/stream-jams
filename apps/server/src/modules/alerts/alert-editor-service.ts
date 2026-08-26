@@ -731,7 +731,7 @@ function requiresLayout(layer: AlertLayer): boolean {
 
 function projectDocumentToRule(document: AlertEditorDocument, resolved: ResolvedEditorItem): AlertRule {
   const { rule, variant: currentVariant } = resolved;
-  const text = document.layers.find((layer) => layer.type === "text");
+  const text = selectPrimaryTextLayer(document.layers);
   const visual = document.layers.find((layer) => layer.type === "image" || layer.type === "video");
   const audio = document.layers.find((layer) => layer.type === "audio");
   const tts = document.layers.find((layer) => layer.type === "tts");
@@ -772,6 +772,22 @@ function projectDocumentToRule(document: AlertEditorDocument, resolved: Resolved
       }
       : variant)
   };
+}
+
+function selectPrimaryTextLayer(
+  layers: readonly AlertLayer[]
+): Extract<AlertLayer, { type: "text" }> | undefined {
+  const textLayers = layers
+    .filter((layer): layer is Extract<AlertLayer, { type: "text" }> => layer.type === "text")
+    .slice()
+    .sort((left, right) => left.order - right.order || compareLayerIds(left.id, right.id));
+  return textLayers.find((layer) => layer.name.toLowerCase() === "message")
+    ?? textLayers.find((layer) => layer.visible)
+    ?? textLayers[0];
+}
+
+function compareLayerIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function applyPriorityAssignments(

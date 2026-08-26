@@ -70,6 +70,23 @@ The first implementation run exposed a compatibility-state regression because `a
 - Tests identify themes through catalog-derived stable layer IDs and approved fills and validate resulting documents with `alertEditorDocumentSchema`.
 - No production path re-parses the already parsed internal create input.
 
+## Review follow-up — save projection primary text
+
+The independent Task 3 review found one Important issue: `projectDocumentToRule` selected the first text layer. Starter themes place Eyebrow before Message, so saving an unchanged themed document projected the eyebrow label and geometry back into the compatible alert variant.
+
+The regression was added before the fix and failed with `textTemplate: "Follow"` plus the `alert-follow:clean-signal:eyebrow` layout instead of `"Thanks, {actor.displayName}!"` plus Message geometry. The existing masked save test was also revised so it edits only the semantic Message layer rather than assigning the same template to every text layer.
+
+The fix deterministically sorts text layers by order and then layer ID, selects a case-insensitive layer named `Message`, otherwise the first visible text layer, otherwise the first text layer, and uses that same selected layer for both projected `variant.textTemplate` and the fallback primary layout ID when no image/video is primary.
+
+Fresh follow-up evidence:
+
+- Focused alert-editor test: 55/55 passed.
+- Complete Task 3 focused set: 3 files, 92/92 passed.
+- Broader server suite: 86 files, 602/602 passed.
+- Server typecheck and build passed.
+- Focused ESLint for the two changed server files passed.
+- OpenSpec strict validation and `git diff --check` passed.
+
 ## Concerns
 
-None. The full repository Vitest run was intentionally not used; the task brief specifies the focused server set and notes that the full run is long-running.
+None. The broader server suite was run; the full cross-package repository Vitest run remains outside this server-only follow-up.

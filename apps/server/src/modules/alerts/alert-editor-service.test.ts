@@ -251,7 +251,9 @@ describe("AlertEditorService", () => {
       name: "Follower welcome",
       durationMs: 6_000,
       layers: document.layers.map((layer) =>
-        layer.type === "text" ? { ...layer, template: "Welcome, {userName}!" } : layer
+        layer.type === "text" && layer.name === "Message"
+          ? { ...layer, template: "Welcome, {userName}!" }
+          : layer
       )
     };
 
@@ -267,6 +269,26 @@ describe("AlertEditorService", () => {
     expect(harness.metadata.saveRule).toHaveBeenCalledWith(
       expect.objectContaining({ ruleId: rule.id, targetProfileIds: ["landscape"], reviewState: "ready" })
     );
+  });
+
+  it("projects the themed Message template and geometry instead of the earlier Eyebrow layer", async () => {
+    const harness = createHarness();
+    const document = await harness.service.getDocument(rule.id);
+    const message = document.layers
+      .filter((layer) => layer.type === "text")
+      .find((layer) => layer.name === "Message")!;
+    const messageLayout = document.targetProfiles
+      .find((profile) => profile.id === "landscape")!
+      .layerLayouts.find((layout) => layout.layerId === message.id)!;
+
+    await harness.service.saveDocument(rule.id, document);
+
+    expect(harness.rules.saveRule).toHaveBeenCalledWith(expect.objectContaining({
+      variants: [expect.objectContaining({
+        textTemplate: "Thanks, {actor.displayName}!",
+        layout: messageLayout
+      })]
+    }));
   });
 
   it("creates and persists alert TTS configuration from an editor layer", async () => {
