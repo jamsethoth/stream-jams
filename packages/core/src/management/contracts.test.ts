@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import * as core from "../index.js";
+import type { AlertCreateInput, AlertCreateRequestInput, AlertStarterThemeId } from "../index.js";
 
 interface RuntimeSchema {
   parse(input: unknown): unknown;
@@ -148,6 +149,41 @@ describe("management target and provider contracts", () => {
 });
 
 describe("management alert contracts and rules", () => {
+  it("exports the bounded starter-theme catalog and defaults omitted create input", () => {
+    const themeId = schema("alertStarterThemeIdSchema");
+    const createAlert = schema("alertCreateInputSchema");
+
+    expect(core.defaultAlertStarterThemeId).toBe("clean-signal");
+    expect(core.alertStarterThemes).toEqual([
+      expect.objectContaining({ id: "clean-signal", label: "Clean Signal" }),
+      expect.objectContaining({ id: "bold-pop", label: "Bold Pop" }),
+      expect.objectContaining({ id: "neon-terminal", label: "Neon Terminal" })
+    ]);
+    expect(Object.isFrozen(core.alertStarterThemes)).toBe(true);
+    expect(core.alertStarterThemes.every((theme) => Object.isFrozen(theme))).toBe(true);
+    expect((themeId as RuntimeSchema & { readonly options: readonly string[] }).options).toEqual([
+      "clean-signal",
+      "bold-pop",
+      "neon-terminal"
+    ]);
+    expect(createAlert.parse({ eventType: "raid", name: "Raid" })).toEqual({
+      eventType: "raid",
+      name: "Raid",
+      themeId: "clean-signal"
+    });
+    expect(createAlert.parse({ eventType: "raid", name: "Raid", themeId: "bold-pop" })).toEqual({
+      eventType: "raid",
+      name: "Raid",
+      themeId: "bold-pop"
+    });
+    const unknownTheme = { eventType: "raid", name: "Raid", themeId: "unknown" };
+    expect(createAlert.safeParse(unknownTheme).success).toBe(false);
+    expect(unknownTheme).toEqual({ eventType: "raid", name: "Raid", themeId: "unknown" });
+
+    expectTypeOf<AlertCreateRequestInput["themeId"]>().toEqualTypeOf<AlertStarterThemeId | undefined>();
+    expectTypeOf<AlertCreateInput["themeId"]>().toEqualTypeOf<AlertStarterThemeId>();
+  });
+
   it("uses stable default and variation editor identities in alert inventory", () => {
     const inventoryRow = schema("alertInventoryRowSchema");
 

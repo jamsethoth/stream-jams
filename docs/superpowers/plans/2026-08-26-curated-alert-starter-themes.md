@@ -80,7 +80,7 @@ git commit -m "docs(alerts): plan curated starter themes"
 - Produces: `AlertStarterThemeId`, `alertStarterThemeIdSchema`, `defaultAlertStarterThemeId`, `alertStarterThemes`, `materializeAlertStarterTheme(input)`, and `applyAlertStarterTheme(document, themeId)`.
 - Produces: `AlertCreateRequestInput = z.input<typeof alertCreateInputSchema>` for caller/wire payloads, where `themeId` remains optional, and `AlertCreateInput = z.output<typeof alertCreateInputSchema>` for parsed internal input, where `themeId` is required after Clean Signal defaulting.
 
-- [ ] **Step 1: Write contract tests that fail because theme IDs and create-input defaulting do not exist**
+- [x] **Step 1: Write contract tests that fail because theme IDs and create-input defaulting do not exist**
 
 ```ts
 expect(alertCreateInputSchema.parse({ eventType: "raid", name: "Raid" }).themeId)
@@ -92,7 +92,7 @@ expect(() => alertCreateInputSchema.parse({
 })).toThrow();
 ```
 
-- [ ] **Step 2: Run the focused contract test and verify RED**
+- [x] **Step 2: Run the focused contract test and verify RED**
 
 ```powershell
 corepack.cmd pnpm exec vitest run packages/core/src/management/contracts.test.ts
@@ -100,11 +100,11 @@ corepack.cmd pnpm exec vitest run packages/core/src/management/contracts.test.ts
 
 Expected: failure because `themeId` and the exported catalog contract are absent.
 
-- [ ] **Step 3: Add the exact theme ID schema, default, summary type, and create-input field**
+- [x] **Step 3: Add the exact theme ID schema, default, summary type, and create-input field**
 
 Use a Zod enum over the three literal IDs and apply the Clean Signal default during parsing. Export `AlertCreateRequestInput = z.input<typeof alertCreateInputSchema>` for wire/caller compatibility (`themeId?: AlertStarterThemeId`) and `AlertCreateInput = z.output<typeof alertCreateInputSchema>` only for parsed internal use (`themeId: AlertStarterThemeId`). Do not use the parsed type for a caller that may omit the field.
 
-- [ ] **Step 4: Write materialization and re-theme tests and verify RED**
+- [x] **Step 4: Write materialization and re-theme tests and verify RED**
 
 Cover all canonical event types × three themes × two profiles, schema validity, in-bounds geometry, deterministic IDs/order, text/shape-only materialization, primary-message precedence, fallback message, audio/TTS preservation, visual replacement, disabled/review state, profile-availability preservation, and idempotency.
 
@@ -112,18 +112,18 @@ Cover all canonical event types × three themes × two profiles, schema validity
 corepack.cmd pnpm exec vitest run packages/core/src/management/alert-starter-themes.test.ts
 ```
 
-- [ ] **Step 5: Implement the minimal catalog and pure functions**
+- [x] **Step 5: Implement the minimal catalog and pure functions**
 
 Use deterministic IDs based on document ID, theme ID, and semantic role. Scale the approved normalized rectangles to the fixed profile dimensions with integer rounding. Define both target-profile layouts explicitly and validate the returned full document at the boundary.
 
-- [ ] **Step 6: Run focused core tests and typecheck the package**
+- [x] **Step 6: Run focused core tests and typecheck the package**
 
 ```powershell
 corepack.cmd pnpm exec vitest run packages/core/src/management/contracts.test.ts packages/core/src/management/alert-starter-themes.test.ts
 corepack.cmd pnpm --filter @stream-jams/core typecheck
 ```
 
-- [ ] **Step 7: Commit the core catalog**
+- [x] **Step 7: Commit the core catalog**
 
 ```powershell
 git add packages/core/src

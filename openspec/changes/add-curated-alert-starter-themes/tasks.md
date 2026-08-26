@@ -1,10 +1,10 @@
 ## 1. Core Theme Contract And Materialization
 
-- [ ] 1.1 Add the validated three-ID theme contract, immutable catalog summaries, and Clean Signal default to core alert-management contracts.
-- [ ] 1.2 Add `AlertCreateRequestInput` from the optional-theme schema input and required/defaulted `AlertCreateInput` from schema output; reject unknown IDs without mutation.
-- [ ] 1.3 Implement deterministic, schema-validated theme materialization for all canonical events and both fixed profiles using the approved text/solid-fill blueprints.
-- [ ] 1.4 Implement pure existing-document re-theming with primary-message precedence, visual replacement, nonvisual preservation, disabled state, and profile review reset.
-- [ ] 1.5 Add focused core tests for catalog bounds, defaulting, all event/theme/profile combinations, geometry, determinism, idempotency, validation, and preservation/fallback behavior.
+- [x] 1.1 Add the validated three-ID theme contract, immutable catalog summaries, and Clean Signal default to core alert-management contracts.
+- [x] 1.2 Add `AlertCreateRequestInput` from the optional-theme schema input and required/defaulted `AlertCreateInput` from schema output; reject unknown IDs without mutation.
+- [x] 1.3 Implement deterministic, schema-validated theme materialization for all canonical events and both fixed profiles using the approved text/solid-fill blueprints.
+- [x] 1.4 Implement pure existing-document re-theming with primary-message precedence, visual replacement, nonvisual preservation, disabled state, and profile review reset.
+- [x] 1.5 Add focused core tests for catalog bounds, defaulting, all event/theme/profile combinations, geometry, determinism, idempotency, validation, and preservation/fallback behavior.
 
 ## 2. Server Creation Integration
 
