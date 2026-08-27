@@ -60,10 +60,11 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | BL-032 | LAN overlay mode | Deferred | P3 | Authentication, origin policy, network warnings, and threat model | [Product plan](product-plan.md) |
 | BL-033 | User-owned cloud backup destination integration | Deferred | P3 | Stable backup format and explicit provider authorization | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-034 | App-data relocation, configurable retention, release/update checks, and command palette | Deferred | P3 | Individual measured user need | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
-| BL-035 | Evaluate the Storybook Vitest addon | Deferred | P3 | Stable Storybook inventory and a measured CI benefit | [Future-feature notes](future-features.md#evaluate-storybook-vitest-addon) |
+| BL-035 | Migrate Storybook browser tests away from the deprecated Story Store API | Deferred | P2 | Stable Storybook inventory and defined interaction/accessibility parity | Replace the Story Store-based test runner with the Storybook Vitest addon while preserving Chromium interactions, accessibility checks, and console-failure coverage. [Future-feature notes](future-features.md#evaluate-storybook-vitest-addon) |
 | BL-036 | Optional encryption for exported backups | Deferred | P3 | Stable backup format and a defined password/key recovery model | [Product plan](product-plan.md) |
 | BL-037 | Alert scheduling | Deferred | P3 | A concrete scheduling workflow and safe clock/time-zone semantics | [Product plan](product-plan.md) |
 | BL-038 | Full operator console expansion for intake, event review, and attention workflows | Deferred | P2 | BL-001 and demonstrated live-operation needs | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
+| BL-041 | Production web bundle splitting and performance budget | Deferred | P2 | Production entry chunk remains above Vite's 500 kB advisory threshold | Measure management startup, define an initial-load budget, and lazy-load heavy management surfaces, especially the alert editor, without weakening overlay reliability. |
 
 ## Not Planned
 
