@@ -70,7 +70,7 @@ describe("alert condition authoring catalog", () => {
     });
     expect(definition("channel_point_redemption", "channelPointReward")).toMatchObject({
       valueKind: "text",
-      operators: ["equals"]
+      operators: ["equals", "oneOf"]
     });
     expect(definition("channel_point_redemption", "rewardTitle")).toMatchObject({
       valueKind: "text",
@@ -117,6 +117,9 @@ describe("alert condition authoring catalog", () => {
     expect(validateAuthoredAlertConditions("channel_point_redemption", [
       { field: "rewardTitle", operator: "includes", value: "hydrate" }
     ])).toEqual([]);
+    expect(validateAuthoredAlertConditions("channel_point_redemption", [
+      { field: "channelPointReward", operator: "oneOf", value: ["reward-1", "reward-2"] }
+    ])).toEqual([]);
     expect(validateAuthoredAlertConditions("subscription", [
       { field: "tier", operator: "equals", value: "1000" }
     ])).toEqual([]);
@@ -133,6 +136,8 @@ describe("alert condition authoring catalog", () => {
     expect(issueCode("cheer", { field: "cheerAmount", operator: "range", value: [100, 10] })).toBe("reversed-range");
     expect(issueCode("cheer", { field: "metadata.bits", operator: "equals", value: 100 })).toBe("unsupported-field");
     expect(issueCode("cheer", { field: "cheerAmount", operator: "includes", value: 100 })).toBe("unsupported-operator");
+    expect(issueCode("channel_point_redemption", { field: "channelPointReward", operator: "oneOf", value: [] })).toBe("invalid-value");
+    expect(issueCode("channel_point_redemption", { field: "rewardTitle", operator: "oneOf", value: ["Hydrate"] })).toBe("unsupported-operator");
   });
 
   it("formats readable summaries and displays enum labels", () => {
@@ -141,6 +146,7 @@ describe("alert condition authoring catalog", () => {
     expect(formatAlertConditionSummary("cheer", { field: "cheerAmount", operator: "max", value: 500 })).toBe("Cheer amount is at most 500");
     expect(formatAlertConditionSummary("cheer", { field: "cheerAmount", operator: "range", value: [100, 500] })).toBe("Cheer amount is between 100 and 500");
     expect(formatAlertConditionSummary("channel_point_redemption", { field: "rewardTitle", operator: "includes", value: "Hydrate" })).toBe("Reward title contains Hydrate");
+    expect(formatAlertConditionSummary("channel_point_redemption", { field: "channelPointReward", operator: "oneOf", value: ["reward-a", "reward-b"] })).toBe("Reward ID is one of reward-a, reward-b");
     expect(formatAlertConditionSummary("subscription", { field: "tier", operator: "equals", value: "1000" })).toBe("Subscription tier is Tier 1");
     expect(formatAlertConditionSummary("follow", { field: "metadata.vip", operator: "equals", value: true })).toBe("Legacy condition: metadata.vip equals true");
   });

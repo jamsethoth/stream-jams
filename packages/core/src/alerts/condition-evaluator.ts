@@ -20,6 +20,11 @@ export class DefaultAlertConditionEvaluator implements AlertConditionEvaluator {
         return evaluateNumeric(actual, condition.value, (actualNumber, expectedNumber) => actualNumber <= expectedNumber);
       case "range":
         return evaluateRange(actual, condition.value);
+      case "oneOf":
+        return typeof actual === "string"
+          && Array.isArray(condition.value)
+          && condition.value.every((candidate) => typeof candidate === "string")
+          && condition.value.includes(actual);
     }
   }
 }
