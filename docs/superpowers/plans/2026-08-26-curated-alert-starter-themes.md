@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript 6, Zod, Node.js/Fastify, React 19, Vite, Vitest, Testing Library, Storybook, Playwright, OpenSpec.
 
-**Spec:** `openspec/changes/add-curated-alert-starter-themes/specs/alert-configuration-management/spec.md`
+**Spec:** `openspec/specs/alert-configuration-management/spec.md` (synced; implementation artifacts archived under `openspec/changes/archive/2026-08-26-add-curated-alert-starter-themes/`)
 
 ## Global Constraints
 
@@ -296,11 +296,11 @@ corepack.cmd pnpm exec playwright test tests/e2e/management-alerts.spec.ts
 
 Expected: PASS. Production behavior is developed test-first in Tasks 2–5; this task adds browser-level acceptance coverage after those behaviors exist and must not manufacture an artificial failing state.
 
-- [ ] **Step 3: Mark OpenSpec tasks complete only after their evidence exists**
+- [x] **Step 3: Mark OpenSpec tasks complete only after their evidence exists**
 
 Run strict validation after checkbox updates. Do not archive, sync, remove BL-006, push, create a PR, or merge without the corresponding explicit workflow/approval.
 
-- [ ] **Step 4: Run final repository gates**
+- [x] **Step 4: Run final repository gates**
 
 ```powershell
 corepack.cmd pnpm lint
@@ -316,11 +316,11 @@ openspec.cmd validate --all --strict --json
 
 Run the full Vitest suite with a verbose reporter and allow its normal three-plus-minute collection/execution window to finish. If it genuinely fails or hangs beyond the repository's expected runtime, preserve the output and report the full-suite gap; do not describe focused passing tests as a full-suite pass.
 
-- [ ] **Step 5: Rebuild, restart, and live-check**
+- [x] **Step 5: Rebuild, restart, and live-check**
 
 Wait for `/health`, then verify all three cards, landscape/vertical previews, one themed creation, one re-theme/save/reload, and one connected browser-source test playback. Shut down only the service instance started for this task.
 
-- [ ] **Step 6: Commit end-to-end coverage and task evidence**
+- [x] **Step 6: Commit end-to-end coverage and task evidence**
 
 ```powershell
 git add tests/e2e/management-alerts.spec.ts openspec/changes/add-curated-alert-starter-themes/tasks.md
