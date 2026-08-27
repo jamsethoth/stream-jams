@@ -594,7 +594,17 @@ test("focused alert editor applies Neon Terminal while preserving nonvisual beha
   await page.route(`**/management/alerts/${document.id}/editor`, async (route) => {
     if (route.request().method() === "PUT") {
       const body = route.request().postDataJSON() as { readonly document: AlertEditorDocument };
-      document = alertEditorDocumentSchema.parse(body.document);
+      const candidate = alertEditorDocumentSchema.parse(body.document);
+      const reviewIssue = editorSaveReviewIssue(document, candidate);
+      if (reviewIssue !== null) {
+        await route.fulfill({
+          status: 422,
+          contentType: "application/json",
+          json: { error: { code: "ALERT_EDITOR_INVALID", message: reviewIssue } }
+        });
+        return;
+      }
+      document = candidate;
       savedDocuments.push(document);
     }
     await route.fulfill({ contentType: "application/json", json: document });
@@ -642,6 +652,10 @@ test("focused alert editor applies Neon Terminal while preserving nonvisual beha
   await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
   await page.getByRole("tab", { name: "Alert" }).click();
   await expect(page.getByRole("checkbox", { name: "Use this profile for live alerts" })).not.toBeChecked();
+  await page.locator(".alert-editor-page__profile-warning").getByRole("button", { name: "Mark reviewed" }).click();
+  await page.getByRole("button", { name: /^Landscape/u }).click();
+  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
+  await page.locator(".alert-editor-page__profile-warning").getByRole("button", { name: "Mark reviewed" }).click();
 
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
@@ -649,15 +663,15 @@ test("focused alert editor applies Neon Terminal while preserving nonvisual beha
   await page.reload();
   await expect(page.getByText("Saved")).toBeVisible();
   await expect(page.getByText("Alert disabled")).toBeVisible();
-  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
+  await expect(page.locator(".alert-editor-page__profile-warning")).toHaveCount(0);
 
   const saved = savedDocuments[0]!;
   const savedTextLayers = saved.layers.filter((layer) => layer.type === "text");
   const savedShapeLayers = saved.layers.filter((layer) => layer.type === "shape");
   expect(saved.enabled).toBe(false);
   expect(saved.targetProfiles).toMatchObject([
-    { id: "landscape", enabled: true, reviewState: "needs-review" },
-    { id: "vertical", enabled: false, reviewState: "needs-review" }
+    { id: "landscape", enabled: true, reviewState: "ready" },
+    { id: "vertical", enabled: false, reviewState: "ready" }
   ]);
   expect(saved.layers.some((layer) => layer.type === "image" || layer.type === "video")).toBe(false);
   expect(saved.layers).toEqual(expect.arrayContaining([
@@ -1575,6 +1589,27 @@ function reThemeRaidDocument(): AlertEditorDocument {
       }
     }]
   });
+}
+
+function editorSaveReviewIssue(
+  current: AlertEditorDocument,
+  candidate: AlertEditorDocument
+): string | null {
+  const enabledProfiles = candidate.targetProfiles.filter((profile) => profile.enabled);
+  if (enabledProfiles.length === 0) return "Enable at least one target profile before saving.";
+  if (!enabledProfiles.some((profile) => profile.reviewState === "ready")) {
+    return "Finish reviewing at least one enabled target profile before saving.";
+  }
+  for (const profile of enabledProfiles) {
+    const currentProfile = current.targetProfiles.find((item) => item.id === profile.id);
+    if (
+      profile.reviewState !== "ready"
+      && !(currentProfile?.enabled === true && currentProfile.reviewState === "needs-review")
+    ) {
+      return `Finish reviewing the ${profile.id} profile before enabling it.`;
+    }
+  }
+  return null;
 }
 
 function alertEditorDocument() {
