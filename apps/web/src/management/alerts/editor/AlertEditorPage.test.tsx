@@ -3315,6 +3315,66 @@ describe("AlertEditorPage", () => {
     ]);
   });
 
+  it("preserves edits made while a copied design is loading", async () => {
+    const user = userEvent.setup();
+    const target = editorDocument();
+    const source: AlertEditorDocument = {
+      ...structuredClone(target),
+      id: "alert-raid",
+      eventType: "raid",
+      name: "Raid design",
+      layers: target.layers.map((layer, index) => index === 0 ? { ...layer, name: "Copied message" } : layer)
+    };
+    let resolveSource!: (document: AlertEditorDocument) => void;
+    const sourceRequest = new Promise<AlertEditorDocument>((resolve) => { resolveSource = resolve; });
+    const getAlertEditorDocument = vi.fn((alertId: string) => alertId === source.id
+      ? sourceRequest
+      : Promise.resolve(target));
+
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={target.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument,
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Copy design from..." }));
+    const dialog = screen.getByRole("dialog", { name: "Copy design from another alert?" });
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "Source alert" }), source.id);
+    await user.click(within(dialog).getByRole("button", { name: "Copy design" }));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog", { name: "Copy design from another alert?" })).not.toBeInTheDocument();
+
+    const name = screen.getByRole("textbox", { name: "Alert name" });
+    fireEvent.change(name, { target: { value: "Edited while copying" } });
+    expect(name).toHaveValue("Edited while copying");
+
+    await act(async () => { resolveSource(source); });
+    expect(await screen.findByText("Design copied.")).toBeInTheDocument();
+    expect(name).toHaveValue("Edited while copying");
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(name).toHaveValue("Edited while copying");
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(name).toHaveValue(target.name);
+  });
+
   it("reviews and saves two already-enabled profiles incrementally", async () => {
     const user = userEvent.setup();
     const base = editorDocument();
