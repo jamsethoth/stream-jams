@@ -15,7 +15,6 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 | ID | Feature | Priority | Dependencies | OpenSpec |
 | --- | --- | --- | --- | --- |
-| BL-039 | Collapsible event-type grouping for alert inventory and focused-editor navigation | P1 | Variation authoring contract implemented | [`group-alerts-by-event-type`](../openspec/changes/group-alerts-by-event-type/proposal.md) |
 
 ## Alert Authoring And Assets
 
