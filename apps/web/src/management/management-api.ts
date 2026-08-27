@@ -29,7 +29,7 @@ import {
   type AlertEditorDocument,
   type AlertEditorErrorReportInput,
   type AlertEditorErrorReportResult,
-  type AlertCreateInput,
+  type AlertCreateRequestInput,
   type AlertEditorTestRequest,
   type AlertEditorTestResult,
   type AlertSetActivationImpact,
@@ -263,7 +263,7 @@ export interface ManagementApi {
   listAlertSets(): Promise<readonly AlertSetOverview[]>;
   getAlertSet(setId: string): Promise<AlertSetDetail>;
   createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
-  createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow>;
+  createAlert(setId: string, input: AlertCreateRequestInput): Promise<AlertInventoryRow>;
   createAlertVariation(alertId: string, input: AlertVariationCreateInput): Promise<AlertInventoryRow>;
   duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow>;
   resetManagedAlert(alertId: string, confirmLiveImpact?: boolean): Promise<AlertInventoryRow>;

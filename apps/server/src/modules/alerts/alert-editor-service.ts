@@ -1,6 +1,7 @@
 import {
   DefaultTemplateRenderer,
   SafeTemplateRenderer,
+  applyAlertStarterTheme,
   alertEditorDocumentSchema,
   alertEditorTestRequestSchema,
   getAlertTemplateVariableCatalog,
@@ -9,6 +10,7 @@ import {
   createNormalizedAlertSampleEvent,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
+  defaultAlertStarterThemeId,
   validateAuthoredAlertConditions,
   type AlertCondition,
   type AlertEditorDocument,
@@ -17,6 +19,7 @@ import {
   type AlertLayer,
   type AlertRepository,
   type AlertRule,
+  type AlertStarterThemeId,
   type AlertTargetProfileDocument,
   type AlertVariationAuthoringContext,
   type AlertVariationPriorityAssignment,
@@ -422,7 +425,8 @@ function hydrateOrCreateDocument(
 
 function createDocumentFromRule(
   resolved: ResolvedEditorItem,
-  metadata: AlertRuleManagementMetadata | null
+  metadata: AlertRuleManagementMetadata | null,
+  themeId: AlertStarterThemeId = defaultAlertStarterThemeId
 ): AlertEditorDocument {
   const { rule, variant } = resolved;
   if (rule.collectionIds[0] === undefined) {
@@ -481,13 +485,32 @@ function createDocumentFromRule(
     templateVariables: getAlertTemplateVariableCatalog(rule.eventType),
     samplePayloads: createBuiltInSamples(rule.eventType)
   };
-  return alertEditorDocumentSchema.parse(document);
+  const compatibilityDocument = alertEditorDocumentSchema.parse(document);
+  const themedDocument = applyAlertStarterTheme(compatibilityDocument, themeId);
+  return alertEditorDocumentSchema.parse({
+    ...themedDocument,
+    enabled: compatibilityDocument.enabled,
+    targetProfiles: themedDocument.targetProfiles.map((profile) => {
+      const compatibilityProfile = compatibilityDocument.targetProfiles.find(
+        (candidate) => candidate.id === profile.id
+      );
+      if (compatibilityProfile === undefined) {
+        throw new Error(`Missing compatibility target profile: ${profile.id}`);
+      }
+      return {
+        ...profile,
+        enabled: compatibilityProfile.enabled,
+        reviewState: compatibilityProfile.reviewState
+      };
+    })
+  });
 }
 
 export function createAlertEditorDocumentFromRule(
   rule: AlertRule,
   variantIndex: number,
-  metadata: AlertRuleManagementMetadata | null
+  metadata: AlertRuleManagementMetadata | null,
+  themeId: AlertStarterThemeId = defaultAlertStarterThemeId
 ): AlertEditorDocument {
   const variant = rule.variants[variantIndex];
   if (variant === undefined || variantIndex < 0) {
@@ -499,7 +522,7 @@ export function createAlertEditorDocumentFromRule(
     variantIndex,
     editorId: variantIndex === 0 ? rule.id : variant.id,
     kind: variantIndex === 0 ? "default" : "variation"
-  }, metadata);
+  }, metadata, themeId);
 }
 
 function hydrateDocument(
@@ -708,7 +731,7 @@ function requiresLayout(layer: AlertLayer): boolean {
 
 function projectDocumentToRule(document: AlertEditorDocument, resolved: ResolvedEditorItem): AlertRule {
   const { rule, variant: currentVariant } = resolved;
-  const text = document.layers.find((layer) => layer.type === "text");
+  const text = selectPrimaryTextLayer(document.layers);
   const visual = document.layers.find((layer) => layer.type === "image" || layer.type === "video");
   const audio = document.layers.find((layer) => layer.type === "audio");
   const tts = document.layers.find((layer) => layer.type === "tts");
@@ -749,6 +772,22 @@ function projectDocumentToRule(document: AlertEditorDocument, resolved: Resolved
       }
       : variant)
   };
+}
+
+function selectPrimaryTextLayer(
+  layers: readonly AlertLayer[]
+): Extract<AlertLayer, { type: "text" }> | undefined {
+  const textLayers = layers
+    .filter((layer): layer is Extract<AlertLayer, { type: "text" }> => layer.type === "text")
+    .slice()
+    .sort((left, right) => left.order - right.order || compareLayerIds(left.id, right.id));
+  return textLayers.find((layer) => layer.name.toLowerCase() === "message")
+    ?? textLayers.find((layer) => layer.visible)
+    ?? textLayers[0];
+}
+
+function compareLayerIds(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function applyPriorityAssignments(

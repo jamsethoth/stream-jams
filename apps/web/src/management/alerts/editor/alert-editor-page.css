@@ -404,6 +404,10 @@
   gap: 20px;
 }
 
+.management-modal:has(.alert-editor-page__theme-dialog) {
+  max-width: 1040px;
+}
+
 .alert-editor-page__save-warning h2,
 .alert-editor-page__save-warning p {
   margin: 0;

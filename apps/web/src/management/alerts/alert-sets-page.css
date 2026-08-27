@@ -590,6 +590,10 @@
   gap: 18px;
 }
 
+.management-modal:has(.alert-sets-page__theme-dialog) {
+  max-width: 1040px;
+}
+
 .alert-sets-page__modal h2 {
   font-size: 22px;
   margin-bottom: 6px;

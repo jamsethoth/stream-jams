@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  alertEditorDocumentSchema,
   normalizedStreamEventSchema,
   streamEventTypes,
   validateAlertSamplePayload,
-  compatibilityAlertTextBoxStyle,
-  compatibilityAlertTextStyle,
   DefaultModerationService,
   AlertEditorDocument,
   AlertRule,
@@ -155,28 +154,50 @@ describe("AlertEditorService", () => {
     );
   });
 
-  it("creates a deterministic editor document for a legacy alert", async () => {
+  it("lazily creates a schema-valid Clean Signal editor document for a legacy alert", async () => {
     const harness = createHarness();
 
     const document = await harness.service.getDocument(rule.id);
 
+    expect(alertEditorDocumentSchema.parse(document)).toEqual(document);
     expect(document).toMatchObject({
       id: rule.id,
       setId: "set-default",
       eventType: "follow",
       providerKind: "twitch",
-      layers: [{
-        type: "text",
-        template: "Thanks, {actor.displayName}!",
-        textStyle: compatibilityAlertTextStyle,
-        boxStyle: compatibilityAlertTextBoxStyle
-      }]
     });
+    expect(document.layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: `${rule.id}:clean-signal:panel`,
+        type: "shape",
+        fill: "#07111DDE"
+      }),
+      expect.objectContaining({
+        id: `${rule.id}:clean-signal:message`,
+        type: "text",
+        template: "Thanks, {actor.displayName}!"
+      })
+    ]));
     expect(document.targetProfiles).toEqual([
       expect.objectContaining({ id: "landscape", enabled: true, reviewState: "ready" }),
       expect.objectContaining({ id: "vertical", enabled: false, reviewState: "needs-review" })
     ]);
     expect(document.samplePayloads.map((sample) => sample.id)).toEqual(["normal", "edge"]);
+  });
+
+  it("creates schema-valid Clean Signal and explicit Bold Pop documents through the compatibility helper", () => {
+    const cleanSignal = createAlertEditorDocumentFromRule(rule, 0, null);
+    const boldPop = createAlertEditorDocumentFromRule(rule, 0, null, "bold-pop");
+
+    expect(alertEditorDocumentSchema.parse(cleanSignal)).toEqual(cleanSignal);
+    expect(alertEditorDocumentSchema.parse(boldPop)).toEqual(boldPop);
+    expect(cleanSignal.layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: `${rule.id}:clean-signal:panel`, fill: "#07111DDE" })
+    ]));
+    expect(boldPop.layers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: `${rule.id}:bold-pop:magenta-block`, fill: "#EF3F8FFF" }),
+      expect.objectContaining({ id: `${rule.id}:bold-pop:panel`, fill: "#171321F2" })
+    ]));
   });
 
   it("builds valid normal and edge test events for every canonical event type", async () => {
@@ -230,7 +251,9 @@ describe("AlertEditorService", () => {
       name: "Follower welcome",
       durationMs: 6_000,
       layers: document.layers.map((layer) =>
-        layer.type === "text" ? { ...layer, template: "Welcome, {userName}!" } : layer
+        layer.type === "text" && layer.name === "Message"
+          ? { ...layer, template: "Welcome, {userName}!" }
+          : layer
       )
     };
 
@@ -246,6 +269,26 @@ describe("AlertEditorService", () => {
     expect(harness.metadata.saveRule).toHaveBeenCalledWith(
       expect.objectContaining({ ruleId: rule.id, targetProfileIds: ["landscape"], reviewState: "ready" })
     );
+  });
+
+  it("projects the themed Message template and geometry instead of the earlier Eyebrow layer", async () => {
+    const harness = createHarness();
+    const document = await harness.service.getDocument(rule.id);
+    const message = document.layers
+      .filter((layer) => layer.type === "text")
+      .find((layer) => layer.name === "Message")!;
+    const messageLayout = document.targetProfiles
+      .find((profile) => profile.id === "landscape")!
+      .layerLayouts.find((layout) => layout.layerId === message.id)!;
+
+    await harness.service.saveDocument(rule.id, document);
+
+    expect(harness.rules.saveRule).toHaveBeenCalledWith(expect.objectContaining({
+      variants: [expect.objectContaining({
+        textTemplate: "Thanks, {actor.displayName}!",
+        layout: messageLayout
+      })]
+    }));
   });
 
   it("creates and persists alert TTS configuration from an editor layer", async () => {
@@ -330,7 +373,13 @@ describe("AlertEditorService", () => {
       priority: 20,
       cooldownSeconds: 15,
       rulePriority: 10,
-      layers: [{ type: "text", template: "Welcome back, {actor.displayName}!" }]
+      layers: expect.arrayContaining([
+        expect.objectContaining({
+          id: "variant-vip:clean-signal:message",
+          type: "text",
+          template: "Welcome back, {actor.displayName}!"
+        })
+      ])
     });
   });
 
@@ -342,7 +391,7 @@ describe("AlertEditorService", () => {
       priority: 12,
       variants: [{ ...rule.variants[0]!, name: "Current default", weight: 3, priority: 7 }]
     };
-    const generated = await createHarnessWithRule(variationRule).service.getDocument(variationRule.id);
+    const generated = createAlertEditorDocumentFromRule(variationRule, 0, null, "bold-pop");
     const stored = {
       ...generated,
       name: "Stale name",
@@ -360,8 +409,18 @@ describe("AlertEditorService", () => {
       priority: 7,
       cooldownSeconds: 45,
       rulePriority: 12,
-      layers: [{ type: "text", template: "Stored design" }]
+      layers: expect.arrayContaining([
+        expect.objectContaining({ id: `${variationRule.id}:bold-pop:panel`, fill: "#171321F2" }),
+        expect.objectContaining({
+          id: `${variationRule.id}:bold-pop:message`,
+          type: "text",
+          template: "Stored design"
+        })
+      ])
     });
+    expect((await harness.service.getDocument(variationRule.id)).layers.some(
+      (layer) => layer.id.includes(":clean-signal:")
+    )).toBe(false);
   });
 
   it("saves only the selected variation and keeps metadata keyed by its rule", async () => {
@@ -813,23 +872,21 @@ describe("AlertEditorService", () => {
       referenceId: "ref-test-1",
       test: true
     });
-    expect(harness.enqueueTest).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceEvent: expect.objectContaining({ id: "ref-test-1", type: "follow", metadata: expect.objectContaining({ test: true }) }),
-        alerts: [
-          expect.objectContaining({
-            overlayInstruction: expect.objectContaining({
-              targetProfileId: "landscape",
-              text: expect.objectContaining({
-                text: "Thanks, James!",
-                textStyle: compatibilityAlertTextStyle,
-                boxStyle: compatibilityAlertTextBoxStyle
-              })
-            })
-          })
-        ]
+    const playback = harness.enqueueTest.mock.calls[0]?.[0] as AlertEditorTestPlayback | undefined;
+    expect(playback?.sourceEvent).toMatchObject({
+      id: "ref-test-1",
+      type: "follow",
+      metadata: expect.objectContaining({ test: true })
+    });
+    expect(playback?.alerts.find(({ overlayInstruction }) =>
+      overlayInstruction.text?.text === "Thanks, James!"
+    )?.overlayInstruction).toMatchObject({
+      targetProfileId: "landscape",
+      text: expect.objectContaining({
+        text: "Thanks, James!",
+        textStyle: expect.objectContaining({ fontPreset: "system-sans", fontSizePx: 56 })
       })
-    );
+    });
 
     harness.hasConnectedOutput.mockResolvedValue(false);
     await expect(harness.service.sendTest(rule.id, request)).rejects.toBeInstanceOf(AlertEditorDeliveryBlockedError);
@@ -902,7 +959,9 @@ describe("AlertEditorService", () => {
     };
     const harness = createHarnessWithRule(variationRule, null, moderationService);
     const document = await harness.service.getDocument("variant-moderated");
-    const textLayer = document.layers.find((layer) => layer.type === "text")!;
+    const textLayer = document.layers
+      .filter((layer) => layer.type === "text")
+      .find((layer) => layer.name === "Message")!;
     const textLayout = document.targetProfiles
       .find((profile) => profile.id === "landscape")!
       .layerLayouts.find((layout) => layout.layerId === textLayer.id)!;
@@ -1089,7 +1148,9 @@ describe("AlertEditorService", () => {
   it("omits configured audio and TTS layers when both test inclusion flags are disabled", async () => {
     const harness = createHarness();
     const document = await harness.service.getDocument(rule.id);
-    const textLayer = document.layers.find((layer) => layer.type === "text")!;
+    const textLayer = document.layers
+      .filter((layer) => layer.type === "text")
+      .find((layer) => layer.name === "Message")!;
     const configuredLayers = [
       textLayer,
       {

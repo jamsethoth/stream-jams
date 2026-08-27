@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  type AlertCreateInput,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle
 } from "@stream-jams/core";
@@ -526,7 +527,7 @@ describe("management UI contract routes", () => {
       ["duplicate", "set-default", "Everyday copy"],
       ["activate", "set-default", true],
       ["review", "set-default"],
-      ["create-alert", "set-default", "cheer", "Big cheer"],
+      ["create-alert", "set-default", "cheer", "Big cheer", "clean-signal"],
       ["enable-alert", "alert-follow", true],
       ["create-variation", "alert-follow", "VIP follower"],
       ["duplicate-alert", "alert-follow"],
@@ -534,6 +535,42 @@ describe("management UI contract routes", () => {
       ["delete-alert", "variant-vip", true],
       ["delete", "set-seasonal"]
     ]);
+  });
+
+  it("passes an explicit starter theme through the parsed alert-create boundary", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/alerts",
+      headers: authHeaders,
+      payload: { eventType: "cheer", name: "Bold cheer", themeId: "bold-pop" }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(service.alertSetCommands).toEqual([
+      ["create-alert", "set-default", "cheer", "Bold cheer", "bold-pop"]
+    ]);
+  });
+
+  it("rejects an unknown starter theme before calling the alert-create service", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/alerts",
+      headers: authHeaders,
+      payload: { eventType: "cheer", name: "Unknown theme", themeId: "laser-grid" }
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INVALID_ALERT_CREATE_INPUT",
+        message: expect.stringContaining("starter theme")
+      }
+    });
+    expect(service.alertSetCommands).toEqual([]);
   });
 
   it("rejects malformed alert-set command input with actionable client errors", async () => {
@@ -732,8 +769,8 @@ class StubManagementUiQueryService {
     return { ...alertSetOverview(), id: "set-seasonal", name: input.name, active: false, starter: false };
   }
 
-  async createAlert(setId: string, input: { readonly eventType: "cheer"; readonly name: string }) {
-    this.alertSetCommands.push(["create-alert", setId, input.eventType, input.name]);
+  async createAlert(setId: string, input: AlertCreateInput) {
+    this.alertSetCommands.push(["create-alert", setId, input.eventType, input.name, input.themeId]);
     return {
       ...alertInventoryRow(),
       id: "alert-cheer",

@@ -115,7 +115,8 @@ describe("alert set management contracts", () => {
   it("accepts canonical event types for alert creation and trims the alert name", () => {
     expect(alertCreateInputSchema.parse({ eventType: "cheer", name: "  New cheer  " })).toEqual({
       eventType: "cheer",
-      name: "New cheer"
+      name: "New cheer",
+      themeId: "clean-signal"
     });
     expect(alertCreateInputSchema.safeParse({ eventType: "twitch.raid", name: "Raid" }).success).toBe(false);
   });

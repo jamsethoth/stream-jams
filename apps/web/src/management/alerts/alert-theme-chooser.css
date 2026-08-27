@@ -1,0 +1,135 @@
+.alert-theme-chooser {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.alert-theme-chooser__heading {
+  display: grid;
+  gap: 4px;
+}
+
+.alert-theme-chooser__heading h3,
+.alert-theme-chooser__heading p {
+  margin: 0;
+}
+
+.alert-theme-chooser__heading h3 {
+  font-size: 16px;
+}
+
+.alert-theme-chooser__heading p,
+.alert-theme-chooser__choice > span > span,
+.alert-theme-chooser__preview > span {
+  color: var(--color-text-muted);
+}
+
+.alert-theme-chooser__heading p,
+.alert-theme-chooser__choice > span > span {
+  font-size: 13px;
+}
+
+.alert-theme-chooser__options {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.alert-theme-chooser__card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  cursor: pointer;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.alert-theme-chooser__card:has(input:checked) {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.alert-theme-chooser__card:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.alert-theme-chooser__card:has(input:focus-visible) {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+.alert-theme-chooser__choice {
+  align-items: start;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.alert-theme-chooser__choice input {
+  height: 16px;
+  margin: 2px 0 0;
+  width: 16px;
+}
+
+.alert-theme-chooser__choice > span {
+  display: grid;
+  gap: 3px;
+}
+
+.alert-theme-chooser__previews {
+  align-items: end;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1fr) minmax(72px, 0.42fr);
+}
+
+.alert-theme-chooser__preview {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.alert-theme-chooser__preview > span {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.alert-theme-preview {
+  aspect-ratio: 16 / 9;
+  background: var(--color-canvas);
+  border: 1px solid var(--color-border-strong);
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+  position: relative;
+  width: 100%;
+}
+
+.alert-theme-preview--vertical {
+  aspect-ratio: 9 / 16;
+  justify-self: center;
+  max-width: 112px;
+}
+
+.alert-theme-preview__layer {
+  box-sizing: border-box;
+  overflow: hidden;
+  position: absolute;
+}
+
+.alert-theme-preview__text {
+  white-space: normal;
+}
+
+@media (max-width: 980px) {
+  .alert-theme-chooser__options {
+    grid-template-columns: 1fr;
+  }
+
+  .alert-theme-chooser__previews {
+    grid-template-columns: minmax(0, 2fr) minmax(72px, 0.7fr);
+  }
+}

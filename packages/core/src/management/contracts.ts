@@ -254,9 +254,14 @@ export const alertInventoryRowSchema = z.object({
   previewText: z.string()
 });
 
+export const alertStarterThemeIdSchema = z.enum(["clean-signal", "bold-pop", "neon-terminal"]);
+
+export const defaultAlertStarterThemeId = "clean-signal" as const satisfies AlertStarterThemeId;
+
 export const alertCreateInputSchema = z.object({
   eventType: streamEventTypeSchema,
-  name: z.string().trim().min(1).max(120)
+  name: z.string().trim().min(1).max(120),
+  themeId: alertStarterThemeIdSchema.default(defaultAlertStarterThemeId)
 });
 
 export const alertVariationCreateInputSchema = z.object({
@@ -1044,9 +1049,16 @@ export type AlertValidationIssue = z.infer<typeof alertValidationIssueSchema>;
 export type AlertOutputState = z.infer<typeof alertOutputStateSchema>;
 export type AlertSetOverview = z.infer<typeof alertSetOverviewSchema>;
 export type AlertInventoryRow = z.infer<typeof alertInventoryRowSchema>;
+export type AlertStarterThemeId = z.infer<typeof alertStarterThemeIdSchema>;
+export interface AlertStarterThemeSummary {
+  readonly id: AlertStarterThemeId;
+  readonly label: string;
+  readonly description: string;
+}
 export type AlertVariationCreateInput = z.infer<typeof alertVariationCreateInputSchema>;
 export type ManagedAlertMutationInput = z.infer<typeof managedAlertMutationInputSchema>;
-export type AlertCreateInput = z.infer<typeof alertCreateInputSchema>;
+export type AlertCreateRequestInput = z.input<typeof alertCreateInputSchema>;
+export type AlertCreateInput = z.output<typeof alertCreateInputSchema>;
 export type AlertBrowserSourceView = z.infer<typeof alertBrowserSourceViewSchema>;
 export type AlertSetDetail = z.infer<typeof alertSetDetailSchema>;
 export type AlertSetMutationInput = z.infer<typeof alertSetMutationInputSchema>;

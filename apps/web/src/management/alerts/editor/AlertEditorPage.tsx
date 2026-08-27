@@ -1,4 +1,5 @@
 import {
+  applyAlertStarterTheme,
   alertFontPresets,
   alertFontWeights,
   alertTextBoxStyleSchema,
@@ -10,6 +11,7 @@ import {
   createAlertTemplateContext,
   createNormalizedAlertSampleEvent,
   defaultOptionalAlertShadow,
+  defaultAlertStarterThemeId,
   evaluateAlertVariationSample,
   getAlertEditorAffectedProfileIds,
   moveAlertPriorityGroup,
@@ -22,6 +24,7 @@ import {
   type AlertInventoryRow,
   type AlertLayer,
   type AlertSetDetail,
+  type AlertStarterThemeId,
   type AlertVariationAuthoringContext,
   type AlertVariationPriorityAssignment,
   type AlertVariationSampleEvaluation,
@@ -41,6 +44,7 @@ import type { ManagementApi } from "../../management-api.js";
 import { ManagementHttpError } from "../../management-http-client.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { buildAlertEventGroups, filterAlertEventGroups } from "../alert-event-groups.js";
+import { AlertThemeChooser } from "../AlertThemeChooser.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
 import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventInspector.js";
 import { RgbaColorControl } from "./RgbaColorControl.js";
@@ -100,9 +104,64 @@ type SaveWarningState = {
   readonly rejectNavigation?: (cause: unknown) => void;
   readonly resolveNavigation?: (saved: boolean) => void;
 };
+type StarterThemeReviewHistory = {
+  readonly current: boolean;
+  readonly future: readonly boolean[];
+  readonly past: readonly boolean[];
+};
+type AlertEditorSessionState = {
+  readonly editor: AlertEditorState | null;
+  readonly starterThemeReviewHistory: StarterThemeReviewHistory;
+};
+
+const starterThemeAppliedNotice: ManagementToastNotice = {
+  tone: "warning",
+  message: "Starter theme applied.",
+  detail: "Review both Landscape and Vertical before saving or re-enabling."
+};
+const emptyStarterThemeReviewHistory: StarterThemeReviewHistory = { current: false, future: [], past: [] };
+const emptyAlertEditorSessionState: AlertEditorSessionState = {
+  editor: null,
+  starterThemeReviewHistory: emptyStarterThemeReviewHistory
+};
+
+function applyStarterThemeReviewUpdate(
+  history: StarterThemeReviewHistory,
+  current: boolean,
+  historyLimit: number
+): StarterThemeReviewHistory {
+  return {
+    current,
+    past: [...history.past, history.current].slice(-historyLimit),
+    future: []
+  };
+}
+
+function undoStarterThemeReviewUpdate(
+  history: StarterThemeReviewHistory,
+  historyLimit: number
+): StarterThemeReviewHistory {
+  return {
+    current: history.past.at(-1) ?? false,
+    past: history.past.slice(0, -1),
+    future: [history.current, ...history.future].slice(0, historyLimit)
+  };
+}
+
+function redoStarterThemeReviewUpdate(
+  history: StarterThemeReviewHistory,
+  historyLimit: number
+): StarterThemeReviewHistory {
+  return {
+    current: history.future[0] ?? false,
+    past: [...history.past, history.current].slice(-historyLimit),
+    future: history.future.slice(1)
+  };
+}
 
 export function AlertEditorPage(props: AlertEditorPageProps) {
-  const [editor, setEditor] = useState<AlertEditorState | null>(null);
+  const [editorSession, setEditorSession] = useState<AlertEditorSessionState>(emptyAlertEditorSessionState);
+  const { editor, starterThemeReviewHistory } = editorSession;
   const [variationContext, setVariationContext] = useState<AlertVariationAuthoringContext | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
   const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
@@ -142,6 +201,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [saveWarning, setSaveWarning] = useState<SaveWarningState | null>(null);
   const [copyDesignOpen, setCopyDesignOpen] = useState(false);
+  const [starterThemeOpen, setStarterThemeOpen] = useState(false);
+  const [starterThemeId, setStarterThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
+  const [starterThemeError, setStarterThemeError] = useState<ActionableManagementError | null>(null);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
   const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
@@ -165,11 +227,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   useEffect(() => {
     let active = true;
-    setEditor(null);
+    setEditorSession(emptyAlertEditorSessionState);
     setVariationContext(null);
     setSetDetail(null);
     setLoadedSetId(undefined);
     setError(null);
+    setNotice(null);
+    setPendingProfileId(null);
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
@@ -194,7 +258,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           weight: candidate.weight,
           priority: candidate.priority
         })));
-      setEditor(createEditorState(document, priorityGroups));
+      setEditorSession({
+        editor: createEditorState(document, priorityGroups),
+        starterThemeReviewHistory: emptyStarterThemeReviewHistory
+      });
       setVariationContext(context);
       setProfileId(props.targetProfileId === "vertical" ? "vertical" : "landscape");
       setCanvasViews({});
@@ -287,9 +354,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             confirmLiveImpact,
             priorityAssignments
           );
-      setEditor((current) => {
-        if (current === null) return null;
-        return completeAlertEditorSave(current, sourceDocument, sourcePriorityGroups, saved);
+      setEditorSession((current) => {
+        if (current.editor === null) return current;
+        return {
+          editor: completeAlertEditorSave(current.editor, sourceDocument, sourcePriorityGroups, saved),
+          starterThemeReviewHistory: emptyStarterThemeReviewHistory
+        };
       });
       setVariationContext((current) => current === null
         ? null
@@ -322,7 +392,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }, [editor, props.managementApi, setDetail, showActionError, variationContext]);
 
   const discard = useCallback(() => {
-    setEditor((current) => current === null ? null : revertEditorChanges(current));
+    setEditorSession((current) => ({
+      editor: current.editor === null ? null : revertEditorChanges(current.editor),
+      starterThemeReviewHistory: emptyStarterThemeReviewHistory
+    }));
     resetLocalPreview();
     resetEventInspectorDraft();
     setError(null);
@@ -361,6 +434,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   });
 
   const document = editor?.document ?? null;
+  useEffect(() => {
+    if (document === null) return;
+    setSelectedLayerId((current) => current !== null && document.layers.some((layer) => layer.id === current)
+      ? current
+      : document.layers[0]?.id ?? null);
+  }, [document]);
   const selectedLayer = document?.layers.find((layer) => layer.id === selectedLayerId) ?? null;
   const profile = document?.targetProfiles.find((candidate) => candidate.id === profileId) ?? null;
   const storedCanvasView = canvasViews[profileId];
@@ -402,27 +481,102 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   ), [profileId, props.alertId, setDetail]);
 
   function updateDocument(update: (document: AlertEditorDocument) => AlertEditorDocument) {
-    setEditor((current) => current === null ? null : applyEditorUpdate(current, update));
+    setEditorSession((current) => {
+      if (current.editor === null) return current;
+      const next = applyEditorUpdate(current.editor, update);
+      if (next === current.editor) return current;
+      return {
+        editor: next,
+        starterThemeReviewHistory: applyStarterThemeReviewUpdate(
+          current.starterThemeReviewHistory,
+          current.starterThemeReviewHistory.current,
+          current.editor.historyLimit
+        )
+      };
+    });
     resetLocalPreview();
     setNotice(null);
   }
 
   function updatePriorityGroups(update: Parameters<typeof applyPriorityGroupUpdate>[1]) {
-    setEditor((current) => current === null ? null : applyPriorityGroupUpdate(current, update));
+    setEditorSession((current) => {
+      if (current.editor === null) return current;
+      const next = applyPriorityGroupUpdate(current.editor, update);
+      if (next === current.editor) return current;
+      return {
+        editor: next,
+        starterThemeReviewHistory: applyStarterThemeReviewUpdate(
+          current.starterThemeReviewHistory,
+          current.starterThemeReviewHistory.current,
+          current.editor.historyLimit
+        )
+      };
+    });
     resetLocalPreview();
     setNotice(null);
   }
 
+  function openStarterThemeDialog() {
+    setStarterThemeId(defaultAlertStarterThemeId);
+    setStarterThemeError(null);
+    setStarterThemeOpen(true);
+  }
+
+  function closeStarterThemeDialog() {
+    setStarterThemeOpen(false);
+    setStarterThemeError(null);
+  }
+
+  function applyStarterTheme() {
+    if (document === null || editor === null) return;
+    try {
+      const themed = applyAlertStarterTheme(document, starterThemeId);
+      setEditorSession((current) => current.editor === null
+        ? current
+        : {
+            editor: applyEditorUpdate(current.editor, () => themed),
+            starterThemeReviewHistory: applyStarterThemeReviewUpdate(
+              current.starterThemeReviewHistory,
+              true,
+              current.editor.historyLimit
+            )
+          });
+      resetLocalPreview();
+      setSelectedLayerId((current) => themed.layers.some((layer) => layer.id === current)
+        ? current
+        : themed.layers.find((layer) => layer.type !== "audio" && layer.type !== "tts")?.id ?? null);
+      setStarterThemeOpen(false);
+      setStarterThemeError(null);
+      setNotice(starterThemeAppliedNotice);
+    } catch (cause) {
+      setStarterThemeError(actionableError(
+        "The starter theme was not applied",
+        cause,
+        "Correct the invalid alert settings, then choose Apply theme again."
+      ));
+    }
+  }
+
   function undo() {
-    setEditor((current) => current === null ? null : undoEditorUpdate(current));
+    if (editor === null) return;
+    const next = undoEditorUpdate(editor);
+    if (next === editor) return;
+    const nextThemeReviewHistory = undoStarterThemeReviewUpdate(starterThemeReviewHistory, editor.historyLimit);
+    setEditorSession({ editor: next, starterThemeReviewHistory: nextThemeReviewHistory });
     resetLocalPreview();
     resetEventInspectorDraft();
+    setNotice(nextThemeReviewHistory.current ? starterThemeAppliedNotice : null);
   }
 
   function redo() {
-    setEditor((current) => current === null ? null : redoEditorUpdate(current));
+    if (editor === null) return;
+    const next = redoEditorUpdate(editor);
+    if (next === editor) return;
+    const nextThemeReviewHistory = redoStarterThemeReviewUpdate(starterThemeReviewHistory, editor.historyLimit);
+    setEditorSession({ editor: next, starterThemeReviewHistory: nextThemeReviewHistory });
     resetLocalPreview();
     resetEventInspectorDraft();
+    setNotice(nextThemeReviewHistory.current ? starterThemeAppliedNotice : null);
   }
 
   const updateCurrentCanvasView = useCallback((next: CanvasViewState) => {
@@ -431,7 +585,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   function requestProfileSwitch(nextProfileId: TargetProfileId) {
     if (nextProfileId === profileId) return;
-    if (editor !== null && isEditorDirty(editor)) {
+    if (editor !== null && isEditorDirty(editor) && !starterThemeReviewHistory.current) {
       setPendingProfileId(nextProfileId);
       return;
     }
@@ -958,7 +1112,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 ttsProvidersLoaded={ttsProvidersLoaded}
               />
             ) : tab === "alert" ? (
-              <AlertInspector document={document} onChange={updateDocument} onCopyDesign={() => {
+              <AlertInspector document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onCopyDesign={() => {
                 setCopyDesignSourceId(filteredAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
@@ -1028,6 +1182,21 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setCopyDesignOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy || copyDesignSourceId === ""} onClick={() => void applyCopiedDesign()} type="button">Copy design</button></div>
         </div>
       </ModalSurface>
+      <ModalSurface labelledBy="starter-theme-dialog-title" onCancel={closeStarterThemeDialog} open={starterThemeOpen}>
+        <div className="alert-editor-page__save-warning alert-editor-page__theme-dialog">
+          <div>
+            <h2 id="starter-theme-dialog-title">Apply starter theme?</h2>
+            <p>All text, shape, image, and video layers will be replaced. The primary message, audio, TTS, identity, matching and variation behavior, cooldown, priority, duration, samples, and variables remain.</p>
+            <p>The alert will be disabled. Landscape and Vertical remain available as configured, and both profiles return to Needs review.</p>
+          </div>
+          {starterThemeError === null ? null : <ManagementErrorBanner error={starterThemeError} />}
+          <AlertThemeChooser disabled={busy} eventType={document.eventType} onChange={setStarterThemeId} value={starterThemeId} />
+          <div className="management-modal__actions">
+            <button className="button button--secondary" disabled={busy} onClick={closeStarterThemeDialog} type="button">Cancel</button>
+            <button className="button button--primary" disabled={busy} onClick={applyStarterTheme} type="button">Apply theme</button>
+          </div>
+        </div>
+      </ModalSurface>
       <ModalSurface labelledBy="active-alert-save-warning-title" onCancel={cancelSaveWarning} open={saveWarning !== null}>
         <div className="alert-editor-page__save-warning">
           <div>
@@ -1046,8 +1215,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       </ModalSurface>
       <ModalSurface labelledBy="profile-switch-warning-title" onCancel={() => setPendingProfileId(null)} open={pendingProfileId !== null}>
         <div className="alert-editor-page__save-warning">
-          <div><h2 id="profile-switch-warning-title">Switch profiles with unsaved changes?</h2><p>Choose whether to save or discard the current alert changes before opening {pendingProfileId === null ? "the other profile" : profileLabel(pendingProfileId)}.</p></div>
-          <div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setPendingProfileId(null)} type="button">Cancel</button><button className="button button--danger-quiet" disabled={busy} onClick={discardAndSwitchProfile} type="button">Discard and switch</button><button className="button button--primary" disabled={busy} onClick={() => void saveAndSwitchProfile()} type="button">Save and switch</button></div>
+          <div>
+            <h2 id="profile-switch-warning-title">Switch profiles with unsaved changes?</h2>
+            <p>Choose whether to save or discard the current alert changes before opening {pendingProfileId === null ? "the other profile" : profileLabel(pendingProfileId)}.</p>
+          </div>
+          <div className="management-modal__actions">
+            <button className="button button--secondary" onClick={() => setPendingProfileId(null)} type="button">Cancel</button>
+            <button className="button button--secondary" onClick={discardAndSwitchProfile} type="button">Discard and switch</button>
+            <button className="button button--primary" onClick={() => void saveAndSwitchProfile()} type="button">Save and switch</button>
+          </div>
         </div>
       </ModalSurface>
       <ModalSurface labelledBy="profile-copy-warning-title" onCancel={() => setProfileCopy(null)} open={profileCopy !== null}>
@@ -1680,8 +1856,9 @@ function boundedStyleError(
     : null;
 }
 
-function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
+function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
   readonly document: AlertEditorDocument;
+  readonly onApplyTheme: () => void;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
   readonly onCopyDesign: () => void;
   readonly onCopyProfileLayout: () => void;
@@ -1694,6 +1871,7 @@ function AlertInspector({ document, onChange, onCopyDesign, onCopyProfileLayout,
       <label><span>Alert name</span><input onChange={(event) => { const name = event.currentTarget.value; onChange((current) => ({ ...current, name })); }} value={document.name} /></label>
       <label><span>Duration (milliseconds)</span><input min="100" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => ({ ...current, durationMs })); }} type="number" value={document.durationMs} /></label>
       <label className="alert-editor-inspector__check"><input checked={document.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
+      <button className="button button--secondary" onClick={onApplyTheme} type="button">Apply starter theme</button>
       <button className="button button--secondary" onClick={onCopyDesign} type="button">Copy design from...</button>
       <button className="button button--secondary" onClick={onCopyProfileLayout} type="button">Copy layout from {profileId === "landscape" ? "Vertical" : "Landscape"}</button>
       <section className="alert-editor-inspector__profile-state">
