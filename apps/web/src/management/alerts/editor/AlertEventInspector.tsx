@@ -1,20 +1,32 @@
 import {
   formatAlertConditionSummary,
   getAlertConditionFieldDefinitions,
+  readChannelPointRewardSelection,
+  replaceChannelPointRewardSelection,
   validateAuthoredAlertConditions,
+  type AlertCondition,
   type AlertConditionFieldDefinition,
   type AlertEditorDocument,
   type AlertPriorityGroup,
+  type ScalarAlertConditionOperator,
+  type TwitchCustomRewardCatalog,
   type AlertVariationAuthoringContext,
   type AlertVariationSampleEvaluation
 } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
+import { TwitchRewardPicker, type TwitchRewardSampleChoice } from "../TwitchRewardPicker.js";
 
 type EditorCondition = AlertEditorDocument["conditions"][number];
+type ScalarEditorCondition = Exclude<EditorCondition, { readonly operator: "oneOf" }>;
 type VariationCandidatePresentation = AlertVariationAuthoringContext["candidates"][number];
+
+const channelPointRewardField = ["channelPointReward"] as const;
+const noHiddenConditionFields: readonly string[] = [];
 
 export interface AlertEventInspectorProps {
   readonly document: AlertEditorDocument;
+  readonly loadTwitchCustomRewards: () => Promise<TwitchCustomRewardCatalog>;
+  readonly overlapAlertNames: readonly string[];
   readonly previewIncludeAudio: boolean;
   readonly previewIncludeTts: boolean;
   readonly sendIncludeAudio: boolean;
@@ -31,10 +43,12 @@ export interface AlertEventInspectorProps {
   readonly onResetSample: () => void;
   readonly onSample: (sampleId: string) => void;
   readonly onSampleDraft: (value: string) => void;
+  readonly onUseRewardSample: (sample: TwitchRewardSampleChoice) => void;
   readonly onSend: () => void;
   readonly sampleDraft: string;
   readonly sampleError: string | null;
   readonly sampleId: string | null;
+  readonly sampleRewardId: string | undefined;
   readonly previewDisabled: boolean;
   readonly priorityGroups: readonly AlertPriorityGroup[];
   readonly sendDisabled: boolean;
@@ -51,6 +65,9 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
     ? null
     : "Relative chance must be a positive whole number.";
   const eventDraftError = ruleDraftError ?? variationDraftError ?? relativeChanceError;
+  const rewardSelection = props.document.kind === "default" && props.document.eventType === "channel_point_redemption"
+    ? readChannelPointRewardSelection(props.document.conditions)
+    : null;
 
   useEffect(() => {
     props.onDraftError(eventDraftError);
@@ -66,10 +83,24 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
       <fieldset className="alert-editor-inspector__impact">
         <legend>Affects default and all variations</legend>
         <p>These rule controls are shared by the default and every variation for this event.</p>
+        {rewardSelection === null ? null : (
+          <TwitchRewardPicker
+            loadRewards={props.loadTwitchCustomRewards}
+            onChange={(selection) => props.onChange((document) => ({
+              ...document,
+              conditions: replaceChannelPointRewardSelection(document.conditions, selection).map(editableCondition)
+            }))}
+            onUseAsSample={props.onUseRewardSample}
+            overlapAlertNames={props.overlapAlertNames}
+            selection={rewardSelection}
+            {...(props.sampleRewardId === undefined ? {} : { sampleRewardId: props.sampleRewardId })}
+          />
+        )}
         <ConditionList
           conditions={props.document.conditions}
           eventType={props.document.eventType}
           heading="Rule conditions"
+          hiddenFields={rewardSelection === null ? noHiddenConditionFields : channelPointRewardField}
           onChange={(conditions) => props.onChange((document) => ({ ...document, conditions: [...conditions] }))}
           onDraftError={setRuleDraftError}
         />
@@ -89,6 +120,7 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
             conditions={props.document.variantConditions}
             eventType={props.document.eventType}
             heading="Variation conditions"
+            hiddenFields={noHiddenConditionFields}
             onChange={(variantConditions) => props.onChange((document) => ({ ...document, variantConditions: [...variantConditions] }))}
             onDraftError={setVariationDraftError}
           />
@@ -302,15 +334,21 @@ function formatPercentage(value: number): string {
   return `${Number.isInteger(value) ? value : Number(value.toFixed(2))}%`;
 }
 
-function ConditionList({ conditions, eventType, heading, onChange, onDraftError }: {
+function ConditionList({ conditions, eventType, heading, hiddenFields, onChange, onDraftError }: {
   readonly conditions: readonly EditorCondition[];
   readonly eventType: AlertEditorDocument["eventType"];
   readonly heading: string;
+  readonly hiddenFields: readonly string[];
   readonly onChange: (conditions: readonly EditorCondition[]) => void;
   readonly onDraftError: (error: string | null) => void;
 }) {
-  const definitions = getAlertConditionFieldDefinitions(eventType);
+  const hiddenFieldSet = new Set(hiddenFields);
+  const definitions = getAlertConditionFieldDefinitions(eventType)
+    .filter((definition) => !hiddenFieldSet.has(definition.field));
   const available = definitions.filter((definition) => !conditions.some((condition) => condition.field === definition.field));
+  const visibleConditions = conditions.flatMap((condition, index) => hiddenFieldSet.has(condition.field)
+    ? []
+    : [{ condition, index }]);
   const [rangeDrafts, setRangeDrafts] = useState<Record<number, { readonly minimum: string; readonly maximum: string }>>({});
   const [rangeErrors, setRangeErrors] = useState<Record<number, string>>({});
   const rowRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -336,14 +374,17 @@ function ConditionList({ conditions, eventType, heading, onChange, onDraftError 
     const definition = available[0];
     if (definition === undefined) return;
     pendingFocusRef.current = conditions.length;
-    const operator = definition.operators[0];
+    const operator = scalarOperators(definition)[0];
     if (operator === undefined) return;
     onChange([...conditions, conditionWithDefault(definition, operator)]);
   }
 
   function removeCondition(index: number) {
     const remaining = conditions.filter((_, candidateIndex) => candidateIndex !== index);
-    pendingFocusRef.current = remaining.length === 0 ? "add" : Math.min(index, remaining.length - 1);
+    const remainingVisibleIndexes = remaining.flatMap((condition, candidateIndex) => hiddenFieldSet.has(condition.field)
+      ? []
+      : [candidateIndex]);
+    pendingFocusRef.current = remainingVisibleIndexes[0] ?? "add";
     setRangeDrafts((current) => removeIndexedEntry(current, index));
     setRangeErrors((current) => removeIndexedEntry(current, index));
     onChange(remaining);
@@ -355,7 +396,7 @@ function ConditionList({ conditions, eventType, heading, onChange, onDraftError 
     onChange(replaceCondition(conditions, index, condition));
   }
 
-  function updateRange(index: number, condition: EditorCondition, definition: AlertConditionFieldDefinition, part: "minimum" | "maximum", value: string) {
+  function updateRange(index: number, condition: ScalarEditorCondition, definition: AlertConditionFieldDefinition, part: "minimum" | "maximum", value: string) {
     const savedValue = Array.isArray(condition.value) ? condition.value : [definition.minimum ?? 0, definition.minimum ?? 0];
     const current = rangeDrafts[index] ?? { minimum: String(savedValue[0]), maximum: String(savedValue[1]) };
     const next = { ...current, [part]: value };
@@ -377,11 +418,14 @@ function ConditionList({ conditions, eventType, heading, onChange, onDraftError 
   return (
     <fieldset className="alert-editor-inspector__conditions">
       <legend>{heading}</legend>
-      {conditions.length === 0 ? <p>No conditions. Every matching {formatEventType(eventType).toLowerCase()} event is eligible.</p> : null}
-      {conditions.map((condition, index) => {
+      {visibleConditions.length === 0 ? <p>{hiddenFields.length === 0 ? "No conditions." : "No additional conditions."} Every matching {formatEventType(eventType).toLowerCase()} event is eligible.</p> : null}
+      {visibleConditions.map(({ condition, index }) => {
         const definition = definitions.find((candidate) => candidate.field === condition.field);
-        const authored = definition !== undefined && definition.operators.includes(condition.operator);
-        if (!authored || definition === undefined) {
+        if (
+          definition === undefined
+          || condition.operator === "oneOf"
+          || !scalarOperators(definition).includes(condition.operator)
+        ) {
           return (
             <div className="alert-editor-inspector__condition" key={`${condition.field}-${index}`} ref={(element) => { rowRefs.current[index] = element; }}>
               <div className="alert-editor-inspector__unknown-condition"><strong>Legacy condition</strong><span>{formatAlertConditionSummary(eventType, condition)}</span></div>
@@ -395,6 +439,7 @@ function ConditionList({ conditions, eventType, heading, onChange, onDraftError 
         const validationMessage = rangeError ?? issue?.message ?? null;
         const errorId = `${heading.toLowerCase().replaceAll(" ", "-")}-${index}-error`;
         const fieldOptions = definitions.filter((candidate) => candidate.field === condition.field || !conditions.some((other, otherIndex) => otherIndex !== index && other.field === candidate.field));
+        const operators = scalarOperators(definition);
         const rangeValue = Array.isArray(condition.value) ? condition.value : [definition.minimum ?? 0, definition.minimum ?? 0];
         const rangeDraft = rangeDrafts[index] ?? { minimum: String(rangeValue[0]), maximum: String(rangeValue[1]) };
         return (
@@ -402,10 +447,10 @@ function ConditionList({ conditions, eventType, heading, onChange, onDraftError 
             <div className="alert-editor-inspector__condition-controls">
               <label><span>Field</span><select aria-label={`${heading} condition ${index + 1} field`} data-condition-primary onChange={(event) => {
                 const nextDefinition = definitions.find((candidate) => candidate.field === event.currentTarget.value);
-                const operator = nextDefinition?.operators[0];
+                const operator = nextDefinition === undefined ? undefined : scalarOperators(nextDefinition)[0];
                 if (nextDefinition !== undefined && operator !== undefined) replaceAuthoredCondition(index, conditionWithDefault(nextDefinition, operator));
               }} value={condition.field}>{fieldOptions.map((option) => <option key={option.field} value={option.field}>{option.label}</option>)}</select></label>
-              <label><span>Operator</span><select aria-label={`${heading} ${definition.label} operator`} onChange={(event) => replaceAuthoredCondition(index, conditionWithDefault(definition, event.currentTarget.value as EditorCondition["operator"]))} value={condition.operator}>{definition.operators.map((operator) => <option key={operator} value={operator}>{operatorLabel(operator)}</option>)}</select></label>
+              <label><span>Operator</span><select aria-label={`${heading} ${definition.label} operator`} onChange={(event) => replaceAuthoredCondition(index, conditionWithDefault(definition, event.currentTarget.value as ScalarAlertConditionOperator))} value={condition.operator}>{operators.map((operator) => <option key={operator} value={operator}>{operatorLabel(operator)}</option>)}</select></label>
               {condition.operator === "range" ? (
                 <div className="alert-editor-inspector__range">
                   <label><span>Minimum</span><input aria-describedby={validationMessage === null ? undefined : errorId} aria-invalid={validationMessage !== null} aria-label={`${heading} ${definition.label} Minimum`} min={definition.minimum} onChange={(event) => updateRange(index, condition, definition, "minimum", event.currentTarget.value)} type="number" value={rangeDraft.minimum} /></label>
@@ -424,11 +469,11 @@ function ConditionList({ conditions, eventType, heading, onChange, onDraftError 
 }
 
 function ConditionValueControl({ condition, definition, errorId, heading, onChange }: {
-  readonly condition: EditorCondition;
+  readonly condition: ScalarEditorCondition;
   readonly definition: AlertConditionFieldDefinition;
   readonly errorId: string | undefined;
   readonly heading: string;
-  readonly onChange: (value: EditorCondition["value"]) => void;
+  readonly onChange: (value: ScalarEditorCondition["value"]) => void;
 }) {
   const label = `${heading} ${definition.label} value`;
   if (definition.valueKind === "enum") {
@@ -454,11 +499,11 @@ export function alertDocumentConditionError(document: AlertEditorDocument): stri
   return null;
 }
 
-function conditionWithDefault(definition: AlertConditionFieldDefinition, operator: EditorCondition["operator"]): EditorCondition {
+function conditionWithDefault(definition: AlertConditionFieldDefinition, operator: ScalarAlertConditionOperator): ScalarEditorCondition {
   return { field: definition.field, operator, value: defaultConditionValue(definition, operator) };
 }
 
-function defaultConditionValue(definition: AlertConditionFieldDefinition, operator: EditorCondition["operator"]): EditorCondition["value"] {
+function defaultConditionValue(definition: AlertConditionFieldDefinition, operator: ScalarAlertConditionOperator): ScalarEditorCondition["value"] {
   if (operator === "range") {
     const minimum = definition.minimum ?? 0;
     return [minimum, minimum];
@@ -473,7 +518,7 @@ function replaceCondition(conditions: readonly EditorCondition[], index: number,
   return conditions.map((candidate, candidateIndex) => candidateIndex === index ? condition : candidate);
 }
 
-function operatorLabel(operator: EditorCondition["operator"]): string {
+function operatorLabel(operator: ScalarAlertConditionOperator): string {
   switch (operator) {
     case "equals": return "Equals";
     case "includes": return "Includes";
@@ -481,6 +526,26 @@ function operatorLabel(operator: EditorCondition["operator"]): string {
     case "max": return "Maximum";
     case "range": return "Range";
   }
+}
+
+function scalarOperators(definition: AlertConditionFieldDefinition): readonly ScalarAlertConditionOperator[] {
+  return definition.operators.filter(
+    (operator): operator is ScalarAlertConditionOperator => operator !== "oneOf"
+  );
+}
+
+function editableCondition(condition: AlertCondition): EditorCondition {
+  if (condition.operator === "oneOf") {
+    return { ...condition, value: [...condition.value] };
+  }
+  if (
+    typeof condition.value === "string"
+    || typeof condition.value === "number"
+    || typeof condition.value === "boolean"
+  ) {
+    return { ...condition, value: condition.value };
+  }
+  return { ...condition, value: [condition.value[0], condition.value[1]] };
 }
 
 function readNumberDraft(value: string): number {

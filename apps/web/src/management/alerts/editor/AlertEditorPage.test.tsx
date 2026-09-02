@@ -4,7 +4,9 @@ import {
   type AlertEditorDocument,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
-  type RegisteredProviderView
+  type RegisteredProviderView,
+  type TwitchCustomReward,
+  type TwitchCustomRewardCatalog
 } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -30,8 +32,8 @@ import {
 } from "./editor-state.js";
 
 type TestAlertEditorPageProps = Omit<AlertEditorPageProps, "managementApi"> & {
-  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "previewModeration"> &
-    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "previewModeration">>;
+  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "getTwitchCustomRewards" | "previewModeration"> &
+    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "getTwitchCustomRewards" | "previewModeration">>;
 };
 
 function AlertEditorPage(props: TestAlertEditorPageProps) {
@@ -44,9 +46,11 @@ function AlertEditorPage(props: TestAlertEditorPageProps) {
       text: input.text,
       actions: []
     }));
+  const getTwitchCustomRewards: AlertEditorPageApi["getTwitchCustomRewards"] = props.managementApi.getTwitchCustomRewards
+    ?? (async () => ({ rewards: [] }));
   return <ProductionAlertEditorPage
     {...props}
-    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext, previewModeration }}
+    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext, getTwitchCustomRewards, previewModeration }}
   />;
 }
 
@@ -1785,6 +1789,7 @@ describe("AlertEditorPage", () => {
     const managementApi = {
       getAlertEditorDocument: vi.fn(async () => editorDocument()),
       getAlertVariationAuthoringContext: vi.fn(async () => variationContext(editorDocument())),
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [] })),
       getAlertSet: vi.fn(async () => alertSetDetail(false)),
       listRegisteredProviders: vi.fn(async () => []),
       getAssetChangeImpact: vi.fn(),
@@ -2749,6 +2754,256 @@ describe("AlertEditorPage", () => {
     expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
   });
 
+  it("preserves an untouched legacy reward equality when the catalog fails and another edit is saved", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [
+        { field: "channelPointReward", operator: "equals", value: "reward-hydrate" },
+        { field: "rewardTitle", operator: "includes", value: "Hydrate" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => { throw new Error("Twitch unavailable"); }),
+      saveAlertEditorDocument
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    expect(await screen.findByText("Twitch rewards could not be loaded")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Custom Twitch rewards" })).toHaveLength(1);
+    const ruleConditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(ruleConditions).queryByRole("textbox", { name: "Rule conditions Reward ID value" })).not.toBeInTheDocument();
+
+    const cooldown = screen.getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    await user.clear(cooldown);
+    await user.type(cooldown, "7");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    expect(saveAlertEditorDocument.mock.calls[0]![1].conditions).toEqual(document.conditions);
+  });
+
+  it("normalizes an explicit second reward to one ordered membership condition", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [
+        { field: "channelPointReward", operator: "equals", value: "reward-hydrate" },
+        { field: "rewardTitle", operator: "includes", value: "reward" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [
+        customReward("reward-hydrate", "Hydrate"),
+        customReward("reward-stretch", "Stretch")
+      ] })),
+      saveAlertEditorDocument
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(await screen.findByRole("checkbox", { name: /Stretch/u }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    const savedRewardConditions = saveAlertEditorDocument.mock.calls[0]![1].conditions
+      .filter((condition) => condition.field === "channelPointReward");
+    expect(savedRewardConditions).toEqual([
+      { field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }
+    ]);
+    expect(saveAlertEditorDocument.mock.calls[0]![1].conditions).toContainEqual(
+      { field: "rewardTitle", operator: "includes", value: "reward" }
+    );
+  });
+
+  it("removes every reward condition only when catch-all coverage is explicitly selected", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [
+        { field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] },
+        { field: "rewardTitle", operator: "includes", value: "reward" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("reward-hydrate", "Hydrate")] })),
+      saveAlertEditorDocument
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("radio", { name: "Every custom reward, including future rewards" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    expect(saveAlertEditorDocument.mock.calls[0]![1].conditions).toEqual([
+      { field: "rewardTitle", operator: "includes", value: "reward" }
+    ]);
+  });
+
+  it("reconciles current reward metadata while preserving deleted IDs through save, reload, and account switch", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-deleted"] }]
+    });
+    const loadRewards = vi.fn<AlertEditorPageApi["getTwitchCustomRewards"]>()
+      .mockResolvedValueOnce({ rewards: [customReward("reward-hydrate", "Old title")] })
+      .mockResolvedValueOnce({ rewards: [customReward("reward-hydrate", "Current title", { isPaused: true })] });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    const firstView = renderChannelPointEditor(document, { getTwitchCustomRewards: loadRewards, saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    expect(await screen.findByText("Old title")).toBeInTheDocument();
+    expect(screen.getByText("reward-deleted")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh rewards" }));
+    expect(await screen.findByText("Current title")).toBeInTheDocument();
+    expect(screen.getByText("Paused")).toBeInTheDocument();
+
+    const priority = screen.getByRole("spinbutton", { name: "Rule priority" });
+    await user.clear(priority);
+    await user.type(priority, "4");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    const saved = saveAlertEditorDocument.mock.calls[0]![1];
+    expect(saved.conditions).toContainEqual({
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: ["reward-hydrate", "reward-deleted"]
+    });
+
+    firstView.unmount();
+    renderChannelPointEditor(saved, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("other-account-reward", "Other account reward")] }))
+    });
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await screen.findByText("Other account reward");
+    expect(screen.getByText("reward-hydrate")).toBeInTheDocument();
+    expect(screen.getByText("reward-deleted")).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable reward")).toHaveLength(2);
+    expect(screen.getByRole("checkbox", { name: /Unavailable reward.*reward-hydrate/u })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Unavailable reward.*reward-deleted/u })).toBeChecked();
+  });
+
+  it("warns only for another active intersecting or catch-all redemption rule", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+    });
+    const baseRow = channelPointInventoryRow(document);
+    const setDetail = channelPointAlertSetDetail(document, [
+      { ...baseRow, id: "alert-intersection", name: "Hydration layer", conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }] },
+      { ...baseRow, id: "alert-catch-all", name: "Every reward celebration", conditions: [] },
+      { ...baseRow, id: "alert-disabled", name: "Disabled overlap", enabled: false, conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }] },
+      { ...baseRow, id: "alert-disjoint", name: "Disjoint reward", conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-dance"] }] }
+    ]);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [
+        customReward("reward-hydrate", "Hydrate"),
+        customReward("reward-stretch", "Stretch")
+      ] })),
+      setDetail
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const warning = await screen.findByRole("note", { name: "Potential overlapping alerts" });
+    expect(warning).toHaveTextContent("Hydration layer");
+    expect(warning).toHaveTextContent("Every reward celebration");
+    expect(warning).not.toHaveTextContent("Disabled overlap");
+    expect(warning).not.toHaveTextContent("Disjoint reward");
+    expect(warning).not.toHaveTextContent(document.name);
+    await user.click(await screen.findByRole("checkbox", { name: /Stretch/u }));
+    expect(screen.getByRole("note", { name: "Potential overlapping alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("uses current rewards for session samples and defaults outside samples without persisting catalog data", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }],
+      samplePayloads: [{
+        id: "normal",
+        label: "Outside reward",
+        kind: "built-in",
+        payload: { userName: "James", rewardId: "reward-outside", rewardTitle: "Outside reward", userInput: "" }
+      }]
+    });
+    const originalSamples = structuredClone(document.samplePayloads);
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [
+        customReward("reward-hydrate", "Hydrate now"),
+        customReward("reward-stretch", "Stretch now")
+      ] })),
+      saveAlertEditorDocument
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const sampleDraft = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    await waitFor(() => expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toMatchObject({
+      rewardId: "reward-hydrate",
+      rewardTitle: "Hydrate now"
+    }));
+    await user.click(screen.getByRole("button", { name: "Use Stretch now as sample" }));
+    expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toMatchObject({
+      userName: "James",
+      rewardId: "reward-stretch",
+      rewardTitle: "Stretch now",
+      userInput: ""
+    });
+
+    const cooldown = screen.getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    await user.clear(cooldown);
+    await user.type(cooldown, "3");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    expect(document.samplePayloads).toEqual(originalSamples);
+    expect(saveAlertEditorDocument.mock.calls[0]![1].samplePayloads).toEqual(originalSamples);
+  });
+
+  it("explains inside and outside reward samples without disabling preview or send test", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+    });
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(() => new Promise<TwitchCustomRewardCatalog>(() => undefined))
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("Default plays as the fallback for this sample.");
+    fireEvent.change(screen.getByRole("textbox", { name: "Session payload (JSON)" }), {
+      target: { value: JSON.stringify({ userName: "James", rewardId: "reward-outside", rewardTitle: "Outside reward" }) }
+    });
+    await waitFor(() => expect(explanation).toHaveTextContent("No alert plays for this sample."));
+    expect(explanation).toHaveTextContent("Reward ID is one of reward-hydrate");
+    expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Replay preview" })).toBeEnabled();
+    for (const button of screen.getAllByRole("button", { name: "Send test" })) expect(button).toBeEnabled();
+  });
+
+  it("shows saved variation membership as Legacy while retaining exact reward ID authoring", async () => {
+    const user = userEvent.setup();
+    const variation = channelPointDocument({
+      id: "variation-rewards",
+      kind: "variation",
+      parentAlertId: "alert-channel-points",
+      name: "Special reward variation",
+      conditions: [],
+      variantConditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }]
+    });
+    renderChannelPointEditor(variation);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    expect(screen.queryByRole("heading", { name: "Custom Twitch rewards" })).not.toBeInTheDocument();
+    const variationConditions = screen.getByRole("group", { name: "Variation conditions" });
+    expect(variationConditions).toHaveTextContent("Legacy condition");
+    expect(variationConditions).toHaveTextContent("Reward ID is one of reward-hydrate, reward-stretch");
+    await user.click(within(variationConditions).getByRole("button", { name: "Remove channelPointReward from Variation conditions" }));
+    await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
+    const operator = within(variationConditions).getByRole("combobox", { name: "Variation conditions Reward ID operator" });
+    expect(within(operator).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["equals"]);
+    expect(within(variationConditions).getByRole("textbox", { name: "Variation conditions Reward ID value" })).toBeInTheDocument();
+  });
+
   it("edits variation conditions and shared rule controls", async () => {
     const user = userEvent.setup();
     const variation: AlertEditorDocument = {
@@ -3548,6 +3803,119 @@ function alertSetDetail(active = true): AlertSetDetail {
       { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
+  };
+}
+
+function channelPointDocument(overrides: Partial<AlertEditorDocument> = {}): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    id: "alert-channel-points",
+    eventType: "channel_point_redemption",
+    name: "Shared custom rewards",
+    conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }],
+    templateVariables: [
+      { key: "userName", label: "User name", description: "Display name for the redeemer." },
+      { key: "rewardTitle", label: "Reward title", description: "Current reward title." },
+      { key: "userInput", label: "User input", description: "Optional redemption input." }
+    ],
+    samplePayloads: [{
+      id: "normal",
+      label: "Hydrate redemption",
+      kind: "built-in",
+      payload: { userName: "James", rewardId: "reward-hydrate", rewardTitle: "Hydrate", userInput: "" }
+    }],
+    ...overrides
+  };
+}
+
+function channelPointInventoryRow(
+  document: AlertEditorDocument
+): AlertSetDetail["inventory"][number] {
+  return {
+    id: document.parentAlertId ?? document.id,
+    setId: document.setId,
+    providerKind: document.providerKind,
+    eventType: document.eventType,
+    parentAlertId: null,
+    name: document.kind === "default" ? document.name : "Shared custom rewards",
+    kind: "default",
+    enabled: document.kind === "default" ? document.enabled : true,
+    conditions: document.conditions,
+    weight: 1,
+    priority: null,
+    reviewState: "ready",
+    targetProfileIds: document.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id),
+    previewText: "Channel point redemption preview"
+  };
+}
+
+function channelPointAlertSetDetail(
+  document: AlertEditorDocument,
+  siblings: readonly AlertSetDetail["inventory"][number][] = []
+): AlertSetDetail {
+  const source = alertSetDetail(false);
+  return {
+    ...source,
+    inventory: [channelPointInventoryRow(document), ...siblings]
+  };
+}
+
+function renderChannelPointEditor(
+  document: AlertEditorDocument,
+  options: {
+    readonly getTwitchCustomRewards?: AlertEditorPageApi["getTwitchCustomRewards"];
+    readonly saveAlertEditorDocument?: AlertEditorPageApi["saveAlertEditorDocument"];
+    readonly sendAlertEditorTest?: AlertEditorPageApi["sendAlertEditorTest"];
+    readonly setDetail?: AlertSetDetail;
+  } = {}
+) {
+  const getTwitchCustomRewards = options.getTwitchCustomRewards
+    ?? vi.fn(async () => ({ rewards: [] }));
+  const saveAlertEditorDocument = options.saveAlertEditorDocument
+    ?? vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  const sendAlertEditorTest = options.sendAlertEditorTest ?? vi.fn();
+  const view = render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId={document.id}
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document),
+          getAlertVariationAuthoringContext: vi.fn(async () => variationContext(document)),
+          getTwitchCustomRewards,
+          getAlertSet: vi.fn(async () => options.setDetail ?? channelPointAlertSetDetail(document)),
+          listRegisteredProviders: vi.fn(async () => []),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest
+        }}
+        onBack={() => undefined}
+        onOpenAlert={() => undefined}
+      />
+    </DirtyNavigationProvider>
+  );
+  return { getTwitchCustomRewards, saveAlertEditorDocument, sendAlertEditorTest, ...view };
+}
+
+function customReward(
+  id: string,
+  title: string,
+  overrides: Partial<TwitchCustomReward> = {}
+): TwitchCustomReward {
+  return {
+    id,
+    title,
+    prompt: "",
+    cost: 500,
+    backgroundColor: "#00E5CB",
+    isUserInputRequired: false,
+    isEnabled: true,
+    isPaused: false,
+    isInStock: true,
+    ...overrides
   };
 }
 

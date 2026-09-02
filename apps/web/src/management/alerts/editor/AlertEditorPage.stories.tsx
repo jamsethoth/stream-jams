@@ -4,11 +4,13 @@ import {
   type AlertEditorDocument,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
-  type RegisteredProviderView
+  type RegisteredProviderView,
+  type TwitchCustomReward
 } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../../stories/mock-apis.js";
+import { ManagementHttpError } from "../../management-http-client.js";
 import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
 import { AlertEditorPage } from "./AlertEditorPage.js";
 
@@ -910,6 +912,113 @@ export const PrioritySaveFailure: Story = {
   }
 };
 
+export const SharedRewardSelection: Story = {
+  tags: ["task7-reward-editor"],
+  args: {
+    alertId: "alert-shared-rewards",
+    managementApi: channelPointStoryApi(
+      channelPointEditorDocument({
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }]
+      }),
+      {
+        getTwitchCustomRewards: async () => ({ rewards: [
+          storyReward("reward-hydrate", "Hydrate"),
+          storyReward("reward-stretch", "Stretch")
+        ] })
+      }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const picker = await canvas.findByRole("region", { name: "Custom Twitch rewards" });
+    await expect(await within(picker).findByText("2 custom rewards loaded.")).toBeVisible();
+    await expect(within(picker).getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
+    await expect(within(picker).getByRole("checkbox", { name: /Stretch/u })).toBeChecked();
+  }
+};
+
+export const UnavailableSavedReward: Story = {
+  tags: ["task7-reward-editor"],
+  args: {
+    alertId: "alert-shared-rewards",
+    managementApi: channelPointStoryApi(
+      channelPointEditorDocument({
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-retired"] }],
+        samplePayloads: [{
+          id: "normal",
+          label: "Retired reward",
+          kind: "built-in",
+          payload: { userName: "James", rewardId: "reward-retired", rewardTitle: "Retired reward" }
+        }]
+      }),
+      { getTwitchCustomRewards: async () => ({ rewards: [] }) }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    await expect(await canvas.findByText("No custom rewards are available for this channel.")).toBeVisible();
+    await expect(canvas.getByText("reward-retired")).toBeVisible();
+    await expect(canvas.getByRole("checkbox", { name: /Unavailable reward.*reward-retired/u })).toBeChecked();
+  }
+};
+
+export const CatalogFailurePreservesSelection: Story = {
+  tags: ["task7-reward-editor"],
+  args: {
+    alertId: "alert-shared-rewards",
+    managementApi: channelPointStoryApi(
+      channelPointEditorDocument({
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+      }),
+      {
+        getTwitchCustomRewards: async () => {
+          throw new ManagementHttpError("Twitch request failed", "TWITCH_API_REQUEST_FAILED", "ref-story-rewards");
+        }
+      }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const error = await canvas.findByRole("alert");
+    await expect(error).toHaveTextContent("Twitch rewards could not be loaded");
+    await expect(error).toHaveTextContent("ref-story-rewards");
+    await expect(canvas.getByRole("checkbox", { name: /Unavailable reward.*reward-hydrate/u })).toBeChecked();
+  }
+};
+
+export const PotentialOverlapWarning: Story = {
+  tags: ["task7-reward-editor"],
+  args: {
+    alertId: "alert-shared-rewards",
+    managementApi: channelPointStoryApi(
+      channelPointEditorDocument({
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+      }),
+      {
+        getAlertSet: async () => channelPointStorySetDetail([
+          {
+            ...channelPointInventoryRow(channelPointEditorDocument()),
+            id: "alert-every-reward",
+            name: "Every reward celebration",
+            conditions: []
+          }
+        ]),
+        getTwitchCustomRewards: async () => ({ rewards: [storyReward("reward-hydrate", "Hydrate")] })
+      }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const warning = await canvas.findByRole("note", { name: "Potential overlapping alerts" });
+    await expect(warning).toHaveTextContent("Every reward celebration");
+    await expect(canvas.getByRole("checkbox", { name: /Hydrate/u })).toBeEnabled();
+  }
+};
+
 export const DeliveryFailure: Story = {
   args: {
     managementApi: createStoryManagementApi({
@@ -994,6 +1103,85 @@ function editorDocument(): AlertEditorDocument {
       { id: "normal", label: "Normal example", kind: "built-in", payload: { userName: "James" } },
       { id: "edge", label: "Long-content example", kind: "built-in", payload: { userName: "A-Very-Long-Display-Name" } }
     ]
+  };
+}
+
+function channelPointEditorDocument(overrides: Partial<AlertEditorDocument> = {}): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    id: "alert-shared-rewards",
+    eventType: "channel_point_redemption",
+    name: "Shared custom rewards",
+    conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }],
+    templateVariables: [
+      { key: "userName", label: "User name", description: "Display name for the redeemer." },
+      { key: "rewardTitle", label: "Reward title", description: "Current reward title." },
+      { key: "userInput", label: "User input", description: "Optional redemption input." }
+    ],
+    samplePayloads: [{
+      id: "normal",
+      label: "Hydrate redemption",
+      kind: "built-in",
+      payload: { userName: "James", rewardId: "reward-hydrate", rewardTitle: "Hydrate", userInput: "" }
+    }],
+    ...overrides
+  };
+}
+
+function channelPointStoryApi(
+  storyDocument: AlertEditorDocument,
+  overrides: Parameters<typeof createStoryManagementApi>[0] = {}
+) {
+  return createStoryManagementApi({
+    getAlertEditorDocument: async () => storyDocument,
+    getAlertVariationAuthoringContext: async () => variationContext(storyDocument),
+    getAlertSet: async () => channelPointStorySetDetail(),
+    ...overrides
+  });
+}
+
+function channelPointInventoryRow(
+  storyDocument: AlertEditorDocument
+): AlertSetDetail["inventory"][number] {
+  return {
+    id: storyDocument.parentAlertId ?? storyDocument.id,
+    setId: storyDocument.setId,
+    providerKind: storyDocument.providerKind,
+    eventType: storyDocument.eventType,
+    parentAlertId: null,
+    name: storyDocument.kind === "default" ? storyDocument.name : "Shared custom rewards",
+    kind: "default",
+    enabled: storyDocument.kind === "default" ? storyDocument.enabled : true,
+    conditions: storyDocument.conditions,
+    weight: 1,
+    priority: null,
+    reviewState: "ready",
+    targetProfileIds: ["landscape"],
+    previewText: "Channel point redemption preview"
+  };
+}
+
+function channelPointStorySetDetail(
+  siblings: readonly AlertSetDetail["inventory"][number][] = []
+): AlertSetDetail {
+  const source = alertSetDetail();
+  return {
+    ...source,
+    inventory: [channelPointInventoryRow(channelPointEditorDocument()), ...siblings]
+  };
+}
+
+function storyReward(id: string, title: string): TwitchCustomReward {
+  return {
+    id,
+    title,
+    prompt: "",
+    cost: 500,
+    backgroundColor: "#00E5CB",
+    isUserInputRequired: false,
+    isEnabled: true,
+    isPaused: false,
+    isInStock: true
   };
 }
 
