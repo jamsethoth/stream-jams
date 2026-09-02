@@ -3,7 +3,7 @@ import type {
   TwitchCustomReward,
   TwitchCustomRewardCatalog
 } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode, useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -116,8 +116,12 @@ describe("TwitchRewardPicker", () => {
     );
     second.resolve({ rewards: [customReward("reward-a", "Current title")] });
     expect(await screen.findByText("Current title")).toBeInTheDocument();
-    first.resolve({ rewards: [customReward("reward-a", "Stale title")] });
-    await waitFor(() => expect(screen.queryByText("Stale title")).not.toBeInTheDocument());
+    await act(async () => {
+      first.resolve({ rewards: [customReward("reward-a", "Stale title")] });
+      await first.promise;
+    });
+    expect(screen.getByText("Current title")).toBeInTheDocument();
+    expect(screen.queryByText("Stale title")).not.toBeInTheDocument();
 
     const refreshLoad = vi.fn()
       .mockResolvedValueOnce({ rewards: [customReward("reward-a", "Current title")] })
