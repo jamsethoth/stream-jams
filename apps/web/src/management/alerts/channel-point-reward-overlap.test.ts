@@ -22,6 +22,12 @@ describe("findOverlappingChannelPointAlertNames", () => {
       { mode: "all" },
       "alert-current"
     )).toEqual(["General channel points", "Hydrate and stretch", "Posture check"]);
+
+    expect(findOverlappingChannelPointAlertNames(
+      inventory,
+      { mode: "selected", rewardIds: ["reward-hydrate"] },
+      null
+    )).toEqual(["General channel points", "Hydrate and stretch", "Current alert"]);
   });
 
   it("ignores disabled rules, variations, other event types, disjoint sets, and the excluded rule", () => {

@@ -8,7 +8,7 @@ import {
 export function findOverlappingChannelPointAlertNames(
   inventory: readonly AlertInventoryRow[],
   selection: ChannelPointRewardSelection,
-  excludedRuleId: string
+  excludedRuleId: string | null
 ): string[] {
   return inventory
     .filter((row) => (
