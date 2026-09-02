@@ -11,6 +11,8 @@ import {
   alertSetOverviewSchema,
   alertStarterTemplates,
   evaluateAlertSetActivation,
+  replaceChannelPointRewardSelection,
+  type AlertCondition,
   type AlertBrowserSourceView,
   type AlertCollection,
   type AlertConfigurationIdKind,
@@ -168,7 +170,10 @@ export class AlertSetManagementService {
     if (template === undefined) {
       throw new Error(`No starter alert template exists for ${input.eventType}`);
     }
-    const created = this.#materializeRule(starterRuleInput(setId, template, input.name));
+    const conditions = input.eventType === "channel_point_redemption"
+      ? replaceChannelPointRewardSelection([], input.channelPointRewardSelection ?? { mode: "all" })
+      : [];
+    const created = this.#materializeRule(starterRuleInput(setId, template, input.name, conditions));
     const metadata = {
       ruleId: created.id,
       providerKind: "twitch" as const,
@@ -880,14 +885,15 @@ function copyEditorDocument(
 function starterRuleInput(
   setId: string,
   definition: (typeof alertStarterTemplates)[number],
-  name: string = definition.defaultName
+  name: string = definition.defaultName,
+  conditions: readonly AlertCondition[] = []
 ): Parameters<ManagedAlertService["createRule"]>[0] {
   return {
     name,
     eventType: definition.eventType,
     enabled: false,
     collectionIds: [setId],
-    conditions: [],
+    conditions,
     variants: [
       {
         name: "Default",

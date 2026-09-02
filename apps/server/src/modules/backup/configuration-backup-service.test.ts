@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   appConfigSchema,
   configurationBackupLimits,
+  type AlertRule,
   type AppConfig,
   type AppConfigUpdate,
   type AssetRecord,
@@ -9,6 +10,7 @@ import {
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryStreamJamsDatabase, currentSchemaVersion, type StreamJamsDatabase } from "../db/database.js";
+import { SqliteAlertRepository } from "../alerts/sqlite-alert-repository.js";
 import { SqliteModerationSettingsRepository } from "../moderation/sqlite-moderation-settings-repository.js";
 import {
   ConfigurationBackupService,
@@ -73,6 +75,45 @@ describe("ConfigurationBackupService", () => {
         nextStep: "Export a new backup from the source installation."
       })]
     });
+  });
+
+  it("preserves reward membership arrays and legacy exact conditions through export, preflight, and restore", async () => {
+    const source = createRealService();
+    const target = createRealService();
+    const sharedRule = createRewardRule("rule-shared", {
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: ["reward-third", "reward-first", "reward-second"]
+    });
+    const legacyRule = createRewardRule("rule-legacy", {
+      field: "channelPointReward",
+      operator: "equals",
+      value: "reward-legacy"
+    });
+
+    try {
+      const sourceAlerts = new SqliteAlertRepository(source.database.connection);
+      await sourceAlerts.saveRule(sharedRule);
+      await sourceAlerts.saveRule(legacyRule);
+
+      const archive = await source.service.exportArchive();
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+
+      await target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      });
+
+      const restoredAlerts = new SqliteAlertRepository(target.database.connection);
+      await expect(restoredAlerts.findRuleById(sharedRule.id)).resolves.toEqual(sharedRule);
+      await expect(restoredAlerts.findRuleById(legacyRule.id)).resolves.toEqual(legacyRule);
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
   });
 
   it("reports checksum blockers and never enables an invalid archive", async () => {
@@ -603,4 +644,29 @@ function replacementMock() {
   return vi.fn((input: Parameters<ConfigurationSnapshotRepository["replace"]>[0]) => {
     void input;
   });
+}
+
+function createRewardRule(id: string, condition: AlertRule["conditions"][number]): AlertRule {
+  return {
+    id,
+    name: id === "rule-shared" ? "Shared rewards" : "Legacy reward",
+    eventType: "channel_point_redemption",
+    enabled: false,
+    collectionIds: ["set-default"],
+    conditions: [condition],
+    variants: [{
+      id: `${id}-default`,
+      name: "Default",
+      enabled: false,
+      weight: 1,
+      visualAssetId: null,
+      audioAssetId: null,
+      textTemplate: "{userName} redeemed {rewardTitle}!",
+      ttsConfig: null,
+      durationMs: 5_000,
+      layout: { x: 640, y: 760, width: 640, height: 180, zIndex: 10 }
+    }],
+    cooldownSeconds: 0,
+    priority: 0
+  };
 }

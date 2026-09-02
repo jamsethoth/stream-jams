@@ -162,6 +162,94 @@ describe("AlertSetManagementService", () => {
     ]));
   });
 
+  it.each([
+    [["reward-one"]],
+    [["reward-first", "reward-second", "reward-third"]]
+  ])("atomically creates a disabled shared reward alert for %j in first-selected order", async (rewardIds) => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const commit = vi.spyOn(fixture.mutationStore, "commit");
+
+    const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
+      eventType: "channel_point_redemption",
+      name: "Shared rewards",
+      channelPointRewardSelection: { mode: "selected", rewardIds }
+    }));
+
+    expect(commit).toHaveBeenCalledOnce();
+    const mutation = commit.mock.calls[0]![0];
+    const rewardCondition = [{
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: rewardIds
+    }];
+    expect(mutation.saveRules).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        eventType: "channel_point_redemption",
+        enabled: false,
+        conditions: rewardCondition,
+        variants: [expect.objectContaining({ enabled: false })]
+      })
+    ]);
+    expect(mutation.saveRuleMetadata).toEqual([
+      expect.objectContaining({ ruleId: created.id, reviewState: "needs-review" })
+    ]);
+    expect(mutation.saveDocuments).toEqual([
+      expect.objectContaining({ id: created.id, conditions: rewardCondition })
+    ]);
+  });
+
+  it.each([
+    ["an omitted legacy selection", {}],
+    ["explicit catch-all mode", { channelPointRewardSelection: { mode: "all" } }]
+  ])("creates a condition-free redemption alert for %s", async (_label, selectionInput) => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const commit = vi.spyOn(fixture.mutationStore, "commit");
+
+    const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
+      eventType: "channel_point_redemption",
+      name: "Every reward",
+      ...selectionInput
+    }));
+
+    expect(commit.mock.calls[0]![0]).toMatchObject({
+      saveRules: [expect.objectContaining({ id: created.id, conditions: [] })],
+      saveDocuments: [expect.objectContaining({ id: created.id, conditions: [] })]
+    });
+  });
+
+  it("creates a selected-reward alert with an explicit starter theme", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const commit = vi.spyOn(fixture.mutationStore, "commit");
+
+    const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
+      eventType: "channel_point_redemption",
+      name: "Bold rewards",
+      themeId: "bold-pop",
+      channelPointRewardSelection: { mode: "selected", rewardIds: ["reward-bold"] }
+    }));
+
+    const mutation = commit.mock.calls[0]![0];
+    expect(mutation.saveRules).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-bold"] }]
+      })
+    ]);
+    expect(mutation.saveDocuments).toEqual([
+      expect.objectContaining({
+        id: created.id,
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-bold"] }],
+        layers: expect.arrayContaining([
+          expect.objectContaining({ id: `${created.id}:bold-pop:magenta-block`, fill: "#EF3F8FFF" })
+        ])
+      })
+    ]);
+  });
+
   it("creates every canonical event without expanding the starter set", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
