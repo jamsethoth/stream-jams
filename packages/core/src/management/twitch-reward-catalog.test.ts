@@ -27,11 +27,28 @@ describe("Twitch custom reward catalog contract", () => {
 
   it("rejects incomplete and malformed sanitized rewards", () => {
     expect(twitchCustomRewardSchema.safeParse({ ...completeReward, id: "" }).success).toBe(false);
+    const { id: omittedId, ...rewardWithoutId } = completeReward;
+    void omittedId;
+    expect(twitchCustomRewardSchema.safeParse(rewardWithoutId).success).toBe(false);
     expect(twitchCustomRewardSchema.safeParse({ ...completeReward, title: "  " }).success).toBe(false);
     expect(twitchCustomRewardSchema.safeParse({ ...completeReward, cost: 0 }).success).toBe(false);
     expect(twitchCustomRewardSchema.safeParse({ ...completeReward, cost: 500.5 }).success).toBe(false);
     expect(twitchCustomRewardSchema.safeParse({ ...completeReward, backgroundColor: "00E5CB" }).success).toBe(false);
-    expect(twitchCustomRewardSchema.safeParse({ ...completeReward, isInStock: undefined }).success).toBe(false);
+    const {
+      isUserInputRequired: omittedUserInputRequired,
+      ...rewardWithoutUserInputRequired
+    } = completeReward;
+    void omittedUserInputRequired;
+    expect(twitchCustomRewardSchema.safeParse(rewardWithoutUserInputRequired).success).toBe(false);
+    const { isEnabled: omittedEnabled, ...rewardWithoutEnabled } = completeReward;
+    void omittedEnabled;
+    expect(twitchCustomRewardSchema.safeParse(rewardWithoutEnabled).success).toBe(false);
+    const { isPaused: omittedPaused, ...rewardWithoutPaused } = completeReward;
+    void omittedPaused;
+    expect(twitchCustomRewardSchema.safeParse(rewardWithoutPaused).success).toBe(false);
+    const { isInStock: omittedInStock, ...rewardWithoutInStock } = completeReward;
+    void omittedInStock;
+    expect(twitchCustomRewardSchema.safeParse(rewardWithoutInStock).success).toBe(false);
   });
 
   it("rejects unsanitized provider fields and unknown catalog keys", () => {
