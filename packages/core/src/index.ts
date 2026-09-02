@@ -229,6 +229,7 @@ export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplaceme
 
 export * from "./management/contracts.js";
 export * from "./management/alert-starter-themes.js";
+export * from "./management/twitch-reward-catalog.js";
 
 export type * from "./templates/template-renderer.js";
 export { DefaultTemplateRenderer } from "./templates/template-renderer.js";

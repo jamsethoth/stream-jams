@@ -1,6 +1,11 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 import * as core from "../index.js";
-import type { AlertCreateInput, AlertCreateRequestInput, AlertStarterThemeId } from "../index.js";
+import type {
+  AlertCreateInput,
+  AlertCreateRequestInput,
+  AlertStarterThemeId,
+  ChannelPointRewardSelection
+} from "../index.js";
 
 interface RuntimeSchema {
   parse(input: unknown): unknown;
@@ -182,6 +187,74 @@ describe("management alert contracts and rules", () => {
 
     expectTypeOf<AlertCreateRequestInput["themeId"]>().toEqualTypeOf<AlertStarterThemeId | undefined>();
     expectTypeOf<AlertCreateInput["themeId"]>().toEqualTypeOf<AlertStarterThemeId>();
+  });
+
+  it("accepts channel point reward selections only for channel point redemption alerts", () => {
+    const createAlert = schema("alertCreateInputSchema");
+
+    expect(createAlert.parse({
+      eventType: "channel_point_redemption",
+      name: "All rewards",
+      channelPointRewardSelection: { mode: "all" }
+    })).toMatchObject({ channelPointRewardSelection: { mode: "all" } });
+    expect(createAlert.parse({
+      eventType: "channel_point_redemption",
+      name: "Hydration rewards",
+      channelPointRewardSelection: { mode: "selected", rewardIds: ["reward-a"] }
+    })).toMatchObject({
+      channelPointRewardSelection: { mode: "selected", rewardIds: ["reward-a"] }
+    });
+    expect(createAlert.parse({
+      eventType: "channel_point_redemption",
+      name: "Many rewards",
+      channelPointRewardSelection: {
+        mode: "selected",
+        rewardIds: Array.from({ length: 50 }, (_, index) => `reward-${index}`)
+      }
+    })).toMatchObject({
+      channelPointRewardSelection: {
+        mode: "selected",
+        rewardIds: Array.from({ length: 50 }, (_, index) => `reward-${index}`)
+      }
+    });
+    expect(createAlert.parse({ eventType: "channel_point_redemption", name: "Legacy catch-all" })).toEqual({
+      eventType: "channel_point_redemption",
+      name: "Legacy catch-all",
+      themeId: "clean-signal"
+    });
+
+    expect(createAlert.safeParse({
+      eventType: "channel_point_redemption",
+      name: "No rewards",
+      channelPointRewardSelection: { mode: "selected", rewardIds: [] }
+    }).success).toBe(false);
+    expect(createAlert.safeParse({
+      eventType: "channel_point_redemption",
+      name: "Duplicate rewards",
+      channelPointRewardSelection: { mode: "selected", rewardIds: ["reward-a", "reward-a"] }
+    }).success).toBe(false);
+    expect(createAlert.safeParse({
+      eventType: "channel_point_redemption",
+      name: "Too many rewards",
+      channelPointRewardSelection: {
+        mode: "selected",
+        rewardIds: Array.from({ length: 51 }, (_, index) => `reward-${index}`)
+      }
+    }).success).toBe(false);
+
+    for (const eventType of core.streamEventTypes) {
+      if (eventType === "channel_point_redemption") continue;
+      expect(createAlert.safeParse({
+        eventType,
+        name: "Not a redemption",
+        channelPointRewardSelection: { mode: "all" }
+      }).success, eventType).toBe(false);
+    }
+
+    expectTypeOf<AlertCreateRequestInput["channelPointRewardSelection"]>()
+      .toEqualTypeOf<ChannelPointRewardSelection | undefined>();
+    expectTypeOf<AlertCreateInput["channelPointRewardSelection"]>()
+      .toEqualTypeOf<ChannelPointRewardSelection | undefined>();
   });
 
   it("uses stable default and variation editor identities in alert inventory", () => {

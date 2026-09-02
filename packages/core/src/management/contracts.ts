@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { channelPointRewardSelectionSchema } from "../alerts/channel-point-reward-selection.js";
 import { alertConditionSchema, streamEventTypeSchema } from "../alerts/schemas.js";
 import {
   alertTextBoxStyleSchema,
@@ -261,7 +262,16 @@ export const defaultAlertStarterThemeId = "clean-signal" as const satisfies Aler
 export const alertCreateInputSchema = z.object({
   eventType: streamEventTypeSchema,
   name: z.string().trim().min(1).max(120),
-  themeId: alertStarterThemeIdSchema.default(defaultAlertStarterThemeId)
+  themeId: alertStarterThemeIdSchema.default(defaultAlertStarterThemeId),
+  channelPointRewardSelection: channelPointRewardSelectionSchema.optional()
+}).superRefine((input, refinement) => {
+  if (input.eventType !== "channel_point_redemption" && input.channelPointRewardSelection !== undefined) {
+    refinement.addIssue({
+      code: "custom",
+      path: ["channelPointRewardSelection"],
+      message: "Reward selection is available only for channel point redemption alerts"
+    });
+  }
 });
 
 export const alertVariationCreateInputSchema = z.object({
