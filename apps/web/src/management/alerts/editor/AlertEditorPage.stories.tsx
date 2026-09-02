@@ -234,7 +234,7 @@ export const NarrowScreenStyleGuard: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole("heading", {
+    await expect(await canvas.findByRole("heading", {
       name: "Alert editor requires a larger screen",
       hidden: true
     })).toBeInTheDocument();
