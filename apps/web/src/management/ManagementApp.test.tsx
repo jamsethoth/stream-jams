@@ -465,6 +465,7 @@ function createManagementApi(): ManagementApi {
       actionableProblems: []
     })),
     getTwitchStatus: vi.fn(async () => ({ connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null })),
+    getTwitchCustomRewards: vi.fn(async () => ({ rewards: [] })),
     startTwitchAuth: vi.fn(async () => {
       throw new Error("not called");
     }),

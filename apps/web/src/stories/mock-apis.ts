@@ -22,6 +22,9 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getTwitchStatus() {
       return { connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null };
     },
+    async getTwitchCustomRewards() {
+      return { rewards: [] };
+    },
     async startTwitchAuth() {
       return {
         authorizationId: "story-auth",

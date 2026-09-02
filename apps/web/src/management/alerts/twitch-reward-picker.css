@@ -1,0 +1,133 @@
+.twitch-reward-picker {
+  display: grid;
+  gap: 16px;
+}
+
+.twitch-reward-picker__header {
+  align-items: start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.twitch-reward-picker__header h3,
+.twitch-reward-picker__header p,
+.twitch-reward-picker__request,
+.twitch-reward-picker__error p,
+.twitch-reward-picker__validation {
+  margin: 0;
+}
+
+.twitch-reward-picker__header p,
+.twitch-reward-picker__request,
+.twitch-reward-picker__reward small {
+  color: var(--color-text-muted);
+}
+
+.twitch-reward-picker__coverage {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 14px;
+}
+
+.twitch-reward-picker__coverage > label,
+.twitch-reward-picker__reward > label {
+  align-items: start;
+  cursor: pointer;
+  display: flex;
+  gap: 10px;
+}
+
+.twitch-reward-picker__coverage > label > span,
+.twitch-reward-picker__reward-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.twitch-reward-picker__coverage small {
+  color: var(--color-text-muted);
+}
+
+.twitch-reward-picker__validation {
+  color: var(--color-negative);
+  font-size: 14px;
+}
+
+.twitch-reward-picker__warning,
+.twitch-reward-picker__error {
+  border: 1px solid var(--color-warning);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.twitch-reward-picker__warning {
+  background: var(--color-warning-soft);
+  color: var(--color-text);
+}
+
+.twitch-reward-picker__error {
+  background: var(--color-negative-soft);
+  border-color: var(--color-negative);
+  display: grid;
+  gap: 8px;
+}
+
+.twitch-reward-picker__error-actions,
+.twitch-reward-picker__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.twitch-reward-picker__rewards {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.twitch-reward-picker__reward {
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.twitch-reward-picker__reward--unavailable {
+  border-color: var(--color-warning);
+}
+
+.twitch-reward-picker__statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.twitch-reward-picker__statuses > span {
+  background: var(--color-warning-soft);
+  border: 1px solid var(--color-warning);
+  border-radius: 6px;
+  color: var(--color-text);
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.twitch-reward-picker__sample {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .twitch-reward-picker__header,
+  .twitch-reward-picker__reward {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

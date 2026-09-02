@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { alertEditorDocumentSchema } from "@stream-jams/core";
+import { alertEditorDocumentSchema, type TwitchCustomReward } from "@stream-jams/core";
 import { createHttpManagementApi } from "./management-api.js";
 
 describe("createHttpManagementApi", () => {
@@ -526,6 +526,77 @@ describe("createHttpManagementApi", () => {
       status: "failed", code: "TWITCH_OAUTH_EXPIRED", message: "Twitch authorization expired"
     });
     await expect(api.pollTwitchAuth({ authorizationId: "auth-123" })).resolves.toEqual({ status: "connected", connection: status });
+  });
+
+  it("loads a strict Twitch custom reward catalog through the authenticated GET path", async () => {
+    const statusCombinations = Array.from({ length: 16 }, (_, flags) => customReward(
+      `reward-${flags}`,
+      `Reward ${flags}`,
+      {
+        isUserInputRequired: (flags & 1) !== 0,
+        isEnabled: (flags & 2) !== 0,
+        isPaused: (flags & 4) !== 0,
+        isInStock: (flags & 8) !== 0
+      }
+    ));
+    const responses = [
+      { rewards: [customReward("reward-hydrate", "Hydrate"), ...statusCombinations] },
+      { rewards: [] }
+    ];
+    let responseIndex = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (url === "/twitch/custom-rewards") {
+        expect(init).toEqual({ headers: { authorization: "Bearer mgmt_session" } });
+        return jsonResponse(responses[responseIndex++]!);
+      }
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getTwitchCustomRewards()).resolves.toEqual(responses[0]);
+    await expect(api.getTwitchCustomRewards()).resolves.toEqual({ rewards: [] });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/twitch/custom-rewards",
+      expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer mgmt_session" }) })
+    );
+  });
+
+  it("rejects Twitch reward catalog responses that leak token or image data", async () => {
+    const responses = [
+      { rewards: [{ ...customReward("reward-a", "Reward A"), accessToken: "never-render" }] },
+      { rewards: [{ ...customReward("reward-b", "Reward B"), image: { url: "https://example.invalid/reward.png" } }] },
+      { rewards: [{ ...customReward("reward-c", "Reward C"), imageUrl: "https://example.invalid/reward.png" }] }
+    ];
+    let responseIndex = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/auth/management/sessions") return jsonResponse(managementSession());
+      return jsonResponse(responses[responseIndex++]!);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    for (let index = 0; index < responses.length; index += 1) {
+      await expect(api.getTwitchCustomRewards()).rejects.toThrow();
+    }
+  });
+
+  it("rejects malformed, oversized, and unknown-field Twitch reward catalogs", async () => {
+    const responses = [
+      { rewards: [{ ...customReward("reward-a", "Reward A"), cost: 0 }] },
+      { rewards: Array.from({ length: 51 }, (_, index) => customReward(`reward-${index}`, `Reward ${index}`)) },
+      { rewards: [], accessToken: "never-render" }
+    ];
+    let responseIndex = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input) === "/auth/management/sessions") return jsonResponse(managementSession());
+      return jsonResponse(responses[responseIndex++]!);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    for (let index = 0; index < responses.length; index += 1) {
+      await expect(api.getTwitchCustomRewards()).rejects.toThrow();
+    }
   });
 
   it("rejects malformed Device Code responses, unsafe Twitch URLs, leaked device codes, and unknown poll states", async () => {
@@ -1215,5 +1286,24 @@ function alertSetActivationImpact() {
     affectedEventTypes: [],
     blockers: [],
     warnings: []
+  };
+}
+
+function customReward(
+  id: string,
+  title: string,
+  overrides: Partial<TwitchCustomReward> = {}
+): TwitchCustomReward {
+  return {
+    id,
+    title,
+    prompt: "",
+    cost: 500,
+    backgroundColor: "#00E5CB",
+    isUserInputRequired: false,
+    isEnabled: true,
+    isPaused: false,
+    isInStock: true,
+    ...overrides
   };
 }

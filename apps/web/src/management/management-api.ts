@@ -26,6 +26,7 @@ import {
   registeredProviderDetailSchema,
   registeredProviderViewSchema,
   ttsProviderSafetySettingsSchema,
+  twitchCustomRewardCatalogSchema,
   type AlertEditorDocument,
   type AlertEditorErrorReportInput,
   type AlertEditorErrorReportResult,
@@ -63,7 +64,8 @@ import {
   type ProviderVoiceTestResult,
   type RegisteredProviderDetail,
   type RegisteredProviderView,
-  type TtsProviderSafetySettings
+  type TtsProviderSafetySettings,
+  type TwitchCustomRewardCatalog
 } from "@stream-jams/core";
 import { createManagementHttpClient, type HttpManagementClientOptions } from "./management-http-client.js";
 
@@ -248,6 +250,7 @@ export type TwitchAuthPollResultView =
 export interface ManagementApi {
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
   getTwitchStatus(): Promise<TwitchConnectionStatusView>;
+  getTwitchCustomRewards(): Promise<TwitchCustomRewardCatalog>;
   startTwitchAuth(): Promise<TwitchAuthStartResultView>;
   pollTwitchAuth(input: { readonly authorizationId: string }): Promise<TwitchAuthPollResultView>;
   listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
@@ -359,6 +362,14 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         "/twitch/auth/status",
         twitchConnectionStatusContract,
         "Unable to load Twitch connection status."
+      );
+    },
+
+    getTwitchCustomRewards() {
+      return getContract(
+        "/twitch/custom-rewards",
+        twitchCustomRewardCatalogSchema,
+        "Unable to load Twitch custom rewards."
       );
     },
 
