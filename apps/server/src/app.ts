@@ -27,6 +27,10 @@ import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/r
 import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.js";
 import { registerTwitchAuthRoutes, type TwitchAuthRouteDependencies } from "./http/routes/twitch-auth.js";
 import { registerTwitchEventSubRoutes, type TwitchEventSubRouteDependencies } from "./http/routes/twitch-eventsub.js";
+import {
+  registerTwitchRewardCatalogRoutes,
+  type TwitchRewardCatalogRouteDependencies
+} from "./http/routes/twitch-reward-catalog.js";
 import { registerWebShellRoutes, type WebShellRenderer } from "./http/routes/web-shell.js";
 import { createRedactor } from "./modules/security/redactor.js";
 
@@ -56,7 +60,8 @@ export interface ServerAppDependencies
     Partial<PlaybackRouteDependencies>,
     Partial<TtsRouteDependencies>,
     Partial<TwitchAuthRouteDependencies>,
-    Partial<TwitchEventSubRouteDependencies> {
+    Partial<TwitchEventSubRouteDependencies>,
+    Partial<TwitchRewardCatalogRouteDependencies> {
   readonly metadata: ServerAppMetadata;
   readonly webBuildDirectory?: string;
   readonly webShellRenderer?: WebShellRenderer;
@@ -201,6 +206,14 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     }
 
     registerTwitchEventSubRoutes(app, dependencies);
+  }
+
+  if (dependencies.twitchRewardCatalogService !== undefined) {
+    if (!hasTwitchRewardCatalogRouteDependencies(dependencies)) {
+      throw new Error("Twitch reward catalog routes require service, management auth, and rate-limit hooks");
+    }
+
+    registerTwitchRewardCatalogRoutes(app, dependencies);
   }
 
   if (dependencies.serverConfigService !== undefined) {
@@ -403,6 +416,16 @@ function hasTwitchEventSubRouteDependencies(
 ): dependencies is ServerAppDependencies & TwitchEventSubRouteDependencies {
   return (
     dependencies.twitchEventSubStatusService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasTwitchRewardCatalogRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & TwitchRewardCatalogRouteDependencies {
+  return (
+    dependencies.twitchRewardCatalogService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

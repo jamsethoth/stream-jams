@@ -244,6 +244,168 @@ describe("DefaultTwitchApiClient", () => {
       "client-id": "client-id"
     });
   });
+
+  it("retrieves and projects every custom reward with Twitch auth headers", async () => {
+    const fetcher = createRecordingFetch([
+      jsonResponse({
+        data: [
+          {
+            id: "reward-enabled",
+            title: "Hydrate",
+            prompt: "Drink some water",
+            cost: 500,
+            background_color: "#00AAFF",
+            is_user_input_required: false,
+            is_enabled: true,
+            is_paused: false,
+            is_in_stock: true,
+            image: { url_1x: "https://provider.invalid/reward.png" },
+            default_image: { url_1x: "https://provider.invalid/default.png" },
+            unknown_provider_field: "not returned"
+          },
+          {
+            id: "reward-paused",
+            title: "Paused reward",
+            prompt: "",
+            cost: 1_000,
+            background_color: "#112233",
+            is_user_input_required: true,
+            is_enabled: true,
+            is_paused: true,
+            is_in_stock: true
+          },
+          {
+            id: "reward-out-of-stock",
+            title: "Out of stock reward",
+            prompt: "Unavailable for now",
+            cost: 2_000,
+            background_color: "#ABCDEF",
+            is_user_input_required: false,
+            is_enabled: false,
+            is_paused: false,
+            is_in_stock: false
+          }
+        ]
+      })
+    ]);
+    const client = createClient(fetcher.fetch);
+
+    await expect(
+      client.getCustomRewards({
+        accessToken: "access-token",
+        clientId: "client-id",
+        broadcasterId: "broadcaster-1"
+      })
+    ).resolves.toEqual({
+      rewards: [
+        {
+          id: "reward-enabled",
+          title: "Hydrate",
+          prompt: "Drink some water",
+          cost: 500,
+          backgroundColor: "#00AAFF",
+          isUserInputRequired: false,
+          isEnabled: true,
+          isPaused: false,
+          isInStock: true
+        },
+        {
+          id: "reward-paused",
+          title: "Paused reward",
+          prompt: "",
+          cost: 1_000,
+          backgroundColor: "#112233",
+          isUserInputRequired: true,
+          isEnabled: true,
+          isPaused: true,
+          isInStock: true
+        },
+        {
+          id: "reward-out-of-stock",
+          title: "Out of stock reward",
+          prompt: "Unavailable for now",
+          cost: 2_000,
+          backgroundColor: "#ABCDEF",
+          isUserInputRequired: false,
+          isEnabled: false,
+          isPaused: false,
+          isInStock: false
+        }
+      ]
+    });
+
+    expect(fetcher.requests).toHaveLength(1);
+    expect(fetcher.requests[0]).toEqual({
+      url: "https://api.twitch.tv/helix/channel_points/custom_rewards?broadcaster_id=broadcaster-1",
+      init: {
+        headers: {
+          authorization: "Bearer access-token",
+          "client-id": "client-id"
+        }
+      }
+    });
+    expect(fetcher.requests[0]?.url).not.toContain("only_manageable_rewards");
+  });
+
+  it("accepts an empty custom reward catalog", async () => {
+    const fetcher = createRecordingFetch([jsonResponse({ data: [] })]);
+    const client = createClient(fetcher.fetch);
+
+    await expect(
+      client.getCustomRewards({
+        accessToken: "access-token",
+        clientId: "client-id",
+        broadcasterId: "broadcaster-1"
+      })
+    ).resolves.toEqual({ rewards: [] });
+  });
+
+  it("rejects invalid, oversized, and malformed custom reward responses", async () => {
+    const validReward = {
+      id: "reward-1",
+      title: "Hydrate",
+      prompt: "Drink some water",
+      cost: 500,
+      background_color: "#00AAFF",
+      is_user_input_required: false,
+      is_enabled: true,
+      is_paused: false,
+      is_in_stock: true
+    };
+    const fetcher = createRecordingFetch([
+      new Response("not JSON", { status: 200 }),
+      jsonResponse({ data: Array.from({ length: 51 }, (_, index) => ({ ...validReward, id: `reward-${index}` })) }),
+      jsonResponse({ data: [{ ...validReward, title: "" }] }),
+      jsonResponse({ data: "not-an-array" })
+    ]);
+    const client = createClient(fetcher.fetch);
+    const request = {
+      accessToken: "access-token",
+      clientId: "client-id",
+      broadcasterId: "broadcaster-1"
+    };
+
+    for (let index = 0; index < 4; index += 1) {
+      await expect(client.getCustomRewards(request)).rejects.toBeInstanceOf(TwitchApiResponseError);
+    }
+  });
+
+  it("preserves non-success custom reward response status without exposing the body", async () => {
+    const fetcher = createRecordingFetch([
+      jsonResponse({ message: "provider body must stay private" }, { status: 403 })
+    ]);
+    const client = createClient(fetcher.fetch);
+
+    const failure = client.getCustomRewards({
+      accessToken: "access-token",
+      clientId: "client-id",
+      broadcasterId: "broadcaster-1"
+    });
+
+    await expect(failure).rejects.toMatchObject({ status: 403 });
+    await expect(failure).rejects.toBeInstanceOf(TwitchApiHttpError);
+    await expect(failure).rejects.not.toThrow(/provider body must stay private/u);
+  });
 });
 
 function createClient(fetcher: typeof fetch): DefaultTwitchApiClient {

@@ -283,4 +283,20 @@ describe("createServerApp", () => {
     ).toThrow("Twitch EventSub routes require service, management auth, and rate-limit hooks");
   });
 
+  it("does not register Twitch reward catalog routes without management auth and rate-limit hooks", () => {
+    expect(() =>
+      createServerApp({
+        metadata: {
+          appName: "stream-jams",
+          version: "1.2.3"
+        },
+        twitchRewardCatalogService: {
+          async listCustomRewards() {
+            return { rewards: [] };
+          }
+        }
+      })
+    ).toThrow("Twitch reward catalog routes require service, management auth, and rate-limit hooks");
+  });
+
 });

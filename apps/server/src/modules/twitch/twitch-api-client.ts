@@ -1,3 +1,8 @@
+import {
+  twitchCustomRewardCatalogSchema,
+  type TwitchCustomRewardCatalog
+} from "@stream-jams/core";
+
 export interface TwitchDeviceAuthorizationRequest {
   readonly clientId: string;
   readonly scopes: readonly string[];
@@ -65,6 +70,16 @@ export interface TwitchApiClient {
   getCurrentUser(input: TwitchCurrentUserRequest): Promise<TwitchCurrentUser>;
 }
 
+export interface TwitchCustomRewardsRequest {
+  readonly accessToken: string;
+  readonly clientId: string;
+  readonly broadcasterId: string;
+}
+
+export interface TwitchRewardApiClient {
+  getCustomRewards(input: TwitchCustomRewardsRequest): Promise<TwitchCustomRewardCatalog>;
+}
+
 export interface TwitchApiClientOptions {
   readonly fetch?: typeof fetch | undefined;
   readonly authBaseUrl?: string | undefined;
@@ -89,7 +104,7 @@ export class TwitchApiResponseError extends Error {
   }
 }
 
-export class DefaultTwitchApiClient implements TwitchApiClient {
+export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiClient {
   readonly #fetch: typeof fetch;
   readonly #authBaseUrl: string;
   readonly #apiBaseUrl: string;
@@ -176,6 +191,18 @@ export class DefaultTwitchApiClient implements TwitchApiClient {
     });
 
     return parseCurrentUser(body);
+  }
+
+  async getCustomRewards(input: TwitchCustomRewardsRequest): Promise<TwitchCustomRewardCatalog> {
+    const query = new URLSearchParams({ broadcaster_id: input.broadcasterId });
+    const body = await this.#requestJson(this.#apiBaseUrl + "/channel_points/custom_rewards?" + query.toString(), {
+      headers: {
+        authorization: "Bearer " + input.accessToken,
+        "client-id": input.clientId
+      }
+    });
+
+    return parseCustomRewards(body);
   }
 
   async #requestToken(body: URLSearchParams): Promise<TwitchTokenGrant> {
@@ -304,6 +331,36 @@ function parseCurrentUser(body: unknown): TwitchCurrentUser {
     login: user.login,
     displayName: user.display_name
   };
+}
+
+function parseCustomRewards(body: unknown): TwitchCustomRewardCatalog {
+  if (!isRecord(body) || !Array.isArray(body.data)) {
+    throw new TwitchApiResponseError();
+  }
+
+  try {
+    return twitchCustomRewardCatalogSchema.parse({
+      rewards: body.data.map((reward) => {
+        if (!isRecord(reward)) {
+          throw new TwitchApiResponseError();
+        }
+
+        return {
+          id: reward.id,
+          title: reward.title,
+          prompt: reward.prompt,
+          cost: reward.cost,
+          backgroundColor: reward.background_color,
+          isUserInputRequired: reward.is_user_input_required,
+          isEnabled: reward.is_enabled,
+          isPaused: reward.is_paused,
+          isInStock: reward.is_in_stock
+        };
+      })
+    });
+  } catch {
+    throw new TwitchApiResponseError();
+  }
 }
 
 function parseScopes(value: unknown): readonly string[] | null {
