@@ -2,9 +2,17 @@ import type { LogContext, Logger, TwitchCustomRewardCatalog } from "@stream-jams
 import { describe, expect, it } from "vitest";
 import { createServerApp } from "../../app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
-import { TwitchApiHttpError, TwitchApiResponseError } from "../../modules/twitch/twitch-api-client.js";
+import {
+  DefaultTwitchApiClient,
+  TwitchApiHttpError,
+  TwitchApiResponseError
+} from "../../modules/twitch/twitch-api-client.js";
+import type { TwitchAccount, TwitchAccountRepository } from "../../modules/twitch/twitch-account-repository.js";
 import { TwitchOAuthProviderError } from "../../modules/twitch/twitch-oauth-service.js";
-import { TwitchRewardCatalogError } from "../../modules/twitch/twitch-reward-catalog-service.js";
+import {
+  TwitchRewardCatalogError,
+  TwitchRewardCatalogService
+} from "../../modules/twitch/twitch-reward-catalog-service.js";
 import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
@@ -126,6 +134,64 @@ describe("twitch reward catalog routes", () => {
     expect(response.body).not.toContain("provider.invalid");
   });
 
+  it("maps a rejected provider fetch through the real client and service path to a bounded 502", async () => {
+    const tokenLikeValue = "access-token-secret-value";
+    const account: TwitchAccount = {
+      accountId: "broadcaster-1",
+      login: "streamer",
+      displayName: "Streamer",
+      scopes: ["channel:read:redemptions"],
+      connectedAt: "2026-08-27T12:00:00.000Z",
+      updatedAt: "2026-08-27T12:00:00.000Z"
+    };
+    const repository: TwitchAccountRepository = {
+      deleteAccount: async () => {},
+      findConnectedAccount: async () => account,
+      saveAccount: async (savedAccount) => savedAccount
+    };
+    const service = new TwitchRewardCatalogService({
+      apiClient: new DefaultTwitchApiClient({
+        fetch: async () => {
+          throw new Error(`network failure containing ${tokenLikeValue}`);
+        }
+      }),
+      clientId: "client-id",
+      oauthService: {
+        refreshConnectedAccount: async () => {
+          throw new Error("refresh must not be called");
+        },
+        validateConnectedAccount: async () => ({
+          connection: {
+            connected: true,
+            authorizationState: "ready",
+            missingScopes: [],
+            account
+          },
+          refreshed: false
+        })
+      },
+      repository,
+      secretStore: {
+        deleteSecret: async () => {},
+        getSecret: async () => tokenLikeValue,
+        setSecret: async () => {}
+      }
+    });
+    const { app, authHeaders, logs } = await createProtectedCatalogApp(service);
+
+    const response = await app.inject({ method: "GET", url: "/twitch/custom-rewards", headers: authHeaders });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toEqual({
+      error: {
+        code: "TWITCH_REWARD_CATALOG_PROVIDER_ERROR",
+        message: "Twitch custom rewards are temporarily unavailable"
+      }
+    });
+    expect(JSON.stringify(response.json())).not.toContain(tokenLikeValue);
+    expect(JSON.stringify(logs)).not.toContain(tokenLikeValue);
+  });
+
   it("leaves unknown failures to the global 500 boundary", async () => {
     const { app, authHeaders } = await createAppWithCatalog({ error: new Error("unexpected failure") });
 
@@ -144,6 +210,16 @@ async function createAppWithCatalog(
   } = {}
 ) {
   const service = new RecordingRewardCatalogService(options.result ?? catalog, options.error);
+  return {
+    ...(await createProtectedCatalogApp(service, options.maxRequests)),
+    service
+  };
+}
+
+async function createProtectedCatalogApp(
+  twitchRewardCatalogService: Pick<TwitchRewardCatalogService, "listCustomRewards">,
+  maxRequests = 100
+) {
   const managementSessionService = new LocalManagementSessionService({
     clock: () => new Date("2026-08-27T12:00:00.000Z"),
     generateId: () => "mgmt_twitch-rewards-session",
@@ -151,14 +227,14 @@ async function createAppWithCatalog(
   });
   const session = await managementSessionService.createSession();
   const managementRateLimiter = new LocalManagementRateLimiter({
-    maxRequests: options.maxRequests ?? 100,
+    maxRequests,
     windowMs: 60_000,
     clock: () => new Date("2026-08-27T12:00:00.000Z")
   });
   const runtimeLogger = new RecordingLogger();
   const app = createServerApp({
     metadata: { appName: "stream-jams", version: "1.2.3" },
-    twitchRewardCatalogService: service,
+    twitchRewardCatalogService,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     runtimeLogger
@@ -167,8 +243,7 @@ async function createAppWithCatalog(
   return {
     app,
     authHeaders: { authorization: `Bearer ${session.id}` },
-    logs: runtimeLogger.entries,
-    service
+    logs: runtimeLogger.entries
   };
 }
 

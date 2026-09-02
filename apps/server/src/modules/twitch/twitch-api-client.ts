@@ -104,6 +104,15 @@ export class TwitchApiResponseError extends Error {
   }
 }
 
+export class TwitchApiTransportError extends Error {
+  readonly code = "TWITCH_API_REQUEST_FAILED";
+
+  constructor() {
+    super("Twitch API request failed");
+    this.name = "TwitchApiTransportError";
+  }
+}
+
 export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiClient {
   readonly #fetch: typeof fetch;
   readonly #authBaseUrl: string;
@@ -218,13 +227,17 @@ export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiC
   }
 
   async #requestJson(url: string, init: RequestInit): Promise<unknown> {
-    const response = await this.#fetch(url, init);
-    const body = await readJsonResponse(response);
+    let response: Response;
+    try {
+      response = await this.#fetch(url, init);
+    } catch {
+      throw new TwitchApiTransportError();
+    }
     if (!response.ok) {
       throw new TwitchApiHttpError(response.status);
     }
 
-    return body;
+    return readJsonResponse(response);
   }
 }
 

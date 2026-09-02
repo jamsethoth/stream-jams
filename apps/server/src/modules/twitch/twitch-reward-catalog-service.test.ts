@@ -1,8 +1,17 @@
 import type { SecretStore, TwitchCustomRewardCatalog } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { TwitchApiHttpError, TwitchApiResponseError, type TwitchRewardApiClient } from "./twitch-api-client.js";
+import {
+  TwitchApiHttpError,
+  TwitchApiResponseError,
+  type TwitchApiClient,
+  type TwitchRewardApiClient
+} from "./twitch-api-client.js";
 import type { TwitchAccount, TwitchAccountRepository, TwitchConnectionStatus } from "./twitch-account-repository.js";
-import { createTwitchTokenSecretRef, TwitchOAuthProviderError } from "./twitch-oauth-service.js";
+import {
+  createTwitchTokenSecretRef,
+  TwitchOAuthProviderError,
+  TwitchOAuthService
+} from "./twitch-oauth-service.js";
 import {
   TwitchRewardCatalogError,
   TwitchRewardCatalogService
@@ -113,13 +122,42 @@ describe("TwitchRewardCatalogService", () => {
     expect(harness.apiClient.getCustomRewards).not.toHaveBeenCalled();
   });
 
+  it("maps a missing access token to reconnect-required before the real OAuth lifecycle validates", async () => {
+    const lifecycle = createRealOAuthLifecycle({
+      secretStore: createSecretStore(async () => null)
+    });
+
+    await expect(lifecycle.service.listCustomRewards()).rejects.toMatchObject({
+      code: "TWITCH_REWARD_CATALOG_RECONNECT_REQUIRED"
+    });
+
+    expect(lifecycle.oauthApiClient.validateCount).toBe(0);
+    expect(lifecycle.rewardApiClient.getCustomRewards).not.toHaveBeenCalled();
+  });
+
+  it("preserves a secret-store read failure as a provider error with the real OAuth lifecycle", async () => {
+    const lifecycle = createRealOAuthLifecycle({
+      secretStore: createSecretStore(async () => {
+        throw new Error("credential service unavailable");
+      })
+    });
+
+    await expect(lifecycle.service.listCustomRewards()).rejects.toMatchObject({
+      code: "TWITCH_OAUTH_PROVIDER_ERROR"
+    });
+
+    expect(lifecycle.oauthApiClient.validateCount).toBe(0);
+    expect(lifecycle.rewardApiClient.getCustomRewards).not.toHaveBeenCalled();
+  });
+
   it("preserves an initial validation failure without calling the catalog API", async () => {
     const validationError = new TwitchOAuthProviderError("Twitch token validation failed");
     const harness = createHarness({ validationError });
 
     await expect(harness.service.listCustomRewards()).rejects.toBe(validationError);
 
-    expect(harness.repository.findConnectedAccount).not.toHaveBeenCalled();
+    expect(harness.repository.findConnectedAccount).toHaveBeenCalledTimes(1);
+    expect(harness.secretStore.getSecret).toHaveBeenCalledTimes(1);
     expect(harness.apiClient.getCustomRewards).not.toHaveBeenCalled();
   });
 
@@ -294,4 +332,78 @@ function createConnectionStatus(account: TwitchAccount | null): TwitchConnection
     missingScopes: [],
     account
   };
+}
+
+function createRealOAuthLifecycle(options: { readonly secretStore: SecretStore }) {
+  const repository = new MemoryTwitchAccountRepository(createAccount(["channel:read:redemptions"]));
+  const oauthApiClient = new LifecycleTwitchApiClient();
+  const oauthService = new TwitchOAuthService({
+    apiClient: oauthApiClient,
+    clientId: "client-id",
+    generateAuthorizationId: () => "authorization-1",
+    repository,
+    secretStore: options.secretStore
+  });
+  const rewardApiClient: TwitchRewardApiClient = {
+    getCustomRewards: vi.fn(async () => activeCatalog)
+  };
+  const service = new TwitchRewardCatalogService({
+    apiClient: rewardApiClient,
+    clientId: "client-id",
+    oauthService,
+    repository,
+    secretStore: options.secretStore
+  });
+
+  return { oauthApiClient, rewardApiClient, service };
+}
+
+function createSecretStore(getSecret: SecretStore["getSecret"]): SecretStore {
+  return {
+    deleteSecret: vi.fn(),
+    getSecret,
+    setSecret: vi.fn()
+  };
+}
+
+class MemoryTwitchAccountRepository implements TwitchAccountRepository {
+  constructor(private account: TwitchAccount | null) {}
+
+  async saveAccount(account: TwitchAccount): Promise<TwitchAccount> {
+    this.account = account;
+    return account;
+  }
+
+  async findConnectedAccount(): Promise<TwitchAccount | null> {
+    return this.account;
+  }
+
+  async deleteAccount(accountId: string): Promise<void> {
+    if (this.account?.accountId === accountId) this.account = null;
+  }
+}
+
+class LifecycleTwitchApiClient implements TwitchApiClient {
+  validateCount = 0;
+
+  async startDeviceAuthorization(): Promise<never> {
+    throw new Error("not used");
+  }
+
+  async pollDeviceAuthorization(): Promise<never> {
+    throw new Error("not used");
+  }
+
+  async refreshUserToken(): Promise<never> {
+    throw new Error("not used");
+  }
+
+  async validateToken(): Promise<never> {
+    this.validateCount += 1;
+    throw new Error("not used");
+  }
+
+  async getCurrentUser(): Promise<never> {
+    throw new Error("not used");
+  }
 }

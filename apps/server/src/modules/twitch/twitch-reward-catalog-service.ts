@@ -1,7 +1,12 @@
 import type { SecretStore, TwitchCustomRewardCatalog } from "@stream-jams/core";
+import { runtimeSecretStoreUnavailableMessage } from "../security/runtime-secret-store.js";
 import { TwitchApiHttpError, type TwitchRewardApiClient } from "./twitch-api-client.js";
 import type { TwitchAccount, TwitchAccountRepository } from "./twitch-account-repository.js";
-import { createTwitchTokenSecretRef, type TwitchOAuthService } from "./twitch-oauth-service.js";
+import {
+  createTwitchTokenSecretRef,
+  TwitchOAuthProviderError,
+  type TwitchOAuthService
+} from "./twitch-oauth-service.js";
 
 const requiredRewardCatalogScope = "channel:read:redemptions";
 
@@ -45,6 +50,7 @@ export class TwitchRewardCatalogService {
   }
 
   async listCustomRewards(): Promise<TwitchCustomRewardCatalog> {
+    let firstRequest = await this.#readCatalogRequest("TWITCH_REWARD_CATALOG_DISCONNECTED");
     const validation = await this.#oauthService.validateConnectedAccount({ notifyConnectionChanged: false });
     if (!validation.connection.connected) {
       throw new TwitchRewardCatalogError(
@@ -52,8 +58,9 @@ export class TwitchRewardCatalogService {
         "Connect a Twitch broadcaster account before loading custom rewards"
       );
     }
-
-    const firstRequest = await this.#readCatalogRequest("TWITCH_REWARD_CATALOG_DISCONNECTED");
+    if (validation.refreshed) {
+      firstRequest = await this.#readCatalogRequest("TWITCH_REWARD_CATALOG_RECONNECT_REQUIRED");
+    }
     try {
       return await this.#apiClient.getCustomRewards(firstRequest);
     } catch (error) {
@@ -88,9 +95,14 @@ export class TwitchRewardCatalogService {
     }
     assertRewardCatalogScope(account);
 
-    const accessToken = await this.#secretStore.getSecret(
-      createTwitchTokenSecretRef(account.accountId, "access_token")
-    );
+    let accessToken: string | null;
+    try {
+      accessToken = await this.#secretStore.getSecret(
+        createTwitchTokenSecretRef(account.accountId, "access_token")
+      );
+    } catch {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    }
     if (accessToken === null) {
       throw new TwitchRewardCatalogError(
         "TWITCH_REWARD_CATALOG_RECONNECT_REQUIRED",

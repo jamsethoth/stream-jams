@@ -406,6 +406,41 @@ describe("DefaultTwitchApiClient", () => {
     await expect(failure).rejects.toBeInstanceOf(TwitchApiHttpError);
     await expect(failure).rejects.not.toThrow(/provider body must stay private/u);
   });
+
+  it.each([
+    [401, null],
+    [403, "not JSON"]
+  ] as const)("preserves HTTP %s before parsing an invalid custom reward error body", async (status, body) => {
+    const fetcher = createRecordingFetch([new Response(body, { status })]);
+    const client = createClient(fetcher.fetch);
+
+    const failure = client.getCustomRewards({
+      accessToken: "access-token",
+      clientId: "client-id",
+      broadcasterId: "broadcaster-1"
+    });
+
+    await expect(failure).rejects.toBeInstanceOf(TwitchApiHttpError);
+    await expect(failure).rejects.toMatchObject({ status });
+  });
+
+  it("normalizes rejected custom reward fetches without retaining transport details", async () => {
+    const client = createClient(async () => {
+      throw new Error("network failure containing access-token-secret-value");
+    });
+
+    const failure = client.getCustomRewards({
+      accessToken: "access-token",
+      clientId: "client-id",
+      broadcasterId: "broadcaster-1"
+    });
+
+    await expect(failure).rejects.toMatchObject({
+      code: "TWITCH_API_REQUEST_FAILED",
+      message: "Twitch API request failed"
+    });
+    await expect(failure).rejects.not.toThrow(/access-token-secret-value/u);
+  });
 });
 
 function createClient(fetcher: typeof fetch): DefaultTwitchApiClient {
