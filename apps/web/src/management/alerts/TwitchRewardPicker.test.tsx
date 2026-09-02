@@ -246,6 +246,59 @@ describe("TwitchRewardPicker", () => {
     expect(matchingSample).not.toHaveBeenCalled();
   });
 
+  it("preserves operator sample edits after settlement and defaults again when reward selection changes", async () => {
+    const onUseAsSample = vi.fn();
+    const loadRewards = vi.fn(async () => ({ rewards: [
+      customReward("reward-a", "Hydrate"),
+      customReward("reward-b", "Stretch")
+    ] }));
+    const onChange = vi.fn();
+    const { rerender } = render(
+      <StrictMode>
+        <TwitchRewardPicker
+          loadRewards={loadRewards}
+          onChange={onChange}
+          onUseAsSample={onUseAsSample}
+          sampleRewardId="reward-a"
+          selection={{ mode: "selected", rewardIds: ["reward-a"] }}
+        />
+      </StrictMode>
+    );
+
+    await screen.findByText("2 custom rewards loaded.");
+    expect(onUseAsSample).not.toHaveBeenCalled();
+
+    rerender(
+      <StrictMode>
+        <TwitchRewardPicker
+          loadRewards={loadRewards}
+          onChange={onChange}
+          onUseAsSample={onUseAsSample}
+          sampleRewardId="reward-outside"
+          selection={{ mode: "selected", rewardIds: ["reward-a"] }}
+        />
+      </StrictMode>
+    );
+    expect(onUseAsSample).not.toHaveBeenCalled();
+
+    rerender(
+      <StrictMode>
+        <TwitchRewardPicker
+          loadRewards={loadRewards}
+          onChange={onChange}
+          onUseAsSample={onUseAsSample}
+          sampleRewardId="reward-outside"
+          selection={{ mode: "selected", rewardIds: ["reward-b"] }}
+        />
+      </StrictMode>
+    );
+    await waitFor(() => expect(onUseAsSample).toHaveBeenCalledWith({
+      rewardId: "reward-b",
+      rewardTitle: "Stretch"
+    }));
+    expect(onUseAsSample).toHaveBeenCalledTimes(1);
+  });
+
   it("emits stable current reward identity and unavailable fallback for sample actions", async () => {
     const user = userEvent.setup();
     const onUseAsSample = vi.fn();

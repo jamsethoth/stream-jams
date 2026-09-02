@@ -5,8 +5,7 @@ import {
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
   type RegisteredProviderView,
-  type TwitchCustomReward,
-  type TwitchCustomRewardCatalog
+  type TwitchCustomReward
 } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -2958,22 +2957,58 @@ describe("AlertEditorPage", () => {
     expect(saveAlertEditorDocument.mock.calls[0]![1].samplePayloads).toEqual(originalSamples);
   });
 
+  it("repairs a malformed session draft with a reward sample without mutating built-in samples", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+    });
+    const originalSamples = structuredClone(document.samplePayloads);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("reward-hydrate", "Hydrate now")] }))
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await screen.findByText("1 custom reward loaded.");
+    const sampleDraft = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    fireEvent.change(sampleDraft, { target: { value: "{ malformed" } });
+    expect(await screen.findByText("Sample payload must be a valid JSON object.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Use Hydrate now as sample" }));
+
+    await waitFor(() => expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toEqual({
+      rewardId: "reward-hydrate",
+      rewardTitle: "Hydrate now"
+    }));
+    expect(screen.queryByText("Sample payload must be a valid JSON object.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
+    expect(document.samplePayloads).toEqual(originalSamples);
+  });
+
   it("explains inside and outside reward samples without disabling preview or send test", async () => {
     const user = userEvent.setup();
     const document = channelPointDocument({
       conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
     });
     renderChannelPointEditor(document, {
-      getTwitchCustomRewards: vi.fn(() => new Promise<TwitchCustomRewardCatalog>(() => undefined))
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("reward-hydrate", "Hydrate")] }))
     });
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await screen.findByText("1 custom reward loaded.");
+    expect(screen.getByRole("group", { name: "Rule conditions" })).toHaveTextContent(
+      "No additional conditions. Reward coverage above determines which channel point redemption events are eligible."
+    );
     const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
     expect(explanation).toHaveTextContent("Default plays as the fallback for this sample.");
-    fireEvent.change(screen.getByRole("textbox", { name: "Session payload (JSON)" }), {
+    const sampleDraft = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    fireEvent.change(sampleDraft, {
       target: { value: JSON.stringify({ userName: "James", rewardId: "reward-outside", rewardTitle: "Outside reward" }) }
     });
     await waitFor(() => expect(explanation).toHaveTextContent("No alert plays for this sample."));
+    expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toMatchObject({
+      rewardId: "reward-outside",
+      rewardTitle: "Outside reward"
+    });
     expect(explanation).toHaveTextContent("Reward ID is one of reward-hydrate");
     expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Replay preview" })).toBeEnabled();

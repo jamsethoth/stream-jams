@@ -472,16 +472,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   ), [channelPointRewardSelection, currentRuleId, setDetail?.inventory]);
   const sampleRewardId = typeof samplePayload?.rewardId === "string" ? samplePayload.rewardId : undefined;
   const applyRewardToSessionSample = useCallback((sample: TwitchRewardSampleChoice) => {
-    if (document === null || samplePayload === null) return;
+    if (document === null) return;
     const nextPayload = {
-      ...samplePayload,
+      ...(parseSample(sampleDraft) ?? {}),
       rewardId: sample.rewardId,
       rewardTitle: sample.rewardTitle
     };
     setSampleDraft(JSON.stringify(nextPayload, null, 2));
     setSampleError(validateAlertSamplePayload(document.eventType, nextPayload));
     resetLocalPreview();
-  }, [document, resetLocalPreview, samplePayload]);
+  }, [document, resetLocalPreview, sampleDraft]);
   const variationEvaluation = useMemo(() => (
     editor === null || variationContext === null || samplePayload === null || sampleError !== null || documentConditionError !== null
       ? null

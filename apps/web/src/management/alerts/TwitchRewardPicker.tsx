@@ -45,7 +45,7 @@ export function TwitchRewardPicker({
 }: TwitchRewardPickerProps) {
   const pickerId = useId();
   const requestGenerationRef = useRef(0);
-  const defaultedSampleRef = useRef<string | null>(null);
+  const reconciledSampleSelectionRef = useRef<string | null>(null);
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const [request, setRequest] = useState<CatalogRequestState>({ status: "loading", rewards: [] });
 
@@ -74,6 +74,9 @@ export function TwitchRewardPicker({
     [request.rewards]
   );
   const selectedRewardIds = selection.mode === "selected" ? selection.rewardIds : [];
+  const sampleSelectionKey = selection.mode === "all"
+    ? "all"
+    : `selected:${JSON.stringify(selectedRewardIds)}`;
   const missingRewardIds = selectedRewardIds.filter((rewardId) => !rewardById.has(rewardId));
   const firstSelectedId = selectedRewardIds[0] ?? null;
   const sampleIsSelected = sampleRewardId !== undefined && selectedRewardIds.includes(sampleRewardId);
@@ -85,21 +88,24 @@ export function TwitchRewardPicker({
   useEffect(() => {
     if (
       !requestSettled
-      || selection.mode !== "selected"
+      || onUseAsSample === undefined
+      || reconciledSampleSelectionRef.current === sampleSelectionKey
+    ) {
+      return;
+    }
+    reconciledSampleSelectionRef.current = sampleSelectionKey;
+
+    if (
+      selection.mode !== "selected"
       || firstSelectedId === null
       || firstSelectedTitle === null
       || sampleIsSelected
-      || onUseAsSample === undefined
     ) {
-      if (sampleIsSelected) defaultedSampleRef.current = null;
       return;
     }
 
-    const defaultKey = `${sampleRewardId ?? ""}\u0000${firstSelectedId}`;
-    if (defaultedSampleRef.current === defaultKey) return;
-    defaultedSampleRef.current = defaultKey;
     onUseAsSample({ rewardId: firstSelectedId, rewardTitle: firstSelectedTitle });
-  }, [firstSelectedId, firstSelectedTitle, onUseAsSample, requestSettled, sampleIsSelected, sampleRewardId, selection.mode]);
+  }, [firstSelectedId, firstSelectedTitle, onUseAsSample, requestSettled, sampleIsSelected, sampleSelectionKey, selection.mode]);
 
   function setMode(mode: ChannelPointRewardSelection["mode"]) {
     if (mode === "all") {

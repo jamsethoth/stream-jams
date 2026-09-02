@@ -418,7 +418,11 @@ function ConditionList({ conditions, eventType, heading, hiddenFields, onChange,
   return (
     <fieldset className="alert-editor-inspector__conditions">
       <legend>{heading}</legend>
-      {visibleConditions.length === 0 ? <p>{hiddenFields.length === 0 ? "No conditions." : "No additional conditions."} Every matching {formatEventType(eventType).toLowerCase()} event is eligible.</p> : null}
+      {visibleConditions.length === 0 ? hiddenFields.length === 0 ? (
+        <p>No conditions. Every matching {formatEventType(eventType).toLowerCase()} event is eligible.</p>
+      ) : (
+        <p>No additional conditions. Reward coverage above determines which {formatEventType(eventType).toLowerCase()} events are eligible.</p>
+      ) : null}
       {visibleConditions.map(({ condition, index }) => {
         const definition = definitions.find((candidate) => candidate.field === condition.field);
         if (
