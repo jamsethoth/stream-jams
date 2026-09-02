@@ -35,6 +35,7 @@ export const PopulatedMultiSelection: Story = {
       customReward("reward-posture", "Posture check", { cost: 500 })
     ] }),
     onUseAsSample: fn(),
+    overlapAlertNames: ["General channel points"],
     sampleRewardId: "reward-hydrate",
     selection: { mode: "selected", rewardIds: ["reward-hydrate", "reward-stretch"] }
   },
@@ -42,6 +43,7 @@ export const PopulatedMultiSelection: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("heading", { name: "Custom Twitch rewards" })).toBeVisible();
     await expect(await canvas.findByText("3 custom rewards loaded.")).toBeVisible();
+    await expect(canvas.getByRole("note", { name: "Potential overlapping alerts" })).toBeVisible();
     await expect(canvas.getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
     await expect(canvas.getByRole("checkbox", { name: /Stretch break/u })).toBeChecked();
   }

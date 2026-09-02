@@ -181,10 +181,10 @@ export function TwitchRewardPicker({
       ) : null}
 
       {overlapAlertNames.length === 0 ? null : (
-        <aside className="twitch-reward-picker__warning" aria-label="Potential overlapping alerts">
+        <div className="twitch-reward-picker__warning" aria-label="Potential overlapping alerts" role="note">
           <strong>These alerts may also play for the same reward:</strong>{" "}
           {overlapAlertNames.join(", ")}.
-        </aside>
+        </div>
       )}
 
       <CatalogRequestMessage request={request} onRetry={refreshRewards} retryDisabled={requestDisabled} />

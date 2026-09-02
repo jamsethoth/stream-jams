@@ -277,9 +277,10 @@ describe("TwitchRewardPicker", () => {
       />
     );
 
-    const warning = await screen.findByLabelText("Potential overlapping alerts");
+    const warning = await screen.findByRole("note", { name: "Potential overlapping alerts" });
     expect(warning).toHaveTextContent("General rewards");
     expect(warning).toHaveTextContent("Hydration layer");
+    expect(screen.queryByRole("complementary", { name: "Potential overlapping alerts" })).not.toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: /Hydrate/u })).toBeEnabled();
   });
 });
