@@ -54,6 +54,27 @@ describe("SqliteAlertRepository", () => {
     await expect(repository.findRuleById("rule-1")).resolves.toEqual(ruleWithVariantSelection);
   });
 
+  it("round-trips channel-point reward membership conditions", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const repository = new SqliteAlertRepository(database.connection);
+    seedRuleAssets(database.connection);
+    const collection = createCollection("collection-1", "Main Alerts");
+    const rule: AlertRule = {
+      ...createRule("rule-rewards", [collection.id]),
+      eventType: "channel_point_redemption",
+      conditions: [{
+        field: "channelPointReward",
+        operator: "oneOf",
+        value: ["reward-a", "reward-b", "reward-c"]
+      }]
+    };
+
+    await repository.saveCollection(collection);
+    await repository.saveRule(rule);
+
+    await expect(repository.findRuleById(rule.id)).resolves.toEqual(rule);
+  });
+
   it("preserves default and variation order independently of their IDs", async () => {
     using database = createInMemoryStreamJamsDatabase();
     const repository = new SqliteAlertRepository(database.connection);

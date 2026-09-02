@@ -149,12 +149,7 @@ export class AlertEditorService {
         kind: index === 0 ? "default" : "variation",
         name: index === 0 ? rule.name : variant.name,
         enabled: variant.enabled,
-        conditions: (variant.conditions ?? []).map((condition) => ({
-          ...condition,
-          value: typeof condition.value === "object"
-            ? [condition.value[0], condition.value[1]] as [number, number]
-            : condition.value
-        })),
+        conditions: (variant.conditions ?? []).map(cloneAlertCondition),
         weight: variant.weight,
         priority: variant.priority ?? null
       }))
@@ -397,6 +392,30 @@ interface ResolvedEditorItem {
   readonly variantIndex: number;
   readonly editorId: string;
   readonly kind: "default" | "variation";
+}
+
+function cloneAlertCondition(
+  condition: AlertCondition
+): AlertVariationAuthoringContext["candidates"][number]["conditions"][number] {
+  if (condition.operator === "oneOf") {
+    return {
+      field: condition.field,
+      operator: "oneOf",
+      value: [...condition.value]
+    };
+  }
+
+  return typeof condition.value === "object"
+    ? {
+        field: condition.field,
+        operator: condition.operator,
+        value: [condition.value[0], condition.value[1]] as [number, number]
+      }
+    : {
+        field: condition.field,
+        operator: condition.operator,
+        value: condition.value
+      };
 }
 
 function resolvedEditorItem(

@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
   alertCollectionSchema,
+  alertConditionSchema,
   alertRuleSchema,
   type AlertCollection,
   type AlertCondition,
@@ -400,11 +401,11 @@ function mapCollectionRow(row: AlertCollectionRow): AlertCollection {
 }
 
 function mapConditionRow(row: AlertConditionRow): AlertCondition {
-  return {
+  return alertConditionSchema.parse({
     field: String(row.field),
-    operator: row.operator as AlertCondition["operator"],
-    value: JSON.parse(String(row.value_json)) as AlertCondition["value"]
-  };
+    operator: String(row.operator),
+    value: JSON.parse(String(row.value_json))
+  });
 }
 
 function mapVariantRow(row: AlertVariantRow): AlertVariant {
