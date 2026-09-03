@@ -15,6 +15,8 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 | ID | Feature | Priority | Dependencies | OpenSpec |
 | --- | --- | --- | --- | --- |
+| BL-042 | Runnable Windows desktop app with default close-to-tray and owned local-service lifecycle | P2 | Existing local-server runtime; packaged Windows/native-dependency acceptance | [`add-windows-desktop-tray-runtime`](../openspec/changes/add-windows-desktop-tray-runtime/proposal.md) |
+| BL-043 | Alert-wide Browser Source and named audio-device routing | P2 | BL-042 implemented and verified; packaged two-device capability gate | [`add-alert-audio-routing`](../openspec/changes/add-alert-audio-routing/proposal.md) |
 
 ## Alert Authoring And Assets
 
@@ -54,7 +56,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | BL-027 | Startup module selection/setup wizard | Trigger-based | P3 | Multiple shipped overlay modules | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
 | BL-028 | Music widget and additional overlay modules | Deferred | P2 | A separately approved module slice | [Product plan](product-plan.md) |
 | BL-029 | Expanded output management, connected-client history, route-key audit, and OBS-aware readiness | Deferred | P3 | Output workflow outgrows the current Alerts section | [UI decisions](design/ui-refactor-decisions.md) |
-| BL-030 | Electron packaging, signing, installer, updater, and `safeStorage` migration | Deferred | P2 | Stable local-server MVP and packaging decision | [Product plan](product-plan.md) |
+| BL-030 | Desktop installer, signing, publishing, updater, and `safeStorage` migration | Deferred | P2 | BL-042 desktop foundation and a separately approved distribution/credential-migration change | Runnable Windows folder and tray lifecycle are planned separately in BL-042. [Product plan](product-plan.md) |
 | BL-031 | Docker delivery | Deferred | P3 | Supported self-hosted deployment requirement | [Product plan](product-plan.md) |
 | BL-032 | LAN overlay mode | Deferred | P3 | Authentication, origin policy, network warnings, and threat model | [Product plan](product-plan.md) |
 | BL-033 | User-owned cloud backup destination integration | Deferred | P3 | Stable backup format and explicit provider authorization | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
