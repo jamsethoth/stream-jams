@@ -1,6 +1,6 @@
 # Implementation and verification evidence
 
-Reconciled on 2026-09-03 against the proposal, design, both delta specifications, current implementation, automated checks, and the operator's confirmation that the real-account workflow works. This is the completion record for [tasks.md](tasks.md); archive/spec sync and publication remain separate actions.
+Reconciled on 2026-09-03 against the proposal, design, both delta specifications, current implementation, automated checks, and the operator's confirmation that the real-account workflow works. This is the completion record for [tasks.md](tasks.md). The user subsequently authorized spec sync, archive, push, and PR creation; merging remains a separate decision.
 
 ## Checklist evidence
 
@@ -66,6 +66,10 @@ The first closeout Playwright run passed 30/31 cases and exposed a test-only ass
 - The isolated server was shut down and its port/processes were confirmed gone. QA records remain locally under `.superpowers/sdd/2026-08-27-twitch-reward-catalog-alert-selection/`.
 - On 2026-09-03 the production build was launched with the operator's existing database and OS credential store. Health/UI returned 200, Twitch status was connected/ready with channel-points scope present, and the operator explicitly confirmed the workflow works against the real account. This is operator acceptance, not a claim that every synthetic failure case was exercised against Twitch.
 
+## Spec sync and archive
+
+On 2026-09-03 the six alert-configuration requirements were synchronized into the existing canonical specification and the three catalog requirements into a new `twitch-reward-catalog` canonical specification. All seven change artifacts, including `.openspec.yaml`, were moved to this dated archive with matching file hashes and all 29 tasks complete. Post-sync/archive `openspec.cmd validate --all --strict --json` passed all 31 items (28 specs and three active changes), with no failures; the same two existing informational long-requirement notices remain. The implementation plan now links to the canonical specs and this completion record. No application code changed during archive.
+
 ## Scope boundaries
 
-No reward mutation, redemption-history retrieval, image loading, catalog persistence, new dependency, SQLite migration, provider-specific matcher condition, or per-reward EventSub subscription was introduced. Matching remains local and provider-independent. Spec sync/archive, push, PR creation, and merge are not authorized by this closeout.
+No reward mutation, redemption-history retrieval, image loading, catalog persistence, new dependency, SQLite migration, provider-specific matcher condition, or per-reward EventSub subscription was introduced. Matching remains local and provider-independent. Spec sync/archive and publication were authorized separately after implementation closeout; merge is not part of that authorization.

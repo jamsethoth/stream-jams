@@ -1,6 +1,6 @@
 # Twitch Reward Catalog Alert Selection Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Completed implementation record (2026-09-03):** The eight task outcomes below are complete. The original execution steps and commands are retained as historical planning context, not outstanding work. The [archived checklist and evidence](../../../openspec/changes/archive/2026-09-03-add-twitch-reward-catalog-alert-selection/verification.md) reconcile all 29 OpenSpec tasks and record automated and operator-confirmed real-account validation.
 
 **Goal:** Let an operator load the linked Twitch broadcaster's custom rewards and create or edit one shared channel-point alert that matches any selected reward.
 
@@ -8,7 +8,20 @@
 
 **Tech Stack:** TypeScript 6, Zod 4, Node.js 24, Fastify 5, React 19, Vite 8, Vitest 4, Testing Library, Storybook 10, Playwright 1.61, SQLite, OpenSpec.
 
-**Spec:** `openspec/changes/add-twitch-reward-catalog-alert-selection/design.md`, `openspec/changes/add-twitch-reward-catalog-alert-selection/specs/twitch-reward-catalog/spec.md`, and `openspec/changes/add-twitch-reward-catalog-alert-selection/specs/alert-configuration-management/spec.md`
+**Spec:** [Archived design](../../../openspec/changes/archive/2026-09-03-add-twitch-reward-catalog-alert-selection/design.md), [canonical Twitch reward catalog](../../../openspec/specs/twitch-reward-catalog/spec.md), and [canonical alert configuration](../../../openspec/specs/alert-configuration-management/spec.md).
+
+## Completion Reconciliation
+
+- [x] Task 1: Exact reward membership, compatibility, and pure selection/overlap helpers.
+- [x] Task 2: Sanitized catalog and event-scoped alert-create contracts.
+- [x] Task 3: Protected catalog endpoint, bounded authorization recovery, and safe diagnostics.
+- [x] Task 4: Atomic selected-alert creation and SQLite/backup portability without a migration.
+- [x] Task 5: Typed management client, accessible picker, overlap projection, and Storybook states.
+- [x] Task 6: Catalog-backed Add alert selection, validation, reset, and disabled/review defaults.
+- [x] Task 7: Shared rule editing, unresolved-ID preservation, overlap, and session samples.
+- [x] Task 8: Browser acceptance, operator docs, final gates, and real-account acceptance.
+
+The detailed evidence record reports 1,317 unit tests, 177 Storybook tests, and 31 browser tests passing, plus lint, typecheck, production/Storybook builds, strict OpenSpec validation, and live endpoint/log checks. The user subsequently authorized spec sync, archive, push, and PR creation; merging remains a separate decision.
 
 ## Global Constraints
 
