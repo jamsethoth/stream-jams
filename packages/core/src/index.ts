@@ -31,6 +31,14 @@ export {
 export type * from "./auth/management-session-service.js";
 
 export type * from "./alerts/types.js";
+export type { ChannelPointRewardSelection } from "./alerts/channel-point-reward-selection.js";
+export {
+  channelPointRewardIdsSchema,
+  channelPointRewardSelectionSchema,
+  channelPointRewardSelectionsMayOverlap,
+  readChannelPointRewardSelection,
+  replaceChannelPointRewardSelection
+} from "./alerts/channel-point-reward-selection.js";
 export type * from "./alerts/text-style.js";
 export {
   alertFontPresets,
@@ -221,6 +229,7 @@ export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplaceme
 
 export * from "./management/contracts.js";
 export * from "./management/alert-starter-themes.js";
+export * from "./management/twitch-reward-catalog.js";
 
 export type * from "./templates/template-renderer.js";
 export { DefaultTemplateRenderer } from "./templates/template-renderer.js";

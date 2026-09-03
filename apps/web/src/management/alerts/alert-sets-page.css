@@ -594,6 +594,11 @@
   max-width: 1040px;
 }
 
+.alert-sets-page__theme-dialog > .twitch-reward-picker {
+  border-block: 1px solid var(--color-border);
+  padding-block: 18px;
+}
+
 .alert-sets-page__modal h2 {
   font-size: 22px;
   margin-bottom: 6px;

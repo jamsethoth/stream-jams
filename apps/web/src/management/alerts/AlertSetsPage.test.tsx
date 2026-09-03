@@ -5,7 +5,8 @@ import {
   type AlertSetActivationImpact,
   type AlertSetDetail,
   type AlertSetOverview,
-  type StreamEventType
+  type StreamEventType,
+  type TwitchCustomReward
 } from "@stream-jams/core";
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -20,7 +21,7 @@ describe("AlertSetsPage", () => {
     vi.useRealTimers();
     window.history.replaceState(null, "", window.location.pathname);
   });
-  it("loads the active set, masks browser-source keys, and supports starter review and quick enable", async () => {
+  it("loads the active set with browser-source status and masked keys", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
@@ -41,7 +42,15 @@ describe("AlertSetsPage", () => {
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
     expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
     expect(screen.getByText("4 alerts need review")).toBeInTheDocument();
+  });
 
+  it("reveals and hides browser-source URLs without changing keys", async () => {
+    const api = alertSetsApi();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Expand browser sources" }));
+    const landscapeSource = screen.getByRole("article", { name: "Landscape browser source" });
     await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
     expect(screen.getByRole("textbox", { name: "Landscape browser source" })).toHaveValue(
       "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_landscape?profile=landscape"
@@ -51,7 +60,14 @@ describe("AlertSetsPage", () => {
     expect(landscapeSource.querySelector(".alert-sets-page__source-masked")).toBeInTheDocument();
     expect(api.createOverlayOutputKey).not.toHaveBeenCalled();
     expect(api.regenerateOverlayOutputKey).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Enable New follower" }));
+  });
+
+  it("supports starter review and quick enable", async () => {
+    const api = alertSetsApi();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Enable New follower" }));
     expect(api.setManagedAlertEnabled).toHaveBeenCalledWith("alert-follow", true);
     await user.click(screen.getByRole("button", { name: "Mark starter review done" }));
     expect(api.markStarterAlertSetReviewComplete).toHaveBeenCalledWith("set-default");
@@ -238,6 +254,219 @@ describe("AlertSetsPage", () => {
     }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Edit New cheer" })).toHaveFocus());
     expect(onEditAlert).not.toHaveBeenCalled();
+  });
+
+  it("loads Twitch rewards when channel-point creation opens without reloading on controlled rerenders", async () => {
+    const getTwitchCustomRewards = vi.fn(async () => ({ rewards: twitchRewards() }));
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ getTwitchCustomRewards })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+
+    expect(await within(dialog).findByText("3 custom rewards loaded.")).toBeVisible();
+    expect(getTwitchCustomRewards).toHaveBeenCalledOnce();
+
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.paste("Shared hydration");
+    await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
+    await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
+
+    expect(getTwitchCustomRewards).toHaveBeenCalledOnce();
+  });
+
+  it("submits two selected rewards in one channel-point alert payload", async () => {
+    const createAlert = vi.fn(async (_setId, input) => ({
+      ...detail().inventory[3]!,
+      id: "alert-shared-rewards",
+      name: input.name
+    }));
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      createAlert,
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: twitchRewards() }))
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("3 custom rewards loaded.");
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.paste("Shared hydration");
+    await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /Hydrate/u }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /Stretch/u }));
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
+      eventType: "channel_point_redemption",
+      name: "Shared hydration",
+      themeId: "clean-signal",
+      channelPointRewardSelection: {
+        mode: "selected",
+        rewardIds: ["reward-hydrate", "reward-stretch"]
+      }
+    }));
+  });
+
+  it("submits catch-all reward intent for channel-point alerts", async () => {
+    const createAlert = vi.fn(async () => detail().inventory[3]!);
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      createAlert,
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [] }))
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("No custom rewards are available for this channel.");
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
+      eventType: "channel_point_redemption",
+      name: "Custom reward",
+      themeId: "clean-signal",
+      channelPointRewardSelection: { mode: "all" }
+    }));
+  });
+
+  it("selects only the reward IDs in the current catalog snapshot", async () => {
+    const createAlert = vi.fn(async () => detail().inventory[3]!);
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      createAlert,
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: twitchRewards().slice(0, 2) }))
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("2 custom rewards loaded.");
+    await user.click(within(dialog).getByRole("button", { name: "Select all currently listed" }));
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", expect.objectContaining({
+      channelPointRewardSelection: {
+        mode: "selected",
+        rewardIds: ["reward-hydrate", "reward-stretch"]
+      }
+    })));
+  });
+
+  it("requires at least one reward in selected mode", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: twitchRewards() }))
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("3 custom rewards loaded.");
+    await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
+
+    expect(within(dialog).getByText("Select at least one reward before saving this alert.")).toBeVisible();
+    expect(within(dialog).getByRole("button", { name: "Create alert" })).toBeDisabled();
+  });
+
+  it("preserves name, theme, and reward selection when catalog refresh fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const getTwitchCustomRewards = vi.fn()
+      .mockResolvedValueOnce({ rewards: twitchRewards() })
+      .mockRejectedValueOnce(new Error("Twitch unavailable"));
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({ getTwitchCustomRewards })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("3 custom rewards loaded.");
+    await user.clear(within(dialog).getByLabelText("Alert name"));
+    await user.type(within(dialog).getByLabelText("Alert name"), "Shared hydration");
+    await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
+    await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /Hydrate/u }));
+    await user.click(within(dialog).getByRole("button", { name: "Refresh rewards" }));
+
+    expect(await within(dialog).findByText("Twitch rewards could not be loaded")).toBeVisible();
+    expect(within(dialog).getByLabelText("Alert name")).toHaveValue("Shared hydration");
+    expect(within(dialog).getByRole("radio", { name: "Bold Pop" })).toBeChecked();
+    expect(within(dialog).getByRole("radio", { name: "Selected rewards" })).toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
+  });
+
+  it("omits reward intent after switching from channel-point creation to Raid", async () => {
+    const createAlert = vi.fn(async () => detail().inventory[1]!);
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      createAlert,
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: twitchRewards() }))
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("3 custom rewards loaded.");
+    await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /Hydrate/u }));
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "raid");
+    await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
+
+    await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
+      eventType: "raid",
+      name: "New raid",
+      themeId: "clean-signal"
+    }));
+  });
+
+  it("resets reward coverage to catch-all whenever Add alert reopens", async () => {
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: twitchRewards() }))
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    let dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("3 custom rewards loaded.");
+    await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /Hydrate/u }));
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    await user.click(screen.getByRole("button", { name: "Add alert" }));
+    dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+
+    expect(within(dialog).getByRole("radio", { name: "Every custom reward, including future rewards" })).toBeChecked();
+  });
+
+  it("warns about an enabled overlapping reward alert without blocking creation", async () => {
+    const source = detail();
+    source.inventory = source.inventory.map((candidate) => candidate.id === "alert-reward"
+      ? {
+          ...candidate,
+          enabled: true,
+          conditions: [{ field: "channelPointReward" as const, operator: "oneOf" as const, value: ["reward-hydrate"] }]
+        }
+      : candidate);
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source),
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: twitchRewards() }))
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Add alert" }));
+    const dialog = screen.getByRole("dialog", { name: "Add alert" });
+    await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
+    await within(dialog).findByText("3 custom rewards loaded.");
+    await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
+    await user.click(within(dialog).getByRole("checkbox", { name: /Hydrate/u }));
+
+    expect(within(dialog).getByRole("note", { name: "Potential overlapping alerts" })).toHaveTextContent("Custom reward");
+    expect(within(dialog).getByRole("button", { name: "Create alert" })).toBeEnabled();
   });
 
   it("cancels Add alert without sending a create request", async () => {
@@ -663,6 +892,7 @@ type AlertSetsApi = Pick<
   ManagementApi,
   | "listAlertSets"
   | "getAlertSet"
+  | "getTwitchCustomRewards"
   | "createAlertSet"
   | "createAlert"
   | "createAlertVariation"
@@ -687,6 +917,7 @@ function alertSetsApi(overrides: Partial<AlertSetsApi> = {}): AlertSetsApi {
   return {
     listAlertSets: vi.fn(async () => [source.overview]),
     getAlertSet: vi.fn(async () => source),
+    getTwitchCustomRewards: vi.fn(async () => ({ rewards: [] })),
     createAlertSet: vi.fn(async ({ name }) => ({ ...source.overview, id: "set-new", name, active: false, starter: false })),
     createAlert: vi.fn(async (_setId, input) => ({ ...source.inventory[0]!, id: "alert-new", ...input })),
     createAlertVariation: vi.fn(async (alertId, input) => ({ ...source.inventory[0]!, id: "variant-new", parentAlertId: alertId, kind: "variation" as const, name: input.name })),
@@ -787,6 +1018,28 @@ function alert(id: string, name: string, eventType: StreamEventType) {
     reviewState: "needs-review" as const,
     targetProfileIds: ["landscape" as const],
     previewText: `${name} preview`
+  };
+}
+
+function twitchRewards(): TwitchCustomReward[] {
+  return [
+    twitchReward("reward-hydrate", "Hydrate", 500),
+    twitchReward("reward-stretch", "Stretch", 750),
+    twitchReward("reward-posture", "Posture check", 1_000)
+  ];
+}
+
+function twitchReward(id: string, title: string, cost: number): TwitchCustomReward {
+  return {
+    id,
+    title,
+    prompt: "",
+    cost,
+    backgroundColor: "#00E5CB",
+    isUserInputRequired: false,
+    isEnabled: true,
+    isPaused: false,
+    isInStock: true
   };
 }
 

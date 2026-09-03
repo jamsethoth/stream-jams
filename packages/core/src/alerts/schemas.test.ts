@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alertRuleSchema, streamEventTypeSchema } from "./schemas.js";
+import { alertConditionSchema, alertRuleSchema, streamEventTypeSchema } from "./schemas.js";
 
 const validRule = {
   id: "rule-1",
@@ -84,5 +84,44 @@ describe("alertRuleSchema", () => {
     };
 
     expect(alertRuleSchema.safeParse(invalidRule).success).toBe(false);
+  });
+});
+
+describe("alertConditionSchema channel-point reward membership", () => {
+  it.each([
+    ["one reward", ["reward-1"]],
+    ["fifty rewards", Array.from({ length: 50 }, (_, index) => `reward-${index + 1}`)]
+  ])("accepts %s", (_label, rewardIds) => {
+    expect(alertConditionSchema.parse({
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: rewardIds
+    })).toEqual({
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: rewardIds
+    });
+  });
+
+  it.each([
+    ["an empty selection", []],
+    ["more than fifty rewards", Array.from({ length: 51 }, (_, index) => `reward-${index + 1}`)],
+    ["a whitespace-only reward ID", ["   "]],
+    ["duplicate reward IDs after trimming", [" reward-1 ", "reward-1"]],
+    ["a non-string reward ID", ["reward-1", 2]]
+  ])("rejects %s", (_label, value) => {
+    expect(alertConditionSchema.safeParse({
+      field: "channelPointReward",
+      operator: "oneOf",
+      value
+    }).success).toBe(false);
+  });
+
+  it("rejects membership for reward titles", () => {
+    expect(alertConditionSchema.safeParse({
+      field: "rewardTitle",
+      operator: "oneOf",
+      value: ["Hydrate"]
+    }).success).toBe(false);
   });
 });

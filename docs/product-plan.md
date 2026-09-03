@@ -200,7 +200,7 @@ Alert conditions should support:
 - Gift count.
 - Raid viewer count.
 - Cheer amount.
-- Specific channel point reward.
+- Specific channel point reward, including multiple stable reward IDs selected by one shared rule. All matching active alerts continue to play.
 - Event source/platform.
 
 If multiple active alerts match a single event, the default behavior is to play all matching alerts. Queue behavior should prevent collisions where needed, but matching rules should not collapse to a single winner by default.

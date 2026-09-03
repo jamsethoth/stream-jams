@@ -62,6 +62,18 @@ describe("DefaultAlertConditionEvaluator", () => {
     expect(evaluate({ field: "rewardTitle", operator: "includes", value: "Hydrate" }, createChannelPointEvent())).toBe(true);
   });
 
+  it("matches exact selected reward IDs for direct Twitch and Streamer.bot redemption events", () => {
+    const condition: AlertCondition = {
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: ["reward-1", "reward-2"]
+    };
+
+    expect(evaluate(condition, createChannelPointEvent())).toBe(true);
+    expect(evaluate(condition, createChannelPointEvent({ ingestProvider: "streamerbot" }))).toBe(true);
+    expect(evaluate(condition, createChannelPointEvent({ rewardId: "reward-3" }))).toBe(false);
+  });
+
   it("evaluates canonical aliases without provider metadata", () => {
     const communityGift: CommunityGiftEvent = {
       ...createCheerEvent(),

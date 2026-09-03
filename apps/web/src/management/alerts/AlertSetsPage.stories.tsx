@@ -1,4 +1,4 @@
-import type { AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, StreamEventType } from "@stream-jams/core";
+import type { AlertCreateRequestInput, AlertSetDetail, AlertSetOverview, AlertValidationIssue, StreamEventType, TwitchCustomReward } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
@@ -198,6 +198,64 @@ export const CreateAlertThemeSelection: Story = {
     await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
     await expect(dialog.getByRole("radio", { name: "Neon Terminal" })).toBeChecked();
     await expect(dialog.getAllByText("Welcome raiders from StreamSpark!")).toHaveLength(6);
+  }
+};
+
+export const CreateSharedRewardAlert: Story = {
+  tags: ["task6-reward-creation"],
+  args: {
+    managementApi: (() => {
+      const source = detail(activeSet);
+      const withOverlap: AlertSetDetail = {
+        ...source,
+        inventory: source.inventory.map((candidate) => candidate.id === "alert-reward"
+          ? {
+              ...candidate,
+              enabled: true,
+              conditions: [{ field: "channelPointReward" as const, operator: "oneOf" as const, value: ["reward-hydrate"] }]
+            }
+          : candidate)
+      };
+      return createStoryManagementApi({
+        ...api([activeSet], withOverlap),
+        getTwitchCustomRewards: async () => ({ rewards: storyTwitchRewards })
+      });
+    })()
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
+    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    await userEvent.selectOptions(dialog.getByLabelText("Event type"), "channel_point_redemption");
+    await dialog.findByText("3 custom rewards loaded.");
+    await userEvent.click(dialog.getByRole("radio", { name: "Selected rewards" }));
+    await userEvent.click(dialog.getByRole("checkbox", { name: /Hydrate/u }));
+    await userEvent.click(dialog.getByRole("checkbox", { name: /Stretch/u }));
+
+    await expect(dialog.getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
+    await expect(dialog.getByRole("checkbox", { name: /Stretch/u })).toBeChecked();
+    await expect(dialog.getByRole("note", { name: "Potential overlapping alerts" })).toHaveTextContent("Custom reward");
+    await expect(dialog.getByRole("button", { name: "Create alert" })).toBeEnabled();
+  }
+};
+
+export const CreateRewardAlertWithEmptyCatalog: Story = {
+  tags: ["task6-reward-creation"],
+  args: {
+    managementApi: createStoryManagementApi({
+      ...api([activeSet], detail(activeSet)),
+      getTwitchCustomRewards: async () => ({ rewards: [] })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
+    const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
+    await userEvent.selectOptions(dialog.getByLabelText("Event type"), "channel_point_redemption");
+
+    await expect(await dialog.findByText("No custom rewards are available for this channel.")).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: "Every custom reward, including future rewards" })).toBeChecked();
+    await expect(dialog.getByRole("button", { name: "Create alert" })).toBeEnabled();
   }
 };
 
@@ -547,5 +605,25 @@ function issue(id: string, severity: "blocker" | "warning", message: string): Al
     eventType: null,
     alertId: null,
     referenceId: null
+  };
+}
+
+const storyTwitchRewards: TwitchCustomReward[] = [
+  storyTwitchReward("reward-hydrate", "Hydrate", 500),
+  storyTwitchReward("reward-stretch", "Stretch", 750),
+  storyTwitchReward("reward-posture", "Posture check", 1_000)
+];
+
+function storyTwitchReward(id: string, title: string, cost: number): TwitchCustomReward {
+  return {
+    id,
+    title,
+    prompt: "",
+    cost,
+    backgroundColor: "#00E5CB",
+    isUserInputRequired: false,
+    isEnabled: true,
+    isPaused: false,
+    isInStock: true
   };
 }

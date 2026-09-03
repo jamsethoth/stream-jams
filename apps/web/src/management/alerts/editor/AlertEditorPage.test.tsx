@@ -4,7 +4,8 @@ import {
   type AlertEditorDocument,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
-  type RegisteredProviderView
+  type RegisteredProviderView,
+  type TwitchCustomReward
 } from "@stream-jams/core";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -30,8 +31,8 @@ import {
 } from "./editor-state.js";
 
 type TestAlertEditorPageProps = Omit<AlertEditorPageProps, "managementApi"> & {
-  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "previewModeration"> &
-    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "previewModeration">>;
+  readonly managementApi: Omit<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "getTwitchCustomRewards" | "previewModeration"> &
+    Partial<Pick<AlertEditorPageApi, "getAlertVariationAuthoringContext" | "getTwitchCustomRewards" | "previewModeration">>;
 };
 
 function AlertEditorPage(props: TestAlertEditorPageProps) {
@@ -44,9 +45,11 @@ function AlertEditorPage(props: TestAlertEditorPageProps) {
       text: input.text,
       actions: []
     }));
+  const getTwitchCustomRewards: AlertEditorPageApi["getTwitchCustomRewards"] = props.managementApi.getTwitchCustomRewards
+    ?? (async () => ({ rewards: [] }));
   return <ProductionAlertEditorPage
     {...props}
-    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext, previewModeration }}
+    managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext, getTwitchCustomRewards, previewModeration }}
   />;
 }
 
@@ -58,62 +61,11 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
-  it("applies a selected starter theme only on confirmation and preserves editor history and save", async () => {
-    const baseDocument = editorDocument();
-    const themedSource: AlertEditorDocument = {
-      ...baseDocument,
-      name: "Custom celebration",
-      cooldownSeconds: 12,
-      rulePriority: 7,
-      durationMs: 7_500,
-      templateVariables: [{ key: "userName", label: "User name", description: "Display name." }],
-      layers: [
-        ...baseDocument.layers.map((layer) => layer.type === "text" && layer.name === "Message"
-          ? { ...layer, template: "Custom hello, {userName}!" }
-          : layer),
-        { id: "layer-shape", name: "Backdrop", type: "shape", visible: true, order: 2, fill: "#112233FF", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
-        { id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
-        { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 4, assetId: "asset-audio", volume: 0.4, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
-        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 5, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
-      ],
-      targetProfiles: baseDocument.targetProfiles.map((profile) => ({
-        ...profile,
-        enabled: true,
-        reviewState: "ready" as const,
-        layerLayouts: [
-          ...profile.layerLayouts,
-          { layerId: "layer-shape", x: 100, y: 100, width: 300, height: 200, zIndex: 2 },
-          { layerId: "layer-video", x: 450, y: 100, width: 300, height: 200, zIndex: 3 }
-        ]
-      }))
-    };
-    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
-    const user = userEvent.setup();
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId={themedSource.id}
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => themedSource),
-            getAlertSet: vi.fn(async () => alertSetDetail(true)),
-            listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest: vi.fn()
-          }}
-          onBack={() => undefined}
-          onOpenAlert={() => undefined}
-        />
-      </DirtyNavigationProvider>
-    );
-
+  it("requires confirmation before applying a starter theme", async () => {
+    const { user } = renderStarterThemeEditor();
     await user.click(await screen.findByRole("tab", { name: "Alert" }));
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
-    let dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    const dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
     expect(dialog).toHaveTextContent("text, shape, image, and video layers");
     expect(dialog).toHaveTextContent("primary message, audio, TTS, identity, matching and variation behavior, cooldown, priority, duration, samples, and variables");
     expect(dialog).toHaveTextContent("disabled");
@@ -124,9 +76,13 @@ describe("AlertEditorPage", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("Saved")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  });
 
+  it("preserves undo redo and revert when applying a starter theme", async () => {
+    const { user } = renderStarterThemeEditor();
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
-    dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    const dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
     await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
     await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
 
@@ -147,7 +103,15 @@ describe("AlertEditorPage", () => {
     expect(screen.getByText("Saved")).toBeInTheDocument();
     expect(screen.getAllByText("Alert enabled").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
-    dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    const revertedDialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    expect(within(revertedDialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+  });
+
+  it("saves a starter theme without changing nonvisual settings and restores ordinary edit guards", async () => {
+    const { user, saveAlertEditorDocument } = renderStarterThemeEditor();
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    const dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
     expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
     await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
     await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
@@ -176,7 +140,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("tab", { name: "Layers" }));
     await user.click(screen.getByText("Message", { selector: ".alert-editor-inspector__layer-list span" }).closest("button")!);
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Ordinary edit after save");
+    await user.paste("Ordinary edit after save");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
     expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
   });
@@ -207,7 +171,7 @@ describe("AlertEditorPage", () => {
 
     const message = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(message);
-    await user.type(message, "Before theme");
+    await user.paste("Before theme");
     await user.click(screen.getByText("Celebration", { selector: ".alert-editor-inspector__layer-list span" }).closest("button")!);
     await user.click(screen.getByRole("tab", { name: "Alert" }));
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
@@ -241,7 +205,7 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByText("Starter theme applied.")).not.toBeInTheDocument();
     expect(screen.getByText("Unsaved changes reverted.")).toBeInTheDocument();
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Ordinary edit after revert");
+    await user.paste("Ordinary edit after revert");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
     switchDialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
     expect(switchDialog).toBeInTheDocument();
@@ -1143,50 +1107,27 @@ describe("AlertEditorPage", () => {
     ));
   });
 
-  it("edits and validates text-only typography and box styles", async () => {
-    const user = userEvent.setup();
-    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId="alert-follow"
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => editorDocument()),
-            getAlertSet: vi.fn(async () => alertSetDetail(false)),
-            listRegisteredProviders: vi.fn(async () => []),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest: vi.fn()
-          }}
-          onBack={() => undefined}
-          onOpenAlert={() => undefined}
-        />
-      </DirtyNavigationProvider>
-    );
+  it.each([
+    ["Typography", "Font size"],
+    ["Text box", "Padding"],
+    ["Position and size", "X"],
+    ["Animation preset", "Animation duration (milliseconds)"]
+  ])("opens the %s disclosure without dirtying the alert", async (label, controlLabel) => {
+    const { user } = renderLayerStyleEditor();
+    const summary = await screen.findByText(label, { selector: "summary" });
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    const control = screen.getByLabelText(controlLabel);
+    expect(control).not.toBeVisible();
+    await user.click(summary);
+    expect(summary.closest("details")).toHaveAttribute("open");
+    expect(control).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
 
-    await screen.findByText("Typography", { selector: "summary" });
-    const disclosures = [
-      ["Typography", "Font size"],
-      ["Text box", "Padding"],
-      ["Position and size", "X"],
-      ["Animation preset", "Animation duration (milliseconds)"]
-    ] as const;
-    for (const [label, controlLabel] of disclosures) {
-      const summary = screen.getByText(label, { selector: "summary" });
-      expect(summary.closest("details")).not.toHaveAttribute("open");
-      const control = screen.getByLabelText(controlLabel);
-      expect(control).not.toBeVisible();
-      await user.click(summary);
-      expect(summary.closest("details")).toHaveAttribute("open");
-      expect(control).toBeVisible();
-      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    }
+  it("edits and saves text typography", async () => {
+    const { user, saveAlertEditorDocument } = renderLayerStyleEditor();
+    await user.click(await screen.findByText("Typography", { selector: "summary" }));
     const typography = screen.getByRole("group", { name: "Typography" });
-    const textBox = screen.getByRole("group", { name: "Text box" });
     const initialFontSize = within(typography).getByLabelText("Font size");
     expect(initialFontSize).toHaveValue(32);
 
@@ -1219,6 +1160,42 @@ describe("AlertEditorPage", () => {
     fireEvent.change(within(typography).getByLabelText("Text shadow color opacity"), {
       target: { value: "40" }
     });
+
+    expect(screen.getByText("Thanks, James!").style.fontFamily).toBe('Georgia, "Times New Roman", serif');
+    expect(screen.getByText("Thanks, James!").style.fontSize).toBe("64px");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      "alert-follow",
+      expect.objectContaining({
+        layers: expect.arrayContaining([
+          expect.objectContaining({
+            textStyle: expect.objectContaining({
+              fontPreset: "serif",
+              fontSizePx: 64,
+              fontWeight: 700,
+              lineHeight: 1.45,
+              horizontalAlign: "left",
+              verticalAlign: "bottom",
+              color: "#ABCDEF80",
+              shadow: {
+                offsetX: -5,
+                offsetY: 7,
+                blur: 20,
+                color: "#11223366"
+              }
+            })
+          })
+        ])
+      }),
+      false
+    ));
+  });
+
+  it("edits and saves text box styles", async () => {
+    const { user, saveAlertEditorDocument } = renderLayerStyleEditor();
+    await user.click(await screen.findByText("Text box", { selector: "summary" }));
+    const textBox = screen.getByRole("group", { name: "Text box" });
     fireEvent.change(within(textBox).getByLabelText("Background color color"), {
       target: { value: "#102030" }
     });
@@ -1246,8 +1223,6 @@ describe("AlertEditorPage", () => {
       target: { value: "60" }
     });
 
-    expect(screen.getByText("Thanks, James!").style.fontFamily).toBe('Georgia, "Times New Roman", serif');
-    expect(screen.getByText("Thanks, James!").style.fontSize).toBe("64px");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
@@ -1255,21 +1230,6 @@ describe("AlertEditorPage", () => {
       expect.objectContaining({
         layers: expect.arrayContaining([
           expect.objectContaining({
-            textStyle: expect.objectContaining({
-              fontPreset: "serif",
-              fontSizePx: 64,
-              fontWeight: 700,
-              lineHeight: 1.45,
-              horizontalAlign: "left",
-              verticalAlign: "bottom",
-              color: "#ABCDEF80",
-              shadow: {
-                offsetX: -5,
-                offsetY: 7,
-                blur: 20,
-                color: "#11223366"
-              }
-            }),
             boxStyle: expect.objectContaining({
               backgroundColor: "#102030BF",
               paddingPx: 24,
@@ -1286,7 +1246,20 @@ describe("AlertEditorPage", () => {
       }),
       false
     ));
+  });
 
+  it("validates text-only styles and preserves invalid drafts through history", async () => {
+    const source = editorDocument();
+    const { user } = renderLayerStyleEditor({
+      ...source,
+      layers: source.layers.map((layer) => layer.type === "text"
+        ? { ...layer, textStyle: { ...compatibilityAlertTextStyle, fontSizePx: 64 } }
+        : layer)
+    });
+    await user.click(await screen.findByText("Typography", { selector: "summary" }));
+    await user.click(screen.getByText("Text box", { selector: "summary" }));
+    const typography = screen.getByRole("group", { name: "Typography" });
+    const textBox = screen.getByRole("group", { name: "Text box" });
     const fontSize = within(typography).getByLabelText("Font size");
     fireEvent.change(fontSize, { target: { value: "513" } });
     expect(fontSize).toHaveAttribute("aria-invalid", "true");
@@ -1396,7 +1369,7 @@ describe("AlertEditorPage", () => {
     fireEvent.change(screen.getByLabelText("Fill opacity"), { target: { value: "50" } });
     const layerName = screen.getByRole("textbox", { name: "Layer name" });
     await user.clear(layerName);
-    await user.type(layerName, "Background");
+    await user.paste("Background");
     await user.click(screen.getByRole("button", { name: "Hide Background" }));
     expect(view.container.querySelector(".alert-canvas__shape")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show Background" }));
@@ -1546,48 +1519,8 @@ describe("AlertEditorPage", () => {
     expect(screen.getByText("2")).toBeVisible();
   });
 
-  it("loads a focused canvas workspace and keeps Preview separate from Send test", async () => {
-    const user = userEvent.setup();
-    const document = editorDocument();
-    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
-    const sendAlertEditorTest = vi.fn(async (_alertId: string, request: { targetProfileId: "landscape" | "vertical" }) => ({
-      status: "queued" as const,
-      targetProfileId: request.targetProfileId,
-      referenceId: "ref-editor-test",
-      test: true as const
-    }));
-    const previewModeration = vi.fn(async (input: { readonly target: "rendered" | "tts"; readonly text: string }) => ({
-      target: input.target,
-      settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
-      text: "Moderated canvas text",
-      actions: []
-    }));
-    const onOpenAlert = vi.fn();
-    const onBack = vi.fn();
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId="alert-follow"
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => document),
-            getAlertSet: vi.fn(async () => alertSetDetail()),
-            listRegisteredProviders: vi.fn(async () => []),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest,
-            previewModeration
-          }}
-          onBack={onBack}
-          onOpenAlert={onOpenAlert}
-          targetProfileId="landscape"
-        />
-      </DirtyNavigationProvider>
-    );
-
+  it("loads focused navigation and supports keyboard-accessible inspector tabs", async () => {
+    const { user, onBack } = renderWorkspaceEditor();
     expect(await screen.findByRole("heading", { name: "New follower" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
       "AlertsEveryday alertsNew follower"
@@ -1617,12 +1550,15 @@ describe("AlertEditorPage", () => {
     expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
-    const canvas = within(screen.getByRole("region", { name: "Landscape alert canvas" }));
     expect(screen.getByRole("button", { name: /Landscape/ })).toHaveAttribute("aria-pressed", "true");
+  });
 
+  it("confirms active-alert saves from the focused workspace", async () => {
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor();
+    await screen.findByRole("heading", { name: "New follower" });
     const template = screen.getByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Welcome, James!");
+    await user.paste("Welcome, James!");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Save" }));
     const saveWarning = screen.getByRole("dialog", { name: "Save changes to active alert?" });
@@ -1635,7 +1571,18 @@ describe("AlertEditorPage", () => {
       expect.objectContaining({ layers: expect.arrayContaining([expect.objectContaining({ template: "Welcome, James!" })]) }),
       true
     ));
+  });
 
+  it("keeps local Preview separate from Send test and resets preview after editing", async () => {
+    const source = editorDocument();
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor({
+      ...source,
+      layers: source.layers.map((layer) => layer.type === "text"
+        ? { ...layer, template: "Welcome, James!" }
+        : layer)
+    });
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    const canvas = within(screen.getByRole("region", { name: "Landscape alert canvas" }));
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("Local preview is running.")).toBeInTheDocument();
     expect(canvas.getByText("Moderated canvas text")).toBeInTheDocument();
@@ -1644,7 +1591,8 @@ describe("AlertEditorPage", () => {
     const firstPreviewLayer = screen.getByRole("button", { name: "Message layer" });
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByRole("button", { name: "Message layer" })).not.toBe(firstPreviewLayer);
-    await user.type(template, " again");
+    await user.click(template);
+    await user.paste(" again");
     expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
     expect(canvas.queryByText("Moderated canvas text")).not.toBeInTheDocument();
     expect(canvas.getByText("Welcome, James! again")).toBeInTheDocument();
@@ -1656,7 +1604,11 @@ describe("AlertEditorPage", () => {
       expect.objectContaining({ targetProfileId: "landscape", includeAudio: true, includeTts: true })
     ));
     expect((await screen.findByText(/Queued on Landscape.*ref-editor-test/)).closest(".management-toast")).toHaveClass("management-toast--success");
+  });
 
+  it("keeps profile selection when navigating to an alert and blocks tests on disabled profiles", async () => {
+    const { user, onOpenAlert } = renderWorkspaceEditor();
+    await screen.findByRole("heading", { name: "New follower" });
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
@@ -1718,7 +1670,8 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("button", { name: /New follower/u })).toHaveAttribute("aria-current", "page");
     expect(onOpenAlert).not.toHaveBeenCalled();
 
-    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "not-an-alert");
+    await user.click(screen.getByRole("searchbox", { name: "Search alerts" }));
+    await user.paste("not-an-alert");
     expect(screen.getByText("No matching alerts.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByRole("searchbox", { name: "Search alerts" })).toHaveValue("");
@@ -1726,12 +1679,14 @@ describe("AlertEditorPage", () => {
     expect(getAlertSet).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: /Collapse Raid/u }));
-    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "large raid");
+    await user.click(screen.getByRole("searchbox", { name: "Search alerts" }));
+    await user.paste("large raid");
     expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");
     await user.clear(screen.getByRole("searchbox", { name: "Search alerts" }));
     expect(screen.getByRole("button", { name: /Expand Raid/u })).toHaveAttribute("aria-expanded", "false");
 
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), " unsaved");
+    await user.click(screen.getByRole("textbox", { name: "Message template" }));
+    await user.paste(" unsaved");
     const emptyDisclosure = screen.getByRole("button", { name: /Expand Resubscription/u });
     emptyDisclosure.focus();
     await user.keyboard("{Enter}");
@@ -1785,6 +1740,7 @@ describe("AlertEditorPage", () => {
     const managementApi = {
       getAlertEditorDocument: vi.fn(async () => editorDocument()),
       getAlertVariationAuthoringContext: vi.fn(async () => variationContext(editorDocument())),
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [] })),
       getAlertSet: vi.fn(async () => alertSetDetail(false)),
       listRegisteredProviders: vi.fn(async () => []),
       getAssetChangeImpact: vi.fn(),
@@ -1817,7 +1773,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Cannot save");
+    await user.paste("Cannot save");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     const firstError = await screen.findByRole("alert");
@@ -1985,7 +1941,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Save before leaving");
+    await user.paste("Save before leaving");
     await user.click(screen.getByRole("button", { name: "Leave editor" }));
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
 
@@ -2060,7 +2016,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Unsaved profile change");
+    await user.paste("Unsaved profile change");
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     let dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
     expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
@@ -2079,7 +2035,7 @@ describe("AlertEditorPage", () => {
 
     await user.click(screen.getByRole("button", { name: /Landscape/ }));
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Save before switching");
+    await user.paste("Save before switching");
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
     await user.click(within(dialog).getByRole("button", { name: "Save and switch" }));
@@ -2124,7 +2080,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("tab", { name: "Layers" }));
     await user.click(screen.getByText("Message", { selector: ".alert-editor-inspector__layer-list span" }).closest("button")!);
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Edited themed draft");
+    await user.paste("Edited themed draft");
     await user.click(screen.getByRole("button", { name: /^Landscape/u }));
     expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Edited themed draft");
@@ -2167,7 +2123,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("tab", { name: "Layers" }));
     const template = screen.getByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Ordinary edit after discard");
+    await user.paste("Ordinary edit after discard");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
     expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
   });
@@ -2247,11 +2203,14 @@ describe("AlertEditorPage", () => {
 
     await screen.findByRole("region", { name: "Landscape alert canvas" });
     await user.click(screen.getByText("Animation preset", { selector: "summary" }));
-    await user.clear(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }), "650");
-    await user.clear(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }), "120");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Animation easing" }), "linear");
+    const animation = within(screen.getByRole("group", { name: "Animation preset" }));
+    const duration = animation.getByLabelText("Animation duration (milliseconds)");
+    const delay = animation.getByLabelText("Animation delay (milliseconds)");
+    await user.clear(duration);
+    await user.type(duration, "650");
+    await user.clear(delay);
+    await user.type(delay, "120");
+    await user.selectOptions(animation.getByLabelText("Animation easing"), "linear");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
@@ -2301,7 +2260,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Welcome ");
+    await user.paste("Welcome ");
     await user.click(screen.getByRole("button", { name: "Insert {userName}" }));
     expect(template).toHaveValue("Welcome {userName}");
 
@@ -2695,11 +2654,11 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Submitted edit");
+    await user.paste("Submitted edit");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     await user.clear(template);
-    await user.type(template, "Newer local edit");
+    await user.paste("Newer local edit");
 
     await act(async () => {
       resolveSave?.(submitted!);
@@ -2749,79 +2708,373 @@ describe("AlertEditorPage", () => {
     expect(window.location.pathname).toBe("/manage/modules/alerts/editor/alert-follow");
   });
 
-  it("edits variation conditions and shared rule controls", async () => {
+  it("preserves an untouched legacy reward equality when the catalog fails and another edit is saved", async () => {
     const user = userEvent.setup();
-    const variation: AlertEditorDocument = {
-      ...editorDocument(),
-      id: "variant-large-raid",
-      eventType: "raid",
-      kind: "variation",
-      parentAlertId: "alert-raid",
-      name: "Large raid",
-      weight: 2,
-      priority: 5,
-      samplePayloads: [{
-        id: "normal",
-        label: "Normal example",
-        kind: "built-in",
-        payload: { userName: "Raider", raidViewers: 50, amount: 50 }
-      }]
-    };
-    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId={variation.id}
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => variation),
-            getAlertSet: vi.fn(async () => alertSetDetail(false)),
-            listRegisteredProviders: vi.fn(async () => []),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest: vi.fn()
-          }}
-          onBack={() => undefined}
-          onOpenAlert={() => undefined}
-        />
-      </DirtyNavigationProvider>
-    );
+    const document = channelPointDocument({
+      conditions: [
+        { field: "channelPointReward", operator: "equals", value: "reward-hydrate" },
+        { field: "rewardTitle", operator: "includes", value: "Hydrate" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => { throw new Error("Twitch unavailable"); }),
+      saveAlertEditorDocument
+    });
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
-    const sharedControls = screen.getByRole("group", { name: "Affects default and all variations" });
-    expect(within(sharedControls).getByRole("group", { name: "Rule conditions" })).toBeInTheDocument();
-    expect(within(sharedControls).getByRole("spinbutton", { name: "Cooldown (seconds)" })).toBeInTheDocument();
-    expect(within(sharedControls).getByRole("spinbutton", { name: "Rule priority" })).toBeInTheDocument();
+    expect(await screen.findByText("Twitch rewards could not be loaded")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Custom Twitch rewards" })).toHaveLength(1);
+    const ruleConditions = screen.getByRole("group", { name: "Rule conditions" });
+    expect(within(ruleConditions).queryByRole("textbox", { name: "Rule conditions Reward ID value" })).not.toBeInTheDocument();
+
+    const cooldown = screen.getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    await user.clear(cooldown);
+    await user.type(cooldown, "7");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    expect(saveAlertEditorDocument.mock.calls[0]![1].conditions).toEqual(document.conditions);
+  });
+
+  it("normalizes an explicit second reward to one ordered membership condition", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [
+        { field: "channelPointReward", operator: "equals", value: "reward-hydrate" },
+        { field: "rewardTitle", operator: "includes", value: "reward" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [
+        customReward("reward-hydrate", "Hydrate"),
+        customReward("reward-stretch", "Stretch")
+      ] })),
+      saveAlertEditorDocument
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(await screen.findByRole("checkbox", { name: /Stretch/u }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    const savedRewardConditions = saveAlertEditorDocument.mock.calls[0]![1].conditions
+      .filter((condition) => condition.field === "channelPointReward");
+    expect(savedRewardConditions).toEqual([
+      { field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }
+    ]);
+    expect(saveAlertEditorDocument.mock.calls[0]![1].conditions).toContainEqual(
+      { field: "rewardTitle", operator: "includes", value: "reward" }
+    );
+  });
+
+  it("removes every reward condition only when catch-all coverage is explicitly selected", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [
+        { field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] },
+        { field: "rewardTitle", operator: "includes", value: "reward" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("reward-hydrate", "Hydrate")] })),
+      saveAlertEditorDocument
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("radio", { name: "Every custom reward, including future rewards" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    expect(saveAlertEditorDocument.mock.calls[0]![1].conditions).toEqual([
+      { field: "rewardTitle", operator: "includes", value: "reward" }
+    ]);
+  });
+
+  it("reconciles current reward metadata while preserving deleted IDs through save, reload, and account switch", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-deleted"] }]
+    });
+    const loadRewards = vi.fn<AlertEditorPageApi["getTwitchCustomRewards"]>()
+      .mockResolvedValueOnce({ rewards: [customReward("reward-hydrate", "Old title")] })
+      .mockResolvedValueOnce({ rewards: [customReward("reward-hydrate", "Current title", { isPaused: true })] });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    const firstView = renderChannelPointEditor(document, { getTwitchCustomRewards: loadRewards, saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    expect(await screen.findByText("Old title")).toBeInTheDocument();
+    expect(screen.getByText("reward-deleted")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Refresh rewards" }));
+    expect(await screen.findByText("Current title")).toBeInTheDocument();
+    expect(screen.getByText("Paused")).toBeInTheDocument();
+
+    const priority = screen.getByRole("spinbutton", { name: "Rule priority" });
+    await user.clear(priority);
+    await user.type(priority, "4");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    const saved = saveAlertEditorDocument.mock.calls[0]![1];
+    expect(saved.conditions).toContainEqual({
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: ["reward-hydrate", "reward-deleted"]
+    });
+
+    firstView.unmount();
+    renderChannelPointEditor(saved, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("other-account-reward", "Other account reward")] }))
+    });
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await screen.findByText("Other account reward");
+    expect(screen.getByText("reward-hydrate")).toBeInTheDocument();
+    expect(screen.getByText("reward-deleted")).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable reward")).toHaveLength(2);
+    expect(screen.getByRole("checkbox", { name: /Unavailable reward.*reward-hydrate/u })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Unavailable reward.*reward-deleted/u })).toBeChecked();
+  });
+
+  it("warns only for another active intersecting or catch-all redemption rule", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+    });
+    const baseRow = channelPointInventoryRow(document);
+    const setDetail = channelPointAlertSetDetail(document, [
+      { ...baseRow, id: "alert-intersection", name: "Hydration layer", conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }] },
+      { ...baseRow, id: "alert-catch-all", name: "Every reward celebration", conditions: [] },
+      { ...baseRow, id: "alert-disabled", name: "Disabled overlap", enabled: false, conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }] },
+      { ...baseRow, id: "alert-disjoint", name: "Disjoint reward", conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-dance"] }] }
+    ]);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [
+        customReward("reward-hydrate", "Hydrate"),
+        customReward("reward-stretch", "Stretch")
+      ] })),
+      setDetail
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const warning = await screen.findByRole("note", { name: "Potential overlapping alerts" });
+    expect(warning).toHaveTextContent("Hydration layer");
+    expect(warning).toHaveTextContent("Every reward celebration");
+    expect(warning).not.toHaveTextContent("Disabled overlap");
+    expect(warning).not.toHaveTextContent("Disjoint reward");
+    expect(warning).not.toHaveTextContent(document.name);
+    await user.click(await screen.findByRole("checkbox", { name: /Stretch/u }));
+    expect(screen.getByRole("note", { name: "Potential overlapping alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("uses current rewards for session samples and defaults outside samples without persisting catalog data", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }],
+      samplePayloads: [{
+        id: "normal",
+        label: "Outside reward",
+        kind: "built-in",
+        payload: { userName: "James", rewardId: "reward-outside", rewardTitle: "Outside reward", userInput: "" }
+      }]
+    });
+    const originalSamples = structuredClone(document.samplePayloads);
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [
+        customReward("reward-hydrate", "Hydrate now"),
+        customReward("reward-stretch", "Stretch now")
+      ] })),
+      saveAlertEditorDocument
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const sampleDraft = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    await waitFor(() => expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toMatchObject({
+      rewardId: "reward-hydrate",
+      rewardTitle: "Hydrate now"
+    }));
+    await user.click(screen.getByRole("button", { name: "Use Stretch now as sample" }));
+    expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toMatchObject({
+      userName: "James",
+      rewardId: "reward-stretch",
+      rewardTitle: "Stretch now",
+      userInput: ""
+    });
+
+    const cooldown = screen.getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    await user.clear(cooldown);
+    await user.type(cooldown, "3");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledTimes(1));
+    expect(document.samplePayloads).toEqual(originalSamples);
+    expect(saveAlertEditorDocument.mock.calls[0]![1].samplePayloads).toEqual(originalSamples);
+  });
+
+  it("repairs a malformed session draft with a reward sample without mutating built-in samples", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+    });
+    const originalSamples = structuredClone(document.samplePayloads);
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("reward-hydrate", "Hydrate now")] }))
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await screen.findByText("1 custom reward loaded.");
+    const sampleDraft = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    fireEvent.change(sampleDraft, { target: { value: "{ malformed" } });
+    expect(await screen.findByText("Sample payload must be a valid JSON object.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Use Hydrate now as sample" }));
+
+    await waitFor(() => expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toEqual({
+      rewardId: "reward-hydrate",
+      rewardTitle: "Hydrate now"
+    }));
+    expect(screen.queryByText("Sample payload must be a valid JSON object.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
+    expect(document.samplePayloads).toEqual(originalSamples);
+  });
+
+  it("explains inside and outside reward samples without disabling preview or send test", async () => {
+    const user = userEvent.setup();
+    const document = channelPointDocument({
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+    });
+    renderChannelPointEditor(document, {
+      getTwitchCustomRewards: vi.fn(async () => ({ rewards: [customReward("reward-hydrate", "Hydrate")] }))
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await screen.findByText("1 custom reward loaded.");
+    expect(screen.getByRole("group", { name: "Rule conditions" })).toHaveTextContent(
+      "No additional conditions. Reward coverage above determines which channel point redemption events are eligible."
+    );
+    const explanation = screen.getByRole("region", { name: "Sample selection explanation" });
+    expect(explanation).toHaveTextContent("Default plays as the fallback for this sample.");
+    const sampleDraft = screen.getByRole("textbox", { name: "Session payload (JSON)" });
+    fireEvent.change(sampleDraft, {
+      target: { value: JSON.stringify({ userName: "James", rewardId: "reward-outside", rewardTitle: "Outside reward" }) }
+    });
+    await waitFor(() => expect(explanation).toHaveTextContent("No alert plays for this sample."));
+    expect(JSON.parse((sampleDraft as HTMLTextAreaElement).value)).toMatchObject({
+      rewardId: "reward-outside",
+      rewardTitle: "Outside reward"
+    });
+    expect(explanation).toHaveTextContent("Reward ID is one of reward-hydrate");
+    expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Replay preview" })).toBeEnabled();
+    for (const button of screen.getAllByRole("button", { name: "Send test" })) expect(button).toBeEnabled();
+  });
+
+  it("shows saved variation membership as Legacy while retaining exact reward ID authoring", async () => {
+    const user = userEvent.setup();
+    const variation = channelPointDocument({
+      id: "variation-rewards",
+      kind: "variation",
+      parentAlertId: "alert-channel-points",
+      name: "Special reward variation",
+      conditions: [],
+      variantConditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-stretch"] }]
+    });
+    renderChannelPointEditor(variation);
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    expect(screen.queryByRole("heading", { name: "Custom Twitch rewards" })).not.toBeInTheDocument();
+    const variationConditions = screen.getByRole("group", { name: "Variation conditions" });
+    expect(variationConditions).toHaveTextContent("Legacy condition");
+    expect(variationConditions).toHaveTextContent("Reward ID is one of reward-hydrate, reward-stretch");
+    await user.click(within(variationConditions).getByRole("button", { name: "Remove channelPointReward from Variation conditions" }));
+    await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
+    const operator = within(variationConditions).getByRole("combobox", { name: "Variation conditions Reward ID operator" });
+    expect(within(operator).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["equals"]);
+    expect(within(variationConditions).getByRole("textbox", { name: "Variation conditions Reward ID value" })).toBeInTheDocument();
+  });
+
+  it("edits variation conditions without changing shared rule controls", async () => {
+    const user = userEvent.setup();
+    const variation = raidVariationDocument({
+      id: "variant-large-raid",
+      name: "Large raid",
+      weight: 2,
+      priority: 5
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    renderVariationSelectionEditor(variation, [], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
     const variationControls = screen.getByRole("group", { name: "Affects this variation only" });
     const variationConditions = within(variationControls).getByRole("group", { name: "Variation conditions" });
     await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
-    expect(within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 1 field" })).toHaveFocus();
-    const viewerMinimum = within(variationConditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers value" });
+    expect(within(variationConditions).getByLabelText("Variation conditions condition 1 field")).toHaveFocus();
+    const viewerMinimum = within(variationConditions).getByLabelText("Variation conditions Raid viewers value");
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions Raid viewers operator" }),
+      within(variationConditions).getByLabelText("Variation conditions Raid viewers operator"),
       "min"
     );
     await user.clear(viewerMinimum);
     await user.type(viewerMinimum, "25");
     await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 2 field" }),
+      within(variationConditions).getByLabelText("Variation conditions condition 2 field"),
       "ingestProvider"
     );
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions Event source value" }),
+      within(variationConditions).getByLabelText("Variation conditions Event source value"),
       "streamerbot"
     );
-    await user.clear(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }));
-    await user.type(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }), "4");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      variation.id,
+      expect.objectContaining({
+        weight: 2,
+        priority: 5,
+        cooldownSeconds: 0,
+        rulePriority: 0,
+        variantConditions: [
+          { field: "raidViewers", operator: "min", value: 25 },
+          { field: "ingestProvider", operator: "equals", value: "streamerbot" }
+        ]
+      }),
+      false
+    ));
+  });
+
+  it("edits shared rule controls and relative chance without changing variation conditions", async () => {
+    const user = userEvent.setup();
+    const variation = raidVariationDocument({
+      id: "variant-large-raid",
+      name: "Large raid",
+      weight: 2,
+      priority: 5,
+      variantConditions: [
+        { field: "raidViewers", operator: "min", value: 25 },
+        { field: "ingestProvider", operator: "equals", value: "streamerbot" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    renderVariationSelectionEditor(variation, [], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const sharedControls = screen.getByRole("group", { name: "Affects default and all variations" });
+    expect(within(sharedControls).getByRole("group", { name: "Rule conditions" })).toBeInTheDocument();
+    const cooldown = within(sharedControls).getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    const rulePriority = within(sharedControls).getByRole("spinbutton", { name: "Rule priority" });
+    expect(cooldown).toBeInTheDocument();
+    expect(rulePriority).toBeInTheDocument();
+    const variationControls = screen.getByRole("group", { name: "Affects this variation only" });
+    const relativeChance = within(variationControls).getByRole("spinbutton", { name: "Relative chance" });
+    await user.clear(relativeChance);
+    await user.type(relativeChance, "4");
     expect(within(variationControls).queryByRole("spinbutton", { name: "Variation priority" })).not.toBeInTheDocument();
-    await user.clear(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }), "15");
-    await user.clear(screen.getByRole("spinbutton", { name: "Rule priority" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Rule priority" }), "3");
+    await user.clear(cooldown);
+    await user.type(cooldown, "15");
+    await user.clear(rulePriority);
+    await user.type(rulePriority, "3");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
@@ -2840,55 +3093,50 @@ describe("AlertEditorPage", () => {
     ));
   });
 
-  it("offers only applicable normalized conditions for expanded event families", async () => {
-    const cases: readonly {
-      readonly eventType: AlertEditorDocument["eventType"];
-      readonly expected: readonly string[];
-      readonly absent?: string;
-    }[] = [
-      { eventType: "gift_subscription", expected: ["Subscription tier"] },
-      { eventType: "community_gift", expected: ["Subscription tier", "Gift count", "Anonymous gift"] },
-      { eventType: "hype_train_progress", expected: ["Hype Train level", "Hype Train progress", "Hype Train total"] },
-      { eventType: "poll_end", expected: ["Poll votes", "Terminal status"] },
-      { eventType: "prediction_end", expected: ["Prediction points", "Total users", "Terminal status"] },
-      { eventType: "stream_online", expected: ["Stream type"] },
-      { eventType: "stream_offline", expected: ["Event source"], absent: "Stream type" }
-    ];
+  it.each<{
+    readonly eventType: AlertEditorDocument["eventType"];
+    readonly expected: readonly string[];
+    readonly absent?: string;
+  }>([
+    { eventType: "gift_subscription", expected: ["Subscription tier"] },
+    { eventType: "community_gift", expected: ["Subscription tier", "Gift count", "Anonymous gift"] },
+    { eventType: "hype_train_progress", expected: ["Hype Train level", "Hype Train progress", "Hype Train total"] },
+    { eventType: "poll_end", expected: ["Poll votes", "Terminal status"] },
+    { eventType: "prediction_end", expected: ["Prediction points", "Total users", "Terminal status"] },
+    { eventType: "stream_online", expected: ["Stream type"] },
+    { eventType: "stream_offline", expected: ["Event source"], absent: "Stream type" }
+  ])("offers only applicable normalized conditions for expanded event family $eventType", async ({ eventType, expected, absent }) => {
+    const user = userEvent.setup();
+    const document = { ...editorDocument(), id: `alert-${eventType}`, eventType };
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId={document.id}
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => document),
+            getAlertSet: vi.fn(async () => alertSetDetail()),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, saved) => saved),
+            sendAlertEditorTest: vi.fn()
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
 
-    for (const { eventType, expected, absent } of cases) {
-      const user = userEvent.setup();
-      const document = { ...editorDocument(), id: `alert-${eventType}`, eventType };
-      const view = render(
-        <DirtyNavigationProvider>
-          <AlertEditorPage
-            alertId={document.id}
-            assetApi={assetApi}
-            managementApi={{
-              getAlertEditorDocument: vi.fn(async () => document),
-              getAlertSet: vi.fn(async () => alertSetDetail()),
-              listRegisteredProviders: vi.fn(async () => []),
-              getAssetChangeImpact: vi.fn(),
-              listAssetLibraryItems: vi.fn(async () => []),
-              deleteAsset: vi.fn(),
-              updateAssetMetadata: vi.fn(),
-              saveAlertEditorDocument: vi.fn(async (_alertId, saved) => saved),
-              sendAlertEditorTest: vi.fn()
-            }}
-            onBack={() => undefined}
-            onOpenAlert={() => undefined}
-          />
-        </DirtyNavigationProvider>
-      );
-
-      await user.click(await screen.findByRole("tab", { name: "Event" }));
-      const conditions = screen.getByRole("group", { name: "Rule conditions" });
-      await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
-      const field = within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" });
-      for (const label of expected) expect(within(field).getByRole("option", { name: label })).toBeInTheDocument();
-      if (absent !== undefined) expect(within(field).queryByRole("option", { name: absent })).not.toBeInTheDocument();
-      expect(within(field).queryByRole("option", { name: /metadata|actor|provider id/iu })).not.toBeInTheDocument();
-      view.unmount();
-    }
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const conditions = screen.getByRole("group", { name: "Rule conditions" });
+    await user.click(within(conditions).getByRole("button", { name: "Add condition" }));
+    const field = within(conditions).getByRole("combobox", { name: "Rule conditions condition 1 field" });
+    for (const label of expected) expect(within(field).getByRole("option", { name: label })).toBeInTheDocument();
+    if (absent !== undefined) expect(within(field).queryByRole("option", { name: absent })).not.toBeInTheDocument();
+    expect(within(field).queryByRole("option", { name: /metadata|actor|provider id/iu })).not.toBeInTheDocument();
   });
 
   it("allows terminated as a poll-end terminal status", async () => {
@@ -3436,6 +3684,131 @@ describe("AlertEditorPage", () => {
   });
 });
 
+function renderWorkspaceEditor(document = editorDocument()) {
+  const user = userEvent.setup();
+  const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  const sendAlertEditorTest = vi.fn(async (_alertId: string, request: { targetProfileId: "landscape" | "vertical" }) => ({
+    status: "queued" as const,
+    targetProfileId: request.targetProfileId,
+    referenceId: "ref-editor-test",
+    test: true as const
+  }));
+  const previewModeration = vi.fn(async (input: { readonly target: "rendered" | "tts"; readonly text: string }) => ({
+    target: input.target,
+    settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+    text: "Moderated canvas text",
+    actions: []
+  }));
+  const onOpenAlert = vi.fn();
+  const onBack = vi.fn();
+  render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId="alert-follow"
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document),
+          getAlertSet: vi.fn(async () => alertSetDetail()),
+          listRegisteredProviders: vi.fn(async () => []),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest,
+          previewModeration
+        }}
+        onBack={onBack}
+        onOpenAlert={onOpenAlert}
+        targetProfileId="landscape"
+      />
+    </DirtyNavigationProvider>
+  );
+  return { user, saveAlertEditorDocument, sendAlertEditorTest, onOpenAlert, onBack };
+}
+
+function renderLayerStyleEditor(document = editorDocument()) {
+  const user = userEvent.setup();
+  const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId="alert-follow"
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document),
+          getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest: vi.fn()
+        }}
+        onBack={() => undefined}
+        onOpenAlert={() => undefined}
+      />
+    </DirtyNavigationProvider>
+  );
+  return { user, saveAlertEditorDocument };
+}
+
+function renderStarterThemeEditor() {
+  const baseDocument = editorDocument();
+  const themedSource: AlertEditorDocument = {
+    ...baseDocument,
+    name: "Custom celebration",
+    cooldownSeconds: 12,
+    rulePriority: 7,
+    durationMs: 7_500,
+    templateVariables: [{ key: "userName", label: "User name", description: "Display name." }],
+    layers: [
+      ...baseDocument.layers.map((layer) => layer.type === "text" && layer.name === "Message"
+        ? { ...layer, template: "Custom hello, {userName}!" }
+        : layer),
+      { id: "layer-shape", name: "Backdrop", type: "shape", visible: true, order: 2, fill: "#112233FF", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+      { id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+      { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 4, assetId: "asset-audio", volume: 0.4, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
+      { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 5, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+    ],
+    targetProfiles: baseDocument.targetProfiles.map((profile) => ({
+      ...profile,
+      enabled: true,
+      reviewState: "ready" as const,
+      layerLayouts: [
+        ...profile.layerLayouts,
+        { layerId: "layer-shape", x: 100, y: 100, width: 300, height: 200, zIndex: 2 },
+        { layerId: "layer-video", x: 450, y: 100, width: 300, height: 200, zIndex: 3 }
+      ]
+    }))
+  };
+  const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  const user = userEvent.setup();
+  render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId={themedSource.id}
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => themedSource),
+          getAlertSet: vi.fn(async () => alertSetDetail(true)),
+          listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest: vi.fn()
+        }}
+        onBack={() => undefined}
+        onOpenAlert={() => undefined}
+      />
+    </DirtyNavigationProvider>
+  );
+  return { user, saveAlertEditorDocument };
+}
+
 function NavigationProbe() {
   const navigation = useManagementNavigation();
   return <><button onClick={() => navigation.requestNavigation({ id: "modules-alerts" })} type="button">Leave editor</button>{navigation.guard}</>;
@@ -3548,6 +3921,119 @@ function alertSetDetail(active = true): AlertSetDetail {
       { id: "alert-raid", setId: "set-default", providerKind: "twitch", eventType: "raid", parentAlertId: null, name: "New raid", kind: "default", enabled: true, conditions: [], weight: 1, priority: null, reviewState: "ready", targetProfileIds: ["landscape"], previewText: "Raid preview" }
     ],
     browserSources: []
+  };
+}
+
+function channelPointDocument(overrides: Partial<AlertEditorDocument> = {}): AlertEditorDocument {
+  return {
+    ...editorDocument(),
+    id: "alert-channel-points",
+    eventType: "channel_point_redemption",
+    name: "Shared custom rewards",
+    conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }],
+    templateVariables: [
+      { key: "userName", label: "User name", description: "Display name for the redeemer." },
+      { key: "rewardTitle", label: "Reward title", description: "Current reward title." },
+      { key: "userInput", label: "User input", description: "Optional redemption input." }
+    ],
+    samplePayloads: [{
+      id: "normal",
+      label: "Hydrate redemption",
+      kind: "built-in",
+      payload: { userName: "James", rewardId: "reward-hydrate", rewardTitle: "Hydrate", userInput: "" }
+    }],
+    ...overrides
+  };
+}
+
+function channelPointInventoryRow(
+  document: AlertEditorDocument
+): AlertSetDetail["inventory"][number] {
+  return {
+    id: document.parentAlertId ?? document.id,
+    setId: document.setId,
+    providerKind: document.providerKind,
+    eventType: document.eventType,
+    parentAlertId: null,
+    name: document.kind === "default" ? document.name : "Shared custom rewards",
+    kind: "default",
+    enabled: document.kind === "default" ? document.enabled : true,
+    conditions: document.conditions,
+    weight: 1,
+    priority: null,
+    reviewState: "ready",
+    targetProfileIds: document.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id),
+    previewText: "Channel point redemption preview"
+  };
+}
+
+function channelPointAlertSetDetail(
+  document: AlertEditorDocument,
+  siblings: readonly AlertSetDetail["inventory"][number][] = []
+): AlertSetDetail {
+  const source = alertSetDetail(false);
+  return {
+    ...source,
+    inventory: [channelPointInventoryRow(document), ...siblings]
+  };
+}
+
+function renderChannelPointEditor(
+  document: AlertEditorDocument,
+  options: {
+    readonly getTwitchCustomRewards?: AlertEditorPageApi["getTwitchCustomRewards"];
+    readonly saveAlertEditorDocument?: AlertEditorPageApi["saveAlertEditorDocument"];
+    readonly sendAlertEditorTest?: AlertEditorPageApi["sendAlertEditorTest"];
+    readonly setDetail?: AlertSetDetail;
+  } = {}
+) {
+  const getTwitchCustomRewards = options.getTwitchCustomRewards
+    ?? vi.fn(async () => ({ rewards: [] }));
+  const saveAlertEditorDocument = options.saveAlertEditorDocument
+    ?? vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  const sendAlertEditorTest = options.sendAlertEditorTest ?? vi.fn();
+  const view = render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId={document.id}
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document),
+          getAlertVariationAuthoringContext: vi.fn(async () => variationContext(document)),
+          getTwitchCustomRewards,
+          getAlertSet: vi.fn(async () => options.setDetail ?? channelPointAlertSetDetail(document)),
+          listRegisteredProviders: vi.fn(async () => []),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest
+        }}
+        onBack={() => undefined}
+        onOpenAlert={() => undefined}
+      />
+    </DirtyNavigationProvider>
+  );
+  return { getTwitchCustomRewards, saveAlertEditorDocument, sendAlertEditorTest, ...view };
+}
+
+function customReward(
+  id: string,
+  title: string,
+  overrides: Partial<TwitchCustomReward> = {}
+): TwitchCustomReward {
+  return {
+    id,
+    title,
+    prompt: "",
+    cost: 500,
+    backgroundColor: "#00E5CB",
+    isUserInputRequired: false,
+    isEnabled: true,
+    isPaused: false,
+    isInStock: true,
+    ...overrides
   };
 }
 

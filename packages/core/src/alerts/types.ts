@@ -7,11 +7,19 @@ export interface AlertCollection {
   readonly enabled: boolean;
 }
 
-export interface AlertCondition {
-  readonly field: string;
-  readonly operator: "equals" | "min" | "max" | "range" | "includes";
-  readonly value: string | number | boolean | readonly [number, number];
-}
+export type ScalarAlertConditionOperator = "equals" | "min" | "max" | "range" | "includes";
+
+export type AlertCondition =
+  | {
+      readonly field: string;
+      readonly operator: ScalarAlertConditionOperator;
+      readonly value: string | number | boolean | readonly [number, number];
+    }
+  | {
+      readonly field: "channelPointReward";
+      readonly operator: "oneOf";
+      readonly value: readonly string[];
+    };
 
 export interface AlertTtsConfig {
   readonly enabled: boolean;

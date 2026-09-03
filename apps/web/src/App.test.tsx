@@ -34,6 +34,9 @@ function createManagementApi(): ManagementApi {
     async getTwitchStatus() {
       return { connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null };
     },
+    async getTwitchCustomRewards() {
+      return { rewards: [] };
+    },
     async startTwitchAuth() {
       throw new Error("not called");
     },

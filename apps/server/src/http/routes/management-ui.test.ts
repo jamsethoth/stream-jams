@@ -553,6 +553,61 @@ describe("management UI contract routes", () => {
     ]);
   });
 
+  it("passes selected reward intent through the parsed alert-create boundary", async () => {
+    const { app, authHeaders, service } = await createApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/alerts",
+      headers: authHeaders,
+      payload: {
+        eventType: "channel_point_redemption",
+        name: "Shared rewards",
+        channelPointRewardSelection: {
+          mode: "selected",
+          rewardIds: ["reward-second", "reward-first"]
+        }
+      }
+    });
+
+    expect(response.statusCode).toBe(201);
+    expect(service.alertCreateInputs).toEqual([{
+      eventType: "channel_point_redemption",
+      name: "Shared rewards",
+      themeId: "clean-signal",
+      channelPointRewardSelection: {
+        mode: "selected",
+        rewardIds: ["reward-second", "reward-first"]
+      }
+    }]);
+  });
+
+  it.each([
+    ["empty", { eventType: "channel_point_redemption", name: "Empty", channelPointRewardSelection: { mode: "selected", rewardIds: [] } }],
+    ["duplicate", { eventType: "channel_point_redemption", name: "Duplicate", channelPointRewardSelection: { mode: "selected", rewardIds: ["private-reward", "private-reward"] } }],
+    ["oversized", { eventType: "channel_point_redemption", name: "Oversized", channelPointRewardSelection: { mode: "selected", rewardIds: Array.from({ length: 51 }, (_, index) => `private-${index}`) } }],
+    ["non-redemption", { eventType: "cheer", name: "Cheer", channelPointRewardSelection: { mode: "all" } }]
+  ])("rejects %s reward selection without invoking alert creation", async (_label, payload) => {
+    const { app, authHeaders, service } = await createApp();
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/management/alert-sets/set-default/alerts",
+      headers: authHeaders,
+      payload
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INVALID_ALERT_CREATE_INPUT",
+        message: "Choose a supported event type, reward selection, and starter theme, and enter an alert name between 1 and 120 characters."
+      }
+    });
+    expect(service.alertCreateInputs).toEqual([]);
+    expect(service.alertSetCommands).toEqual([]);
+  });
+
   it("rejects an unknown starter theme before calling the alert-create service", async () => {
     const { app, authHeaders, service } = await createApp();
 
@@ -652,6 +707,7 @@ class StubManagementUiQueryService {
   readonly activationRequests: Array<{ readonly providerId: string; readonly confirmWarnings: boolean }> = [];
   readonly deactivationRequests: string[] = [];
   readonly alertSetCommands: unknown[][] = [];
+  readonly alertCreateInputs: AlertCreateInput[] = [];
   readonly assetCommands: unknown[][] = [];
   readonly editorCommands: unknown[][] = [];
   readonly maintenanceCommands: string[] = [];
@@ -770,6 +826,7 @@ class StubManagementUiQueryService {
   }
 
   async createAlert(setId: string, input: AlertCreateInput) {
+    this.alertCreateInputs.push(structuredClone(input));
     this.alertSetCommands.push(["create-alert", setId, input.eventType, input.name, input.themeId]);
     return {
       ...alertInventoryRow(),

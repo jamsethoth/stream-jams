@@ -1,4 +1,4 @@
-import type { CheerEvent } from "../events/types.js";
+import type { ChannelPointRedemptionEvent, CheerEvent } from "../events/types.js";
 import type { AlertRule, AlertVariant } from "./types.js";
 import { describe, expect, it } from "vitest";
 import { DefaultAlertMatcher } from "./alert-matcher.js";
@@ -81,6 +81,54 @@ describe("DefaultAlertMatcher", () => {
     });
 
     expect(matches.map((match) => match.rule.id)).toEqual(["enabled-match"]);
+  });
+
+  it.each(["twitch", "streamerbot"] as const)("matches shared rewards with AND conditions for %s intake", (ingestProvider) => {
+    const event: ChannelPointRedemptionEvent = {
+      ...createCheerEvent(),
+      type: "channel_point_redemption",
+      ingestProvider,
+      amount: null,
+      rewardId: "reward-1",
+      rewardTitle: "Hydrate",
+      userInput: null
+    };
+    const rules = [
+      createRule({ id: "catch-all", eventType: event.type }),
+      createRule({
+        id: "shared",
+        eventType: event.type,
+        conditions: [
+          { field: "channelPointReward", operator: "oneOf", value: ["reward-1", "reward-2"] },
+          { field: "actor.displayName", operator: "equals", value: "Viewer" }
+        ]
+      }),
+      createRule({
+        id: "overlap",
+        eventType: event.type,
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-2", "reward-1"] }]
+      }),
+      createRule({
+        id: "outside-selection",
+        eventType: event.type,
+        conditions: [
+          { field: "channelPointReward", operator: "oneOf", value: ["reward-other"] },
+          { field: "actor.displayName", operator: "equals", value: "Viewer" }
+        ]
+      }),
+      createRule({
+        id: "other-condition-fails",
+        eventType: event.type,
+        conditions: [
+          { field: "channelPointReward", operator: "oneOf", value: ["reward-1"] },
+          { field: "actor.displayName", operator: "equals", value: "Someone else" }
+        ]
+      })
+    ];
+
+    expect(matcher.findMatches({ event, rules }).map((match) => match.rule.id)).toEqual(["catch-all", "overlap", "shared"]);
+    expect(matcher.findMatches({ event: { ...event, rewardId: "reward-1-extra" }, rules }).map((match) => match.rule.id))
+      .toEqual(["catch-all"]);
   });
 });
 

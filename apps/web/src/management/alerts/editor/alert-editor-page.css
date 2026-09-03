@@ -872,6 +872,17 @@
   margin: 0;
 }
 
+.alert-editor-inspector__impact > .twitch-reward-picker {
+  gap: 10px;
+  min-width: 0;
+}
+
+.alert-editor-inspector .twitch-reward-picker__header,
+.alert-editor-inspector .twitch-reward-picker__reward {
+  align-items: stretch;
+  flex-direction: column;
+}
+
 .alert-editor-inspector__priority-groups,
 .alert-editor-inspector__selection-explanation {
   border-top: 1px solid var(--color-border);

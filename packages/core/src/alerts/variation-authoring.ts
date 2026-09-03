@@ -8,6 +8,7 @@ import {
   DefaultAlertConditionEvaluator,
   type AlertConditionEvaluator
 } from "./condition-evaluator.js";
+import { channelPointRewardIdsSchema } from "./channel-point-reward-selection.js";
 import type { AlertCondition } from "./types.js";
 
 export type AlertConditionValueKind = "number" | "text" | "enum" | "boolean";
@@ -134,7 +135,7 @@ const conditionCatalog = {
   cheer: [numericDefinition("cheerAmount", "Cheer amount", 1), ingestProviderDefinition],
   raid: [numericDefinition("raidViewers", "Raid viewers", 1), ingestProviderDefinition],
   channel_point_redemption: [
-    textDefinition("channelPointReward", "Reward ID", ["equals"]),
+    textDefinition("channelPointReward", "Reward ID", ["equals", "oneOf"]),
     textDefinition("rewardTitle", "Reward title", ["equals", "includes"]),
     ingestProviderDefinition
   ],
@@ -246,6 +247,8 @@ export function formatAlertConditionSummary(
       return `${definition.label} is at most ${formattedValue}`;
     case "range":
       return `${definition.label} is between ${formattedValue}`;
+    case "oneOf":
+      return `${definition.label} is one of ${Array.isArray(condition.value) ? condition.value.join(", ") : formattedValue}`;
   }
 }
 
@@ -614,6 +617,12 @@ function validateConditionValue(
   value: unknown,
   conditionIndex: number
 ): readonly AlertConditionValidationIssue[] {
+  if (operator === "oneOf") {
+    return channelPointRewardIdsSchema.safeParse(value).success
+      ? []
+      : [issue(conditionIndex, "invalid-value", `${definition.label} requires 1 through 50 unique reward IDs.`)];
+  }
+
   if (definition.valueKind === "number") {
     const values = operator === "range" ? value : [value];
     if (!Array.isArray(values) || values.length !== (operator === "range" ? 2 : 1)

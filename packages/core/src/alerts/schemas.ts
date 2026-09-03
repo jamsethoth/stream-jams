@@ -6,6 +6,7 @@ import {
   overlayElementLayoutSchema,
   positiveIntegerSchema
 } from "../shared/schemas.js";
+import { channelPointRewardIdsSchema } from "./channel-point-reward-selection.js";
 
 export const alertCollectionSchema = z.object({
   id: nonEmptyStringSchema,
@@ -13,11 +14,18 @@ export const alertCollectionSchema = z.object({
   enabled: z.boolean()
 });
 
-export const alertConditionSchema = z.object({
-  field: nonEmptyStringSchema,
-  operator: z.enum(["equals", "min", "max", "range", "includes"]),
-  value: z.union([z.string(), z.number(), z.boolean(), z.tuple([z.number(), z.number()])])
-});
+export const alertConditionSchema = z.union([
+  z.object({
+    field: nonEmptyStringSchema,
+    operator: z.enum(["equals", "min", "max", "range", "includes"]),
+    value: z.union([z.string(), z.number(), z.boolean(), z.tuple([z.number(), z.number()])])
+  }),
+  z.object({
+    field: z.literal("channelPointReward"),
+    operator: z.literal("oneOf"),
+    value: channelPointRewardIdsSchema
+  })
+]);
 
 export const alertTtsConfigSchema = z.object({
   enabled: z.boolean(),

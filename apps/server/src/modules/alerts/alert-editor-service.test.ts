@@ -91,7 +91,10 @@ describe("AlertEditorService", () => {
           id: "variant-disabled",
           name: "Disabled VIP",
           enabled: false,
-          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          conditions: [
+            { field: "actor.displayName", operator: "equals", value: "James" },
+            { field: "amount", operator: "range", value: [100, 500] }
+          ],
           weight: 3,
           priority: 9
         },
@@ -125,7 +128,10 @@ describe("AlertEditorService", () => {
           kind: "variation",
           name: "Disabled VIP",
           enabled: false,
-          conditions: [{ field: "actor.displayName", operator: "equals", value: "James" }],
+          conditions: [
+            { field: "actor.displayName", operator: "equals", value: "James" },
+            { field: "amount", operator: "range", value: [100, 500] }
+          ],
           weight: 3,
           priority: 9
         },
@@ -144,6 +150,29 @@ describe("AlertEditorService", () => {
 
     await expect(harness.service.getVariationContext(variationRule.id)).resolves.toEqual(expected);
     await expect(harness.service.getVariationContext("variant-weighted")).resolves.toEqual(expected);
+  });
+
+  it("preserves every selected reward ID in variation authoring context", async () => {
+    const rewardCondition = {
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: ["reward-a", "reward-b", "reward-c"]
+    } as const;
+    const rewardRule: AlertRule = {
+      ...rule,
+      id: "alert-rewards",
+      eventType: "channel_point_redemption",
+      variants: [{ ...rule.variants[0]!, conditions: [rewardCondition] }]
+    };
+    const harness = createHarnessWithRule(rewardRule);
+
+    await expect(harness.service.getVariationContext(rewardRule.id)).resolves.toMatchObject({
+      candidates: [
+        expect.objectContaining({
+          conditions: [rewardCondition]
+        })
+      ]
+    });
   });
 
   it("rejects variation context requests for an unknown editor ID", async () => {

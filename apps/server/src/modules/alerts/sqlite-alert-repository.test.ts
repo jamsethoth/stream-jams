@@ -1,7 +1,10 @@
+import { mkdtempSync, rmSync } from "node:fs";
 import { constants, type DatabaseSync } from "node:sqlite";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { DefaultAlertService, type AlertCollection, type AlertRule } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createInMemoryStreamJamsDatabase } from "../db/database.js";
+import { createInMemoryStreamJamsDatabase, openStreamJamsDatabase } from "../db/database.js";
 import { SqliteAlertRepository } from "./sqlite-alert-repository.js";
 
 describe("SqliteAlertRepository", () => {
@@ -52,6 +55,39 @@ describe("SqliteAlertRepository", () => {
     await repository.saveRule(ruleWithVariantSelection);
 
     await expect(repository.findRuleById("rule-1")).resolves.toEqual(ruleWithVariantSelection);
+  });
+
+  it("preserves reward membership arrays and legacy exact reward conditions after reopening", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "stream-jams-alert-repository-"));
+    const path = join(directory, "alerts.sqlite");
+    const collection = createCollection("collection-1", "Main Alerts");
+    const sharedRule = createRewardRule("rule-shared", collection.id, {
+      field: "channelPointReward",
+      operator: "oneOf",
+      value: ["reward-c", "reward-a", "reward-b"]
+    });
+    const legacyRule = createRewardRule("rule-legacy", collection.id, {
+      field: "channelPointReward",
+      operator: "equals",
+      value: "reward-legacy"
+    });
+
+    try {
+      using firstDatabase = openStreamJamsDatabase(path);
+      const firstRepository = new SqliteAlertRepository(firstDatabase.connection);
+      seedRuleAssets(firstDatabase.connection);
+      await firstRepository.saveCollection(collection);
+      await firstRepository.saveRule(sharedRule);
+      await firstRepository.saveRule(legacyRule);
+      firstDatabase.close();
+
+      using reopenedDatabase = openStreamJamsDatabase(path);
+      const reopenedRepository = new SqliteAlertRepository(reopenedDatabase.connection);
+      await expect(reopenedRepository.findRuleById(sharedRule.id)).resolves.toEqual(sharedRule);
+      await expect(reopenedRepository.findRuleById(legacyRule.id)).resolves.toEqual(legacyRule);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("preserves default and variation order independently of their IDs", async () => {
@@ -268,5 +304,19 @@ function createRule(id: string, collectionIds: readonly string[]): AlertRule {
     ],
     cooldownSeconds: 30,
     priority: 10
+  };
+}
+
+function createRewardRule(
+  id: string,
+  collectionId: string,
+  condition: AlertRule["conditions"][number]
+): AlertRule {
+  const rule = createRule(id, [collectionId]);
+  return {
+    ...rule,
+    eventType: "channel_point_redemption",
+    conditions: [condition],
+    variants: rule.variants.map((variant) => ({ ...variant, id: `${id}-default` }))
   };
 }

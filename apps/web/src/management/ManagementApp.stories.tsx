@@ -27,7 +27,7 @@ export const FullShell: Story = {
   },
   render: (args) => <ManagementAppAtRoute args={args} path="/" />,
   play: async ({ canvasElement }) => {
-    const link = within(canvasElement).getByRole("link", { name: "Open Operator Console" });
+    const link = await within(canvasElement).findByRole("link", { name: "Open Operator Console" });
     await expect(link).toHaveAttribute("href", "/operator");
     await expect(link).not.toHaveAttribute("target");
   },

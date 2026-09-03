@@ -17,6 +17,7 @@ import {
   moveAlertPriorityGroup,
   moveAlertVariationToPriorityGroup,
   normalizeAlertPriorityGroups,
+  readChannelPointRewardSelection,
   rgbaColorSchema,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -45,6 +46,8 @@ import { ManagementHttpError } from "../../management-http-client.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { buildAlertEventGroups, filterAlertEventGroups } from "../alert-event-groups.js";
 import { AlertThemeChooser } from "../AlertThemeChooser.js";
+import { findOverlappingChannelPointAlertNames } from "../channel-point-reward-overlap.js";
+import type { TwitchRewardSampleChoice } from "../TwitchRewardPicker.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
 import { AlertEventInspector, alertDocumentConditionError } from "./AlertEventInspector.js";
 import { RgbaColorControl } from "./RgbaColorControl.js";
@@ -77,6 +80,7 @@ export type AlertEditorPageApi = Pick<
   ManagementApi,
   | "getAlertEditorDocument"
   | "getAlertVariationAuthoringContext"
+  | "getTwitchCustomRewards"
   | "getAlertSet"
   | "listRegisteredProviders"
   | "getAssetChangeImpact"
@@ -224,6 +228,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setPreviewTextByLayerId({});
     previewRequestIdRef.current += 1;
   }, []);
+  const loadTwitchCustomRewards = useCallback(
+    () => props.managementApi.getTwitchCustomRewards(),
+    [props.managementApi]
+  );
 
   useEffect(() => {
     let active = true;
@@ -447,6 +455,33 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const documentConditionError = conditionDraftError ?? (document === null ? null : alertDocumentConditionError(document));
   const documentStyleError = document === null ? null : alertDocumentVisualStyleError(document);
   const samplePayload = useMemo(() => parseSample(sampleDraft), [sampleDraft]);
+  const channelPointRewardSelection = useMemo(() => (
+    document?.eventType === "channel_point_redemption"
+      ? readChannelPointRewardSelection(document.conditions)
+      : null
+  ), [document]);
+  const currentRuleId = document === null ? null : document.parentAlertId ?? document.id;
+  const overlapAlertNames = useMemo(() => (
+    channelPointRewardSelection === null
+      ? []
+      : findOverlappingChannelPointAlertNames(
+          setDetail?.inventory ?? [],
+          channelPointRewardSelection,
+          currentRuleId
+        )
+  ), [channelPointRewardSelection, currentRuleId, setDetail?.inventory]);
+  const sampleRewardId = typeof samplePayload?.rewardId === "string" ? samplePayload.rewardId : undefined;
+  const applyRewardToSessionSample = useCallback((sample: TwitchRewardSampleChoice) => {
+    if (document === null) return;
+    const nextPayload = {
+      ...(parseSample(sampleDraft) ?? {}),
+      rewardId: sample.rewardId,
+      rewardTitle: sample.rewardTitle
+    };
+    setSampleDraft(JSON.stringify(nextPayload, null, 2));
+    setSampleError(validateAlertSamplePayload(document.eventType, nextPayload));
+    resetLocalPreview();
+  }, [document, resetLocalPreview, sampleDraft]);
   const variationEvaluation = useMemo(() => (
     editor === null || variationContext === null || samplePayload === null || sampleError !== null || documentConditionError !== null
       ? null
@@ -1120,6 +1155,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               <AlertEventInspector
                 document={document}
                 key={`${document.id}:${eventInspectorRevision}`}
+                loadTwitchCustomRewards={loadTwitchCustomRewards}
+                overlapAlertNames={overlapAlertNames}
                 previewIncludeAudio={previewIncludeAudio}
                 previewIncludeTts={previewIncludeTts}
                 sendIncludeAudio={sendIncludeAudio}
@@ -1141,10 +1178,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                   setSampleError(parsed === null ? "Sample payload must be a valid JSON object." : validateAlertSamplePayload(document.eventType, parsed));
                   resetLocalPreview();
                 }}
+                onUseRewardSample={applyRewardToSessionSample}
                 onSend={() => void sendTest()}
                 sampleDraft={sampleDraft}
                 sampleError={sampleError}
                 sampleId={sampleId}
+                sampleRewardId={sampleRewardId}
                 previewDisabled={sampleError !== null || documentConditionError !== null || documentStyleError !== null}
                 priorityGroups={editor.priorityGroups}
                 sendDisabled={!canSend}

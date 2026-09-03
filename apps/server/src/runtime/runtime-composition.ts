@@ -102,7 +102,11 @@ import {
   StreamerBotRuntimeService,
   type StreamerBotRuntimeDiagnostic
 } from "../modules/streamerbot/streamerbot-runtime-service.js";
-import { DefaultTwitchApiClient, type TwitchApiClient } from "../modules/twitch/twitch-api-client.js";
+import {
+  DefaultTwitchApiClient,
+  type TwitchApiClient,
+  type TwitchRewardApiClient
+} from "../modules/twitch/twitch-api-client.js";
 import {
   DefaultTwitchEventSubApiClient,
   TwitchEventSubClient,
@@ -120,6 +124,7 @@ import {
   defaultTwitchClientId,
   TwitchOAuthService
 } from "../modules/twitch/twitch-oauth-service.js";
+import { TwitchRewardCatalogService } from "../modules/twitch/twitch-reward-catalog-service.js";
 import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-account-repository.js";
 import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../server/port-availability.js";
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
@@ -134,6 +139,7 @@ export interface RuntimeAppCompositionOptions {
   readonly portAvailability?: PortAvailabilityChecker;
   readonly secretStore?: SecretStore;
   readonly twitchApiClient?: TwitchApiClient;
+  readonly twitchRewardApiClient?: TwitchRewardApiClient;
   readonly twitchEventSubApiClient?: TwitchEventSubApiClient;
   readonly twitchEventSubSocketFactory?: (url: string) => TwitchEventSubSocket;
   readonly streamerBotSocketFactory?: (url: string) => StreamerBotSocket;
@@ -290,7 +296,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     registry: ttsProviderRegistry,
     moderationService
   });
-  const twitchApiClient = options.twitchApiClient ?? new DefaultTwitchApiClient();
+  const defaultTwitchApiClient = new DefaultTwitchApiClient();
+  const twitchApiClient = options.twitchApiClient ?? defaultTwitchApiClient;
+  const twitchRewardApiClient = options.twitchRewardApiClient ?? defaultTwitchApiClient;
   const overlayGateway = new OverlayGateway({
     overlayAccessService,
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
@@ -449,6 +457,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assertSecretStoreAvailable: runtimeSecretStore.assertAvailable
   });
   twitchAuthServiceRef.current = twitchAuthService;
+  const twitchRewardCatalogService = new TwitchRewardCatalogService({
+    apiClient: twitchRewardApiClient,
+    clientId: twitchClientId,
+    oauthService: twitchAuthService,
+    repository: twitchAccountRepository,
+    secretStore
+  });
   const twitchValidationInterval = (options.scheduleRecurring ?? setInterval)(() => {
     void twitchAuthService.validateConnectedAccount().catch(async () => {
       await twitchEventSubRuntimeService.reportAuthorizationFailure();
@@ -827,6 +842,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runConfigurationMutation: (work) => maintenanceGate.runConfigurationMutation(work),
     ttsService,
     twitchAuthService,
+    twitchRewardCatalogService,
     twitchEventSubStatusService: twitchEventSubRuntimeService,
     diagnosticsService,
     configurationBackupService,
