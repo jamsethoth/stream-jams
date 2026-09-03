@@ -8,7 +8,7 @@ import {
   TwitchApiResponseError
 } from "../../modules/twitch/twitch-api-client.js";
 import type { TwitchAccount, TwitchAccountRepository } from "../../modules/twitch/twitch-account-repository.js";
-import { TwitchOAuthProviderError } from "../../modules/twitch/twitch-oauth-service.js";
+import { TwitchOAuthProviderError, TwitchOAuthService } from "../../modules/twitch/twitch-oauth-service.js";
 import {
   TwitchRewardCatalogError,
   TwitchRewardCatalogService
@@ -199,6 +199,83 @@ describe("twitch reward catalog routes", () => {
 
     expect(response.statusCode).toBe(500);
     expect(response.body).not.toContain("unexpected failure");
+  });
+
+  describe.each(["initial validation", "catalog authorization"] as const)("refresh during %s", (stage) => {
+    it.each([
+      [400, 409, "TWITCH_REWARD_CATALOG_RECONNECT_REQUIRED"],
+      [401, 409, "TWITCH_REWARD_CATALOG_RECONNECT_REQUIRED"],
+      [503, 502, "TWITCH_REWARD_CATALOG_PROVIDER_ERROR"]
+    ] as const)("maps refresh HTTP %i to HTTP %i with %s", async (refreshStatus, expectedStatus, expectedCode) => {
+      const tokenLikeValue = "refresh-token-secret-value";
+      const account: TwitchAccount = {
+        accountId: "broadcaster-1",
+        login: "streamer",
+        displayName: "Streamer",
+        scopes: ["channel:read:redemptions"],
+        connectedAt: "2026-08-27T12:00:00.000Z",
+        updatedAt: "2026-08-27T12:00:00.000Z"
+      };
+      const repository: TwitchAccountRepository = {
+        deleteAccount: async () => {},
+        findConnectedAccount: async () => account,
+        saveAccount: async (savedAccount) => savedAccount
+      };
+      const secretStore = {
+        deleteSecret: async () => {},
+        getSecret: async () => tokenLikeValue,
+        setSecret: async () => {}
+      };
+      const paths: string[] = [];
+      const apiClient = new DefaultTwitchApiClient({
+        fetch: async (input) => {
+          const path = new URL(String(input)).pathname;
+          paths.push(path);
+          if (path === "/oauth2/validate" && stage === "catalog authorization") {
+            return Response.json({
+              client_id: "client-id",
+              login: account.login,
+              scopes: account.scopes,
+              user_id: account.accountId,
+              expires_in: 3_600
+            });
+          }
+          if (path === "/oauth2/token") {
+            return Response.json({ message: `Invalid refresh token: ${tokenLikeValue}` }, { status: refreshStatus });
+          }
+          return Response.json({ message: "Invalid OAuth token" }, { status: 401 });
+        }
+      });
+      const oauthService = new TwitchOAuthService({
+        apiClient,
+        clientId: "client-id",
+        generateAuthorizationId: () => "authorization-1",
+        repository,
+        secretStore
+      });
+      const service = new TwitchRewardCatalogService({
+        apiClient,
+        clientId: "client-id",
+        oauthService,
+        repository,
+        secretStore
+      });
+      const { app, authHeaders, logs } = await createProtectedCatalogApp(service);
+
+      try {
+        const response = await app.inject({ method: "GET", url: "/twitch/custom-rewards", headers: authHeaders });
+
+        expect(response.statusCode).toBe(expectedStatus);
+        expect(response.json().error.code).toBe(expectedCode);
+        expect(paths).toEqual(stage === "initial validation"
+          ? ["/oauth2/validate", "/oauth2/token"]
+          : ["/oauth2/validate", "/helix/channel_points/custom_rewards", "/oauth2/token"]);
+        expect(response.body).not.toContain(tokenLikeValue);
+        expect(JSON.stringify(logs)).not.toContain(tokenLikeValue);
+      } finally {
+        await app.close();
+      }
+    });
   });
 });
 

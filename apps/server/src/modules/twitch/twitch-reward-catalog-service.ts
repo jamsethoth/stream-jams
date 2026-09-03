@@ -51,7 +51,8 @@ export class TwitchRewardCatalogService {
 
   async listCustomRewards(): Promise<TwitchCustomRewardCatalog> {
     let firstRequest = await this.#readCatalogRequest("TWITCH_REWARD_CATALOG_DISCONNECTED");
-    const validation = await this.#oauthService.validateConnectedAccount({ notifyConnectionChanged: false });
+    const validation = await this.#oauthService.validateConnectedAccount({ notifyConnectionChanged: false })
+      .catch(rethrowCatalogAuthorizationError);
     if (!validation.connection.connected) {
       throw new TwitchRewardCatalogError(
         "TWITCH_REWARD_CATALOG_DISCONNECTED",
@@ -69,7 +70,8 @@ export class TwitchRewardCatalogService {
       }
     }
 
-    await this.#oauthService.refreshConnectedAccount({ notifyConnectionChanged: false });
+    await this.#oauthService.refreshConnectedAccount({ notifyConnectionChanged: false })
+      .catch(rethrowCatalogAuthorizationError);
     const finalRequest = await this.#readCatalogRequest("TWITCH_REWARD_CATALOG_RECONNECT_REQUIRED");
     try {
       return await this.#apiClient.getCustomRewards(finalRequest);
@@ -125,6 +127,17 @@ function assertRewardCatalogScope(account: TwitchAccount): void {
       "Reconnect Twitch with channel points access before loading custom rewards"
     );
   }
+}
+
+function rethrowCatalogAuthorizationError(error: unknown): never {
+  if (error instanceof TwitchApiHttpError && (error.status === 400 || error.status === 401)) {
+    throw new TwitchRewardCatalogError(
+      "TWITCH_REWARD_CATALOG_RECONNECT_REQUIRED",
+      "Reconnect Twitch before loading custom rewards"
+    );
+  }
+
+  throw error;
 }
 
 function mapCatalogApiError(error: unknown): unknown {
