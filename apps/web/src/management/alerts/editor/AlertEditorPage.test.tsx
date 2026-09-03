@@ -61,62 +61,11 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
-  it("applies a selected starter theme only on confirmation and preserves editor history and save", async () => {
-    const baseDocument = editorDocument();
-    const themedSource: AlertEditorDocument = {
-      ...baseDocument,
-      name: "Custom celebration",
-      cooldownSeconds: 12,
-      rulePriority: 7,
-      durationMs: 7_500,
-      templateVariables: [{ key: "userName", label: "User name", description: "Display name." }],
-      layers: [
-        ...baseDocument.layers.map((layer) => layer.type === "text" && layer.name === "Message"
-          ? { ...layer, template: "Custom hello, {userName}!" }
-          : layer),
-        { id: "layer-shape", name: "Backdrop", type: "shape", visible: true, order: 2, fill: "#112233FF", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
-        { id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
-        { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 4, assetId: "asset-audio", volume: 0.4, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
-        { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 5, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
-      ],
-      targetProfiles: baseDocument.targetProfiles.map((profile) => ({
-        ...profile,
-        enabled: true,
-        reviewState: "ready" as const,
-        layerLayouts: [
-          ...profile.layerLayouts,
-          { layerId: "layer-shape", x: 100, y: 100, width: 300, height: 200, zIndex: 2 },
-          { layerId: "layer-video", x: 450, y: 100, width: 300, height: 200, zIndex: 3 }
-        ]
-      }))
-    };
-    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
-    const user = userEvent.setup();
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId={themedSource.id}
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => themedSource),
-            getAlertSet: vi.fn(async () => alertSetDetail(true)),
-            listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest: vi.fn()
-          }}
-          onBack={() => undefined}
-          onOpenAlert={() => undefined}
-        />
-      </DirtyNavigationProvider>
-    );
-
+  it("requires confirmation before applying a starter theme", async () => {
+    const { user } = renderStarterThemeEditor();
     await user.click(await screen.findByRole("tab", { name: "Alert" }));
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
-    let dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    const dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
     expect(dialog).toHaveTextContent("text, shape, image, and video layers");
     expect(dialog).toHaveTextContent("primary message, audio, TTS, identity, matching and variation behavior, cooldown, priority, duration, samples, and variables");
     expect(dialog).toHaveTextContent("disabled");
@@ -127,9 +76,13 @@ describe("AlertEditorPage", () => {
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.getByText("Saved")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
+  });
 
+  it("preserves undo redo and revert when applying a starter theme", async () => {
+    const { user } = renderStarterThemeEditor();
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
-    dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    const dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
     await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
     await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
 
@@ -150,7 +103,15 @@ describe("AlertEditorPage", () => {
     expect(screen.getByText("Saved")).toBeInTheDocument();
     expect(screen.getAllByText("Alert enabled").length).toBeGreaterThan(0);
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
-    dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    const revertedDialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
+    expect(within(revertedDialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+  });
+
+  it("saves a starter theme without changing nonvisual settings and restores ordinary edit guards", async () => {
+    const { user, saveAlertEditorDocument } = renderStarterThemeEditor();
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
+    const dialog = screen.getByRole("dialog", { name: "Apply starter theme?" });
     expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
     await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
     await user.click(within(dialog).getByRole("button", { name: "Apply theme" }));
@@ -179,7 +140,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("tab", { name: "Layers" }));
     await user.click(screen.getByText("Message", { selector: ".alert-editor-inspector__layer-list span" }).closest("button")!);
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Ordinary edit after save");
+    await user.paste("Ordinary edit after save");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
     expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
   });
@@ -210,7 +171,7 @@ describe("AlertEditorPage", () => {
 
     const message = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(message);
-    await user.type(message, "Before theme");
+    await user.paste("Before theme");
     await user.click(screen.getByText("Celebration", { selector: ".alert-editor-inspector__layer-list span" }).closest("button")!);
     await user.click(screen.getByRole("tab", { name: "Alert" }));
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
@@ -244,7 +205,7 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByText("Starter theme applied.")).not.toBeInTheDocument();
     expect(screen.getByText("Unsaved changes reverted.")).toBeInTheDocument();
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Ordinary edit after revert");
+    await user.paste("Ordinary edit after revert");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
     switchDialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
     expect(switchDialog).toBeInTheDocument();
@@ -1146,50 +1107,27 @@ describe("AlertEditorPage", () => {
     ));
   });
 
-  it("edits and validates text-only typography and box styles", async () => {
-    const user = userEvent.setup();
-    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId="alert-follow"
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => editorDocument()),
-            getAlertSet: vi.fn(async () => alertSetDetail(false)),
-            listRegisteredProviders: vi.fn(async () => []),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest: vi.fn()
-          }}
-          onBack={() => undefined}
-          onOpenAlert={() => undefined}
-        />
-      </DirtyNavigationProvider>
-    );
+  it.each([
+    ["Typography", "Font size"],
+    ["Text box", "Padding"],
+    ["Position and size", "X"],
+    ["Animation preset", "Animation duration (milliseconds)"]
+  ])("opens the %s disclosure without dirtying the alert", async (label, controlLabel) => {
+    const { user } = renderLayerStyleEditor();
+    const summary = await screen.findByText(label, { selector: "summary" });
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    const control = screen.getByLabelText(controlLabel);
+    expect(control).not.toBeVisible();
+    await user.click(summary);
+    expect(summary.closest("details")).toHaveAttribute("open");
+    expect(control).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+  });
 
-    await screen.findByText("Typography", { selector: "summary" });
-    const disclosures = [
-      ["Typography", "Font size"],
-      ["Text box", "Padding"],
-      ["Position and size", "X"],
-      ["Animation preset", "Animation duration (milliseconds)"]
-    ] as const;
-    for (const [label, controlLabel] of disclosures) {
-      const summary = screen.getByText(label, { selector: "summary" });
-      expect(summary.closest("details")).not.toHaveAttribute("open");
-      const control = screen.getByLabelText(controlLabel);
-      expect(control).not.toBeVisible();
-      await user.click(summary);
-      expect(summary.closest("details")).toHaveAttribute("open");
-      expect(control).toBeVisible();
-      expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    }
+  it("edits and saves text typography", async () => {
+    const { user, saveAlertEditorDocument } = renderLayerStyleEditor();
+    await user.click(await screen.findByText("Typography", { selector: "summary" }));
     const typography = screen.getByRole("group", { name: "Typography" });
-    const textBox = screen.getByRole("group", { name: "Text box" });
     const initialFontSize = within(typography).getByLabelText("Font size");
     expect(initialFontSize).toHaveValue(32);
 
@@ -1222,6 +1160,42 @@ describe("AlertEditorPage", () => {
     fireEvent.change(within(typography).getByLabelText("Text shadow color opacity"), {
       target: { value: "40" }
     });
+
+    expect(screen.getByText("Thanks, James!").style.fontFamily).toBe('Georgia, "Times New Roman", serif');
+    expect(screen.getByText("Thanks, James!").style.fontSize).toBe("64px");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      "alert-follow",
+      expect.objectContaining({
+        layers: expect.arrayContaining([
+          expect.objectContaining({
+            textStyle: expect.objectContaining({
+              fontPreset: "serif",
+              fontSizePx: 64,
+              fontWeight: 700,
+              lineHeight: 1.45,
+              horizontalAlign: "left",
+              verticalAlign: "bottom",
+              color: "#ABCDEF80",
+              shadow: {
+                offsetX: -5,
+                offsetY: 7,
+                blur: 20,
+                color: "#11223366"
+              }
+            })
+          })
+        ])
+      }),
+      false
+    ));
+  });
+
+  it("edits and saves text box styles", async () => {
+    const { user, saveAlertEditorDocument } = renderLayerStyleEditor();
+    await user.click(await screen.findByText("Text box", { selector: "summary" }));
+    const textBox = screen.getByRole("group", { name: "Text box" });
     fireEvent.change(within(textBox).getByLabelText("Background color color"), {
       target: { value: "#102030" }
     });
@@ -1249,8 +1223,6 @@ describe("AlertEditorPage", () => {
       target: { value: "60" }
     });
 
-    expect(screen.getByText("Thanks, James!").style.fontFamily).toBe('Georgia, "Times New Roman", serif');
-    expect(screen.getByText("Thanks, James!").style.fontSize).toBe("64px");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
@@ -1258,21 +1230,6 @@ describe("AlertEditorPage", () => {
       expect.objectContaining({
         layers: expect.arrayContaining([
           expect.objectContaining({
-            textStyle: expect.objectContaining({
-              fontPreset: "serif",
-              fontSizePx: 64,
-              fontWeight: 700,
-              lineHeight: 1.45,
-              horizontalAlign: "left",
-              verticalAlign: "bottom",
-              color: "#ABCDEF80",
-              shadow: {
-                offsetX: -5,
-                offsetY: 7,
-                blur: 20,
-                color: "#11223366"
-              }
-            }),
             boxStyle: expect.objectContaining({
               backgroundColor: "#102030BF",
               paddingPx: 24,
@@ -1289,7 +1246,20 @@ describe("AlertEditorPage", () => {
       }),
       false
     ));
+  });
 
+  it("validates text-only styles and preserves invalid drafts through history", async () => {
+    const source = editorDocument();
+    const { user } = renderLayerStyleEditor({
+      ...source,
+      layers: source.layers.map((layer) => layer.type === "text"
+        ? { ...layer, textStyle: { ...compatibilityAlertTextStyle, fontSizePx: 64 } }
+        : layer)
+    });
+    await user.click(await screen.findByText("Typography", { selector: "summary" }));
+    await user.click(screen.getByText("Text box", { selector: "summary" }));
+    const typography = screen.getByRole("group", { name: "Typography" });
+    const textBox = screen.getByRole("group", { name: "Text box" });
     const fontSize = within(typography).getByLabelText("Font size");
     fireEvent.change(fontSize, { target: { value: "513" } });
     expect(fontSize).toHaveAttribute("aria-invalid", "true");
@@ -1399,7 +1369,7 @@ describe("AlertEditorPage", () => {
     fireEvent.change(screen.getByLabelText("Fill opacity"), { target: { value: "50" } });
     const layerName = screen.getByRole("textbox", { name: "Layer name" });
     await user.clear(layerName);
-    await user.type(layerName, "Background");
+    await user.paste("Background");
     await user.click(screen.getByRole("button", { name: "Hide Background" }));
     expect(view.container.querySelector(".alert-canvas__shape")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Show Background" }));
@@ -1549,48 +1519,8 @@ describe("AlertEditorPage", () => {
     expect(screen.getByText("2")).toBeVisible();
   });
 
-  it("loads a focused canvas workspace and keeps Preview separate from Send test", async () => {
-    const user = userEvent.setup();
-    const document = editorDocument();
-    const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
-    const sendAlertEditorTest = vi.fn(async (_alertId: string, request: { targetProfileId: "landscape" | "vertical" }) => ({
-      status: "queued" as const,
-      targetProfileId: request.targetProfileId,
-      referenceId: "ref-editor-test",
-      test: true as const
-    }));
-    const previewModeration = vi.fn(async (input: { readonly target: "rendered" | "tts"; readonly text: string }) => ({
-      target: input.target,
-      settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
-      text: "Moderated canvas text",
-      actions: []
-    }));
-    const onOpenAlert = vi.fn();
-    const onBack = vi.fn();
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId="alert-follow"
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => document),
-            getAlertSet: vi.fn(async () => alertSetDetail()),
-            listRegisteredProviders: vi.fn(async () => []),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest,
-            previewModeration
-          }}
-          onBack={onBack}
-          onOpenAlert={onOpenAlert}
-          targetProfileId="landscape"
-        />
-      </DirtyNavigationProvider>
-    );
-
+  it("loads focused navigation and supports keyboard-accessible inspector tabs", async () => {
+    const { user, onBack } = renderWorkspaceEditor();
     expect(await screen.findByRole("heading", { name: "New follower" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent(
       "AlertsEveryday alertsNew follower"
@@ -1620,12 +1550,15 @@ describe("AlertEditorPage", () => {
     expect(layersTab).toHaveAttribute("aria-controls", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("id", "alert-editor-panel-layers");
     expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", "alert-editor-tab-layers");
-    const canvas = within(screen.getByRole("region", { name: "Landscape alert canvas" }));
     expect(screen.getByRole("button", { name: /Landscape/ })).toHaveAttribute("aria-pressed", "true");
+  });
 
+  it("confirms active-alert saves from the focused workspace", async () => {
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor();
+    await screen.findByRole("heading", { name: "New follower" });
     const template = screen.getByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Welcome, James!");
+    await user.paste("Welcome, James!");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Save" }));
     const saveWarning = screen.getByRole("dialog", { name: "Save changes to active alert?" });
@@ -1638,7 +1571,18 @@ describe("AlertEditorPage", () => {
       expect.objectContaining({ layers: expect.arrayContaining([expect.objectContaining({ template: "Welcome, James!" })]) }),
       true
     ));
+  });
 
+  it("keeps local Preview separate from Send test and resets preview after editing", async () => {
+    const source = editorDocument();
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor({
+      ...source,
+      layers: source.layers.map((layer) => layer.type === "text"
+        ? { ...layer, template: "Welcome, James!" }
+        : layer)
+    });
+    const template = await screen.findByRole("textbox", { name: "Message template" });
+    const canvas = within(screen.getByRole("region", { name: "Landscape alert canvas" }));
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("Local preview is running.")).toBeInTheDocument();
     expect(canvas.getByText("Moderated canvas text")).toBeInTheDocument();
@@ -1647,7 +1591,8 @@ describe("AlertEditorPage", () => {
     const firstPreviewLayer = screen.getByRole("button", { name: "Message layer" });
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(screen.getByRole("button", { name: "Message layer" })).not.toBe(firstPreviewLayer);
-    await user.type(template, " again");
+    await user.click(template);
+    await user.paste(" again");
     expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
     expect(canvas.queryByText("Moderated canvas text")).not.toBeInTheDocument();
     expect(canvas.getByText("Welcome, James! again")).toBeInTheDocument();
@@ -1659,7 +1604,11 @@ describe("AlertEditorPage", () => {
       expect.objectContaining({ targetProfileId: "landscape", includeAudio: true, includeTts: true })
     ));
     expect((await screen.findByText(/Queued on Landscape.*ref-editor-test/)).closest(".management-toast")).toHaveClass("management-toast--success");
+  });
 
+  it("keeps profile selection when navigating to an alert and blocks tests on disabled profiles", async () => {
+    const { user, onOpenAlert } = renderWorkspaceEditor();
+    await screen.findByRole("heading", { name: "New follower" });
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
@@ -1721,7 +1670,8 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("button", { name: /New follower/u })).toHaveAttribute("aria-current", "page");
     expect(onOpenAlert).not.toHaveBeenCalled();
 
-    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "not-an-alert");
+    await user.click(screen.getByRole("searchbox", { name: "Search alerts" }));
+    await user.paste("not-an-alert");
     expect(screen.getByText("No matching alerts.")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByRole("searchbox", { name: "Search alerts" })).toHaveValue("");
@@ -1729,12 +1679,14 @@ describe("AlertEditorPage", () => {
     expect(getAlertSet).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: /Collapse Raid/u }));
-    await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "large raid");
+    await user.click(screen.getByRole("searchbox", { name: "Search alerts" }));
+    await user.paste("large raid");
     expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");
     await user.clear(screen.getByRole("searchbox", { name: "Search alerts" }));
     expect(screen.getByRole("button", { name: /Expand Raid/u })).toHaveAttribute("aria-expanded", "false");
 
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), " unsaved");
+    await user.click(screen.getByRole("textbox", { name: "Message template" }));
+    await user.paste(" unsaved");
     const emptyDisclosure = screen.getByRole("button", { name: /Expand Resubscription/u });
     emptyDisclosure.focus();
     await user.keyboard("{Enter}");
@@ -1821,7 +1773,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Cannot save");
+    await user.paste("Cannot save");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     const firstError = await screen.findByRole("alert");
@@ -1989,7 +1941,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Save before leaving");
+    await user.paste("Save before leaving");
     await user.click(screen.getByRole("button", { name: "Leave editor" }));
     await user.click(screen.getByRole("button", { name: "Save and leave" }));
 
@@ -2064,7 +2016,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Unsaved profile change");
+    await user.paste("Unsaved profile change");
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     let dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
     expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
@@ -2083,7 +2035,7 @@ describe("AlertEditorPage", () => {
 
     await user.click(screen.getByRole("button", { name: /Landscape/ }));
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Save before switching");
+    await user.paste("Save before switching");
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
     await user.click(within(dialog).getByRole("button", { name: "Save and switch" }));
@@ -2128,7 +2080,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("tab", { name: "Layers" }));
     await user.click(screen.getByText("Message", { selector: ".alert-editor-inspector__layer-list span" }).closest("button")!);
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.type(screen.getByRole("textbox", { name: "Message template" }), "Edited themed draft");
+    await user.paste("Edited themed draft");
     await user.click(screen.getByRole("button", { name: /^Landscape/u }));
     expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Edited themed draft");
@@ -2171,7 +2123,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("tab", { name: "Layers" }));
     const template = screen.getByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Ordinary edit after discard");
+    await user.paste("Ordinary edit after discard");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
     expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
   });
@@ -2251,11 +2203,14 @@ describe("AlertEditorPage", () => {
 
     await screen.findByRole("region", { name: "Landscape alert canvas" });
     await user.click(screen.getByText("Animation preset", { selector: "summary" }));
-    await user.clear(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Animation duration (milliseconds)" }), "650");
-    await user.clear(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Animation delay (milliseconds)" }), "120");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Animation easing" }), "linear");
+    const animation = within(screen.getByRole("group", { name: "Animation preset" }));
+    const duration = animation.getByLabelText("Animation duration (milliseconds)");
+    const delay = animation.getByLabelText("Animation delay (milliseconds)");
+    await user.clear(duration);
+    await user.type(duration, "650");
+    await user.clear(delay);
+    await user.type(delay, "120");
+    await user.selectOptions(animation.getByLabelText("Animation easing"), "linear");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
@@ -2305,7 +2260,7 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Welcome ");
+    await user.paste("Welcome ");
     await user.click(screen.getByRole("button", { name: "Insert {userName}" }));
     expect(template).toHaveValue("Welcome {userName}");
 
@@ -2699,11 +2654,11 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.type(template, "Submitted edit");
+    await user.paste("Submitted edit");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     await user.clear(template);
-    await user.type(template, "Newer local edit");
+    await user.paste("Newer local edit");
 
     await act(async () => {
       resolveSave?.(submitted!);
@@ -3039,79 +2994,87 @@ describe("AlertEditorPage", () => {
     expect(within(variationConditions).getByRole("textbox", { name: "Variation conditions Reward ID value" })).toBeInTheDocument();
   });
 
-  it("edits variation conditions and shared rule controls", async () => {
+  it("edits variation conditions without changing shared rule controls", async () => {
     const user = userEvent.setup();
-    const variation: AlertEditorDocument = {
-      ...editorDocument(),
+    const variation = raidVariationDocument({
       id: "variant-large-raid",
-      eventType: "raid",
-      kind: "variation",
-      parentAlertId: "alert-raid",
       name: "Large raid",
       weight: 2,
-      priority: 5,
-      samplePayloads: [{
-        id: "normal",
-        label: "Normal example",
-        kind: "built-in",
-        payload: { userName: "Raider", raidViewers: 50, amount: 50 }
-      }]
-    };
+      priority: 5
+    });
     const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
-    render(
-      <DirtyNavigationProvider>
-        <AlertEditorPage
-          alertId={variation.id}
-          assetApi={assetApi}
-          managementApi={{
-            getAlertEditorDocument: vi.fn(async () => variation),
-            getAlertSet: vi.fn(async () => alertSetDetail(false)),
-            listRegisteredProviders: vi.fn(async () => []),
-            getAssetChangeImpact: vi.fn(),
-            listAssetLibraryItems: vi.fn(async () => []),
-            deleteAsset: vi.fn(),
-            updateAssetMetadata: vi.fn(),
-            saveAlertEditorDocument,
-            sendAlertEditorTest: vi.fn()
-          }}
-          onBack={() => undefined}
-          onOpenAlert={() => undefined}
-        />
-      </DirtyNavigationProvider>
-    );
+    renderVariationSelectionEditor(variation, [], { saveAlertEditorDocument });
 
     await user.click(await screen.findByRole("tab", { name: "Event" }));
-    const sharedControls = screen.getByRole("group", { name: "Affects default and all variations" });
-    expect(within(sharedControls).getByRole("group", { name: "Rule conditions" })).toBeInTheDocument();
-    expect(within(sharedControls).getByRole("spinbutton", { name: "Cooldown (seconds)" })).toBeInTheDocument();
-    expect(within(sharedControls).getByRole("spinbutton", { name: "Rule priority" })).toBeInTheDocument();
     const variationControls = screen.getByRole("group", { name: "Affects this variation only" });
     const variationConditions = within(variationControls).getByRole("group", { name: "Variation conditions" });
     await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
-    expect(within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 1 field" })).toHaveFocus();
-    const viewerMinimum = within(variationConditions).getByRole("spinbutton", { name: "Variation conditions Raid viewers value" });
+    expect(within(variationConditions).getByLabelText("Variation conditions condition 1 field")).toHaveFocus();
+    const viewerMinimum = within(variationConditions).getByLabelText("Variation conditions Raid viewers value");
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions Raid viewers operator" }),
+      within(variationConditions).getByLabelText("Variation conditions Raid viewers operator"),
       "min"
     );
     await user.clear(viewerMinimum);
     await user.type(viewerMinimum, "25");
     await user.click(within(variationConditions).getByRole("button", { name: "Add condition" }));
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions condition 2 field" }),
+      within(variationConditions).getByLabelText("Variation conditions condition 2 field"),
       "ingestProvider"
     );
     await user.selectOptions(
-      within(variationConditions).getByRole("combobox", { name: "Variation conditions Event source value" }),
+      within(variationConditions).getByLabelText("Variation conditions Event source value"),
       "streamerbot"
     );
-    await user.clear(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }));
-    await user.type(within(variationControls).getByRole("spinbutton", { name: "Relative chance" }), "4");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      variation.id,
+      expect.objectContaining({
+        weight: 2,
+        priority: 5,
+        cooldownSeconds: 0,
+        rulePriority: 0,
+        variantConditions: [
+          { field: "raidViewers", operator: "min", value: 25 },
+          { field: "ingestProvider", operator: "equals", value: "streamerbot" }
+        ]
+      }),
+      false
+    ));
+  });
+
+  it("edits shared rule controls and relative chance without changing variation conditions", async () => {
+    const user = userEvent.setup();
+    const variation = raidVariationDocument({
+      id: "variant-large-raid",
+      name: "Large raid",
+      weight: 2,
+      priority: 5,
+      variantConditions: [
+        { field: "raidViewers", operator: "min", value: 25 },
+        { field: "ingestProvider", operator: "equals", value: "streamerbot" }
+      ]
+    });
+    const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
+    renderVariationSelectionEditor(variation, [], { saveAlertEditorDocument });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const sharedControls = screen.getByRole("group", { name: "Affects default and all variations" });
+    expect(within(sharedControls).getByRole("group", { name: "Rule conditions" })).toBeInTheDocument();
+    const cooldown = within(sharedControls).getByRole("spinbutton", { name: "Cooldown (seconds)" });
+    const rulePriority = within(sharedControls).getByRole("spinbutton", { name: "Rule priority" });
+    expect(cooldown).toBeInTheDocument();
+    expect(rulePriority).toBeInTheDocument();
+    const variationControls = screen.getByRole("group", { name: "Affects this variation only" });
+    const relativeChance = within(variationControls).getByRole("spinbutton", { name: "Relative chance" });
+    await user.clear(relativeChance);
+    await user.type(relativeChance, "4");
     expect(within(variationControls).queryByRole("spinbutton", { name: "Variation priority" })).not.toBeInTheDocument();
-    await user.clear(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Cooldown (seconds)" }), "15");
-    await user.clear(screen.getByRole("spinbutton", { name: "Rule priority" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Rule priority" }), "3");
+    await user.clear(cooldown);
+    await user.type(cooldown, "15");
+    await user.clear(rulePriority);
+    await user.type(rulePriority, "3");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
@@ -3720,6 +3683,131 @@ describe("AlertEditorPage", () => {
     ]);
   });
 });
+
+function renderWorkspaceEditor(document = editorDocument()) {
+  const user = userEvent.setup();
+  const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  const sendAlertEditorTest = vi.fn(async (_alertId: string, request: { targetProfileId: "landscape" | "vertical" }) => ({
+    status: "queued" as const,
+    targetProfileId: request.targetProfileId,
+    referenceId: "ref-editor-test",
+    test: true as const
+  }));
+  const previewModeration = vi.fn(async (input: { readonly target: "rendered" | "tts"; readonly text: string }) => ({
+    target: input.target,
+    settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+    text: "Moderated canvas text",
+    actions: []
+  }));
+  const onOpenAlert = vi.fn();
+  const onBack = vi.fn();
+  render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId="alert-follow"
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document),
+          getAlertSet: vi.fn(async () => alertSetDetail()),
+          listRegisteredProviders: vi.fn(async () => []),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest,
+          previewModeration
+        }}
+        onBack={onBack}
+        onOpenAlert={onOpenAlert}
+        targetProfileId="landscape"
+      />
+    </DirtyNavigationProvider>
+  );
+  return { user, saveAlertEditorDocument, sendAlertEditorTest, onOpenAlert, onBack };
+}
+
+function renderLayerStyleEditor(document = editorDocument()) {
+  const user = userEvent.setup();
+  const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId="alert-follow"
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => document),
+          getAlertSet: vi.fn(async () => alertSetDetail(false)),
+          listRegisteredProviders: vi.fn(async () => []),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest: vi.fn()
+        }}
+        onBack={() => undefined}
+        onOpenAlert={() => undefined}
+      />
+    </DirtyNavigationProvider>
+  );
+  return { user, saveAlertEditorDocument };
+}
+
+function renderStarterThemeEditor() {
+  const baseDocument = editorDocument();
+  const themedSource: AlertEditorDocument = {
+    ...baseDocument,
+    name: "Custom celebration",
+    cooldownSeconds: 12,
+    rulePriority: 7,
+    durationMs: 7_500,
+    templateVariables: [{ key: "userName", label: "User name", description: "Display name." }],
+    layers: [
+      ...baseDocument.layers.map((layer) => layer.type === "text" && layer.name === "Message"
+        ? { ...layer, template: "Custom hello, {userName}!" }
+        : layer),
+      { id: "layer-shape", name: "Backdrop", type: "shape", visible: true, order: 2, fill: "#112233FF", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+      { id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+      { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 4, assetId: "asset-audio", volume: 0.4, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
+      { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 5, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
+    ],
+    targetProfiles: baseDocument.targetProfiles.map((profile) => ({
+      ...profile,
+      enabled: true,
+      reviewState: "ready" as const,
+      layerLayouts: [
+        ...profile.layerLayouts,
+        { layerId: "layer-shape", x: 100, y: 100, width: 300, height: 200, zIndex: 2 },
+        { layerId: "layer-video", x: 450, y: 100, width: 300, height: 200, zIndex: 3 }
+      ]
+    }))
+  };
+  const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+  const user = userEvent.setup();
+  render(
+    <DirtyNavigationProvider>
+      <AlertEditorPage
+        alertId={themedSource.id}
+        assetApi={assetApi}
+        managementApi={{
+          getAlertEditorDocument: vi.fn(async () => themedSource),
+          getAlertSet: vi.fn(async () => alertSetDetail(true)),
+          listRegisteredProviders: vi.fn(async () => [activeSpeakerBot]),
+          getAssetChangeImpact: vi.fn(),
+          listAssetLibraryItems: vi.fn(async () => []),
+          deleteAsset: vi.fn(),
+          updateAssetMetadata: vi.fn(),
+          saveAlertEditorDocument,
+          sendAlertEditorTest: vi.fn()
+        }}
+        onBack={() => undefined}
+        onOpenAlert={() => undefined}
+      />
+    </DirtyNavigationProvider>
+  );
+  return { user, saveAlertEditorDocument };
+}
 
 function NavigationProbe() {
   const navigation = useManagementNavigation();

@@ -536,6 +536,297 @@ test("management alerts creates a Raid alert from the selected Bold Pop theme", 
   await expect(verticalCanvas.locator(".alert-canvas__shape")).toHaveCount(4);
 });
 
+test("management alerts creates selected and catch-all channel point reward alerts", async ({ page }) => {
+  await mockManagementShell(page);
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+  const createAlertRequests: unknown[] = [];
+  const createdAlerts: Array<Record<string, unknown>> = [];
+  let catalogRequestCount = 0;
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: false,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+  const overlappingAlert = {
+    id: "alert-existing-hydration",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "channel_point_redemption",
+    parentAlertId: null,
+    name: "Existing hydration alert",
+    kind: "default",
+    enabled: true,
+    conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }],
+    weight: 1,
+    priority: null,
+    reviewState: "ready",
+    targetProfileIds: ["landscape"],
+    previewText: "Hydrate"
+  };
+  const detail = () => ({
+    overview,
+    inventory: [overlappingAlert, ...createdAlerts],
+    browserSources: []
+  });
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({
+    contentType: "application/json",
+    json: [overview]
+  }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({
+    contentType: "application/json",
+    json: detail()
+  }));
+  await page.route("**/twitch/custom-rewards", (route) => {
+    catalogRequestCount += 1;
+    return route.fulfill({
+      contentType: "application/json",
+      json: {
+        rewards: [
+          customRewardFixture("reward-hydrate", "Hydrate"),
+          customRewardFixture("reward-stretch", "Stretch")
+        ]
+      }
+    });
+  });
+  await page.route("**/management/alert-sets/set-default/alerts", async (route) => {
+    const body = route.request().postDataJSON() as {
+      readonly channelPointRewardSelection: { readonly mode: "all" } | { readonly mode: "selected"; readonly rewardIds: readonly string[] };
+      readonly eventType: string;
+      readonly name: string;
+    };
+    createAlertRequests.push(body);
+    const row = {
+      id: `alert-created-${createAlertRequests.length}`,
+      setId: "set-default",
+      providerKind: "twitch",
+      eventType: body.eventType,
+      parentAlertId: null,
+      name: body.name,
+      kind: "default",
+      enabled: false,
+      conditions: body.channelPointRewardSelection.mode === "selected"
+        ? [{ field: "channelPointReward", operator: "oneOf", value: [...body.channelPointRewardSelection.rewardIds] }]
+        : [],
+      weight: 1,
+      priority: null,
+      reviewState: "needs-review",
+      targetProfileIds: ["landscape", "vertical"],
+      previewText: "Custom reward"
+    };
+    createdAlerts.push(row);
+    await route.fulfill({ contentType: "application/json", status: 201, json: row });
+  });
+
+  await page.goto("/manage/modules/alerts");
+  const selectedSet = page.getByRole("region", { name: "Default alert set" });
+  const eventScopedAdd = selectedSet.getByRole("button", { name: "Add alert for Channel point redemption" });
+  await eventScopedAdd.click();
+  let dialog = page.getByRole("dialog", { name: "Add alert" });
+  await expect(dialog.getByLabel("Event type")).toBeDisabled();
+  await expect(dialog.getByLabel("Event type")).toHaveValue("channel_point_redemption");
+  await expect(dialog.getByRole("radio", { name: "Every custom reward, including future rewards" })).toBeChecked();
+  await expect(dialog.getByText("2 custom rewards loaded.")).toBeVisible();
+  // StrictMode can replay the initial fetch; Refresh must add exactly one request.
+  const requestsBeforeRefresh = catalogRequestCount;
+  await dialog.getByRole("button", { name: "Refresh rewards" }).click();
+  await expect.poll(() => catalogRequestCount).toBe(requestsBeforeRefresh + 1);
+  await expect(dialog.getByText("2 custom rewards loaded.")).toBeVisible();
+  await dialog.getByRole("radio", { name: "Selected rewards" }).click();
+  await dialog.getByRole("button", { name: "Select all currently listed" }).click();
+  await expect(dialog.getByText("Only the saved reward IDs match.")).toBeVisible();
+  await expect(dialog.getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
+  await expect(dialog.getByRole("checkbox", { name: /Stretch/u })).toBeChecked();
+  const overlap = dialog.getByRole("note", { name: "Potential overlapping alerts" });
+  await expect(overlap).toContainText("Existing hydration alert");
+  await expect(dialog.getByRole("button", { name: "Create alert" })).toBeEnabled();
+  await dialog.getByLabel("Alert name").fill("Shared hydration rewards");
+  await dialog.getByRole("button", { name: "Create alert" }).click();
+
+  await expect.poll(() => createAlertRequests.length).toBe(1);
+  expect(createAlertRequests[0]).toEqual({
+    eventType: "channel_point_redemption",
+    name: "Shared hydration rewards",
+    themeId: "clean-signal",
+    channelPointRewardSelection: {
+      mode: "selected",
+      rewardIds: ["reward-hydrate", "reward-stretch"]
+    }
+  });
+
+  await eventScopedAdd.click();
+  dialog = page.getByRole("dialog", { name: "Add alert" });
+  await expect(dialog.getByLabel("Event type")).toHaveValue("channel_point_redemption");
+  await expect(dialog.getByRole("radio", { name: "Every custom reward, including future rewards" })).toBeChecked();
+  await expect(dialog.getByText("2 custom rewards loaded.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Create alert" }).click();
+
+  await expect.poll(() => createAlertRequests.length).toBe(2);
+  expect(createAlertRequests[1]).toEqual({
+    eventType: "channel_point_redemption",
+    name: "Custom reward",
+    themeId: "clean-signal",
+    channelPointRewardSelection: { mode: "all" }
+  });
+  expect(browserErrors).toEqual([]);
+});
+
+test("focused alert editor preserves reward IDs and previews representative samples", async ({ page }) => {
+  await mockManagementShell(page);
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+  let document = channelPointRewardEditorDocument();
+  const savedDocuments: AlertEditorDocument[] = [];
+  const previewRequests: unknown[] = [];
+  const testRequests: unknown[] = [];
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: false,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    ],
+    validationIssues: [],
+    outputs: []
+  };
+  const detail = () => ({
+    overview,
+    inventory: [
+      channelPointRewardInventoryRow(document),
+      {
+        ...channelPointRewardInventoryRow(document),
+        id: "alert-hydration-layer",
+        name: "Hydration layer",
+        enabled: true,
+        conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate"] }]
+      }
+    ],
+    browserSources: []
+  });
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({
+    contentType: "application/json",
+    json: [overview]
+  }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({
+    contentType: "application/json",
+    json: detail()
+  }));
+  await page.route("**/management/providers?capability=tts", (route) => route.fulfill({
+    contentType: "application/json",
+    json: []
+  }));
+  await page.route("**/twitch/custom-rewards", (route) => route.fulfill({
+    contentType: "application/json",
+    json: {
+      rewards: [
+        customRewardFixture("reward-hydrate", "Hydrate"),
+        customRewardFixture("reward-stretch", "Stretch")
+      ]
+    }
+  }));
+  await page.route(`**/management/alerts/${document.id}/editor`, async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { readonly document: AlertEditorDocument };
+      document = body.document;
+      savedDocuments.push(body.document);
+    }
+    await route.fulfill({ contentType: "application/json", json: document });
+  });
+  await page.route(`**/management/alerts/${document.id}/editor/variation-context`, (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext(document)
+  }));
+  await page.route(`**/management/alerts/${document.id}/editor/test`, async (route) => {
+    testRequests.push(route.request().postDataJSON());
+    await route.fulfill({
+      contentType: "application/json",
+      json: { status: "queued", targetProfileId: "landscape", referenceId: "ref-reward-e2e", test: true }
+    });
+  });
+  await page.route("**/moderation/preview", async (route) => {
+    const request = route.request().postDataJSON() as { readonly target: "rendered" | "tts"; readonly text: string };
+    previewRequests.push(request);
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        target: request.target,
+        settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+        text: request.text,
+        actions: []
+      }
+    });
+  });
+
+  await page.goto(`/manage/modules/alerts/editor/${document.id}?profile=landscape`);
+  await page.getByRole("tab", { name: "Event" }).click();
+  await expect(page.getByText("2 custom rewards loaded.")).toBeVisible();
+  await expect(page.getByText("Unavailable reward")).toBeVisible();
+  await expect(page.getByText("reward-deleted", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Unavailable reward.*reward-deleted/u })).toBeChecked();
+
+  await page.getByRole("checkbox", { name: /Hydrate/u }).click();
+  const overlap = page.getByRole("note", { name: "Potential overlapping alerts" });
+  await expect(overlap).toContainText("Hydration layer");
+  await page.getByRole("button", { name: "Use Hydrate as sample" }).click();
+  const sampleDraft = page.getByRole("textbox", { name: "Session payload (JSON)" });
+  await expect.poll(async () => JSON.parse(await sampleDraft.inputValue()).rewardId).toBe("reward-hydrate");
+  const explanation = page.getByRole("region", { name: "Sample selection explanation" });
+  await expect(explanation).toContainText("Default plays as the fallback for this sample.");
+
+  await sampleDraft.fill(JSON.stringify({
+    userName: "James",
+    rewardId: "reward-outside",
+    rewardTitle: "Outside reward",
+    userInput: ""
+  }));
+  await expect(explanation).toContainText("No alert plays for this sample.");
+  await expect(explanation).toContainText("Reward ID is one of reward-deleted, reward-hydrate");
+  await expect.poll(async () => JSON.parse(await sampleDraft.inputValue()).rewardId).toBe("reward-outside");
+
+  const headerActions = page.locator(".alert-editor-page__header-actions");
+  await expect(headerActions.getByRole("button", { name: "Preview", exact: true })).toBeEnabled();
+  await expect(headerActions.getByRole("button", { name: "Send test", exact: true })).toBeEnabled();
+  await headerActions.getByRole("button", { name: "Preview", exact: true }).click();
+  await expect(page.getByText("Local preview is running.")).toBeVisible();
+  await headerActions.getByRole("button", { name: "Send test", exact: true }).click();
+  await expect(page.getByText(/Queued on Landscape.*ref-reward-e2e/u)).toBeVisible();
+  expect(previewRequests).toHaveLength(1);
+  expect(testRequests).toHaveLength(1);
+
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  expect(savedDocuments).toHaveLength(1);
+  expect(savedDocuments[0]?.conditions).toEqual([{
+    field: "channelPointReward",
+    operator: "oneOf",
+    value: ["reward-deleted", "reward-hydrate"]
+  }]);
+
+  await page.reload();
+  await page.getByRole("tab", { name: "Event" }).click();
+  await expect(page.getByText("2 custom rewards loaded.")).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /Unavailable reward.*reward-deleted/u })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
+  expect(browserErrors).toEqual([]);
+});
+
 test("focused alert editor applies Neon Terminal while preserving nonvisual behavior", async ({ page }) => {
   await mockManagementShell(page);
   let document = reThemeRaidDocument();
@@ -1677,5 +1968,69 @@ function defaultVariationContext(document: {
       weight: document.weight ?? 1,
       priority: document.priority ?? null
     }]
+  };
+}
+
+function customRewardFixture(id: string, title: string) {
+  return {
+    id,
+    title,
+    prompt: "",
+    cost: 500,
+    backgroundColor: "#00E5CB",
+    isUserInputRequired: false,
+    isEnabled: true,
+    isPaused: false,
+    isInStock: true
+  };
+}
+
+function channelPointRewardEditorDocument(): AlertEditorDocument {
+  const base = alertEditorDocument();
+  return alertEditorDocumentSchema.parse({
+    ...base,
+    id: "alert-shared-rewards",
+    eventType: "channel_point_redemption",
+    name: "Shared custom rewards",
+    enabled: true,
+    conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-deleted"] }],
+    layers: base.layers.map((layer) => layer.type === "text"
+      ? { ...layer, template: "Redeemed {rewardTitle}!" }
+      : layer),
+    templateVariables: [
+      { key: "userName", label: "User name", description: "Display name for the redeemer." },
+      { key: "rewardTitle", label: "Reward title", description: "Current reward title." },
+      { key: "userInput", label: "User input", description: "Optional redemption input." }
+    ],
+    samplePayloads: [{
+      id: "normal",
+      label: "Deleted reward",
+      kind: "built-in",
+      payload: {
+        userName: "James",
+        rewardId: "reward-deleted",
+        rewardTitle: "Deleted reward",
+        userInput: ""
+      }
+    }]
+  });
+}
+
+function channelPointRewardInventoryRow(document: AlertEditorDocument) {
+  return {
+    id: document.id,
+    setId: document.setId,
+    providerKind: document.providerKind,
+    eventType: document.eventType,
+    parentAlertId: null,
+    name: document.name,
+    kind: "default",
+    enabled: document.enabled,
+    conditions: document.conditions,
+    weight: 1,
+    priority: null,
+    reviewState: "ready",
+    targetProfileIds: ["landscape"],
+    previewText: "Custom reward"
   };
 }

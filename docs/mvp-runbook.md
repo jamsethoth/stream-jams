@@ -84,6 +84,22 @@ Credential store is unavailable. Configure Windows Credential Manager, macOS Key
 
 On Linux, install and unlock a Secret Service-compatible keyring such as GNOME Keyring or KWallet through the desktop session before connecting Twitch. There is no plaintext fallback for real runtime tokens; in-memory or fake secret stores are only for automated tests.
 
+## Channel point reward alerts
+
+When adding a Channel point redemption alert or opening its Event inspector, Stream Jams loads the custom rewards from the linked Twitch broadcaster account. Use `Refresh rewards` to fetch the current titles, costs, and availability; loading is read-only and does not create, edit, or redeem Twitch rewards. Connection, permission, eligibility, and provider errors remain visible without clearing saved selections.
+
+- `Every custom reward, including future rewards` is catch-all coverage with no saved reward condition.
+- `Selected rewards` saves stable reward IDs in one shared alert rule. All selected rewards use that alert's design and variations.
+- `Select all currently listed` saves a snapshot of the displayed IDs. Rewards added later are not selected automatically; refresh and select them explicitly.
+- Disabled, paused, out-of-stock, and user-input rewards remain selectable. Their current status is guidance, not a change to the saved matching rule.
+- A saved ID absent from the current catalog appears as `Unavailable reward` with its ID. It survives refresh failures, deleted rewards, account changes, save, and reload until you explicitly remove it.
+
+Potential-overlap guidance lists other enabled alerts that may also match the selection. It does not block saving or choose a winner: all matching active alerts continue to play, subject to the existing queue behavior. Newly created alerts remain disabled and need review before activation.
+
+In the Event inspector, use a selected reward's `Use as sample` action to update only the current session payload's reward ID and title. Initial reconciliation or a changed selection uses the first selected reward when the current sample is outside the selection. Later manual JSON edits remain yours, so you can inspect both match and no-match explanations. Preview and Send test still target the selected alert and do not claim that an outside sample is eligible for live matching. Session samples do not become built-in samples or persist catalog metadata in the alert.
+
+Backups containing the `oneOf` reward-membership condition restore in this and later compatible Stream Jams builds. Older builds do not understand that condition; there is no lossy downgrade. Existing exact-ID (`equals`) reward conditions remain unchanged unless their reward selection is explicitly edited.
+
 ## Speaker.bot Connection
 
 1. In Speaker.bot, open `Settings > WebSocket Server`.

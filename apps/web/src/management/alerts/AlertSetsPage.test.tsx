@@ -21,7 +21,7 @@ describe("AlertSetsPage", () => {
     vi.useRealTimers();
     window.history.replaceState(null, "", window.location.pathname);
   });
-  it("loads the active set, masks browser-source keys, and supports starter review and quick enable", async () => {
+  it("loads the active set with browser-source status and masked keys", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
@@ -42,7 +42,15 @@ describe("AlertSetsPage", () => {
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
     expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
     expect(screen.getByText("4 alerts need review")).toBeInTheDocument();
+  });
 
+  it("reveals and hides browser-source URLs without changing keys", async () => {
+    const api = alertSetsApi();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Expand browser sources" }));
+    const landscapeSource = screen.getByRole("article", { name: "Landscape browser source" });
     await user.click(screen.getByRole("button", { name: "Reveal Landscape URL" }));
     expect(screen.getByRole("textbox", { name: "Landscape browser source" })).toHaveValue(
       "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_landscape?profile=landscape"
@@ -52,7 +60,14 @@ describe("AlertSetsPage", () => {
     expect(landscapeSource.querySelector(".alert-sets-page__source-masked")).toBeInTheDocument();
     expect(api.createOverlayOutputKey).not.toHaveBeenCalled();
     expect(api.regenerateOverlayOutputKey).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Enable New follower" }));
+  });
+
+  it("supports starter review and quick enable", async () => {
+    const api = alertSetsApi();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Enable New follower" }));
     expect(api.setManagedAlertEnabled).toHaveBeenCalledWith("alert-follow", true);
     await user.click(screen.getByRole("button", { name: "Mark starter review done" }));
     expect(api.markStarterAlertSetReviewComplete).toHaveBeenCalledWith("set-default");
@@ -254,7 +269,7 @@ describe("AlertSetsPage", () => {
     expect(getTwitchCustomRewards).toHaveBeenCalledOnce();
 
     await user.clear(within(dialog).getByLabelText("Alert name"));
-    await user.type(within(dialog).getByLabelText("Alert name"), "Shared hydration");
+    await user.paste("Shared hydration");
     await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
     await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
 
@@ -278,7 +293,7 @@ describe("AlertSetsPage", () => {
     await user.selectOptions(within(dialog).getByLabelText("Event type"), "channel_point_redemption");
     await within(dialog).findByText("3 custom rewards loaded.");
     await user.clear(within(dialog).getByLabelText("Alert name"));
-    await user.type(within(dialog).getByLabelText("Alert name"), "Shared hydration");
+    await user.paste("Shared hydration");
     await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
     await user.click(within(dialog).getByRole("checkbox", { name: /Hydrate/u }));
     await user.click(within(dialog).getByRole("checkbox", { name: /Stretch/u }));
