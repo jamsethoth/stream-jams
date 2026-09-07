@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing TypeScript/Zod, Node/Fastify, SQLite repositories, React/Vite, Vitest, Storybook and Playwright, plus the implemented Electron desktop runtime. No native audio driver or new UI library.
 
-**Spec:** [Proposal](../../../openspec/changes/add-alert-audio-routing/proposal.md), [design](../../../openspec/changes/add-alert-audio-routing/design.md), and all five [capability deltas](../../../openspec/changes/add-alert-audio-routing/specs). The OpenSpec [tasks](../../../openspec/changes/add-alert-audio-routing/tasks.md) are the authoritative completion ledger. Dependency: implemented and verified [desktop foundation](2026-09-03-windows-desktop-tray-runtime.md), not merely its apply-ready artifacts.
+**Spec:** [Proposal](../../../openspec/changes/archive/2026-09-07-add-alert-audio-routing/proposal.md), [design](../../../openspec/changes/archive/2026-09-07-add-alert-audio-routing/design.md), and all five [capability deltas](../../../openspec/changes/archive/2026-09-07-add-alert-audio-routing/specs). The OpenSpec [tasks](../../../openspec/changes/archive/2026-09-07-add-alert-audio-routing/tasks.md) are the authoritative completion ledger. Dependency: implemented and verified [desktop foundation](2026-09-03-windows-desktop-tray-runtime.md), not merely its apply-ready artifacts.
 
 ## Global Constraints
 

@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing strict TypeScript/ESM, pnpm workspaces, Node/Fastify, React/Vite, SQLite/keyring, Vitest, Storybook and Playwright; exactly pinned Electron and Electron Forge added only for desktop hosting/packaging.
 
-**Spec:** [Proposal](../../../openspec/changes/add-windows-desktop-tray-runtime/proposal.md), [design](../../../openspec/changes/add-windows-desktop-tray-runtime/design.md), and all three [capability deltas](../../../openspec/changes/add-windows-desktop-tray-runtime/specs). OpenSpec [tasks](../../../openspec/changes/add-windows-desktop-tray-runtime/tasks.md) are the authoritative completion ledger; checkboxes below provide execution detail.
+**Spec:** [Proposal](../../../openspec/changes/archive/2026-09-07-add-windows-desktop-tray-runtime/proposal.md), [design](../../../openspec/changes/archive/2026-09-07-add-windows-desktop-tray-runtime/design.md), and all three [capability deltas](../../../openspec/changes/archive/2026-09-07-add-windows-desktop-tray-runtime/specs). OpenSpec [tasks](../../../openspec/changes/archive/2026-09-07-add-windows-desktop-tray-runtime/tasks.md) are the authoritative completion ledger; checkboxes below provide execution detail.
 
 ## Global Constraints
 

@@ -26,5 +26,5 @@ Stream Jams needs a desktop-owned service lifetime so closing the management win
 
 - Add `apps/desktop`; extend server runtime exports, configuration contracts/store, runtime composition, management Settings, and backup integration. No Electron imports enter `apps/web` or framework-independent core domain logic.
 - Add exactly pinned Electron/Forge build dependencies, desktop build/test commands, Windows packaging validation, Storybook/Playwright coverage, and runbook instructions.
-- This is the first of two changes. [Alert audio routing](../add-alert-audio-routing/proposal.md) must verify this prerequisite is implemented before wiring device playback.
-- [Implementation plan](../../../docs/superpowers/plans/2026-09-03-windows-desktop-tray-runtime.md). The remaining distribution work stays in BL-030; this proposal does not authorize implementation or publication by itself.
+- This is the first of two changes. [Alert audio routing](../2026-09-07-add-alert-audio-routing/proposal.md) must verify this prerequisite is implemented before wiring device playback.
+- [Implementation plan](../../../../docs/superpowers/plans/2026-09-03-windows-desktop-tray-runtime.md). The remaining distribution work stays in BL-030; this proposal does not authorize implementation or publication by itself.

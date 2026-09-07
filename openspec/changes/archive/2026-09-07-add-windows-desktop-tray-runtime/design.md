@@ -2,7 +2,7 @@
 
 The repository has a Fastify server, React management/overlay bundles, framework-independent core contracts, and no desktop workspace. `apps/server/src/index.ts` currently performs startup as an import side effect. `createRuntimeAppComposition()` already owns provider connections, Fastify and SQLite and exposes `close()`. `FileConfigStore` owns validated, atomically replaced configuration under the existing local profile.
 
-The user approved a two-change program and selected a runnable Windows application folder, not the full BL-030 distribution program. This change supplies the prerequisite shell; [audio routing](../add-alert-audio-routing/design.md) supplies actual device playback.
+The user approved a two-change program and selected a runnable Windows application folder, not the full BL-030 distribution program. This change supplies the prerequisite shell; [audio routing](../2026-09-07-add-alert-audio-routing/design.md) supplies actual device playback.
 
 ## Goals / Non-Goals
 
@@ -70,4 +70,4 @@ No product decisions remain open. Native packaging compatibility is an implement
 
 ## Implementation
 
-Follow the [implementation plan](../../../docs/superpowers/plans/2026-09-03-windows-desktop-tray-runtime.md) and [unchecked task list](tasks.md). Do not mark this dependency complete from artifact readiness alone.
+Follow the [implementation plan](../../../../docs/superpowers/plans/2026-09-03-windows-desktop-tray-runtime.md) and [unchecked task list](tasks.md). Do not mark this dependency complete from artifact readiness alone.

@@ -28,7 +28,7 @@ Streamers need alert sounds to reach their own headphones, a stream-facing mixer
 
 ## Impact
 
-- Depends on implemented [Windows desktop/tray runtime](../add-windows-desktop-tray-runtime/proposal.md), plus an early real-device capability gate in the packaged application.
+- Depends on implemented [Windows desktop/tray runtime](../2026-09-07-add-windows-desktop-tray-runtime/proposal.md), plus an early real-device capability gate in the packaged application.
 - Affects core editor/playback contracts and resolution, SQLite route persistence, server playback coordination and testing, desktop IPC/player, management Settings/editor/diagnostics, alert overlay rendering, backup mapping, and regression tests.
 - Browser-source URLs and their authorization remain unchanged. New management mutations retain authentication, CSRF, origin restrictions, and rate limiting; no overlay key gains device-management privileges.
-- [Implementation plan](../../../docs/superpowers/plans/2026-09-03-alert-audio-routing.md). Planning readiness does not mean the dependency or device gate has passed.
+- [Implementation plan](../../../../docs/superpowers/plans/2026-09-03-alert-audio-routing.md). Planning readiness does not mean the dependency or device gate has passed.

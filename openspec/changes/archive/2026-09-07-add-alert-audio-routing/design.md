@@ -2,7 +2,7 @@
 
 An alert document already has multiple audio layers, while each normalized overlay instruction carries at most one audio asset. `PlaybackCoordinator` selects variations once and then expands instructions across visual targets. Queue admission currently requires overlay alerts, completion is driven by browser recipients, and editor Send test requires a connected profile. Reusing that expansion for devices would duplicate sound and would not support device-only operation.
 
-The implemented [desktop prerequisite](../add-windows-desktop-tray-runtime/design.md) must own service and playback lifetime. This proposal does not assume an ordinary browser or OBS CEF grants output-device access.
+The implemented [desktop prerequisite](../2026-09-07-add-windows-desktop-tray-runtime/design.md) must own service and playback lifetime. This proposal does not assume an ordinary browser or OBS CEF grants output-device access.
 
 ## Goals / Non-Goals
 
@@ -89,4 +89,4 @@ No further product choices are required. Hardware/API feasibility remains an exp
 
 ## Implementation
 
-Follow the [implementation plan](../../../docs/superpowers/plans/2026-09-03-alert-audio-routing.md) and [unchecked tasks](tasks.md). All actual device checks remain unperformed at proposal time.
+Follow the [implementation plan](../../../../docs/superpowers/plans/2026-09-03-alert-audio-routing.md) and [unchecked tasks](tasks.md). All actual device checks remain unperformed at proposal time.
