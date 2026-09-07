@@ -53,6 +53,12 @@ interface OverlayInstruction {
 }
 
 export async function mockManagementShell(page: Page): Promise<void> {
+  await page.route("**/audio/status", (route) => route.fulfill({ json: {
+    capability: { available: false, devices: [], reason: "desktop-unavailable", nextStep: "Open the desktop app to use device outputs." }, muted: false, routes: []
+  } }));
+  await page.route("**/config/desktop", async (route) => {
+    await route.fulfill({ contentType: "application/json", json: { available: false, closeToTray: true } });
+  });
   await page.route("**/auth/management/sessions", async (route) => {
     await route.fulfill({
       contentType: "application/json",
@@ -227,6 +233,7 @@ export function visualInstruction(input: {
   readonly assetId: string;
   readonly purpose: OverlayPurpose;
   readonly scope: OverlayScope;
+  readonly durationMs?: number | undefined;
   readonly moduleId?: string | undefined;
   readonly overlayId?: string | undefined;
 }): OverlayInstruction {
@@ -250,6 +257,6 @@ export function visualInstruction(input: {
     audio: null,
     text: null,
     tts: null,
-    durationMs: 4000
+    durationMs: input.durationMs ?? 4000
   };
 }

@@ -2,7 +2,12 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AssetFileNotFoundError, AssetPathTraversalError, LocalAssetStore } from "./local-asset-store.js";
+import {
+  AssetFileNotFoundError,
+  AssetPathTraversalError,
+  AssetReadLimitExceededError,
+  LocalAssetStore
+} from "./local-asset-store.js";
 
 const temporaryDirectories: string[] = [];
 
@@ -32,6 +37,7 @@ describe("LocalAssetStore", () => {
     const store = new LocalAssetStore({ assetDirectory });
 
     await expect(store.read("../secret.txt")).rejects.toBeInstanceOf(AssetPathTraversalError);
+    await expect(store.readBounded("../secret.txt", 1)).rejects.toBeInstanceOf(AssetPathTraversalError);
     await expect(store.read("/tmp/secret.txt")).rejects.toBeInstanceOf(AssetPathTraversalError);
     await expect(store.read("image\\..\\secret.txt")).rejects.toBeInstanceOf(AssetPathTraversalError);
   });
@@ -41,6 +47,21 @@ describe("LocalAssetStore", () => {
     const store = new LocalAssetStore({ assetDirectory });
 
     await expect(store.read("image/missing.png")).rejects.toBeInstanceOf(AssetFileNotFoundError);
+  });
+
+  it("reads through an explicit byte limit without allocating an oversized file", async () => {
+    const assetDirectory = await createTemporaryAssetDirectory();
+    const store = new LocalAssetStore({ assetDirectory });
+    await store.write({
+      assetId: "tone",
+      originalFileName: "tone.mp3",
+      mediaType: "audio",
+      normalizedExtension: ".mp3",
+      bytes: new Uint8Array([1, 2, 3, 4])
+    });
+
+    await expect(store.readBounded("audio/tone.mp3", 3)).rejects.toBeInstanceOf(AssetReadLimitExceededError);
+    await expect(store.readBounded("audio/tone.mp3", 4)).resolves.toEqual(Buffer.from([1, 2, 3, 4]));
   });
 
   it("inspects available, missing, and broken storage paths", async () => {

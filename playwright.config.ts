@@ -36,7 +36,9 @@ try {
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
-  workers: process.env.CI ? 1 : undefined,
+  // The E2E projects intentionally share one Stream Jams service and its
+  // persisted state, so parallel workers are not isolated from each other.
+  workers: 1,
   use: {
     baseURL,
     trace: "on-first-retry"

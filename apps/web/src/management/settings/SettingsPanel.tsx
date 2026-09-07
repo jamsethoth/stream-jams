@@ -7,30 +7,37 @@ import {
   type ConfigurationRestorePreflight,
   type ConfigurationRestoreResult
 } from "@stream-jams/core";
-import { useCallback, useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { AudioOutputsPanel, type AudioOutputsPanelHandle } from "../audio/AudioOutputsPanel.js";
+import { defaultAudioApi, type AudioApi } from "../audio/audio-api.js";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { formatBytes, formatCount, formatHours } from "../foundation/formatters.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
-import type { ManagementApi, ServerConfigView } from "../management-api.js";
+import type { DesktopConfigView, ManagementApi, ServerConfigView } from "../management-api.js";
+import { DesktopSettingsPanel } from "./DesktopSettingsPanel.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import "./settings-panel.css";
 
 type SettingsApi = Pick<
   ManagementApi,
-  "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
+  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
 >;
 
 export interface SettingsPanelProps {
+  readonly audioApi?: AudioApi | undefined;
   readonly managementApi: SettingsApi;
 }
 
 const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 };
 
-export function SettingsPanel({ managementApi }: SettingsPanelProps) {
+export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: SettingsPanelProps) {
+  const audioPanelRef = useRef<AudioOutputsPanelHandle>(null);
   const [savedConfig, setSavedConfig] = useState(defaultServerConfig);
   const [configDraft, setConfigDraft] = useState(defaultServerConfig);
+  const [desktopConfig, setDesktopConfig] = useState<DesktopConfigView | null>(null);
+  const [closeToTray, setCloseToTray] = useState(true);
   const [summary, setSummary] = useState<ConfigurationBackupSummary | null>(null);
   const [archive, setArchive] = useState<ConfigurationBackupArchive | null>(null);
   const [archiveName, setArchiveName] = useState<string | null>(null);
@@ -41,14 +48,17 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   const [initialLoadFailed, setInitialLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [maintenanceBusy, setMaintenanceBusy] = useState<"open-data-folder" | "clear-old-logs" | null>(null);
+  const [audioDirty, setAudioDirty] = useState(false);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
   const loadSettings = useCallback(async () => {
     setLoading(true);
     setError(null);
-    await Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary()])
-      .then(([serverConfig, backupSummary]) => {
+    await Promise.all([managementApi.getServerConfig(), managementApi.getConfigurationBackupSummary(), managementApi.getDesktopConfig()])
+      .then(([serverConfig, backupSummary, desktop]) => {
+        setDesktopConfig(desktop);
+        setCloseToTray(desktop.closeToTray);
         setSavedConfig(serverConfig);
         setConfigDraft(serverConfig);
         setSummary(backupSummary);
@@ -66,11 +76,21 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
   useEffect(() => { void loadSettings(); }, [loadSettings]);
 
   useEffect(() => {
-    if (loading || window.location.hash !== "#backup-restore") return;
-    document.getElementById("backup-restore")?.scrollIntoView({ block: "start" });
+    if (loading) return;
+    const targetId = window.location.hash === "#backup-restore"
+      ? "backup-restore"
+      : window.location.hash === "#audio-outputs" ? "audio-outputs" : null;
+    if (targetId !== null) document.getElementById(targetId)?.scrollIntoView({ block: "start" });
   }, [loading]);
 
   const serverDirty = savedConfig.host !== configDraft.host || savedConfig.port !== configDraft.port;
+  const desktopDirty = desktopConfig?.available === true && desktopConfig.closeToTray !== closeToTray;
+
+  const saveDesktop = useCallback(async () => {
+    const saved = await managementApi.updateDesktopConfig({ closeToTray });
+    setDesktopConfig(saved);
+    setCloseToTray(saved.closeToTray);
+  }, [closeToTray, managementApi]);
 
   const saveServer = useCallback(async () => {
     const saved = await managementApi.updateServerConfig(configDraft);
@@ -78,22 +98,42 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
     setConfigDraft(saved);
   }, [configDraft, managementApi]);
 
+  const saveSettings = useCallback(async () => {
+    if (serverDirty) await saveServer();
+    if (desktopDirty) await saveDesktop();
+    if (audioDirty && !(await audioPanelRef.current?.save())) {
+      return { saved: false as const, error: "Audio output changes could not be saved. Resolve the highlighted route and try again." };
+    }
+  }, [audioDirty, desktopDirty, saveDesktop, saveServer, serverDirty]);
+
   const discard = useCallback(() => {
+    setCloseToTray(desktopConfig?.closeToTray ?? true);
     setConfigDraft(savedConfig);
     setArchive(null);
     setArchiveName(null);
     setPreflight(null);
     setRestoreResult(null);
     setConfirmation("");
-  }, [savedConfig]);
+    audioPanelRef.current?.discard();
+  }, [desktopConfig, savedConfig]);
 
   useDirtyNavigationSource({
     id: "settings",
-    dirty: serverDirty || archive !== null,
-    summary: archive === null ? "Server settings have unsaved changes." : "A configuration backup is selected for restore.",
-    save: archive === null && serverDirty ? saveServer : null,
+    dirty: serverDirty || desktopDirty || audioDirty || archive !== null,
+    summary: archive === null ? "Settings or named audio outputs have unsaved changes." : "A configuration backup is selected for restore.",
+    save: archive === null && (serverDirty || desktopDirty || audioDirty) ? saveSettings : null,
     discard
   });
+
+  async function submitDesktop(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try { await saveDesktop(); setNotice({ tone: "success", message: "Desktop settings saved." }); }
+    catch (cause) { setError(actionable("Desktop settings could not be applied", cause, "Check the service and retry. If the preference was saved but not applied, restart the desktop app.")); }
+    finally { setBusy(false); }
+  }
 
   async function submitServer(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -180,6 +220,9 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
       setConfirmation("");
       setNotice({ tone: "warning", message: "Configuration restored.", detail: "Complete the follow-up actions before going live." });
       setSummary(await managementApi.getConfigurationBackupSummary());
+      const desktop = await managementApi.getDesktopConfig();
+      setDesktopConfig(desktop);
+      setCloseToTray(desktop.closeToTray);
     } catch (cause) {
       setError(actionable("Configuration was not restored", cause, "Resolve the reported failure, validate the backup again, and retry."));
     } finally {
@@ -253,6 +296,18 @@ export function SettingsPanel({ managementApi }: SettingsPanelProps) {
           <button disabled={busy || !serverDirty} type="submit">Save server settings</button>
         </form>
       </section>
+
+      {desktopConfig?.available !== true ? null : (
+        <section aria-labelledby="desktop-heading" className="settings-page__section">
+          <div className="settings-page__section-heading"><div><h3 id="desktop-heading">Desktop app</h3><p>Choose what happens when you close the management window.</p></div></div>
+          <form className="settings-page__form" onSubmit={submitDesktop}>
+            <DesktopSettingsPanel closeToTray={closeToTray} disabled={busy} onChange={setCloseToTray} />
+            <button disabled={busy || !desktopDirty} type="submit">Save desktop settings</button>
+          </form>
+        </section>
+      )}
+
+      <AudioOutputsPanel audioApi={audioApi} onDirtyChange={setAudioDirty} ref={audioPanelRef} />
 
       {summary === null ? null : (
         <section aria-labelledby="storage-heading" className="settings-page__section">

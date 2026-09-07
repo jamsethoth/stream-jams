@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ServerConfigService, type PortAvailabilityChecker } from "./server-config-service.js";
 
 const baseConfig: AppConfig = {
+  desktop: { closeToTray: true },
   server: {
     host: "127.0.0.1",
     port: 39187

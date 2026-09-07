@@ -13,3 +13,5 @@ playwright-report/
 storybook-static/
 .playwright-mcp/
 .superpowers/
+apps/desktop/.stage/
+apps/desktop/out/

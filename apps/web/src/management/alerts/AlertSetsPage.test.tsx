@@ -171,11 +171,16 @@ describe("AlertSetsPage", () => {
     source.inventory = source.inventory.map((candidate) => candidate.id === "alert-follow"
       ? { ...candidate, targetProfileIds: ["landscape", "vertical"] }
       : candidate);
-    const getAlertEditorDocument = vi.fn(async () => editorDocument());
+    source.browserSources = source.browserSources.map((entry) => ({ ...entry, connectionState: "connected" as const }));
+    source.overview.targetProfiles = source.overview.targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "ready" as const }));
+    const saved = editorDocument();
+    saved.targetProfiles = saved.targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "ready" as const }));
+    const getAlertEditorDocument = vi.fn(async () => saved);
     const sendAlertEditorTest = vi.fn(async (_alertId, request) => ({
       status: "queued" as const,
       targetProfileId: request.targetProfileId,
       referenceId: "ref-inline-test",
+      deliveredDestinations: [], unavailableDestinations: [],
       test: true as const
     }));
     const user = userEvent.setup();
@@ -187,17 +192,29 @@ describe("AlertSetsPage", () => {
     })} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "Test New follower" }));
-    await user.click(screen.getByRole("button", { name: "Send New follower test to Vertical" }));
+    await user.click(await screen.findByRole("button", { name: "Send New follower test to Vertical" }));
 
     await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", {
-      document: editorDocument(),
+      document: saved,
       targetProfileId: "vertical",
       samplePayload: { userName: "James" },
       includeAudio: true,
       includeTts: true
     }));
     expect(getAlertEditorDocument).toHaveBeenCalledWith("alert-follow");
-    expect(screen.getByText("New follower test queued for Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
+    expect(screen.getByText("Test queued on Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
+  });
+
+  it("sends saved device audio without inventing a ready browser profile", async () => {
+    const source = detail();
+    source.inventory = source.inventory.map((row) => ({ ...row, targetProfileIds: [] }));
+    const saved = editorDocument();
+    saved.outputs = { browserSource: false, deviceRouteIds: ["private"] };
+    saved.targetProfiles = saved.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" as const }));
+    const api = alertSetsApi({ getAlertSet: vi.fn(async () => source), getAlertEditorDocument: vi.fn(async () => saved) });
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Test New follower" }));
+    await waitFor(() => expect(api.sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({ document: saved, targetProfileId: null, includeAudio: true, includeTts: true })));
   });
 
   it("links a failed inline alert test to the server Diagnostics record", async () => {
@@ -936,7 +953,7 @@ function alertSetsApi(overrides: Partial<AlertSetsApi> = {}): AlertSetsApi {
     })),
     deleteAlertSet: vi.fn(async () => undefined),
     getAlertEditorDocument: vi.fn(async () => editorDocument()),
-    sendAlertEditorTest: vi.fn(async (_alertId, request) => ({ status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-inline-test", test: true as const })),
+    sendAlertEditorTest: vi.fn(async (_alertId, request) => ({ status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-inline-test", test: true as const, deliveredDestinations: [], unavailableDestinations: [] })),
     createOverlayOutputKey: vi.fn(async () => ({
       keyId: "key-created",
       url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_created?profile=landscape",
@@ -1103,6 +1120,7 @@ function editorDocument(): AlertEditorDocument {
     cooldownSeconds: 0,
     rulePriority: 0,
     durationMs: 5_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [{
       id: "layer-message",
       name: "Message",

@@ -19,6 +19,11 @@ import type {
   Logger,
   TtsService
 } from "@stream-jams/core";
+import { resolveAlertAudio } from "@stream-jams/core";
+import type { AudioPlaybackSink, PlaybackQueueItem } from "@stream-jams/core";
+import type { AudioOutputService } from "../audio/audio-output-service.js";
+
+type PlaybackAudioOutputService = Pick<AudioOutputService, "preparePlayback"> & Partial<Pick<AudioOutputService, "listRoutes">>;
 
 export type PlaybackEnqueueStatus = "queued" | "duplicate" | "no-matches" | "cooldown";
 
@@ -64,12 +69,30 @@ export interface PlaybackCoordinatorDependencies {
   readonly visualAssetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly assetRepository?: Pick<AssetRepository, "findManyByIds">;
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
+  readonly audioPlaybackSink?: AudioPlaybackSink;
+  readonly audioOutputService?: PlaybackAudioOutputService;
   readonly findEditorDocuments?: (alertIds: readonly string[]) => Promise<ReadonlyMap<string, AlertEditorDocument>>;
   readonly ttsService?: Pick<TtsService, "createPlaybackInstructionFromModeratedText">;
   readonly logger?: Pick<Logger, "error">;
   readonly generateReferenceId?: () => string;
   readonly persistPlaybackSafetyState?: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
 }
+
+interface DevicePlaybackState {
+  readonly id: string;
+  cancelled: boolean;
+  settled: boolean;
+  stopping: Promise<void> | null;
+}
+
+interface PendingBrowserInstruction {
+  pendingClients: Set<string> | null;
+  readonly completedBeforeDispatch: Set<string>;
+  dispatchComplete: boolean;
+}
+
+const PLAYBACK_PREPARATION_TIMEOUT_MS = 5_000;
+const PLAYBACK_COMPLETION_GRACE_MS = 5_000;
 
 export class PlaybackCoordinator {
   readonly #alertService: Pick<AlertService, "listActiveRules">;
@@ -82,6 +105,13 @@ export class PlaybackCoordinator {
   readonly #visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly #assetRepository: Pick<AssetRepository, "findManyByIds"> | null;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
+  readonly #audioPlaybackSink: AudioPlaybackSink | null;
+  readonly #audioOutputService: PlaybackAudioOutputService | null;
+  #devicePlayback: DevicePlaybackState | null = null;
+  #closePromise: Promise<void> | null = null;
+  #preparationTimer: ReturnType<typeof setTimeout> | null = null;
+  #completionTimer: ReturnType<typeof setTimeout> | null = null;
+  #stoppingOccurrence: { readonly id: string; readonly promise: Promise<PlaybackQueueSnapshot> } | null = null;
   readonly #findEditorDocuments:
     ((alertIds: readonly string[]) => Promise<ReadonlyMap<string, AlertEditorDocument>>) | null;
   readonly #ttsService: Pick<TtsService, "createPlaybackInstructionFromModeratedText"> | null;
@@ -90,7 +120,10 @@ export class PlaybackCoordinator {
   readonly #persistPlaybackSafetyState: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
   #lastDeliveredCurrentItemId: string | null = null;
   #lastRemoteTtsItemId: string | null = null;
-  #pendingClientsByInstructionId = new Map<string, Set<string> | null>();
+  #pendingClientsByInstructionId = new Map<string, PendingBrowserInstruction>();
+  #browserInstructionIds: readonly string[] = [];
+  #browserDispatchComplete = true;
+  #closed = false;
 
   constructor(dependencies: PlaybackCoordinatorDependencies) {
     this.#alertService = dependencies.alertService;
@@ -103,6 +136,8 @@ export class PlaybackCoordinator {
     this.#visualAssetMediaTypes = dependencies.visualAssetMediaTypes ?? {};
     this.#assetRepository = dependencies.assetRepository ?? null;
     this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
+    this.#audioPlaybackSink = dependencies.audioPlaybackSink ?? null;
+    this.#audioOutputService = dependencies.audioOutputService ?? null;
     this.#findEditorDocuments = dependencies.findEditorDocuments ?? null;
     this.#ttsService = dependencies.ttsService ?? null;
     this.#logger = dependencies.logger ?? null;
@@ -121,7 +156,21 @@ export class PlaybackCoordinator {
     return this.#queue.getSnapshot();
   }
 
+  close(): Promise<void> {
+    if (this.#closePromise !== null) return this.#closePromise;
+    this.#closed = true;
+    if (this.#devicePlayback !== null) this.#devicePlayback.cancelled = true;
+    this.#clearOccurrenceTimers();
+    this.#queue.pause();
+    this.#pendingClientsByInstructionId.clear();
+    const ids = this.#browserInstructionIds;
+    this.#stopBrowserInstructions(ids);
+    this.#closePromise = this.#audioPlaybackSink?.close() ?? Promise.resolve();
+    return this.#closePromise;
+  }
+
   async enqueueEvent(event: NormalizedStreamEvent): Promise<PlaybackEnqueueResult> {
+    if (this.#closed) throw new Error("Playback has stopped.");
     if (!this.#dedupeService.accept(event)) {
       return this.#result("duplicate", [], []);
     }
@@ -149,10 +198,19 @@ export class PlaybackCoordinator {
 
     const selectedVariants = this.#resolver.selectVariants(readyMatches);
     const editorDocuments = await this.#loadEditorDocuments(readyMatches, selectedVariants);
+    const audio = readyMatches.flatMap(match => {
+      const selected = selectedVariants.get(match.rule.id)!;
+      const documentId = selected.id === match.rule.variants[0]?.id ? match.rule.id : selected.id;
+      const document = editorDocuments.get(documentId);
+      if (document === undefined || !document.enabled) return [];
+      const resolved = resolveAlertAudio(document);
+      return resolved === null || resolved.outputs.deviceRouteIds.length === 0 ? [] : [resolved];
+    });
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(
       selectedVariants.values(),
       editorDocuments.values()
     );
+    if (this.#closed) throw new Error("Playback has stopped.");
     const resolvedAlerts = this.#targets.flatMap((target) =>
       this.#resolver.resolveMatches({
         matches: readyMatches,
@@ -165,6 +223,7 @@ export class PlaybackCoordinator {
     const snapshot = this.#deliverCurrent(this.#queue.enqueue({
       sourceEvent: event,
       alerts: resolvedAlerts,
+      audio,
       priority: Math.max(...readyMatches.map((match) => match.rule.priority))
     }));
 
@@ -194,6 +253,7 @@ export class PlaybackCoordinator {
       })
     );
     for (const alert of alerts) {
+      if (this.#closed) return;
       const tts = alert.overlayInstruction.tts;
       if (tts?.mode !== "remote-trigger") continue;
       const providerId = readProviderPayloadString(tts.providerPayload, "providerId");
@@ -250,27 +310,36 @@ export class PlaybackCoordinator {
   }
 
   enqueueResolvedTest(input: EnqueuePlaybackItemInput): PlaybackQueueSnapshot {
+    if (this.#closed) throw new Error("Playback has stopped.");
     return this.#deliverCurrent(this.#queue.enqueue(input));
   }
 
   completeCurrent(): PlaybackQueueSnapshot {
+    if (this.#closed || (this.#devicePlayback !== null && (!this.#devicePlayback.settled || this.#devicePlayback.cancelled))) {
+      return this.#queue.getSnapshot();
+    }
+    this.#clearOccurrenceTimers();
     return this.#deliverCurrent(this.#queue.completeCurrent());
   }
 
   reportInstructionFinished(clientId: string, instructionId: string): PlaybackQueueSnapshot {
     const snapshot = this.#queue.getSnapshot();
-    const pendingClients = this.#pendingClientsByInstructionId.get(instructionId);
-    if (snapshot.current?.id !== this.#lastDeliveredCurrentItemId || pendingClients === undefined) {
+    const pending = this.#pendingClientsByInstructionId.get(instructionId);
+    if (snapshot.current?.id !== this.#lastDeliveredCurrentItemId || pending === undefined) {
       return snapshot;
     }
 
-    if (pendingClients !== null && !pendingClients.delete(clientId)) {
+    if (!pending.dispatchComplete) {
+      pending.completedBeforeDispatch.add(clientId);
       return snapshot;
     }
-    if (pendingClients === null || pendingClients.size === 0) {
+    if (pending.pendingClients !== null && !pending.pendingClients.delete(clientId)) {
+      return snapshot;
+    }
+    if (pending.pendingClients === null || pending.pendingClients.size === 0) {
       this.#pendingClientsByInstructionId.delete(instructionId);
     }
-    return this.#pendingClientsByInstructionId.size === 0 ? this.completeCurrent() : snapshot;
+    return this.#canCompleteCurrent() ? this.completeCurrent() : snapshot;
   }
 
   reportClientDisconnected(clientId: string): PlaybackQueueSnapshot {
@@ -280,23 +349,23 @@ export class PlaybackCoordinator {
     }
 
     let removed = false;
-    for (const [instructionId, pendingClients] of this.#pendingClientsByInstructionId) {
-      if (pendingClients !== null && pendingClients.delete(clientId)) {
+    for (const [instructionId, pending] of this.#pendingClientsByInstructionId) {
+      if (!pending.dispatchComplete) {
+        pending.completedBeforeDispatch.add(clientId);
+      } else if (pending.pendingClients !== null && pending.pendingClients.delete(clientId)) {
         removed = true;
-        if (pendingClients.size === 0) {
+        if (pending.pendingClients.size === 0) {
           this.#pendingClientsByInstructionId.delete(instructionId);
         }
       }
     }
-    return removed && this.#pendingClientsByInstructionId.size === 0 ? this.completeCurrent() : snapshot;
+    return removed && this.#canCompleteCurrent() ? this.completeCurrent() : snapshot;
   }
 
-  skipCurrent(): PlaybackQueueSnapshot {
-    const instructionIds = this.#queue.getSnapshot().current?.alerts.map((alert) => alert.overlayInstruction.id) ?? [];
-    if (instructionIds.length > 0) {
-      this.#overlayPlaybackSink?.stopPlaybackInstructions?.(instructionIds);
-    }
-    return this.#deliverCurrent(this.#queue.skipCurrent());
+  skipCurrent(): Promise<PlaybackQueueSnapshot> {
+    const current = this.#queue.getSnapshot().current;
+    if (this.#closed || current === null) return Promise.resolve(this.#queue.getSnapshot());
+    return this.#stopOccurrenceAndAdvance(current.id, "skipped");
   }
 
   replayRecent(itemId: string): PlaybackQueueSnapshot {
@@ -317,6 +386,7 @@ export class PlaybackCoordinator {
     await this.#persistPlaybackSafetyState({ muted: true });
     const snapshot = this.#queue.mute();
     this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    await this.#audioPlaybackSink?.setMuted(snapshot.muted);
     return snapshot;
   }
 
@@ -324,6 +394,7 @@ export class PlaybackCoordinator {
     await this.#persistPlaybackSafetyState({ muted: false });
     const snapshot = this.#queue.unmute();
     this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    await this.#audioPlaybackSink?.setMuted(snapshot.muted);
     return snapshot;
   }
 
@@ -333,12 +404,17 @@ export class PlaybackCoordinator {
   }
 
   #deliverCurrent(initialSnapshot: PlaybackQueueSnapshot): PlaybackQueueSnapshot {
+    if (this.#closed) return initialSnapshot;
     let snapshot = initialSnapshot;
     while (true) {
       if (snapshot.current === null) {
+        this.#clearOccurrenceTimers();
+        this.#devicePlayback = null;
         this.#lastDeliveredCurrentItemId = null;
         this.#lastRemoteTtsItemId = null;
         this.#pendingClientsByInstructionId.clear();
+        this.#browserInstructionIds = [];
+        this.#browserDispatchComplete = true;
         return snapshot;
       }
 
@@ -347,7 +423,7 @@ export class PlaybackCoordinator {
         this.#lastRemoteTtsItemId = snapshot.current.id;
       }
 
-      if (this.#overlayPlaybackSink === null) {
+      if (this.#overlayPlaybackSink === null && this.#audioPlaybackSink === null) {
         if (shouldDispatchRemoteTts && !snapshot.muted) {
           void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
         }
@@ -362,24 +438,222 @@ export class PlaybackCoordinator {
       }
 
       this.#lastDeliveredCurrentItemId = snapshot.current.id;
+      this.#clearOccurrenceTimers();
       this.#pendingClientsByInstructionId.clear();
-      for (const alert of snapshot.current.alerts) {
-        const instructionId = alert.overlayInstruction.id;
-        const delivery = this.#overlayPlaybackSink.deliverPlaybackInstruction(alert.overlayInstruction);
-        if (delivery === undefined) {
-          this.#pendingClientsByInstructionId.set(instructionId, null);
-        } else if (delivery.deliveredClientIds.length > 0) {
-          this.#pendingClientsByInstructionId.set(instructionId, new Set(delivery.deliveredClientIds));
+      this.#browserDispatchComplete = false;
+      this.#devicePlayback = null;
+      const browserInstructions = (this.#overlayPlaybackSink === null ? [] : snapshot.current.alerts).map(alert => ({
+        ...alert.overlayInstruction,
+        id: `${snapshot.current!.id}:${alert.overlayInstruction.id}`
+      }));
+      this.#browserInstructionIds = browserInstructions.map(instruction => instruction.id);
+      for (const instruction of browserInstructions) {
+        this.#pendingClientsByInstructionId.set(instruction.id, {
+          pendingClients: null,
+          completedBeforeDispatch: new Set(),
+          dispatchComplete: false
+        });
+      }
+      // Register device and browser work before either sink can report completion.
+      if (snapshot.current.audio.length > 0 && this.#audioPlaybackSink !== null && this.#audioOutputService !== null) {
+        const state = { id: snapshot.current.id, cancelled: false, settled: false, stopping: null };
+        this.#devicePlayback = state;
+        this.#preparationTimer = this.#scheduleTimer(
+          () => { void this.#expireDevicePreparation(snapshot.current!, state); },
+          PLAYBACK_PREPARATION_TIMEOUT_MS
+        );
+      }
+      const occurrenceDurationMs = Math.max(
+        0,
+        ...snapshot.current.alerts.map(alert => alert.overlayInstruction.durationMs),
+        ...snapshot.current.audio.map(audio => audio.durationMs)
+      );
+      this.#completionTimer = this.#scheduleTimer(
+        () => { void this.#handleWatchdog(snapshot.current!.id); },
+        occurrenceDurationMs + PLAYBACK_COMPLETION_GRACE_MS
+      );
+      if (this.#devicePlayback !== null) {
+        const state = this.#devicePlayback;
+        void this.#dispatchDeviceAudio(snapshot.current, state);
+      }
+      for (const instruction of browserInstructions) {
+        const pending = this.#pendingClientsByInstructionId.get(instruction.id)!;
+        try {
+          const delivery = this.#overlayPlaybackSink!.deliverPlaybackInstruction(instruction);
+          pending.dispatchComplete = true;
+          if (delivery === undefined) {
+            if (pending.completedBeforeDispatch.size > 0) this.#pendingClientsByInstructionId.delete(instruction.id);
+          } else {
+            pending.pendingClients = new Set(delivery.deliveredClientIds);
+            for (const clientId of pending.completedBeforeDispatch) pending.pendingClients.delete(clientId);
+            if (pending.pendingClients.size === 0) this.#pendingClientsByInstructionId.delete(instruction.id);
+          }
+        } catch {
+          pending.dispatchComplete = true;
+          this.#pendingClientsByInstructionId.delete(instruction.id);
         }
       }
+      this.#browserDispatchComplete = true;
       if (shouldDispatchRemoteTts && !snapshot.muted) {
         void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
       }
 
-      if (this.#pendingClientsByInstructionId.size > 0) {
+      if (!this.#canCompleteCurrent()) {
         return snapshot;
       }
+      this.#clearOccurrenceTimers();
       snapshot = this.#queue.completeCurrent();
+    }
+  }
+
+  async #dispatchDeviceAudio(item: PlaybackQueueItem, state: DevicePlaybackState): Promise<void> {
+    const active = () => !this.#closed && !state.cancelled && this.#devicePlayback === state;
+    try {
+      const prepared = await this.#audioOutputService!.preparePlayback(item.id, item.audio);
+      if (this.#devicePlayback === state) this.#clearPreparationTimer();
+      if (!active()) return;
+      if (prepared.unavailableRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, prepared.unavailableRouteIds);
+      // All documents belong to one occurrence. One failed document must not
+      // release the queue while other documents are still playing.
+      let requiresExplicitStop = false;
+      await Promise.allSettled(prepared.batches.map(async batch => {
+        if (!active()) return;
+        try {
+          const result = await this.#audioPlaybackSink!.play({ ...batch, muted: this.#queue.getSnapshot().muted });
+          if (result.failedRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, result.failedRouteIds);
+        } catch {
+          requiresExplicitStop = true;
+          void this.#recordDeviceAudioFailure(item.id, batch.destinations.flatMap(destination => destination.routeIds));
+        }
+      }));
+      if (requiresExplicitStop && active()) {
+        try {
+          state.stopping ??= this.#audioPlaybackSink!.stop(item.id);
+          await state.stopping;
+        } catch {
+          state.stopping = null;
+          state.cancelled = true;
+          this.#clearOccurrenceTimers();
+          return;
+        }
+      }
+    } catch {
+      if (this.#devicePlayback === state) this.#clearPreparationTimer();
+      void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds));
+    } finally {
+      state.settled = true;
+      if (active() && this.#canCompleteCurrent()) this.completeCurrent();
+    }
+  }
+
+  #canCompleteCurrent(): boolean {
+    return this.#browserDispatchComplete &&
+      this.#pendingClientsByInstructionId.size === 0 &&
+      (this.#devicePlayback === null || this.#devicePlayback.settled);
+  }
+
+  async #expireDevicePreparation(item: PlaybackQueueItem, state: DevicePlaybackState): Promise<void> {
+    if (this.#closed || this.#devicePlayback !== state || state.cancelled) return;
+    this.#clearPreparationTimer();
+    state.cancelled = true;
+    void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds));
+    try {
+      state.stopping ??= this.#audioPlaybackSink!.stop(item.id);
+      await state.stopping;
+    } catch {
+      state.stopping = null;
+      this.#clearOccurrenceTimers();
+      return;
+    }
+    if (this.#closed || this.#devicePlayback !== state || this.#stoppingOccurrence !== null) return;
+    // No device dispatch may follow this preparation. Release only its token;
+    // healthy browser recipients retain their own completion and watchdog.
+    this.#devicePlayback = null;
+    if (this.#canCompleteCurrent()) this.completeCurrent();
+  }
+
+  #handleWatchdog(playbackId: string): Promise<PlaybackQueueSnapshot> {
+    return this.#stopOccurrenceAndAdvance(playbackId, "completed").catch(() => this.#queue.getSnapshot());
+  }
+
+  #stopOccurrenceAndAdvance(
+    playbackId: string,
+    status: "completed" | "skipped"
+  ): Promise<PlaybackQueueSnapshot> {
+    if (this.#stoppingOccurrence?.id === playbackId) return this.#stoppingOccurrence.promise;
+    const promise = (async () => {
+      if (this.#closed || this.#queue.getSnapshot().current?.id !== playbackId) return this.#queue.getSnapshot();
+      const state = this.#devicePlayback;
+      if (state !== null) state.cancelled = true;
+      this.#clearOccurrenceTimers();
+      this.#stopBrowserInstructions(this.#browserInstructionIds);
+      this.#pendingClientsByInstructionId.clear();
+      this.#browserDispatchComplete = true;
+      if (state !== null && this.#audioPlaybackSink !== null) {
+        state.stopping ??= this.#audioPlaybackSink.stop(playbackId);
+        try {
+          await state.stopping;
+        } catch (error) {
+          state.stopping = null;
+          throw error;
+        }
+        state.settled = true;
+      }
+      if (this.#closed || this.#queue.getSnapshot().current?.id !== playbackId) return this.#queue.getSnapshot();
+      return this.#deliverCurrent(status === "skipped" ? this.#queue.skipCurrent() : this.#queue.completeCurrent());
+    })();
+    this.#stoppingOccurrence = { id: playbackId, promise };
+    void promise.finally(() => {
+      if (this.#stoppingOccurrence?.promise === promise) this.#stoppingOccurrence = null;
+    }).catch(() => undefined);
+    return promise;
+  }
+
+  #scheduleTimer(callback: () => void, delayMs: number): ReturnType<typeof setTimeout> {
+    const timer = setTimeout(callback, delayMs);
+    timer.unref?.();
+    return timer;
+  }
+
+  #stopBrowserInstructions(instructionIds: readonly string[]): void {
+    if (instructionIds.length === 0) return;
+    try {
+      this.#overlayPlaybackSink?.stopPlaybackInstructions?.(instructionIds);
+    } catch {
+      // A disconnected browser must not prevent the independent device path from reaching silence.
+    }
+  }
+
+  #clearPreparationTimer(): void {
+    if (this.#preparationTimer === null) return;
+    clearTimeout(this.#preparationTimer);
+    this.#preparationTimer = null;
+  }
+
+  #clearOccurrenceTimers(): void {
+    this.#clearPreparationTimer();
+    if (this.#completionTimer === null) return;
+    clearTimeout(this.#completionTimer);
+    this.#completionTimer = null;
+  }
+
+  async #recordDeviceAudioFailure(playbackId: string, routeIds: readonly string[]): Promise<void> {
+    if (this.#logger === null || this.#generateReferenceId === null) return;
+    try {
+      const routes = this.#audioOutputService?.listRoutes?.() ?? [];
+      const ids = [...new Set(routeIds)];
+      const routeNames = ids.map((id) => routes.find((route) => route.id === id)?.name ?? id);
+      await this.#logger.error(`Alert audio outputs unavailable: ${routeNames.join(", ") || "desktop player"}. No automatic fallback was used.`, {
+        module: "alerts", source: "audio.playback.failed", correlationId: this.#generateReferenceId(), processingId: null,
+        metadata: {
+          playbackId, routeIds: ids, routeNames,
+          summary: "Alert audio delivery needs attention",
+          nextStep: "Check the named routes in Audio outputs. Reconnect the saved device or explicitly rebind it; recovery applies to future playback only.",
+          correctionLabel: "Open audio outputs", correctionRoute: "/manage/settings#audio-outputs"
+        }
+      });
+    } catch {
+      // Diagnostics failure must not prevent healthy outputs or queue completion.
     }
   }
 

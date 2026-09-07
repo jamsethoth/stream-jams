@@ -8,6 +8,7 @@ import {
   type ReactNode
 } from "react";
 import { DirtyNavigationDialog } from "../foundation/DirtyNavigationDialog.js";
+import { getDesktopBridge } from "../desktop/desktop-bridge.js";
 import {
   formatManagementRoute,
   parseManagementRoute,
@@ -70,10 +71,11 @@ export function useDirtyNavigationSource(options: DirtyNavigationRegistrationOpt
   }, [options.dirty, options.discard, options.id, options.save, options.summary, register, unregister]);
 }
 
-interface PendingNavigation {
+interface RouteNavigation {
   readonly route: ManagementRoute;
   readonly mode: "push" | "replace";
 }
+type PendingNavigation = RouteNavigation | { readonly quitId: string };
 
 export function useManagementNavigation() {
   const context = useContext(DirtyNavigationContext);
@@ -85,7 +87,7 @@ export function useManagementNavigation() {
   const [pending, setPending] = useState<PendingNavigation | null>(null);
   const [guardError, setGuardError] = useState<string | null>(null);
 
-  const commit = useCallback((nextRoute: ManagementRoute, mode: PendingNavigation["mode"]) => {
+  const commit = useCallback((nextRoute: ManagementRoute, mode: RouteNavigation["mode"]) => {
     const path = formatManagementRoute(nextRoute);
     if (mode === "replace") {
       window.history.replaceState(null, "", path);
@@ -94,6 +96,15 @@ export function useManagementNavigation() {
     }
     setRoute(nextRoute);
   }, []);
+
+  useEffect(() => {
+    const bridge = getDesktopBridge();
+    return bridge?.onQuitRequested((quitId) => {
+      if (context.source === null) { bridge.resolveQuit(quitId, true); return; }
+      setGuardError(null);
+      setPending({ quitId });
+    });
+  }, [context.source]);
 
   const requestNavigation = useCallback(
     (nextRoute: ManagementRoute) => {
@@ -145,7 +156,8 @@ export function useManagementNavigation() {
     if (sourceId !== undefined) {
       context.unregister(sourceId);
     }
-    commit(pending.route, pending.mode);
+    if ("quitId" in pending) getDesktopBridge()?.resolveQuit(pending.quitId, true);
+    else commit(pending.route, pending.mode);
     setPending(null);
     setGuardError(null);
   }, [commit, context, pending]);
@@ -180,6 +192,7 @@ export function useManagementNavigation() {
     <DirtyNavigationDialog
       error={guardError}
       onCancel={() => {
+        if (pending !== null && "quitId" in pending) getDesktopBridge()?.resolveQuit(pending.quitId, false);
         setPending(null);
         setGuardError(null);
       }}

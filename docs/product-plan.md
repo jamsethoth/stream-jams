@@ -406,6 +406,8 @@ SQLite must be accessed through repository interfaces rather than directly from 
 
 The first implementation remains a plain local app. Electron is the selected packaged desktop target once the MVP stabilizes. The codebase should be designed so an Electron shell can launch or supervise the local Node/Fastify service and load the management UI without rewriting domain logic. Electron-specific work should live at the application shell boundary; browser UIs should not directly access filesystem, secret storage, SQLite, or Node APIs.
 
+The approved `add-windows-desktop-tray-runtime` follow-on adds that shell as an unsigned, runnable Windows x64 folder using Electron Forge. It reuses the same local service and Node keyring adapter, defaults X to hide-to-tray, and offers an explicit full-Quit preference. It does not introduce installers, signing, publication, updates, startup-at-login, a Windows service, or a `safeStorage` migration. See the [runbook](mvp-runbook.md#windows-desktop-startup-and-tray) and [verification evidence](verification/windows-desktop-tray-runtime.md); the original MVP baseline above remains historical scope.
+
 Supported platform goals:
 
 - Development and local hosting should support Windows, macOS, and Linux where practical.

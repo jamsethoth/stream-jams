@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import type { SecretRef, SecretStore } from "@stream-jams/core";
 import { KeyringCredentialAdapter } from "./keyring-credential-adapter.js";
 import { OsSecretStore, type OsCredentialAdapter } from "./os-secret-store.js";
@@ -24,12 +24,6 @@ export interface RuntimeSecretStoreSelection {
   readonly status: RuntimeSecretStoreStatus;
   assertAvailable(): void;
 }
-
-const healthCheckRef: SecretRef = {
-  namespace: "management",
-  accountId: "local-runtime",
-  name: "credential-store-health-check"
-};
 
 export async function createRuntimeSecretStore(
   options: RuntimeSecretStoreOptions = {}
@@ -102,11 +96,16 @@ async function checkSecretStoreAvailability(
     readonly generateHealthCheckValue: () => string;
   }
 ): Promise<RuntimeSecretStoreStatus> {
+  // Concurrent CLI/desktop launches must not overwrite one another's probe.
+  const healthCheckRef: SecretRef = {
+    namespace: "management", accountId: `local-runtime-${randomUUID()}`, name: "credential-store-health-check"
+  };
   try {
     const expected = options.generateHealthCheckValue();
     await secretStore.setSecret(healthCheckRef, expected);
-    const actual = await secretStore.getSecret(healthCheckRef);
-    await secretStore.deleteSecret(healthCheckRef);
+    let actual: string | null;
+    try { actual = await secretStore.getSecret(healthCheckRef); }
+    finally { await secretStore.deleteSecret(healthCheckRef); }
 
     if (actual !== expected) {
       return degradedStatus(options.now);

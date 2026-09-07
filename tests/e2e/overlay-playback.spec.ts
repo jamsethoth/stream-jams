@@ -217,7 +217,10 @@ test("module overlay renders image assets through overlay-safe media URLs", asyn
   await page.route("**/overlay/modules/alerts/live/ovl_live/assets/asset-image", async (route) => {
     assetRequested = true;
     await route.fulfill({
-      body: Buffer.from("iVBORw0KGgo=", "base64"),
+      body: Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+        "base64"
+      ),
       contentType: "image/png"
     });
   });
@@ -236,7 +239,8 @@ test("module overlay renders image assets through overlay-safe media URLs", asyn
                 id: "image-asset",
                 assetId: "asset-image",
                 purpose: "live",
-                scope: "module"
+                scope: "module",
+                durationMs: 60_000
               })
             ]
           }

@@ -1,4 +1,4 @@
-import { formatHttpError, readHttpErrorDetails } from "./http-errors.js";
+import { formatHttpError, readHttpErrorDetails, type HttpErrorReference } from "./http-errors.js";
 
 export interface HttpManagementClientOptions {
   readonly fetch?: typeof fetch;
@@ -20,6 +20,7 @@ interface JsonRequestOptions {
 export interface ManagementHttpClient {
   getJson<T>(path: string, fallbackMessage: string): Promise<T>;
   postJson<T>(path: string, body: unknown | undefined, fallbackMessage: string): Promise<T>;
+  postRequest(path: string, fallbackMessage: string, body?: unknown): Promise<void>;
   putJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
   patchJson<T>(path: string, body: unknown, fallbackMessage: string): Promise<T>;
   deleteJson<T>(path: string, fallbackMessage: string): Promise<T>;
@@ -30,7 +31,9 @@ export class ManagementHttpError extends Error {
   constructor(
     message: string,
     readonly code: string | null,
-    readonly referenceId: string | null
+    readonly referenceId: string | null,
+    readonly nextStep: string | null = null,
+    readonly references: readonly HttpErrorReference[] = []
   ) {
     super(message);
     this.name = "ManagementHttpError";
@@ -39,7 +42,13 @@ export class ManagementHttpError extends Error {
 
 async function createManagementHttpError(response: Response, fallback: string): Promise<ManagementHttpError> {
   const details = await readHttpErrorDetails(response, fallback);
-  return new ManagementHttpError(formatHttpError(details), details.code, details.referenceId);
+  return new ManagementHttpError(
+    formatHttpError(details),
+    details.code,
+    details.referenceId,
+    details.nextStep,
+    details.references
+  );
 }
 
 export function createManagementHttpClient(options: HttpManagementClientOptions = {}): ManagementHttpClient {
@@ -121,6 +130,22 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     },
     postJson<T>(path: string, body: unknown | undefined, fallbackMessage: string) {
       return requestJson<T>(path, { method: "POST", body, fallbackMessage });
+    },
+    async postRequest(path: string, fallbackMessage: string, body?: unknown) {
+      const hasBody = body !== undefined;
+      await requestWithSession(
+        path,
+        (session) => ({
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${session.id}`,
+            "x-stream-jams-csrf": session.csrfToken,
+            ...(hasBody ? { "content-type": "application/json" } : {})
+          },
+          ...(hasBody ? { body: JSON.stringify(body) } : {})
+        }),
+        fallbackMessage
+      );
     },
     putJson<T>(path: string, body: unknown, fallbackMessage: string) {
       return requestJson<T>(path, { method: "PUT", body, fallbackMessage });

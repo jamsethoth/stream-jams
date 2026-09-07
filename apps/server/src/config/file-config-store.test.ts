@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { FileConfigStore } from "./file-config-store.js";
 
 const defaultConfig: AppConfig = {
+  desktop: { closeToTray: true },
   server: {
     host: "127.0.0.1",
     port: 39187
@@ -46,6 +47,25 @@ describe("FileConfigStore", () => {
     await expect(readFile(configFilePath, "utf8")).resolves.toContain("\"port\": 39187");
   });
 
+  it("preserves simultaneous initial reads, desktop updates, and safety updates", async () => {
+    const store = new FileConfigStore({ configFilePath, defaultConfig });
+    await Promise.all([
+      store.readConfig(),
+      store.updateConfig({ desktop: { closeToTray: false } }),
+      store.updateConfig({ playback: { muted: true } }),
+      store.readConfig()
+    ]);
+    const persisted = await new FileConfigStore({ configFilePath, defaultConfig }).readConfig();
+    expect(persisted.desktop).toEqual({ closeToTray: false });
+    expect(persisted.playback.muted).toBe(true);
+  });
+
+  it("does not poison later writes after an invalid update", async () => {
+    const store = new FileConfigStore({ configFilePath, defaultConfig });
+    await expect(store.updateConfig({ server: { port: -1 } })).rejects.toThrow();
+    expect((await store.updateConfig({ desktop: { closeToTray: false } })).desktop.closeToTray).toBe(false);
+  });
+
   it("persists validated partial updates over the current config", async () => {
     const store = new FileConfigStore({ configFilePath, defaultConfig });
 
@@ -62,6 +82,7 @@ describe("FileConfigStore", () => {
     });
 
     expect(updated).toEqual({
+      desktop: { closeToTray: true },
       server: {
         host: "127.0.0.1",
         port: 39188
@@ -79,6 +100,7 @@ describe("FileConfigStore", () => {
     });
 
     await expect(new FileConfigStore({ configFilePath, defaultConfig }).readConfig()).resolves.toEqual({
+      desktop: { closeToTray: true },
       server: {
         host: "127.0.0.1",
         port: 39188

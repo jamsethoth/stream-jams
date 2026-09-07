@@ -12,6 +12,7 @@ export interface AppStorageConfig {
 }
 
 export interface AppConfig {
+  readonly desktop: DesktopConfig;
   readonly server: AppServerConfig;
   readonly storage: AppStorageConfig;
   readonly logging: LogSettings;
@@ -29,8 +30,15 @@ export interface AppStorageConfigUpdate {
 }
 
 export interface AppConfigUpdate {
+  readonly desktop?: DesktopConfigUpdate;
   readonly server?: AppServerConfigUpdate;
   readonly storage?: AppStorageConfigUpdate;
   readonly logging?: LogSettingsUpdate;
   readonly playback?: Partial<PlaybackSafetyState>;
 }
+
+export interface DesktopConfig {
+  readonly closeToTray: boolean;
+}
+
+export type DesktopConfigUpdate = Partial<DesktopConfig>;

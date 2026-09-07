@@ -275,7 +275,9 @@ function createService(
       status: "queued",
       targetProfileId: request.targetProfileId,
       referenceId: "ref-test",
-      test: true
+      test: true,
+      deliveredDestinations: [],
+      unavailableDestinations: []
     }),
     reportAlertEditorError: async (_alertId, input) => ({ referenceId: input.error.referenceId }),
     listAssetLibraryItems: async (): Promise<readonly AssetLibraryItem[]> => [],

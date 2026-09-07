@@ -112,7 +112,7 @@ The system SHALL store a unique protected verifier for each overlay route key an
 
 ### Requirement: Management Presents Module Profile Browser Sources In Context
 
-The system SHALL present browser-source outputs inside the owning module, grouped by fixed target profile, with configuration readiness as the primary status, profile enablement, secondary connection telemetry, masked URL, and explicit reveal, copy, regenerate, and test actions.
+The system SHALL present browser-source outputs inside the owning module, grouped by fixed target profile, with configuration readiness as the primary status, profile enablement, secondary connection telemetry, masked URL, and explicit reveal, copy, regenerate, and test actions. Device-audio destinations SHALL NOT require additional browser-source URLs or alter browser-source readiness.
 
 #### Scenario: Alert set shows landscape and vertical outputs
 
@@ -140,15 +140,21 @@ The system SHALL present browser-source outputs inside the owning module, groupe
 
 #### Scenario: Test send reuses the profile browser source
 
-- **WHEN** a management user sends a test alert to a target profile
-- **THEN** the test playback is delivered to that profile's live browser source
+- **WHEN** a management user sends test content to a valid enabled and reviewed target profile with a connected browser recipient
+- **THEN** the browser portion of test playback is delivered to that profile's live browser source
 - **AND** no separate test browser-source URL, key, or setup step is presented
+
+#### Scenario: Device-only test needs no new browser source
+
+- **WHEN** an alert test delivers only to selected local device routes
+- **THEN** the system does not create a browser-source URL or claim an existing browser profile is connected
 
 #### Scenario: Included audio cannot start in the browser source
 
 - **WHEN** a delivered alert includes audio and the browser rejects audio playback
 - **THEN** the overlay fails that instruction closed without leaving stale output visible
 - **AND** the failed playback report gives the operator a human-readable cause and next step
+- **AND** independent healthy device recipients are not cancelled solely because that browser recipient failed
 
 #### Scenario: Route key remains masked until reveal
 

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   appConfigSchema,
   configurationBackupLimits,
+  type AlertEditorDocument,
   type AlertRule,
   type AppConfig,
   type AppConfigUpdate,
@@ -11,6 +12,8 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryStreamJamsDatabase, currentSchemaVersion, type StreamJamsDatabase } from "../db/database.js";
 import { SqliteAlertRepository } from "../alerts/sqlite-alert-repository.js";
+import { SqliteAlertEditorDocumentRepository } from "../alerts/sqlite-alert-editor-document-repository.js";
+import { SqliteAudioOutputRouteRepository } from "../audio/sqlite-audio-output-route-repository.js";
 import { SqliteModerationSettingsRepository } from "../moderation/sqlite-moderation-settings-repository.js";
 import {
   ConfigurationBackupService,
@@ -19,9 +22,11 @@ import {
   type ConfigurationSnapshotRepository
 } from "./configuration-backup-service.js";
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
+import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "./runtime-maintenance-gate.js";
 
 const pngBytes = Buffer.from("89504e470d0a1a0a", "hex");
 const appConfig: AppConfig = {
+  desktop: { closeToTray: true },
   server: { host: "127.0.0.1", port: 39187 },
   storage: { dataDirectory: "C:/source/data", assetDirectory: "C:/source/assets" },
   logging: { level: "INFO", rollover: "hourly", retentionHours: 336 },
@@ -38,6 +43,203 @@ const asset: AssetRecord = {
 };
 
 describe("ConfigurationBackupService", () => {
+  it("identifies local device bindings as excluded from portable backups", async () => {
+    const { service } = createService();
+
+    const summary = await service.summary();
+
+    expect(summary.secretExclusions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/local audio device IDs and labels/i)
+    ]));
+  });
+
+  it("round-trips route identities and assignments while naming every route requiring rebinding", async () => {
+    const source = createRealService();
+    const target = createRealService();
+    try {
+      await seedRoutedAlerts(source.database);
+      const archive = await source.service.exportArchive();
+      const preflight = await target.service.preflight(archive);
+
+      expect(preflight.state).toBe("valid");
+      expect(archive.configuration.tables.audio_output_routes).toEqual([
+        { id: "route-headphones", name: "Headphones", device_id: null, device_label: null },
+        { id: "route-stream", name: "Stream mix", device_id: null, device_label: null }
+      ]);
+      expect(JSON.stringify(archive)).not.toMatch(/source-endpoint|Source headset|Source mixer/);
+      const rebindWarnings = ["Headphones", "Stream mix"].map((name) => expect.objectContaining({
+        summary: expect.stringContaining(name),
+        nextStep: expect.stringMatching(/bind/i),
+        correction: { label: "Open Audio outputs", route: "/manage/settings#audio-outputs" }
+      }));
+      expect(preflight.warnings).toEqual(expect.arrayContaining(rebindWarnings));
+
+      const result = await target.service.restore({
+        archive,
+        archiveId: preflight.archiveId!,
+        confirmation: "RESTORE",
+        regenerateRouteKeys: true
+      });
+
+      expect(result.warnings).toEqual(expect.arrayContaining(rebindWarnings));
+      expect(new SqliteAudioOutputRouteRepository(target.database.connection).list()).toEqual([
+        { id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null },
+        { id: "route-stream", name: "Stream mix", deviceId: null, deviceLabel: null }
+      ]);
+      const documents = new SqliteAlertEditorDocumentRepository(target.database.connection);
+      await expect(documents.find("rule-routed")).resolves.toMatchObject({
+        outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] }
+      });
+      await expect(documents.find("rule-routed-default")).resolves.toMatchObject({
+        outputs: { browserSource: true, deviceRouteIds: ["route-stream", "route-headphones"] }
+      });
+      expect(new SqliteAudioOutputRouteRepository(source.database.connection).findById("route-headphones"))
+        .toMatchObject({ deviceId: "source-endpoint-headphones", deviceLabel: "Source headset" });
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
+  });
+
+  it("rejects orphaned route assignments in preflight before changing the target database", async () => {
+    const source = createRealService();
+    const target = createRealService();
+    try {
+      await seedRoutedAlerts(source.database);
+      const archive = await source.service.exportArchive();
+      archive.configuration.tables.audio_output_routes = [];
+      archive.manifest.configurationRecordCount -= 2;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const previous = target.snapshotRepository.captureRestorePoint();
+
+      const preflight = await target.service.preflight(archive);
+
+      expect(preflight.state).toBe("invalid");
+      expect(preflight.blockers).toEqual(expect.arrayContaining([
+        expect.objectContaining({ cause: expect.stringMatching(/missing audio route/i), nextStep: expect.stringMatching(/export/i) })
+      ]));
+      await expect(target.service.restore({
+        archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true
+      })).rejects.toMatchObject({ code: "RESTORE_PREFLIGHT_REQUIRED" });
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(previous);
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
+  });
+
+  it("explicitly rejects an older database schema even when the archive format is supported", async () => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = currentSchemaVersion - 1;
+      delete archive.configuration.tables.audio_output_routes;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const previous = target.snapshotRepository.captureRestorePoint();
+
+      const preflight = await target.service.preflight(archive);
+
+      expect(preflight.state).toBe("invalid");
+      expect(preflight.blockers).toEqual(expect.arrayContaining([
+        expect.objectContaining({ summary: "Backup schema is not supported", cause: expect.stringContaining(`schema ${currentSchemaVersion - 1}`) })
+      ]));
+      await expect(target.service.restore({
+        archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true
+      })).rejects.toMatchObject({ code: "RESTORE_PREFLIGHT_REQUIRED" });
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(previous);
+    } finally {
+      target.database.close();
+    }
+  });
+
+  it("rolls back replaced route definitions, local bindings, and default/variation assignments together", async () => {
+    const source = createRealService();
+    const target = createRealService();
+    try {
+      await seedRoutedAlerts(source.database);
+      await seedRoutedAlerts(target.database);
+      const routes = new SqliteAudioOutputRouteRepository(target.database.connection);
+      routes.save({ id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset" });
+      const documents = new SqliteAlertEditorDocumentRepository(target.database.connection);
+      for (const id of ["rule-routed", "rule-routed-default"]) {
+        const document = await documents.find(id);
+        if (document === null) throw new Error("Routed fixture document is required");
+        await documents.save({ ...document, outputs: { browserSource: false, deviceRouteIds: ["route-stream"] } });
+      }
+      const previous = target.snapshotRepository.captureRestorePoint();
+      let replacedRoute: ReturnType<SqliteAudioOutputRouteRepository["findById"]> = null;
+      let replacedDocument: AlertEditorDocument | null = null;
+      target.service = createRealService({
+        database: target.database,
+        updateConfig: async () => {
+          replacedRoute = routes.findById("route-headphones");
+          replacedDocument = await documents.find("rule-routed");
+          throw new Error("Target config is locked");
+        }
+      }).service;
+      const archive = await source.service.exportArchive();
+      const preflight = await target.service.preflight(archive);
+
+      await expect(target.service.restore({
+        archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true
+      })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
+
+      expect(replacedRoute).toEqual({ id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null });
+      expect(replacedDocument).toMatchObject({ outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] } });
+      expect(target.snapshotRepository.captureRestorePoint()).toEqual(previous);
+      expect(routes.findById("route-headphones")).toEqual({
+        id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset"
+      });
+      for (const id of ["rule-routed", "rule-routed-default"]) {
+        await expect(documents.find(id)).resolves.toMatchObject({ outputs: { browserSource: false, deviceRouteIds: ["route-stream"] } });
+      }
+    } finally {
+      source.database.close();
+      target.database.close();
+    }
+  });
+
+  it("holds the maintenance gate across asynchronous backup work so route mutations cannot race restore", async () => {
+    const gate = new RuntimeMaintenanceGate();
+    const target = createRealService();
+    let markBackupStarted!: () => void;
+    let releaseBackup!: () => void;
+    const backupStarted = new Promise<void>((resolve) => { markBackupStarted = resolve; });
+    const backupReleased = new Promise<void>((resolve) => { releaseBackup = resolve; });
+    try {
+      await seedRoutedAlerts(target.database);
+      target.service = createRealService({
+        database: target.database,
+        runExclusive: (work) => gate.runMaintenance(work),
+        writeSafetyBackup: async () => {
+          markBackupStarted();
+          await backupReleased;
+          return "C:/safe/pre-restore.streamjams-backup";
+        }
+      }).service;
+      const archive = await target.service.exportArchive();
+      const preflight = await target.service.preflight(archive);
+      const restoring = target.service.restore({
+        archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true
+      });
+      try {
+        await backupStarted;
+        expect(() => gate.runConfigurationMutation(() => target.database.connection.prepare(
+          "UPDATE audio_output_routes SET name = 'Racing edit' WHERE id = 'route-headphones'"
+        ).run())).toThrow(RuntimeMaintenanceUnavailableError);
+        await expect(gate.runIntake(async () => undefined)).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError);
+      } finally {
+        releaseBackup();
+        await restoring;
+      }
+      expect(new SqliteAudioOutputRouteRepository(target.database.connection).findById("route-headphones"))
+        .toEqual({ id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null });
+      expect(() => gate.runConfigurationMutation(() => undefined)).not.toThrow();
+    } finally {
+      target.database.close();
+    }
+  });
+
   it("exports all registered assets and only allowlisted secret-free configuration", async () => {
     const { service } = createService();
 
@@ -170,6 +372,23 @@ describe("ConfigurationBackupService", () => {
     });
   });
 
+  it("rechecks playback that starts after preflight before creating a safety backup or replacing data", async () => {
+    const runtime = { intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 };
+    const writeSafetyBackup = vi.fn(async () => "C:/safe/pre-restore.streamjams-backup");
+    const { service, replace } = createService({ runtime, writeSafetyBackup });
+    const archive = await service.exportArchive();
+    const preflight = await service.preflight(archive);
+    expect(preflight.state).toBe("valid");
+    runtime.playbackActive = true;
+
+    await expect(service.restore({
+      archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true
+    })).rejects.toMatchObject({ code: "RESTORE_LIVE_BLOCKED" });
+
+    expect(writeSafetyBackup).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+  });
+
   it("stops before mutation when the safety backup cannot be written", async () => {
     const replace = replacementMock();
     const { service } = createService({
@@ -202,7 +421,8 @@ describe("ConfigurationBackupService", () => {
     archive.configuration.appConfig = {
       ...archive.configuration.appConfig,
       server: { host: "127.0.0.1", port: 40123 },
-      storage: { dataDirectory: "D:/other/data", assetDirectory: "D:/other/assets" }
+      storage: { dataDirectory: "D:/other/data", assetDirectory: "D:/other/assets" },
+      desktop: { closeToTray: false }
     };
     archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
     const preflight = await service.preflight(archive);
@@ -220,7 +440,8 @@ describe("ConfigurationBackupService", () => {
     expect(updateConfig).toHaveBeenCalledWith(expect.objectContaining({
       server: { host: "127.0.0.1", port: 40123 },
       logging: appConfig.logging,
-      playback: appConfig.playback
+      playback: appConfig.playback,
+      desktop: { closeToTray: false }
     }));
     expect(updateConfig.mock.calls[0]?.[0]).not.toHaveProperty("storage");
     expect(regenerateOutput).toHaveBeenCalledWith(expect.anything(), "http://127.0.0.1:40123");
@@ -240,7 +461,7 @@ describe("ConfigurationBackupService", () => {
         steps.push("config");
         return appConfig;
       },
-      reloadRuntimeConfiguration: () => steps.push("reload")
+      reloadRuntimeConfiguration: () => { steps.push("reload"); }
     });
     const archive = await service.exportArchive();
     const preflight = await service.preflight(archive);
@@ -259,6 +480,7 @@ describe("ConfigurationBackupService", () => {
     let persistedConfig = appConfig;
     const updateConfig = vi.fn(async (patch: AppConfigUpdate): Promise<AppConfig> => {
       persistedConfig = appConfigSchema.parse({
+        desktop: { ...persistedConfig.desktop, ...patch.desktop },
         server: { ...persistedConfig.server, ...patch.server },
         storage: { ...persistedConfig.storage, ...patch.storage },
         logging: { ...persistedConfig.logging, ...patch.logging },
@@ -278,6 +500,7 @@ describe("ConfigurationBackupService", () => {
     const archivedConfig = appConfigSchema.parse(archive.configuration.appConfig);
     archive.configuration.appConfig = {
       ...archivedConfig,
+      desktop: { closeToTray: false },
       server: { ...archivedConfig.server, port: 40123 }
     };
     archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
@@ -291,6 +514,8 @@ describe("ConfigurationBackupService", () => {
     })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
 
     expect(updateConfig).toHaveBeenCalledTimes(2);
+    expect(updateConfig.mock.calls[0]?.[0].desktop).toEqual({ closeToTray: false });
+    expect(updateConfig.mock.calls[1]?.[0].desktop).toEqual({ closeToTray: true });
     expect(persistedConfig).toEqual(appConfig);
   });
 
@@ -592,6 +817,8 @@ function createRealService(overrides: {
   readonly initialPolicy?: ModerationSettings;
   readonly updateConfig?: ConfigurationBackupServiceOptions["configStore"]["updateConfig"];
   readonly reloadRuntimeConfiguration?: () => void;
+  readonly runExclusive?: ConfigurationBackupServiceOptions["runExclusive"];
+  readonly writeSafetyBackup?: ConfigurationBackupServiceOptions["safetyBackupStore"]["write"];
 } = {}) {
   const database = overrides.database ?? createInMemoryStreamJamsDatabase();
   if (overrides.database === undefined) {
@@ -624,9 +851,10 @@ function createRealService(overrides: {
     },
     getRuntime: async () => ({ intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 }),
     getAvailableBytes: async () => 1_000_000,
-    safetyBackupStore: { write: async () => "C:/safe/pre-restore.streamjams-backup" },
+    safetyBackupStore: { write: overrides.writeSafetyBackup ?? (async () => "C:/safe/pre-restore.streamjams-backup") },
     regenerateOutput: async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` }),
-    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration })
+    ...(overrides.reloadRuntimeConfiguration === undefined ? {} : { reloadRuntimeConfiguration: overrides.reloadRuntimeConfiguration }),
+    ...(overrides.runExclusive === undefined ? {} : { runExclusive: overrides.runExclusive })
   };
   return {
     service: new ConfigurationBackupService(options),
@@ -669,4 +897,31 @@ function createRewardRule(id: string, condition: AlertRule["conditions"][number]
     cooldownSeconds: 0,
     priority: 0
   };
+}
+
+async function seedRoutedAlerts(database: StreamJamsDatabase): Promise<void> {
+  const routes = new SqliteAudioOutputRouteRepository(database.connection);
+  routes.save({ id: "route-headphones", name: "Headphones", deviceId: "source-endpoint-headphones", deviceLabel: "Source headset" });
+  routes.save({ id: "route-stream", name: "Stream mix", deviceId: "source-endpoint-stream", deviceLabel: "Source mixer" });
+  await new SqliteAlertRepository(database.connection).saveRule(createRewardRule("rule-routed", {
+    field: "channelPointReward", operator: "equals", value: "reward-routed"
+  }));
+  const documents = new SqliteAlertEditorDocumentRepository(database.connection);
+  const document: AlertEditorDocument = {
+    id: "rule-routed", setId: "set-default", providerKind: "twitch", eventType: "channel_point_redemption",
+    kind: "default", parentAlertId: null, name: "Routed reward", enabled: false,
+    conditions: [], variantConditions: [], weight: 1, priority: null,
+    cooldownSeconds: 0, rulePriority: 0, durationMs: 5_000,
+    outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] }, layers: [],
+    targetProfiles: [
+      { id: "landscape", enabled: false, reviewState: "needs-review", layerLayouts: [] },
+      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
+    ],
+    samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: {} }]
+  };
+  await documents.save(document);
+  await documents.save({
+    ...document, id: "rule-routed-default", kind: "variation", parentAlertId: document.id,
+    outputs: { browserSource: true, deviceRouteIds: ["route-stream", "route-headphones"] }
+  });
 }

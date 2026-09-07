@@ -231,9 +231,10 @@ test("management alerts reviews the starter set and safely manages its landscape
   const reviewWarning = page.locator(".management-toast--warning");
   await expect(reviewWarning).toContainText("Starter review marked complete.");
   await expect(reviewWarning).toContainText("Alerts remain disabled until you enable them.");
+  listening = true;
   await page.getByRole("button", { name: "Test New follower" }).click();
   const successToast = page.locator(".management-toast--success");
-  await expect(successToast).toContainText("New follower test queued for Landscape. Reference ref-inline-e2e.");
+  await expect(successToast).toContainText("Test queued on Landscape. Reference ref-inline-e2e.");
   const toastBounds = await successToast.boundingBox();
   if (toastBounds === null) throw new Error("Expected the success toast to have visible bounds.");
   expect(toastBounds.x).toBeGreaterThanOrEqual(0);
@@ -412,7 +413,7 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
   await ruleConditions.getByRole("combobox", { name: "Rule conditions Gift count operator" }).selectOption("min");
   await expect(ruleConditions.getByRole("spinbutton", { name: "Rule conditions Gift count value" })).toBeVisible();
   await page.getByLabel("Alert inspector").getByRole("button", { name: "Send test" }).click();
-  await expect(page.getByText(/Queued on Landscape.*ref-community-gift/u)).toBeVisible();
+  await expect(page.getByText(/Test queued on Landscape.*ref-community-gift/u)).toBeVisible();
   expect(testRequests).toEqual([expect.objectContaining({
     targetProfileId: "landscape",
     samplePayload: expect.objectContaining({ amount: 5, tier: "1000" })
@@ -806,7 +807,7 @@ test("focused alert editor preserves reward IDs and previews representative samp
   await headerActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
   await headerActions.getByRole("button", { name: "Send test", exact: true }).click();
-  await expect(page.getByText(/Queued on Landscape.*ref-reward-e2e/u)).toBeVisible();
+  await expect(page.getByText(/Test queued on Landscape.*ref-reward-e2e/u)).toBeVisible();
   expect(previewRequests).toHaveLength(1);
   expect(testRequests).toHaveLength(1);
 
@@ -1257,7 +1258,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await expect(page.getByRole("region", { name: "Priority groups" }).getByRole("group", { name: "Priority group 1" })).toContainText("Large raid");
   await expect(page.getByRole("region", { name: "Priority groups" }).getByRole("group", { name: "Priority group 1" })).toContainText("Weighted raid");
   await page.getByLabel("Alert inspector").getByRole("button", { name: "Send test" }).click();
-  await expect(page.getByText(/Queued on Landscape.*ref-variation-selected/u)).toBeVisible();
+  await expect(page.getByText(/Test queued on Landscape.*ref-variation-selected/u)).toBeVisible();
   expect(testRequests).toEqual([expect.objectContaining({
     targetProfileId: "landscape",
     samplePayload: expect.objectContaining({ raidViewers: 25 })
@@ -1581,7 +1582,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   });
   expect(testRequests).toHaveLength(0);
   await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
-  await expect(page.getByText(/Queued on Landscape.*ref-e2e-editor-landscape/u)).toBeVisible();
+  await expect(page.getByText(/Test queued on Landscape.*ref-e2e-editor-landscape/u)).toBeVisible();
   expect(testRequests).toHaveLength(1);
   expect(testRequests[0]).toMatchObject({
     document: {
@@ -1624,7 +1625,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
   await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
-  await expect(page.getByText(/Queued on Vertical.*ref-e2e-editor-vertical/u)).toBeVisible();
+  await expect(page.getByText(/Test queued on Vertical.*ref-e2e-editor-vertical/u)).toBeVisible();
   expect(testRequests).toHaveLength(2);
   expect(testRequests).toEqual([
     expect.objectContaining({ targetProfileId: "landscape" }),

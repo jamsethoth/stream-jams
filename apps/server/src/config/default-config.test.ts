@@ -5,6 +5,7 @@ import { createDefaultAppConfig, resolveConfigFilePath } from "./default-config.
 describe("default app config", () => {
   it("uses the MVP localhost host and default Stream Jams port with POSIX paths", () => {
     expect(createDefaultAppConfig("/home/streamer", { path: posix })).toEqual({
+      desktop: { closeToTray: true },
       server: {
         host: "127.0.0.1",
         port: 39187

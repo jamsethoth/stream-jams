@@ -14,7 +14,11 @@ export const appStorageConfigSchema = z.object({
   assetDirectory: nonEmptyStringSchema
 });
 
+export const desktopConfigSchema = z.object({ closeToTray: z.boolean().default(true) });
+export const desktopConfigUpdateSchema = z.object({ closeToTray: z.boolean() }).strict().partial();
+
 export const appConfigSchema = z.object({
+  desktop: desktopConfigSchema.default({ closeToTray: true }),
   server: appServerConfigSchema,
   storage: appStorageConfigSchema,
   logging: logSettingsSchema.default(defaultLogSettings),
@@ -22,6 +26,7 @@ export const appConfigSchema = z.object({
 });
 
 export const appConfigUpdateSchema = z.object({
+  desktop: desktopConfigUpdateSchema.optional(),
   server: appServerConfigSchema.partial().optional(),
   storage: appStorageConfigSchema.partial().optional(),
   logging: logSettingsUpdateSchema.optional(),

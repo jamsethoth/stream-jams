@@ -7,8 +7,67 @@ import { DefaultModerationService } from "../moderation/moderation-service.js";
 import { resolvedAlertSchema } from "../playback/schemas.js";
 import { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alert-resolver.js";
 import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "./text-style.js";
+import * as core from "../index.js";
 
 describe("DefaultAlertResolver", () => {
+  it("resolves canonical visible audio without profile readiness, enabled state, or asset deduplication", () => {
+    expect(core).toHaveProperty("resolveAlertAudio");
+    const original = createEditorDocument(createRule());
+    const audioLayer = original.layers.find(layer => layer.type === "audio")!;
+    const document: AlertEditorDocument = {
+      ...original, enabled: false, targetProfiles: [],
+      outputs: { browserSource: false, deviceRouteIds: ["personal"] },
+      layers: [
+        { ...audioLayer, id: "second", order: 2 },
+        { ...audioLayer, id: "hidden", visible: false, order: 0 },
+        { ...audioLayer, id: "first", order: 1 }
+      ]
+    };
+    expect(core.resolveAlertAudio(document)).toEqual({
+      documentId: document.id, durationMs: document.durationMs, outputs: document.outputs,
+      layers: [
+        { layerId: "first", assetId: "asset-audio", volume: 0.5 },
+        { layerId: "second", assetId: "asset-audio", volume: 0.5 }
+      ]
+    });
+    expect(core.resolveAlertAudio({ ...document, layers: [] })).toBeNull();
+  });
+
+  it.each([undefined, "landscape"] as const)("honors browser audio opt-out on target %s without suppressing visuals or TTS", targetProfileId => {
+    const rule = createRule({ variants: [createVariant({ audioAssetId: "legacy-audio", ttsConfig: {
+      enabled: true, providerId: "browser-speech", voiceId: null, template: "Thanks", minimumAmount: null
+    } })] });
+    const document = { ...createEditorDocument(rule), outputs: { browserSource: false, deviceRouteIds: ["personal"] } };
+    const alerts = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent())],
+      target: { ...target, ...(targetProfileId === undefined ? {} : { targetProfileId }) },
+      editorDocuments: new Map([[document.id, document]])
+    });
+    expect(alerts.length).toBeGreaterThan(0);
+    expect(alerts.every(alert => alert.overlayInstruction.audio === null)).toBe(true);
+    expect(alerts.some(alert => alert.overlayInstruction.text !== null)).toBe(true);
+    expect(alerts.some(alert => alert.overlayInstruction.tts !== null)).toBe(true);
+  });
+
+  it("uses every visible editor audio layer on legacy outputs, retaining per-layer volume", () => {
+    const rule = createRule({ variants: [createVariant({ audioAssetId: "stale-legacy-audio" })] });
+    const original = createEditorDocument(rule);
+    const audioLayer = original.layers.find(layer => layer.type === "audio")!;
+    const document: AlertEditorDocument = { ...original, layers: [
+      ...original.layers,
+      { ...audioLayer, id: "second", order: 20, volume: 0.25 } as typeof audioLayer,
+      { ...audioLayer, id: "hidden", order: 21, visible: false }
+    ] };
+    const alerts = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent())], target,
+      editorDocuments: new Map([[document.id, document]])
+    });
+    expect(alerts.flatMap(alert => alert.overlayInstruction.audio ?? [])).toEqual([
+      { assetId: "asset-audio", volume: 0.5 }, { assetId: "asset-audio", volume: 0.25 }
+    ]);
+    expect(alerts.filter(alert => alert.overlayInstruction.text !== null)).toHaveLength(1);
+  });
+
   it("resolves priority-ordered matches into overlay instructions without raw event payloads", () => {
     const event = createCheerEvent({
       amount: 500,
@@ -649,6 +708,7 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
     cooldownSeconds: rule.cooldownSeconds,
     rulePriority: rule.priority,
     durationMs: 4_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [
       {
         id: "layer-text",

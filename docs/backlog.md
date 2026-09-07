@@ -13,8 +13,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 ## Planned Changes
 
-| ID | Feature | Priority | Dependencies | OpenSpec |
-| --- | --- | --- | --- | --- |
+No promoted backlog items are currently awaiting implementation. Completed desktop/tray and alert-routing requirements are maintained in the durable OpenSpec capabilities and their September 7, 2026 archives.
 
 ## Alert Authoring And Assets
 
@@ -54,7 +53,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | BL-027 | Startup module selection/setup wizard | Trigger-based | P3 | Multiple shipped overlay modules | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
 | BL-028 | Music widget and additional overlay modules | Deferred | P2 | A separately approved module slice | [Product plan](product-plan.md) |
 | BL-029 | Expanded output management, connected-client history, route-key audit, and OBS-aware readiness | Deferred | P3 | Output workflow outgrows the current Alerts section | [UI decisions](design/ui-refactor-decisions.md) |
-| BL-030 | Electron packaging, signing, installer, updater, and `safeStorage` migration | Deferred | P2 | Stable local-server MVP and packaging decision | [Product plan](product-plan.md) |
+| BL-030 | Desktop installer, signing, publishing, updater, and `safeStorage` migration | Deferred | P2 | Implemented desktop foundation and a separately approved distribution/credential-migration change | Runnable Windows folder and tray lifecycle are implemented; distribution and credential migration remain separate. [Desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md); [Product plan](product-plan.md) |
 | BL-031 | Docker delivery | Deferred | P3 | Supported self-hosted deployment requirement | [Product plan](product-plan.md) |
 | BL-032 | LAN overlay mode | Deferred | P3 | Authentication, origin policy, network warnings, and threat model | [Product plan](product-plan.md) |
 | BL-033 | User-owned cloud backup destination integration | Deferred | P3 | Stable backup format and explicit provider authorization | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
@@ -64,6 +63,12 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | BL-037 | Alert scheduling | Deferred | P3 | A concrete scheduling workflow and safe clock/time-zone semantics | [Product plan](product-plan.md) |
 | BL-038 | Full operator console expansion for intake, event review, and attention workflows | Deferred | P2 | BL-001 and demonstrated live-operation needs | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-041 | Production web bundle splitting and performance budget | Deferred | P2 | Production entry chunk remains above Vite's 500 kB advisory threshold | Measure management startup, define an initial-load budget, and lazy-load heavy management surfaces, especially the alert editor, without weakening overlay reliability. |
+
+## Known Issues
+
+| ID | Issue | Status | Priority | Dependency or trigger | Detail |
+| --- | --- | --- | --- | --- | --- |
+| BL-044 | Intermittent Windows desktop process-exit delay after audio playback | Investigation deferred to separate conversation | P2 | User-approved deferral; retain native shutdown regression coverage | After resetting the accumulated Neewer/OBSBOT process states, the unchanged playback/restart test passed 5/5 times. Root-cause attribution and whether each vendor's resource growth is normal are now owned by a separate diagnostic conversation. Resume feature work under the user's assumption that this environmental issue will be resolved later; do not claim it fixed or relax native exit deadlines. The distinct test cleanup-reference defect has been corrected. [Handoff and resumed work](verification/alert-audio-routing.md#september-5-investigation-handoff-and-resumed-implementation) |
 
 ## Not Planned
 

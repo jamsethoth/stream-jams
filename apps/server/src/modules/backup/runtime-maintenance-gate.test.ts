@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { RuntimeMaintenanceGate, RuntimeMaintenanceUnavailableError } from "./runtime-maintenance-gate.js";
 
 describe("RuntimeMaintenanceGate", () => {
+  it("drains active work and permanently blocks intake and mutations during shutdown", async () => {
+    const gate = new RuntimeMaintenanceGate();
+    let release!: () => void;
+    const intake = gate.runIntake(() => new Promise<void>((resolve) => { release = resolve; }));
+    let stopped = false;
+    const stopping = gate.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    await expect(gate.runIntake(async () => "unexpected")).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError);
+    expect(() => gate.runConfigurationMutation(() => "unexpected")).toThrow(RuntimeMaintenanceUnavailableError);
+    release();
+    await intake;
+    await stopping;
+    await expect(gate.runMaintenance(async () => undefined)).rejects.toBeInstanceOf(RuntimeMaintenanceUnavailableError);
+  });
   it("blocks new intake while maintenance is active", async () => {
     const gate = new RuntimeMaintenanceGate();
     let release!: () => void;

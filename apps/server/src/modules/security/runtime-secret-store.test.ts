@@ -15,6 +15,15 @@ const twitchAccessTokenRef: SecretRef = {
 };
 
 describe("createRuntimeSecretStore", () => {
+  it("uses independent temporary health entries for concurrent desktop and CLI startup", async () => {
+    const credentials = new RecordingCredentialAdapter();
+    const selections = await Promise.all([
+      createRuntimeSecretStore({ credentials, generateHealthCheckValue: () => "first-probe" }),
+      createRuntimeSecretStore({ credentials, generateHealthCheckValue: () => "second-probe" })
+    ]);
+    expect(selections.map((selection) => selection.status.state)).toEqual(["ready", "ready"]);
+    expect(credentials.values.size).toBe(0);
+  });
   it("selects an OS-backed secret store and checks credential availability", async () => {
     const credentials = new RecordingCredentialAdapter();
 
@@ -29,7 +38,7 @@ describe("createRuntimeSecretStore", () => {
       lastErrorAt: null,
       message: null
     });
-    expect(credentials.values.has("stream-jams:management:credential-store-health-check:local-runtime")).toBe(false);
+    expect(credentials.values.size).toBe(0);
 
     await selection.secretStore.setSecret(twitchAccessTokenRef, "access-token-secret");
 

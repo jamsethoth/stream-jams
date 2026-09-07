@@ -2,6 +2,7 @@ import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   alertCollectionSchema,
   alertEditorDocumentSchema,
+  audioOutputRouteSchema,
   alertRuleSchema,
   assetMetadataUpdateInputSchema,
   normalizeModerationSettings,
@@ -55,6 +56,8 @@ const tableDefinitions = [
   table("alert_set_metadata", ["set_id", "starter", "starter_review_state", "landscape_enabled", "landscape_review_state", "vertical_enabled", "vertical_review_state"], ["set_id"]),
   table("alert_rule_management_metadata", ["rule_id", "provider_kind", "review_state", "target_profile_ids_json"], ["rule_id"], ["target_profile_ids_json"]),
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
+  table("audio_output_routes", ["id", "name", "device_id", "device_label"], ["id"], [],
+    "SELECT id, name, NULL AS device_id, NULL AS device_label FROM audio_output_routes"),
   table("alert_editor_documents", ["alert_id", "document_json", "updated_at"], ["alert_id"], ["document_json"]),
   table(
     "alert_moderation_settings",
@@ -488,11 +491,22 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     }));
   }
 
+  for (const [index, row] of (tables.audio_output_routes ?? []).entries()) {
+    pushSchemaError(errors, `audio_output_routes[${index}]`, audioOutputRouteSchema.safeParse({
+      id: row.id, name: row.name, deviceId: row.device_id, deviceLabel: row.device_label
+    }));
+    if (row.device_id !== null || row.device_label !== null) errors.push(`audio_output_routes[${index}] must be unbound in a portable backup.`);
+    if (typeof row.name === "string" && row.name !== row.name.trim()) errors.push(`audio_output_routes[${index}].name must be trimmed.`);
+  }
+  const audioRouteIds = new Set((tables.audio_output_routes ?? []).map(row => row.id));
   for (const [index, row] of (tables.alert_editor_documents ?? []).entries()) {
     const result = alertEditorDocumentSchema.safeParse(parseJsonValue(row.document_json));
     pushSchemaError(errors, `alert_editor_documents[${index}]`, result);
     if (result.success && result.data.id !== row.alert_id) {
       errors.push(`alert_editor_documents[${index}].alert_id does not match document_json.id.`);
+    }
+    if (result.success && result.data.outputs.deviceRouteIds.some(id => !audioRouteIds.has(id))) {
+      errors.push(`alert_editor_documents[${index}] references a missing audio route.`);
     }
   }
 
@@ -529,6 +543,7 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
     ["alert_set_metadata", ["set_id"]],
     ["alert_rule_management_metadata", ["rule_id"]],
     ["asset_library_metadata", ["asset_id"]],
+    ["audio_output_routes", ["id"]],
     ["alert_editor_documents", ["alert_id"]]
   ] as const;
   for (const [tableName, columns] of constraints) {
@@ -542,6 +557,13 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
     }
   }
 
+  const routeNames = new Set<string>();
+  for (const [index, row] of (tables.audio_output_routes ?? []).entries()) {
+    // SQLite NOCASE folds ASCII, not the current machine's locale or Unicode case.
+    const name = String(row.name).replace(/[A-Z]/g, character => character.toLowerCase());
+    if (routeNames.has(name)) errors.push(`audio_output_routes[${index}] duplicates another route name case-insensitively.`);
+    routeNames.add(name);
+  }
   const collectionNames = new Set<string>();
   let activeCollectionCount = 0;
   const alertCollections = tables.alert_collections ?? [];

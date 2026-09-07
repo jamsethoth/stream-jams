@@ -7,6 +7,7 @@ import {
   type AlertRule,
   type AppConfig,
   type AppConfigUpdate,
+  type AudioPlaybackSink,
   type ConfigStore,
   type OverlayInstruction
 } from "@stream-jams/core";
@@ -96,12 +97,27 @@ describe("runtime app composition smoke", () => {
     await expect(secondComposition.syncEventSourceRuntime()).resolves.toBeUndefined();
   });
 
-  it("reloads the restored moderation policy without restarting the runtime", async () => {
+  it("reloads restored moderation and desktop preferences without restarting the runtime", async () => {
     const testRoot = await createTemporaryDirectory();
+    const desktopChanges: boolean[] = [];
+    const sinkMuteChanges: boolean[] = [];
+    const audioPlaybackSink: AudioPlaybackSink = {
+      play: async () => ({ failedRouteIds: [] }),
+      stop: async () => {},
+      setMuted: async muted => { sinkMuteChanges.push(muted); },
+      close: async () => {}
+    };
+    const config = createConfig(testRoot);
     const composition = await createRuntimeAppComposition({
       homeDirectory: testRoot,
       webBuildDirectory: await createWebBuildFixture(testRoot),
-      configStore: new StaticConfigStore(createConfig(testRoot)),
+      configStore: new StaticConfigStore({
+        ...config,
+        desktop: { closeToTray: false },
+        playback: { ...config.playback, muted: true }
+      }),
+      desktopHost: { onConfigChanged: ({ closeToTray }) => { desktopChanges.push(closeToTray); }, onPlaybackStateChanged: () => {} },
+      audioPlaybackSink,
       environment: { TWITCH_CLIENT_ID: "test-client" },
       secretStore: new InMemorySecretStore(),
       twitchApiClient: new ThrowingTwitchApiClient(),
@@ -118,6 +134,12 @@ describe("runtime app composition smoke", () => {
       payload: { name: "Backup policy", enabled: true }
     });
     const backup = await composition.app.inject({ method: "GET", url: "/management/settings/backup", headers });
+    const unmuted = await composition.app.inject({ method: "POST", url: "/playback/unmute", headers });
+    const changedDesktop = await composition.app.inject({ method: "PATCH", url: "/config/desktop", headers, payload: { closeToTray: true } });
+    expect(unmuted.statusCode, unmuted.body).toBe(200);
+    expect(sinkMuteChanges.at(-1)).toBe(false);
+    expect(changedDesktop.statusCode, changedDesktop.body).toBe(200);
+    expect(desktopChanges.at(-1)).toBe(true);
     const changed = await composition.app.inject({
       method: "PATCH",
       url: "/moderation/settings",
@@ -146,6 +168,10 @@ describe("runtime app composition smoke", () => {
     const active = await composition.app.inject({ method: "GET", url: "/moderation/settings", headers });
 
     expect(restored.statusCode, restored.body).toBe(200);
+    expect(sinkMuteChanges.at(-1)).toBe(true);
+    expect(desktopChanges.at(-1)).toBe(false);
+    expect((await composition.app.inject({ method: "GET", url: "/config/desktop", headers })).json()).toEqual({ available: true, closeToTray: false });
+    expect((await composition.app.inject({ method: "GET", url: "/health" })).statusCode).toBe(200);
     expect(active.json()).toEqual({
       renderedText: { maxLength: 240, blockedTerms: [], stripUrls: false },
       ttsText: { maxLength: 180, blockedTerms: [], stripUrls: true }
@@ -1703,6 +1729,7 @@ function createConfig(
   playback = { paused: false, muted: false, doNotDisturb: false }
 ): AppConfig {
   return {
+    desktop: { closeToTray: true },
     server: {
       host: "127.0.0.1",
       port: 39187
@@ -1729,6 +1756,7 @@ class StaticConfigStore implements ConfigStore {
 
   async updateConfig(patch: AppConfigUpdate): Promise<AppConfig> {
     this.config = {
+      desktop: { ...this.config.desktop, ...patch.desktop },
       server: {
         host: patch.server?.host ?? this.config.server.host,
         port: patch.server?.port ?? this.config.server.port

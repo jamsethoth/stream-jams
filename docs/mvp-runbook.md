@@ -11,6 +11,50 @@
 
 For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for hot reload and is not the production-style local runtime that streamers should use for browser-source overlays.
 
+## Windows desktop startup and tray
+
+The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. This is not an installer or a signed release. Windows may warn about an unsigned application.
+
+The desktop main process owns one utility-process service, a sandboxed management window, and a tray icon. The service still owns Fastify, SQLite, provider connections, and configuration. The default loopback address, `.stream-jams` data profile, `STREAM_JAMS_CONFIG_PATH` override, and OS keyring adapter are unchanged. Quit any existing CLI service before using desktop with the same profile. An occupied port produces an actionable failure; desktop never kills that listener or chooses another port automatically.
+
+- By default, the window's X hides management to the tray. The service, overlays, and unsaved editor draft stay alive.
+- Tray **Open** restores management. **Mute/Unmute** uses the same persisted playback safety state as the Operator Console.
+- Tray **Quit** stops the owned service. Unsaved management changes require Save and leave, Discard, or Cancel first.
+- In Settings, disable **Close window to tray** and save to make X perform a full Quit. This preference also participates in backup restore and rollback.
+- If management crashes, native Quit warns that unsaved edits cannot be recovered. Startup has a 20-second deadline; graceful shutdown has 10 seconds before terminating only the owned worker.
+- A second launch with the same Electron profile focuses the existing instance. `STREAM_JAMS_DESKTOP_USER_DATA_PATH` accepts an absolute path for isolated testing; it does not change the application data directory or make concurrent use of one data profile safe.
+
+Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the folder outside the checkout and use temporary config/data/Electron profiles and uniquely named temporary credentials. They must not use live provider accounts or live overlay URLs. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
+
+Installers, signing, publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
+
+## Alert audio outputs
+
+In the desktop app, open **Settings → Audio outputs**. Give each output a stable name, choose an explicit output device, then select **Create output** or **Save output**. Choosing a device does not play sound. **Test** is an explicit one-second sound and respects global mute. No microphone permission or additional OBS browser source is required. CLI-only operation preserves these routes but cannot play device audio.
+
+Open an alert, select its **Alert** inspector tab, and choose **Audio outputs**. These are alert-wide selections: every visible explicit audio layer uses the same destinations while retaining its own volume. The selections participate in Undo, Redo, Revert and Save. An active alert's output changes require confirmation and apply to future playback starts; they do not redirect a sound already playing.
+
+| Explicit audio selection | Result |
+| --- | --- |
+| Browser Source only | Existing browser-source audio, with no direct device copy |
+| Named device outputs only | Direct desktop playback on those devices, without browser-source explicit audio |
+| Browser Source and named outputs | Both paths receive explicit audio |
+| No outputs | Explicit audio is intentionally silent |
+
+TTS is independent: browser speech and Speaker.bot retain their existing routing and safety rules. Disabling Browser Source **explicit audio** does not guarantee a silent browser source when TTS is configured. All alert videos, including older visual-video alerts, are always silent in Preview, Send test and live playback. Add a separate audio layer for a soundtrack; the app does not extract audio or alter the video asset/layout. The separate video-shoutout module is unchanged.
+
+**Preview** stays local to management and only plays local audio/TTS when explicitly selected. It never invokes the configured device routes. **Send test** uses the selected draft and sample; the inventory Test action uses the saved document and its first built-in sample. One available browser profile sends immediately from inventory; multiple available profiles require a choice. Device-only audio does not require an enabled, reviewed or connected visual profile. The Event inspector also offers an explicit no-browser test option and separate Send audio/Send TTS toggles. Unavailable browser profiles are never enabled or rendered to make a test succeed. Results identify available and skipped destinations plus a Diagnostics reference.
+
+Routes never fall back to the default/communications device, another route, or Browser Source. Missing and unbound selections remain saved. Reconnect the original device or explicitly rebind the route in Settings. A returning device with a different ID needs rebinding even if its label is unchanged. A referenced route cannot be deleted until its listed alerts stop using it. Status refreshes within five seconds while the page is visible; failed refreshes retain a clearly marked last-known snapshot. If bounded automatic player recovery is exhausted, use **Retry audio player**. Recovery only affects future playback; interrupted audio is not replayed automatically.
+
+Global mute covers browser and device explicit audio. Skip stops current device work before the next item starts; Pause and Do Not Disturb retain their queue-advancement semantics. Closing to tray keeps the player alive. Full Quit stops the owned player and service. Audio failure diagnostics name routes, include a reference, and link directly to **Settings → Audio outputs**, without exposing local hardware bindings on overlays.
+
+OBS Desktop Audio and monitoring can independently capture a nominally private endpoint. Verify OBS capture/monitor settings before treating any route as private. Combined browser/device paths can differ in latency or create duplicate capture if OBS also captures the device. Stream Jams does not change OBS, Wave Link or Windows mixer settings for you.
+
+Portable backups retain route IDs/names and alert assignments but clear local device IDs and labels. Restore names every route needing setup and requires explicit rebinding; older unsupported archive schemas and orphaned assignments are rejected. Internal failed-restore rollback preserves the destination's exact prior bindings. Stop intake and wait for playback, route tests and queued work to finish before restore.
+
+Schema migration `019-audio-output-routes.ts` adds `audio_output_routes` with stable `id`, unique case-insensitive `name`, and paired nullable `device_id`/`device_label`. Alert-wide selections live in validated editor-document JSON and are checked transactionally against route references. The backup table map explicitly projects local binding columns to NULL; operational rollback captures the unprojected rows. See [routing acceptance evidence](verification/alert-audio-routing-authoring-acceptance.md) for automated results and the remaining physical-device/OBS gate.
+
 ## Management Security
 
 Management API access uses a local management session plus browser-origin protections. The management session bootstrap response includes a bearer session id and a session-bound CSRF token. The management UI sends the bearer token on management API requests and sends `X-Stream-Jams-CSRF` on state-changing `POST`, `PUT`, `PATCH`, and `DELETE` requests.

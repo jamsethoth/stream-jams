@@ -8,6 +8,7 @@ import {
   getAlertEditorAffectedProfileIds,
   createAlertTemplateContext,
   createNormalizedAlertSampleEvent,
+  resolveAlertAudio,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   defaultAlertStarterThemeId,
@@ -15,6 +16,7 @@ import {
   type AlertCondition,
   type AlertEditorDocument,
   type AlertEditorTestRequest,
+  type AlertEditorTestDestination,
   type AlertEditorTestResult,
   type AlertLayer,
   type AlertRepository,
@@ -26,6 +28,9 @@ import {
   type NormalizedStreamEvent,
   type OverlayElementLayout,
   type ResolvedAlert,
+  type ResolvedAlertAudio,
+  type AudioOutputStatus,
+  type AudioOutputRoute,
   type TargetProfileId,
   type ModerationService,
   type TemplateRenderer
@@ -45,6 +50,7 @@ export interface AlertEditorDocumentRepository {
 export interface AlertEditorTestPlayback {
   readonly sourceEvent: NormalizedStreamEvent;
   readonly alerts: readonly ResolvedAlert[];
+  readonly audio: readonly ResolvedAlertAudio[];
 }
 
 export interface AlertEditorAtomicSaveInput {
@@ -59,6 +65,8 @@ export interface AlertEditorServiceOptions {
   readonly rules: Pick<AlertRepository, "findRuleById" | "listRules" | "listCollections" | "saveRule">;
   readonly metadata: Pick<AlertSetMetadataRepository, "findRule" | "saveRule">;
   readonly hasConnectedOutput: (targetProfileId: TargetProfileId) => Promise<boolean>;
+  readonly getAudioOutputStatus?: () => Promise<AudioOutputStatus>;
+  readonly listAudioOutputRoutes?: () => readonly AudioOutputRoute[];
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
   readonly moderationService: ModerationService;
   readonly findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>;
@@ -98,8 +106,12 @@ export class AlertEditorDeliveryBlockedError extends Error {
 export class AlertEditorLiveImpactConfirmationRequiredError extends Error {
   readonly code = "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED";
 
-  constructor(readonly affectedProfileIds: readonly TargetProfileId[]) {
-    super(`Saving can change active live output for ${affectedProfileIds.join(" and ")}. Review the changes and confirm the live impact before saving.`);
+  constructor(
+    readonly affectedProfileIds: readonly TargetProfileId[],
+    readonly affectedAudioDestinationNames: readonly string[] = []
+  ) {
+    const destinations = [...affectedProfileIds, ...affectedAudioDestinationNames];
+    super(`Saving can change active live output for ${destinations.join(" and ")}. Review the changes and confirm the live impact before saving.`);
     this.name = "AlertEditorLiveImpactConfirmationRequiredError";
   }
 }
@@ -199,7 +211,7 @@ export class AlertEditorService {
       assignments
     );
     const projectedMetadata = ruleMetadataFromDocument(saveDocument, resolved.rule.id);
-    const affectedProfileIds = await this.#getAffectedProfileIds({
+    const liveImpact = await this.#getLiveImpact({
       current,
       currentMetadata: metadata,
       currentRule: resolved.rule,
@@ -208,11 +220,14 @@ export class AlertEditorService {
       projectedRule,
       selectedEditorId: resolved.editorId
     });
-    if (!confirmLiveImpact && affectedProfileIds.size > 0) {
+    if (!confirmLiveImpact && (liveImpact.profileIds.size > 0 || liveImpact.audioDestinationNames.size > 0)) {
       const collections = await this.#options.rules.listCollections();
       const activeSetIds = new Set(collections.filter((collection) => collection.enabled).map((collection) => collection.id));
       if (activeSetIds.has(current.setId) || activeSetIds.has(document.setId)) {
-        throw new AlertEditorLiveImpactConfirmationRequiredError([...affectedProfileIds]);
+        throw new AlertEditorLiveImpactConfirmationRequiredError(
+          [...liveImpact.profileIds],
+          [...liveImpact.audioDestinationNames]
+        );
       }
     }
     return this.#options.saveAtomically({
@@ -223,7 +238,7 @@ export class AlertEditorService {
     });
   }
 
-  async #getAffectedProfileIds(input: {
+  async #getLiveImpact(input: {
     readonly current: AlertEditorDocument;
     readonly currentMetadata: AlertRuleManagementMetadata | null;
     readonly currentRule: AlertRule;
@@ -231,13 +246,18 @@ export class AlertEditorService {
     readonly projectedMetadata: AlertRuleManagementMetadata;
     readonly projectedRule: AlertRule;
     readonly selectedEditorId: string;
-  }): Promise<Set<TargetProfileId>> {
+  }): Promise<{
+    readonly profileIds: Set<TargetProfileId>;
+    readonly audioDestinationNames: Set<string>;
+  }> {
     const siblingEditorIds = input.currentRule.variants.flatMap((variant, variantIndex) => {
       const editorId = variantIndex === 0 ? input.currentRule.id : variant.id;
       return editorId === input.selectedEditorId ? [] : [editorId];
     });
     const storedSiblings = await this.#options.documents.findMany(siblingEditorIds);
     const affectedProfileIds = new Set<TargetProfileId>();
+    const affectedAudioDestinationNames = new Set<string>();
+    const routes = new Map(this.#options.listAudioOutputRoutes?.().map(route => [route.id, route]) ?? []);
 
     for (const [variantIndex, currentVariant] of input.currentRule.variants.entries()) {
       const projectedVariant = input.projectedRule.variants[variantIndex];
@@ -254,9 +274,17 @@ export class AlertEditorService {
       for (const profileId of getAlertEditorAffectedProfileIds(currentDocument, projectedDocument)) {
         affectedProfileIds.add(profileId);
       }
+      if (currentDocument.enabled || projectedDocument.enabled) {
+        addChangedAudioDestinationNames(
+          currentDocument,
+          projectedDocument,
+          routes,
+          affectedAudioDestinationNames
+        );
+      }
     }
 
-    return affectedProfileIds;
+    return { profileIds: affectedProfileIds, audioDestinationNames: affectedAudioDestinationNames };
   }
 
   async sendTest(alertId: string, candidate: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
@@ -265,18 +293,13 @@ export class AlertEditorService {
       throw new AlertEditorValidationError(["The test document does not match the selected alert."]);
     }
 
-    const profile = profileById(request.document, request.targetProfileId);
-    const profileIssues = validateProfile(request.document, profile);
-    if (!profile.enabled || profile.reviewState !== "ready" || profileIssues.length > 0) {
-      throw new AlertEditorDeliveryBlockedError(
-        `Finish reviewing and enable the ${request.targetProfileId} profile before sending it to an output.`
-      );
-    }
-    if (!(await this.#options.hasConnectedOutput(request.targetProfileId))) {
-      throw new AlertEditorDeliveryBlockedError(
-        `Connect the ${request.targetProfileId} browser-source output, then try Send test again.`
-      );
-    }
+    const profile = request.targetProfileId === null ? null : profileById(request.document, request.targetProfileId);
+    const browserDestination = request.targetProfileId === null ? null : testBrowserDestination(request.targetProfileId);
+    const browserReady = profile !== null
+      && profile.enabled
+      && profile.reviewState === "ready"
+      && validateProfile(request.document, profile).length === 0
+      && await this.#options.hasConnectedOutput(profile.id);
 
     const referenceId = this.#options.generateReferenceId();
     const sourceEvent = createNormalizedAlertSampleEvent({
@@ -287,20 +310,64 @@ export class AlertEditorService {
       occurredAt: this.#now().toISOString()
     });
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(request.document);
-    const alerts = this.#createTestAlerts(request, profile, sourceEvent, visualAssetMediaTypes);
-    if (alerts.length === 0) {
+    const alerts = browserReady && profile !== null
+      ? this.#createTestAlerts(request, profile, sourceEvent, visualAssetMediaTypes)
+      : [];
+    const canonicalAudio = request.includeAudio ? resolveAlertAudio(request.document) : null;
+    const deviceDestinations = await this.#resolveTestDeviceDestinations(canonicalAudio);
+    const audio = canonicalAudio === null || deviceDestinations.delivered.length === 0
+      ? []
+      : [{
+          ...canonicalAudio,
+          outputs: {
+            ...canonicalAudio.outputs,
+            deviceRouteIds: deviceDestinations.delivered.map(destination => destination.id)
+          }
+        }];
+    if (alerts.length === 0 && audio.length === 0) {
       throw new AlertEditorDeliveryBlockedError(
-        "The selected profile has no visible layer that can be sent with the current audio and TTS settings."
+        "No included test content can reach an available destination. Connect and review a Browser Source or choose an available device route, then try again."
       );
     }
 
-    await this.#options.enqueueTest({ sourceEvent, alerts });
+    await this.#options.enqueueTest({ sourceEvent, alerts, audio });
     return {
       status: "queued",
       targetProfileId: request.targetProfileId,
       referenceId,
-      test: true
+      test: true,
+      deliveredDestinations: [
+        ...(browserDestination !== null && alerts.length > 0 ? [browserDestination] : []),
+        ...deviceDestinations.delivered
+      ],
+      unavailableDestinations: [
+        ...(browserDestination !== null && !browserReady ? [browserDestination] : []),
+        ...deviceDestinations.unavailable
+      ]
     };
+  }
+
+  async #resolveTestDeviceDestinations(audio: ResolvedAlertAudio | null): Promise<{
+    readonly delivered: readonly AlertEditorTestDestination[];
+    readonly unavailable: readonly AlertEditorTestDestination[];
+  }> {
+    if (audio === null || audio.outputs.deviceRouteIds.length === 0) {
+      return { delivered: [], unavailable: [] };
+    }
+    const status = await this.#options.getAudioOutputStatus?.();
+    const routes = new Map(status?.routes.map(routeStatus => [routeStatus.route.id, routeStatus]) ?? []);
+    const delivered: AlertEditorTestDestination[] = [];
+    const unavailable: AlertEditorTestDestination[] = [];
+    for (const routeId of audio.outputs.deviceRouteIds) {
+      const routeStatus = routes.get(routeId);
+      const destination: AlertEditorTestDestination = {
+        kind: "device-route",
+        id: routeId,
+        name: routeStatus?.route.name ?? "Unavailable audio route"
+      };
+      (routeStatus?.state === "ready" ? delivered : unavailable).push(destination);
+    }
+    return { delivered, unavailable };
   }
 
   async #resolveEditorItem(editorId: string): Promise<ResolvedEditorItem> {
@@ -331,7 +398,11 @@ export class AlertEditorService {
     const layers = [...request.document.layers]
       .filter((layer) => layer.visible)
       .sort((left, right) => left.order - right.order)
-      .filter((layer) => (layer.type === "audio" ? request.includeAudio : layer.type === "tts" ? request.includeTts : true));
+      .filter((layer) => (
+        layer.type === "audio"
+          ? request.includeAudio && request.document.outputs.browserSource
+          : layer.type === "tts" ? request.includeTts : true
+      ));
 
     return layers.flatMap((layer) => {
       const layout = layouts.get(layer.id);
@@ -339,7 +410,7 @@ export class AlertEditorService {
         layer,
         layout,
         request.document.durationMs,
-        request.targetProfileId,
+        profile.id,
         context,
         this.#renderedTextTemplateRenderer,
         this.#ttsTemplateRenderer,
@@ -616,8 +687,10 @@ function validateDocumentForSave(document: AlertEditorDocument, current: AlertEd
   const layerIds = document.layers.map((layer) => layer.id);
   const issues = layerIds.length === new Set(layerIds).size ? [] : ["Layer names must identify unique layers."];
   const enabledProfiles = document.targetProfiles.filter((profile) => profile.enabled);
-  if (enabledProfiles.length === 0) issues.push("Enable at least one target profile before saving.");
-  if (!enabledProfiles.some((profile) => profile.reviewState === "ready")) {
+  const hasDeviceAudio = document.outputs.deviceRouteIds.length > 0
+    && document.layers.some(layer => layer.type === "audio" && layer.visible);
+  if (enabledProfiles.length === 0 && !hasDeviceAudio) issues.push("Enable at least one target profile before saving.");
+  if (!hasDeviceAudio && !enabledProfiles.some((profile) => profile.reviewState === "ready")) {
     issues.push("Finish reviewing at least one enabled target profile before saving.");
   }
   for (const profile of enabledProfiles) {
@@ -754,9 +827,9 @@ function projectDocumentToRule(document: AlertEditorDocument, resolved: Resolved
   const visual = document.layers.find((layer) => layer.type === "image" || layer.type === "video");
   const audio = document.layers.find((layer) => layer.type === "audio");
   const tts = document.layers.find((layer) => layer.type === "tts");
-  const profile = document.targetProfiles.find((candidate) => candidate.enabled && candidate.reviewState === "ready")!;
+  const profile = document.targetProfiles.find((candidate) => candidate.enabled && candidate.reviewState === "ready");
   const primaryLayerId = visual?.id ?? text?.id;
-  const layout = profile.layerLayouts.find((candidate) => candidate.layerId === primaryLayerId) ?? currentVariant.layout;
+  const layout = profile?.layerLayouts.find((candidate) => candidate.layerId === primaryLayerId) ?? currentVariant.layout;
   return {
     ...rule,
     name: resolved.kind === "default" ? document.name : rule.name,
@@ -837,6 +910,51 @@ function ruleMetadataFromDocument(document: AlertEditorDocument, ruleId: string)
 
 function profileById(document: AlertEditorDocument, profileId: TargetProfileId): AlertTargetProfileDocument {
   return document.targetProfiles.find((profile) => profile.id === profileId)!;
+}
+
+function testBrowserDestination(profileId: TargetProfileId): AlertEditorTestDestination {
+  return {
+    kind: "browser-source",
+    id: profileId,
+    name: `${profileId === "landscape" ? "Landscape" : "Vertical"} Browser Source`
+  };
+}
+
+function addChangedAudioDestinationNames(
+  current: AlertEditorDocument,
+  projected: AlertEditorDocument,
+  routes: ReadonlyMap<string, AudioOutputRoute>,
+  names: Set<string>
+): void {
+  if (current.outputs.browserSource !== projected.outputs.browserSource) names.add("Browser Source");
+  const currentRouteIds = new Set(current.outputs.deviceRouteIds);
+  const projectedRouteIds = new Set(projected.outputs.deviceRouteIds);
+  for (const routeId of new Set([...currentRouteIds, ...projectedRouteIds])) {
+    if (currentRouteIds.has(routeId) === projectedRouteIds.has(routeId)) continue;
+    names.add(routes.get(routeId)?.name ?? "Unavailable audio route");
+  }
+  if (serializeDeviceAudioLiveState(current) === serializeDeviceAudioLiveState(projected)) return;
+  for (const routeId of new Set([...currentRouteIds, ...projectedRouteIds])) {
+    names.add(routes.get(routeId)?.name ?? "Unavailable audio route");
+  }
+}
+
+function serializeDeviceAudioLiveState(document: AlertEditorDocument): string | null {
+  const audio = resolveAlertAudio(document);
+  if (!document.enabled || audio === null || audio.outputs.deviceRouteIds.length === 0) return null;
+  return JSON.stringify({
+    providerKind: document.providerKind,
+    eventType: document.eventType,
+    conditions: document.conditions,
+    setId: document.setId,
+    cooldownSeconds: document.cooldownSeconds,
+    rulePriority: document.rulePriority,
+    variantConditions: document.variantConditions,
+    weight: document.weight,
+    priority: document.priority,
+    durationMs: audio.durationMs,
+    layers: audio.layers
+  });
 }
 
 function createBuiltInSamples(eventType: AlertEditorDocument["eventType"]) {

@@ -143,7 +143,7 @@ function createManagementApi(): ManagementApi {
       return document;
     },
     async sendAlertEditorTest(_alertId, request) {
-      return { status: "queued", targetProfileId: request.targetProfileId, referenceId: "ref-test", test: true };
+      return { status: "queued", targetProfileId: request.targetProfileId, referenceId: "ref-test", test: true, deliveredDestinations: [], unavailableDestinations: [] };
     },
     async reportAlertEditorError(_alertId, input) {
       return { referenceId: input.error.referenceId };
@@ -194,6 +194,8 @@ function createManagementApi(): ManagementApi {
         port: 39187
       };
     },
+    async getDesktopConfig() { return { available: false, closeToTray: true }; },
+    async updateDesktopConfig(input) { return { ...input, available: true }; },
     async updateServerConfig(input) {
       return input;
     },

@@ -26,6 +26,17 @@ const followEvent: NormalizedStreamEvent = {
 };
 
 describe("DiagnosticsService", () => {
+  it("links audio destination failures to route setup rather than TTS or browser sources", async () => {
+    const source = new RecordingRuntimeLogSource([{
+      timestamp: "2026-09-07T13:00:00.000Z", level: "ERROR", event: "audio.playback.failed", component: "alerts",
+      message: "Audio output unavailable: Private speakers. No fallback was used.", correlationId: "ref-audio", processingId: null
+    }]);
+    const workspace = await createService(new RecordingDiagnosticsRepository(), [], source).getWorkspace();
+    expect(workspace.problems).toContainEqual(expect.objectContaining({
+      referenceId: "ref-audio", correction: { label: "Open audio outputs", route: "/manage/settings?diagnostic=ref-audio#audio-outputs" }
+    }));
+  });
+
   it("returns redacted management-safe diagnostics and provider errors", async () => {
     const repository = new RecordingDiagnosticsRepository({
       eventLogs: [

@@ -428,7 +428,8 @@ describe("provider pages", () => {
     expect(await screen.findByText("No Twitch account connected")).toBeInTheDocument();
     const popup = { location: { href: "" }, close: vi.fn() } as unknown as Window;
     const open = vi.spyOn(window, "open").mockReturnValue(popup);
-    await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect Twitch" })); });
     expect(open).toHaveBeenCalledWith("about:blank", "stream-jams-twitch-device-auth");
     expect(screen.getByText("ABCD-EFGH")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Twitch" })).toHaveAttribute(
@@ -436,11 +437,16 @@ describe("provider pages", () => {
       "https://www.twitch.tv/activate"
     );
     expect(popup.location.href).toBe("https://www.twitch.tv/activate");
-    await new Promise((resolve) => window.setTimeout(resolve, 2_150));
+    await act(async () => { await vi.advanceTimersByTimeAsync(999); });
+    expect(api.pollTwitchAuth).not.toHaveBeenCalled();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(api.pollTwitchAuth).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
     expect(api.pollTwitchAuth).toHaveBeenCalledTimes(2);
     expect(polledAt[1]! - polledAt[0]!).toBeGreaterThanOrEqual(900);
     expect(screen.getByText("Jamsethoth (@jamsethoth)")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Test connection" })).toBeEnabled();
+    vi.useRealTimers();
     await user.click(screen.getByRole("button", { name: "Test connection" }));
 
     expect(await screen.findByRole("heading", { name: "Review event source" })).toBeInTheDocument();
@@ -470,11 +476,12 @@ describe("provider pages", () => {
     render(<EventSourcesPage managementApi={api} />);
     await user.click(await screen.findByRole("button", { name: "Add event source" }));
     await user.click(screen.getByRole("button", { name: "Continue" }));
-    await user.click(screen.getByRole("button", { name: "Connect Twitch" }));
-    expect(await screen.findByText("POPUP-CODE")).toBeInTheDocument();
+    vi.useFakeTimers();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Connect Twitch" })); });
+    expect(screen.getByText("POPUP-CODE")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Twitch" })).toHaveAttribute("href", "https://www.twitch.tv/activate");
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
-    await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_100); });
     expect(pollTwitchAuth).not.toHaveBeenCalled();
     expect(api.registerProvider).not.toHaveBeenCalled();
   });

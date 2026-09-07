@@ -9,7 +9,7 @@ export interface PlaybackRouteCoordinator {
   mute(): Promise<PlaybackQueueSnapshot>;
   unmute(): Promise<PlaybackQueueSnapshot>;
   setDoNotDisturb(enabled: boolean): Promise<PlaybackQueueSnapshot>;
-  skipCurrent(): PlaybackQueueSnapshot;
+  skipCurrent(): PlaybackQueueSnapshot | Promise<PlaybackQueueSnapshot>;
   replayRecent(itemId: string): PlaybackQueueSnapshot;
 }
 
@@ -45,7 +45,7 @@ export function registerPlaybackRoutes(app: FastifyInstance, dependencies: Playb
     return snapshot;
   });
   app.post("/playback/skip", { preHandler }, async (request) => {
-    const snapshot = dependencies.playbackCoordinator.skipCurrent();
+    const snapshot = await dependencies.playbackCoordinator.skipCurrent();
     await logPlaybackTransition(dependencies, request.id, "skip");
     return snapshot;
   });

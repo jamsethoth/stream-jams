@@ -10,6 +10,7 @@ import {
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAssetApi, createStoryManagementApi } from "../../../stories/mock-apis.js";
+import { createStoryAudioApi } from "../../../stories/audio-fixtures.js";
 import { ManagementHttpError } from "../../management-http-client.js";
 import { DirtyNavigationProvider } from "../../navigation/dirty-navigation.js";
 import { AlertEditorPage } from "./AlertEditorPage.js";
@@ -39,6 +40,7 @@ const meta = {
     return <DirtyNavigationProvider><Story args={{ ...context.args, managementApi: apiWithContext }} /></DirtyNavigationProvider>;
   }],
   args: {
+    audioApi: createStoryAudioApi(),
     alertId: document.id,
     assetApi: createStoryAssetApi(),
     managementApi,
@@ -51,6 +53,23 @@ const meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+export const AlertWideAudioOutputs: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
+    const browser = canvas.getByRole("checkbox", { name: "Browser Source" });
+    await expect(browser).toBeChecked();
+    await userEvent.click(await canvas.findByRole("checkbox", { name: /Private headphones/ }));
+    await userEvent.click(browser);
+    await expect(browser).not.toBeChecked();
+    await expect(canvas.getByText("Unsaved")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
+    await expect(browser).toBeChecked();
+    await userEvent.click(canvas.getByRole("button", { name: "Revert" }));
+    await expect(canvas.getByRole("checkbox", { name: /Private headphones/ })).not.toBeChecked();
+  }
+};
 
 export const CompatibilityTextStyle: Story = {
   play: async ({ canvasElement }) => {
@@ -1062,6 +1081,7 @@ function editorDocument(): AlertEditorDocument {
     cooldownSeconds: 0,
     rulePriority: 0,
     durationMs: 5_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
     templateVariables: [
       { key: "userName", label: "User name", description: "Display name for the event actor." }
     ],

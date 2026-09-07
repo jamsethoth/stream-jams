@@ -6,6 +6,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./runtime": {
+      "types": "./dist/runtime/start-local-runtime.d.ts",
+      "default": "./dist/runtime/start-local-runtime.js"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"

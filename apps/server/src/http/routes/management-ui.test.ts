@@ -11,7 +11,10 @@ import {
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
 import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
-import { AlertEditorLiveImpactConfirmationRequiredError } from "../../modules/alerts/alert-editor-service.js";
+import {
+  AlertEditorDeliveryBlockedError,
+  AlertEditorLiveImpactConfirmationRequiredError
+} from "../../modules/alerts/alert-editor-service.js";
 
 describe("management UI contract routes", () => {
   it("returns every validated Slice 1 view through protected routes", async () => {
@@ -186,15 +189,62 @@ describe("management UI contract routes", () => {
         includeTts: false
       }
     });
+    const deviceOnly = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/editor/test",
+      headers: authHeaders,
+      payload: {
+        document,
+        targetProfileId: null,
+        samplePayload: { userName: "James" },
+        includeAudio: true,
+        includeTts: true
+      }
+    });
 
     expect(saved.statusCode).toBe(200);
     expect(saved.json()).toMatchObject({ name: "Follower welcome" });
     expect(sent.statusCode).toBe(200);
-    expect(sent.json()).toEqual({ status: "queued", targetProfileId: "landscape", referenceId: "ref-editor-test", test: true });
+    expect(sent.json()).toEqual({
+      status: "queued", targetProfileId: "landscape", referenceId: "ref-editor-test", test: true,
+      deliveredDestinations: [], unavailableDestinations: []
+    });
+    expect(deviceOnly.statusCode, deviceOnly.body).toBe(200);
+    expect(deviceOnly.json()).toMatchObject({ targetProfileId: null, deliveredDestinations: [], unavailableDestinations: [] });
     expect(service.editorCommands).toEqual([
       ["save", "alert-follow", "Follower welcome", true, [{ variationId: "variant-vip", priority: 2 }]],
-      ["test", "alert-follow", "landscape"]
+      ["test", "alert-follow", "landscape"],
+      ["test", "alert-follow", null]
     ]);
+  });
+
+  it("records an actionable device-only correction when no destination can receive the test", async () => {
+    const { app, authHeaders, service } = await createApp();
+    const document = (await app.inject({
+      method: "GET", url: "/management/alerts/alert-follow/editor", headers: authHeaders
+    })).json();
+    service.nextEditorTestError = new AlertEditorDeliveryBlockedError(
+      "No included test content can reach an available destination."
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/management/alerts/alert-follow/editor/test",
+      headers: authHeaders,
+      payload: { document, targetProfileId: null, samplePayload: {}, includeAudio: true, includeTts: true }
+    });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({
+      error: {
+        code: "ALERT_EDITOR_TEST_BLOCKED",
+        id: "err_settings_maintenance",
+        message: "No included test content can reach an available destination."
+      }
+    });
+    expect(service.reportedEditorErrors.at(-1)?.nextStep).toBe(
+      "Connect and review a Browser Source or choose an available device route, then try again."
+    );
   });
 
   it("protects and validates sibling variation context for default and variation editor IDs", async () => {
@@ -710,6 +760,8 @@ class StubManagementUiQueryService {
   readonly alertCreateInputs: AlertCreateInput[] = [];
   readonly assetCommands: unknown[][] = [];
   readonly editorCommands: unknown[][] = [];
+  readonly reportedEditorErrors: Array<{ readonly nextStep: string }> = [];
+  nextEditorTestError: Error | null = null;
   readonly maintenanceCommands: string[] = [];
   failLogCleanup = false;
 
@@ -980,13 +1032,18 @@ class StubManagementUiQueryService {
     return document;
   }
 
-  async sendAlertEditorTest(alertId: string, request: { readonly targetProfileId: "landscape" | "vertical" }) {
+  async sendAlertEditorTest(alertId: string, request: { readonly targetProfileId: "landscape" | "vertical" | null }) {
+    if (this.nextEditorTestError !== null) throw this.nextEditorTestError;
     this.editorCommands.push(["test", alertId, request.targetProfileId]);
     return { status: "queued" as const, targetProfileId: request.targetProfileId, referenceId: "ref-editor-test", test: true as const };
   }
 
-  async reportAlertEditorError(alertId: string, input: { readonly setId: string | null; readonly error: { readonly referenceId: string | null } }) {
+  async reportAlertEditorError(alertId: string, input: {
+    readonly setId: string | null;
+    readonly error: { readonly referenceId: string | null; readonly nextStep: string };
+  }) {
     this.editorCommands.push(["report-error", alertId, input.setId, input.error.referenceId]);
+    this.reportedEditorErrors.push(input.error);
     return { referenceId: input.error.referenceId ?? "ui_editor_fallback" };
   }
 

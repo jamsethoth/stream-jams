@@ -32,6 +32,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "alert_set_metadata",
       "alert_rule_management_metadata",
       "asset_library_metadata",
+      "audio_output_routes",
       "alert_editor_documents",
       "alert_moderation_settings"
     ]);
@@ -65,6 +66,47 @@ describe("SqliteConfigurationSnapshotRepository", () => {
         boxStyle: compatibilityAlertTextBoxStyle
       }]
     });
+  });
+
+  it("exports portable route identities without bindings and restores exact local bindings on rollback", () => {
+    const db = database.connection;
+    db.prepare("INSERT INTO audio_output_routes VALUES (?, ?, ?, ?)").run("route-a", "Private", "machine-only-device", "Machine headphones");
+    const outputs = { browserSource: false, deviceRouteIds: ["route-a"] };
+    db.prepare("UPDATE alert_editor_documents SET document_json = ?").run(JSON.stringify({ ...editorDocument(), outputs }));
+    const repository = new SqliteConfigurationSnapshotRepository(db);
+    const restorePoint = repository.captureRestorePoint();
+    const snapshot = repository.snapshot();
+    expect(snapshot.tables.audio_output_routes).toEqual([{ id: "route-a", name: "Private", device_id: null, device_label: null }]);
+    expect(JSON.stringify(snapshot)).not.toContain("machine-only-device");
+    expect(JSON.stringify(snapshot)).not.toContain("Machine headphones");
+    expect(JSON.parse(String(snapshot.tables.alert_editor_documents?.[0]?.document_json)).outputs).toEqual(outputs);
+    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(db.prepare("SELECT device_id, device_label FROM audio_output_routes").get()).toEqual({ device_id: null, device_label: null });
+    repository.restoreRestorePoint(restorePoint);
+    expect(db.prepare("SELECT device_id, device_label FROM audio_output_routes").get()).toEqual({ device_id: "machine-only-device", device_label: "Machine headphones" });
+  });
+
+  it("rejects unknown route references, portable hardware bindings, and NOCASE name conflicts before replacement", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const route = { id: "route-a", name: "Private", device_id: null, device_label: null };
+    const withMissingRoute = { ...snapshot.tables, audio_output_routes: [], alert_editor_documents: [
+      { alert_id: "alert-follow", updated_at: "2026-09-05", document_json: JSON.stringify({ ...editorDocument(), outputs: { browserSource: false, deviceRouteIds: ["missing"] } }) }
+    ] };
+    for (const [tables, expected] of [
+      [withMissingRoute, /missing audio route/i],
+      [{ ...snapshot.tables, audio_output_routes: [{ ...route, device_id: "device", device_label: "Headphones" }] }, /unbound/i],
+      [{ ...snapshot.tables, audio_output_routes: [route, { ...route, id: "b", name: "PRIVATE" }] }, /route name/i]
+    ] satisfies Array<[ConfigurationBackupArchive["configuration"]["tables"], RegExp]>) {
+      expect(repository.validate({ appConfig: {}, ...snapshot, tables }).join(" ")).toMatch(expected);
+      expect(() => repository.replace({ tables, assets: [seededAsset()] })).toThrow();
+      expect(repository.snapshot()).toEqual(snapshot);
+    }
+    // SQLite NOCASE folds ASCII only: do not invent a broader locale-dependent identity.
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: { ...snapshot.tables, audio_output_routes: [
+      { ...route, name: "Ä" }, { ...route, id: "b", name: "ä" }
+    ] } })).toEqual([]);
   });
 
   it("round-trips non-default text, box, and shape styles through a portable snapshot", () => {
@@ -147,11 +189,16 @@ describe("SqliteConfigurationSnapshotRepository", () => {
   });
 
   it("keeps portable table mappings aligned with migrated columns", () => {
+    database.connection.prepare("INSERT INTO audio_output_routes VALUES (?, ?, ?, ?)")
+      .run("route-a", "Private", "local-endpoint", "Local headset");
     const snapshot = new SqliteConfigurationSnapshotRepository(database.connection).snapshot();
     const intentionallyExcludedColumns = new Map([
       ["asset_metadata", new Set(["storage_path"])],
       ["provider_registrations", new Set(["secret_ref_json"])],
       ["alert_moderation_settings", new Set(["updated_at"])]
+    ]);
+    const localOnlyColumnsClearedOnExport = new Map([
+      ["audio_output_routes", new Set(["device_id", "device_label"])]
     ]);
 
     for (const [tableName, rows] of Object.entries(snapshot.tables)) {
@@ -165,6 +212,9 @@ describe("SqliteConfigurationSnapshotRepository", () => {
         .filter((name) => !excluded.has(name));
 
       expect(Object.keys(firstRow), tableName).toEqual(migratedColumns);
+      for (const column of localOnlyColumnsClearedOnExport.get(tableName) ?? []) {
+        expect(firstRow[column], `${tableName}.${column} is local-only`).toBeNull();
+      }
     }
   });
 

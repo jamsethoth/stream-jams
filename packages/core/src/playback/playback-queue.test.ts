@@ -1,4 +1,5 @@
 import type { CheerEvent } from "../events/types.js";
+import type { ResolvedAlertAudio } from "../audio/types.js";
 import type { OverlayInstruction } from "../overlays/types.js";
 import type { ResolvedAlert } from "./types.js";
 import { describe, expect, it } from "vitest";
@@ -6,6 +7,39 @@ import { playbackQueueSnapshotSchema } from "./schemas.js";
 import { DefaultPlaybackQueue, PlaybackQueueItemNotFoundError } from "./playback-queue.js";
 
 describe("DefaultPlaybackQueue", () => {
+  it("admits device-only audio and replays the immutable content with a new occurrence ID", () => {
+    const queue = createQueue(new MutableClock("2026-05-30T12:00:00.000Z"));
+    const audio: ResolvedAlertAudio[] = [{
+      documentId: "document-1", durationMs: 3000,
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{ layerId: "sound-1", assetId: "tone", volume: 0.5 }]
+    }];
+    const expectedAudio = structuredClone(audio);
+    const event = createCheerEvent();
+    const snapshot = queue.enqueue({ sourceEvent: event, alerts: [], audio });
+    expect(snapshot.current).toMatchObject({ id: "queue-item-1", alerts: [], audio: expectedAudio });
+    expect(playbackQueueSnapshotSchema.parse(snapshot).current?.audio).toEqual(expectedAudio);
+
+    (audio[0]!.outputs.deviceRouteIds as string[]).push("changed-input");
+    (event as { id: string }).id = "changed-event";
+    (snapshot.current!.audio[0]!.layers[0]! as { volume: number }).volume = 0;
+    queue.completeCurrent();
+    const replay = queue.replayRecent("queue-item-1");
+    expect(replay.current).toMatchObject({
+      id: "queue-item-2", sourceEvent: { id: "event-cheer" }, audio: expectedAudio
+    });
+    expect(replay.recent[0]?.audio).toEqual(expectedAudio);
+  });
+
+  it("normalizes omitted audio on legacy queue inputs and wire snapshots", () => {
+    const queue = createQueue(new MutableClock("2026-05-30T12:00:00.000Z"));
+    const snapshot = queue.enqueue({ sourceEvent: createCheerEvent(), alerts: [createResolvedAlert("legacy")] });
+    expect(snapshot.current?.audio).toEqual([]);
+    expect(playbackQueueSnapshotSchema.parse({
+      ...snapshot, current: { ...snapshot.current, audio: undefined }
+    }).current?.audio).toEqual([]);
+  });
+
   it("enqueues all resolved alerts from one event as one playing queue item", () => {
     const clock = new MutableClock("2026-05-30T12:00:00.000Z");
     const queue = createQueue(clock);

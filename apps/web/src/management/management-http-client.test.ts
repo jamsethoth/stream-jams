@@ -98,6 +98,30 @@ describe("createManagementHttpClient", () => {
     });
   });
 
+  it("retains safe audio impact metadata for confirmation and conflict UI", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/auth/management/sessions"
+        ? jsonResponse({ id: "mgmt_session", csrfToken: "csrf_session" })
+        : jsonResponse({
+            error: {
+              code: "AUDIO_ROUTE_REFERENCED",
+              message: "This route is still referenced by alerts.",
+              nextStep: "Remove the route from the listed alerts before deleting it.",
+              references: [{ alertId: "alert-a", name: "New follower" }]
+            }
+          }, { status: 409 })
+    );
+    const client = createManagementHttpClient({ fetch: fetcher });
+
+    const error = await client.deleteRequest("/audio/routes/route-a", "Unable to delete output.").catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ManagementHttpError);
+    expect(error).toMatchObject({
+      nextStep: "Remove the route from the listed alerts before deleting it.",
+      references: [{ alertId: "alert-a", name: "New follower" }]
+    });
+  });
+
   it("renews an unauthorized management session and retries the request once", async () => {
     let sessionNumber = 0;
     let readNumber = 0;

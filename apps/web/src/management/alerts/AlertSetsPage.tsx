@@ -3,6 +3,7 @@ import {
   defaultAlertStarterThemeId,
   type ActionableManagementError,
   type AlertBrowserSourceView,
+  type AlertEditorDocument,
   type AlertInventoryRow,
   type AlertSetActivationImpact,
   type AlertSetDetail,
@@ -21,6 +22,7 @@ import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import type { ManagementApi } from "../management-api.js";
 import { AlertThemeChooser } from "./AlertThemeChooser.js";
+import { alertTestNotice } from "./alert-test-notice.js";
 import { TwitchRewardPicker } from "./TwitchRewardPicker.js";
 import {
   buildAlertEventGroups,
@@ -112,6 +114,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [activationSet, setActivationSet] = useState<AlertSetOverview | null>(null);
   const [previewAlert, setPreviewAlert] = useState<AlertInventoryRow | null>(null);
   const [testMenuAlertId, setTestMenuAlertId] = useState<string | null>(null);
+  const [testMenuProfileIds, setTestMenuProfileIds] = useState<readonly TargetProfileId[]>([]);
   const [testingAlertId, setTestingAlertId] = useState<string | null>(null);
   const [regenerateDialog, setRegenerateDialog] = useState<RegenerateDialogState | null>(null);
   const [regenerateConfirmation, setRegenerateConfirmation] = useState("");
@@ -538,29 +541,38 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     }
   }
 
-  function requestInlineTest(alert: AlertInventoryRow) {
-    if (alert.targetProfileIds.length === 0) {
-      setError(toActionableError(
-        "The alert test was not sent",
-        new Error("The saved alert does not target an enabled profile."),
-        "Open the alert, enable and review a target profile, then try again."
-      ));
-      return;
+  async function requestInlineTest(alert: AlertInventoryRow) {
+    if (testMenuAlertId === alert.id) { setTestMenuAlertId(null); return; }
+    setTestingAlertId(alert.id);
+    setError(null);
+    setNotice(null);
+    try {
+      const [saved, currentSet] = await Promise.all([
+        managementApi.getAlertEditorDocument(alert.id), managementApi.getAlertSet(alert.setId)
+      ]);
+      const profiles = saved.targetProfiles.filter((profile) => profile.enabled && profile.reviewState === "ready"
+        && currentSet.overview.targetProfiles.some((candidate) => candidate.id === profile.id && candidate.enabled && candidate.reviewState === "ready")
+        && currentSet.browserSources.some((source) => source.targetProfileId === profile.id && source.connectionState === "connected"));
+      if (profiles.length <= 1) {
+        await sendInlineTest(alert, profiles[0]?.id ?? null, saved);
+      } else {
+        setTestMenuProfileIds(profiles.map(({ id }) => id));
+        setTestMenuAlertId(alert.id);
+      }
+    } catch (cause) {
+      setError(toActionableError("The alert test was not sent", cause, "Reload the saved alert and review its audio outputs and browser sources, then retry."));
+    } finally {
+      setTestingAlertId(null);
     }
-    if (alert.targetProfileIds.length === 1) {
-      void sendInlineTest(alert, alert.targetProfileIds[0]!);
-      return;
-    }
-    setTestMenuAlertId((current) => current === alert.id ? null : alert.id);
   }
 
-  async function sendInlineTest(alert: AlertInventoryRow, targetProfileId: TargetProfileId) {
+  async function sendInlineTest(alert: AlertInventoryRow, targetProfileId: TargetProfileId | null, preparedDocument?: AlertEditorDocument) {
     setTestingAlertId(alert.id);
     setTestMenuAlertId(null);
     setError(null);
     setNotice(null);
     try {
-      const document = await managementApi.getAlertEditorDocument(alert.id);
+      const document = preparedDocument ?? await managementApi.getAlertEditorDocument(alert.id);
       const sample = document.samplePayloads.find((candidate) => candidate.kind === "built-in");
       if (sample === undefined) throw new Error("The saved alert has no built-in sample payload.");
       const result = await managementApi.sendAlertEditorTest(alert.id, {
@@ -570,12 +582,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         includeAudio: true,
         includeTts: true
       });
-      setNotice({ tone: "success", message: `${alert.name} test queued for ${formatProfile(result.targetProfileId)}. Reference ${result.referenceId}.` });
+      setNotice(alertTestNotice(result));
     } catch (cause) {
       setError(toActionableError(
         "The alert test was not sent",
         cause,
-        `Review the alert and connect the ${formatProfile(targetProfileId)} browser source, then try again.`
+        "Review the alert's selected Audio outputs in Settings, or connect and review its browser source, then try again."
       ));
     } finally {
       setTestingAlertId(null);
@@ -776,6 +788,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       query={query}
                       statusFilter={statusFilter}
                       testMenuAlertId={testMenuAlertId}
+                      testMenuProfileIds={testMenuProfileIds}
                       testingAlertId={testingAlertId}
                     />
                   )}
@@ -867,6 +880,7 @@ function AlertInventory({
   query,
   statusFilter,
   testMenuAlertId,
+  testMenuProfileIds,
   testingAlertId,
 }: {
   readonly busy: boolean;
@@ -896,6 +910,7 @@ function AlertInventory({
   readonly query: string;
   readonly statusFilter: string;
   readonly testMenuAlertId: string | null;
+  readonly testMenuProfileIds: readonly TargetProfileId[];
   readonly testingAlertId: string | null;
 }) {
   return (
@@ -955,6 +970,7 @@ function AlertInventory({
                       onTestProfile={onTestProfile}
                       onToggle={onToggle}
                       testMenuAlertId={testMenuAlertId}
+                      testMenuProfileIds={testMenuProfileIds}
                       testingAlertId={testingAlertId}
                     />
                   )}
@@ -978,6 +994,7 @@ function AlertInventory({
                         onToggle={onToggle}
                         orphanVariations={group.orphanVariations}
                         testMenuAlertId={testMenuAlertId}
+                        testMenuProfileIds={testMenuProfileIds}
                         testingAlertId={testingAlertId}
                       />
                     </section>
@@ -1009,6 +1026,7 @@ function AlertRowsTable({
   onToggle,
   orphanVariations = [],
   testMenuAlertId,
+  testMenuProfileIds,
   testingAlertId
 }: {
   readonly busy: boolean;
@@ -1026,6 +1044,7 @@ function AlertRowsTable({
   readonly onToggle: (alert: AlertInventoryRow) => void;
   readonly orphanVariations?: readonly AlertInventoryRow[];
   readonly testMenuAlertId: string | null;
+  readonly testMenuProfileIds: readonly TargetProfileId[];
   readonly testingAlertId: string | null;
 }) {
   const rows = [
@@ -1081,7 +1100,7 @@ function AlertRowsTable({
                       <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
                     </div></details>
                   </div>
-                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{alert.targetProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
+                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
                 </td>
               </tr>
             );

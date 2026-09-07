@@ -11,6 +11,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
+import { createStoryAudioApi } from "../../../stories/audio-fixtures.js";
 import { ManagementHttpError } from "../../management-http-client.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../../navigation/dirty-navigation.js";
 import {
@@ -49,9 +50,12 @@ function AlertEditorPage(props: TestAlertEditorPageProps) {
     ?? (async () => ({ rewards: [] }));
   return <ProductionAlertEditorPage
     {...props}
+    audioApi={props.audioApi ?? testAudioApi}
     managementApi={{ ...props.managementApi, getAlertVariationAuthoringContext, getTwitchCustomRewards, previewModeration }}
   />;
 }
+
+const testAudioApi = createStoryAudioApi();
 
 afterEach(() => {
   cleanup();
@@ -61,6 +65,71 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("confirms changed audio content on active device-only alerts without changing outputs", async () => {
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor(routedEditorDocument());
+    await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
+    fireEvent.change(screen.getByRole("slider", { name: "Volume 50%" }), { target: { value: "0.7" } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    expect(dialog).toHaveTextContent("Private headphones");
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+  });
+
+  it("sends included device audio with no ready visual profile and names partial delivery", async () => {
+    const document = routedEditorDocument();
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor(document);
+    sendAlertEditorTest.mockResolvedValue({ status: "queued", targetProfileId: null, test: true, referenceId: "ref-device-only",
+      deliveredDestinations: [{ kind: "device-route", id: "private", name: "Private headphones" }],
+      unavailableDestinations: [{ kind: "device-route", id: "stream", name: "Stream mix" }]
+    });
+    await user.click(await screen.findByRole("button", { name: "Preview" }));
+    expect(sendAlertEditorTest).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Send test" }));
+    expect(sendAlertEditorTest).toHaveBeenCalledWith(document.id, expect.objectContaining({ document, targetProfileId: null, includeAudio: true }));
+    const notice = (await screen.findByText(/Test queued on Private headphones.*ref-device-only/)).closest(".management-toast");
+    expect(notice).toHaveClass("management-toast--warning");
+    expect(notice).toHaveTextContent("Not delivered to: Stream mix");
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Send audio" }));
+    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+  });
+
+  it("confirms output changes on an active alert even without ready visual profiles", async () => {
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor(routedEditorDocument());
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    await user.click(await screen.findByRole("checkbox", { name: /Private headphones/ }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    expect(dialog).toHaveTextContent("Private headphones");
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith("alert-follow", expect.objectContaining({ outputs: { browserSource: false, deviceRouteIds: ["stream"] } }), true));
+  });
+
+  it("edits alert-wide audio outputs through undo redo revert and confirmed save", async () => {
+    const { user, saveAlertEditorDocument } = renderStarterThemeEditor();
+    await user.click(await screen.findByRole("tab", { name: "Alert" }));
+    const browser = () => screen.getByRole("checkbox", { name: /Browser Source/ });
+    expect(browser()).toBeChecked();
+    await user.click(browser());
+    expect(browser()).not.toBeChecked();
+    expect(screen.getByText(/Explicit audio is silent/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(browser()).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(browser()).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Revert" }));
+    expect(browser()).toBeChecked();
+    await user.click(browser());
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
+    expect(dialog).toHaveTextContent("Audio outputs");
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    expect(saveAlertEditorDocument.mock.calls[0]![1].outputs).toEqual({ browserSource: false, deviceRouteIds: [] });
+    expect(screen.getByText(/Videos are visual-only/)).toBeInTheDocument();
+  });
+
   it("requires confirmation before applying a starter theme", async () => {
     const { user } = renderStarterThemeEditor();
     await user.click(await screen.findByRole("tab", { name: "Alert" }));
@@ -1080,7 +1149,7 @@ describe("AlertEditorPage", () => {
     });
     const saveAlertEditorDocument = vi.fn<AlertEditorPageApi["saveAlertEditorDocument"]>()
       .mockRejectedValueOnce(new ManagementHttpError(
-        "Saving can change active live output for landscape.",
+        "Saving can change active live output for Stream mix.",
         "ALERT_EDITOR_LIVE_IMPACT_CONFIRMATION_REQUIRED",
         null
       ))
@@ -1094,6 +1163,7 @@ describe("AlertEditorPage", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     const confirmation = await screen.findByRole("dialog", { name: "Save changes to active alert?" });
+    expect(confirmation).toHaveTextContent("Stream mix");
     expect(saveAlertEditorDocument).toHaveBeenCalledWith(
       selected.id,
       expect.objectContaining({ cooldownSeconds: 15 }),
@@ -1603,7 +1673,7 @@ describe("AlertEditorPage", () => {
       "alert-follow",
       expect.objectContaining({ targetProfileId: "landscape", includeAudio: true, includeTts: true })
     ));
-    expect((await screen.findByText(/Queued on Landscape.*ref-editor-test/)).closest(".management-toast")).toHaveClass("management-toast--success");
+    expect((await screen.findByText(/Test queued on Landscape.*ref-editor-test/)).closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
   it("keeps profile selection when navigating to an alert and blocks tests on disabled profiles", async () => {
@@ -3684,13 +3754,23 @@ describe("AlertEditorPage", () => {
   });
 });
 
+function routedEditorDocument(): AlertEditorDocument {
+  const source = editorDocument();
+  return { ...source, outputs: { browserSource: false, deviceRouteIds: ["private", "stream"] },
+    targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" })),
+    layers: [...source.layers, { id: "sound", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-sound", volume: 0.5,
+      animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }]
+  };
+}
+
 function renderWorkspaceEditor(document = editorDocument()) {
   const user = userEvent.setup();
   const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
-  const sendAlertEditorTest = vi.fn(async (_alertId: string, request: { targetProfileId: "landscape" | "vertical" }) => ({
+  const sendAlertEditorTest = vi.fn<AlertEditorPageApi["sendAlertEditorTest"]>(async (_alertId, request) => ({
     status: "queued" as const,
     targetProfileId: request.targetProfileId,
     referenceId: "ref-editor-test",
+    deliveredDestinations: [], unavailableDestinations: [],
     test: true as const
   }));
   const previewModeration = vi.fn(async (input: { readonly target: "rendered" | "tts"; readonly text: string }) => ({
@@ -3851,6 +3931,7 @@ function editorDocument(): AlertEditorDocument {
     cooldownSeconds: 0,
     rulePriority: 0,
     durationMs: 5_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [
       {
         id: "layer-text",

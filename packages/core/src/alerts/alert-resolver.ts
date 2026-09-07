@@ -100,27 +100,36 @@ export class DefaultAlertResolver implements AlertResolver {
 
   resolveMatches(input: ResolveAlertMatchesInput): readonly ResolvedAlert[] {
     const matches = [...input.matches].sort((left, right) => {
-        const priorityDifference = right.rule.priority - left.rule.priority;
-        return priorityDifference === 0 ? left.rule.id.localeCompare(right.rule.id) : priorityDifference;
-      });
+      const priorityDifference = right.rule.priority - left.rule.priority;
+      return priorityDifference === 0 ? left.rule.id.localeCompare(right.rule.id) : priorityDifference;
+    });
     const targetProfileId = toEditorTargetProfileId(input.target.targetProfileId);
-    if (targetProfileId !== null) {
-      return matches.flatMap((match) => {
-        const variant = input.selectedVariants?.get(match.rule.id) ?? this.#selectVariant(match);
-        const defaultVariant = match.rule.variants[0];
-        const editorId = variant.id === defaultVariant?.id ? match.rule.id : variant.id;
-        const document = input.editorDocuments?.get(editorId);
-        return document === undefined
-          ? [this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}, variant)]
-          : this.#resolveEditorDocument(match, variant, document, targetProfileId, input.target, input.visualAssetMediaTypes ?? {});
+    return matches.flatMap((match) => {
+      const variant = input.selectedVariants?.get(match.rule.id) ?? this.#selectVariant(match);
+      const defaultVariant = match.rule.variants[0];
+      const editorId = variant.id === defaultVariant?.id ? match.rule.id : variant.id;
+      const document = input.editorDocuments?.get(editorId);
+      if (document !== undefined && !document.enabled) return [];
+      if (document !== undefined && targetProfileId !== null) {
+        return this.#resolveEditorDocument(match, variant, document, targetProfileId, input.target, input.visualAssetMediaTypes ?? {});
+      }
+      const legacy = this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}, variant);
+      if (document === undefined) return [legacy];
+      // Keep legacy visuals/TTS intact, but never bypass the editor's audio policy.
+      const audioLayers = [...document.layers]
+        .filter(layer => layer.type === "audio" && layer.visible && document.outputs.browserSource)
+        .sort((left, right) => left.order - right.order);
+      const audioAlerts = audioLayers.flatMap(layer => {
+        const instruction = this.#createEditorLayerInstruction(
+          match, layer, undefined, document.durationMs, null, input.target, {}
+        );
+        return instruction === null ? [] : [{
+          id: this.#generateId("resolved-alert"), sourceEventId: match.event.id,
+          ruleId: match.rule.id, variantId: variant.id, overlayInstruction: instruction
+        }];
       });
-    }
-    return matches.map((match) => this.#resolveMatch(
-      match,
-      input.target,
-      input.visualAssetMediaTypes ?? {},
-      input.selectedVariants?.get(match.rule.id)
-    ));
+      return [{ ...legacy, overlayInstruction: { ...legacy.overlayInstruction, audio: null } }, ...audioAlerts];
+    });
   }
 
   selectVariants(matches: readonly AlertMatch[]): ReadonlyMap<string, AlertVariant> {
@@ -142,7 +151,7 @@ export class DefaultAlertResolver implements AlertResolver {
 
     const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
     return [...document.layers]
-      .filter((layer) => layer.visible)
+      .filter((layer) => layer.visible && (layer.type !== "audio" || document.outputs.browserSource))
       .sort((left, right) => left.order - right.order)
       .flatMap((layer) => {
         const instruction = this.#createEditorLayerInstruction(
@@ -170,7 +179,7 @@ export class DefaultAlertResolver implements AlertResolver {
     layer: AlertLayer,
     layout: OverlayElementLayout | undefined,
     durationMs: number,
-    targetProfileId: TargetProfileId,
+    targetProfileId: TargetProfileId | null,
     target: AlertResolverTarget,
     visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>
   ): OverlayInstruction | null {

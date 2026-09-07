@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import { HttpResponseError } from "./http/errors.js";
+import { AudioOutputError } from "./modules/audio/audio-output-error.js";
+import { registerAudioOutputRoutes, type AudioOutputRouteDependencies } from "./http/routes/audio-outputs.js";
 import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/routes/alerts.js";
 import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
 import { registerConfigRoutes, type ServerConfigRouteDependencies } from "./http/routes/config.js";
+import { registerDesktopConfigRoutes, type DesktopConfigRouteDependencies } from "./http/routes/desktop-config.js";
 import {
   registerConfigurationBackupRoutes,
   type ConfigurationBackupRouteDependencies
@@ -46,6 +49,8 @@ export interface ServerErrorLogEntry {
 
 export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
+    Partial<DesktopConfigRouteDependencies>,
+    Partial<AudioOutputRouteDependencies>,
     Partial<ConfigurationBackupRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
     Partial<ManagementUiRouteDependencies>,
@@ -76,6 +81,26 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
   registerServerErrorHandler(app, dependencies);
 
   registerHealthRoutes(app, dependencies.metadata);
+  if (dependencies.audioOutputService !== undefined) {
+    if (dependencies.managementAuthPreHandler === undefined || dependencies.managementRateLimitPreHandler === undefined) {
+      throw new Error("Audio outputs require management auth and rate-limit hooks");
+    }
+    registerAudioOutputRoutes(app, {
+      audioOutputService: dependencies.audioOutputService,
+      managementAuthPreHandler: dependencies.managementAuthPreHandler,
+      managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
+    });
+  }
+  if (dependencies.desktopConfigService !== undefined) {
+    if (dependencies.managementAuthPreHandler === undefined || dependencies.managementRateLimitPreHandler === undefined) {
+      throw new Error("Desktop configuration requires management auth and rate-limit hooks");
+    }
+    registerDesktopConfigRoutes(app, {
+      desktopConfigService: dependencies.desktopConfigService,
+      managementAuthPreHandler: dependencies.managementAuthPreHandler,
+      managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
+    });
+  }
   const webShellRenderer = dependencies.webBuildDirectory === undefined
     ? dependencies.webShellRenderer
     : registerWebShellRoutes(app, {
@@ -263,6 +288,12 @@ function registerServerErrorHandler(app: FastifyInstance, dependencies: ServerAp
   const logServerError = dependencies.serverErrorLogger ?? defaultServerErrorLogger;
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof AudioOutputError) {
+      return reply.status(error.statusCode).send({ error: {
+        code: error.code, message: error.message, nextStep: error.nextStep,
+        routeIds: error.routeIds, references: error.references
+      } });
+    }
     const response = toServerErrorResponse(error);
     const errorId = generateServerErrorId();
     const requestId = String(request.id);

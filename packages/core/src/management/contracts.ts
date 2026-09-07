@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { alertAudioOutputsSchema } from "../audio/schemas.js";
 import { channelPointRewardSelectionSchema } from "../alerts/channel-point-reward-selection.js";
 import { alertConditionSchema, streamEventTypeSchema } from "../alerts/schemas.js";
 import {
@@ -602,6 +603,7 @@ export const alertEditorDocumentSchema = z.object({
   cooldownSeconds: nonNegativeIntegerSchema.default(0),
   rulePriority: z.number().int().default(0),
   durationMs: positiveIntegerSchema.max(120_000),
+  outputs: alertAudioOutputsSchema,
   layers: z.array(alertLayerSchema),
   targetProfiles: alertTargetProfileDocumentsSchema,
   templateVariables: z.array(alertTemplateVariableSchema).optional(),
@@ -652,17 +654,25 @@ export const alertEditorSaveInputSchema = z.object({
 
 export const alertEditorTestRequestSchema = z.object({
   document: alertEditorDocumentSchema,
-  targetProfileId: targetProfileIdSchema,
+  targetProfileId: targetProfileIdSchema.nullable(),
   samplePayload: metadataSchema,
   includeAudio: z.boolean(),
   includeTts: z.boolean()
 });
 
+export const alertEditorTestDestinationSchema = z.object({
+  kind: z.enum(["browser-source", "device-route"]),
+  id: nonEmptyStringSchema,
+  name: nonEmptyStringSchema
+});
+
 export const alertEditorTestResultSchema = z.object({
   status: z.literal("queued"),
-  targetProfileId: targetProfileIdSchema,
+  targetProfileId: targetProfileIdSchema.nullable(),
   referenceId: nonEmptyStringSchema,
-  test: z.literal(true)
+  test: z.literal(true),
+  deliveredDestinations: z.array(alertEditorTestDestinationSchema).default([]),
+  unavailableDestinations: z.array(alertEditorTestDestinationSchema).default([])
 });
 
 export const alertEditorErrorReportInputSchema = z.object({
@@ -1084,6 +1094,7 @@ export type AlertVariationAuthoringContext = z.infer<typeof alertVariationAuthor
 export type AlertVariationPriorityAssignment = z.infer<typeof alertVariationPriorityAssignmentSchema>;
 export type AlertEditorSaveInput = z.infer<typeof alertEditorSaveInputSchema>;
 export type AlertEditorTestRequest = z.infer<typeof alertEditorTestRequestSchema>;
+export type AlertEditorTestDestination = z.infer<typeof alertEditorTestDestinationSchema>;
 export type AlertEditorTestResult = z.infer<typeof alertEditorTestResultSchema>;
 export type AlertEditorErrorReportInput = z.infer<typeof alertEditorErrorReportInputSchema>;
 export type AlertEditorErrorReportResult = z.infer<typeof alertEditorErrorReportResultSchema>;
