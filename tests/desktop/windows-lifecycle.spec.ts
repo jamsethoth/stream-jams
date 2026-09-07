@@ -82,9 +82,10 @@ test("an unavailable renderer requires native confirmation before service shutdo
     });
     await desktop.evaluate(({ app }) => {
       const started = Date.now();
-      for (const event of ["before-quit", "will-quit", "quit"] as const) {
-        app.on(event, () => console.info(`Renderer-failure quit: ${event} at ${Date.now() - started}ms`));
-      }
+      const log = (event: string) => console.info(`Renderer-failure quit: ${event} at ${Date.now() - started}ms`);
+      app.on("before-quit", () => log("before-quit"));
+      app.on("will-quit", () => log("will-quit"));
+      app.on("quit", () => log("quit"));
     });
     await windowByUrl(desktop, `http://127.0.0.1:${fixture.port}/manage`);
     await expectHealth(fixture.port, true);

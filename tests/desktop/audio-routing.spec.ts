@@ -38,7 +38,12 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
     const boundary = await desktop.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL(): string } }) => candidate.webContents.getURL() === "stream-jams-audio://player/");
       if (window === undefined) return null;
-      const preferences = window.webContents.getLastWebPreferences();
+      // This runtime-only Electron inspector is intentionally confined to the
+      // packaged security test; it is not part of the public WebContents type.
+      const inspected = window.webContents as typeof window.webContents & {
+        getLastWebPreferences(): { nodeIntegration: boolean; contextIsolation: boolean; sandbox: boolean };
+      };
+      const preferences = inspected.getLastWebPreferences();
       return {
         visible: window.isVisible(),
         focusable: window.isFocusable(),
@@ -162,9 +167,11 @@ test("approved packaged capability check plays two explicit outputs independentl
     desktop.on("console", (message) => { if (message.text().startsWith("Audio shutdown:")) console.info(message.text()); });
     await desktop.evaluate(({ app }) => {
       const started = Date.now();
-      for (const event of ["before-quit", "will-quit", "quit", "window-all-closed"] as const) {
-        app.on(event, () => console.info(`Audio shutdown: ${event} at ${Date.now() - started}ms`));
-      }
+      const log = (event: string) => console.info(`Audio shutdown: ${event} at ${Date.now() - started}ms`);
+      app.on("before-quit", () => log("before-quit"));
+      app.on("will-quit", () => log("will-quit"));
+      app.on("quit", () => log("quit"));
+      app.on("window-all-closed", () => log("window-all-closed"));
     });
     const management = await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
     const player = await audioPlayer(desktop);
