@@ -8,11 +8,26 @@ import type { PlaybackApi } from "./playback-api.js";
 
 afterEach(() => {
   cleanup();
+  delete window.streamJamsDesktop;
   vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
 describe("OperatorApp", () => {
+  it("permits desktop quit from the draft-free operator console and removes its listener", () => {
+    let request: ((id: string) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const resolveQuit = vi.fn();
+    window.streamJamsDesktop = {
+      onQuitRequested: (listener) => { request = listener; return unsubscribe; },
+      resolveQuit
+    };
+    const { unmount } = render(<OperatorApp api={createApi({ getSnapshot: () => new Promise(() => {}) })} />);
+    request?.("test-quit");
+    expect(resolveQuit).toHaveBeenCalledWith("test-quit", true);
+    unmount();
+    expect(unsubscribe).toHaveBeenCalledOnce();
+  });
   it("places management navigation in the shared header action position", async () => {
     render(<OperatorApp api={createApi({ getSnapshot: async () => snapshot() })} />);
 
@@ -272,6 +287,7 @@ function activeSnapshot(): PlaybackQueueSnapshot {
 function item(id: string, status: PlaybackQueueItem["status"], actor: string, alertCount: number): PlaybackQueueItem {
   return {
     id,
+    audio: [],
     sourceEvent: {
       id: `event-${id}`,
       providerId: "twitch",

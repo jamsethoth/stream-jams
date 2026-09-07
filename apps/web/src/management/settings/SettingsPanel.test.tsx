@@ -6,11 +6,39 @@ import {
   type ConfigurationRestorePreflight
 } from "@stream-jams/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AudioApi } from "../audio/audio-api.js";
 import type { ManagementApi } from "../management-api.js";
+import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 import { SettingsPanel } from "./SettingsPanel.js";
 
 describe("SettingsPanel", () => {
   afterEach(() => cleanup());
+
+  it("saves the desktop opt-out explicitly and does not show it in CLI mode", async () => {
+    const managementApi = createManagementApi({ getDesktopConfig: async () => ({ available: true, closeToTray: true }) });
+    const view = render(<SettingsPanel managementApi={managementApi} />);
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Close window to tray" }));
+    expect(managementApi.updateDesktopConfig).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Save desktop settings" }));
+    expect(await screen.findByText("Desktop settings saved.")).toBeVisible();
+    expect(managementApi.updateDesktopConfig).toHaveBeenCalledWith({ closeToTray: false });
+    expect(screen.getByRole("checkbox", { name: "Close window to tray" })).not.toBeChecked();
+    view.unmount();
+    render(<SettingsPanel managementApi={createManagementApi()} />);
+    await screen.findByLabelText("Port");
+    expect(screen.queryByRole("checkbox", { name: "Close window to tray" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the desktop draft recoverable when saving fails", async () => {
+    render(<SettingsPanel managementApi={createManagementApi({
+      getDesktopConfig: async () => ({ available: true, closeToTray: true }),
+      updateDesktopConfig: async () => { throw new Error("Disk is read-only"); }
+    })} />);
+    await userEvent.click(await screen.findByRole("checkbox", { name: "Close window to tray" }));
+    await userEvent.click(screen.getByRole("button", { name: "Save desktop settings" }));
+    expect(await screen.findByText("Disk is read-only")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save desktop settings" })).toBeEnabled();
+  });
 
   it("shows global preferences, storage, logging, and compatibility information", async () => {
     const user = userEvent.setup();
@@ -115,6 +143,75 @@ describe("SettingsPanel", () => {
     await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" }));
   });
 
+  it("integrates named audio outputs and restores the audio deep-link target", async () => {
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoView
+    });
+    window.history.replaceState(null, "", "/manage/settings#audio-outputs");
+
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
+
+    expect(await screen.findByText("Headphones")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Audio outputs" })).toBeVisible();
+    await waitFor(() => expect(scrollIntoView).toHaveBeenCalledWith({ block: "start" }));
+  });
+
+  it("guards route drafts on navigation and saves them before leaving", async () => {
+    const user = userEvent.setup();
+    const audioApi = createAudioApi();
+    window.history.replaceState(null, "", "/manage/settings");
+    render(
+      <DirtyNavigationProvider>
+        <SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} />
+      </DirtyNavigationProvider>
+    );
+
+    const name = await screen.findByLabelText("Output name");
+    await user.clear(name);
+    await user.type(name, "Private headphones");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    expect(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" })).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(audioApi.updateRoute).toHaveBeenCalledWith("route-a", {
+      name: "Private headphones", confirmLiveImpact: false
+    }));
+    await waitFor(() => expect(window.location.pathname).toBe("/manage"));
+  });
+
+  it("guards and discards an unfinished new output on navigation", async () => {
+    const user = userEvent.setup();
+    const audioApi = createAudioApi();
+    window.history.replaceState(null, "", "/manage/settings");
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+
+    await user.type(await screen.findByLabelText("New output name"), "Draft speakers");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    expect(await screen.findByRole("dialog", { name: "Leave with unsaved changes?" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/manage"));
+    expect(audioApi.createRoute).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unnamed device draft and blocks Save and leave with an inline error", async () => {
+    const user = userEvent.setup();
+    const audioApi = createAudioApi();
+    window.history.replaceState(null, "", "/manage/settings");
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+
+    await user.selectOptions(await screen.findByLabelText("New output device"), "endpoint-a");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    await user.click(await screen.findByRole("button", { name: "Save and leave" }));
+
+    expect(await screen.findByText("Audio output needs a name")).toBeVisible();
+    expect(screen.getByLabelText("New output device")).toHaveValue("endpoint-a");
+    expect(window.location.pathname).toBe("/manage/settings");
+    expect(audioApi.createRoute).not.toHaveBeenCalled();
+  });
+
   it("downloads a versioned backup and reports completion", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
@@ -195,11 +292,13 @@ describe("SettingsPanel", () => {
 
 type SettingsApi = Pick<
   ManagementApi,
-  "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
+  "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
 >;
 
 function createManagementApi(overrides: Partial<SettingsApi> = {}): SettingsApi {
   return {
+    getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true })),
+    updateDesktopConfig: vi.fn(async (input) => ({ ...input, available: true })),
     getServerConfig: vi.fn(async () => ({ host: "127.0.0.1", port: 39187 })),
     updateServerConfig: vi.fn(async (input) => input),
     getConfigurationBackupSummary: vi.fn(async () => ({
@@ -230,6 +329,31 @@ function createManagementApi(overrides: Partial<SettingsApi> = {}): SettingsApi 
     clearOldLogs: vi.fn(async () => ({ deletedCount: 3 })),
     ...overrides
   };
+}
+
+function createAudioApi(): AudioApi {
+  return {
+    getStatus: vi.fn(async () => ({
+      capability: { available: true, devices: [{ deviceId: "endpoint-a", label: "USB headphones" }], reason: null, nextStep: null },
+      muted: false,
+      routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones" }, state: "ready" as const }]
+    })),
+    createRoute: vi.fn(),
+    updateRoute: vi.fn(async (id, input) => ({
+      id,
+      name: input.name ?? "Headphones",
+      deviceId: input.deviceId === undefined ? "endpoint-a" : input.deviceId,
+      deviceLabel: input.deviceId === null ? null : "USB headphones"
+    })),
+    deleteRoute: vi.fn(async () => undefined),
+    testRoute: vi.fn(async (routeId) => ({ routeId, muted: false })),
+    retry: vi.fn(async () => undefined)
+  };
+}
+
+function SettingsNavigationHarness({ audioApi, managementApi }: { readonly audioApi: AudioApi; readonly managementApi: SettingsApi }) {
+  const navigation = useManagementNavigation();
+  return <><button onClick={() => navigation.requestNavigation({ id: "home" })} type="button">Go home</button><SettingsPanel audioApi={audioApi} managementApi={managementApi} />{navigation.guard}</>;
 }
 
 function backupArchive(): ConfigurationBackupArchive {

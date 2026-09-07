@@ -3,9 +3,15 @@ import { cleanup, fireEvent, render, screen, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import type { AssetLibraryItem, DiagnosticsWorkspaceView } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ManagementApp } from "./ManagementApp.js";
+import { ManagementApp as ProductionManagementApp, type ManagementAppProps } from "./ManagementApp.js";
+import { createStoryAudioApi } from "../stories/audio-fixtures.js";
 import type { AssetApi } from "./assets/AssetManager.js";
 import type { ManagementApi } from "./management-api.js";
+
+const testAudioApi = createStoryAudioApi();
+function ManagementApp(props: ManagementAppProps) {
+  return <ProductionManagementApp {...props} audioApi={props.audioApi ?? testAudioApi} />;
+}
 
 afterEach(() => {
   cleanup();
@@ -600,6 +606,7 @@ function createManagementApi(): ManagementApi {
       status: "queued" as const,
       targetProfileId: request.targetProfileId,
       referenceId: "ref-test",
+      deliveredDestinations: [], unavailableDestinations: [],
       test: true as const
     })),
     reportAlertEditorError: vi.fn(async (_alertId, input) => ({
@@ -635,6 +642,8 @@ function createManagementApi(): ManagementApi {
       host: "127.0.0.1",
       port: 39187
     })),
+    getDesktopConfig: vi.fn(async () => ({ available: false, closeToTray: true })),
+    updateDesktopConfig: vi.fn(async (input) => ({ ...input, available: true })),
     updateServerConfig: vi.fn(async (input) => input),
     getModerationSettings: vi.fn(async () => ({
       renderedText: {

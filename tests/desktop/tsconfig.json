@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "composite": true, "types": ["node"], "tsBuildInfoFile": "../../dist/desktop-tests.tsbuildinfo" },
+  "include": ["*.ts"]
+}

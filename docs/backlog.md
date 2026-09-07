@@ -67,6 +67,12 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 | BL-038 | Full operator console expansion for intake, event review, and attention workflows | Deferred | P2 | BL-001 and demonstrated live-operation needs | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-041 | Production web bundle splitting and performance budget | Deferred | P2 | Production entry chunk remains above Vite's 500 kB advisory threshold | Measure management startup, define an initial-load budget, and lazy-load heavy management surfaces, especially the alert editor, without weakening overlay reliability. |
 
+## Known Issues
+
+| ID | Issue | Status | Priority | Dependency or trigger | Detail |
+| --- | --- | --- | --- | --- | --- |
+| BL-044 | Intermittent Windows desktop process-exit delay after audio playback | Investigation deferred to separate conversation | P2 | User-approved deferral; retain native shutdown regression coverage | After resetting the accumulated Neewer/OBSBOT process states, the unchanged playback/restart test passed 5/5 times. Root-cause attribution and whether each vendor's resource growth is normal are now owned by a separate diagnostic conversation. Resume feature work under the user's assumption that this environmental issue will be resolved later; do not claim it fixed or relax native exit deadlines. The distinct test cleanup-reference defect has been corrected. [Handoff and resumed work](verification/alert-audio-routing.md#september-5-investigation-handoff-and-resumed-implementation) |
+
 ## Not Planned
 
 | ID | Feature | Reason |

@@ -61,7 +61,7 @@ export interface ConfigurationBackupServiceOptions {
   readonly getAvailableBytes: () => Promise<number>;
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
-  readonly reloadRuntimeConfiguration?: () => void;
+  readonly reloadRuntimeConfiguration?: () => void | Promise<void>;
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
     deleteTokenSecrets(accountId: string): Promise<void>;
@@ -104,7 +104,7 @@ export class ConfigurationBackupService {
       assetDirectory: appConfig.storage.assetDirectory,
       logLevel: appConfig.logging.level,
       logRetentionHours: appConfig.logging.retentionHours,
-      secretExclusions: ["Provider credentials and tokens", "Overlay route keys and hashes", "Runtime logs and sessions"]
+      secretExclusions: ["Provider credentials and tokens", "Overlay route keys and hashes", "Local audio device IDs and labels", "Runtime logs and sessions"]
     };
     try {
       const archive = await this.exportArchive();
@@ -341,6 +341,17 @@ export class ConfigurationBackupService {
     if (archive.configuration.overlayOutputs.length > 0) {
       warnings.push(warning("Browser-source URLs will change", "Overlay route keys are intentionally excluded and will be regenerated.", "Update the affected browser-source URLs in OBS after restore."));
     }
+    for (const route of archive.configuration.tables.audio_output_routes ?? []) {
+      if (typeof route.name !== "string") continue;
+      warnings.push({
+        ...warning(
+          `Audio route "${route.name}" requires rebinding after restore`,
+          "Local audio device IDs and labels are intentionally excluded from portable backups.",
+          "Open Audio outputs and explicitly bind this route to a local device before using it."
+        ),
+        correction: { label: "Open Audio outputs", route: "/manage/settings#audio-outputs" }
+      });
+    }
     warnings.push(warning("Restart Stream Jams after restore", "Server and logging preferences are written to local configuration while the current process remains active.", "Restart Stream Jams after completing provider and browser-source follow-up."));
 
     const impact = restoreImpact(archive);
@@ -433,12 +444,13 @@ export class ConfigurationBackupService {
 
       this.#options.snapshotRepository.replace({ tables: request.archive.configuration.tables, assets: stagedAssets });
       await this.#options.configStore.updateConfig({
+        desktop: restoredConfig.desktop,
         server: restoredConfig.server,
         logging: restoredConfig.logging,
         playback: restoredConfig.playback
       });
       appConfigUpdated = true;
-      this.#options.reloadRuntimeConfiguration?.();
+      await this.#options.reloadRuntimeConfiguration?.();
     } catch (cause) {
       const rollbackFailures: string[] = [];
       try {
@@ -449,6 +461,7 @@ export class ConfigurationBackupService {
       if (appConfigUpdated) {
         try {
           await this.#options.configStore.updateConfig({
+            desktop: previousConfig.desktop,
             server: previousConfig.server,
             logging: previousConfig.logging,
             playback: previousConfig.playback
@@ -458,7 +471,7 @@ export class ConfigurationBackupService {
         }
       }
       try {
-        this.#options.reloadRuntimeConfiguration?.();
+        await this.#options.reloadRuntimeConfiguration?.();
       } catch (error) {
         rollbackFailures.push(`Runtime configuration rollback failed: ${errorMessage(error)}`);
       }

@@ -18,6 +18,7 @@ import {
   moveAlertVariationToPriorityGroup,
   normalizeAlertPriorityGroups,
   readChannelPointRewardSelection,
+  resolveAlertAudio,
   rgbaColorSchema,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -36,6 +37,8 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
+import { defaultAudioApi, type AudioApi } from "../../audio/audio-api.js";
+import { useAudioStatus } from "../../audio/use-audio-status.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../../foundation/ManagementToast.js";
@@ -46,6 +49,8 @@ import { ManagementHttpError } from "../../management-http-client.js";
 import { useDirtyNavigationSource } from "../../navigation/dirty-navigation.js";
 import { buildAlertEventGroups, filterAlertEventGroups } from "../alert-event-groups.js";
 import { AlertThemeChooser } from "../AlertThemeChooser.js";
+import { alertTestNotice } from "../alert-test-notice.js";
+import { AlertAudioOutputs } from "./AlertAudioOutputs.js";
 import { findOverlappingChannelPointAlertNames } from "../channel-point-reward-overlap.js";
 import type { TwitchRewardSampleChoice } from "../TwitchRewardPicker.js";
 import { AlertCanvas, type CanvasBackground } from "./AlertCanvas.js";
@@ -93,6 +98,7 @@ export type AlertEditorPageApi = Pick<
 > & Partial<Pick<ManagementApi, "reportAlertEditorError">>;
 
 export interface AlertEditorPageProps {
+  readonly audioApi?: AudioApi;
   readonly alertId: string;
   readonly assetApi: AssetApi;
   readonly managementApi: AlertEditorPageApi;
@@ -105,6 +111,7 @@ type InspectorTab = "layers" | "alert" | "event";
 type PickerState = { readonly layerId: string | null; readonly type: "image" | "video" | "audio" };
 type ReportableActionError = ActionableManagementError & { readonly referenceId: string };
 type SaveWarningState = {
+  readonly serverMessage?: string;
   readonly rejectNavigation?: (cause: unknown) => void;
   readonly resolveNavigation?: (saved: boolean) => void;
 };
@@ -189,6 +196,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [conditionDraftError, setConditionDraftError] = useState<string | null>(null);
   const [eventInspectorRevision, setEventInspectorRevision] = useState(0);
   const [sendIncludeAudio, setSendIncludeAudio] = useState(true);
+  const [sendDeviceOnly, setSendDeviceOnly] = useState(false);
+  const audioStatus = useAudioStatus(props.audioApi ?? defaultAudioApi);
   const [sendIncludeTts, setSendIncludeTts] = useState(true);
   const [previewIncludeAudio, setPreviewIncludeAudio] = useState(false);
   const [previewIncludeTts, setPreviewIncludeTts] = useState(false);
@@ -384,7 +393,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }, [activeTtsProvider, conditionDraftError, editor, props.alertId, props.managementApi, resetLocalPreview, showActionError, variationContext]);
 
   const requiresLiveImpactConfirmation = useCallback(async () => {
-    if (editor === null || !isEditorDirty(editor) || affectedProfileIds(editor, setDetail, variationContext).length === 0) return false;
+    if (editor === null || !isEditorDirty(editor) || (affectedProfileIds(editor, setDetail, variationContext).length === 0 && !hasAudioOutputImpact(editor))) return false;
     try {
       const latestSetDetail = await props.managementApi.getAlertSet(editor.document.setId);
       setSetDetail(latestSetDetail);
@@ -423,6 +432,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     } catch (cause) {
       if (!isLiveImpactConfirmationRequired(cause)) throw cause;
       return new Promise<boolean>((resolve, reject) => setSaveWarning({
+        serverMessage: cause instanceof Error ? cause.message : "The server requires live-impact confirmation.",
         rejectNavigation: reject,
         resolveNavigation: resolve
       }));
@@ -433,7 +443,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     id: `alert-editor:${props.alertId}`,
     dirty: editor !== null && isEditorDirty(editor),
     summary: editor !== null && hasLiveSaveImpact(editor, setDetail, variationContext)
-      ? `This active alert has unsaved changes that can affect ${affectedProfileLabelsForEditor(editor, setDetail, variationContext).join(" and ")} live output.`
+      ? `This active alert has unsaved changes that can affect ${[...affectedProfileLabelsForEditor(editor, setDetail, variationContext), ...(hasAudioOutputImpact(editor) ? ["selected audio outputs"] : [])].join(" and ")} live output.`
       : editor !== null && arePriorityGroupsDirty(editor)
         ? `This alert has unsaved priority group changes affecting ${affectedProfileLabelsForEditor(editor, setDetail, variationContext).join(" and ") || "no enabled"} profiles.`
         : "This alert has unsaved layer or profile changes.",
@@ -775,14 +785,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     try {
       const result = await props.managementApi.sendAlertEditorTest(props.alertId, {
         document: applyActiveTtsProvider(document, activeTtsProvider),
-        targetProfileId: profileId,
+        targetProfileId: !sendDeviceOnly && profile.enabled && profile.reviewState === "ready" ? profileId : null,
         samplePayload,
         includeAudio: sendIncludeAudio,
         includeTts: sendIncludeTts
       });
-      setNotice({ tone: "success", message: `Queued on ${profileLabel(profileId)}. Reference ${result.referenceId}.` });
+      setNotice(alertTestNotice(result));
     } catch (cause) {
-      showActionError(actionableError("The alert test was not sent", cause, `Connect and review the ${profileLabel(profileId)} output, then try again.`));
+      showActionError(actionableError("The alert test was not sent", cause, "Review selected Audio outputs in Settings, or connect and review the browser source, then try again."));
     } finally {
       setBusy(false);
     }
@@ -796,7 +806,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       }
       await save(false);
     } catch (cause) {
-      if (isLiveImpactConfirmationRequired(cause)) setSaveWarning({});
+      if (isLiveImpactConfirmationRequired(cause)) setSaveWarning({
+        serverMessage: cause instanceof Error ? cause.message : "The server requires live-impact confirmation."
+      });
       // Save and status-check failures are rendered through the page error banner.
     }
   }
@@ -935,7 +947,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
-  const canSend = profile.enabled && profile.reviewState === "ready" && samplePayload !== null && sampleError === null && documentConditionError === null && documentStyleError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
+  const hasDeviceAudio = sendIncludeAudio && document.outputs.deviceRouteIds.length > 0 && document.layers.some((layer) => layer.visible && layer.type === "audio");
+  const canSend = ((!sendDeviceOnly && profile.enabled && profile.reviewState === "ready") || hasDeviceAudio) && samplePayload !== null && sampleError === null && documentConditionError === null && documentStyleError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
   return (
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
@@ -966,6 +979,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
       {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
+      {document.layers.some((layer) => layer.type === "video") ? <p className="alert-editor-page__condition-error">Videos are visual-only and always silent in alerts. To keep a soundtrack, add an explicit audio layer and choose its alert-wide outputs. Existing video assets and layouts are unchanged.</p> : null}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event settings need correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
       {documentStyleError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Visual styles need correction: {documentStyleError} Correct the selected layer&apos;s highlighted style fields before saving, previewing, or sending a test.</p>}
       {validationIssues.length === 0 ? null : (
@@ -1147,11 +1161,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 ttsProvidersLoaded={ttsProvidersLoaded}
               />
             ) : tab === "alert" ? (
-              <AlertInspector document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onCopyDesign={() => {
+              <><AlertInspector document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onCopyDesign={() => {
                 setCopyDesignSourceId(filteredAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
+              <AlertAudioOutputs value={document.outputs} status={audioStatus.status} loading={audioStatus.loading} error={audioStatus.error} onChange={(outputs) => updateDocument((current) => ({ ...current, outputs }))} /></>
             ) : (
+              <><div className="alert-editor-inspector"><fieldset><legend>Test destinations</legend><label className="alert-editor-inspector__check"><input checked={sendDeviceOnly} onChange={(event) => setSendDeviceOnly(event.currentTarget.checked)} type="checkbox" />Send test without a browser source (selected device outputs only)</label>
+              <p>Send test uses this draft and the selected audio outputs. Unavailable browser profiles are omitted; available device audio can still play. Preview stays local. TTS follows its existing provider.</p></fieldset></div>
               <AlertEventInspector
                 document={document}
                 key={`${document.id}:${eventInspectorRevision}`}
@@ -1190,7 +1207,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 selectionExplanationCorrection={sampleError !== null ? "sample" : documentConditionError !== null ? "event" : null}
                 variationContext={variationContext}
                 variationEvaluation={variationEvaluation}
-              />
+              /></>
             )}
           </div>
           {(["layers", "alert", "event"] as const).filter((value) => value !== tab).map((value) => (
@@ -1241,10 +1258,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div>
             <h2 id="active-alert-save-warning-title">Save changes to active alert?</h2>
             <p>This alert belongs to the active set. Saving can change live output immediately.</p>
+            {saveWarning?.serverMessage ? <p>{saveWarning.serverMessage}</p> : null}
           </div>
           <dl>
             <div><dt>Event</dt><dd>{formatEventType(document.eventType)} events</dd></div>
             <div><dt>Profiles</dt><dd>{affectedProfileLabelsForEditor(editor, setDetail, variationContext).join(", ") || "None"}</dd></div>
+            {hasAudioOutputImpact(editor) ? <div><dt>Audio outputs</dt><dd>{[...new Set([editor.savedDocument.outputs, document.outputs].flatMap((outputs) => [
+              ...(outputs.browserSource ? ["Browser Source"] : []),
+              ...outputs.deviceRouteIds.map((id) => audioStatus.status?.routes.find(({ route }) => route.id === id)?.route.name ?? id)
+            ]))].join(", ") || "None (explicit audio is silent)"}. Changes apply to future playback starts.</dd></div> : null}
           </dl>
           <div className="management-modal__actions">
             <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
@@ -1404,7 +1426,19 @@ function hasLiveSaveImpact(
   context: AlertVariationAuthoringContext | null
 ): boolean {
   if (setDetail?.overview.active !== true || !isEditorDirty(editor)) return false;
-  return affectedProfileIds(editor, setDetail, context).length > 0;
+  return affectedProfileIds(editor, setDetail, context).length > 0 || hasAudioOutputImpact(editor);
+}
+
+function hasAudioOutputImpact(editor: AlertEditorState): boolean {
+  if (!editor.savedDocument.enabled && !editor.document.enabled) return false;
+  if (JSON.stringify(editor.savedDocument.outputs) !== JSON.stringify(editor.document.outputs)) return true;
+  const deviceState = (document: AlertEditorDocument) => {
+    const audio = resolveAlertAudio(document);
+    if (!document.enabled || audio === null || audio.outputs.deviceRouteIds.length === 0) return null;
+    return { audio, conditions: document.conditions, variantConditions: document.variantConditions,
+      weight: document.weight, priority: document.priority, cooldownSeconds: document.cooldownSeconds, rulePriority: document.rulePriority };
+  };
+  return JSON.stringify(deviceState(editor.savedDocument)) !== JSON.stringify(deviceState(editor.document));
 }
 
 function affectedProfileIds(

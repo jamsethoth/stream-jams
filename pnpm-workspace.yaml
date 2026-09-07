@@ -5,6 +5,12 @@ nodeVersion: 24.16.0
 engineStrict: true
 runtimeOnFail: download
 overrides:
+  # Forge 7's rebuild pins a Git URL; use Electron's published equivalent while
+  # retaining pnpm's blockExoticSubdeps protection.
+  '@electron/rebuild@3.7.2>@electron/node-gyp': 10.2.0-electron.2
+  # yauzl 2's legacy stream destruction hangs extract-zip on Node 24.16
+  # (nodejs/node#63487); v3 preserves its callback API with modern stream cleanup.
+  'extract-zip@2.0.1>yauzl': 3.4.0
   'brace-expansion@<1.1.18': 1.1.18
   'brace-expansion@>=3.0.0 <5.0.9': 5.0.9
   'fast-uri@>=3.0.0 <3.1.5': 3.1.5
@@ -14,10 +20,12 @@ overrides:
   'undici@>=7.0.0 <7.29.0': 7.29.0
   'uuid@<11.1.1': 11.1.1
 allowBuilds:
+  electron: true
   '@swc/core': true
   esbuild: true
   unrs-resolver: true
 onlyBuiltDependencies:
+  - electron
   - '@swc/core'
   - esbuild
   - unrs-resolver

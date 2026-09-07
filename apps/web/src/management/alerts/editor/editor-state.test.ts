@@ -560,6 +560,7 @@ function createDocument(): AlertEditorDocument {
     cooldownSeconds: 0,
     rulePriority: 0,
     durationMs: 5000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [
       {
         ...layerBase("layer-text", "Follower name", 0),

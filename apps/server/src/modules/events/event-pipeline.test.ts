@@ -243,6 +243,7 @@ function queueResult(event: NormalizedStreamEvent): PlaybackEnqueueResult {
       current: {
         id: "queue-item-1",
         sourceEvent: event,
+        audio: [],
         alerts: [
           {
             id: "resolved-alert-1",

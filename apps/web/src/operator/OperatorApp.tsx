@@ -1,6 +1,7 @@
 import type { PlaybackQueueItem, PlaybackQueueSnapshot } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
 import "../App.css";
+import { getDesktopBridge } from "../management/desktop/desktop-bridge.js";
 import { formatDateTime } from "../management/foundation/formatters.js";
 import { StatusBadge, type StatusBadgeTone } from "../management/foundation/StatusBadge.js";
 import { ManagementHttpError } from "../management/management-http-client.js";
@@ -22,6 +23,11 @@ export interface OperatorAppProps {
 }
 
 export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
+  useEffect(() => {
+    const bridge = getDesktopBridge();
+    // Operator controls persist each command immediately; this surface has no draft.
+    return bridge?.onQuitRequested((requestId) => bridge.resolveQuit(requestId, true));
+  }, []);
   const [snapshot, setSnapshot] = useState<PlaybackQueueSnapshot | null>(null);
   const [initialError, setInitialError] = useState<OperatorError | null>(null);
   const [refreshError, setRefreshError] = useState<OperatorError | null>(null);

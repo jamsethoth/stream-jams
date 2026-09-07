@@ -1,4 +1,5 @@
 import { useMemo, type MouseEvent } from "react";
+import { defaultAudioApi, type AudioApi } from "./audio/audio-api.js";
 import type { AssetApi } from "./assets/AssetManager.js";
 import { AssetManager } from "./assets/AssetManager.js";
 import { AlertSetsPage } from "./alerts/AlertSetsPage.js";
@@ -21,11 +22,13 @@ import {
 import { SettingsPanel } from "./settings/SettingsPanel.js";
 
 export interface ManagementAppProps {
+  readonly audioApi?: AudioApi;
   readonly assetApi: AssetApi;
   readonly managementApi?: ManagementApi | undefined;
 }
 
 interface ResolvedManagementAppProps {
+  readonly audioApi: AudioApi;
   readonly assetApi: AssetApi;
   readonly managementApi: ManagementApi;
 }
@@ -34,12 +37,12 @@ export function ManagementApp(props: ManagementAppProps) {
   const resolvedManagementApi = useMemo(() => props.managementApi ?? createHttpManagementApi(), [props.managementApi]);
   return (
     <DirtyNavigationProvider>
-      <ManagementAppContent {...props} managementApi={resolvedManagementApi} />
+      <ManagementAppContent {...props} audioApi={props.audioApi ?? defaultAudioApi} managementApi={resolvedManagementApi} />
     </DirtyNavigationProvider>
   );
 }
 
-function ManagementAppContent({ assetApi, managementApi }: ResolvedManagementAppProps) {
+function ManagementAppContent({ assetApi, audioApi, managementApi }: ResolvedManagementAppProps) {
   const navigation = useManagementNavigation();
   const definition = getManagementRouteDefinition(navigation.route);
 
@@ -102,7 +105,7 @@ function ManagementAppContent({ assetApi, managementApi }: ResolvedManagementApp
           aria-label={`${definition.title} content`}
           className={navigation.route.id === "alert-editor" ? "management-route-content management-route-content--focused" : "management-route-content"}
         >
-          <RouteContent assetApi={assetApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} />
+          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} />
         </section>
       </main>
       {navigation.guard}
@@ -112,6 +115,7 @@ function ManagementAppContent({ assetApi, managementApi }: ResolvedManagementApp
 
 function RouteContent({
   assetApi,
+  audioApi,
   managementApi,
   onNavigate,
   route
@@ -130,6 +134,7 @@ function RouteContent({
     case "alert-editor":
       return route.alertId === undefined ? null : (
         <AlertEditorPage
+          audioApi={audioApi}
           alertId={route.alertId}
           assetApi={assetApi}
           managementApi={managementApi}
@@ -146,6 +151,6 @@ function RouteContent({
     case "diagnostics":
       return <DiagnosticsPanel initialReferenceId={route.referenceId} managementApi={managementApi} />;
     case "settings":
-      return <SettingsPanel managementApi={managementApi} />;
+      return <SettingsPanel audioApi={audioApi} managementApi={managementApi} />;
   }
 }

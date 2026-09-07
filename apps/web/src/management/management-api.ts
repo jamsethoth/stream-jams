@@ -74,6 +74,11 @@ export interface ServerConfigView {
   readonly port: number;
 }
 
+export interface DesktopConfigView {
+  readonly available: boolean;
+  readonly closeToTray: boolean;
+}
+
 export interface ModerationTargetSettingsView {
   readonly maxLength: number;
   readonly blockedTerms: readonly string[];
@@ -300,6 +305,8 @@ export interface ManagementApi {
   openDataFolder(): Promise<OpenDataFolderResult>;
   clearOldLogs(): Promise<ClearOldLogsResult>;
   getServerConfig(): Promise<ServerConfigView>;
+  getDesktopConfig(): Promise<DesktopConfigView>;
+  updateDesktopConfig(input: { readonly closeToTray: boolean }): Promise<DesktopConfigView>;
   updateServerConfig(input: ServerConfigView): Promise<ServerConfigView>;
   getModerationSettings(): Promise<ModerationSettingsView>;
   updateModerationSettings(input: ModerationSettingsView): Promise<ModerationSettingsView>;
@@ -739,6 +746,13 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async getServerConfig() {
       return client.getJson<ServerConfigView>("/config/server", "Unable to load server settings.");
+    },
+
+    async getDesktopConfig() {
+      return client.getJson<DesktopConfigView>("/config/desktop", "Unable to load desktop settings.");
+    },
+    async updateDesktopConfig(input) {
+      return client.patchJson<DesktopConfigView>("/config/desktop", input, "Unable to save desktop settings.");
     },
 
     async updateServerConfig(input: ServerConfigView) {

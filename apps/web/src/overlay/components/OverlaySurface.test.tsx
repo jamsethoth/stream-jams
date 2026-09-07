@@ -20,6 +20,17 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it.each(["live", "test"] as const)("keeps alert videos silent in %s even when the output is unmuted", (purpose) => {
+    const value = { ...instruction(), purpose, visual: {
+      assetId: "legacy-video", mediaType: "video" as const,
+      layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }
+    } };
+    const { rerender } = render(<OverlaySurface composition={composition(value)} muted={false} resolveAssetUrl={(id) => `/assets/${id}`} />);
+    expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", true);
+    rerender(<OverlaySurface composition={composition({ ...value, moduleId: "video-shoutout" })} muted={false} resolveAssetUrl={(id) => `/assets/${id}`} />);
+    expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", false);
+  });
+
   it("renders animated shapes with target-profile geometry and preset timing", () => {
     render(
       <OverlaySurface

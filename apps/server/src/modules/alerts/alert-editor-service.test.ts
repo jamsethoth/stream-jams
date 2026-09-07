@@ -7,7 +7,8 @@ import {
   DefaultModerationService,
   AlertEditorDocument,
   AlertRule,
-  AlertEditorTestRequest
+  AlertEditorTestRequest,
+  type AudioOutputStatus
 } from "@stream-jams/core";
 import {
   AlertEditorDeliveryBlockedError,
@@ -605,6 +606,23 @@ describe("AlertEditorService", () => {
     expect(harness.saveAtomically).not.toHaveBeenCalled();
   });
 
+  it("includes a sibling device route when a shared rule change affects it", async () => {
+    const variationRule = createPriorityRule();
+    const harness = createAtomicHarness(variationRule, true, audioStatusFixture());
+    const sibling = harness.storedDocuments.get("variant-high")!;
+    harness.storedDocuments.set("variant-high", deviceOnlyDocument(sibling));
+    const document = await harness.service.getDocument(variationRule.id);
+
+    await expect(harness.service.saveDocument(variationRule.id, {
+      ...document,
+      conditions: [{ field: "ingestProvider", operator: "equals", value: "twitch" }]
+    })).rejects.toMatchObject({
+      affectedProfileIds: ["landscape"],
+      affectedAudioDestinationNames: ["Stream mix"]
+    });
+    expect(harness.saveAtomically).not.toHaveBeenCalled();
+  });
+
   it("rejects an event type that does not belong to the selected alert before mutation", async () => {
     const variationRule = createPriorityRule();
     const harness = createAtomicHarness(variationRule);
@@ -884,6 +902,113 @@ describe("AlertEditorService", () => {
     await expect(harness.service.saveDocument(rule.id, edited, true)).resolves.toEqual(edited);
   });
 
+  it("names route output changes for an active device-only alert without enabling an invalid visual profile", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    harness.rules.listCollections.mockResolvedValue([{ id: "set-default", name: "Default", enabled: true }]);
+    const document = await harness.service.getDocument(rule.id);
+    const currentDeviceOnly: AlertEditorDocument = {
+      ...document,
+      outputs: { browserSource: false, deviceRouteIds: ["route-stream"] },
+      layers: [
+        ...document.layers,
+        {
+          id: "layer-audio", name: "Chime", type: "audio", visible: true,
+          order: document.layers.length, assetId: "asset-chime", volume: 1,
+          animation: document.layers[0]!.animation
+        }
+      ],
+      targetProfiles: document.targetProfiles.map(profile => ({
+        ...profile,
+        enabled: false,
+        reviewState: "needs-review" as const
+      }))
+    };
+    harness.documents.find.mockResolvedValue(currentDeviceOnly);
+    const deviceOnly: AlertEditorDocument = {
+      ...currentDeviceOnly,
+      outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] }
+    };
+
+    await expect(harness.service.saveDocument(rule.id, deviceOnly)).rejects.toMatchObject({
+      affectedProfileIds: [],
+      affectedAudioDestinationNames: ["Stream mix", "Headphones"]
+    });
+    await expect(harness.service.saveDocument(rule.id, deviceOnly, true)).resolves.toEqual(deviceOnly);
+    expect(deviceOnly.targetProfiles.every(profile => !profile.enabled && profile.reviewState === "needs-review")).toBe(true);
+  });
+
+  it("allows an existing active device-only alert to be disabled after naming its affected route", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    harness.rules.listCollections.mockResolvedValue([{ id: "set-default", name: "Default", enabled: true }]);
+    const current = deviceOnlyDocument(await harness.service.getDocument(rule.id));
+    harness.documents.find.mockResolvedValue(current);
+    const disabled = { ...current, enabled: false };
+
+    await expect(harness.service.saveDocument(rule.id, disabled)).rejects.toMatchObject({
+      affectedProfileIds: [],
+      affectedAudioDestinationNames: ["Stream mix"]
+    });
+    await expect(harness.service.saveDocument(rule.id, disabled, true)).resolves.toEqual(disabled);
+    expect(disabled.targetProfiles.every(profile => !profile.enabled && profile.reviewState === "needs-review")).toBe(true);
+  });
+
+  it.each(["asset", "volume", "duration", "visibility", "matching"] as const)(
+    "requires named live-impact confirmation for device-audio %s changes with unchanged routes",
+    async (change) => {
+      const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+      harness.rules.listCollections.mockResolvedValue([{ id: "set-default", name: "Default", enabled: true }]);
+      const current = deviceOnlyDocument(await harness.service.getDocument(rule.id), true);
+      harness.documents.find.mockResolvedValue(current);
+      const candidate: AlertEditorDocument = change === "duration"
+        ? { ...current, durationMs: current.durationMs + 1_000 }
+        : change === "matching"
+          ? { ...current, conditions: [{ field: "ingestProvider", operator: "equals", value: "twitch" }] }
+          : {
+              ...current,
+              layers: current.layers.map(layer => layer.id !== "layer-audio"
+                ? layer
+                : change === "asset"
+                  ? { ...layer, assetId: "asset-updated" }
+                  : change === "volume"
+                    ? { ...layer, volume: 0.25 }
+                    : { ...layer, visible: false })
+            };
+
+      await expect(harness.service.saveDocument(rule.id, candidate)).rejects.toMatchObject({
+        affectedProfileIds: [],
+        affectedAudioDestinationNames: ["Stream mix"]
+      });
+      expect(harness.documents.save).not.toHaveBeenCalled();
+    }
+  );
+
+  it("does not report a device-route impact for a TTS-only edit", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    harness.rules.listCollections.mockResolvedValue([{ id: "set-default", name: "Default", enabled: true }]);
+    const current = deviceOnlyDocument(await harness.service.getDocument(rule.id));
+    harness.documents.find.mockResolvedValue(current);
+    const candidate: AlertEditorDocument = {
+      ...current,
+      layers: [
+        ...current.layers,
+        {
+          id: "layer-tts",
+          name: "Speech",
+          type: "tts",
+          visible: true,
+          order: current.layers.length,
+          animation: current.layers[0]!.animation,
+          enabled: true,
+          providerId: "speakerbot",
+          template: "Welcome {actor.displayName}"
+        }
+      ]
+    };
+
+    await expect(harness.service.saveDocument(rule.id, candidate)).resolves.toEqual(candidate);
+    expect(harness.documents.save).toHaveBeenCalledOnce();
+  });
+
   it("queues visible layers through playback and blocks disconnected outputs", async () => {
     const harness = createHarness();
     const document = await harness.service.getDocument(rule.id);
@@ -899,7 +1024,11 @@ describe("AlertEditorService", () => {
       status: "queued",
       targetProfileId: "landscape",
       referenceId: "ref-test-1",
-      test: true
+      test: true,
+      deliveredDestinations: [
+        { kind: "browser-source", id: "landscape", name: "Landscape Browser Source" }
+      ],
+      unavailableDestinations: []
     });
     const playback = harness.enqueueTest.mock.calls[0]?.[0] as AlertEditorTestPlayback | undefined;
     expect(playback?.sourceEvent).toMatchObject({
@@ -920,6 +1049,142 @@ describe("AlertEditorService", () => {
     harness.hasConnectedOutput.mockResolvedValue(false);
     await expect(harness.service.sendTest(rule.id, request)).rejects.toBeInstanceOf(AlertEditorDeliveryBlockedError);
     expect(harness.enqueueTest).toHaveBeenCalledTimes(1);
+  });
+
+  it("queues canonical audio for a null-profile device-only test and reports named partial destinations", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    const document = await harness.service.getDocument(rule.id);
+    const candidate: AlertEditorDocument = {
+      ...document,
+      outputs: { browserSource: true, deviceRouteIds: ["route-headphones", "route-stream"] },
+      layers: [
+        ...document.layers,
+        {
+          id: "layer-audio",
+          name: "Chime",
+          type: "audio",
+          visible: true,
+          order: document.layers.length,
+          assetId: "asset-chime",
+          volume: 0.65,
+          animation: document.layers[0]!.animation
+        }
+      ]
+    };
+
+    await expect(harness.service.sendTest(rule.id, {
+      document: candidate,
+      targetProfileId: null,
+      samplePayload: { userName: "James" },
+      includeAudio: true,
+      includeTts: true
+    })).resolves.toEqual({
+      status: "queued",
+      targetProfileId: null,
+      referenceId: "ref-test-1",
+      test: true,
+      deliveredDestinations: [
+        { kind: "device-route", id: "route-headphones", name: "Headphones" }
+      ],
+      unavailableDestinations: [
+        { kind: "device-route", id: "route-stream", name: "Stream mix" }
+      ]
+    });
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      alerts: [],
+      audio: [{
+        documentId: rule.id,
+        durationMs: 5_000,
+        outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
+        layers: [{ layerId: "layer-audio", assetId: "asset-chime", volume: 0.65 }]
+      }]
+    }));
+  });
+
+  it("skips an invalid selected browser profile while delivering healthy device audio", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    const document = await harness.service.getDocument(rule.id);
+    const candidate: AlertEditorDocument = {
+      ...document,
+      outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] },
+      layers: [
+        ...document.layers,
+        {
+          id: "layer-audio",
+          name: "Chime",
+          type: "audio",
+          visible: true,
+          order: document.layers.length,
+          assetId: "asset-chime",
+          volume: 1,
+          animation: document.layers[0]!.animation
+        }
+      ]
+    };
+
+    await expect(harness.service.sendTest(rule.id, {
+      document: candidate,
+      targetProfileId: "vertical",
+      samplePayload: { userName: "James" },
+      includeAudio: true,
+      includeTts: false
+    })).resolves.toMatchObject({
+      deliveredDestinations: [
+        { kind: "device-route", id: "route-headphones", name: "Headphones" }
+      ],
+      unavailableDestinations: [
+        { kind: "browser-source", id: "vertical", name: "Vertical Browser Source" }
+      ]
+    });
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      alerts: [],
+      audio: [expect.objectContaining({ documentId: rule.id })]
+    }));
+  });
+
+  it("removes explicit audio from browser and device paths while preserving included TTS", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    const document = await harness.service.getDocument(rule.id);
+    const animation = document.layers[0]!.animation;
+    const candidate: AlertEditorDocument = {
+      ...document,
+      outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
+      layers: [
+        ...document.layers,
+        { id: "layer-audio", name: "Chime", type: "audio", visible: true, order: 10, assetId: "asset-chime", volume: 1, animation },
+        {
+          id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 11,
+          enabled: true, providerId: "browser-speech", template: "Welcome {userName}", animation
+        }
+      ]
+    };
+
+    await harness.service.sendTest(rule.id, {
+      document: candidate,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James" },
+      includeAudio: false,
+      includeTts: true
+    });
+
+    const playback = harness.enqueueTest.mock.calls[0]?.[0] as AlertEditorTestPlayback;
+    expect(playback.audio).toEqual([]);
+    expect(playback.alerts.some(alert => alert.overlayInstruction.audio !== null)).toBe(false);
+    expect(playback.alerts.some(alert => alert.overlayInstruction.tts?.text === "Welcome James")).toBe(true);
+  });
+
+  it("rejects a device-only test when its included content has no deliverable destination", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    const document = await harness.service.getDocument(rule.id);
+
+    await expect(harness.service.sendTest(rule.id, {
+      document: { ...document, outputs: { browserSource: true, deviceRouteIds: ["route-stream"] } },
+      targetProfileId: null,
+      samplePayload: { userName: "James" },
+      includeAudio: true,
+      includeTts: true
+    })).rejects.toThrow("No included test content can reach an available destination");
+    expect(harness.enqueueTest).not.toHaveBeenCalled();
   });
 
   it("queues a shape for Send test with selected-profile geometry and preset animation", async () => {
@@ -1273,9 +1538,13 @@ describe("AlertEditorService", () => {
 function createHarness(
   activeSet = false,
   findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>,
-  moderationService = new DefaultModerationService()
+  moderationService = new DefaultModerationService(),
+  audioOutputStatus?: AudioOutputStatus
 ) {
-  const documents: AlertEditorDocumentRepository & { save: ReturnType<typeof vi.fn> } = {
+  const documents: AlertEditorDocumentRepository & {
+    find: ReturnType<typeof vi.fn>;
+    save: ReturnType<typeof vi.fn>;
+  } = {
     find: vi.fn(async () => null),
     findMany: vi.fn(async () => new Map()),
     save: vi.fn(async (document: AlertEditorDocument) => document),
@@ -1301,6 +1570,10 @@ function createHarness(
     rules,
     metadata,
     hasConnectedOutput,
+    ...(audioOutputStatus === undefined ? {} : { getAudioOutputStatus: async () => audioOutputStatus }),
+    ...(audioOutputStatus === undefined ? {} : {
+      listAudioOutputRoutes: () => audioOutputStatus.routes.map(routeStatus => routeStatus.route)
+    }),
     enqueueTest,
     moderationService,
     ...(findAssetMediaType === undefined ? {} : { findAssetMediaType }),
@@ -1314,6 +1587,52 @@ function createHarness(
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, hasConnectedOutput, enqueueTest };
+}
+
+function audioStatusFixture(): AudioOutputStatus {
+  return {
+    capability: {
+      available: true,
+      devices: [{ deviceId: "device-headphones", label: "Headphones" }],
+      reason: null,
+      nextStep: null
+    },
+    muted: false,
+    routes: [
+      {
+        route: { id: "route-headphones", name: "Headphones", deviceId: "device-headphones", deviceLabel: "Headphones" },
+        state: "ready"
+      },
+      {
+        route: { id: "route-stream", name: "Stream mix", deviceId: "device-stream", deviceLabel: "Stream mix" },
+        state: "missing-device"
+      }
+    ]
+  };
+}
+
+function deviceOnlyDocument(document: AlertEditorDocument, includeSecondLayer = false): AlertEditorDocument {
+  const animation = document.layers[0]!.animation;
+  return {
+    ...document,
+    outputs: { browserSource: false, deviceRouteIds: ["route-stream"] },
+    layers: [
+      ...document.layers,
+      {
+        id: "layer-audio", name: "Chime", type: "audio", visible: true,
+        order: document.layers.length, assetId: "asset-chime", volume: 1, animation
+      },
+      ...(includeSecondLayer ? [{
+        id: "layer-audio-second", name: "Second chime", type: "audio" as const, visible: true,
+        order: document.layers.length + 1, assetId: "asset-second", volume: 0.5, animation
+      }] : [])
+    ],
+    targetProfiles: document.targetProfiles.map(profile => ({
+      ...profile,
+      enabled: false,
+      reviewState: "needs-review" as const
+    }))
+  };
 }
 
 function createHarnessWithRule(
@@ -1393,7 +1712,11 @@ function createConditionRule(): AlertRule {
   };
 }
 
-function createAtomicHarness(ruleFixture: AlertRule, activeSet = false) {
+function createAtomicHarness(
+  ruleFixture: AlertRule,
+  activeSet = false,
+  audioOutputStatus?: AudioOutputStatus
+) {
   const storedDocuments = new Map(
     ruleFixture.variants.map((_, index) => {
       const document = createAlertEditorDocumentFromRule(ruleFixture, index, null);
@@ -1427,6 +1750,9 @@ function createAtomicHarness(ruleFixture: AlertRule, activeSet = false) {
     rules,
     metadata,
     hasConnectedOutput: async () => true,
+    ...(audioOutputStatus === undefined ? {} : {
+      listAudioOutputRoutes: () => audioOutputStatus.routes.map(routeStatus => routeStatus.route)
+    }),
     enqueueTest: async () => undefined,
     moderationService: new DefaultModerationService(),
     generateId: () => "generated",
@@ -1434,5 +1760,5 @@ function createAtomicHarness(ruleFixture: AlertRule, activeSet = false) {
     saveAtomically,
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
-  return { service, documents, rules, metadata, saveAtomically };
+  return { service, documents, rules, metadata, saveAtomically, storedDocuments };
 }

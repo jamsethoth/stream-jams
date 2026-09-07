@@ -1,6 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import { alertEditorDocumentSchema, type AlertEditorDocument } from "@stream-jams/core";
 import type { AlertEditorDocumentRepository } from "./alert-editor-service.js";
+import { runInTransaction } from "../db/database.js";
+import { AudioOutputError } from "../audio/audio-output-error.js";
 
 interface AlertEditorDocumentRow {
   readonly document_json: unknown;
@@ -54,15 +56,20 @@ export class SqliteAlertEditorDocumentRepository implements AlertEditorDocumentR
 
   saveSync(candidate: AlertEditorDocument): AlertEditorDocument {
     const document = alertEditorDocumentSchema.parse(candidate);
-    this.#connection
-      .prepare(
-        `INSERT INTO alert_editor_documents (alert_id, document_json, updated_at)
-         VALUES (?, ?, ?)
-         ON CONFLICT(alert_id) DO UPDATE SET
-           document_json = excluded.document_json,
-           updated_at = excluded.updated_at`
-      )
-      .run(document.id, JSON.stringify(document), this.#now().toISOString());
-    return document;
+    return runInTransaction(this.#connection, () => {
+      const lookup = this.#connection.prepare("SELECT id FROM audio_output_routes WHERE id = ?");
+      const missing = document.outputs.deviceRouteIds.filter(id => lookup.get(id) === undefined);
+      if (missing.length > 0) throw new AudioOutputError(409, "AUDIO_ROUTE_NOT_FOUND", "One or more selected audio routes no longer exist.", "Refresh the route list and choose existing routes before saving.", missing);
+      this.#connection
+        .prepare(
+          `INSERT INTO alert_editor_documents (alert_id, document_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(alert_id) DO UPDATE SET
+             document_json = excluded.document_json,
+             updated_at = excluded.updated_at`
+        )
+        .run(document.id, JSON.stringify(document), this.#now().toISOString());
+      return document;
+    });
   }
 }

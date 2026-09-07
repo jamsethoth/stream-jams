@@ -21,6 +21,7 @@ export function createDefaultAppConfig(homeDirectory: string, options: DefaultAp
   const dataRoot = pathOperations.join(homeDirectory, appDataDirectoryName);
 
   return {
+    desktop: { closeToTray: true },
     server: {
       host: "127.0.0.1",
       port: 39187

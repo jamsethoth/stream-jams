@@ -19,6 +19,7 @@ import { alertVariantAssetForeignKeysMigration } from "./migrations/015-alert-va
 import { overlayKeyLookupIndexesMigration } from "./migrations/016-overlay-key-lookup-indexes.js";
 import { alertTextStyleDefaultsMigration } from "./migrations/017-alert-text-style-defaults.js";
 import { alertModerationSettingsMigration } from "./migrations/018-alert-moderation-settings.js";
+import { audioOutputRoutesMigration } from "./migrations/019-audio-output-routes.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -49,7 +50,8 @@ const migrations = [
   alertVariantAssetForeignKeysMigration,
   overlayKeyLookupIndexesMigration,
   alertTextStyleDefaultsMigration,
-  alertModerationSettingsMigration
+  alertModerationSettingsMigration,
+  audioOutputRoutesMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

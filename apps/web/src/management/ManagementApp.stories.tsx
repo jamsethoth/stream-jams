@@ -3,10 +3,12 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, within } from "storybook/test";
 import { ManagementApp, type ManagementAppProps } from "./ManagementApp.js";
 import { createStoryAssetApi, createStoryManagementApi } from "../stories/mock-apis.js";
+import { createStoryAudioApi } from "../stories/audio-fixtures.js";
 
 const meta = {
   title: "Management/ManagementApp",
   component: ManagementApp,
+  args: { audioApi: createStoryAudioApi() },
   parameters: {
     docs: {
       description: {

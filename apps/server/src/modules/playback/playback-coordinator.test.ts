@@ -20,7 +20,8 @@ import {
   type ResolvedAlert,
   type TtsService
 } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import type { AudioPlaybackSink, DeviceAudioResult, ResolvedAlertAudio } from "@stream-jams/core";
+import { describe, expect, it, vi } from "vitest";
 import {
   PlaybackCoordinator,
   type OverlayPlaybackInstructionSink,
@@ -28,6 +29,626 @@ import {
 } from "./playback-coordinator.js";
 
 describe("PlaybackCoordinator", () => {
+  it("retains a browser completion reported synchronously during delivery", () => {
+    const coordinator = createCoordinator({
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          coordinator.reportInstructionFinished("obs", instruction.id);
+          return { deliveredClientIds: ["obs"] };
+        }
+      }
+    });
+
+    const event = createCheerEvent({ id: "synchronous-browser-completion" });
+    const snapshot = coordinator.enqueueResolvedTest({
+      sourceEvent: event,
+      alerts: [createResolvedAlert(event.id, "resolved", "instruction")]
+    });
+
+    expect(snapshot.current).toBeNull();
+    expect(snapshot.recent[0]).toMatchObject({ id: "queue-item-1", status: "completed" });
+  });
+
+  it("gives replayed browser instructions occurrence-specific acknowledgement IDs", () => {
+    const deliveredIds: string[] = [];
+    const coordinator = createCoordinator({
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          deliveredIds.push(instruction.id);
+          return { deliveredClientIds: ["obs"] };
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "stale-browser-completion" });
+    coordinator.enqueueResolvedTest({
+      sourceEvent: event,
+      alerts: [createResolvedAlert(event.id, "resolved", "instruction")]
+    });
+    const firstId = deliveredIds[0]!;
+    coordinator.reportInstructionFinished("obs", firstId);
+
+    coordinator.replayRecent("queue-item-1");
+    const replayId = deliveredIds[1]!;
+
+    expect(replayId).not.toBe(firstId);
+    expect(coordinator.reportInstructionFinished("obs", firstId).current?.id).toBe("queue-item-2");
+    expect(coordinator.reportInstructionFinished("obs", replayId).current).toBeNull();
+  });
+
+  it("settles a failed browser dispatch without clearing a healthy recipient", () => {
+    const deliveredIds: string[] = [];
+    const coordinator = createCoordinator({
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) {
+          if (instruction.id.includes("failed-instruction")) throw new Error("browser disconnected");
+          deliveredIds.push(instruction.id);
+          return { deliveredClientIds: ["obs"] };
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "one-browser-fails" });
+
+    expect(() => coordinator.enqueueResolvedTest({
+      sourceEvent: event,
+      alerts: [
+        createResolvedAlert(event.id, "failed", "failed-instruction"),
+        createResolvedAlert(event.id, "healthy", "healthy-instruction")
+      ]
+    })).not.toThrow();
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("obs", deliveredIds[0]!).current).toBeNull();
+  });
+
+  it("keeps a healthy browser playing after device preparation expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = audioFixture();
+      const preparation = deferred<Awaited<ReturnType<typeof audio.dependencies.audioOutputService.preparePlayback>>>();
+      audio.dependencies.audioOutputService.preparePlayback.mockReturnValueOnce(preparation.promise);
+      const stopPlaybackInstructions = vi.fn();
+      const delivered: string[] = [];
+      const coordinator = createCoordinator({ ...audio.dependencies, overlayPlaybackSink: {
+        deliverPlaybackInstruction(instruction) { delivered.push(instruction.id); return { deliveredClientIds: ["obs"] }; },
+        stopPlaybackInstructions
+      } });
+      const event = createCheerEvent({ id: "slow-device-healthy-browser" });
+      const alert = createResolvedAlert(event.id, "resolved", "instruction");
+      coordinator.enqueueResolvedTest({ sourceEvent: event,
+        alerts: [{ ...alert, overlayInstruction: { ...alert.overlayInstruction, durationMs: 30_000 } }],
+        audio: [{ ...deviceAudio(), durationMs: 30_000 }] });
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(stopPlaybackInstructions).not.toHaveBeenCalled();
+      expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+      preparation.resolve({ unavailableRouteIds: [], batches: [] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(audio.sink.play).not.toHaveBeenCalled();
+      expect(coordinator.reportInstructionFinished("obs", delivered[0]!).current).toBeNull();
+      await coordinator.close();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("stops a hung preparation at five seconds and never starts its late result", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = audioFixture();
+      const preparation = deferred<Awaited<ReturnType<typeof audio.dependencies.audioOutputService.preparePlayback>>>();
+      const stopped = deferred<void>();
+      audio.dependencies.audioOutputService.preparePlayback.mockReturnValueOnce(preparation.promise);
+      audio.sink.stop.mockReturnValueOnce(stopped.promise);
+      const delivered: string[] = [];
+      const coordinator = createCoordinator({
+        ...audio.dependencies,
+        overlayPlaybackSink: {
+          deliverPlaybackInstruction(instruction) {
+            delivered.push(instruction.id);
+            return { deliveredClientIds: [] };
+          }
+        }
+      });
+      const first = createCheerEvent({ id: "hung-preparation" });
+      const next = createCheerEvent({ id: "after-hung-preparation" });
+      coordinator.enqueueResolvedTest({ sourceEvent: first, alerts: [], audio: [deviceAudio()] });
+      coordinator.enqueueResolvedTest({
+        sourceEvent: next,
+        alerts: [createResolvedAlert(next.id, "next", "next-instruction")]
+      });
+
+      await vi.advanceTimersByTimeAsync(4_999);
+      expect(audio.sink.stop).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(delivered).toEqual([]);
+
+      stopped.resolve(undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(delivered).toHaveLength(1);
+      expect(coordinator.getSnapshot().current).toBeNull();
+
+      preparation.resolve({
+        unavailableRouteIds: [],
+        batches: [{
+          ...deviceAudio(),
+          playbackId: "queue-item-1",
+          muted: false,
+          destinations: [{ deviceId: "a", routeIds: ["personal"] }]
+        }]
+      });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(audio.sink.play).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops browser and device work at duration plus five seconds before advancing", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = audioFixture();
+      const stopped = deferred<void>();
+      audio.sink.stop.mockReturnValueOnce(stopped.promise);
+      const delivered: string[] = [];
+      const stoppedBrowser: string[][] = [];
+      const coordinator = createCoordinator({
+        ...audio.dependencies,
+        overlayPlaybackSink: {
+          deliverPlaybackInstruction(instruction) {
+            delivered.push(instruction.id);
+            return { deliveredClientIds: instruction.id.includes("first") ? ["obs"] : [] };
+          },
+          stopPlaybackInstructions(ids) {
+            stoppedBrowser.push([...ids]);
+          }
+        }
+      });
+      const first = createCheerEvent({ id: "duration-watchdog" });
+      const next = createCheerEvent({ id: "after-duration-watchdog" });
+      coordinator.enqueueResolvedTest({
+        sourceEvent: first,
+        alerts: [createResolvedAlert(first.id, "first", "first-instruction")],
+        audio: [{ ...deviceAudio(), durationMs: 2_000 }]
+      });
+      coordinator.enqueueResolvedTest({
+        sourceEvent: next,
+        alerts: [createResolvedAlert(next.id, "next", "next-instruction")]
+      });
+
+      await vi.advanceTimersByTimeAsync(7_999);
+      expect(audio.sink.stop).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(stoppedBrowser).toEqual([[delivered[0]!]]);
+      expect(delivered).toHaveLength(1);
+
+      stopped.resolve(undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(delivered).toHaveLength(2);
+      expect(coordinator.getSnapshot().current).toBeNull();
+
+      audio.finished.resolve({ failedRouteIds: [] });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(delivered).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not advance at the watchdog when device silence cannot be established", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = audioFixture();
+      audio.sink.stop.mockRejectedValueOnce(new Error("silence unknown"));
+      const delivered: string[] = [];
+      const coordinator = createCoordinator({
+        ...audio.dependencies,
+        overlayPlaybackSink: {
+          deliverPlaybackInstruction(instruction) {
+            delivered.push(instruction.id);
+            return { deliveredClientIds: ["obs"] };
+          },
+          stopPlaybackInstructions() {}
+        }
+      });
+      const first = createCheerEvent({ id: "failed-watchdog-stop" });
+      const next = createCheerEvent({ id: "after-failed-watchdog-stop" });
+      coordinator.enqueueResolvedTest({
+        sourceEvent: first,
+        alerts: [createResolvedAlert(first.id, "first", "first-instruction")],
+        audio: [deviceAudio()]
+      });
+      coordinator.enqueueResolvedTest({
+        sourceEvent: next,
+        alerts: [createResolvedAlert(next.id, "next", "next-instruction")]
+      });
+
+      await vi.advanceTimersByTimeAsync(8_000);
+
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+      expect(delivered).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still establishes device silence when browser stop throws", async () => {
+    const audio = audioFixture();
+    const coordinator = createCoordinator({
+      ...audio.dependencies,
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          return { deliveredClientIds: ["obs"] };
+        },
+        stopPlaybackInstructions() {
+          throw new Error("browser already disconnected");
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "browser-stop-failed" });
+    coordinator.enqueueResolvedTest({
+      sourceEvent: event,
+      alerts: [createResolvedAlert(event.id, "first", "instruction")],
+      audio: [deviceAudio()]
+    });
+
+    await expect(coordinator.skipCurrent()).resolves.toMatchObject({ current: null });
+    expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+  });
+
+  it("closes device playback even when browser shutdown throws", async () => {
+    const audio = audioFixture();
+    const coordinator = createCoordinator({
+      ...audio.dependencies,
+      overlayPlaybackSink: {
+        deliverPlaybackInstruction() {
+          return { deliveredClientIds: ["obs"] };
+        },
+        stopPlaybackInstructions() {
+          throw new Error("browser already disconnected");
+        }
+      }
+    });
+    const event = createCheerEvent({ id: "browser-close-failed" });
+    coordinator.enqueueResolvedTest({
+      sourceEvent: event,
+      alerts: [createResolvedAlert(event.id, "first", "instruction")],
+      audio: [deviceAudio()]
+    });
+
+    await expect(coordinator.close()).resolves.toBeUndefined();
+    expect(audio.sink.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("serializes concurrent skips through one silence acknowledgement", async () => {
+    const audio = audioFixture();
+    const stopped = deferred<void>();
+    audio.sink.stop.mockReturnValueOnce(stopped.promise);
+    const coordinator = createCoordinator(audio.dependencies);
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "first" }), alerts: [], audio: [deviceAudio()] });
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "next" }), alerts: [], audio: [deviceAudio()] });
+
+    const firstSkip = coordinator.skipCurrent();
+    const secondSkip = coordinator.skipCurrent();
+
+    expect(secondSkip).toBe(firstSkip);
+    expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+    stopped.resolve(undefined);
+    await Promise.all([firstSkip, secondSkip]);
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-2");
+    await coordinator.close();
+  });
+
+  it("does not advance when close overtakes a pending skip", async () => {
+    const audio = audioFixture();
+    const preparation = deferred<Awaited<ReturnType<typeof audio.dependencies.audioOutputService.preparePlayback>>>();
+    const stopped = deferred<void>();
+    audio.dependencies.audioOutputService.preparePlayback.mockReturnValueOnce(preparation.promise);
+    audio.sink.stop.mockReturnValueOnce(stopped.promise);
+    const coordinator = createCoordinator(audio.dependencies);
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "first" }), alerts: [], audio: [deviceAudio()] });
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "next" }), alerts: [], audio: [deviceAudio()] });
+
+    const skipping = coordinator.skipCurrent();
+    const closing = coordinator.close();
+    stopped.resolve(undefined);
+    await Promise.all([skipping, closing]);
+    preparation.resolve({ unavailableRouteIds: [], batches: [] });
+    await Promise.resolve();
+
+    expect(audio.sink.close).toHaveBeenCalledTimes(1);
+    expect(audio.sink.play).not.toHaveBeenCalled();
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+  });
+
+  it("uses a concurrent persisted mute for playback still preparing", async () => {
+    const audio = audioFixture();
+    const preparation = deferred<Awaited<ReturnType<typeof audio.dependencies.audioOutputService.preparePlayback>>>();
+    audio.dependencies.audioOutputService.preparePlayback.mockReturnValueOnce(preparation.promise);
+    const coordinator = createCoordinator(audio.dependencies);
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent(), alerts: [], audio: [deviceAudio()] });
+
+    await coordinator.mute();
+    preparation.resolve({
+      unavailableRouteIds: [],
+      batches: [{
+        ...deviceAudio(),
+        playbackId: "queue-item-1",
+        muted: false,
+        destinations: [{ deviceId: "a", routeIds: ["personal"] }]
+      }]
+    });
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledWith(expect.objectContaining({ muted: true })));
+    audio.finished.resolve({ failedRouteIds: [] });
+    await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
+  });
+
+  it("awaits explicit device silence after play rejects before advancing", async () => {
+    const audio = audioFixture();
+    const stopped = deferred<void>();
+    audio.sink.play.mockRejectedValueOnce(new Error("IPC link lost"));
+    audio.sink.stop.mockReturnValueOnce(stopped.promise);
+    const coordinator = createCoordinator(audio.dependencies);
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "rejected-play" }), alerts: [], audio: [deviceAudio()] });
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "next" }), alerts: [], audio: [deviceAudio()] });
+
+    await vi.waitFor(() => expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1"));
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    expect(audio.sink.play).toHaveBeenCalledTimes(1);
+
+    stopped.resolve(undefined);
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-2");
+    await coordinator.close();
+  });
+
+  it("holds the queue when explicit silence after play rejection also fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const audio = audioFixture();
+      audio.sink.play.mockRejectedValueOnce(new Error("IPC link lost"));
+      audio.sink.stop.mockRejectedValueOnce(new Error("silence unknown"));
+      const coordinator = createCoordinator(audio.dependencies);
+      coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "rejected-play-and-stop" }), alerts: [], audio: [deviceAudio()] });
+      coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "next" }), alerts: [], audio: [deviceAudio()] });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+      expect(audio.sink.play).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(8_000);
+      expect(audio.sink.stop).toHaveBeenCalledTimes(1);
+      expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+
+      await coordinator.skipCurrent();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(audio.sink.play).toHaveBeenCalledTimes(2);
+      expect(audio.sink.stop).toHaveBeenCalledTimes(2);
+      await coordinator.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("prepares queued content only when it starts, keeps active bindings fixed, and uses fresh bindings for replay", async () => {
+    const audio = audioFixture();
+    let boundDeviceId = "original";
+    audio.dependencies.audioOutputService.preparePlayback.mockImplementation(async (playbackId, items) => ({
+      unavailableRouteIds: [], batches: items.map(item => ({
+        playbackId, documentId: item.documentId, durationMs: item.durationMs, layers: item.layers, muted: false,
+        destinations: [{ deviceId: boundDeviceId, routeIds: [...item.outputs.deviceRouteIds] }]
+      }))
+    }));
+    const coordinator = createCoordinator(audio.dependencies);
+    await coordinator.pause();
+    const content = deviceAudio();
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent(), alerts: [], audio: [content] });
+    expect(audio.dependencies.audioOutputService.preparePlayback).not.toHaveBeenCalled();
+    boundDeviceId = "at-start";
+    await coordinator.resume();
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(1));
+    expect(audio.sink.play.mock.calls[0]?.[0].destinations[0]?.deviceId).toBe("at-start");
+    boundDeviceId = "after-start";
+    (content.layers[0]! as { assetId: string }).assetId = "changed";
+    await coordinator.mute();
+    expect(audio.sink.setMuted).toHaveBeenCalledWith(true);
+    expect(audio.sink.play).toHaveBeenCalledTimes(1);
+    audio.finished.resolve({ failedRouteIds: [] });
+    await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
+    coordinator.replayRecent("queue-item-1");
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
+    expect(audio.sink.play.mock.calls[1]?.[0]).toMatchObject({
+      playbackId: "queue-item-2", muted: true, layers: [{ assetId: "tone" }],
+      destinations: [{ deviceId: "after-start" }]
+    });
+    expect(audio.sink.play.mock.calls[0]?.[0].destinations[0]?.deviceId).toBe("at-start");
+  });
+
+  it("retains browser completion after device audio finishes first", async () => {
+    const audio = audioFixture();
+    const coordinator = createCoordinator({ ...audio.dependencies,
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) }
+    });
+    const event = createCheerEvent();
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "first", "visual")], audio: [deviceAudio()] });
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(1));
+    audio.finished.resolve({ failedRouteIds: [] });
+    await new Promise<void>(resolve => setTimeout(resolve, 0));
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("obs", "queue-item-1:visual").current).toBeNull();
+  });
+
+  it("does not advance when stopping fails, and allows an explicit retry", async () => {
+    const audio = audioFixture();
+    audio.sink.stop.mockRejectedValueOnce(new Error("Stop not acknowledged"));
+    const coordinator = createCoordinator(audio.dependencies);
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent(), alerts: [], audio: [deviceAudio()] });
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent(), alerts: [], audio: [deviceAudio()] });
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(1));
+    await expect(coordinator.skipCurrent()).rejects.toThrow("Stop not acknowledged");
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    expect(audio.sink.play).toHaveBeenCalledTimes(1);
+    await coordinator.skipCurrent();
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
+    await coordinator.close();
+  });
+
+  it("waits for healthy audio documents after a sibling fails and safely completes wholly missing routes", async () => {
+    const audio = audioFixture();
+    const error = vi.fn(async () => {});
+    audio.sink.play.mockRejectedValueOnce(new Error("private device details"));
+    const coordinator = createCoordinator({ ...audio.dependencies, audioOutputService: {
+      ...audio.dependencies.audioOutputService,
+      listRoutes: () => [{ id: "personal", name: "Private headphones", deviceId: "private-device-id", deviceLabel: "Private device label" }]
+    }, logger: { error }, generateReferenceId: () => "audio-ref" });
+    coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent(), alerts: [], audio: [deviceAudio(), { ...deviceAudio(), documentId: "second" }] });
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    expect(JSON.stringify(error.mock.calls)).not.toContain("private device details");
+    audio.finished.resolve({ failedRouteIds: [] });
+    await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
+    audio.dependencies.audioOutputService.preparePlayback.mockResolvedValue({ batches: [], unavailableRouteIds: ["personal"] });
+    coordinator.replayRecent("queue-item-1");
+    await vi.waitFor(() => expect(coordinator.getSnapshot().recent[0]?.id).toBe("queue-item-2"));
+    expect(audio.sink.play).toHaveBeenCalledTimes(2);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("unavailable"), expect.objectContaining({
+      correlationId: "audio-ref", metadata: expect.objectContaining({ playbackId: "queue-item-2", routeIds: ["personal"], routeNames: ["Private headphones"], correctionRoute: "/manage/settings#audio-outputs" })
+    }));
+    expect(JSON.stringify(error.mock.calls)).not.toContain("private-device-id");
+    expect(JSON.stringify(error.mock.calls)).not.toContain("Private device label");
+  });
+
+  it("does not enqueue a live event that was still resolving during shutdown", async () => {
+    const docs = deferred<AlertEditorDocument | null>();
+    const rule = createRule();
+    const coordinator = createCoordinator({ alertService: new RecordingAlertService([rule]), findEditorDocument: () => docs.promise });
+    const enqueue = coordinator.enqueueEvent(createCheerEvent());
+    await coordinator.close();
+    docs.resolve(createEditorDocument(rule));
+    await expect(enqueue).rejects.toThrow(/stopped/);
+    expect(coordinator.getSnapshot()).toMatchObject({ current: null, queued: [], recent: [] });
+  });
+
+  it.each([false, true])("delivers one canonical device batch for the selected variation without OBS (ready profiles: %s)", async readyProfiles => {
+    const base = createRule();
+    const rule = { ...base, variants: [
+      { ...base.variants[0]!, enabled: false }, createVariant({ id: "chosen" })
+    ] };
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule), id: "chosen", kind: "variation", parentAlertId: rule.id,
+      outputs: { browserSource: readyProfiles, deviceRouteIds: ["personal"] },
+      targetProfiles: readyProfiles ? createEditorDocument(rule).targetProfiles.map(profile => ({ ...profile, enabled: true, reviewState: "ready" })) : [],
+      layers: [
+        { id: "one", name: "Sound", type: "audio", visible: true, order: 0, animation, assetId: "tone", volume: 0.5 },
+        { id: "two", name: "Sound", type: "audio", visible: true, order: 1, animation, assetId: "tone", volume: 0.25 },
+        { id: "hidden", name: "Hidden", type: "audio", visible: false, order: 2, animation, assetId: "secret", volume: 1 }
+      ]
+    };
+    const audio = audioFixture();
+    const findEditorDocument = vi.fn(async (id: string) => id === document.id ? document : null);
+    const coordinator = createCoordinator({
+      ...audio.dependencies, alertService: new RecordingAlertService([rule]), findEditorDocument,
+      additionalTargets: ["landscape", "vertical"].map(targetProfileId => ({
+        overlayId: "overlay-1", purpose: "live" as const, scope: "module" as const,
+        targetProfileId: targetProfileId as "landscape" | "vertical"
+      })),
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
+    });
+    await coordinator.enqueueEvent(createCheerEvent());
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(1));
+    expect(findEditorDocument).toHaveBeenCalledExactlyOnceWith("chosen");
+    expect(audio.sink.play).toHaveBeenCalledWith(expect.objectContaining({
+      playbackId: "queue-item-1", documentId: "chosen",
+      layers: [{ layerId: "one", assetId: "tone", volume: 0.5 }, { layerId: "two", assetId: "tone", volume: 0.25 }]
+    }));
+    expect(coordinator.getSnapshot().current?.audio).toHaveLength(1);
+    audio.finished.resolve({ failedRouteIds: [] });
+    await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
+    coordinator.replayRecent("queue-item-1");
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
+    expect(audio.sink.play.mock.calls[1]?.[0]).toMatchObject({ playbackId: "queue-item-2", documentId: "chosen" });
+  });
+
+  it.each(["disabled", "no-routes", "hidden"] as const)("does not dispatch device audio for %s live content", async mode => {
+    const audio = audioFixture();
+    const rule = createRule();
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule), enabled: mode !== "disabled",
+      outputs: { browserSource: false, deviceRouteIds: mode === "no-routes" ? [] : ["personal"] },
+      layers: [{ id: "one", name: "Sound", type: "audio", visible: mode !== "hidden", order: 0, animation, assetId: "tone", volume: 0.5 }]
+    };
+    const coordinator = createCoordinator({ ...audio.dependencies,
+      alertService: new RecordingAlertService([rule]), findEditorDocument: async () => document,
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
+    });
+    await coordinator.enqueueEvent(createCheerEvent());
+    expect(audio.dependencies.audioOutputService.preparePlayback).not.toHaveBeenCalled();
+    expect(audio.sink.play).not.toHaveBeenCalled();
+    expect(coordinator.getSnapshot().current).toBeNull();
+  });
+
+  it("waits for both device and browser completion and ignores old device completion after skip", async () => {
+    const audio = audioFixture();
+    const stop = deferred<void>();
+    audio.sink.stop.mockReturnValue(stop.promise);
+    const coordinator = createCoordinator({ ...audio.dependencies,
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) }
+    });
+    const event = createCheerEvent();
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "first", "visual")], audio: [deviceAudio()] });
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [], audio: [deviceAudio()] });
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(1));
+    coordinator.reportInstructionFinished("obs", "queue-item-1:visual");
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    const skipping = coordinator.skipCurrent();
+    expect(audio.sink.stop).toHaveBeenCalledWith("queue-item-1");
+    expect(audio.sink.play).toHaveBeenCalledTimes(1);
+    const nextFinished = deferred<DeviceAudioResult>();
+    audio.sink.play.mockReturnValueOnce(nextFinished.promise);
+    stop.resolve(undefined);
+    await skipping;
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
+    audio.finished.resolve({ failedRouteIds: [] });
+    await Promise.resolve();
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-2");
+    nextFinished.resolve({ failedRouteIds: [] });
+    await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
+  });
+
+  it("does not start device audio after skip or shutdown cancels pending preparation", async () => {
+    for (const action of ["skip", "close"] as const) {
+      const audio = audioFixture();
+      const preparing = deferred<Awaited<ReturnType<typeof audio.dependencies.audioOutputService.preparePlayback>>>();
+      audio.dependencies.audioOutputService.preparePlayback.mockReturnValueOnce(preparing.promise);
+      const coordinator = createCoordinator(audio.dependencies);
+      coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent(), alerts: [], audio: [deviceAudio()] });
+      expect(audio.dependencies.audioOutputService.preparePlayback).toHaveBeenCalledTimes(1);
+      if (action === "skip") await coordinator.skipCurrent();
+      else await coordinator.close();
+      preparing.resolve({ unavailableRouteIds: [], batches: [{ ...deviceAudio(), playbackId: "queue-item-1", muted: false, destinations: [{ deviceId: "a", routeIds: ["personal"] }] }] });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(audio.sink.play).not.toHaveBeenCalled();
+    }
+  });
+
+  it("stops current playback and cannot advance on late client disconnects after shutdown", () => {
+    const deliveries: string[] = [];
+    const stops: string[][] = [];
+    const coordinator = createCoordinator({ overlayPlaybackSink: {
+      deliverPlaybackInstruction(instruction) { deliveries.push(instruction.id); return { deliveredClientIds: ["obs"] }; },
+      stopPlaybackInstructions(ids) { stops.push([...ids]); }
+    } });
+    const event = createCheerEvent();
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "first", "first-instruction")] });
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "next", "next-instruction")] });
+    coordinator.close();
+    coordinator.close();
+    coordinator.reportClientDisconnected("obs");
+    coordinator.reportInstructionFinished("obs", "queue-item-1:first-instruction");
+    expect(deliveries).toEqual(["queue-item-1:first-instruction"]);
+    expect(stops).toEqual([["queue-item-1:first-instruction"]]);
+    expect(() => coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [] })).toThrow(/stopped/);
+  });
   it("rejects duplicate events before listing active rules", async () => {
     const event = createCheerEvent({ id: "event-duplicate" });
     const dedupeService = new DefaultPlaybackDedupeService({
@@ -141,7 +762,7 @@ describe("PlaybackCoordinator", () => {
     await coordinator.pause();
     await coordinator.resume();
 
-    expect(deliveredInstructionIds).toEqual(["overlay-instruction-2"]);
+    expect(deliveredInstructionIds).toEqual(["queue-item-1:overlay-instruction-2"]);
   });
 
   it("persists safety state before applying it and leaves runtime unchanged on failure", async () => {
@@ -203,12 +824,12 @@ describe("PlaybackCoordinator", () => {
     coordinator.skipCurrent();
 
     expect(calls).toEqual([
-      "deliver:instruction-a",
-      "deliver:instruction-b",
+      "deliver:queue-item-1:instruction-a",
+      "deliver:queue-item-1:instruction-b",
       "persist:true",
       "mute:true",
-      "stop:instruction-a,instruction-b",
-      "deliver:instruction-next"
+      "stop:queue-item-1:instruction-a,queue-item-1:instruction-b",
+      "deliver:queue-item-2:instruction-next"
     ]);
   });
 
@@ -247,7 +868,7 @@ describe("PlaybackCoordinator", () => {
     const snapshot = coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [alert] });
 
     expect(snapshot.current?.alerts).toEqual([alert]);
-    expect(deliveredInstructionIds).toEqual(["instruction-editor-test"]);
+    expect(deliveredInstructionIds).toEqual(["queue-item-1:instruction-editor-test"]);
     expect(alertService.listActiveRuleCalls).toBe(0);
   });
 
@@ -268,16 +889,16 @@ describe("PlaybackCoordinator", () => {
     coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [firstAlert, secondAlert] });
     coordinator.enqueueResolvedTest({ sourceEvent: nextEvent, alerts: [nextAlert] });
 
-    expect(coordinator.reportInstructionFinished("client-1", "instruction-1").current?.id).toBe("queue-item-1");
-    expect(coordinator.reportInstructionFinished("client-1", "instruction-1").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-1", "queue-item-1:instruction-1").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-1", "queue-item-1:instruction-1").current?.id).toBe("queue-item-1");
     expect(coordinator.reportInstructionFinished("client-1", "stale-instruction").current?.id).toBe("queue-item-1");
-    expect(coordinator.reportInstructionFinished("unknown-client", "instruction-2").current?.id).toBe("queue-item-1");
-    expect(coordinator.reportInstructionFinished("client-2", "instruction-1").current?.id).toBe("queue-item-1");
-    expect(coordinator.reportInstructionFinished("client-1", "instruction-2").current?.id).toBe("queue-item-1");
-    expect(coordinator.reportInstructionFinished("client-2", "instruction-2").current?.id).toBe("queue-item-2");
-    expect(coordinator.reportInstructionFinished("client-2", "instruction-2").current?.id).toBe("queue-item-2");
-    expect(coordinator.reportInstructionFinished("client-1", "instruction-3").current?.id).toBe("queue-item-2");
-    expect(coordinator.reportInstructionFinished("client-2", "instruction-3").current).toBeNull();
+    expect(coordinator.reportInstructionFinished("unknown-client", "queue-item-1:instruction-2").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-2", "queue-item-1:instruction-1").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-1", "queue-item-1:instruction-2").current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("client-2", "queue-item-1:instruction-2").current?.id).toBe("queue-item-2");
+    expect(coordinator.reportInstructionFinished("client-2", "queue-item-1:instruction-2").current?.id).toBe("queue-item-2");
+    expect(coordinator.reportInstructionFinished("client-1", "queue-item-2:instruction-3").current?.id).toBe("queue-item-2");
+    expect(coordinator.reportInstructionFinished("client-2", "queue-item-2:instruction-3").current).toBeNull();
   });
 
   it("releases every pending instruction when a delivered client disconnects", () => {
@@ -297,8 +918,8 @@ describe("PlaybackCoordinator", () => {
       ]
     });
 
-    coordinator.reportInstructionFinished("client-1", "instruction-1");
-    coordinator.reportInstructionFinished("client-1", "instruction-2");
+    coordinator.reportInstructionFinished("client-1", "queue-item-1:instruction-1");
+    coordinator.reportInstructionFinished("client-1", "queue-item-1:instruction-2");
 
     expect(coordinator.reportClientDisconnected("unknown-client").current).not.toBeNull();
     expect(coordinator.reportClientDisconnected("client-2").current).toBeNull();
@@ -728,6 +1349,8 @@ function createCoordinator(
     readonly persistPlaybackSafetyState?: (patch: Partial<PlaybackSafetyState>) => Promise<PlaybackSafetyState>;
     readonly clock?: MutableClock;
     readonly random?: () => number;
+    readonly audioPlaybackSink?: AudioPlaybackSink;
+    readonly audioOutputService?: PlaybackCoordinatorDependencies["audioOutputService"];
   } = {}
 ): PlaybackCoordinator {
   const clock = options.clock ?? new MutableClock("2026-05-30T12:00:00.000Z");
@@ -760,6 +1383,8 @@ function createCoordinator(
     ...(options.additionalTargets === undefined ? {} : { additionalTargets: options.additionalTargets }),
     ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
     ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink }),
+    ...(options.audioPlaybackSink === undefined ? {} : { audioPlaybackSink: options.audioPlaybackSink }),
+    ...(options.audioOutputService === undefined ? {} : { audioOutputService: options.audioOutputService }),
     ...(options.findEditorDocument === undefined ? {} : {
       findEditorDocuments: async (editorIds: readonly string[]) => new Map(
         (await Promise.all(editorIds.map(async (editorId) => [
@@ -934,6 +1559,7 @@ function createSequentialPlaybackQueue(itemCount: number): PlaybackQueue {
           id: `queue-item-${index}`,
           sourceEvent: event,
           alerts: [createResolvedAlert(event.id, `resolved-${index}`, `instruction-${index}`)],
+          audio: [],
           priority: 0,
           status: "playing",
           enqueuedAt: "2026-05-30T12:00:00.000Z",
@@ -983,6 +1609,7 @@ function createEditorDocument(rule: AlertRule): AlertEditorDocument {
     cooldownSeconds: rule.cooldownSeconds,
     rulePriority: rule.priority,
     durationMs: 3_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [
       {
         id: "layer-primary",
@@ -1031,3 +1658,34 @@ const animation = {
   delayMs: 0,
   easing: "ease-out"
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return { promise, resolve };
+}
+
+function deviceAudio(): ResolvedAlertAudio {
+  return { documentId: "document", durationMs: 3000,
+    outputs: { browserSource: false, deviceRouteIds: ["personal"] },
+    layers: [{ layerId: "sound", assetId: "tone", volume: 0.5 }] };
+}
+
+function audioFixture() {
+  const finished = deferred<DeviceAudioResult>();
+  const sink = {
+    play: vi.fn<AudioPlaybackSink["play"]>(() => finished.promise),
+    stop: vi.fn<AudioPlaybackSink["stop"]>(async () => {}),
+    setMuted: vi.fn<AudioPlaybackSink["setMuted"]>(async () => {}),
+    close: vi.fn<AudioPlaybackSink["close"]>(async () => {})
+  };
+  const audioOutputService = {
+    preparePlayback: vi.fn(async (playbackId: string, audio: readonly ResolvedAlertAudio[]) => ({
+      unavailableRouteIds: [] as string[], batches: audio.map(item => ({
+        playbackId, documentId: item.documentId, durationMs: item.durationMs, layers: item.layers, muted: false,
+        destinations: [{ deviceId: "a", routeIds: [...item.outputs.deviceRouteIds] }]
+      }))
+    }))
+  };
+  return { finished, sink, dependencies: { audioPlaybackSink: sink, audioOutputService } };
+}

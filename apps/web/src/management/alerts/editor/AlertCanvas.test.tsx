@@ -280,6 +280,7 @@ const editorDocument: AlertEditorDocument = {
   cooldownSeconds: 0,
   rulePriority: 0,
   durationMs: 2_000,
+  outputs: { browserSource: true, deviceRouteIds: [] },
   layers: [{
     id: "layer-shape",
     name: "Badge",

@@ -19,7 +19,12 @@ import {
   createDefaultOverlayModuleRegistry,
   overlayScopeSchema,
   type ActionableManagementError,
+  type AudioDeviceHost,
+  type AudioPlaybackSink,
   type ConfigStore,
+  type DesktopConfig,
+  type DesktopAudioTransport,
+  type PlaybackSafetyState,
   type AlertBrowserSourceView,
   type ProviderLiveStatus,
   type ProviderKind,
@@ -30,6 +35,7 @@ import { createServerApp } from "../app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "../config/default-config.js";
 import { FileConfigStore } from "../config/file-config-store.js";
 import { ServerConfigService } from "../config/server-config-service.js";
+import { DesktopConfigService } from "../config/desktop-config-service.js";
 import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
@@ -58,6 +64,7 @@ import { SqliteConfigurationSnapshotRepository } from "../modules/backup/sqlite-
 import {
   currentSchemaVersion,
   openStreamJamsDatabase,
+  runInTransaction,
   type StreamJamsDatabase
 } from "../modules/db/database.js";
 import { DiagnosticsService } from "../modules/diagnostics/diagnostics-service.js";
@@ -129,8 +136,19 @@ import { SqliteTwitchAccountRepository } from "../modules/twitch/sqlite-twitch-a
 import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../server/port-availability.js";
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
 import { syncEventSourceRuntimes } from "./event-source-runtime-coordinator.js";
+import { onceAsync } from "./once-async.js";
+import { AudioOutputService } from "../modules/audio/audio-output-service.js";
+import { DesktopAudioSink } from "../modules/audio/desktop-audio-sink.js";
+import { SqliteAudioOutputRouteRepository } from "../modules/audio/sqlite-audio-output-route-repository.js";
 
 export interface RuntimeAppCompositionOptions {
+  readonly audioDeviceHost?: AudioDeviceHost;
+  readonly audioPlaybackSink?: AudioPlaybackSink;
+  readonly desktopAudioTransport?: DesktopAudioTransport;
+  readonly desktopHost?: {
+    onConfigChanged(config: DesktopConfig): void;
+    onPlaybackStateChanged(state: PlaybackSafetyState): void;
+  };
   readonly homeDirectory: string;
   readonly webBuildDirectory: string;
   readonly environment?: NodeJS.ProcessEnv;
@@ -155,6 +173,8 @@ export interface RuntimeAppCompositionOptions {
 }
 
 export interface RuntimeAppComposition {
+  readonly desktopConfigService: DesktopConfigService;
+  readonly playbackCoordinator: PlaybackCoordinator;
   readonly app: FastifyInstance;
   readonly configStore: ConfigStore;
   readonly database: StreamJamsDatabase;
@@ -180,9 +200,31 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       defaultConfig: createDefaultAppConfig(options.homeDirectory)
     });
   const initialConfig = await configStore.readConfig();
+  const desktopConfigService = new DesktopConfigService(configStore, options.desktopHost?.onConfigChanged);
   const logConfigService = new LogConfigService(configStore);
   const logSettings = await logConfigService.getSettings();
   const database = openStreamJamsDatabase(join(initialConfig.storage.dataDirectory, "stream-jams.sqlite"));
+  const cleanups: Array<() => void | Promise<void>> = [() => database.close()];
+  let closing = false;
+  const runtimeWork = new Set<Promise<unknown>>();
+  // Last drain before SQLite closes, after intake/playback and providers stop.
+  cleanups.push(async () => { await Promise.allSettled([...runtimeWork]); });
+  function trackRuntimeWork(work: () => Promise<void>): Promise<void> {
+    if (closing) return Promise.resolve();
+    const pending = Promise.resolve().then(work);
+    runtimeWork.add(pending);
+    void pending.finally(() => runtimeWork.delete(pending)).catch(() => undefined);
+    return pending;
+  }
+  const close = onceAsync(async () => {
+    closing = true;
+    const errors: unknown[] = [];
+    for (const cleanup of cleanups.reverse()) {
+      try { await cleanup(); } catch (error) { errors.push(error); }
+    }
+    if (errors.length > 0) throw new AggregateError(errors, "Local runtime cleanup failed");
+  });
+  try {
   const moderationSettingsRepository = new SqliteModerationSettingsRepository(database.connection);
   const moderationService = new DefaultModerationService({ repository: moderationSettingsRepository });
   const diagnosticsLogRepository = new SqliteDiagnosticsLogRepository(database.connection);
@@ -332,6 +374,34 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: generatePlaybackQueueItemId,
     initialSafetyState: initialConfig.playback
   });
+  const maintenanceGate = new RuntimeMaintenanceGate();
+  let desktopAudioSink: DesktopAudioSink | undefined;
+  if (options.desktopAudioTransport !== undefined) {
+    try {
+      await options.desktopAudioTransport.setMuted(initialConfig.playback.muted);
+    } catch (error) {
+      try { await options.desktopAudioTransport.close(); }
+      catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "Desktop audio initialization and cleanup failed", { cause: cleanupError });
+      }
+      throw error;
+    }
+    desktopAudioSink = new DesktopAudioSink({
+      transport: options.desktopAudioTransport,
+      assetRepository,
+      assetStore,
+      now: () => now().getTime()
+    });
+  }
+  const audioDeviceHost = options.audioDeviceHost ?? options.desktopAudioTransport;
+  const audioPlaybackSink = options.audioPlaybackSink ?? desktopAudioSink;
+  const audioOutputService = new AudioOutputService({
+    routes: new SqliteAudioOutputRouteRepository(database.connection),
+    ...(audioDeviceHost === undefined ? {} : { host: audioDeviceHost }),
+    isMuted: () => playbackQueue.getSnapshot().muted,
+    runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
+    runTest: work => maintenanceGate.runIntake(work)
+  });
   const playbackCoordinator = new PlaybackCoordinator({
     alertService,
     matcher: new DefaultAlertMatcher(),
@@ -369,10 +439,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetRepository,
     findEditorDocuments: (alertIds) => alertEditorDocumentRepository.findMany(alertIds),
     overlayPlaybackSink: overlayGateway,
+    audioOutputService,
+    ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
     ttsService,
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId,
-    persistPlaybackSafetyState: async (patch) => (await configStore.updateConfig({ playback: patch })).playback
+    persistPlaybackSafetyState: async (patch) => {
+      const { playback } = await configStore.updateConfig({ playback: patch });
+      options.desktopHost?.onPlaybackStateChanged(playback);
+      return playback;
+    }
   });
   const eventPipeline = new EventPipeline({
     playbackCoordinator,
@@ -385,7 +461,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: generateEventSourceReferenceId,
     onDiagnostic: (entry) => writeEventSourceFailureDiagnostic(runtimeLogger, "events", "event-intake", entry)
   });
-  const maintenanceGate = new RuntimeMaintenanceGate();
   const streamerBotRuntimeService = new StreamerBotRuntimeService({
     repository: providerRegistrationRepository,
     secretStore,
@@ -441,11 +516,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       await authService.validateConnectedAccount({ notifyConnectionChanged: false });
     }
   });
-  const syncEventSourceRuntime = () => syncEventSourceRuntimes({
+  const syncEventSourceRuntime = () => trackRuntimeWork(() => syncEventSourceRuntimes({
     repository: providerRegistrationRepository,
     twitchRuntime: twitchEventSubRuntimeService,
     streamerBotRuntime: streamerBotRuntimeService
-  });
+  }));
   const twitchAuthService = new TwitchOAuthService({
     apiClient: twitchApiClient,
     clientId: twitchClientId,
@@ -465,7 +540,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const twitchValidationInterval = (options.scheduleRecurring ?? setInterval)(() => {
-    void twitchAuthService.validateConnectedAccount().catch(async () => {
+    void trackRuntimeWork(() => twitchAuthService.validateConnectedAccount().then(() => undefined)).catch(async () => {
+      if (closing) return;
       await twitchEventSubRuntimeService.reportAuthorizationFailure();
     });
   }, 60 * 60 * 1_000);
@@ -473,6 +549,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     const unref = (twitchValidationInterval as { readonly unref?: () => void }).unref;
     unref?.call(twitchValidationInterval);
   }
+  cleanups.push(() => (options.cancelRecurring ?? clearInterval)(twitchValidationInterval as ReturnType<typeof setInterval>));
   const providerManagementService = new ProviderManagementService({
     repository: providerRegistrationRepository,
     adapters: createProviderManagementAdapters({
@@ -576,6 +653,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           client.targetProfileId === targetProfileId
       );
     },
+    getAudioOutputStatus: () => audioOutputService.getStatus(),
+    listAudioOutputRoutes: () => audioOutputService.listRoutes(),
     async enqueueTest(playback) {
       playbackCoordinator.enqueueResolvedTest(playback);
     },
@@ -722,8 +801,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       );
       return { label: regenerated.output.label, url: regenerated.url };
     },
-    reloadRuntimeConfiguration: () => {
+    reloadRuntimeConfiguration: async () => {
       moderationService.reloadSettings();
+      await desktopConfigService.refresh();
+      const { playback } = await configStore.readConfig();
+      await audioPlaybackSink?.setMuted(playback.muted);
+      if (playback.paused) playbackQueue.pause(); else playbackQueue.resume();
+      playbackQueue.setDoNotDisturb(playback.doNotDisturb);
+      if (playback.muted) playbackQueue.mute(); else playbackQueue.unmute();
+      overlayGateway.setPlaybackMuted(playback.muted);
+      options.desktopHost?.onPlaybackStateChanged(playback);
     },
     twitchCredentials: {
       async findConnectedAccountId() {
@@ -836,6 +923,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     managementSessionService,
     managementOriginPreHandler,
     serverConfigService,
+    desktopConfigService,
+    audioOutputService,
     overlayModuleRegistry,
     overlayModuleConfigService,
     moderationService,
@@ -883,9 +972,18 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
   });
   registerManagementCorsPreflightRoute(app, managementOriginPolicy);
+  cleanups.push(() => app.close());
+  cleanups.push(() => {
+    twitchEventSubRuntimeService.disconnect();
+    streamerBotRuntimeService.disconnect();
+  });
+  cleanups.push(() => maintenanceGate.stop());
+  cleanups.push(() => playbackCoordinator.close());
 
   return {
     app,
+    desktopConfigService,
+    playbackCoordinator,
     configStore,
     database,
     managementSessionService,
@@ -895,14 +993,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     streamerBotRuntimeService,
     eventIngestionService,
     syncEventSourceRuntime,
-    async close() {
-      (options.cancelRecurring ?? clearInterval)(twitchValidationInterval as ReturnType<typeof setInterval>);
-      twitchEventSubRuntimeService.disconnect();
-      streamerBotRuntimeService.disconnect();
-      await app.close();
-      database.close();
-    }
+    close
   };
+  } catch (error) {
+    try { await close(); } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], "Runtime composition and cleanup failed", { cause: cleanupError });
+    }
+    throw error;
+  }
 }
 
 function toDiagnosticsProviderState(state: TwitchEventSubRuntimeState): "idle" | "ready" | "degraded" {

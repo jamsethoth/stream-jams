@@ -267,7 +267,7 @@ function OverlayInstructionLayer({
         <video
           autoPlay
           data-testid={`overlay-video-${instruction.id}`}
-          muted={muted}
+          muted={instruction.moduleId === "alerts" || muted}
           onError={() => reportFailure("Video playback failed")}
           src={resolveAssetUrl(instruction.visual.assetId)}
           style={elementStyle(instruction.visual.layout, instruction.animation, instruction.durationMs)}

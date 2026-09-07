@@ -11,10 +11,16 @@
       "path": "apps/server"
     },
     {
+      "path": "apps/desktop"
+    },
+    {
       "path": "apps/web"
     },
     {
       "path": "tests/e2e"
+    },
+    {
+      "path": "tests/desktop"
     }
   ]
 }

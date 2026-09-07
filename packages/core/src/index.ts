@@ -22,6 +22,8 @@ export type * from "./diagnostics/repository.js";
 export type * from "./config/types.js";
 export type { ConfigStore } from "./config/config-store.js";
 export {
+  desktopConfigSchema,
+  desktopConfigUpdateSchema,
   appConfigSchema,
   appConfigUpdateSchema,
   appServerConfigSchema,
@@ -29,6 +31,30 @@ export {
 } from "./config/schemas.js";
 
 export type * from "./auth/management-session-service.js";
+
+export type * from "./audio/types.js";
+export type { AudioDeviceCapability, AudioRouteStatus, AudioOutputStatus } from "./audio/schemas.js";
+export type { AudioOutputRouteRepository } from "./audio/audio-output-route-repository.js";
+export { resolveAudioDestinations } from "./audio/resolve-audio-destinations.js";
+export { resolveAlertAudio } from "./audio/resolve-alert-audio.js";
+export {
+  alertAudioOutputsSchema,
+  audioRouteIdSchema,
+  explicitAudioDeviceIdSchema,
+  audioOutputDeviceSchema,
+  audioOutputRouteSchema,
+  audioOutputRouteCreateSchema,
+  audioOutputRoutePatchSchema,
+  audioOutputRouteTestSchema,
+  resolvedAudioLayerSchema,
+  resolvedAlertAudioSchema,
+  audioDestinationSchema,
+  deviceAudioBatchSchema,
+  deviceAudioResultSchema,
+  audioDeviceCapabilitySchema,
+  audioRouteStatusSchema,
+  audioOutputStatusSchema
+} from "./audio/schemas.js";
 
 export type * from "./alerts/types.js";
 export type { ChannelPointRewardSelection } from "./alerts/channel-point-reward-selection.js";
@@ -252,3 +278,4 @@ export {
   ttsProviderConfigRefSchema,
   ttsVoiceSchema
 } from "./tts/schemas.js";
+export * from "./audio/transport.js";

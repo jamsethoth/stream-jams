@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { posix } from "node:path";
@@ -25,6 +25,18 @@ export class AssetFileNotFoundError extends Error {
     super(`Asset file not found: ${storagePath}`);
     this.name = "AssetFileNotFoundError";
     this.storagePath = storagePath;
+  }
+}
+
+export class AssetReadLimitExceededError extends Error {
+  readonly storagePath: string;
+  readonly maxBytes: number;
+
+  constructor(storagePath: string, maxBytes: number) {
+    super(`Asset file exceeds the ${maxBytes}-byte read limit: ${storagePath}`);
+    this.name = "AssetReadLimitExceededError";
+    this.storagePath = storagePath;
+    this.maxBytes = maxBytes;
   }
 }
 
@@ -57,6 +69,32 @@ export class LocalAssetStore implements MediaAssetStore {
       }
 
       throw error;
+    }
+  }
+
+  async readBounded(storagePath: string, maxBytes: number): Promise<Buffer> {
+    if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Asset read limit must be a nonnegative safe integer");
+    const absolutePath = this.#resolveStoragePath(storagePath);
+    let handle;
+    try {
+      handle = await open(absolutePath, "r");
+      const file = await handle.stat();
+      if (!file.isFile() || file.size > maxBytes) throw new AssetReadLimitExceededError(storagePath, maxBytes);
+      const chunks: Buffer[] = [];
+      let total = 0;
+      while (true) {
+        const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - total + 1));
+        const { bytesRead } = await handle.read(chunk, 0, chunk.byteLength, null);
+        if (bytesRead === 0) return Buffer.concat(chunks, total);
+        total += bytesRead;
+        if (total > maxBytes) throw new AssetReadLimitExceededError(storagePath, maxBytes);
+        chunks.push(chunk.subarray(0, bytesRead));
+      }
+    } catch (error) {
+      if (isNodeError(error) && error.code === "ENOENT") throw new AssetFileNotFoundError(storagePath);
+      throw error;
+    } finally {
+      await handle?.close();
     }
   }
 

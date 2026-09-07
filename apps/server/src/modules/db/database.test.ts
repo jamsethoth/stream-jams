@@ -26,7 +26,8 @@ const expectedMigrations = [
   "015-alert-variant-asset-foreign-keys",
   "016-overlay-key-lookup-indexes",
   "017-alert-text-style-defaults",
-  "018-alert-moderation-settings"
+  "018-alert-moderation-settings",
+  "019-audio-output-routes"
 ] as const;
 
 const expectedTables = [
@@ -42,6 +43,7 @@ const expectedTables = [
   "alert_variants",
   "asset_library_metadata",
   "asset_metadata",
+  "audio_output_routes",
   "event_logs",
   "overlay_keys",
   "overlay_module_config",
@@ -425,7 +427,8 @@ describe("Stream Jams SQLite database", () => {
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
       DROP TABLE alert_moderation_settings;
-      DELETE FROM schema_migrations WHERE id = '018-alert-moderation-settings';
+      DROP TABLE audio_output_routes;
+      DELETE FROM schema_migrations WHERE id IN ('018-alert-moderation-settings', '019-audio-output-routes');
     `);
 
     database.runMigrations();

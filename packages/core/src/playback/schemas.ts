@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolvedAlertAudioSchema } from "../audio/schemas.js";
 import { normalizedStreamEventSchema } from "../events/schemas.js";
 import { overlayInstructionSchema } from "../overlays/schemas.js";
 import { isoDateTimeSchema, nonEmptyStringSchema } from "../shared/schemas.js";
@@ -15,6 +16,7 @@ export const playbackQueueItemSchema = z.object({
   id: nonEmptyStringSchema,
   sourceEvent: normalizedStreamEventSchema,
   alerts: z.array(resolvedAlertSchema),
+  audio: z.array(resolvedAlertAudioSchema).default([]),
   priority: z.number().int(),
   status: z.enum(["queued", "playing", "completed", "skipped"]),
   enqueuedAt: isoDateTimeSchema,

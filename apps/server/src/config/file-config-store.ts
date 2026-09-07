@@ -18,13 +18,18 @@ export interface FileConfigStoreOptions {
 export class FileConfigStore implements ConfigStore {
   readonly #configFilePath: string;
   readonly #defaultConfig: AppConfig;
+  #pending: Promise<unknown> = Promise.resolve();
 
   constructor(options: FileConfigStoreOptions) {
     this.#configFilePath = options.configFilePath;
     this.#defaultConfig = parseAppConfig(options.defaultConfig);
   }
 
-  async readConfig(): Promise<AppConfig> {
+  readConfig(): Promise<AppConfig> {
+    return this.#serialize(() => this.#readConfig());
+  }
+
+  async #readConfig(): Promise<AppConfig> {
     try {
       const rawConfig = await readFile(this.#configFilePath, "utf8");
       return parseAppConfig(JSON.parse(rawConfig));
@@ -42,10 +47,21 @@ export class FileConfigStore implements ConfigStore {
     }
   }
 
-  async updateConfig(patch: AppConfigUpdate): Promise<AppConfig> {
-    const current = await this.readConfig();
+  updateConfig(patch: AppConfigUpdate): Promise<AppConfig> {
+    return this.#serialize(() => this.#updateConfig(patch));
+  }
+
+  #serialize<T>(work: () => Promise<T>): Promise<T> {
+    const result = this.#pending.then(work);
+    this.#pending = result.catch(() => undefined);
+    return result;
+  }
+
+  async #updateConfig(patch: AppConfigUpdate): Promise<AppConfig> {
+    const current = await this.#readConfig();
     const parsedPatch = appConfigUpdateSchema.parse(patch);
     const nextConfig = parseAppConfig({
+      desktop: { ...current.desktop, ...parsedPatch.desktop },
       server: {
         ...current.server,
         ...parsedPatch.server

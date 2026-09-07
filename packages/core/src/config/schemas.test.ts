@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appConfigSchema, appConfigUpdateSchema } from "./schemas.js";
+import { appConfigSchema, appConfigUpdateSchema, desktopConfigSchema } from "./schemas.js";
 import { appConfigSchema as exportedAppConfigSchema, defaultLogSettings } from "../index.js";
 
 const validConfig = {
@@ -19,8 +19,15 @@ const validConfig = {
 };
 
 describe("appConfigSchema", () => {
+  it("defaults desktop close policy and rejects coercion", () => {
+    expect(desktopConfigSchema.parse({})).toEqual({ closeToTray: true });
+    expect(desktopConfigSchema.safeParse({ closeToTray: "false" }).success).toBe(false);
+    expect(appConfigSchema.parse(validConfig).desktop).toEqual({ closeToTray: true });
+    expect(appConfigUpdateSchema.parse({ desktop: { closeToTray: false } }).desktop).toEqual({ closeToTray: false });
+  });
   it("accepts local-only server and storage settings", () => {
     const expected = {
+      desktop: { closeToTray: true },
       ...validConfig,
       playback: {
         paused: false,
@@ -40,6 +47,7 @@ describe("appConfigSchema", () => {
     };
 
     expect(appConfigSchema.parse(legacyConfig)).toEqual({
+      desktop: { closeToTray: true },
       ...legacyConfig,
       logging: defaultLogSettings,
       playback: {

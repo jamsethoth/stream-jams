@@ -398,6 +398,7 @@ describe("management alert contracts and rules", () => {
 
     expect(editorDocument.parse(document)).toEqual({
       ...document,
+      outputs: { browserSource: true, deviceRouteIds: [] },
       layers: [
         {
           ...document.layers[0],
@@ -479,6 +480,11 @@ describe("management alert contracts and rules", () => {
       includeTts: false
     } as const;
     expect(testRequest.parse(request)).toEqual({ ...request, document: editorDocument.parse(document) });
+    expect(testRequest.parse({ ...request, targetProfileId: null })).toEqual({
+      ...request,
+      document: editorDocument.parse(document),
+      targetProfileId: null
+    });
     expect(testRequest.safeParse({ ...request, targetProfileId: "square" }).success).toBe(false);
 
     const testResult = schema("alertEditorTestResultSchema");
@@ -493,8 +499,33 @@ describe("management alert contracts and rules", () => {
       status: "queued",
       targetProfileId: "landscape",
       referenceId: "test-alert-follow-1",
-      test: true
+      test: true,
+      deliveredDestinations: [],
+      unavailableDestinations: []
     });
+    expect(testResult.parse({
+      status: "queued",
+      targetProfileId: null,
+      referenceId: "test-alert-follow-2",
+      test: true,
+      deliveredDestinations: [
+        { kind: "device-route", id: "route-headphones", name: "Headphones" }
+      ],
+      unavailableDestinations: [
+        { kind: "device-route", id: "route-stream", name: "Stream mix" }
+      ]
+    })).toMatchObject({
+      targetProfileId: null,
+      deliveredDestinations: [{ kind: "device-route", id: "route-headphones", name: "Headphones" }],
+      unavailableDestinations: [{ kind: "device-route", id: "route-stream", name: "Stream mix" }]
+    });
+    expect(testResult.safeParse({
+      status: "queued",
+      targetProfileId: null,
+      referenceId: "test-alert-follow-3",
+      test: true,
+      deliveredDestinations: [{ kind: "device-route", id: "route-headphones", name: "" }]
+    }).success).toBe(false);
   });
 
   it("persists TTS layer routing and upgrades legacy layers to Browser Speech", () => {

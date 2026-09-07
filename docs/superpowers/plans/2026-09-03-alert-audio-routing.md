@@ -31,7 +31,7 @@ Paths are repository-relative and resolve from the execution checkout. New files
 | Area | Files | Responsibility |
 | --- | --- | --- |
 | Audio contracts | new `packages/core/src/audio/{types,schemas,audio-output-route-repository,resolve-audio-destinations}.ts`; existing core `index.ts`, `management/contracts.ts` | Outputs, routes, device batches/results, validation and destination resolution |
-| Canonical playback | new `packages/core/src/alerts/resolve-alert-audio.ts`; existing `alerts/alert-resolver.ts`, `playback/{types,schemas,playback-queue}.ts` | One audio record per chosen document, audio-only admission and replay |
+| Canonical playback | new `packages/core/src/audio/resolve-alert-audio.ts`; existing `alerts/alert-resolver.ts`, `playback/{types,schemas,playback-queue}.ts` | One audio record per chosen document, audio-only admission and replay |
 | Persistence/API | new `apps/server/src/modules/audio/{audio-output-service,sqlite-audio-output-route-repository,desktop-audio-sink}.ts`, `apps/server/src/http/routes/audio-outputs.ts`, next `modules/db/migrations/019-audio-output-routes.ts` if 019 remains free | Route CRUD/reference integrity, device bridge and protected actions |
 | Runtime | existing `apps/server/src/modules/playback/playback-coordinator.ts`, `modules/alerts/{alert-editor-service,alert-set-management-service,sqlite-alert-editor-document-repository}.ts`, `runtime/runtime-composition.ts`, `http/routes/management-ui.ts` | Shared test/live dispatch, async completion and host injection |
 | Desktop audio | new `apps/desktop/src/audio/{audio-window,audio-preload,audio-ipc,player,start-bound-audio}.ts`, `audio/player.html`; existing desktop main/worker/supervisor/Forge config | Isolated persistent player, media lifecycle, permissions and generations |
@@ -175,6 +175,8 @@ Add it to editor documents, defaults/create/copy/duplicate/variation/re-theme pa
 
 **OpenSpec tasks:** 3.1-3.4. Files: core resolver/playback entries, server coordinator and editor test normalization.
 
+Execution checkpoint (September 6): OpenSpec tasks 3.1–3.4 are complete locally; see [verification](../../verification/alert-audio-routing-canonical-queue.md). The canonical helper lives with the core audio contracts. Minimal server-side sink completion/cancellation was pulled forward from task 4 to verify real occurrence-start binding snapshots. Production desktop transport and full safety acceptance remain task 4; destination-aware editor test dispatch remains task 5. Commit/publication has not been requested, and the OpenSpec task list remains the authoritative completion ledger.
+
 **Interfaces:** `resolveAlertAudio(document: AlertEditorDocument): ResolvedAlertAudio | null` normalizes visible audio without checking browser connectivity or choosing siblings; live caller enforces matching/enabled state, while explicit selected-document tests retain their existing ability to test drafts. Add `audio: readonly ResolvedAlertAudio[]` to queue items/schemas and optional `audio` to `EnqueuePlaybackItemInput` for compatible callers (normalized to empty).
 
 - [ ] In existing `packages/core/src/playback/playback-queue.test.ts`, add this failing case using its existing `createQueue`, `MutableClock` and `createCheerEvent` helpers:
@@ -209,6 +211,8 @@ if (input.alerts.length === 0 && audio.length === 0) return this.getSnapshot();
 
 ## Task 4: Player transport, completion and safety controls
 
+Execution checkpoint (September 7, 2026): OpenSpec tasks 4.1–4.6 are implemented and verified locally. The testable media engine lives in `apps/desktop/src/audio/device-audio-player.ts` with its matching test file; `player.ts` is the browser/IPC entrypoint. Production transport shares one absolute startup deadline across stages. See [desktop safety verification](../../verification/alert-audio-routing-desktop-safety.md) for tests, reviewed fixes and the silent packaged result. The detailed steps below remain the original implementation recipe; the OpenSpec task list is authoritative for completion. No commit/publication or final physical-device/OBS acceptance is implied.
+
 **OpenSpec tasks:** 4.1-4.6. Files: desktop player/IPC/window, server desktop-audio-sink/coordinator/composition, safety API and tests.
 
 **Interfaces:** Implement the shared `AudioPlaybackSink` through a validated worker/main bridge. `AudioOutputService` supplies current bindings/status; the sink resolves authorized asset IDs server-side, not renderer-supplied paths. Add renderer generation/request ID to every wire event. `play` returns terminal route results and `stop` establishes silence before resolving.
@@ -232,6 +236,8 @@ Define `cancelled: Set<string>`, `activeGeneration: number`, and `currentMuted: 
 
 ## Task 5: Device-aware management, tests and silent alert video
 
+Execution checkpoint (September 7): OpenSpec tasks 5.1–5.5 are complete locally. Settings, editor/history/live-impact and destination-aware Send test are integrated, and alert videos are visual-only without moving TTS or video-shoutout audio. The original recipe below remains historical; the OpenSpec task list is the authoritative completion ledger. See [authoring and acceptance verification](../../verification/alert-audio-routing-authoring-acceptance.md) for review fixes, automated gate evidence and manual boundaries. Commit/publication remains unrequested.
+
 **OpenSpec tasks:** 5.1-5.5. Read the frontend skill and routed UX/style documents before editing; relevant UX sections are Save And Auto-Save, Confirmation Pattern, Browser Sources, Alert Editor, Preview And Send Test, Diagnostics, and Settings And Backup.
 
 **Interfaces:** `AlertAudioOutputs` UI component receives `{ value: AlertAudioOutputs; routes: readonly AudioOutputRoute[]; onChange(value: AlertAudioOutputs): void }` with an aliased import for the identically named core type. `AudioOutputsPanel` uses `audio-api.ts` for validated CRUD/status/test responses. Extend `AlertEditorTestRequest.targetProfileId` to allow null for explicit device-only tests; browser delivery is omitted for null. Extend test results with delivered/unavailable destination summaries without removing the reference ID/test marker.
@@ -253,6 +259,8 @@ Here `checked` is the named-route checkbox value and `routeId` is its stable rou
 - [ ] Force mute for alert videos in canvas/preview/OverlaySurface, including legacy video visuals, without muting other module players. Add video-containing alert upgrade warnings and tests that audio/TTS layers remain independent. Add `tests/e2e/management-audio-routing.spec.ts` for route assignment/save/reload/undo/preview/test; reuse typed mock boundaries for deterministic CI and real service integration where available. Run relevant web/server tests, Storybook gates, Playwright and typecheck; commit.
 
 ## Task 6: Backup, diagnostics and real-output acceptance
+
+Final execution checkpoint (September 7): OpenSpec tasks 6.1–6.5 are complete locally (29/29 routing tasks overall). Existing SQL portable projection was reused; no duplicate `toPortableAudioRoute` helper was needed. Archive/rebind/rollback and real runtime restore-activity tests, the runbook and migration-derived schema documentation are complete. The numbered manual checklist and all separately readiness-gated assisted checks have user acceptance; the unchanged silent packaged lifecycle test passed again at sign-off. See the [scenario reconciliation and acceptance matrix](../../verification/alert-audio-routing-authoring-acceptance.md) for measured results and retained harness/shutdown observations. The original steps below remain the implementation recipe; OpenSpec tasks are the authoritative completion ledger. No external process investigation, publication, archive or main-spec synchronization was performed.
 
 **OpenSpec tasks:** 6.1-6.5. Files: existing backup snapshot/service/maintenance gate and tests, route Diagnostics integration, runbook, schema documentation and actual evidence record.
 

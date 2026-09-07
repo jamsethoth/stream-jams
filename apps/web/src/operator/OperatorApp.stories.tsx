@@ -110,6 +110,7 @@ function activeSnapshot(): PlaybackQueueSnapshot {
 function item(id: string, status: PlaybackQueueItem["status"], actor: string): PlaybackQueueItem {
   return {
     id,
+    audio: [],
     sourceEvent: {
       id: `event-${id}`,
       providerId: "twitch",

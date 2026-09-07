@@ -526,8 +526,8 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
         alertId,
         setId: null,
         summary: "The alert test was not sent",
-        nextStep: "Choose a target profile and valid sample payload, then try Send test again."
-      }, 400, "INVALID_ALERT_EDITOR_TEST", "Choose a target profile and valid sample payload, then try Send test again.");
+        nextStep: "Choose a valid target profile or device-only delivery and sample payload, then try Send test again."
+      }, 400, "INVALID_ALERT_EDITOR_TEST", "Choose a valid target profile or device-only delivery and sample payload, then try Send test again.");
     }
     try {
       return alertEditorTestResultSchema.parse(
@@ -540,7 +540,9 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
         alertId,
         setId: input.data.document.setId,
         summary: "The alert test was not sent",
-        nextStep: `Connect and review the ${input.data.targetProfileId} output, then try again.`
+        nextStep: input.data.targetProfileId === null
+          ? "Connect and review a Browser Source or choose an available device route, then try again."
+          : `Connect and review the ${input.data.targetProfileId} output or choose an available device route, then try again.`
       });
     }
   });

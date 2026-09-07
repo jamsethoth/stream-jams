@@ -16,6 +16,8 @@
     }
   },
   "scripts": {
+    "desktop:package": "corepack pnpm build && node scripts/stage-desktop.mjs && corepack pnpm --filter @stream-jams/desktop package",
+    "test:desktop": "playwright test --config playwright.desktop.config.ts",
     "dev": "corepack pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
     "start:local": "corepack pnpm build && node apps/server/dist/index.js",
     "build": "corepack pnpm -r build",

@@ -27,7 +27,7 @@ test("settings persists server port changes and rejects invalid ports", async ({
   await portInput.fill("40123");
   await page.getByRole("button", { name: "Save server settings" }).click();
 
-  await expect(page.getByRole("status")).toContainText("Server settings saved");
+  await expect(page.getByRole("status").filter({ hasText: "Server settings saved" })).toContainText("Server settings saved");
   await expect(portInput).toHaveValue("40123");
   expect(updates).toEqual([{ host: "127.0.0.1", port: 40123 }]);
 
@@ -89,7 +89,7 @@ test("settings exports and restores only after validated typed confirmation", as
   await page.getByRole("button", { name: "Export backup" }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/\.streamjams-backup$/u);
-  await expect(page.getByRole("status")).toContainText("Backup exported");
+  await expect(page.getByRole("status").filter({ hasText: "Backup exported" })).toContainText("Backup exported");
 
   await page.getByLabel("Backup file").setInputFiles({
     name: "stream-jams.streamjams-backup",

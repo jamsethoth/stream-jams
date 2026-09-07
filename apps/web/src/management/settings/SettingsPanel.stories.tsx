@@ -6,12 +6,13 @@ import {
   storyBackupPreflight
 } from "../../stories/mock-apis.js";
 import type { ManagementApi } from "../management-api.js";
+import type { AudioApi } from "../audio/audio-api.js";
 import { SettingsPanel } from "./SettingsPanel.js";
 
 const meta = {
   title: "Management/Settings/Backup and restore",
   component: SettingsPanel,
-  args: { managementApi: createSettingsStoryApi() },
+  args: { audioApi: createAudioStoryApi(), managementApi: createSettingsStoryApi() },
   parameters: { layout: "fullscreen" }
 } satisfies Meta<typeof SettingsPanel>;
 
@@ -159,6 +160,21 @@ function createSettingsStoryApi(overrides: Partial<ManagementApi> = {}): Managem
     clearOldLogs: fn(async () => ({ deletedCount: 2 })),
     ...overrides
   });
+}
+
+function createAudioStoryApi(): AudioApi {
+  return {
+    getStatus: fn(async () => ({
+      capability: { available: true, devices: [{ deviceId: "endpoint-a", label: "USB headphones" }], reason: null, nextStep: null },
+      muted: false,
+      routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones" }, state: "ready" as const }]
+    })),
+    createRoute: fn(),
+    updateRoute: fn(),
+    deleteRoute: fn(),
+    testRoute: fn(),
+    retry: fn()
+  };
 }
 
 function backupFile(): File {

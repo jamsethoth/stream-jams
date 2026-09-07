@@ -502,6 +502,9 @@ function correctionForEvidence(
   alertSetId: string | null = null
 ) {
   const normalized = message.toLowerCase();
+  if (normalized.includes("audio.playback") || normalized.includes("audio output") || normalized.includes("audio route") || normalized.includes("audio device")) {
+    return correction("Open audio outputs", "/manage/settings#audio-outputs", referenceId);
+  }
   if (normalized.includes("asset") || normalized.includes("media file")) {
     return correction("Open assets", "/manage/assets", referenceId);
   }

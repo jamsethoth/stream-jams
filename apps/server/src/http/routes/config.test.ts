@@ -7,6 +7,7 @@ import { createManagementAuthPreHandler } from "../middleware/management-auth.js
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 
 const baseConfig: AppConfig = {
+  desktop: { closeToTray: true },
   server: {
     host: "127.0.0.1",
     port: 39187

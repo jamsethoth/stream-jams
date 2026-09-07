@@ -1,9 +1,11 @@
 import type { NormalizedStreamEvent } from "../events/types.js";
+import type { ResolvedAlertAudio } from "../audio/types.js";
 import type { PlaybackQueueItem, PlaybackQueueSnapshot, PlaybackSafetyState, ResolvedAlert } from "./types.js";
 
 export interface EnqueuePlaybackItemInput {
   readonly sourceEvent: NormalizedStreamEvent;
   readonly alerts: readonly ResolvedAlert[];
+  readonly audio?: readonly ResolvedAlertAudio[];
   readonly priority?: number;
 }
 
@@ -64,15 +66,16 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
   }
 
   enqueue(input: EnqueuePlaybackItemInput): PlaybackQueueSnapshot {
-    if (input.alerts.length === 0) {
+    if (input.alerts.length === 0 && (input.audio?.length ?? 0) === 0) {
       return this.#snapshot();
     }
 
     const now = this.#now();
     this.#queued.push({
       id: this.#generateId(),
-      sourceEvent: input.sourceEvent,
-      alerts: [...input.alerts],
+      sourceEvent: structuredClone(input.sourceEvent),
+      alerts: structuredClone(input.alerts),
+      audio: structuredClone(input.audio ?? []),
       priority: input.priority ?? 0,
       status: "queued",
       enqueuedAt: now,
@@ -102,6 +105,7 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
     return this.enqueue({
       sourceEvent: item.sourceEvent,
       alerts: item.alerts,
+      audio: item.audio,
       priority: item.priority
     });
   }
@@ -195,6 +199,7 @@ function toPlaybackQueueItem(item: InternalPlaybackQueueItem): PlaybackQueueItem
     id: item.id,
     sourceEvent: item.sourceEvent,
     alerts: item.alerts,
+    audio: item.audio,
     priority: item.priority,
     status: item.status,
     enqueuedAt: item.enqueuedAt,
