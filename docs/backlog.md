@@ -13,7 +13,13 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 ## Planned Changes
 
-No promoted backlog items are currently awaiting implementation. Completed desktop/tray and alert-routing requirements are maintained in the durable OpenSpec capabilities and their September 7, 2026 archives.
+Completed desktop/tray and alert-routing requirements are maintained in the durable OpenSpec capabilities and their September 7, 2026 archives. The following proposals are artifact-ready; downstream implementation still requires its listed dependencies.
+
+| ID | Feature | Status | Priority | Dependencies | OpenSpec |
+| --- | --- | --- | --- | --- | --- |
+| BL-045 | Shared Windows desktop overlay and ordered module surfaces | Planned | P1 | Implemented desktop runtime; packaged transparent-video/input/shutdown capability gate | [add-shared-desktop-overlay-surface](../openspec/changes/add-shared-desktop-overlay-surface/proposal.md) |
+| BL-046 | User-controlled routed video soundtracks in Alerts | Planned | P1 | Implemented audio routing; local video codec/timing acceptance | [add-routed-video-audio-controls](../openspec/changes/add-routed-video-audio-controls/proposal.md) |
+| BL-047 | Screen Effects and merged multi-module queue operations | Planned | P1 | BL-045 and BL-046 implemented and specs synced | [add-screen-effects-module](../openspec/changes/add-screen-effects-module/proposal.md) |
 
 ## Alert Authoring And Assets
 
@@ -63,6 +69,9 @@ No promoted backlog items are currently awaiting implementation. Completed deskt
 | BL-037 | Alert scheduling | Deferred | P3 | A concrete scheduling workflow and safe clock/time-zone semantics | [Product plan](product-plan.md) |
 | BL-038 | Full operator console expansion for intake, event review, and attention workflows | Deferred | P2 | BL-001 and demonstrated live-operation needs | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-041 | Production web bundle splitting and performance budget | Deferred | P2 | Production entry chunk remains above Vite's 500 kB advisory threshold | Measure management startup, define an initial-load budget, and lazy-load heavy management surfaces, especially the alert editor, without weakening overlay reliability. |
+| BL-048 | Cross-platform desktop overlay support | Deferred | P3 | Windows surface proven; named macOS/Linux packaging, input, display and audio acceptance targets | Windows first. [Screen Effects design](superpowers/specs/2026-09-07-screen-effects-design.md) |
+| BL-049 | Exclusive-full-screen desktop overlay compatibility evaluation | Evidence-dependent | P3 | Demonstrated need beyond windowed/borderless; explicit backend and anti-cheat/support-risk decision | No graphics injection or automatic game-setting changes are authorized by BL-045/BL-047. [Design boundary](superpowers/specs/2026-09-07-screen-effects-design.md#shared-visual-surface) |
+| BL-050 | Optional cloud service deployment with a local desktop bridge | Deferred candidate | P3 | Explicit deployment need, local-device ownership boundary and separately approved authentication/transport model | Current app remains local-first; this does not reopen marketplace or general cloud sync. [Design boundary](superpowers/specs/2026-09-07-screen-effects-design.md#product-boundaries) |
 
 ## Known Issues
 
