@@ -19,6 +19,6 @@
     "@stream-jams/core": "workspace:0.0.0"
   },
   "devDependencies": {
-    "typescript": "6.0.3"
+    "typescript": "7.0.2"
   }
 }
