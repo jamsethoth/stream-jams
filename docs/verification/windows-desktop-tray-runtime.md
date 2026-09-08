@@ -59,3 +59,33 @@ Desktop foundation is partially complete, not accepted. Audio routing has not st
 The desktop foundation is accepted: the native shutdown mitigation, automated failure/duplicate/session-end/frontend matrices, final gates, and human tray interaction all passed. Preserve the 20-second startup and 10-second service-stop bounds. Distribution residuals remain deferred to BL-030; the dependent audio-routing change can now proceed.
 
 Residual temporary directories use only these test-owned prefixes under the Windows temporary directory: `stream-jams-desktop-smoke-`, `stream-jams-utility-test-`, and `stream-jams-native-close-`. Some contain locked files from exited processes; remove only verified test paths after their handles are released. No live user profile or credential entry is an authorized cleanup target.
+
+## Opt-in shutdown evidence (September 8)
+
+The local desktop build supports `STREAM_JAMS_SHUTDOWN_LOG`. Leave it unset for normal use. To investigate a future slow Quit, choose a **new absolute JSONL filename in an existing directory** and start the app from that shell. A running instance must first quit normally: a duplicate launch cannot enable logging in its already-running owner. For example, from the repository root in a normal, non-administrator PowerShell session:
+
+```powershell
+$diagnosticLog = Join-Path $env:TEMP ("stream-jams-quit-" + [guid]::NewGuid().ToString() + ".jsonl")
+$env:STREAM_JAMS_SHUTDOWN_LOG = $diagnosticLog
+& '.\apps\desktop\out\Stream Jams-win32-x64\Stream Jams.exe'
+```
+
+Exercise the normal workflow and choose Quit when ready. Afterwards, remove only the shell's opt-in setting with `Remove-Item Env:\STREAM_JAMS_SHUTDOWN_LOG`; this does **not** remove the evidence file. Use a different filename for each launch. Do not change the live profile or remove its files to enable diagnostics.
+
+Records contain only a version, random launch identity, PID, quit-attempt number, sequence, UTC/monotonic timestamps and fixed phase names. `quit-requested` without an accepted/cancelled decision can mean the user or renderer has not answered; it is not consent to stop. Service completion reflects the existing worker-exit promise. `electron-quit` is a JavaScript lifecycle event, **not proof the native processes exited**. Missing/truncated records remain unknown evidence, including when final asynchronous writes do not reach disk.
+
+Logging opens exclusively, never overwrites existing evidence, silently disables on unavailable/relative paths or write errors, and accepts at most 256 records / 64 KiB per launch including queued writes. It does not await disk completion, create directories, rotate/delete logs, recover old attempts or force exit. Developers manage retention manually after confirming exact profiles/process ownership. Existing persistent sessions, edit decisions, tray policy and worker timeout are unchanged.
+
+### Silent staged developer comparison
+
+After `corepack.cmd pnpm desktop:package`, run `corepack.cmd pnpm exec node scripts/diagnose-desktop-shutdown.mjs` in the known-working normal-user launch context. Default outputs are the exact labels `System (Elgato Virtual Audio)` and `SFX (Elgato Virtual Audio)`. To use another pair, set `STREAM_JAMS_AUDIO_TEST_OUTPUTS` to two exact labels separated by `|`, as for existing desktop audio tests. Missing/ambiguous/default-only outputs fail; no device fallback or Windows mixer change is made.
+
+The runner creates isolated profiles under ignored `dist/diagnostics/bl044-staged-*`, launches plain Electron at the manifest version, and compares `windows → audio → service → service → audio → windows`. Both windows remain hidden and persistent; hardware acceleration remains disabled and Chromium sandboxing enabled. Each sample dwells seventy seconds. Audio samples use one second of all-zero PCM **and volume zero**, individually on each endpoint and combined. They do not test audibility or channel meters.
+
+The first two stages import no application runtime; the third adds the real bundled utility service with lifecycle-only audio acknowledgements, not the production alert coordinator. Management is a static local page, not the product UI. The packaged `shutdown-diagnostics.spec.ts` separately checks actual Cancel/Discard cleanup and the phase log. The runner records captured process IDs, native exit timing, listener refusal and DIPS file metadata; a failure stops subsequent launches, retains evidence and never invokes forced cleanup. A passing sample does not resolve BL-044. This command is deliberately not part of routine CI and requires the two configured audio endpoints.
+
+### Next evidence needed for BL-044 closure
+
+The [debugger-free retained-profile controls](alert-audio-routing.md#september-8-debugger-free-retained-profile-controls) also passed, but no matching slow exit occurred. The next useful check is a representative real-use streaming session with the opt-in log enabled, not another identical short synthetic batch. Record the build, session duration, workflow/output selections and UTC time of the normal Quit request. Do not log secret overlay URLs, credentials or provider payloads.
+
+If Quit is slow, retain the log and identify the owned native processes by PID, executable path and start time; a final `electron-quit` record alone cannot establish exit. Separate a pending user decision, failed/incomplete service stop and post-Electron native delay. Preserve the instance for a separately approved targeted trace when practical; do not force-stop it or change vendor/security settings without permission. Missing log records are inconclusive. Closure requires evidence connecting a reproducible failure to a specific cause, followed by a focused fix and verification under those conditions plus state-preservation/lifecycle regressions. The diagnostics PR itself does not satisfy that gate.

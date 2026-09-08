@@ -57,9 +57,8 @@ test("an occupied port is reported without changing the port or terminating its 
     expect(JSON.parse(await readFile(fixture.configPath, "utf8")).server.port).toBe(fixture.port);
 
     const closed = desktop.waitForEvent("close");
-    await desktop.evaluate(() => {
-      (globalThis as typeof globalThis & { releaseDesktopTestDialog?: () => void }).releaseDesktopTestDialog?.();
-    });
+    void closed.catch(() => undefined); // Retain rejection for await without an early unhandled rejection.
+    await replyToNativeDialog(desktop, String(fixture.port), 1);
     await closed;
     desktop = undefined;
     expect(listener.listening).toBe(true);
@@ -87,7 +86,10 @@ test("an unavailable renderer requires native confirmation before service shutdo
       app.on("will-quit", () => log("will-quit"));
       app.on("quit", () => log("quit"));
     });
-    await windowByUrl(desktop, `http://127.0.0.1:${fixture.port}/manage`);
+    const management = await windowByUrl(desktop, `http://127.0.0.1:${fixture.port}/manage`);
+    // A matching URL can precede load completion. Crashing during startup also
+    // rejects ManagementWindow.load(), opening a competing failure dialog.
+    await management.waitForLoadState("load", { timeout: 25_000 });
     await expectHealth(fixture.port, true);
     await holdNativeFailureDialog(desktop);
     await desktop.evaluate(({ BrowserWindow, app }) => {
@@ -100,9 +102,8 @@ test("an unavailable renderer requires native confirmation before service shutdo
     await expectHealth(fixture.port, true);
 
     const closed = desktop.waitForEvent("close");
-    await desktop.evaluate(() => {
-      (globalThis as typeof globalThis & { releaseDesktopTestDialog?: () => void }).releaseDesktopTestDialog?.();
-    });
+    void closed.catch(() => undefined);
+    await replyToNativeDialog(desktop, "Management cannot confirm whether your changes are saved", 1);
     await expectHealth(fixture.port, false);
     await desktop.close();
     await closed;
@@ -110,7 +111,8 @@ test("an unavailable renderer requires native confirmation before service shutdo
   } catch (error) {
     const healthStatus = await fetch(`http://127.0.0.1:${fixture.port}/health`, { signal: AbortSignal.timeout(1_000) })
       .then((response) => response.status, () => 0);
-    console.info("Renderer-failure shutdown observation:", { mainPid, healthStatus, lifecycleEvents });
+    const dialogs = desktop === undefined ? [] : await nativeDialogMessages(desktop).catch(() => []);
+    console.info("Renderer-failure shutdown observation:", { mainPid, healthStatus, lifecycleEvents, dialogs });
     throw error;
   } finally {
     await cleanup(desktop, mainPid, fixture.root);
@@ -132,9 +134,45 @@ test("Windows session-end notification stops the owned service without ending th
     await expectHealth(fixture.port, false);
 
     const closed = desktop.waitForEvent("close");
+    void closed.catch(() => undefined);
     await desktop.evaluate(({ app }) => app.quit());
     await desktop.close();
     await closed;
+    desktop = undefined;
+  } finally {
+    await cleanup(desktop, mainPid, fixture.root);
+  }
+});
+
+test("native dialog replies target the requested pending dialog rather than the latest one", async () => {
+  const fixture = await desktopFixture("dialog-replies");
+  let desktop: ElectronApplication | undefined;
+  let mainPid: number | undefined;
+  try {
+    desktop = await launch(fixture);
+    mainPid = await desktop.evaluate(() => process.pid);
+    const management = await windowByUrl(desktop, `http://127.0.0.1:${fixture.port}/manage`);
+    await management.waitForLoadState("load");
+    await holdNativeFailureDialog(desktop);
+    await desktop.evaluate(({ dialog }) => {
+      const observed = globalThis as typeof globalThis & { dialogReplies?: { message: string; response: number }[] };
+      observed.dialogReplies = [];
+      for (const message of ["quit confirmation", "startup failure"]) {
+        void dialog.showMessageBox({ message }).then(({ response }) => observed.dialogReplies!.push({ message, response }));
+      }
+    });
+
+    await expect(replyToNativeDialog(desktop, "a", 1)).rejects.toThrow("pending dialog");
+    await expect(replyToNativeDialog(desktop, " ", 1)).rejects.toThrow("pending dialog");
+    await replyToNativeDialog(desktop, "quit confirmation", 1);
+    expect(await desktop.evaluate(() => (globalThis as typeof globalThis & { dialogReplies?: unknown[] }).dialogReplies))
+      .toEqual([{ message: "quit confirmation", response: 1 }]);
+    await expect(replyToNativeDialog(desktop, "quit confirmation", 1)).rejects.toThrow("pending dialog");
+    await expect(replyToNativeDialog(desktop, "unknown dialog", 1)).rejects.toThrow("pending dialog");
+    await replyToNativeDialog(desktop, "startup failure", 0);
+    expect(await desktop.evaluate(() => (globalThis as typeof globalThis & { dialogReplies?: unknown[] }).dialogReplies))
+      .toEqual([{ message: "quit confirmation", response: 1 }, { message: "startup failure", response: 0 }]);
+    await quit(desktop, fixture.port);
     desktop = undefined;
   } finally {
     await cleanup(desktop, mainPid, fixture.root);
@@ -175,18 +213,24 @@ function launch(fixture: DesktopFixture): Promise<ElectronApplication> {
   });
 }
 
+interface HeldNativeDialog {
+  readonly message: string;
+  respond: ((response: number) => void) | null;
+}
+
+interface NativeDialogTestState { desktopTestDialogs?: HeldNativeDialog[] }
+
 async function holdNativeFailureDialog(desktop: ElectronApplication): Promise<void> {
   await desktop.evaluate(({ dialog }) => {
-    const observed = globalThis as typeof globalThis & {
-      desktopTestDialogs?: string[];
-      releaseDesktopTestDialog?: () => void;
-    };
+    const observed = globalThis as typeof globalThis & NativeDialogTestState;
     observed.desktopTestDialogs = [];
     dialog.showMessageBox = async (...args: unknown[]) => {
       const options = args.at(-1) as { detail?: string; message?: string };
-      observed.desktopTestDialogs!.push([options.message, options.detail].filter(Boolean).join(" "));
       return new Promise((resolveDialog) => {
-        observed.releaseDesktopTestDialog = () => resolveDialog({ response: 1, checkboxChecked: false });
+        observed.desktopTestDialogs!.push({
+          message: [options.message, options.detail].filter(Boolean).join(" "),
+          respond: (response) => resolveDialog({ response, checkboxChecked: false })
+        });
       });
     };
   });
@@ -194,12 +238,25 @@ async function holdNativeFailureDialog(desktop: ElectronApplication): Promise<vo
 
 function nativeDialogMessages(desktop: ElectronApplication): Promise<string[]> {
   return desktop.evaluate(() => (
-    globalThis as typeof globalThis & { desktopTestDialogs?: string[] }
-  ).desktopTestDialogs ?? []);
+    globalThis as typeof globalThis & NativeDialogTestState
+  ).desktopTestDialogs?.map(({ message }) => message) ?? []);
+}
+
+async function replyToNativeDialog(desktop: ElectronApplication, message: string, response: number): Promise<void> {
+  await desktop.evaluate((_electron, { message, response }) => {
+    const observed = globalThis as typeof globalThis & NativeDialogTestState;
+    const matches = observed.desktopTestDialogs?.filter((dialog) => dialog.respond !== null && dialog.message.includes(message)) ?? [];
+    const dialog = matches[0];
+    if (message.trim() === "" || matches.length !== 1 || dialog?.respond == null) throw new Error(`Expected one pending dialog matching: ${message}`);
+    const respond = dialog.respond;
+    dialog.respond = null;
+    respond(response);
+  }, { message, response });
 }
 
 async function quit(desktop: ElectronApplication, port: number): Promise<void> {
   const closed = desktop.waitForEvent("close");
+  void closed.catch(() => undefined);
   await desktop.evaluate(({ app }) => app.quit());
   await expectHealth(port, false);
   await desktop.close();
