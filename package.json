@@ -22,7 +22,7 @@
     "start:local": "corepack pnpm build && node apps/server/dist/index.js",
     "build": "corepack pnpm -r build",
     "test": "corepack pnpm test:unit",
-    "test:unit": "vitest run",
+    "test:unit": "vitest run && node --test scripts/desktop-shutdown-fixture-data.test.mjs scripts/desktop-shutdown-exit.test.mjs",
     "test:e2e": "corepack pnpm --filter @stream-jams/core build && playwright test",
     "test:e2e:report": "playwright show-report",
     "playwright:docker-server": "node scripts/playwright-docker-server.mjs",
