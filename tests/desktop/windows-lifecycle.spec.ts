@@ -18,6 +18,9 @@ test("a duplicate launch reopens the existing instance without starting another 
     mainPid = await desktop.evaluate(() => process.pid);
     await windowByUrl(desktop, `http://127.0.0.1:${fixture.port}/manage`);
     await expectHealth(fixture.port, true);
+    // ManagementWindow.load() shows the window after loadURL resolves. Hiding
+    // before that initial show races startup and can immediately be undone.
+    await expect.poll(() => desktop!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL(): string } }) => candidate.webContents.getURL().startsWith("http://127.0.0.1:"))?.isVisible())).toBe(true);
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL(): string } }) => candidate.webContents.getURL().startsWith("http://127.0.0.1:"))?.hide());
     await expect.poll(() => desktop!.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((candidate: { webContents: { getURL(): string } }) => candidate.webContents.getURL().startsWith("http://127.0.0.1:"))?.isVisible())).toBe(false);
 
