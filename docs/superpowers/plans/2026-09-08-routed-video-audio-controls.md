@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing core Zod/TypeScript, SQLite, React, browser/Electron media elements and explicit output routing, Vitest/Storybook/Playwright. No extraction service, FFmpeg, new device driver, or codec dependency.
 
-**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/add-routed-video-audio-controls/design.md), [new audio requirements](../../../openspec/changes/add-routed-video-audio-controls/specs/routed-video-audio/spec.md), [routing delta](../../../openspec/changes/add-routed-video-audio-controls/specs/alert-audio-routing/spec.md), [Operator delta](../../../openspec/changes/add-routed-video-audio-controls/specs/alert-playback-operator-controls/spec.md), [OpenSpec tasks](../../../openspec/changes/add-routed-video-audio-controls/tasks.md).
+**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/design.md), [new audio requirements](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/routed-video-audio/spec.md), [routing delta](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/alert-audio-routing/spec.md), [Operator delta](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/alert-playback-operator-controls/spec.md), [OpenSpec tasks](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/tasks.md).
 
 ## Global constraints
 
@@ -221,7 +221,7 @@ it("does not change the video switch when a separate sound appears", () => {
 **Files**
 
 - Modify: `docs/verification/routed-video-audio.md`, `tests/desktop/video-audio.spec.ts`, `docs/mvp-runbook.md`.
-- Update: `openspec/changes/add-routed-video-audio-controls/tasks.md`, `docs/product-plan.md`, `docs/backlog.md` only as work and spec sync complete.
+- Update: `openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/tasks.md`, `docs/product-plan.md`, `docs/backlog.md` only as work and spec sync complete.
 
 - [ ] Run the [shared verification commands](2026-09-08-screen-effects-implementation.md#shared-verification-ledger) and `openspec.cmd validate add-routed-video-audio-controls --strict`. Record actual outputs; classify failures rather than weakening tests or declaring partial success a pass.
 - [ ] Rebuild/restart the authorized runtime and verify the new workflow with neutral media. Test one explicit physical device, two distinct devices, Browser Source-only, combined, no destinations, same-device aliases, and a missing bound device. Confirm old saved Alert video remains silent after upgrade/reload/import and new video follows the toggle.

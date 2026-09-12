@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Electron, React/Vite, TypeScript/Zod, Fastify/SQLite, Vitest, Storybook, and Playwright; no new rendering framework.
 
-**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/add-shared-desktop-overlay-surface/design.md), [normative scenarios](../../../openspec/changes/add-shared-desktop-overlay-surface/specs/shared-overlay-surfaces/spec.md), [OpenSpec tasks](../../../openspec/changes/add-shared-desktop-overlay-surface/tasks.md).
+**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/design.md), [normative scenarios](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/specs/shared-overlay-surfaces/spec.md), [OpenSpec tasks](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/tasks.md).
 
 ## Global constraints
 
@@ -283,7 +283,7 @@ it("does not save or open the HUD while choosing a display", async () => {
 **Files**
 
 - Modify: `docs/verification/shared-desktop-overlay.md`, `tests/desktop/overlay-window.spec.ts`, `tests/desktop/windows-lifecycle.spec.ts`, `docs/product-plan.md`, `docs/backlog.md`, `docs/mvp-runbook.md`.
-- Track completion in `openspec/changes/add-shared-desktop-overlay-surface/tasks.md` only after evidence exists.
+- Track completion in `openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/tasks.md` only after evidence exists.
 
 - [ ] Run the [shared verification commands](2026-09-08-screen-effects-implementation.md#shared-verification-ledger) and `openspec.cmd validate add-shared-desktop-overlay-surface --strict`. Capture actual exit/results and diagnose failures; do not conflate focused tests with full-suite success.
 - [ ] Rebuild/restart only the authorized runtime, check health and reload. Using neutral media, verify Alerts on desktop with no OBS connected, Alerts on both, independent layer changes, separate audio continuing when a visual is hidden, and no playback on settings selection. With approval to open the actual source, verify OBS alpha and module-specific source behavior.

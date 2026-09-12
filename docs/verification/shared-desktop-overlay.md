@@ -296,7 +296,7 @@ Retained report: `C:\Users\James\.codex\visualizations\2026\09\07\01a07d40-9e32-
 
 Normal Quit completed at 15:22:58 UTC with exit code 0, no signal, and all ten captured processes absent (launcher 91796/main 181520). Shutdown evidence includes overlay teardown and Electron Quit phases. The application is closed, with evidence/profile retained and no forced cleanup. OBS coexistence and full acceptance remain outstanding; no production code or dependency changed for these checks.
 
-## Native acceptance and remaining integration boundaries
+## Native acceptance and closure reconciliation
 
 | Check | Status / required evidence |
 | --- | --- |
@@ -307,8 +307,8 @@ Normal Quit completed at 15:22:58 UTC with exit code 0, no signal, and all ten c
 | Transparent moving video at 1080p and 1440p | Latest disabled-acceleration run PASSED user-observed smoothness at both resolutions, following two smooth GPU-enabled matched runs. Existing production acceleration policy can be retained. Earlier failed-run cause remains unresolved. |
 | Mixed-DPI, negative-coordinate bounds | Equal-scale placement passed on all three monitors. Portrait DELL at 125% passed user-observed fit, with exact transparent window/content bounds at x=-864. Opaque comparator outer bounds differed slightly while content matched; see run details. Live DPI changes during active playback and other scaling combinations are not covered. |
 | Selected-monitor unplug/changed identity | Three Windows Settings removals during active transparent playback passed probe clearing/no migration/no replay; same ID restored each time. Physical cable removal and changed-identity cases remain untested. Host cleanup masks the adapter's hide-only path; unit coverage is not final integration acceptance. |
-| Management hide/background playback | Isolated owned management-like window probe passed; final service/tray acceptance awaits production integration. |
-| Bounded Quit | Isolated overlay native exit and profile cleanup passed in 228 ms. Final product service/tray shutdown acceptance remains pending. |
-| Audio fixture branch | Representative user WebM played with default-output audio in both opaque and transparent phases; user confirmed sync. Selectable/multiple output routing and OBS audio are not validated by this test. |
+| Management hide/background playback | Passed in the integrated desktop validation: playback continued with management hidden and no overlay taskbar entry. |
+| Bounded Quit | Passed isolated and integrated native-exit checks without forced cleanup; the final routed-video manual stage also passed normal Quit behavior. |
+| Audio and OBS coexistence | Passed through the integrated routed-video manual plan. Browser Source, selected physical-device, and desktop-overlay cases each had acceptable audio/visual synchronization. The accepted variable delay between independent device and OBS-monitoring paths is documented separately and is not shared-surface queue timing. |
 
-Reproduce the automated probe after building: `corepack.cmd pnpm typecheck`, then `corepack.cmd pnpm exec playwright test --config playwright.desktop.config.ts overlay-window.spec.ts --output test-results/overlay-feasibility-next`. Use a new output directory to preserve failed attempts. S1-1 is complete; the overall shared-surface slice remains incomplete until production transport, persistence, UI and integration acceptance pass. Physical cable removal and additional display combinations are not claimed by the accepted Windows Settings topology tests.
+The production transport, persistence, Settings UI, ordered layers, and integrated desktop/OBS paths are implemented and accepted. The September 12 repository gates passed lint, typecheck, build, Storybook, 1,832 Vitest tests, 34 Playwright tests, and 24 desktop tests with one intentionally skipped physical-output test. The user completed the remaining routed-video manual stages and accepted the documented independent-path audio variance. This closes the scoped shared-surface acceptance without claiming physical cable removal, every display/DPI combination, exclusive-full-screen support, automatic display-identity recovery, cross-platform support, or Screen Effects implementation.

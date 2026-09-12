@@ -57,7 +57,7 @@ Schema migration `019-audio-output-routes.ts` adds `audio_output_routes` with st
 
 ## Shared overlay surfaces (Windows follow-on)
 
-The local shared-surface implementation is undergoing final native/OBS acceptance; see [current verification](verification/shared-desktop-overlay.md). It is the reusable foundation, not yet the Screen Effects module.
+The shared-surface implementation has completed scoped Windows, native desktop, OBS, audio-routing, input, display, background, and shutdown acceptance; see [shared-surface verification](verification/shared-desktop-overlay.md) and [integrated manual validation](verification/routed-video-audio-manual-validation.md). It is the reusable foundation, not the Screen Effects module.
 
 In the Windows app, open **Settings → Overlay surfaces**. Select an explicit desktop display, enable desktop output, enable the **alerts** layer, then save **Desktop overlay**. Desktop defaults disabled/unbound and newly discovered module rows default hidden. Only the active set's enabled, reviewed Landscape Alerts are eligible; no OBS browser source is required for desktop visuals. Selection/editing alone never plays content.
 

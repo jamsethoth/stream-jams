@@ -6,8 +6,8 @@ Date: 2026-09-07. Design and interaction direction approved in conversation; imp
 
 | Slice | Deliverable | Dependency |
 | --- | --- | --- |
-| [Shared desktop overlay](../../../openspec/changes/add-shared-desktop-overlay-surface/proposal.md) | Shared Windows visual recipient and per-surface module layers, demonstrated with Alerts | Merged desktop runtime |
-| [Routed video audio](../../../openspec/changes/add-routed-video-audio-controls/proposal.md) | User-controlled soundtracks in Alerts and reusable media-audio controls | Merged audio routing; can be tested independently of slice 1 |
+| [Shared desktop overlay](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/proposal.md) | Shared Windows visual recipient and per-surface module layers, demonstrated with Alerts | Merged desktop runtime |
+| [Routed video audio](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/proposal.md) | User-controlled soundtracks in Alerts and reusable media-audio controls | Merged audio routing; can be tested independently of slice 1 |
 | [Screen Effects](../../../openspec/changes/add-screen-effects-module/proposal.md) | Effect authoring, event triggers, independent queue, merged Operator | Slices 1 and 2 implemented and specs synced |
 
 Each slice has its own design, normative scenarios, implementation tasks, and acceptance gates. Do not describe downstream artifact readiness as dependency completion. Work one independently reviewable implementation slice at a time.

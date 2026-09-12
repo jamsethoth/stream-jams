@@ -29,6 +29,6 @@
 
 ## 5. Acceptance and handoff
 
-- [ ] 5.1 Run affected regressions and `corepack.cmd pnpm lint`, `typecheck`, `test`, `build`, `build-storybook`, `test:storybook:ci`, `test:e2e`, and `test:desktop`; classify every non-passing gate instead of calling partial checks a full pass.
-- [ ] 5.2 Rebuild/restart only the authorized affected runtime, wait for health, reload management and verify real desktop plus OBS playback with neutral media. Record physical input/display/background/shutdown evidence in the verification document.
-- [ ] 5.3 Reconcile all scenarios with code/tests/evidence, run `openspec.cmd validate add-shared-desktop-overlay-surface --strict`, and update product/runbook/backlog after implementation and spec sync. Do not publish, merge or claim Screen Effects implemented in this slice.
+- [x] 5.1 Run affected regressions and `corepack.cmd pnpm lint`, `typecheck`, `test`, `build`, `build-storybook`, `test:storybook:ci`, `test:e2e`, and `test:desktop`; classify every non-passing gate instead of calling partial checks a full pass.
+- [x] 5.2 Rebuild/restart only the authorized affected runtime, wait for health, reload management and verify real desktop plus OBS playback with neutral media. Record physical input/display/background/shutdown evidence in the verification document.
+- [x] 5.3 Reconcile all scenarios with code/tests/evidence, run `openspec.cmd validate add-shared-desktop-overlay-surface --strict`, and update product/runbook/backlog after implementation and spec sync. Do not publish, merge or claim Screen Effects implemented in this slice.
