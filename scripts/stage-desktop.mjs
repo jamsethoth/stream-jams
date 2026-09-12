@@ -20,6 +20,7 @@ await writeFile(join(stage, "package.json"), JSON.stringify({
 await cp(join(desktop, "dist"), join(stage, "dist"), { recursive: true });
 await cp(join(desktop, "src/audio/player.html"), join(stage, "dist/audio/player.html"));
 await cp(join(root, "apps/web/dist"), join(stage, "web"), { recursive: true });
+await cp(join(root, "apps/web/dist-desktop-overlay"), join(stage, "desktop-overlay"), { recursive: true });
 await cp(join(desktop, "forge.config.js"), join(stage, "forge.config.js"));
 let copiedPackages = 0;
 

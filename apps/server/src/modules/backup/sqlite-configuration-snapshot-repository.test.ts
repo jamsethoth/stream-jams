@@ -17,11 +17,31 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
   afterEach(() => database.close());
 
+  it("restores legacy videos silently and persists current explicit soundtrack fields", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const row = snapshot.tables.alert_editor_documents![0]!;
+    const document = JSON.parse(String(row.document_json));
+    delete document.schemaVersion;
+    document.layers = [{ ...document.layers[0], type: "video", assetId: "asset-follow" }];
+    row.document_json = JSON.stringify(document);
+    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    const restored = JSON.parse(String(database.connection.prepare("SELECT document_json FROM alert_editor_documents").get()!.document_json));
+    expect(restored).toMatchObject({ schemaVersion: 1, layers: [{ playEmbeddedAudio: false, audioVolume: 1 }] });
+    row.document_json = JSON.stringify({ ...restored, layers: [{ ...restored.layers[0], playEmbeddedAudio: true, audioVolume: 0.4 }] });
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(JSON.parse(String(repository.snapshot().tables.alert_editor_documents![0]!.document_json))).toMatchObject({ layers: [{ playEmbeddedAudio: true, audioVolume: 0.4 }] });
+    row.document_json = JSON.stringify({ ...restored, schemaVersion: 2 });
+    expect(repository.validate({ appConfig: {}, ...snapshot }).length).toBeGreaterThan(0);
+  });
+
   it("snapshots the explicit allowlist without provider or route-key secrets", () => {
     const snapshot = new SqliteConfigurationSnapshotRepository(database.connection).snapshot();
 
     expect(Object.keys(snapshot.tables)).toEqual([
       "overlay_module_config",
+      "overlay_surfaces",
       "alert_collections",
       "alert_rules",
       "asset_metadata",
@@ -66,6 +86,43 @@ describe("SqliteConfigurationSnapshotRepository", () => {
         boxStyle: compatibilityAlertTextBoxStyle
       }]
     });
+  });
+
+  it("exports unbound desktop settings and preserves local bindings only in rollback points", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const local = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "private-monitor", opacity: 0.4,
+      layers: [{ moduleId: "alerts", visible: true }] };
+    database.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ?").run(JSON.stringify(local));
+    const point = repository.captureRestorePoint();
+    const snapshot = repository.snapshot();
+    const portable = { ...local, enabled: false, displayId: null };
+    expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toEqual(portable);
+    expect(JSON.stringify(snapshot)).not.toContain("private-monitor");
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(JSON.parse(String(database.connection.prepare("SELECT configuration_json FROM overlay_surfaces").get()?.configuration_json))).toEqual(portable);
+    repository.restoreRestorePoint(point);
+    expect(JSON.parse(String(database.connection.prepare("SELECT configuration_json FROM overlay_surfaces").get()?.configuration_json))).toEqual(local);
+    snapshot.tables.overlay_surfaces![0]!.configuration_json = JSON.stringify(local);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(JSON.parse(String(database.connection.prepare("SELECT configuration_json FROM overlay_surfaces").get()?.configuration_json))).toEqual(portable);
+  });
+
+  it("restores legacy tables to a disabled desktop and rejects secret-bearing surface records atomically", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    delete snapshot.tables.overlay_surfaces;
+    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    const after = repository.snapshot();
+    expect(JSON.parse(String(after.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    const corrupt = structuredClone(after.tables);
+    const row = corrupt.overlay_surfaces![0]!;
+    row.configuration_json = JSON.stringify({ ...JSON.parse(String(row.configuration_json)), generation: 1 });
+    expect(() => repository.replace({ tables: corrupt, assets: [seededAsset()] })).toThrow();
+    expect(repository.snapshot()).toEqual(after);
+    database.connection.exec("CREATE TRIGGER fail_surface_restore BEFORE INSERT ON overlay_surfaces BEGIN SELECT RAISE(ABORT, 'restore failed'); END");
+    expect(() => repository.replace({ tables: after.tables, assets: [seededAsset()] })).toThrow("restore failed");
+    expect(repository.snapshot()).toEqual(after);
   });
 
   it("exports portable route identities without bindings and restores exact local bindings on rollback", () => {
@@ -532,7 +589,7 @@ function seed(database: StreamJamsDatabase): void {
 }
 
 function editorDocument() {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",
@@ -548,6 +605,7 @@ function editorDocument() {
     cooldownSeconds: 0,
     rulePriority: 0,
     durationMs: 5_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [{
       id: "layer-text",
       name: "Message",

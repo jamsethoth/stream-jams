@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   audioPlaybackPayloadSchema,
   maxAudioTransportAssetBytes,
@@ -23,7 +24,9 @@ const supportedMimeTypes = new Set<AudioPlayerAsset["mimeType"]>([
   "audio/mpeg",
   "audio/wav",
   "audio/ogg",
-  "audio/webm"
+  "audio/webm",
+  "video/webm",
+  "video/mp4"
 ]);
 const maxPreparationDurationMs = 5_000;
 const preparationTimedOut = Symbol("preparationTimedOut");
@@ -46,8 +49,8 @@ export class DesktopAudioSink implements AudioPlaybackSink {
 
   async play(batch: DeviceAudioBatch): Promise<DeviceAudioResult> {
     const startedAtMs = this.#now();
-    const deadlineMs = startedAtMs + batch.durationMs;
-    const startDeadlineMs = Math.min(deadlineMs, startedAtMs + maxPreparationDurationMs);
+    const deadlineMs = batch.timing?.endsAtEpochMs ?? startedAtMs + batch.durationMs;
+    const startDeadlineMs = Math.min(deadlineMs, (batch.timing?.startsAtEpochMs ?? startedAtMs) + maxPreparationDurationMs);
     this.#pendingByPlaybackId.set(batch.playbackId, (this.#pendingByPlaybackId.get(batch.playbackId) ?? 0) + 1);
     try {
       if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
@@ -60,7 +63,12 @@ export class DesktopAudioSink implements AudioPlaybackSink {
         if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
         if (this.#now() >= startDeadlineMs) return failedDestinations(batch);
         const record = records.get(assetId);
-        if (record === undefined || record.mediaType !== "audio" || !isSupportedMimeType(record.mimeType) ||
+        if (record === undefined || !isSupportedMimeType(record.mimeType) ||
+            !batch.layers.filter(layer => layer.assetId === assetId).every(layer =>
+              layer.sourceKind === "audio"
+                ? record.mediaType === "audio" && record.mimeType.startsWith("audio/")
+                : layer.sourceKind === "video-soundtrack" && record.mediaType === "video" && record.mimeType.startsWith("video/")) ||
+            !Number.isSafeInteger(record.sizeBytes) ||
             record.sizeBytes <= 0 || record.sizeBytes > maxAudioTransportAssetBytes ||
             record.sizeBytes > maxAudioTransportBatchBytes - totalBytes) {
           continue;
@@ -77,7 +85,9 @@ export class DesktopAudioSink implements AudioPlaybackSink {
           if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
           if (this.#now() >= startDeadlineMs) return failedDestinations(batch);
           if (bytes.byteLength !== record.sizeBytes || bytes.byteLength === 0 ||
-              bytes.byteLength > maxAudioTransportBatchBytes - totalBytes) {
+              bytes.byteLength > maxAudioTransportAssetBytes ||
+              bytes.byteLength > maxAudioTransportBatchBytes - totalBytes ||
+              `sha256:${createHash("sha256").update(bytes).digest("hex")}` !== record.checksum) {
             continue;
           }
           assets.push({ assetId, mimeType: record.mimeType, bytes: new Uint8Array(bytes) });

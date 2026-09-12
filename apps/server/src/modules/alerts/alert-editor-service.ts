@@ -395,38 +395,48 @@ export class AlertEditorService {
   ): readonly ResolvedAlert[] {
     const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
     const context = createAlertTemplateContext(sourceEvent);
+    const browserAudioLayers = new Map(
+      request.includeAudio && request.document.outputs.browserSource
+        ? (resolveAlertAudio(request.document)?.layers ?? []).map((layer) => [layer.layerId, layer])
+        : []
+    );
     const layers = [...request.document.layers]
       .filter((layer) => layer.visible)
       .sort((left, right) => left.order - right.order)
-      .filter((layer) => (
-        layer.type === "audio"
-          ? request.includeAudio && request.document.outputs.browserSource
-          : layer.type === "tts" ? request.includeTts : true
-      ));
+      .filter((layer) => layer.type !== "tts" || request.includeTts);
 
     return layers.flatMap((layer) => {
       const layout = layouts.get(layer.id);
-      const instruction = createLayerInstruction(
-        layer,
-        layout,
+      const instruction = layer.type === "audio" ? null : createLayerInstruction(
+        layer, layout, request.document.durationMs, profile.id, context,
+        this.#renderedTextTemplateRenderer, this.#ttsTemplateRenderer,
+        this.#options.generateId(), visualAssetMediaTypes
+      );
+      const audioSource = browserAudioLayers.get(layer.id);
+      const audioInstruction = audioSource === undefined ? null : createLayerInstruction(
+        {
+          ...layer,
+          type: "audio",
+          assetId: audioSource.assetId,
+          volume: audioSource.volume
+        },
+        undefined,
         request.document.durationMs,
         profile.id,
         context,
         this.#renderedTextTemplateRenderer,
         this.#ttsTemplateRenderer,
         this.#options.generateId(),
-        visualAssetMediaTypes
+        {},
+        audioSource.sourceKind
       );
-      if (instruction === null) return [];
-      return [
-        {
+      return [instruction, audioInstruction].flatMap((candidate) => candidate === null ? [] : [{
           id: this.#options.generateId(),
           sourceEventId: sourceEvent.id,
           ruleId: request.document.parentAlertId ?? request.document.id,
           variantId: request.document.id,
-          overlayInstruction: instruction
-        }
-      ];
+          overlayInstruction: candidate
+        }]);
     });
   }
 
@@ -546,6 +556,7 @@ function createDocumentFromRule(
   const enabledProfiles = new Set(metadata?.targetProfileIds ?? ["landscape"]);
   const landscapeReviewState = metadata?.reviewState === "needs-review" ? "needs-review" : "ready";
   const document = {
+    schemaVersion: 1,
     id: resolved.editorId,
     setId: rule.collectionIds[0],
     providerKind: metadata?.providerKind ?? "twitch",
@@ -1058,7 +1069,8 @@ function createLayerInstruction(
   renderedTextTemplateRenderer: TemplateRenderer,
   ttsTemplateRenderer: TemplateRenderer,
   instructionId: string,
-  visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>
+  visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>,
+  audioSourceKind: ResolvedAlertAudio["layers"][number]["sourceKind"] = "audio"
 ): ResolvedAlert["overlayInstruction"] | null {
   const base = {
     id: instructionId,
@@ -1094,7 +1106,7 @@ function createLayerInstruction(
     };
   }
   if (layer.type === "audio") {
-    return { ...base, audio: { assetId: layer.assetId, volume: layer.volume } };
+    return { ...base, audio: { assetId: layer.assetId, volume: layer.volume, sourceKind: audioSourceKind } };
   }
   if (layer.type === "tts") {
     return {

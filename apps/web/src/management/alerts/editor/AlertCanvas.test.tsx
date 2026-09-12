@@ -264,7 +264,7 @@ const assetApi: AssetApi = {
   replaceAsset: vi.fn()
 };
 
-const editorDocument: AlertEditorDocument = {
+const editorDocument: AlertEditorDocument = { schemaVersion: 1,
   id: "alert-1",
   setId: "set-1",
   providerKind: "twitch",

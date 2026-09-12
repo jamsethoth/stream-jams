@@ -9,6 +9,7 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   createAlertTemplateContext,
+  createVideoAudioSettings,
   createNormalizedAlertSampleEvent,
   defaultOptionalAlertShadow,
   defaultAlertStarterThemeId,
@@ -38,6 +39,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { defaultAudioApi, type AudioApi } from "../../audio/audio-api.js";
+import { MediaAudioControls } from "../../audio/MediaAudioControls.js";
 import { useAudioStatus } from "../../audio/use-audio-status.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
@@ -208,6 +210,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [previewTextByLayerId, setPreviewTextByLayerId] = useState<Readonly<Record<string, string>>>({});
   const previewFrameRef = useRef<number | null>(null);
   const previewRequestIdRef = useRef(0);
+  const previewAudioCleanupRef = useRef(new Set<() => void>());
+  const previewAudioSyncRef = useRef(new Set<() => void>());
+  const previewClockRef = useRef({ elapsedMs: 0, startedAt: 0, playing: false, durationMs: 0 });
+  const previewAudioTimerRef = useRef<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<ActionableManagementError | null>(null);
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
@@ -230,13 +236,25 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setConditionDraftError(null);
     setEventInspectorRevision((current) => current + 1);
   }, []);
+  const stopPreviewAudio = useCallback(() => {
+    if (previewAudioTimerRef.current !== null) window.clearTimeout(previewAudioTimerRef.current);
+    previewAudioTimerRef.current = null;
+    for (const release of previewAudioCleanupRef.current) release();
+  }, []);
+  useEffect(() => () => {
+    previewRequestIdRef.current += 1;
+    previewClockRef.current.playing = false;
+    previewClockRef.current.elapsedMs = 0;
+    stopPreviewAudio();
+  }, [stopPreviewAudio]);
   const resetLocalPreview = useCallback(() => {
     setPreview(false);
     setPreviewPlaying(false);
     setPreviewElapsedMs(0);
     setPreviewTextByLayerId({});
     previewRequestIdRef.current += 1;
-  }, []);
+    stopPreviewAudio();
+  }, [stopPreviewAudio]);
   const loadTwitchCustomRewards = useCallback(
     () => props.managementApi.getTwitchCustomRewards(),
     [props.managementApi]
@@ -328,6 +346,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       const nextElapsedMs = Math.min(durationMs, Math.max(0, Math.round(timestamp - startedAt)));
       setPreviewElapsedMs(nextElapsedMs);
       if (nextElapsedMs >= durationMs) {
+        previewClockRef.current.playing = false;
+        previewClockRef.current.elapsedMs = durationMs;
+        stopPreviewAudio();
         setPreviewPlaying(false);
         previewFrameRef.current = null;
         return;
@@ -339,7 +360,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       if (previewFrameRef.current !== null) cancelAnimationFrame(previewFrameRef.current);
       previewFrameRef.current = null;
     };
-  }, [editor, previewPlaying, previewRunId]);
+  }, [editor, previewPlaying, previewRunId, stopPreviewAudio]);
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (editor === null || variationContext === null) return;
@@ -684,6 +705,34 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     resetLocalPreview();
   }
 
+  function currentPreviewPosition() {
+    const clock = previewClockRef.current;
+    return Math.min(clock.durationMs, clock.elapsedMs + (clock.playing ? performance.now() - clock.startedAt : 0));
+  }
+
+  function changePreviewPlayback(playing: boolean, elapsedMs = currentPreviewPosition()) {
+    const durationMs = document?.durationMs ?? 0;
+    const position = Math.max(0, Math.min(durationMs, elapsedMs));
+    previewClockRef.current = { playing: playing && position < durationMs, elapsedMs: position, startedAt: performance.now(), durationMs };
+    setPreviewPlaying(previewClockRef.current.playing);
+    setPreviewElapsedMs(position);
+    if (previewAudioTimerRef.current !== null) window.clearTimeout(previewAudioTimerRef.current);
+    previewAudioTimerRef.current = null;
+    if (previewClockRef.current.playing) {
+      const requestId = previewRequestIdRef.current;
+      previewAudioTimerRef.current = window.setTimeout(() => {
+        if (previewRequestIdRef.current !== requestId) return;
+        previewClockRef.current.playing = false;
+        previewClockRef.current.elapsedMs = durationMs;
+        previewRequestIdRef.current += 1;
+        setPreviewPlaying(false);
+        setPreviewElapsedMs(durationMs);
+        stopPreviewAudio();
+      }, durationMs - position);
+    }
+    for (const sync of previewAudioSyncRef.current) sync();
+  }
+
   async function previewLocally() {
     if (samplePayload === null || document === null) {
       setSampleError("Sample payload must be a valid JSON object.");
@@ -730,7 +779,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       const previewTtsByLayerId = Object.fromEntries(ttsResults.map((result) => [result.layerId, result.text]));
       setPreviewTextByLayerId(nextPreviewTextByLayerId);
       setPreview(true);
-      setPreviewPlaying(true);
+      changePreviewPlayback(true, 0);
       setPreviewRunId((current) => current + 1);
       setNotice({ tone: "success", message: "Local preview is running." });
       void playPreviewMedia(document, previewTtsByLayerId);
@@ -742,20 +791,84 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   async function playPreviewMedia(currentDocument: AlertEditorDocument, previewTtsByLayerId: Readonly<Record<string, string>>) {
+    const requestId = previewRequestIdRef.current;
+    const isCurrent = () => previewRequestIdRef.current === requestId && currentPreviewPosition() < currentDocument.durationMs;
+    const preparationDeadline = Date.now() + 5000;
+    const prepare = <T,>(work: Promise<T>, deadline = preparationDeadline): Promise<T | null> => new Promise((resolve, reject) => {
+      const timer = { id: 0 };
+      const finish = () => {
+        window.clearTimeout(timer.id);
+        previewAudioCleanupRef.current.delete(cancel);
+      };
+      const cancel = () => { finish(); resolve(null); };
+      previewAudioCleanupRef.current.add(cancel);
+      timer.id = window.setTimeout(() => {
+        finish();
+        reject(new Error("Preview media did not become ready within five seconds."));
+      }, Math.max(0, deadline - Date.now()));
+      work.then(value => { finish(); resolve(value); }, cause => { finish(); reject(cause); });
+    });
     try {
       if (previewIncludeAudio) {
-        const audioLayers = currentDocument.layers.filter(
-          (layer): layer is Extract<AlertLayer, { type: "audio" }> => layer.visible && layer.type === "audio"
-        );
+        const audioLayers = resolveAlertAudio(currentDocument)?.layers ?? [];
         await Promise.all(audioLayers.map(async (layer) => {
-          const blob = await props.assetApi.getAssetFile(layer.assetId);
+          const blob = await prepare(props.assetApi.getAssetFile(layer.assetId));
+          if (blob === null || !isCurrent()) return;
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
+          const release = () => {
+            if (!previewAudioCleanupRef.current.delete(release)) return;
+            audio.onended = null;
+            audio.onloadedmetadata = null;
+            audio.onerror = null;
+            previewAudioSyncRef.current.delete(sync);
+            audio.pause();
+            audio.src = "";
+            URL.revokeObjectURL(url);
+          };
+          previewAudioCleanupRef.current.add(release);
+          audio.onended = () => {
+            if (!isCurrent()) release();
+          };
           audio.volume = layer.volume;
-          await audio.play();
-          window.setTimeout(() => URL.revokeObjectURL(url), currentDocument.durationMs + 1_000);
+          let firstStart = true;
+          const sync = () => {
+            if (!isCurrent()) { release(); return; }
+            if (audio.readyState === 0) return;
+            try {
+              audio.currentTime = currentPreviewPosition() / 1000;
+              if (!previewClockRef.current.playing) { firstStart = false; audio.pause(); return; }
+              const startDeadline = firstStart ? preparationDeadline : Date.now() + 5000;
+              firstStart = false;
+              void prepare(audio.play(), startDeadline).then(() => {
+                if (!isCurrent()) release();
+                else if (!previewClockRef.current.playing) audio.pause();
+              }).catch((cause: unknown) => {
+                release();
+                if (isCurrent()) showActionError(actionableError("Local preview media could not be played", cause, "Check the selected media asset and browser audio permissions, then replay the preview."));
+              });
+            } catch (cause) {
+              release();
+              if (isCurrent()) showActionError(actionableError("Local preview media could not seek", cause, "Check the selected media asset, then replay the preview."));
+            }
+          };
+          previewAudioSyncRef.current.add(sync);
+          if (audio.readyState === 0) {
+            const ready = await prepare(new Promise<boolean>((resolve, reject) => {
+              audio.onloadedmetadata = () => resolve(true);
+              audio.onerror = () => reject(new Error("Preview media metadata could not be loaded."));
+            }));
+            if (ready === null || !isCurrent()) { release(); return; }
+          }
+          audio.onloadedmetadata = null;
+          audio.onerror = () => {
+            release();
+            if (isCurrent()) showActionError(actionableError("Local preview media could not be played", new Error("Media decoding failed."), "Choose a supported media asset and replay the preview."));
+          };
+          sync();
         }));
       }
+      if (!isCurrent()) return;
       if (previewIncludeTts) {
         if (typeof speechSynthesis === "undefined" || typeof SpeechSynthesisUtterance === "undefined") {
           throw new Error("This browser does not provide local speech synthesis.");
@@ -768,6 +881,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         });
       }
     } catch (cause) {
+      if (!isCurrent()) return;
+      previewRequestIdRef.current += 1;
+      stopPreviewAudio();
       showActionError(actionableError("Local preview media could not be played", cause, "Check the selected audio asset and browser audio permissions, then replay the preview."));
     }
   }
@@ -882,7 +998,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const layer: AlertLayer = picker.type === "image"
       ? { ...layerBase(id, "Image", "image", order), assetId }
       : picker.type === "video"
-        ? { ...layerBase(id, "Video or GIF", "video", order), assetId }
+        ? { ...layerBase(id, "Video or GIF", "video", order), assetId, ...createVideoAudioSettings() }
         : { ...layerBase(id, "Audio", "audio", order), assetId, volume: 1 };
     updateDocument((current) => addLayer(current, layer, picker.type === "audio" ? {} : defaultGeometryByProfile()));
     setSelectedLayerId(id);
@@ -947,7 +1063,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
-  const hasDeviceAudio = sendIncludeAudio && document.outputs.deviceRouteIds.length > 0 && document.layers.some((layer) => layer.visible && layer.type === "audio");
+  const hasDeviceAudio = sendIncludeAudio && document.outputs.deviceRouteIds.length > 0 && (resolveAlertAudio(document)?.layers.length ?? 0) > 0;
   const canSend = ((!sendDeviceOnly && profile.enabled && profile.reviewState === "ready") || hasDeviceAudio) && samplePayload !== null && sampleError === null && documentConditionError === null && documentStyleError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
   return (
     <div className="alert-editor-page">
@@ -965,8 +1081,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         <div className="alert-editor-page__header-actions">
           <button className="button button--secondary" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</button>
           <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null} onClick={previewLocally} type="button">Preview</button>
-          {preview ? <button className="button button--secondary" onClick={() => previewPlaying ? setPreviewPlaying(false) : previewLocally()} type="button">{previewPlaying ? "Pause preview" : "Replay preview"}</button> : null}
-          {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => { setPreviewPlaying(false); setPreviewElapsedMs(Math.max(0, Math.min(document.durationMs, Number(event.currentTarget.value)))); }} step="100" type="range" value={previewElapsedMs} /></label> : null}
+          {preview ? <button className="button button--secondary" onClick={() => previewElapsedMs >= document.durationMs ? previewLocally() : changePreviewPlayback(!previewPlaying)} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= document.durationMs ? "Replay preview" : "Resume preview"}</button> : null}
+          {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => changePreviewPlayback(false, Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
           <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
         </div>
@@ -979,7 +1095,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
       {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
-      {document.layers.some((layer) => layer.type === "video") ? <p className="alert-editor-page__condition-error">Videos are visual-only and always silent in alerts. To keep a soundtrack, add an explicit audio layer and choose its alert-wide outputs. Existing video assets and layouts are unchanged.</p> : null}
+      {document.layers.some((layer) => layer.type === "video" && !layer.playEmbeddedAudio) ? <p>Videos with embedded audio off stay silent. Existing videos keep this setting until you enable Play embedded audio in Layers and save.</p> : null}
       {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event settings need correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
       {documentStyleError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Visual styles need correction: {documentStyleError} Correct the selected layer&apos;s highlighted style fields before saving, previewing, or sending a test.</p>}
       {validationIssues.length === 0 ? null : (
@@ -1604,6 +1720,11 @@ function LayerInspector({
           {selectedLayer.type === "audio" ? (
             <label><span>Volume {Math.round(selectedLayer.volume * 100)}%</span><input max="1" min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer)); }} step="0.05" type="range" value={selectedLayer.volume} /></label>
           ) : null}
+          {selectedLayer.type === "video" ? <MediaAudioControls
+            value={{ playEmbeddedAudio: selectedLayer.playEmbeddedAudio, audioVolume: selectedLayer.audioVolume }}
+            hasSeparateAudio={document.layers.some(layer => layer.type === "audio" && layer.visible)}
+            onChange={(settings) => onChange(current => updateLayer(current, selectedLayer.id, layer => layer.type === "video" ? { ...layer, ...settings } : layer))}
+          /> : null}
           {layout === undefined ? null : (
             <details className="alert-editor-inspector__disclosure">
               <summary>Position and size</summary>

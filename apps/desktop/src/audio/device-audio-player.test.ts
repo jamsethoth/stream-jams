@@ -31,6 +31,9 @@ interface ElementControl {
 }
 
 class TestMediaElement implements PlayerMediaElement {
+  currentTime = 0;
+  readyState = 1;
+  seeking = false;
   volume = 1;
   muted = false;
   readonly sinkIds: string[] = [];
@@ -72,7 +75,7 @@ class TestMediaElement implements PlayerMediaElement {
     this.listeners.get(type)?.delete(listener);
   }
 
-  emit(type: "ended" | "error"): void {
+  emit(type: "ended" | "error" | "loadedmetadata" | "seeked"): void {
     for (const listener of [...(this.listeners.get(type) ?? [])]) listener(new Event(type));
   }
 
@@ -131,8 +134,8 @@ function batch(overrides: Partial<DeviceAudioBatch> = {}): DeviceAudioBatch {
     durationMs: 10_000,
     muted: false,
     layers: [
-      { layerId: "intro", assetId: "shared-sound", volume: 0.25 },
-      { layerId: "sting", assetId: "shared-sound", volume: 0.75 }
+      { sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 },
+      { sourceKind: "audio", layerId: "sting", assetId: "shared-sound", volume: 0.75 }
     ],
     destinations: [
       { deviceId: "headphones", routeIds: ["personal"] },
@@ -147,13 +150,48 @@ async function flushStarts(): Promise<void> {
 }
 
 describe("DeviceAudioPlayer", () => {
+  it("waits for the common epoch and cancels pending timed starts without replay", async () => {
+    const audio = createHarness();
+    audio.player.initialize(1, false);
+    const timedBatch = batch({ timing: { startsAtEpochMs: 1100, endsAtEpochMs: 11100 } });
+    const playing = audio.player.play({ generation: 1, batch: timedBatch, assets, deadlineMs: 11100 });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(audio.elements.every(element => element.playCount === 0)).toBe(true);
+    audio.player.stop(timedBatch.playbackId);
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(playing).resolves.toEqual({ failedRouteIds: [] });
+    expect(audio.elements.every(element => element.playCount === 0 && element.cleaned)).toBe(true);
+  });
+
+  it("seeks delayed metadata to the shared offset while retaining current mute", async () => {
+    const sink = deferred();
+    const audio = createHarness({ controls: [{ sink }] });
+    audio.player.initialize(1, false);
+    const timedBatch = batch({ timing: { startsAtEpochMs: 1100, endsAtEpochMs: 11100 },
+      layers: [{ sourceKind: "audio", layerId: "one", assetId: "shared-sound", volume: 0.4 }],
+      destinations: [{ deviceId: "headphones", routeIds: ["personal"] }] });
+    const playing = audio.player.play({ generation: 1, batch: timedBatch, assets, deadlineMs: 11100 });
+    audio.elements[0]!.readyState = 0;
+    sink.resolve();
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(audio.elements[0]!.playCount).toBe(0);
+    audio.player.setMuted(true);
+    audio.elements[0]!.readyState = 1;
+    audio.elements[0]!.emit("loadedmetadata");
+    await flushStarts();
+    expect(audio.elements[0]!.currentTime).toBe(2.5);
+    expect(audio.elements[0]!.mutedAtPlay).toEqual([true]);
+    audio.elements[0]!.emit("ended");
+    await expect(playing).resolves.toEqual({ failedRouteIds: [] });
+    expect(audio.elements[0]!.cleaned).toBe(true);
+  });
   it("uses only the startup budget remaining after upstream asset and transport work", async () => {
     let now = 4500;
     const sink = deferred<void>();
     const audio = createHarness({ controls: [{ sink }], now: () => now });
     audio.player.initialize(1, false);
     const playing = audio.player.play({ generation: 1, batch: batch({
-      layers: [{ layerId: "one", assetId: "shared-sound", volume: 1 }],
+      layers: [{ sourceKind: "audio", layerId: "one", assetId: "shared-sound", volume: 1 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     }), assets, startDeadlineMs: 5000, deadlineMs: 30_000 });
     now = 5100; sink.resolve(); await flushStarts();
@@ -168,7 +206,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ controls: [{ sink }], now: () => now });
     audio.player.initialize(1, false);
     const playing = audio.player.play({ generation: 1, batch: batch({
-      layers: [{ layerId: "one", assetId: "shared-sound", volume: 1 }],
+      layers: [{ sourceKind: "audio", layerId: "one", assetId: "shared-sound", volume: 1 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     }), assets, deadlineMs });
     now = deadlineMs === 2000 ? 3000 : 7000;
@@ -226,7 +264,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ controls: [{ sink }] });
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
 
@@ -246,7 +284,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ controls: [{ sink }] });
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
 
@@ -265,7 +303,7 @@ describe("DeviceAudioPlayer", () => {
     const oldSink = deferred();
     const audio = createHarness({ controls: [{ sink: oldSink }, {}] });
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
     audio.player.initialize(1, false);
@@ -299,7 +337,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ controls: [{ sink }] });
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
     const first = audio.player.play({ generation: 1, batch: oneOutput, assets, deadlineMs: 11_000 });
@@ -326,7 +364,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ controls: [{ sink }, {}] });
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
     const first = audio.player.play({ generation: 1, batch: oneOutput, assets, deadlineMs: 20_000 });
@@ -372,8 +410,8 @@ describe("DeviceAudioPlayer", () => {
     audio.player.initialize(1, false);
     const partial = batch({
       layers: [
-        { layerId: "healthy", assetId: "shared-sound", volume: 0.25 },
-        { layerId: "missing", assetId: "omitted-invalid-sound", volume: 0.75 }
+        { sourceKind: "audio", layerId: "healthy", assetId: "shared-sound", volume: 0.25 },
+        { sourceKind: "audio", layerId: "missing", assetId: "omitted-invalid-sound", volume: 0.75 }
       ]
     });
 
@@ -397,8 +435,8 @@ describe("DeviceAudioPlayer", () => {
     });
     audio.player.initialize(1, false);
     const partial = batch({ layers: [
-      { layerId: "healthy", assetId: "shared-sound", volume: 0.25 },
-      { layerId: "broken", assetId: "broken-sound", volume: 0.75 }
+      { sourceKind: "audio", layerId: "healthy", assetId: "shared-sound", volume: 0.25 },
+      { sourceKind: "audio", layerId: "broken", assetId: "broken-sound", volume: 0.75 }
     ] });
     const partialAssets: readonly AudioPlayerAsset[] = [
       ...assets,
@@ -418,7 +456,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness();
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
 
@@ -437,7 +475,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ controls: [{ sink }] });
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
 
@@ -477,7 +515,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ listOutputDevices: () => enumeration.promise });
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
     const result = audio.player.play({ generation: 1, batch: oneOutput, assets, deadlineMs: 20_000 });
@@ -501,7 +539,7 @@ describe("DeviceAudioPlayer", () => {
     const audio = createHarness({ controls: [{ sink }] });
     audio.player.initialize(1, false);
     const oneOutput = batch({
-      layers: [{ layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.25 }],
       destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
     });
     const result = audio.player.play({ generation: 1, batch: oneOutput, assets, deadlineMs: 11_000 });

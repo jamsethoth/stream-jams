@@ -1,5 +1,5 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "composite": true, "types": ["node"], "tsBuildInfoFile": "../../dist/desktop-tests.tsbuildinfo" },
-  "include": ["*.ts"]
+  "include": ["*.ts", "../fixtures/create-media-fixtures.ts"]
 }

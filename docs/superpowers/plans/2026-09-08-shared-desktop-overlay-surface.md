@@ -31,6 +31,8 @@ Paths identified as **Create** below are proposed files, not claims that those f
 
 ### S1-1: Prove the Windows window policy before broad implementation
 
+Checkpoint September 9: the isolated native gate passed; see [evidence and scope boundaries](../../verification/shared-desktop-overlay.md). Production service-loss/lease/recovery acceptance remains in S1-3/S1-6. Earlier failed-motion observations are retained, not claimed resolved.
+
 **Files**
 
 - Create: `apps/desktop/src/overlay/overlay-window-policy.ts`, `apps/desktop/src/overlay/overlay-window-policy.test.ts`, `apps/desktop/src/overlay/overlay-window.ts`.
@@ -74,6 +76,8 @@ export function selectBoundDisplay(
 - [ ] Stop before S1-2 if this backend cannot meet the native gate. Otherwise prepare a scoped checkpoint for the policy/probe and its evidence; commit only when authorized.
 
 ### S1-2: Persist independent surface rows and preserve migrations
+
+Checkpoint September 9: implementation and focused validation are recorded in the [verification report](../../verification/shared-desktop-overlay.md#s1-2-persistence-checkpoint--september-9). Recipient identity is defined in `overlays/visual-recipient.ts` for reuse by the later transport; do not duplicate that type in S1-3. Runtime repository injection and Settings activation remain later steps.
 
 **Files**
 
@@ -133,6 +137,8 @@ return [...retained, ...appended];
 - [ ] Run `corepack.cmd pnpm exec vitest run packages/core/src/overlay-modules apps/server/src/modules/overlay-surfaces/sqlite-surface-repository.test.ts apps/server/src/modules/backup` and `corepack.cmd pnpm typecheck`; expect focused suites and strict types to pass. Prepare the persistence/compatibility checkpoint; do not mark this slice complete.
 
 ### S1-3: Add a private, bounded desktop visual host
+
+September 9 source checkpoint: timing, strict visual-only transport, host/preload/private session, asset resolver, worker/supervisor leases and production wiring are implemented. Worker `start()` resolves on completion, not admission. Connection generations and occurrence keys reject stale acknowledgements; worker, host and renderer enforce bounded admission and lifetimes. S1-4/S1-5 renderer, recipient and Settings integration are also implemented. Automated workspace/browser/Storybook evidence and remaining packaged native/physical acceptance gates are recorded in `docs/verification/shared-desktop-overlay.md`; source integration is not yet full native product acceptance.
 
 **Files**
 

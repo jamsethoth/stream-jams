@@ -170,6 +170,17 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./overlay-modules/types.js";
+export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
+export type { SurfaceLayer, SurfaceConfiguration, SurfaceRepository } from "./overlay-modules/surface-configuration.js";
+export { visualRecipientKeySchema } from "./overlays/visual-recipient.js";
+export type { VisualRecipientKey } from "./overlays/visual-recipient.js";
+export { playbackTimingSchema, playbackOffsetMs } from "./overlays/playback-timing.js";
+export type { PlaybackTiming } from "./overlays/playback-timing.js";
+export { desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, maxDesktopVisualTransferBytes, visualMediaType } from "./overlays/desktop-visual-transport.js";
+export type { DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
+export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";
+export { selectedDesktopDisplaySchema, desktopOverlayStatusSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
+export type { SelectedDesktopDisplay, DesktopOverlayStatus, SurfaceSettingsView } from "./overlays/desktop-overlay-status.js";
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
 export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
@@ -279,3 +290,6 @@ export {
   ttsVoiceSchema
 } from "./tts/schemas.js";
 export * from "./audio/transport.js";
+export * from "./management/alert-document-compatibility.js";
+export * from "./audio/media-audio.js";
+export * from "./audio/prepare-timed-media.js";

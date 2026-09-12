@@ -12,7 +12,10 @@ import { SettingsPanel } from "./SettingsPanel.js";
 const meta = {
   title: "Management/Settings/Backup and restore",
   component: SettingsPanel,
-  args: { audioApi: createAudioStoryApi(), managementApi: createSettingsStoryApi() },
+  args: { audioApi: createAudioStoryApi(), managementApi: createSettingsStoryApi(), surfaceApi: {
+    load: async () => ({ surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null } }),
+    save: async () => { throw new Error("No surface selected"); }, retry: async () => { throw new Error("Desktop unavailable"); }
+  } },
   parameters: { layout: "fullscreen" }
 } satisfies Meta<typeof SettingsPanel>;
 

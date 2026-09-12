@@ -17,6 +17,8 @@ import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
 import type { DesktopConfigView, ManagementApi, ServerConfigView } from "../management-api.js";
 import { DesktopSettingsPanel } from "./DesktopSettingsPanel.js";
+import { OverlaySurfacesPanel, type OverlaySurfacesPanelHandle } from "./OverlaySurfacesPanel.js";
+import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import "./settings-panel.css";
 
@@ -27,13 +29,16 @@ type SettingsApi = Pick<
 
 export interface SettingsPanelProps {
   readonly audioApi?: AudioApi | undefined;
+  readonly surfaceApi?: SurfaceSettingsApi | undefined;
   readonly managementApi: SettingsApi;
 }
 
 const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 };
 
-export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: SettingsPanelProps) {
+export function SettingsPanel({ audioApi = defaultAudioApi, surfaceApi, managementApi }: SettingsPanelProps) {
   const audioPanelRef = useRef<AudioOutputsPanelHandle>(null);
+  const surfacesPanelRef = useRef<OverlaySurfacesPanelHandle>(null);
+  const [surfacesDirty, setSurfacesDirty] = useState(false);
   const [savedConfig, setSavedConfig] = useState(defaultServerConfig);
   const [configDraft, setConfigDraft] = useState(defaultServerConfig);
   const [desktopConfig, setDesktopConfig] = useState<DesktopConfigView | null>(null);
@@ -79,7 +84,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
     if (loading) return;
     const targetId = window.location.hash === "#backup-restore"
       ? "backup-restore"
-      : window.location.hash === "#audio-outputs" ? "audio-outputs" : null;
+      : window.location.hash === "#audio-outputs" ? "audio-outputs" : window.location.hash === "#overlay-surfaces" ? "overlay-surfaces" : null;
     if (targetId !== null) document.getElementById(targetId)?.scrollIntoView({ block: "start" });
   }, [loading]);
 
@@ -104,7 +109,10 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
     if (audioDirty && !(await audioPanelRef.current?.save())) {
       return { saved: false as const, error: "Audio output changes could not be saved. Resolve the highlighted route and try again." };
     }
-  }, [audioDirty, desktopDirty, saveDesktop, saveServer, serverDirty]);
+    if (surfacesDirty && !(await surfacesPanelRef.current?.save())) {
+      return { saved: false as const, error: "Overlay surface settings could not be saved. Resolve the highlighted settings and try again." };
+    }
+  }, [audioDirty, desktopDirty, surfacesDirty, saveDesktop, saveServer, serverDirty]);
 
   const discard = useCallback(() => {
     setCloseToTray(desktopConfig?.closeToTray ?? true);
@@ -115,13 +123,14 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
     setRestoreResult(null);
     setConfirmation("");
     audioPanelRef.current?.discard();
+    surfacesPanelRef.current?.discard();
   }, [desktopConfig, savedConfig]);
 
   useDirtyNavigationSource({
     id: "settings",
-    dirty: serverDirty || desktopDirty || audioDirty || archive !== null,
-    summary: archive === null ? "Settings or named audio outputs have unsaved changes." : "A configuration backup is selected for restore.",
-    save: archive === null && (serverDirty || desktopDirty || audioDirty) ? saveSettings : null,
+    dirty: serverDirty || desktopDirty || audioDirty || surfacesDirty || archive !== null,
+    summary: archive === null ? "Settings, audio outputs, or overlay surfaces have unsaved changes." : "A configuration backup is selected for restore.",
+    save: archive === null && (serverDirty || desktopDirty || audioDirty || surfacesDirty) ? saveSettings : null,
     discard
   });
 
@@ -308,6 +317,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
       )}
 
       <AudioOutputsPanel audioApi={audioApi} onDirtyChange={setAudioDirty} ref={audioPanelRef} />
+      <OverlaySurfacesPanel api={surfaceApi} manageNavigation={false} onDirtyChange={setSurfacesDirty} ref={surfacesPanelRef} />
 
       {summary === null ? null : (
         <section aria-labelledby="storage-heading" className="settings-page__section">

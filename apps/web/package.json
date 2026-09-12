@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b tsconfig.json && vite build",
+    "build": "tsc -b tsconfig.json && vite build && vite build --config vite.desktop-overlay.config.ts",
     "typecheck": "tsc -b tsconfig.json",
     "storybook": "storybook dev --host 127.0.0.1 --port 6006",
     "build-storybook": "storybook build",
