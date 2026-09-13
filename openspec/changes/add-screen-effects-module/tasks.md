@@ -9,7 +9,7 @@
 - [ ] 2.2 Add authoring/variant resolution tests and implementation for copy/edit/save, weighted boundaries, embedded/separate/audio-only sources and bounded layout/animation with uniform fitting. Do not create general composition or code execution.
 - [x] 2.3 Add typed effect/variant/binding repositories under `apps/server/src/modules/screen-effects` and the next-numbered transactional DB migration; test restart persistence, rollback, duplicate bindings and references.
 - [x] 2.4 Extend asset/route deletion checks with module-qualified effect owners and impact lists; test concurrent saves versus deletion without dangling references.
-- [ ] 2.5 Extend backup/restore with current/legacy fixtures, disabled restored effects and unresolved bindings. Exclude runtime queues/history, live clients and credentials from automatic restored playback.
+- [x] 2.5 Extend backup/restore with current/legacy fixtures, disabled restored effects and unresolved bindings. Exclude runtime queues/history, live clients and credentials from automatic restored playback.
 
 ## 3. Event admission and independent queue
 
