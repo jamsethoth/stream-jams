@@ -313,7 +313,9 @@ export class AlertEditorService {
     const alerts = browserReady && profile !== null
       ? this.#createTestAlerts(request, profile, sourceEvent, visualAssetMediaTypes)
       : [];
-    const canonicalAudio = request.includeAudio ? resolveAlertAudio(request.document) : null;
+    const canonicalAudio = request.includeAudio
+      ? resolveAlertAudio(request.document, visualAssetMediaTypes)
+      : null;
     const deviceDestinations = await this.#resolveTestDeviceDestinations(canonicalAudio);
     const audio = canonicalAudio === null || deviceDestinations.delivered.length === 0
       ? []
@@ -397,7 +399,7 @@ export class AlertEditorService {
     const context = createAlertTemplateContext(sourceEvent);
     const browserAudioLayers = new Map(
       request.includeAudio && request.document.outputs.browserSource
-        ? (resolveAlertAudio(request.document)?.layers ?? []).map((layer) => [layer.layerId, layer])
+        ? (resolveAlertAudio(request.document, visualAssetMediaTypes)?.layers ?? []).map((layer) => [layer.layerId, layer])
         : []
     );
     const layers = [...request.document.layers]
@@ -699,7 +701,9 @@ function validateDocumentForSave(document: AlertEditorDocument, current: AlertEd
   const issues = layerIds.length === new Set(layerIds).size ? [] : ["Layer names must identify unique layers."];
   const enabledProfiles = document.targetProfiles.filter((profile) => profile.enabled);
   const hasDeviceAudio = document.outputs.deviceRouteIds.length > 0
-    && document.layers.some(layer => layer.type === "audio" && layer.visible);
+    && document.layers.some(layer => layer.visible && (
+      layer.type === "audio" || (layer.type === "video" && layer.playEmbeddedAudio)
+    ));
   if (enabledProfiles.length === 0 && !hasDeviceAudio) issues.push("Enable at least one target profile before saving.");
   if (!hasDeviceAudio && !enabledProfiles.some((profile) => profile.reviewState === "ready")) {
     issues.push("Finish reviewing at least one enabled target profile before saving.");

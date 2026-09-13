@@ -985,11 +985,13 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     }
   }
 
-  function applyAsset(assetId: string) {
+  function applyAsset(assetId: string, mediaType: AssetMediaType) {
     if (picker === null || document === null) return;
     if (picker.layerId !== null) {
       updateDocument((current) => updateLayer(current, picker.layerId!, (layer) =>
-        "assetId" in layer ? { ...layer, assetId } : layer));
+        "assetId" in layer
+          ? { ...layer, assetId, ...(layer.type === "video" && mediaType === "gif" ? { playEmbeddedAudio: false } : {}) }
+          : layer));
       setPicker(null);
       return;
     }
@@ -998,7 +1000,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     const layer: AlertLayer = picker.type === "image"
       ? { ...layerBase(id, "Image", "image", order), assetId }
       : picker.type === "video"
-        ? { ...layerBase(id, "Video or GIF", "video", order), assetId, ...createVideoAudioSettings() }
+        ? { ...layerBase(id, "Video or GIF", "video", order), assetId, ...createVideoAudioSettings(), playEmbeddedAudio: mediaType === "video" }
         : { ...layerBase(id, "Audio", "audio", order), assetId, volume: 1 };
     updateDocument((current) => addLayer(current, layer, picker.type === "audio" ? {} : defaultGeometryByProfile()));
     setSelectedLayerId(id);

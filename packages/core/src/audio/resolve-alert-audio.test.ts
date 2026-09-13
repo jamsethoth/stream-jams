@@ -50,3 +50,13 @@ it("never resolves a hidden video soundtrack", () => {
   input.layers = input.layers.map(layer => ({ ...layer, visible: false }));
   expect(resolveAlertAudio(input)).toBeNull();
 });
+
+it("omits a video soundtrack when the stored asset is a GIF", () => {
+  const input = document();
+  input.layers = input.layers.filter(layer => layer.type === "video" && layer.id === "video");
+
+  expect(resolveAlertAudio(input, { clip: "gif" })).toBeNull();
+  expect(resolveAlertAudio(input, { clip: "video" })?.layers).toEqual([
+    { layerId: "video", assetId: "clip", volume: 0.4, sourceKind: "video-soundtrack" }
+  ]);
+});

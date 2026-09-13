@@ -30,9 +30,12 @@ export type AlertResolverIdKind = "resolved-alert" | "overlay-instruction";
 
 type BrowserAudioLayer = Extract<AlertLayer, { type: "audio" }> & Pick<ResolvedAudioLayer, "sourceKind">;
 
-function browserAudioLayers(document: AlertEditorDocument): ReadonlyMap<string, BrowserAudioLayer> {
+function browserAudioLayers(
+  document: AlertEditorDocument,
+  visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>
+): ReadonlyMap<string, BrowserAudioLayer> {
   if (!document.outputs.browserSource) return new Map();
-  const sources = resolveAlertAudio(document)?.layers ?? [];
+  const sources = resolveAlertAudio(document, visualAssetMediaTypes)?.layers ?? [];
   const layers = new Map(document.layers.map(layer => [layer.id, layer]));
   return new Map(sources.map(source => [source.layerId, {
     ...layers.get(source.layerId)!,
@@ -133,7 +136,7 @@ export class DefaultAlertResolver implements AlertResolver {
       const legacy = this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}, variant);
       if (document === undefined) return [legacy];
       // Keep legacy visuals/TTS intact, but never bypass the editor's audio policy.
-      const audioLayers = [...browserAudioLayers(document).values()];
+      const audioLayers = [...browserAudioLayers(document, input.visualAssetMediaTypes ?? {}).values()];
       const audioAlerts = audioLayers.flatMap(layer => {
         const instruction = this.#createEditorLayerInstruction(
           match, layer, undefined, document.durationMs, null, input.target, {}, layer.sourceKind
@@ -165,7 +168,7 @@ export class DefaultAlertResolver implements AlertResolver {
     }
 
     const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
-    const audioLayers = browserAudioLayers(document);
+    const audioLayers = browserAudioLayers(document, visualAssetMediaTypes);
     return [...document.layers]
       .filter((layer) => layer.visible)
       .sort((left, right) => left.order - right.order)

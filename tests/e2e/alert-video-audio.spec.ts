@@ -19,6 +19,12 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
   });
   const saves: unknown[] = [];
   await page.route("**/management/providers?*", route => route.fulfill({ json: [] }));
+  await page.route("**/management/assets/library", route => route.fulfill({ json: [{
+    id: "asset-gif", displayName: "Animated image", originalFileName: "animated.gif", mediaType: "gif", mimeType: "image/gif", sizeBytes: 43,
+    width: 1, height: 1, durationMs: null, health: "available", tags: [], createdAt: "2026-09-12T00:00:00.000Z", updatedAt: "2026-09-12T00:00:00.000Z",
+    usage: { assetId: "asset-gif", totalUsageCount: 0, usages: [] }
+  }] }));
+  await page.route("**/assets/asset-gif/file", route => route.fulfill({ contentType: "image/gif", body: Buffer.from("R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", "base64") }));
   await page.route("**/audio/status", route => route.fulfill({ json: {
     capability: { available: true, devices: [{ deviceId: "fake-private", label: "Private headphones" }], reason: null, nextStep: null }, muted: false,
     routes: [{ route: { id: "private", name: "Private headphones", deviceId: "fake-private", deviceLabel: "Private headphones" }, state: "ready" }]
@@ -67,5 +73,12 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
   await page.getByRole("button", { name: "Clip Video/GIF", exact: true }).click();
   await expect(soundtrack).toBeChecked();
   await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue("0.4");
+  await page.getByRole("button", { name: "Choose asset" }).click();
+  await page.getByRole("button", { name: "Use selected asset" }).click();
+  await expect(soundtrack).not.toBeChecked();
+  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => saves.length).toBe(2);
+  expect(saved.layers[0]).toMatchObject({ assetId: "asset-gif", playEmbeddedAudio: false });
   expect(errors).toEqual([]);
 });

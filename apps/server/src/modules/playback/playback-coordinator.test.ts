@@ -657,6 +657,39 @@ describe("PlaybackCoordinator", () => {
     expect(coordinator.getSnapshot().current).toBeNull();
   });
 
+  it("does not dispatch a stored GIF as device audio from a Video/GIF layer", async () => {
+    const audio = audioFixture();
+    const rule = createRule();
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule),
+      outputs: { browserSource: false, deviceRouteIds: ["personal"] },
+      layers: [{
+        id: "gif",
+        name: "Animated image",
+        type: "video",
+        visible: true,
+        order: 0,
+        animation,
+        assetId: "asset-gif",
+        playEmbeddedAudio: true,
+        audioVolume: 0.5
+      }]
+    };
+    const coordinator = createCoordinator({
+      ...audio.dependencies,
+      alertService: new RecordingAlertService([rule]),
+      assetRepository: new InMemoryAssetRepository({ "asset-gif": "gif" }),
+      findEditorDocument: async () => document,
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
+    });
+
+    await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(audio.dependencies.audioOutputService.preparePlayback).not.toHaveBeenCalled();
+    expect(audio.sink.play).not.toHaveBeenCalled();
+    await coordinator.close();
+  });
+
   it("waits for both device and browser completion and ignores old device completion after skip", async () => {
     const audio = audioFixture();
     const stop = deferred<void>();

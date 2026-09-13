@@ -115,6 +115,38 @@ describe("OverlaySurface", () => {
     expect(video).not.toBeVisible();
   });
 
+  it("gives a timed video a fresh preparation window when first shown late", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1000);
+    const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const events = vi.fn();
+    const value = {
+      ...instruction(),
+      timing: { startsAtEpochMs: 1000, endsAtEpochMs: 20000 },
+      visual: { assetId: "video", mediaType: "video" as const, layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } }
+    };
+    const make = (visible: boolean): OverlayComposition => ({
+      ...composition(value),
+      modules: [{ moduleId: "alerts", enabled: true, surfaceLayer: { visible, zIndex: 0 }, instructions: [value] }]
+    });
+    const props = { resolveAssetUrl: () => "/video.webm", onPlaybackEvent: events };
+    const { rerender } = render(<OverlaySurface composition={make(false)} {...props} />);
+    const video = screen.getByTestId("overlay-video-instruction-1") as HTMLVideoElement;
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    rerender(<OverlaySurface composition={make(true)} {...props} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    Object.defineProperty(video, "readyState", { configurable: true, value: 1 });
+    fireEvent.loadedMetadata(video);
+    expect(video.currentTime).toBe(6);
+    fireEvent.seeked(video);
+    await act(async () => {});
+    expect(play).toHaveBeenCalledOnce();
+    expect(video).toBeVisible();
+  });
+
   it("retains media nodes and audio playback when surface layers reorder or hide", () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const value = { ...instruction(), visual: { assetId: "video", mediaType: "video" as const,

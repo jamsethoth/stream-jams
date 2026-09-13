@@ -175,6 +175,35 @@ describe("AlertEditorPage", () => {
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     expect(saveAlertEditorDocument.mock.calls[0]![1].layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 1 });
   });
+
+  it("adds a GIF with embedded audio disabled", async () => {
+    const { user } = renderWorkspaceEditor(editorDocument(), [assetLibraryItem("gif")]);
+
+    await user.click(await screen.findByRole("button", { name: "Video/GIF" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+
+    expect(await screen.findByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  });
+
+  it("disables embedded audio when a video layer is changed to a GIF", async () => {
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = {
+      ...source,
+      layers: source.layers.map(layer => layer.type === "audio"
+        ? { ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 0.6 }
+        : layer)
+    };
+    const { user } = renderWorkspaceEditor(document, [assetLibraryItem("gif")]);
+
+    await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
+    await user.click(screen.getByRole("button", { name: "Choose asset" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+
+    expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  });
+
   it("edits saved silent video soundtrack through undo redo and confirmed save", async () => {
     const { user, saveAlertEditorDocument } = renderStarterThemeEditor();
     await user.click(await screen.findByText("Loop", { selector: ".alert-editor-inspector__layer-list span" }));
@@ -3966,6 +3995,25 @@ function routedEditorDocument(): AlertEditorDocument {
     targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" })),
     layers: [...source.layers, { id: "sound", name: "Sound", type: "audio", visible: true, order: 2, assetId: "asset-sound", volume: 0.5,
       animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }]
+  };
+}
+
+function assetLibraryItem(mediaType: "gif" | "video"): AssetLibraryItem {
+  return {
+    id: `asset-${mediaType}`,
+    displayName: mediaType === "gif" ? "Animated image" : "Video",
+    originalFileName: mediaType === "gif" ? "animated.gif" : "video.webm",
+    mediaType,
+    mimeType: mediaType === "gif" ? "image/gif" : "video/webm",
+    sizeBytes: 3,
+    width: 320,
+    height: 180,
+    durationMs: mediaType === "gif" ? null : 1_000,
+    health: "available",
+    tags: [],
+    createdAt: "2026-09-10T00:00:00Z",
+    updatedAt: "2026-09-10T00:00:00Z",
+    usage: { assetId: `asset-${mediaType}`, totalUsageCount: 0, usages: [] }
   };
 }
 

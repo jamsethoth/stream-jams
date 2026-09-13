@@ -212,18 +212,18 @@ export class PlaybackCoordinator {
 
     const selectedVariants = this.#resolver.selectVariants(readyMatches);
     const editorDocuments = await this.#loadEditorDocuments(readyMatches, selectedVariants);
+    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(
+      selectedVariants.values(),
+      editorDocuments.values()
+    );
     const audio = readyMatches.flatMap(match => {
       const selected = selectedVariants.get(match.rule.id)!;
       const documentId = selected.id === match.rule.variants[0]?.id ? match.rule.id : selected.id;
       const document = editorDocuments.get(documentId);
       if (document === undefined || !document.enabled) return [];
-      const resolved = resolveAlertAudio(document);
+      const resolved = resolveAlertAudio(document, visualAssetMediaTypes);
       return resolved === null || resolved.outputs.deviceRouteIds.length === 0 ? [] : [resolved];
     });
-    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(
-      selectedVariants.values(),
-      editorDocuments.values()
-    );
     if (this.#closed) throw new Error("Playback has stopped.");
     const resolvedAlerts = this.#targets.flatMap((target) =>
       this.#resolver.resolveMatches({

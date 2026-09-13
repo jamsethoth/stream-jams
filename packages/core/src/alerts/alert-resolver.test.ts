@@ -49,6 +49,30 @@ describe("DefaultAlertResolver", () => {
     expect(document).toEqual(before);
   });
 
+  it("renders a GIF visual without projecting its stale embedded-audio setting", () => {
+    const rule = createRule();
+    const original = createEditorDocument(rule);
+    const video = { id: "video", name: "Video or GIF", type: "video" as const, assetId: "clip", order: 7, animation, visible: true, playEmbeddedAudio: true, audioVolume: 0.4 };
+    const document: AlertEditorDocument = {
+      ...original,
+      layers: [...original.layers, video],
+      targetProfiles: original.targetProfiles.map(profile => ({
+        ...profile,
+        layerLayouts: [...profile.layerLayouts, { layerId: video.id, x: 0, y: 0, width: 320, height: 180, zIndex: 7 }]
+      }))
+    };
+
+    const result = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent())],
+      target: { ...target, targetProfileId: "landscape" },
+      editorDocuments: new Map([[document.id, document]]),
+      visualAssetMediaTypes: { clip: "gif" }
+    });
+
+    expect(result.some(alert => alert.overlayInstruction.visual?.mediaType === "gif")).toBe(true);
+    expect(result.some(alert => alert.overlayInstruction.audio?.assetId === "clip")).toBe(false);
+  });
+
   it.each(["disabled", "needs-review"])("does not project browser soundtrack for a %s profile", state => {
     const rule = createRule();
     const original = createEditorDocument(rule);

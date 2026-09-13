@@ -172,6 +172,8 @@ jobs:
           corepack prepare pnpm@11.2.2 --activate
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install chromium
       - name: Package unsigned Windows folder
         run: pnpm desktop:package
       - name: Verify isolated packaged runtime

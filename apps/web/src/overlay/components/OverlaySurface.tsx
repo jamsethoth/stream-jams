@@ -178,7 +178,12 @@ function OverlayInstructionLayer({
     setVideoReady(false);
     if (!visualVisible || !timingActive || Date.now() >= endsAt) return;
     const preparation = new AbortController();
-    const deadline = Math.min(endsAt, (videoHasStartedRef.current ? Date.now() : startsAt) + 5000);
+    const now = Date.now();
+    const initialDeadline = startsAt + 5000;
+    const deadline = Math.min(
+      endsAt,
+      videoHasStartedRef.current || now >= initialDeadline ? now + 5000 : initialDeadline
+    );
     const startTimer = window.setTimeout(() => {
       preparation.abort(); video.pause();
       reportFailure("Video playback could not start before its preparation deadline.");
