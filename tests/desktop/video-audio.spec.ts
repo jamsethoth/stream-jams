@@ -4,7 +4,6 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { _electron, expect, test, type Page } from "@playwright/test";
-import { recordNeutralClip } from "../fixtures/create-media-fixtures.js";
 import { windowByUrl } from "./audio-harness.js";
 
 // Capability evidence only. Never capture management credentials or emit
@@ -15,18 +14,13 @@ for (const format of [
   { name: "WebM", mimeType: "video/webm;codecs=vp9,opus", extension: "webm" },
   { name: "MP4", mimeType: "video/mp4;codecs=avc1.42001E,mp4a.40.2", extension: "mp4" }
 ] as const) {
-test(`packaged decoder silently plays and seeks ${format.name} soundtracks and trackless media`, async ({ playwright }, testInfo) => {
-  const recorder = await playwright.chromium.launch();
-  const clips: { withAudio: boolean; bytes: Uint8Array }[] = [];
-  try {
-    const page = await recorder.newPage();
-    for (const withAudio of [true, false]) {
-      const options = { width: 320, height: 180, durationMs: 10_000, withAudio, mimeType: format.mimeType };
-      const bytes = await recordNeutralClip(page, options);
-      if (format.name === "MP4") expect(new TextDecoder().decode(bytes.slice(4, 8))).toBe("ftyp");
-      clips.push({ withAudio, bytes });
-    }
-  } finally { await recorder.close(); }
+test(`packaged decoder silently plays and seeks ${format.name} soundtracks and trackless media`, async () => {
+  const testInfo = test.info();
+  const clips = await Promise.all([true, false].map(async withAudio => ({
+    withAudio,
+    bytes: await readFile(resolve("tests/fixtures/media", `neutral-${withAudio ? "with-audio" : "trackless"}.${format.extension}`))
+  })));
+  if (format.name === "MP4") expect(new TextDecoder().decode(clips[0]!.bytes.slice(4, 8))).toBe("ftyp");
 
   const root = await mkdtemp(join(tmpdir(), "stream-jams-video-codec-"));
   const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");

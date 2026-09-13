@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
@@ -6,25 +6,16 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { _electron, expect, test } from "@playwright/test";
-import { recordNeutralClip } from "../fixtures/create-media-fixtures.js";
 import { finishDesktop, withCleanup } from "./audio-harness.js";
 import { cleanupFailedOverlayLaunch } from "./overlay-harness.js";
 
-test("packaged native overlay policy and neutral 1080p/1440p media probe", async ({ playwright }, testInfo) => {
-  const fixtureBrowser = await playwright.chromium.launch();
-  const media: { width: number; height: number; path: string }[] = [];
-  try {
-    const page = await fixtureBrowser.newPage();
-    page.on("console", message => console.info(`Recorder: ${message.text()}`));
-    for (const [width, height] of [[1920, 1080], [2560, 1440]] as const) {
-      const path = testInfo.outputPath(`neutral-${height}.webm`);
-      await mkdir(dirname(path), { recursive: true });
-      const bytes = await recordNeutralClip(page, { width, height, durationMs: 2000, withAudio: false });
-      expect(bytes.byteLength).toBeGreaterThan(0);
-      await writeFile(path, bytes);
-      media.push({ width, height, path });
-    }
-  } finally { await fixtureBrowser.close(); }
+test("packaged native overlay policy and neutral 1080p/1440p media probe", async () => {
+  const testInfo = test.info();
+  const media = [
+    { width: 1920, height: 1080, path: resolve("tests/fixtures/media/neutral-1080.webm") },
+    { width: 2560, height: 1440, path: resolve("tests/fixtures/media/neutral-1440.webm") }
+  ];
+  await Promise.all(media.map(clip => access(clip.path)));
 
   const require = createRequire(resolve("apps/desktop/package.json"));
   const electronPath = require("electron") as string;
