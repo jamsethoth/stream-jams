@@ -309,6 +309,7 @@ export {
 export { chooseWeightedVariant, resolveEffectContent } from "./screen-effects/variant-resolver.js";
 export { matchesEffectBinding } from "./screen-effects/trigger-matcher.js";
 export * from "./screen-effects/effect-queue.js";
+export * from "./screen-effects/module-definition.js";
 export * from "./screen-effects/authoring.js";
 export * from "./screen-effects/effect-queue.js";
 export * from "./screen-effects/layout.js";

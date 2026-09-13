@@ -1,4 +1,5 @@
 import { alertsOverlayModuleDefinition } from "./module-definition.js";
+import { screenEffectsOverlayModuleDefinition } from "../screen-effects/module-definition.js";
 import { overlayModuleDefinitionSchema } from "./schemas.js";
 import type { OverlayModuleDefinition } from "./types.js";
 
@@ -37,5 +38,8 @@ export class StaticOverlayModuleRegistry implements OverlayModuleRegistry {
 }
 
 export function createDefaultOverlayModuleRegistry(): OverlayModuleRegistry {
-  return new StaticOverlayModuleRegistry([alertsOverlayModuleDefinition]);
+  return new StaticOverlayModuleRegistry([
+    alertsOverlayModuleDefinition,
+    screenEffectsOverlayModuleDefinition
+  ]);
 }

@@ -15,16 +15,16 @@
 
 - [x] 3.1 Reuse normalized Twitch reward/catalog identities and configured Streamer.bot source/type subscriptions. Test renamed/missing rewards, unsubscribed events, safe summaries and rejection of payload-selected files/routes/commands without provider switching.
 - [x] 3.2 Implement module-scoped dedupe, module/effect cooldowns and the 100-pending cap; test redelivery, one event reaching both modules, deterministic intentional multiple bindings, no cooldown on rejection and no overflow eviction.
-- [ ] 3.3 Implement one-current Screen Effects queue with priority/FIFO ordering and 25 recent items; test no preemption/overlap, safety holds, audio-only/no-output cases, bounded recipient completion and no restart replay.
-- [ ] 3.4 Snapshot variant/content/audio settings/route IDs/duration at admission and replay with a new occurrence ID/fresh bindings; test queued edits, no reroll, missing references and expired history.
+- [x] 3.3 Implement one-current Screen Effects queue with priority/FIFO ordering and 25 recent items; test no preemption/overlap, safety holds, audio-only/no-output cases, bounded recipient completion and no restart replay.
+- [x] 3.4 Snapshot variant/content/audio settings/route IDs/duration at admission and replay with a new occurrence ID/fresh bindings; test queued edits, no reroll, missing references and expired history.
 
 ## 4. Shared output delivery
 
-- [ ] 4.1 Register `screen-effects` for module/unified/desktop composition with hidden-bottom surface defaults; add module browser-source setup using existing route/profile security without desktop credentials.
-- [ ] 4.2 Deliver effects through shared visual/audio adapters; test visual-only, audio-only and combined selections, uniform fitting and at-most-once device delivery across surfaces.
-- [ ] 4.3 Audit/extend audio batch/coordinator ownership with globally unique module-qualified occurrences; prove ordinary effect skip/completion preserves an active Alert's browser/device audio and visuals.
-- [ ] 4.4 Test readiness, duration-plus-5-second expiry, preparation cancellation, stale generations, monitor/device loss and shared-host crash; settle all audio obligations affected by 2-second stop-timeout destruction while healthy visuals continue.
-- [ ] 4.5 Separate visual surface membership from Browser Source audio membership; test hide/reorder without implicit muting or restart and retain duplicate-browser-source/OBS-monitoring setup warnings.
+- [x] 4.1 Register `screen-effects` for module/unified/desktop composition with hidden-bottom surface defaults; add module browser-source setup using existing route/profile security without desktop credentials.
+- [x] 4.2 Deliver effects through shared visual/audio adapters; test visual-only, audio-only and combined selections, uniform fitting and at-most-once device delivery across surfaces.
+- [x] 4.3 Audit/extend audio batch/coordinator ownership with globally unique module-qualified occurrences; prove ordinary effect skip/completion preserves an active Alert's browser/device audio and visuals.
+- [x] 4.4 Test readiness, duration-plus-5-second expiry, preparation cancellation, stale generations, monitor/device loss and shared-host crash; settle all audio obligations affected by 2-second stop-timeout destruction while healthy visuals continue.
+- [x] 4.5 Separate visual surface membership from Browser Source audio membership; test hide/reorder without implicit muting or restart and retain duplicate-browser-source/OBS-monitoring setup warnings.
 
 ## 5. Merged authoritative operations
 

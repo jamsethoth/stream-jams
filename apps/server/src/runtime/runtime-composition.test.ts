@@ -289,7 +289,13 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
     composition.database.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ? WHERE id = 'desktop:primary'").run(JSON.stringify(saved));
     await composition.close();
     composition = await createRuntimeAppComposition(options);
-    expect(transport.configure).toHaveBeenLastCalledWith({ ...saved, layers: [{ moduleId: "alerts", visible: false }] });
+    expect(transport.configure).toHaveBeenLastCalledWith({
+      ...saved,
+      layers: [
+        { moduleId: "alerts", visible: false },
+        { moduleId: "screen-effects", visible: false }
+      ]
+    });
     expect(transport.prepare).not.toHaveBeenCalled();
     expect(transport.start).not.toHaveBeenCalled();
   } finally {

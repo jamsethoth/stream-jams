@@ -26,6 +26,7 @@ import {
   type DesktopConfig,
   type DesktopAudioTransport,
   type DesktopOverlayTransport,
+  type OverlayModuleRuntime,
   type PlaybackSafetyState,
   type AlertBrowserSourceView,
   type ProviderLiveStatus,
@@ -61,6 +62,7 @@ import { AssetLibraryService } from "../modules/assets/asset-library-service.js"
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
 import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
+import { EffectPlaybackCoordinator } from "../modules/screen-effects/effect-playback-coordinator.js";
 import { SqliteEffectModuleSettingsRepository } from "../modules/screen-effects/sqlite-effect-module-settings-repository.js";
 import { ConfigurationBackupService } from "../modules/backup/configuration-backup-service.js";
 import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
@@ -185,6 +187,7 @@ export interface RuntimeAppCompositionOptions {
 export interface RuntimeAppComposition {
   readonly desktopConfigService: DesktopConfigService;
   readonly playbackCoordinator: PlaybackCoordinator;
+  readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
   readonly app: FastifyInstance;
   readonly configStore: ConfigStore;
   readonly database: StreamJamsDatabase;
@@ -377,6 +380,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     initialPlaybackMuted: initialConfig.playback.muted,
     onClientDisconnected(clientId) {
       playbackCoordinator.reportClientDisconnected(clientId);
+      effectPlaybackCoordinator.reportClientDisconnected(clientId);
     },
     onPlaybackReport(report) {
       if (report.status === "failed") {
@@ -396,6 +400,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
+        effectPlaybackCoordinator.reportInstructionFinished(
+          report.clientId,
+          report.instructionId,
+          report.status === "failed"
+        );
       }
     }
   });
@@ -486,6 +495,22 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return playback;
     }
   });
+  const effectPlaybackCoordinator = new EffectPlaybackCoordinator({
+    queue: effectQueue,
+    getSafety: () => {
+      const snapshot = playbackQueue.getSnapshot();
+      return {
+        paused: snapshot.paused,
+        muted: snapshot.muted,
+        doNotDisturb: snapshot.doNotDisturb
+      };
+    },
+    overlayPlaybackSink: overlayGateway,
+    audioOutputService,
+    ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
+    ...(desktopVisualSink === undefined ? {} : { desktopVisualSink }),
+    now: () => now().getTime()
+  });
   const effectAdmissionService = new EffectAdmissionService({
     repository: effectRepository,
     queue: effectQueue,
@@ -536,7 +561,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const eventPipeline = new EventPipeline({
     playbackCoordinator,
-    effectTriggerSink: effectAdmissionService,
+    effectTriggerSink: {
+      async handleTriggers(triggers) {
+        const result = await effectAdmissionService.handleTriggers(triggers);
+        await effectPlaybackCoordinator.startNext();
+        return result;
+      }
+    },
     diagnosticsLogRepository,
     generateId: generateEventPipelineId,
     onEffectError: (error, triggers) => runtimeLogger.error("Screen Effects trigger handling failed", {
@@ -994,11 +1025,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     openDataFolder: () => localMaintenanceService.openDataFolder(),
     clearOldLogs: () => localMaintenanceService.clearOldLogs()
   });
-  const overlayCompositionService = new DefaultOverlayCompositionService({
-    surfaceRepository,
-    configService: overlayModuleConfigService,
-    runtime: {
-      async getModuleSnapshot(request) {
+  const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
+    ["alerts", {
+      async getModuleSnapshot(request: Parameters<EffectPlaybackCoordinator["getModuleSnapshot"]>[0]) {
         const current = playbackQueue.getSnapshot().current;
         const instructions = current === null
           ? []
@@ -1006,17 +1035,25 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
               .map((alert) => alert.overlayInstruction)
               .filter(
                 (instruction) =>
-                  instruction.overlayId === request.overlayId &&
-                  instruction.moduleId === request.moduleId &&
-                  instruction.purpose === request.purpose &&
-                  instruction.scope === request.scope
+                  instruction.overlayId === request.overlayId
+                  && instruction.moduleId === request.moduleId
+                  && instruction.purpose === request.purpose
+                  && instruction.scope === request.scope
+                  && (instruction.targetProfileId ?? null) === (request.targetProfileId ?? null)
               );
-
-        return {
-          moduleId: request.moduleId,
-          enabled: true,
-          instructions
-        };
+        return { moduleId: "alerts", enabled: true, instructions };
+      }
+    }],
+    ["screen-effects", effectPlaybackCoordinator]
+  ]);
+  const overlayCompositionService = new DefaultOverlayCompositionService({
+    surfaceRepository,
+    configService: overlayModuleConfigService,
+    runtime: {
+      async getModuleSnapshot(request) {
+        const runtime = overlayModuleRuntimes.get(request.moduleId);
+        if (runtime === undefined) throw new Error(`Overlay module runtime "${request.moduleId}" is unavailable`);
+        return runtime.getModuleSnapshot(request);
       }
     }
   });
@@ -1101,11 +1138,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   cleanups.push(() => maintenanceGate.stop());
   cleanups.push(() => playbackCoordinator.close());
+  cleanups.push(() => effectPlaybackCoordinator.close());
 
   return {
     app,
     desktopConfigService,
     playbackCoordinator,
+    effectPlaybackCoordinator,
     configStore,
     database,
     managementSessionService,

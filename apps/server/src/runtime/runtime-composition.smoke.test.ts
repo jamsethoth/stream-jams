@@ -1101,6 +1101,14 @@ describe("runtime app composition smoke", () => {
       expect.objectContaining({
         id: "alerts",
         displayName: "Alerts"
+      }),
+      expect.objectContaining({
+        id: "screen-effects",
+        displayName: "Screen Effects",
+        defaultEnabled: false,
+        renderer: expect.objectContaining({
+          supportedOutputs: ["module", "unified"]
+        })
       })
     ]);
     expect(overlayModuleConfig.statusCode).toBe(200);
