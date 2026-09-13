@@ -61,7 +61,12 @@ function occurrence(id: string, mode: "combined" | "audio" | "visual" = "combine
   };
 }
 
-function harness(item: EffectOccurrence, options: { readonly noOutputs?: boolean } = {}) {
+function harness(item: EffectOccurrence, options: {
+  readonly noOutputs?: boolean;
+  readonly isModuleEnabled?: () => boolean | Promise<boolean>;
+  readonly validateReferences?: () => boolean | Promise<boolean>;
+  readonly validateOutputAvailability?: () => boolean | Promise<boolean>;
+} = {}) {
   const queue = new DefaultEffectQueue({ now: () => Date.now() });
   queue.enqueue(item);
   const delivered: OverlayInstruction[] = [];
@@ -107,6 +112,9 @@ function harness(item: EffectOccurrence, options: { readonly noOutputs?: boolean
     audioOutputService: options.noOutputs ? undefined : audioOutputService,
     audioPlaybackSink: options.noOutputs ? undefined : audio,
     desktopVisualSink: options.noOutputs ? undefined : desktop,
+    isModuleEnabled: options.isModuleEnabled ?? (() => true),
+    validateReferences: options.validateReferences ?? (() => true),
+    validateOutputAvailability: options.validateOutputAvailability ?? (() => true),
     now: () => Date.now()
   });
   return {
@@ -148,6 +156,8 @@ describe("EffectPlaybackCoordinator", () => {
       "audio"
     ]);
     expect(new Set(delivered.map((instruction) => instruction.timing?.startsAtEpochMs)).size).toBe(1);
+    expect(delivered.every((instruction) => instruction.purpose === "live")).toBe(true);
+    expect(delivered.every((instruction) => instruction.targetProfileId === undefined)).toBe(true);
     for (const instruction of delivered) {
       coordinator.reportInstructionFinished("obs", instruction.id);
     }
@@ -155,6 +165,48 @@ describe("EffectPlaybackCoordinator", () => {
 
     expect(queue.snapshot().current).toBeNull();
     expect(queue.snapshot().recent[0]).toMatchObject({ id: "combined", status: "completed" });
+  });
+
+  it("does not advance while disabled and reports an empty disabled module snapshot", async () => {
+    const setup = harness(occurrence("disabled"), { isModuleEnabled: () => false });
+
+    await setup.coordinator.startNext();
+
+    expect(setup.queue.snapshot()).toMatchObject({ current: null, queued: [{ id: "disabled" }] });
+    expect(setup.browser.deliverPlaybackInstruction).not.toHaveBeenCalled();
+    await expect(setup.coordinator.getModuleSnapshot({
+      overlayId: "default",
+      moduleId: "screen-effects",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: null
+    })).resolves.toEqual({ moduleId: "screen-effects", enabled: false, instructions: [] });
+  });
+
+  it("revalidates snapshots and output readiness immediately before dispatch", async () => {
+    const stale = harness(occurrence("stale"), { validateReferences: () => false });
+    await stale.coordinator.startNext();
+    expect(stale.queue.snapshot().recent[0]).toMatchObject({ id: "stale", status: "failed" });
+    expect(stale.browser.deliverPlaybackInstruction).not.toHaveBeenCalled();
+
+    const unavailable = harness(occurrence("unavailable"), {
+      validateOutputAvailability: () => false
+    });
+    await unavailable.coordinator.startNext();
+    expect(unavailable.queue.snapshot().recent[0]).toMatchObject({ id: "unavailable", status: "failed" });
+    expect(unavailable.browser.deliverPlaybackInstruction).not.toHaveBeenCalled();
+  });
+
+  it("stops current work and clears pending work when the module is disabled", async () => {
+    const setup = harness(occurrence("current", "visual"));
+    setup.queue.enqueue({ ...occurrence("pending", "visual"), sequence: 1 });
+    await setup.coordinator.startNext();
+
+    await setup.coordinator.disable();
+
+    expect(setup.browser.stopPlaybackInstructions).toHaveBeenCalled();
+    expect(setup.queue.snapshot()).toMatchObject({ current: null, queued: [] });
+    expect(setup.queue.snapshot().recent[0]).toMatchObject({ id: "current", status: "failed" });
   });
 
   it("uses a module-qualified transport key so skipping an effect cannot stop an alert batch", async () => {

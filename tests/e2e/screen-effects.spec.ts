@@ -6,17 +6,45 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   const createRequests: Record<string, unknown>[] = [];
   const updateRequests: Record<string, unknown>[] = [];
   const testRequests: Record<string, unknown>[] = [];
+  const moduleRequests: Record<string, unknown>[] = [];
   let saved: Record<string, unknown> | null = null;
+  let moduleEnabled = false;
+  let browserSourceCreated = false;
 
   await page.route("**/management/overlay-outputs", (route) => route.fulfill({ json: [{
     id: "module:screen-effects:live",
     label: "Screen Effects live",
     purpose: "live",
+    overlayId: "default",
     scope: "module",
     moduleId: "screen-effects",
-    enabled: true,
-    copyableUrlStatus: "available"
+    targetProfileId: null,
+    enabled: moduleEnabled,
+    keyId: browserSourceCreated ? "screen-effects-key" : null,
+    url: browserSourceCreated ? "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_secret" : null,
+    copyableUrlStatus: browserSourceCreated ? "available" : "create-required"
   }] }));
+  await page.route("**/overlay-modules/screen-effects/config", (route) => route.fulfill({ json: {
+    moduleId: "screen-effects", enabled: moduleEnabled, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
+  } }));
+  await page.route("**/overlay-modules/screen-effects/enabled", async (route) => {
+    const body = route.request().postDataJSON() as { enabled: boolean };
+    moduleRequests.push(body);
+    moduleEnabled = body.enabled;
+    await route.fulfill({ json: {
+      moduleId: "screen-effects", enabled: moduleEnabled, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
+    } });
+  });
+  await page.route("**/management/overlay-outputs/keys", async (route) => {
+    browserSourceCreated = true;
+    await route.fulfill({ json: { output: {
+      id: "module:screen-effects:live", label: "Screen Effects live", purpose: "live",
+      overlayId: "default", scope: "module", moduleId: "screen-effects", targetProfileId: null,
+      enabled: moduleEnabled, keyId: "screen-effects-key",
+      url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_secret",
+      copyableUrlStatus: "available"
+    } } });
+  });
   await page.route("**/management/assets/library", (route) => route.fulfill({ json: [assetLibraryItem()] }));
   await page.route("**/assets/asset-effect-image/file", (route) => route.fulfill({
     body: "<svg xmlns='http://www.w3.org/2000/svg' width='64' height='36'><rect width='64' height='36' fill='#667788'/></svg>",
@@ -68,6 +96,12 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
 
   await page.goto("/manage/modules/screen-effects");
   await expect(page.getByText("No Screen Effects yet.")).toBeVisible();
+  await page.getByRole("button", { name: "Enable Screen Effects module" }).click();
+  await page.getByRole("button", { name: "Confirm change" }).click();
+  await expect(page.getByText("Module enabled")).toBeVisible();
+  expect(moduleRequests).toEqual([{ enabled: true }]);
+  await page.getByRole("button", { name: "Create URL" }).click();
+  await expect(page.getByRole("button", { name: "Reveal Screen Effects live Browser Source URL" })).toBeVisible();
   await page.getByRole("button", { name: "New effect" }).click();
 
   await expect(page.getByRole("checkbox", { name: "Enabled", exact: true })).toBeDisabled();
@@ -115,7 +149,7 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   await expect(page.getByRole("button", { name: "Live Test…" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Back" }).click();
-  await page.getByRole("button", { name: "Copy" }).click();
+  await page.getByRole("button", { name: "Copy", exact: true }).click();
   await expect.poll(() => createRequests.length).toBe(2);
   expect(createRequests[1]).toMatchObject({ enabled: false, name: "New Screen Effect copy" });
   expect(createRequests[1]!.id).not.toBe(createRequests[0]!.id);
@@ -151,7 +185,7 @@ test("blocks a no-output live test and retains an enabled draft after save failu
   await page.getByRole("button", { name: "Close preview" }).click();
   await page.getByRole("button", { name: "Live Test…" }).click();
   const testDialog = page.getByRole("dialog", { name: "Send live Screen Effect test?" });
-  await expect(testDialog).toContainText("No enabled destination is available");
+  await expect(testDialog).toContainText("No destination is selected");
   await expect(testDialog.getByRole("button", { name: "Confirm live test" })).toBeDisabled();
   await testDialog.getByRole("button", { name: "Cancel" }).click();
 

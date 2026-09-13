@@ -134,6 +134,9 @@ test("settings exports and restores only after validated typed confirmation", as
   });
   await page.route("**/screen-effects", async (route) => route.fulfill({ json: [restoredScreenEffect()] }));
   await page.route("**/management/overlay-outputs", async (route) => route.fulfill({ json: [] }));
+  await page.route("**/overlay-modules/screen-effects/config", async (route) => route.fulfill({ json: {
+    moduleId: "screen-effects", enabled: false, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
+  } }));
 
   await page.goto("/manage/settings");
   const downloadPromise = page.waitForEvent("download");

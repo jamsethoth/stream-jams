@@ -98,7 +98,7 @@ The focused operations, route, runtime and Operator regressions passed 119 tests
 
 ## Management authoring checkpoint
 
-Tasks 6.1 and 6.2 are complete. The management shell now exposes Screen Effects as a nested Modules route and a focused editor route. The inventory supports disabled draft creation, editing, copying, explicit enable/disable and deletion confirmation, trigger-setup navigation, and a compact redacted view of Screen Effects Browser Source readiness. It does not add a standalone shared-audio page or expose an overlay route key.
+Tasks 6.1 and 6.2 are complete. The management shell now exposes Screen Effects as a nested Modules route and a focused editor route. The inventory supports disabled draft creation, editing, copying, explicit enable/disable and deletion confirmation, trigger-setup navigation, and module enablement controls. Its Browser Source panel can create, reveal, copy and explicitly regenerate the module-scoped URL/key while preserving redaction by default. It does not add a standalone shared-audio page or expose an overlay route key without an explicit user action.
 
 The focused editor keeps new work local until an explicit valid save and transitions a created draft to update semantics after that first save. It provides immutable Undo/Redo, retained drafts after failed saves, bounded variants, the shared asset picker and video soundtrack controls, separate sound, independent browser/desktop visual destinations, explicit browser/device audio destinations, preset animation/layout controls, and trusted Twitch reward or configured Streamer.bot binding choices. Unresolved saved bindings and routes remain visible instead of being silently changed.
 
@@ -114,13 +114,24 @@ The Screen Effects browser workflow covers local disabled creation, valid media 
 
 `corepack.cmd pnpm desktop:package` built the current workspace successfully. The new isolated packaged desktop workflow used a temporary config, database, asset directory and Electron profile; it enumerated a real desktop display, enabled the Screen Effects surface, uploaded the checked-in neutral trackless video, created/enabled/tested the effect, observed video progress in the private `stream-jams-overlay://surface/` renderer, and shut down. Relaunching the same isolated profile retained the enabled definition while Operator reported zero current, pending and recent occurrences. The focused desktop test passed and removed its owned temporary profile after native exit. This is automated renderer evidence, not human confirmation of physical display composition, OBS capture, click-through behavior or audible routing.
 
+## Independent review remediation
+
+The completed implementation received an independent code review before final verification. The resulting runtime and management hardening was implemented with red/green regression coverage:
+
+- Module enablement is now an authoritative kill switch. Admission rejects disabled-module work before dedupe/cooldown consumption, playback rechecks the setting before dispatch, and disabling the module stops the current effect and clears its pending queue. The management page exposes the guarded enable/disable control.
+- Streamer.bot custom-event identity trusts only the transport envelope ID. Envelopes without one receive a deterministic SHA-256 identity derived from canonical transport source/type/timestamp/data fields; provider payload `id`, `eventId` and `messageId` values cannot choose the dedupe key.
+- Saved asset and route references, exact media types (including GIF versus image), and actual selected-recipient readiness are checked at admission and again immediately before dispatch. An unavailable destination fails closed without invoking that transport, while another healthy selected destination may continue independently.
+- Explicit Live Test uses the real live Browser Source recipient, and Screen Effects browser delivery is limited to the module-specific and unified sources that can actually render it. The management Browser Source controls no longer redirect users to the Alerts module.
+
+The new focused tests were first run red with eight expected failures covering those review findings. After the fixes, the focused backend set passed 33 tests, the focused web set passed six tests, and the expanded Screen Effects/runtime set passed 74 tests. The first post-fix Storybook interaction run found one stale story assertion after the no-destination copy was clarified; the assertion was updated without weakening behavior, and the complete rerun passed 223 interactions in 22 suites.
+
 ## Final automated acceptance
 
 The final repository gates passed on 2026-09-13:
 
 - `corepack.cmd pnpm lint`
 - `corepack.cmd pnpm typecheck`
-- `corepack.cmd pnpm test`: 231 files and 1,969 Vitest tests, plus four native-exit/audio-fixture Node tests
+- `corepack.cmd pnpm test`: 231 files and 1,978 Vitest tests, plus four native-exit/audio-fixture Node tests
 - `corepack.cmd pnpm build`
 - `corepack.cmd pnpm build-storybook`
 - `corepack.cmd pnpm test:storybook:ci`: 223 interactions in 22 suites

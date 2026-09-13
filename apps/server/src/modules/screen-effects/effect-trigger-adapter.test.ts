@@ -3,8 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { StreamerBotEventEnvelope } from "../streamerbot/streamerbot-client.js";
 import {
   createNormalizedEffectTriggers,
-  createStreamerBotEffectTriggers,
-  MissingStreamerBotEventIdError
+  createStreamerBotEffectTriggers
 } from "./effect-trigger-adapter.js";
 
 describe("effect trigger adapters", () => {
@@ -120,16 +119,40 @@ describe("effect trigger adapters", () => {
     expect(triggers[0]?.summary).toHaveLength(256);
   });
 
-  it("rejects configured custom envelopes that lack a stable event identity", () => {
-    expect(() => createStreamerBotEffectTriggers(
-      streamerBotEnvelope("OBS", "SceneChanged", { sceneName: "Live" }),
+  it("derives a stable transport identity without trusting payload identity fields", () => {
+    const envelope = streamerBotEnvelope("OBS", "SceneChanged", {
+      eventId: "attacker-selected-event-id",
+      id: "attacker-selected-id",
+      messageId: "attacker-selected-message-id",
+      sceneName: "Live"
+    });
+    const first = createStreamerBotEffectTriggers(
+      envelope,
       null,
       {
         providerId: "provider-streamerbot",
         twitchBroadcasterId: null,
         externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
       }
-    )).toThrow(MissingStreamerBotEventIdError);
+    );
+    const repeated = createStreamerBotEffectTriggers(envelope, null, {
+      providerId: "provider-streamerbot",
+      twitchBroadcasterId: null,
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    });
+
+    expect(first[0]?.eventId).toMatch(/^streamerbot:[a-f0-9]{64}$/u);
+    expect(first[0]?.eventId).not.toContain("attacker-selected");
+    expect(repeated[0]?.eventId).toBe(first[0]?.eventId);
+    expect(createStreamerBotEffectTriggers(
+      { ...envelope, data: { ...envelope.data, sceneName: "Ending" } },
+      null,
+      {
+        providerId: "provider-streamerbot",
+        twitchBroadcasterId: null,
+        externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+      }
+    )[0]?.eventId).not.toBe(first[0]?.eventId);
   });
 });
 

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   effectTriggerSchema,
   externalStreamEventSchema,
@@ -15,15 +16,6 @@ export interface StreamerBotEffectTriggerContext {
 
 export interface EffectTriggerSink {
   handleTriggers(triggers: readonly EffectTrigger[]): Promise<unknown>;
-}
-
-export class MissingStreamerBotEventIdError extends Error {
-  readonly code = "STREAMERBOT_EVENT_ID_MISSING";
-
-  constructor() {
-    super("Configured Streamer.bot event did not include a stable event ID");
-    this.name = "MissingStreamerBotEventIdError";
-  }
 }
 
 export function createNormalizedEffectTriggers(event: NormalizedStreamEvent): readonly EffectTrigger[] {
@@ -71,10 +63,6 @@ export function createStreamerBotEffectTriggers(
   if (!isExplicitlySubscribed(envelope, context.externalSubscriptions)) {
     return triggers;
   }
-  if (eventId === null) {
-    throw new MissingStreamerBotEventIdError();
-  }
-
   const externalEvent = externalStreamEventSchema.parse({
     id: eventId,
     ingestProvider: "streamerbot",
@@ -112,12 +100,28 @@ function isExplicitlySubscribed(
   );
 }
 
-function stableEnvelopeEventId(envelope: StreamerBotEventEnvelope): string | null {
-  for (const value of [envelope.id, envelope.data.eventId, envelope.data.id, envelope.data.messageId]) {
-    const id = boundedIdentity(value);
-    if (id !== null) return id;
+function stableEnvelopeEventId(envelope: StreamerBotEventEnvelope): string {
+  const transportId = boundedIdentity(envelope.id);
+  if (transportId !== null) return transportId;
+  const fingerprint = canonicalJson({
+    timeStamp: envelope.timeStamp,
+    event: envelope.event,
+    data: envelope.data
+  });
+  return `streamerbot:${createHash("sha256").update(fingerprint).digest("hex")}`;
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value) ?? "null";
   }
-  return null;
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
+  }
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, item]) => item !== undefined)
+    .sort(([left], [right]) => left.localeCompare(right));
+  return `{${entries.map(([key, item]) => `${JSON.stringify(key)}:${canonicalJson(item)}`).join(",")}}`;
 }
 
 function summaryFromPayload(payload: Record<string, unknown>, source: string, type: string): string {

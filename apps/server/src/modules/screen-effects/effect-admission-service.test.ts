@@ -60,6 +60,8 @@ function service(options: {
   readonly now?: () => number;
   readonly random?: () => number;
   readonly validateReferences?: (content: EffectContentSnapshot) => Promise<boolean>;
+  readonly validateOutputAvailability?: (content: EffectContentSnapshot) => Promise<boolean>;
+  readonly isModuleEnabled?: () => Promise<boolean>;
 }) {
   let nextId = 0;
   return new EffectAdmissionService({
@@ -76,7 +78,9 @@ function service(options: {
     generateOccurrenceId: () => `occurrence-${nextId++}`,
     random: options.random ?? (() => 0),
     now: options.now ?? (() => 1_000),
-    validateReferences: options.validateReferences ?? (async () => true)
+    validateReferences: options.validateReferences ?? (async () => true),
+    validateOutputAvailability: options.validateOutputAvailability ?? (async () => true),
+    isModuleEnabled: options.isModuleEnabled ?? (async () => true)
   });
 }
 
@@ -184,6 +188,51 @@ describe("EffectAdmissionService", () => {
     });
   });
 
+  it("does not reserve dedupe or enqueue work while the module is disabled", async () => {
+    const queue = new DefaultEffectQueue();
+    let enabled = false;
+    const admission = service({
+      documents: () => [effect("gated")],
+      queue,
+      isModuleEnabled: async () => enabled
+    });
+
+    await expect(admission.handleTriggers([trigger("gated-event")])).resolves.toEqual({
+      status: "module-disabled",
+      eventId: "gated-event",
+      outcomes: []
+    });
+    await expect(admission.testEffectVariant("gated", "variant-gated")).resolves.toMatchObject({
+      effectId: "gated",
+      status: "module-disabled"
+    });
+    enabled = true;
+    await expect(admission.handleTriggers([trigger("gated-event")])).resolves.toMatchObject({
+      status: "processed",
+      outcomes: [{ effectId: "gated", status: "queued" }]
+    });
+    expect(queue.snapshot().queued).toHaveLength(1);
+  });
+
+  it("fails closed when references or every selected output are unavailable", async () => {
+    const missing = service({
+      documents: () => [effect("missing")],
+      validateReferences: async () => false
+    });
+    await expect(missing.handleTriggers([trigger("missing-event")])).resolves.toMatchObject({
+      outcomes: [{ effectId: "missing", status: "missing-reference" }]
+    });
+
+    const unavailable = service({
+      documents: () => [effect("unavailable")],
+      validateOutputAvailability: async () => false
+    });
+    await expect(unavailable.testEffectVariant("unavailable", "variant-unavailable")).resolves.toMatchObject({
+      effectId: "unavailable",
+      status: "unavailable-output"
+    });
+  });
+
   it("rejects a trigger batch that mixes upstream event IDs", async () => {
     const admission = service({ documents: () => [effect("one")] });
 
@@ -247,10 +296,11 @@ describe("EffectAdmissionService", () => {
 
   it("rejects expired and missing-reference replay without mutating pending work", async () => {
     const queue = new DefaultEffectQueue();
+    let referencesAvailable = true;
     const admission = service({
       documents: () => [effect("replay")],
       queue,
-      validateReferences: async () => false
+      validateReferences: async () => referencesAvailable
     });
 
     await expect(admission.replayRecent("expired")).rejects.toThrow("not retained");
@@ -258,6 +308,7 @@ describe("EffectAdmissionService", () => {
     const originalId = admitted.outcomes[0]!.occurrenceId!;
     queue.advance({ paused: false, muted: false, doNotDisturb: false });
     queue.complete(originalId, "completed", 2_000);
+    referencesAvailable = false;
 
     await expect(admission.replayRecent(originalId)).resolves.toMatchObject({
       effectId: "replay",

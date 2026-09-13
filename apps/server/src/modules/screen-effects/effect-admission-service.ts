@@ -17,7 +17,9 @@ export type EffectAdmissionOutcomeStatus =
   | "cooldown"
   | "full"
   | "no-output"
-  | "missing-reference";
+  | "missing-reference"
+  | "unavailable-output"
+  | "module-disabled";
 
 export interface EffectAdmissionOutcome {
   readonly effectId: string;
@@ -26,6 +28,7 @@ export interface EffectAdmissionOutcome {
 }
 
 export type EffectAdmissionResult =
+  | { readonly status: "module-disabled"; readonly eventId: string; readonly outcomes: readonly [] }
   | { readonly status: "duplicate"; readonly eventId: string; readonly outcomes: readonly [] }
   | { readonly status: "no-matches"; readonly eventId: string; readonly outcomes: readonly [] }
   | {
@@ -44,6 +47,8 @@ export interface EffectAdmissionServiceOptions {
   readonly random?: () => number;
   readonly now?: () => number;
   readonly validateReferences?: (content: EffectContentSnapshot) => Promise<boolean>;
+  readonly validateOutputAvailability?: (content: EffectContentSnapshot) => Promise<boolean>;
+  readonly isModuleEnabled?: () => Promise<boolean>;
   readonly onOutcome?: (result: EffectAdmissionResult) => void | Promise<void>;
 }
 
@@ -87,6 +92,8 @@ export class EffectAdmissionService {
   readonly #random: () => number;
   readonly #now: () => number;
   readonly #validateReferences: (content: EffectContentSnapshot) => Promise<boolean>;
+  readonly #validateOutputAvailability: (content: EffectContentSnapshot) => Promise<boolean>;
+  readonly #isModuleEnabled: () => Promise<boolean>;
   readonly #onOutcome: NonNullable<EffectAdmissionServiceOptions["onOutcome"]>;
   #nextSequence = 0;
 
@@ -100,6 +107,8 @@ export class EffectAdmissionService {
     this.#random = options.random ?? Math.random;
     this.#now = options.now ?? Date.now;
     this.#validateReferences = options.validateReferences ?? (async () => true);
+    this.#validateOutputAvailability = options.validateOutputAvailability ?? (async () => true);
+    this.#isModuleEnabled = options.isModuleEnabled ?? (async () => true);
     this.#onOutcome = options.onOutcome ?? (() => {});
   }
 
@@ -108,6 +117,9 @@ export class EffectAdmissionService {
     const eventId = triggers[0]!.eventId;
     if (triggers.some((trigger) => trigger.eventId !== eventId)) {
       throw new TypeError("Screen Effects trigger batches must describe one upstream event");
+    }
+    if (!await this.#isModuleEnabled()) {
+      return this.#report({ status: "module-disabled", eventId, outcomes: [] });
     }
 
     if (!this.#dedupe.acceptKey(EFFECT_DEDUPE_NAMESPACE, eventId)) {
@@ -120,6 +132,9 @@ export class EffectAdmissionService {
     ]);
     validateCooldown(moduleCooldownSeconds);
     const matches = matchEffects(documents, triggers);
+    if (!await this.#isModuleEnabled()) {
+      return this.#report({ status: "module-disabled", eventId, outcomes: [] });
+    }
     if (matches.length === 0) {
       return this.#report({ status: "no-matches", eventId, outcomes: [] });
     }
@@ -128,6 +143,7 @@ export class EffectAdmissionService {
   }
 
   async testEffect(effectId: string): Promise<EffectAdmissionOutcome> {
+    if (!await this.#isModuleEnabled()) return { effectId, status: "module-disabled" };
     const document = await this.#repository.find(effectId);
     if (document === null) {
       throw new EffectDefinitionNotFoundError(effectId);
@@ -140,6 +156,7 @@ export class EffectAdmissionService {
   }
 
   async testEffectVariant(effectId: string, variantId: string): Promise<EffectAdmissionOutcome> {
+    if (!await this.#isModuleEnabled()) return { effectId, status: "module-disabled" };
     const document = await this.#repository.find(effectId);
     if (document === null) {
       throw new EffectDefinitionNotFoundError(effectId);
@@ -164,6 +181,9 @@ export class EffectAdmissionService {
     if (retained === undefined) {
       throw new EffectRecentOccurrenceNotFoundError(occurrenceId);
     }
+    if (!await this.#isModuleEnabled()) {
+      return { effectId: retained.content.effectId, status: "module-disabled" };
+    }
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId: retained.content.effectId, status: "full" };
     }
@@ -174,11 +194,17 @@ export class EffectAdmissionService {
     content: EffectContentSnapshot,
     trigger: EffectTrigger | null
   ): Promise<EffectAdmissionOutcome> {
+    if (!await this.#isModuleEnabled()) {
+      return { effectId: content.effectId, status: "module-disabled" };
+    }
     if (!hasSelectedOutput(content.variant)) {
       return { effectId: content.effectId, status: "no-output" };
     }
     if (!await this.#validateReferences(content)) {
       return { effectId: content.effectId, status: "missing-reference" };
+    }
+    if (!await this.#validateOutputAvailability(content)) {
+      return { effectId: content.effectId, status: "unavailable-output" };
     }
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId: content.effectId, status: "full" };
@@ -220,6 +246,18 @@ export class EffectAdmissionService {
       const content = resolveEffectContent(document, this.#random());
       if (!hasSelectedOutput(content.variant)) {
         outcomes.push({ effectId: document.id, status: "no-output" });
+        continue;
+      }
+      if (!await this.#validateReferences(content)) {
+        outcomes.push({ effectId: document.id, status: "missing-reference" });
+        continue;
+      }
+      if (!await this.#validateOutputAvailability(content)) {
+        outcomes.push({ effectId: document.id, status: "unavailable-output" });
+        continue;
+      }
+      if (!await this.#isModuleEnabled()) {
+        outcomes.push({ effectId: document.id, status: "module-disabled" });
         continue;
       }
 

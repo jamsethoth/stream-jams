@@ -163,8 +163,7 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
     for (const variant of document.variants) {
       if (variant.visual !== null) {
         const row = findAsset.get(variant.visual.assetId);
-        const expected = variant.visual.mediaType === "video" ? "video" : "image";
-        if (row === undefined || row.media_type !== expected) {
+        if (row === undefined || row.media_type !== variant.visual.mediaType) {
           throw new Error(`Screen Effect visual asset "${variant.visual.assetId}" is missing or incompatible`);
         }
       }

@@ -1,6 +1,7 @@
 import {
   overlayInstructionSchema,
   type AudioPlaybackSink,
+  type EffectContentSnapshot,
   type EffectOccurrence,
   type EffectQueue,
   type EffectQueueSnapshot,
@@ -29,6 +30,9 @@ export interface EffectPlaybackCoordinatorOptions {
   readonly desktopVisualSink?: DesktopVisualPlaybackSink | undefined;
   readonly audioOutputService?: EffectPlaybackAudioOutputService | undefined;
   readonly audioPlaybackSink?: AudioPlaybackSink | undefined;
+  readonly isModuleEnabled?: (() => boolean | Promise<boolean>) | undefined;
+  readonly validateReferences?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
+  readonly validateOutputAvailability?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -64,6 +68,9 @@ export class EffectPlaybackCoordinator {
   readonly #desktopVisualSink: DesktopVisualPlaybackSink | null;
   readonly #audioOutputService: EffectPlaybackAudioOutputService | null;
   readonly #audioPlaybackSink: AudioPlaybackSink | null;
+  readonly #isModuleEnabled: () => boolean | Promise<boolean>;
+  readonly #validateReferences: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
+  readonly #validateOutputAvailability: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
   readonly #now: () => number;
   #active: ActivePlayback | null = null;
   #closed = false;
@@ -77,6 +84,9 @@ export class EffectPlaybackCoordinator {
     this.#desktopVisualSink = options.desktopVisualSink ?? null;
     this.#audioOutputService = options.audioOutputService ?? null;
     this.#audioPlaybackSink = options.audioPlaybackSink ?? null;
+    this.#isModuleEnabled = options.isModuleEnabled ?? (() => true);
+    this.#validateReferences = options.validateReferences ?? (() => true);
+    this.#validateOutputAvailability = options.validateOutputAvailability ?? (() => true);
     this.#now = options.now ?? Date.now;
   }
 
@@ -85,6 +95,10 @@ export class EffectPlaybackCoordinator {
   }
 
   async getModuleSnapshot(request: OverlayModuleSnapshotRequest): Promise<OverlayModuleSnapshot> {
+    const enabled = await this.#isModuleEnabled();
+    if (!enabled) {
+      return { moduleId: "screen-effects", enabled: false, instructions: [] };
+    }
     const instructions = this.#active?.browserInstructions.filter((instruction) =>
       instruction.overlayId === request.overlayId
       && instruction.moduleId === request.moduleId
@@ -94,7 +108,7 @@ export class EffectPlaybackCoordinator {
     ) ?? [];
     return {
       moduleId: "screen-effects",
-      enabled: true,
+      enabled,
       instructions: structuredClone(instructions)
     };
   }
@@ -103,11 +117,33 @@ export class EffectPlaybackCoordinator {
     if (this.#closed || this.#starting || this.#active !== null) return;
     this.#starting = true;
     try {
-      const occurrence = this.#queue.advance(this.#getSafety());
-      if (occurrence !== null) this.#start(occurrence);
+      while (!this.#closed && this.#active === null && await this.#isModuleEnabled()) {
+        const occurrence = this.#queue.advance(this.#getSafety());
+        if (occurrence === null) return;
+        const ready = await this.#validateReferences(occurrence.content)
+          && await this.#validateOutputAvailability(occurrence.content)
+          && await this.#isModuleEnabled();
+        if (this.#queue.snapshot().current?.id !== occurrence.id) return;
+        if (!ready) {
+          this.#queue.complete(occurrence.id, "failed", this.#now());
+          continue;
+        }
+        this.#start(occurrence);
+      }
     } finally {
       this.#starting = false;
     }
+  }
+
+  async disable(): Promise<void> {
+    this.#queue.clearPending();
+    const currentId = this.#queue.snapshot().current?.id;
+    if (currentId === undefined) return;
+    if (this.#active === null) {
+      this.#queue.complete(currentId, "failed", this.#now());
+      return;
+    }
+    await this.#stopAndComplete(currentId, "failed");
   }
 
   reportInstructionFinished(
@@ -332,19 +368,14 @@ interface BrowserTarget {
   readonly targetProfileId?: "landscape" | "vertical";
 }
 
-const browserTargets: readonly BrowserTarget[] = [
-  { scope: "module" },
-  { scope: "module", targetProfileId: "landscape" },
-  { scope: "module", targetProfileId: "vertical" },
-  { scope: "unified" }
-];
+const browserTargets: readonly BrowserTarget[] = [{ scope: "module" }, { scope: "unified" }];
 
 function createBrowserInstructions(
   occurrence: EffectOccurrence,
   startsAtEpochMs: number
 ): readonly OverlayInstruction[] {
   const { variant } = occurrence.content;
-  const purpose = occurrence.trigger === null ? "test" : "live";
+  const purpose = "live";
   const instructions: OverlayInstruction[] = [];
   for (const target of browserTargets) {
     const suffix = `${target.scope}:${target.targetProfileId ?? "default"}`;
@@ -406,7 +437,7 @@ function createDesktopInstructions(
   return [createInstruction({
     occurrence,
     id: `${effectOccurrenceKey("screen-effects", occurrence.id)}:desktop-visual`,
-    purpose: occurrence.trigger === null ? "test" : "live",
+    purpose: "live",
     target: { scope: "module", targetProfileId: "landscape" },
     startsAtEpochMs,
     visual: {

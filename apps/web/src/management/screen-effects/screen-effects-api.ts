@@ -7,7 +7,13 @@ import {
   type HttpManagementClientOptions
 } from "../management-http-client.js";
 
-export type EffectLiveTestStatus = "queued" | "full" | "no-output" | "missing-reference";
+export type EffectLiveTestStatus =
+  | "queued"
+  | "full"
+  | "no-output"
+  | "missing-reference"
+  | "unavailable-output"
+  | "module-disabled";
 
 export interface EffectLiveTestResult {
   readonly effectId: string;
@@ -19,13 +25,23 @@ export interface ScreenEffectBrowserSource {
   readonly id: string;
   readonly label: string;
   readonly purpose: "live" | "test";
+  readonly overlayId: string;
+  readonly scope: "module";
+  readonly moduleId: "screen-effects";
+  readonly targetProfileId: null;
   readonly enabled: boolean;
+  readonly keyId: string | null;
+  readonly url: string | null;
   readonly status: "available" | "create-required" | "regenerate-required";
 }
 
 export interface ScreenEffectsApi {
   list(): Promise<readonly ScreenEffectDocument[]>;
   listBrowserSources(): Promise<readonly ScreenEffectBrowserSource[]>;
+  getModuleEnabled(): Promise<boolean>;
+  setModuleEnabled(enabled: boolean): Promise<boolean>;
+  createBrowserSource(source: ScreenEffectBrowserSource): Promise<ScreenEffectBrowserSource>;
+  regenerateBrowserSource(source: ScreenEffectBrowserSource): Promise<ScreenEffectBrowserSource>;
   get(effectId: string): Promise<ScreenEffectDocument>;
   create(document: ScreenEffectDocument): Promise<ScreenEffectDocument>;
   update(
@@ -53,6 +69,33 @@ export function createHttpScreenEffectsApi(options: HttpManagementClientOptions 
       );
       if (!Array.isArray(response)) throw new TypeError("Expected a Browser Sources response array");
       return response.flatMap((candidate) => parseBrowserSource(candidate));
+    },
+    async getModuleEnabled() {
+      return parseModuleEnabled(await client.getJson(
+        "/overlay-modules/screen-effects/config",
+        "Unable to load the Screen Effects module status."
+      ));
+    },
+    async setModuleEnabled(enabled) {
+      return parseModuleEnabled(await client.patchJson(
+        "/overlay-modules/screen-effects/enabled",
+        { enabled },
+        `Unable to ${enabled ? "enable" : "disable"} the Screen Effects module.`
+      ));
+    },
+    async createBrowserSource(source) {
+      return parseBrowserSourceMutation(await client.postJson(
+        "/management/overlay-outputs/keys",
+        outputRequest(source),
+        "Unable to create the Screen Effects Browser Source URL."
+      ));
+    },
+    async regenerateBrowserSource(source) {
+      return parseBrowserSourceMutation(await client.postJson(
+        "/management/overlay-outputs/keys/regenerate",
+        outputRequest(source),
+        "Unable to regenerate the Screen Effects Browser Source URL."
+      ));
     },
     async get(effectId) {
       return screenEffectDocumentSchema.parse(
@@ -94,7 +137,7 @@ function parseTestResult(candidate: unknown): EffectLiveTestResult {
   const value = candidate as Record<string, unknown>;
   if (
     typeof value.effectId !== "string"
-    || !["queued", "full", "no-output", "missing-reference"].includes(String(value.status))
+    || !["queued", "full", "no-output", "missing-reference", "unavailable-output", "module-disabled"].includes(String(value.status))
     || (value.occurrenceId !== undefined && typeof value.occurrenceId !== "string")
   ) {
     throw new TypeError("The Screen Effect test returned an invalid response");
@@ -115,15 +158,57 @@ function parseBrowserSource(candidate: unknown): readonly ScreenEffectBrowserSou
     || typeof value.label !== "string"
     || (value.purpose !== "live" && value.purpose !== "test")
     || typeof value.enabled !== "boolean"
+    || typeof value.overlayId !== "string"
+    || value.targetProfileId !== null
+    || (value.keyId !== null && typeof value.keyId !== "string")
+    || (value.url !== null && typeof value.url !== "string")
     || !["available", "create-required", "regenerate-required"].includes(String(value.copyableUrlStatus))
   ) return [];
   return [{
     id: value.id,
     label: value.label,
     purpose: value.purpose,
+    overlayId: value.overlayId,
+    scope: "module",
+    moduleId: "screen-effects",
+    targetProfileId: null,
     enabled: value.enabled,
+    keyId: value.keyId as string | null,
+    url: value.url as string | null,
     status: value.copyableUrlStatus as ScreenEffectBrowserSource["status"]
   }];
+}
+
+function parseModuleEnabled(candidate: unknown): boolean {
+  if (typeof candidate !== "object" || candidate === null) {
+    throw new TypeError("The Screen Effects module returned an invalid response");
+  }
+  const value = candidate as Record<string, unknown>;
+  if (value.moduleId !== "screen-effects" || typeof value.enabled !== "boolean") {
+    throw new TypeError("The Screen Effects module returned an invalid response");
+  }
+  return value.enabled;
+}
+
+function parseBrowserSourceMutation(candidate: unknown): ScreenEffectBrowserSource {
+  if (typeof candidate !== "object" || candidate === null) {
+    throw new TypeError("The Screen Effects Browser Source returned an invalid response");
+  }
+  const parsed = parseBrowserSource((candidate as Record<string, unknown>).output)[0];
+  if (parsed === undefined) {
+    throw new TypeError("The Screen Effects Browser Source returned an invalid response");
+  }
+  return parsed;
+}
+
+function outputRequest(source: ScreenEffectBrowserSource) {
+  return {
+    overlayId: source.overlayId,
+    scope: source.scope,
+    moduleId: source.moduleId,
+    purpose: source.purpose,
+    targetProfileId: source.targetProfileId
+  };
 }
 
 export const defaultScreenEffectsApi = createHttpScreenEffectsApi();

@@ -4,6 +4,7 @@ import {
 } from "@stream-jams/core";
 import { useCallback, useEffect, useState } from "react";
 import { ModalSurface } from "../foundation/ModalSurface.js";
+import { MaskedValue } from "../foundation/MaskedValue.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import type {
   ScreenEffectBrowserSource,
@@ -18,13 +19,17 @@ export interface ScreenEffectsPageProps {
 }
 
 type Confirmation =
-  | { readonly kind: "enable"; readonly document: ScreenEffectDocument }
+  | { readonly kind: "effect-enable"; readonly document: ScreenEffectDocument }
   | { readonly kind: "delete"; readonly document: ScreenEffectDocument }
+  | { readonly kind: "module"; readonly enabled: boolean }
+  | { readonly kind: "regenerate"; readonly source: ScreenEffectBrowserSource }
   | null;
 
 export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: ScreenEffectsPageProps) {
   const [documents, setDocuments] = useState<readonly ScreenEffectDocument[]>([]);
   const [browserSources, setBrowserSources] = useState<readonly ScreenEffectBrowserSource[]>([]);
+  const [moduleEnabled, setModuleEnabled] = useState<boolean | null>(null);
+  const [regenerateConfirmation, setRegenerateConfirmation] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -34,9 +39,14 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [loadedDocuments, loadedSources] = await Promise.all([api.list(), api.listBrowserSources()]);
+      const [loadedDocuments, loadedSources, loadedModuleEnabled] = await Promise.all([
+        api.list(),
+        api.listBrowserSources(),
+        api.getModuleEnabled()
+      ]);
       setDocuments(loadedDocuments);
       setBrowserSources(loadedSources);
+      setModuleEnabled(loadedModuleEnabled);
       setError(null);
     } catch (loadError) {
       setError(message(loadError, "Screen Effects could not be loaded."));
@@ -69,8 +79,16 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
   async function confirm() {
     if (confirmation === null) return;
     setBusy(true);
+    setError(null);
     try {
-      if (confirmation.kind === "delete") {
+      if (confirmation.kind === "module") {
+        await api.setModuleEnabled(confirmation.enabled);
+        setNotice(`Screen Effects module is now ${confirmation.enabled ? "enabled" : "disabled"}.`);
+      } else if (confirmation.kind === "regenerate") {
+        await api.regenerateBrowserSource(confirmation.source);
+        setNotice(`${confirmation.source.label} URL was regenerated. Update every browser source that used the old URL.`);
+        setRegenerateConfirmation("");
+      } else if (confirmation.kind === "delete") {
         await api.remove(confirmation.document.id);
         setNotice(`${confirmation.document.name} was deleted.`);
       } else {
@@ -90,11 +108,25 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
     }
   }
 
+  async function createBrowserSource(source: ScreenEffectBrowserSource) {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.createBrowserSource(source);
+      setNotice(`${source.label} URL was created.`);
+      await load();
+    } catch (mutationError) {
+      setError(message(mutationError, "The Screen Effects Browser Source URL was not created."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return <div className="screen-effects-page">
     <section aria-labelledby="screen-effects-inventory-title" className="management-card screen-effects-inventory">
       <header className="screen-effects-section-header">
-        <div><p className="management-eyebrow">Local module</p><h2 id="screen-effects-inventory-title">Screen Effects</h2><p>Coordinate one visual and one optional sound from trusted stream events.</p></div>
-        <button onClick={() => onEdit(generateId("effect"), true)} type="button">New effect</button>
+        <div><p className="management-eyebrow">Local module</p><h2 id="screen-effects-inventory-title">Screen Effects</h2><p>Coordinate one visual and one optional sound from trusted stream events.</p>{moduleEnabled === null ? null : <StatusBadge label={moduleEnabled ? "Module enabled" : "Module disabled"} tone={moduleEnabled ? "positive" : "neutral"} />}</div>
+        <div className="screen-effects-list__actions"><button className="button button--secondary" disabled={busy || moduleEnabled === null} onClick={() => setConfirmation({ kind: "module", enabled: !moduleEnabled })} type="button">{moduleEnabled ? "Disable Screen Effects module" : "Enable Screen Effects module"}</button><button onClick={() => onEdit(generateId("effect"), true)} type="button">New effect</button></div>
       </header>
       {notice === null ? null : <p role="status">{notice}</p>}
       {error === null ? null : <p role="alert">{error} Retry or open Diagnostics for the server reference.</p>}
@@ -110,7 +142,7 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
           <div className="screen-effects-list__actions">
             <button className="button button--secondary" onClick={() => onEdit(document.id, false)} type="button">Edit</button>
             <button className="button button--secondary" disabled={busy} onClick={() => void copy(document)} type="button">Copy</button>
-            <button className="button button--secondary" onClick={() => setConfirmation({ kind: "enable", document })} type="button">{document.enabled ? "Disable" : "Enable"}</button>
+            <button className="button button--secondary" onClick={() => setConfirmation({ kind: "effect-enable", document })} type="button">{document.enabled ? "Disable" : "Enable"}</button>
             <button className="button button--danger" onClick={() => setConfirmation({ kind: "delete", document })} type="button">Delete</button>
           </div>
           <p><a href="/manage/event-sources">Review trigger setup</a> · {document.bindings.length === 0 ? "No trigger configured" : `${document.bindings.length} configured trigger${document.bindings.length === 1 ? "" : "s"}`}</p>
@@ -121,18 +153,40 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
     <section aria-labelledby="screen-effects-browser-title" className="management-card screen-effects-browser-sources">
       <h2 id="screen-effects-browser-title">Browser sources</h2>
       <p>Screen Effects uses its own module source or an enabled unified source. Keep Browser Source audio separate from visual surface membership.</p>
-      {browserSources.length === 0 ? <p>No Screen Effects Browser Source is configured.</p> : <ul>{browserSources.map((source) => <li key={source.id}><strong>{source.label}</strong><span>{source.purpose} · {source.status === "available" ? "ready to copy" : source.status.replace("-", " ")}</span></li>)}</ul>}
-      <a href="/manage/modules/alerts#browser-sources">Review Browser Source setup</a>
+      {browserSources.length === 0 ? <p>No Screen Effects Browser Source output is registered.</p> : <ul>{browserSources.map((source) => <li key={source.id}><div><strong>{source.label}</strong><span>{source.purpose} · {source.status === "available" ? "URL available" : source.status.replace("-", " ")}</span></div>{source.url === null ? null : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />}<div className="screen-effects-list__actions">{source.status === "create-required" ? <button disabled={busy} onClick={() => void createBrowserSource(source)} type="button">Create URL</button> : <button className="button button--danger" disabled={busy} onClick={() => { setRegenerateConfirmation(""); setConfirmation({ kind: "regenerate", source }); }} type="button">Regenerate URL</button>}</div></li>)}</ul>}
     </section>
 
     <ModalSurface labelledBy="screen-effect-confirm-title" onCancel={() => setConfirmation(null)} open={confirmation !== null}>
       {confirmation === null ? null : <div>
-        <h2 id="screen-effect-confirm-title">{confirmation.kind === "delete" ? "Delete Screen Effect?" : `${confirmation.document.enabled ? "Disable" : "Enable"} Screen Effect?`}</h2>
-        <p>{confirmation.kind === "delete" ? `Delete ${confirmation.document.name} and its saved variants and triggers.` : `This changes live admission for ${confirmation.document.name}. Current and queued occurrences keep their saved snapshots.`}</p>
-        <div className="management-modal__actions"><button className="button button--secondary" onClick={() => setConfirmation(null)} type="button">Cancel</button><button disabled={busy} onClick={() => void confirm()} type="button">Confirm change</button></div>
+        <h2 id="screen-effect-confirm-title">{confirmationTitle(confirmation)}</h2>
+        <p>{confirmationMessage(confirmation)}</p>
+        {confirmation.kind === "regenerate" ? <label><span>Type REGENERATE to continue</span><input autoComplete="off" onChange={(event) => setRegenerateConfirmation(event.currentTarget.value)} value={regenerateConfirmation} /></label> : null}
+        <div className="management-modal__actions"><button className="button button--secondary" onClick={() => { setConfirmation(null); setRegenerateConfirmation(""); }} type="button">Cancel</button><button className={confirmation.kind === "delete" || confirmation.kind === "regenerate" ? "button button--danger" : undefined} disabled={busy || (confirmation.kind === "regenerate" && regenerateConfirmation !== "REGENERATE")} onClick={() => void confirm()} type="button">{confirmation.kind === "regenerate" ? "Regenerate URL" : "Confirm change"}</button></div>
       </div>}
     </ModalSurface>
   </div>;
+}
+
+function confirmationTitle(confirmation: Exclude<Confirmation, null>): string {
+  if (confirmation.kind === "delete") return "Delete Screen Effect?";
+  if (confirmation.kind === "regenerate") return `Regenerate ${confirmation.source.label} URL?`;
+  if (confirmation.kind === "module") return `${confirmation.enabled ? "Enable" : "Disable"} Screen Effects module?`;
+  return `${confirmation.document.enabled ? "Disable" : "Enable"} Screen Effect?`;
+}
+
+function confirmationMessage(confirmation: Exclude<Confirmation, null>): string {
+  if (confirmation.kind === "delete") {
+    return `Delete ${confirmation.document.name} and its saved variants and triggers.`;
+  }
+  if (confirmation.kind === "regenerate") {
+    return "The current URL will stop working immediately. Update every browser source that uses it.";
+  }
+  if (confirmation.kind === "module") {
+    return confirmation.enabled
+      ? "Enabled Screen Effects may accept trusted live events. Individual effects remain independently controlled."
+      : "Disabling the module stops its current occurrence and clears its pending queue. Saved effects remain available.";
+  }
+  return `This changes live admission for ${confirmation.document.name}. Current and queued occurrences keep their saved snapshots.`;
 }
 
 function defaultId(prefix: string): string {

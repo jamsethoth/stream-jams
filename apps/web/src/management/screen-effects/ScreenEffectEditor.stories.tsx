@@ -110,7 +110,7 @@ export const NoOutputs: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Live Test…" }));
-    await expect(within(document.body).getByRole("alert")).toHaveTextContent("No enabled destination");
+    await expect(within(document.body).getByRole("alert")).toHaveTextContent("No destination is selected");
     await expect(within(document.body).getByRole("button", { name: "Confirm live test" })).toBeDisabled();
   }
 };
@@ -151,6 +151,10 @@ function createApi(
   return {
     list: async () => [document],
     listBrowserSources: async () => [],
+    getModuleEnabled: async () => true,
+    setModuleEnabled: async (enabled) => enabled,
+    createBrowserSource: async (source) => source,
+    regenerateBrowserSource: async (source) => source,
     get: async () => structuredClone(document),
     create: async (candidate) => candidate,
     update: async (_effectId, candidate) => candidate,

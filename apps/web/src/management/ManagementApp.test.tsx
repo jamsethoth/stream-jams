@@ -828,6 +828,10 @@ function createScreenEffectsApi(): ScreenEffectsApi {
   return {
     list: vi.fn(async () => []),
     listBrowserSources: vi.fn(async () => []),
+    getModuleEnabled: vi.fn(async () => true),
+    setModuleEnabled: vi.fn(async (enabled) => enabled),
+    createBrowserSource: vi.fn(async (source) => source),
+    regenerateBrowserSource: vi.fn(async (source) => source),
     get: vi.fn(async () => { throw new Error("not called"); }),
     create: vi.fn(async (document) => document),
     update: vi.fn(async (_effectId, document) => document),

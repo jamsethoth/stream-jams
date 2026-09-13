@@ -26,6 +26,8 @@ import {
   type DesktopConfig,
   type DesktopAudioTransport,
   type DesktopOverlayTransport,
+  type EffectContentSnapshot,
+  type OverlayModuleConfigService,
   type OverlayModuleRuntime,
   type PlaybackSafetyState,
   type AlertBrowserSourceView,
@@ -453,6 +455,73 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const playbackCooldownService = new DefaultPlaybackCooldownService();
   const playbackDedupeService = new DefaultPlaybackDedupeService();
+  const isEffectModuleEnabled = async () =>
+    (await overlayModuleConfigService.getModuleConfig("screen-effects")).enabled;
+  const validateEffectReferences = async (content: EffectContentSnapshot) => {
+    const assetIds = [
+      ...(content.variant.visual === null ? [] : [content.variant.visual.assetId]),
+      ...(content.variant.sound === null ? [] : [content.variant.sound.assetId])
+    ];
+    const assets = await assetRepository.findManyByIds(assetIds);
+    const visual = content.variant.visual;
+    if (visual !== null && assets.get(visual.assetId)?.mediaType !== visual.mediaType) return false;
+    if (
+      content.variant.sound !== null
+      && assets.get(content.variant.sound.assetId)?.mediaType !== "audio"
+    ) {
+      return false;
+    }
+    return content.variant.outputs.deviceRouteIds.every(
+      (routeId) => audioOutputRouteRepository.findById(routeId) !== null
+    );
+  };
+  const validateEffectOutputAvailability = async (content: EffectContentSnapshot) => {
+    const { variant } = content;
+    const hasBrowserContent = (variant.visual !== null && variant.visualOutputs.browserSource)
+      || (variant.outputs.browserSource && (
+        variant.sound !== null
+        || (variant.visual?.mediaType === "video" && variant.visual.playEmbeddedAudio)
+      ));
+    const browserReady = hasBrowserContent && overlayGateway.clientStates.some(
+      (client) => client.connectionState === "connected"
+        && client.overlayId === "default"
+        && client.purpose === "live"
+        && (
+          (client.scope === "module" && client.moduleId === "screen-effects" && (client.targetProfileId ?? null) === null)
+          || (client.scope === "unified" && client.moduleId === null && (client.targetProfileId ?? null) === null)
+        )
+    );
+
+    let desktopReady = false;
+    if (variant.visual !== null && variant.visualOutputs.desktop && options.desktopOverlayTransport !== undefined) {
+      const surface = (await surfaceRepository.list()).find((candidate) => candidate.kind === "desktop");
+      const displayId = surface?.kind === "desktop" ? surface.displayId : null;
+      desktopReady = surface?.kind === "desktop"
+        && surface.enabled
+        && displayId !== null
+        && surface.layers.some((layer) => layer.moduleId === "screen-effects" && layer.visible);
+      if (desktopReady && options.desktopOverlayTransport.getStatus !== undefined) {
+        try {
+          const status = await options.desktopOverlayTransport.getStatus();
+          desktopReady = status.available
+            && status.state === "ready"
+            && status.displays.some((display) => display.id === displayId);
+        } catch {
+          desktopReady = false;
+        }
+      }
+    }
+
+    let deviceReady = false;
+    if (variant.outputs.deviceRouteIds.length > 0) {
+      const selectedRouteIds = new Set(variant.outputs.deviceRouteIds);
+      const status = await audioOutputService.getStatus();
+      deviceReady = status.routes.some(
+        (route) => selectedRouteIds.has(route.route.id) && route.state === "ready"
+      );
+    }
+    return browserReady || desktopReady || deviceReady;
+  };
   const playbackCoordinator = new PlaybackCoordinator({
     alertService,
     matcher: new DefaultAlertMatcher(),
@@ -511,6 +580,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     audioOutputService,
     ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
     ...(desktopVisualSink === undefined ? {} : { desktopVisualSink }),
+    isModuleEnabled: isEffectModuleEnabled,
+    validateReferences: validateEffectReferences,
+    validateOutputAvailability: validateEffectOutputAvailability,
     now: () => now().getTime()
   });
   const effectAdmissionService = new EffectAdmissionService({
@@ -521,29 +593,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getModuleCooldownSeconds: async () => (await effectModuleSettingsRepository.get()).cooldownSeconds,
     generateOccurrenceId: generateEffectOccurrenceId,
     now: () => now().getTime(),
-    validateReferences: async (content) => {
-      const assetIds = [
-        ...(content.variant.visual === null ? [] : [content.variant.visual.assetId]),
-        ...(content.variant.sound === null ? [] : [content.variant.sound.assetId])
-      ];
-      const assets = await assetRepository.findManyByIds(assetIds);
-      const visual = content.variant.visual;
-      if (
-        visual !== null
-        && assets.get(visual.assetId)?.mediaType !== (visual.mediaType === "video" ? "video" : "image")
-      ) {
-        return false;
-      }
-      if (
-        content.variant.sound !== null
-        && assets.get(content.variant.sound.assetId)?.mediaType !== "audio"
-      ) {
-        return false;
-      }
-      return content.variant.outputs.deviceRouteIds.every(
-        (routeId) => audioOutputRouteRepository.findById(routeId) !== null
-      );
-    },
+    validateReferences: validateEffectReferences,
+    validateOutputAvailability: validateEffectOutputAvailability,
+    isModuleEnabled: isEffectModuleEnabled,
     onOutcome: async (result) => {
       if (result.status !== "processed") return;
       const rejected = result.outcomes.filter((outcome) => outcome.status !== "queued");
@@ -1150,6 +1202,27 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }
   });
+  const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
+    getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
+    async saveModuleConfig(input) {
+      const config = await maintenanceGate.runConfigurationMutation(
+        () => overlayModuleConfigService.saveModuleConfig(input)
+      );
+      if (config.moduleId === "screen-effects" && !config.enabled) {
+        await effectPlaybackCoordinator.disable();
+      }
+      return config;
+    },
+    async setModuleEnabled(moduleId, enabled) {
+      const config = await maintenanceGate.runConfigurationMutation(
+        () => overlayModuleConfigService.setModuleEnabled(moduleId, enabled)
+      );
+      if (config.moduleId === "screen-effects" && !config.enabled) {
+        await effectPlaybackCoordinator.disable();
+      }
+      return config;
+    }
+  };
   const app = createServerApp({
     surfaceSettingsService,
     metadata: {
@@ -1163,7 +1236,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     desktopConfigService,
     audioOutputService,
     overlayModuleRegistry,
-    overlayModuleConfigService,
+    overlayModuleConfigService: runtimeOverlayModuleConfigService,
     moderationService,
     runConfigurationMutation: (work) => maintenanceGate.runConfigurationMutation(work),
     ttsService,

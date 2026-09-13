@@ -16,10 +16,7 @@ import type {
   StreamerBotConnectionState,
   StreamerBotEventEnvelope
 } from "./streamerbot-client.js";
-import {
-  createStreamerBotEffectTriggers,
-  MissingStreamerBotEventIdError
-} from "../screen-effects/effect-trigger-adapter.js";
+import { createStreamerBotEffectTriggers } from "../screen-effects/effect-trigger-adapter.js";
 import {
   normalizeStreamerBotEvent,
   StreamerBotEventNormalizationError
@@ -383,7 +380,7 @@ export class StreamerBotRuntimeService {
         this.#ingestionIssue = null;
       }
     } catch (error) {
-      const message = error instanceof StreamerBotEventNormalizationError || error instanceof MissingStreamerBotEventIdError
+      const message = error instanceof StreamerBotEventNormalizationError
         ? error.message
         : "Streamer.bot event ingestion failed";
       await this.#recordIssue("degraded", message, "error", envelope);

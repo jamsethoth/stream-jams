@@ -131,7 +131,7 @@ describe("StreamerBotRuntimeService", () => {
 
     expect(batches).toEqual([[{
       kind: "streamerbot-event",
-      eventId: "obs-event-1",
+      eventId: expect.stringMatching(/^streamerbot:[a-f0-9]{64}$/u),
       occurredAt: "2026-07-17T12:04:00.000Z",
       providerId: "provider-streamerbot",
       sourceKey: "OBS",

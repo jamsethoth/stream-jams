@@ -123,6 +123,41 @@ describe("SqliteEffectRepository", () => {
     await expect(assets.findById("asset-tone")).resolves.not.toBeNull();
     await expect(effects.find(document.id)).resolves.toEqual(document);
   });
+
+  it("accepts a GIF visual only when the referenced asset is a GIF", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const assets = new SqliteAssetRepository(database.connection);
+    await assets.save({
+      id: "asset-gif",
+      originalFileName: "effect.gif",
+      mediaType: "gif",
+      mimeType: "image/gif",
+      sizeBytes: 4,
+      checksum: "sha256:test-gif",
+      storagePath: "assets/asset-gif.gif"
+    });
+    const draft = createScreenEffectDocument({
+      id: "effect-gif",
+      name: "GIF effect",
+      defaultVariantId: "variant-gif"
+    });
+    const document = screenEffectDocumentSchema.parse({
+      ...draft,
+      variants: [{
+        ...draft.variants[0]!,
+        visual: {
+          mediaType: "gif",
+          assetId: "asset-gif",
+          layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+        },
+        visualOutputs: { browserSource: true, desktop: false }
+      }]
+    });
+
+    const repository = new SqliteEffectRepository(database.connection);
+    await expect(repository.save(document)).resolves.toBeUndefined();
+    await expect(repository.find(document.id)).resolves.toEqual(document);
+  });
 });
 
 async function seedReferences(connection: ConstructorParameters<typeof SqliteEffectRepository>[0]): Promise<void> {

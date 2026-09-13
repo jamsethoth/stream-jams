@@ -105,6 +105,10 @@ function effectApi(document = enabledEffect(false)): ScreenEffectsApi {
   return {
     list: vi.fn(async () => [document]),
     listBrowserSources: vi.fn(async () => []),
+    getModuleEnabled: vi.fn(async () => true),
+    setModuleEnabled: vi.fn(async (enabled) => enabled),
+    createBrowserSource: vi.fn(async (source) => source),
+    regenerateBrowserSource: vi.fn(async (source) => source),
     get: vi.fn(async () => document),
     create: vi.fn(async (candidate) => candidate),
     update: vi.fn(async (_id, candidate) => candidate),

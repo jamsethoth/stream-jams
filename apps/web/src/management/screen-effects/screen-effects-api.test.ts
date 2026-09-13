@@ -20,13 +20,36 @@ describe("createHttpScreenEffectsApi", () => {
         id: "module:screen-effects:live",
         label: "Screen Effects",
         purpose: "live",
+        overlayId: "default",
         scope: "module",
         moduleId: "screen-effects",
+        targetProfileId: null,
         enabled: true,
+        keyId: "key-one",
+        url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_secret",
         copyableUrlStatus: "available"
       }]);
+      if (url === "/overlay-modules/screen-effects/config") return json({
+        moduleId: "screen-effects", enabled: true, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
+      });
       expect(init?.headers).toMatchObject({ authorization: "Bearer mgmt-effects" });
       if (init?.method !== undefined) expect(init.headers).toMatchObject({ "x-stream-jams-csrf": "csrf-effects" });
+      if (url === "/overlay-modules/screen-effects/enabled") return json({
+        moduleId: "screen-effects", enabled: true, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
+      });
+      if (url.startsWith("/management/overlay-outputs/keys")) return json({ output: {
+        id: "module:screen-effects:live",
+        label: "Screen Effects",
+        purpose: "live",
+        overlayId: "default",
+        scope: "module",
+        moduleId: "screen-effects",
+        targetProfileId: null,
+        enabled: true,
+        keyId: "key-two",
+        url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_replaced",
+        copyableUrlStatus: "available"
+      } });
       if (url.endsWith("/test")) return json({ effectId: "effect-one", status: "queued", occurrenceId: "occurrence-one" });
       if (init?.method === "DELETE") return new Response(null, { status: 204 });
       return json(url === "/screen-effects" && init?.method === undefined ? [document] : document, init?.method === "POST" ? 201 : 200);
@@ -38,9 +61,20 @@ describe("createHttpScreenEffectsApi", () => {
       id: "module:screen-effects:live",
       label: "Screen Effects",
       purpose: "live",
+      overlayId: "default",
+      scope: "module",
+      moduleId: "screen-effects",
+      targetProfileId: null,
       enabled: true,
+      keyId: "key-one",
+      url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_secret",
       status: "available"
     }]);
+    await expect(api.getModuleEnabled()).resolves.toBe(true);
+    await expect(api.setModuleEnabled(true)).resolves.toBe(true);
+    const source = (await api.listBrowserSources())[0]!;
+    await expect(api.createBrowserSource(source)).resolves.toMatchObject({ keyId: "key-two" });
+    await expect(api.regenerateBrowserSource(source)).resolves.toMatchObject({ keyId: "key-two" });
     await expect(api.get("effect/one")).resolves.toEqual(document);
     await expect(api.create(document)).resolves.toEqual(document);
     await expect(api.update(document.id, document, true)).resolves.toEqual(document);
@@ -48,6 +82,11 @@ describe("createHttpScreenEffectsApi", () => {
     await expect(api.remove(document.id)).resolves.toBeUndefined();
 
     expect(fetcher.mock.calls.map((call) => String(call[0]))).toContain("/screen-effects/effect%2Fone");
+    const outputMutations = fetcher.mock.calls.filter((call) => String(call[0]).startsWith("/management/overlay-outputs/keys"));
+    expect(outputMutations.map((call) => JSON.parse(String(call[1]?.body)))).toEqual([
+      { overlayId: "default", scope: "module", moduleId: "screen-effects", purpose: "live", targetProfileId: null },
+      { overlayId: "default", scope: "module", moduleId: "screen-effects", purpose: "live", targetProfileId: null }
+    ]);
   });
 
   it("rejects malformed server documents", async () => {

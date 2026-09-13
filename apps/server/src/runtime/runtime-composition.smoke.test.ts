@@ -48,6 +48,68 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("enforces module enablement and real output readiness for Screen Effect tests", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(composition);
+    await new SqliteAssetRepository(composition.database.connection).save({
+      id: "asset-screen-effect-test",
+      originalFileName: "effect.gif",
+      mediaType: "gif",
+      mimeType: "image/gif",
+      sizeBytes: 4,
+      checksum: "sha256:screen-effect-test",
+      storagePath: "gif/effect-test.gif"
+    });
+    const draft = createScreenEffectDocument({
+      id: "effect-runtime-test",
+      name: "Runtime test effect",
+      defaultVariantId: "variant-runtime-test"
+    });
+    await new SqliteEffectRepository(composition.database.connection).save({
+      ...draft,
+      enabled: true,
+      variants: [{
+        ...draft.variants[0]!,
+        visual: {
+          mediaType: "gif",
+          assetId: "asset-screen-effect-test",
+          layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+        },
+        visualOutputs: { browserSource: true, desktop: false }
+      }]
+    });
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const headers = managementAuthHeaders(session);
+    const testUrl = "/screen-effects/effect-runtime-test/test";
+    const payload = { variantId: "variant-runtime-test", confirmLiveImpact: true };
+
+    const disabled = await composition.app.inject({ method: "POST", url: testUrl, headers, payload });
+    expect(disabled.statusCode, disabled.body).toBe(200);
+    expect(disabled.json()).toMatchObject({ status: "module-disabled" });
+
+    const enabled = await composition.app.inject({
+      method: "PATCH",
+      url: "/overlay-modules/screen-effects/enabled",
+      headers,
+      payload: { enabled: true }
+    });
+    expect(enabled.statusCode, enabled.body).toBe(200);
+    const unavailable = await composition.app.inject({ method: "POST", url: testUrl, headers, payload });
+    expect(unavailable.statusCode, unavailable.body).toBe(200);
+    expect(unavailable.json()).toMatchObject({ status: "unavailable-output" });
+    expect(composition.effectPlaybackCoordinator.getSnapshot()).toMatchObject({ current: null, queued: [] });
+  });
+
   it("reports Screen Effect owners through the live asset-management composition", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({

@@ -535,8 +535,8 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
       <p className="management-eyebrow">Explicit live output</p>
       <h2 id="screen-effect-live-test-title">Send live Screen Effect test?</h2>
       <p>The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
-      <p>Affected destinations:</p>
-      {destinations.length === 0 ? <p role="alert">No enabled destination is available.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}
+      <p>Selected destinations (current connection and device readiness are checked when you confirm):</p>
+      {destinations.length === 0 ? <p role="alert">No destination is selected.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}
       <div className="management-modal__actions"><button className="button button--secondary" onClick={onClose} type="button">Cancel</button><button disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</button></div>
     </div>
   </ModalSurface>;
