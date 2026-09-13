@@ -20,29 +20,39 @@ import {
   type ManagementRoute
 } from "./routing/management-route.js";
 import { SettingsPanel } from "./settings/SettingsPanel.js";
+import { ScreenEffectEditor } from "./screen-effects/ScreenEffectEditor.js";
+import { ScreenEffectsPage } from "./screen-effects/ScreenEffectsPage.js";
+import { defaultScreenEffectsApi, type ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
 
 export interface ManagementAppProps {
   readonly audioApi?: AudioApi;
   readonly assetApi: AssetApi;
   readonly managementApi?: ManagementApi | undefined;
+  readonly screenEffectsApi?: ScreenEffectsApi | undefined;
 }
 
 interface ResolvedManagementAppProps {
   readonly audioApi: AudioApi;
   readonly assetApi: AssetApi;
   readonly managementApi: ManagementApi;
+  readonly screenEffectsApi: ScreenEffectsApi;
 }
 
 export function ManagementApp(props: ManagementAppProps) {
   const resolvedManagementApi = useMemo(() => props.managementApi ?? createHttpManagementApi(), [props.managementApi]);
   return (
     <DirtyNavigationProvider>
-      <ManagementAppContent {...props} audioApi={props.audioApi ?? defaultAudioApi} managementApi={resolvedManagementApi} />
+      <ManagementAppContent
+        {...props}
+        audioApi={props.audioApi ?? defaultAudioApi}
+        managementApi={resolvedManagementApi}
+        screenEffectsApi={props.screenEffectsApi ?? defaultScreenEffectsApi}
+      />
     </DirtyNavigationProvider>
   );
 }
 
-function ManagementAppContent({ assetApi, audioApi, managementApi }: ResolvedManagementAppProps) {
+function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffectsApi }: ResolvedManagementAppProps) {
   const navigation = useManagementNavigation();
   const definition = getManagementRouteDefinition(navigation.route);
 
@@ -83,9 +93,9 @@ function ManagementAppContent({ assetApi, audioApi, managementApi }: ResolvedMan
 
   return (
     <div className="app-shell" onClickCapture={handleInternalLinkClick}>
-      {navigation.route.id === "alert-editor" ? null : <ManagementNavigation activeRoute={navigation.route} onNavigate={navigation.requestNavigation} />}
-      <main className={navigation.route.id === "alert-editor" ? "management-main management-main--focused" : "management-main"}>
-        {navigation.route.id === "alert-editor" ? null : <PageHeader
+      {isFocusedEditor(navigation.route) ? null : <ManagementNavigation activeRoute={navigation.route} onNavigate={navigation.requestNavigation} />}
+      <main className={isFocusedEditor(navigation.route) ? "management-main management-main--focused" : "management-main"}>
+        {isFocusedEditor(navigation.route) ? null : <PageHeader
           action={(
             <a className="button button--secondary surface-switch-link" href="/operator">
               Open Operator Console
@@ -103,9 +113,9 @@ function ManagementAppContent({ assetApi, audioApi, managementApi }: ResolvedMan
         )}
         <section
           aria-label={`${definition.title} content`}
-          className={navigation.route.id === "alert-editor" ? "management-route-content management-route-content--focused" : "management-route-content"}
+          className={isFocusedEditor(navigation.route) ? "management-route-content management-route-content--focused" : "management-route-content"}
         >
-          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} />
+          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} screenEffectsApi={screenEffectsApi} />
         </section>
       </main>
       {navigation.guard}
@@ -118,7 +128,8 @@ function RouteContent({
   audioApi,
   managementApi,
   onNavigate,
-  route
+  route,
+  screenEffectsApi
 }: ResolvedManagementAppProps & { readonly onNavigate: (route: ManagementRoute) => void; readonly route: ManagementRoute }) {
   switch (route.id) {
     case "home":
@@ -129,6 +140,8 @@ function RouteContent({
       return <TtsProvidersPage initialProviderId={route.providerId} managementApi={managementApi} openSetupOnLoad={route.setup === "add"} />;
     case "modules-alerts":
       return <AlertSetsPage initialSetId={route.setId} managementApi={managementApi} onEditAlert={(alert) => onNavigate({ id: "alert-editor", alertId: alert.id, setId: alert.setId, eventType: alert.eventType, targetProfileId: alert.targetProfileIds[0] ?? "landscape" })} />;
+    case "modules-screen-effects":
+      return <ScreenEffectsPage api={screenEffectsApi} onEdit={(effectId, create) => onNavigate({ id: "screen-effect-editor", effectId, ...(create ? { create: true as const } : {}) })} />;
     case "alert-safety":
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":
@@ -146,6 +159,18 @@ function RouteContent({
           targetProfileId={route.targetProfileId}
         />
       );
+    case "screen-effect-editor":
+      return route.effectId === undefined ? null : (
+        <ScreenEffectEditor
+          api={screenEffectsApi}
+          assetApi={assetApi}
+          audioApi={audioApi}
+          create={route.create === true}
+          effectId={route.effectId}
+          managementApi={managementApi}
+          onBack={() => onNavigate({ id: "modules-screen-effects" })}
+        />
+      );
     case "assets":
       return <AssetManager assetApi={assetApi} managementApi={managementApi} />;
     case "diagnostics":
@@ -153,4 +178,8 @@ function RouteContent({
     case "settings":
       return <SettingsPanel audioApi={audioApi} managementApi={managementApi} />;
   }
+}
+
+function isFocusedEditor(route: ManagementRoute): boolean {
+  return route.id === "alert-editor" || route.id === "screen-effect-editor";
 }

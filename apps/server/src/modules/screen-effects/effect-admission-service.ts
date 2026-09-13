@@ -70,6 +70,13 @@ export class EffectRecentOccurrenceNotFoundError extends Error {
   }
 }
 
+export class EffectVariantNotFoundError extends Error {
+  constructor(readonly effectId: string, readonly variantId: string) {
+    super(`Screen Effect variant "${variantId}" was not found in "${effectId}"`);
+    this.name = "EffectVariantNotFoundError";
+  }
+}
+
 export class EffectAdmissionService {
   readonly #repository: Pick<ScreenEffectRepository, "list" | "find">;
   readonly #queue: EffectQueue;
@@ -130,6 +137,26 @@ export class EffectAdmissionService {
     }
     const content = resolveEffectContent(document, this.#random());
     return this.#enqueueExplicit(content, null);
+  }
+
+  async testEffectVariant(effectId: string, variantId: string): Promise<EffectAdmissionOutcome> {
+    const document = await this.#repository.find(effectId);
+    if (document === null) {
+      throw new EffectDefinitionNotFoundError(effectId);
+    }
+    const variant = document.variants.find((candidate) => candidate.id === variantId && candidate.enabled);
+    if (variant === undefined) {
+      throw new EffectVariantNotFoundError(effectId, variantId);
+    }
+    if (!this.#queue.hasPendingCapacity()) {
+      return { effectId, status: "full" };
+    }
+    return this.#enqueueExplicit({
+      effectId: document.id,
+      effectName: document.name,
+      variant: structuredClone(variant),
+      priority: document.priority
+    }, null);
   }
 
   async replayRecent(occurrenceId: string): Promise<EffectAdmissionOutcome> {

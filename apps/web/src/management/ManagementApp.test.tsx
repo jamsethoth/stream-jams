@@ -7,6 +7,7 @@ import { ManagementApp as ProductionManagementApp, type ManagementAppProps } fro
 import { createStoryAudioApi } from "../stories/audio-fixtures.js";
 import type { AssetApi } from "./assets/AssetManager.js";
 import type { ManagementApi } from "./management-api.js";
+import type { ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
 
 const testAudioApi = createStoryAudioApi();
 function ManagementApp(props: ManagementAppProps) {
@@ -47,6 +48,24 @@ describe("ManagementApp", () => {
     expect(screen.getByRole("link", { name: "Alerts" })).toHaveAttribute("aria-current", "page");
     expect(screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "page")).toHaveLength(1);
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("ModulesAlerts");
+  });
+
+  it("opens Screen Effects from Modules and enters its focused editor", async () => {
+    const user = userEvent.setup();
+    render(<ManagementApp
+      assetApi={createAssetApi()}
+      managementApi={createManagementApi()}
+      screenEffectsApi={createScreenEffectsApi()}
+    />);
+
+    await user.click(screen.getByRole("link", { name: "Screen Effects" }));
+    expect(window.location.pathname).toBe("/manage/modules/screen-effects");
+    expect(screen.getByRole("link", { name: "Screen Effects" })).toHaveAttribute("aria-current", "page");
+
+    await user.click(await screen.findByRole("button", { name: "New effect" }));
+    expect(window.location.pathname).toMatch(/^\/manage\/modules\/screen-effects\/editor\/effect-/u);
+    expect(await screen.findByLabelText("Effect name")).toHaveValue("New Screen Effect");
+    expect(screen.queryByRole("navigation", { name: "Primary" })).not.toBeInTheDocument();
   });
 
   it("opens alert safety through its stable nested route and follows its internal provider link", async () => {
@@ -802,6 +821,22 @@ function createAssetApi(): AssetApi {
     async replaceAsset(): Promise<AssetRecord> {
       throw new Error("not called");
     }
+  };
+}
+
+function createScreenEffectsApi(): ScreenEffectsApi {
+  return {
+    list: vi.fn(async () => []),
+    listBrowserSources: vi.fn(async () => []),
+    get: vi.fn(async () => { throw new Error("not called"); }),
+    create: vi.fn(async (document) => document),
+    update: vi.fn(async (_effectId, document) => document),
+    remove: vi.fn(async () => {}),
+    test: vi.fn(async (effectId, variantId) => ({
+      effectId,
+      occurrenceId: `occurrence-${variantId}`,
+      status: "queued" as const
+    }))
   };
 }
 

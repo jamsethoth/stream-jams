@@ -3,8 +3,10 @@ export type ManagementRouteId =
   | "event-sources"
   | "tts-providers"
   | "modules-alerts"
+  | "modules-screen-effects"
   | "alert-safety"
   | "alert-editor"
+  | "screen-effect-editor"
   | "assets"
   | "diagnostics"
   | "settings";
@@ -12,6 +14,8 @@ export type ManagementRouteId =
 export interface ManagementRoute {
   readonly id: ManagementRouteId;
   readonly alertId?: string;
+  readonly effectId?: string;
+  readonly create?: true;
   readonly setId?: string;
   readonly eventType?: string;
   readonly targetProfileId?: string;
@@ -55,6 +59,14 @@ const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
     "Configure alert sets, browser-source outputs, and alert behavior.",
     ["Modules", "Alerts"]
   ),
+  "modules-screen-effects": route(
+    "modules-screen-effects",
+    "Screen Effects",
+    "/manage/modules/screen-effects",
+    "Screen Effects",
+    "Author trusted local visual and audio effects without merging them into Alerts.",
+    ["Modules", "Screen Effects"]
+  ),
   "alert-safety": route(
     "alert-safety",
     "Safety",
@@ -70,6 +82,14 @@ const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
     "Alert editor",
     "Edit alert content and target-profile layouts.",
     ["Modules", "Alerts", "Alert editor"]
+  ),
+  "screen-effect-editor": route(
+    "screen-effect-editor",
+    "Screen Effect editor",
+    "/manage/modules/screen-effects/editor/:effectId",
+    "Screen Effect editor",
+    "Edit one Screen Effect definition and its bounded variants.",
+    ["Modules", "Screen Effects", "Effect editor"]
   ),
   assets: route("assets", "Assets", "/manage/assets", "Assets", "Review reusable media and where each asset is used."),
   diagnostics: route(
@@ -96,6 +116,7 @@ routeDefinitions["modules-alerts"] = {
       label: "Alerts",
       childRoutes: []
     },
+    routeDefinitions["modules-screen-effects"],
     routeDefinitions["alert-safety"]
   ]
 };
@@ -127,6 +148,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
   const search = new URLSearchParams(queryIndex === -1 ? "" : pathAndQuery.slice(queryIndex + 1));
   const diagnosticReferenceId = search.get("diagnostic") || undefined;
   const editorMatch = /^\/manage\/modules\/alerts\/editor\/([^/]+)$/u.exec(normalizedPath);
+  const effectEditorMatch = /^\/manage\/modules\/screen-effects\/editor\/([^/]+)$/u.exec(normalizedPath);
 
   if (editorMatch?.[1] !== undefined) {
     const alertId = decodePathSegment(editorMatch[1]);
@@ -143,6 +165,21 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
       ...(setId === undefined ? {} : { setId }),
       ...(eventType === undefined ? {} : { eventType }),
       ...(targetProfileId === undefined ? {} : { targetProfileId }),
+      ...(diagnosticReferenceId === undefined ? {} : { diagnosticReferenceId }),
+      ...(fragment === undefined ? {} : { fragment })
+    };
+  }
+
+  if (effectEditorMatch?.[1] !== undefined) {
+    const effectId = decodePathSegment(effectEditorMatch[1]);
+    if (effectId === null) {
+      return { id: "home" };
+    }
+
+    return {
+      id: "screen-effect-editor",
+      effectId,
+      ...(search.get("new") === "1" ? { create: true as const } : {}),
       ...(diagnosticReferenceId === undefined ? {} : { diagnosticReferenceId }),
       ...(fragment === undefined ? {} : { fragment })
     };
@@ -177,9 +214,12 @@ export function formatManagementRoute(routeValue: ManagementRoute): string {
   if (routeValue.setup !== undefined) search.set("setup", routeValue.setup);
   if (routeValue.diagnosticReferenceId !== undefined) search.set("diagnostic", routeValue.diagnosticReferenceId);
   if (routeValue.referenceId !== undefined) search.set("reference", routeValue.referenceId);
+  if (routeValue.create === true) search.set("new", "1");
   const query = search.toString();
   const path = routeValue.id === "alert-editor" && routeValue.alertId !== undefined
     ? routeDefinitions[routeValue.id].path.replace(":alertId", encodeURIComponent(routeValue.alertId))
+    : routeValue.id === "screen-effect-editor" && routeValue.effectId !== undefined
+      ? routeDefinitions[routeValue.id].path.replace(":effectId", encodeURIComponent(routeValue.effectId))
     : routeDefinitions[routeValue.id].path;
   const pathAndQuery = query === "" ? path : `${path}?${query}`;
   return routeValue.fragment === undefined ? pathAndQuery : `${pathAndQuery}#${routeValue.fragment}`;

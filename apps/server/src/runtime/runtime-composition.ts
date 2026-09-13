@@ -62,6 +62,7 @@ import { AssetLibraryService } from "../modules/assets/asset-library-service.js"
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
 import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
+import { EffectManagementService } from "../modules/screen-effects/effect-management-service.js";
 import { EffectPlaybackCoordinator } from "../modules/screen-effects/effect-playback-coordinator.js";
 import { SqliteEffectModuleSettingsRepository } from "../modules/screen-effects/sqlite-effect-module-settings-repository.js";
 import { ConfigurationBackupService } from "../modules/backup/configuration-backup-service.js";
@@ -1113,6 +1114,42 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     changed: async surface => { if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface); },
     runMutation: work => maintenanceGate.runIntake(work)
   });
+  const effectManagementService = new EffectManagementService({
+    repository: effectRepository,
+    async testEffectVariant(effectId, variantId) {
+      const outcome = await effectAdmissionService.testEffectVariant(effectId, variantId);
+      if (outcome.status === "queued") await effectPlaybackCoordinator.startNext();
+      return outcome;
+    },
+    runMutation: work => maintenanceGate.runConfigurationMutation(
+      () => runInTransaction(database.connection, work)
+    ),
+    async isTwitchRewardAvailable(broadcasterId, rewardId) {
+      const account = await twitchAccountRepository.findConnectedAccount();
+      if (account?.accountId !== broadcasterId) return false;
+      try {
+        return (await twitchRewardCatalogService.listCustomRewards()).rewards.some(
+          (reward) => reward.id === rewardId
+        );
+      } catch {
+        return false;
+      }
+    },
+    async isStreamerBotSelectionConfigured(providerId, sourceKey, eventType) {
+      try {
+        const providers = await providerManagementService.listProviders("event-source");
+        if (!providers.some((provider) => provider.id === providerId && provider.kind === "streamerbot")) {
+          return false;
+        }
+        const catalog = await providerManagementService.getStreamerBotSubscriptions(providerId);
+        return catalog.selected.some(
+          (selection) => selection.sourceKey === sourceKey && selection.eventTypes.includes(eventType)
+        );
+      } catch {
+        return false;
+      }
+    }
+  });
   const app = createServerApp({
     surfaceSettingsService,
     metadata: {
@@ -1150,6 +1187,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     playbackCoordinator,
     legacyPlaybackOperationsService: playbackOperationsService,
     playbackOperationsService,
+    effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,
       originPolicy: managementOriginPolicy,

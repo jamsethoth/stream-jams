@@ -35,8 +35,8 @@
 
 ## 6. Management and UI coverage
 
-- [ ] 6.1 Add Screen Effects inventory/editor routes with asset picker, drafts/Undo/Save, shared soundtrack/destination controls, trigger setup links and compact Browser sources. Add no standalone Shared audio page.
-- [ ] 6.2 Add explicit bounded Preview/Test naming affected destinations and obeying safety/capability; test silent selection, disabled effects, no outputs, failed save and live-impact confirmation.
+- [x] 6.1 Add Screen Effects inventory/editor routes with asset picker, drafts/Undo/Save, shared soundtrack/destination controls, trigger setup links and compact Browser sources. Add no standalone Shared audio page.
+- [x] 6.2 Add explicit bounded Preview/Test naming affected destinations and obeying safety/capability; test silent selection, disabled effects, no outputs, failed save and live-impact confirmation.
 - [ ] 6.3 Add production Storybook stories with neutral fixtures for authoring/variants/audio, simultaneous current items, interleaved queue positions, empty/loading/error/stale states and module-qualified keyboard controls.
 - [ ] 6.4 Add Playwright create/save/enable/test, event-to-queue, concurrent playback, scoped-action, replay-snapshot, surface-order and restart/restore workflows. Use validated event fixtures without real channel mutations.
 

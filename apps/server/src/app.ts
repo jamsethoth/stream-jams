@@ -43,6 +43,10 @@ import {
   registerStreamerBotSubscriptionRoutes,
   type StreamerBotSubscriptionRouteDependencies
 } from "./http/routes/streamerbot-subscriptions.js";
+import {
+  registerScreenEffectRoutes,
+  type ScreenEffectRouteDependencies
+} from "./http/routes/screen-effects.js";
 import { registerWebShellRoutes, type WebShellRenderer } from "./http/routes/web-shell.js";
 import { createRedactor } from "./modules/security/redactor.js";
 
@@ -78,7 +82,8 @@ export interface ServerAppDependencies
     Partial<TwitchAuthRouteDependencies>,
     Partial<TwitchEventSubRouteDependencies>,
     Partial<TwitchRewardCatalogRouteDependencies>,
-    Partial<StreamerBotSubscriptionRouteDependencies> {
+    Partial<StreamerBotSubscriptionRouteDependencies>,
+    Partial<ScreenEffectRouteDependencies> {
   readonly metadata: ServerAppMetadata;
   readonly webBuildDirectory?: string;
   readonly webShellRenderer?: WebShellRenderer;
@@ -233,6 +238,13 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
       throw new Error("Playback operations routes require service, management auth, and rate-limit hooks");
     }
     registerPlaybackOperationsRoutes(app, dependencies);
+  }
+
+  if (dependencies.effectManagementService !== undefined) {
+    if (!hasScreenEffectRouteDependencies(dependencies)) {
+      throw new Error("Screen Effects routes require service, management auth, and rate-limit hooks");
+    }
+    registerScreenEffectRoutes(app, dependencies);
   }
 
   if (dependencies.ttsService !== undefined) {
@@ -461,6 +473,16 @@ function hasPlaybackOperationsRouteDependencies(
 ): dependencies is ServerAppDependencies & PlaybackOperationsRouteDependencies {
   return (
     dependencies.playbackOperationsService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasScreenEffectRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & ScreenEffectRouteDependencies {
+  return (
+    dependencies.effectManagementService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );
