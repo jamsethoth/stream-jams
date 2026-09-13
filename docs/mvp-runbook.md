@@ -24,7 +24,9 @@ The desktop main process owns one utility-process service, a sandboxed managemen
 - If management crashes, native Quit warns that unsaved edits cannot be recovered. Startup has a 20-second deadline; graceful shutdown has 10 seconds before terminating only the owned worker.
 - A second launch with the same Electron profile focuses the existing instance. `STREAM_JAMS_DESKTOP_USER_DATA_PATH` accepts an absolute path for isolated testing; it does not change the application data directory or make concurrent use of one data profile safe.
 
-Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the folder outside the checkout and use temporary config/data/Electron profiles and uniquely named temporary credentials. They must not use live provider accounts or live overlay URLs. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
+Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the folder outside the checkout and use temporary config/data/Electron profiles and uniquely named temporary credentials. They must not use live provider accounts or live overlay URLs. The ordinary desktop suite excludes tests tagged `@hardware`.
+
+Run the audible hardware suite only after receiving explicit approval for the two physical outputs. Set `STREAM_JAMS_AUDIO_TEST=1`, set `STREAM_JAMS_AUDIO_TEST_OUTPUTS` to two exact device labels separated by `|`, then run `corepack pnpm test:desktop:hardware`. The hardware suite plays brief tones independently, together, and again after restarting the packaged application. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
 
 Installers, signing, publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
 

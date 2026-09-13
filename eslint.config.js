@@ -20,7 +20,7 @@ export default tseslint.config(
     languageOptions: {
       parserOptions: {
         projectService: {
-          allowDefaultProject: ["vitest.config.ts", "playwright.config.ts", "playwright.desktop.config.ts", "apps/web/.storybook/*.ts"]
+          allowDefaultProject: ["vitest.config.ts", "playwright.config.ts", "playwright.desktop.config.ts", "playwright.hardware.config.ts", "apps/web/.storybook/*.ts"]
         },
         tsconfigRootDir: import.meta.dirname
       }
