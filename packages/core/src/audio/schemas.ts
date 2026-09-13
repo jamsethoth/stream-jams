@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { playbackTimingSchema } from "../overlays/playback-timing.js";
 import type { AlertAudioOutputs, AudioOutputDevice, AudioOutputRoute, DeviceAudioBatch, DeviceAudioResult, ResolvedAlertAudio } from "./types.js";
 
 export const audioRouteIdSchema = z.string().min(1).refine(value => value.trim() === value, "IDs must not contain surrounding whitespace");
@@ -37,6 +38,7 @@ export const audioOutputRoutePatchSchema = z.object({
 export const audioOutputRouteTestSchema = z.object({}).strict().default({});
 const uniqueIds = z.array(audioRouteIdSchema).refine(ids => new Set(ids).size === ids.length, "IDs must be unique");
 export const resolvedAudioLayerSchema = z.object({
+  sourceKind: z.enum(["audio", "video-soundtrack"]).default("audio"),
   layerId: audioRouteIdSchema,
   assetId: audioRouteIdSchema,
   volume: z.number().min(0).max(1)
@@ -53,6 +55,7 @@ export const audioDestinationSchema = z.object({
   routeIds: uniqueIds.refine(ids => ids.length > 0, "Choose at least one route")
 }).strict();
 export const deviceAudioBatchSchema = z.object({
+  timing: playbackTimingSchema.optional(),
   playbackId: audioRouteIdSchema,
   documentId: audioRouteIdSchema,
   durationMs: z.number().int().min(1).max(120_000),

@@ -12,7 +12,7 @@ describe("DefaultPlaybackQueue", () => {
     const audio: ResolvedAlertAudio[] = [{
       documentId: "document-1", durationMs: 3000,
       outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
-      layers: [{ layerId: "sound-1", assetId: "tone", volume: 0.5 }]
+      layers: [{ sourceKind: "audio", layerId: "sound-1", assetId: "tone", volume: 0.5 }]
     }];
     const expectedAudio = structuredClone(audio);
     const event = createCheerEvent();

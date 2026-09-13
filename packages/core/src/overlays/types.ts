@@ -8,6 +8,7 @@ import type {
   OverlayTargetProfileId
 } from "../shared/schemas.js";
 import type { TtsPlaybackInstruction } from "../tts/types.js";
+import type { PlaybackTiming } from "./playback-timing.js";
 
 export type { OverlayElementLayout, OverlayPurpose, OverlayScope, OverlayTargetProfileId };
 
@@ -111,6 +112,8 @@ export interface OverlayVisualInstruction {
 export interface OverlayAudioInstruction {
   readonly assetId: string;
   readonly volume: number;
+  /** Absent on legacy instructions and equivalent to ordinary audio. */
+  readonly sourceKind?: "audio" | "video-soundtrack" | undefined;
 }
 
 export interface OverlayTextInstruction {
@@ -135,6 +138,7 @@ export interface OverlayPresetAnimationInstruction {
 }
 
 export interface OverlayInstruction {
+  readonly timing?: PlaybackTiming | undefined;
   readonly id: string;
   readonly overlayId: string;
   readonly moduleId: string;

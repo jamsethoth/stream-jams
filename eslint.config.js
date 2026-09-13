@@ -5,7 +5,7 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
-    ignores: ["**/dist/**", "**/coverage/**", "**/node_modules/**", "**/storybook-static/**", "apps/desktop/.stage/**", "apps/desktop/out/**", ".agents/**", ".codex/**"]
+    ignores: ["**/dist/**", "**/dist-desktop-overlay/**", "**/coverage/**", "**/node_modules/**", "**/storybook-static/**", "apps/desktop/.stage/**", "apps/desktop/out/**", ".agents/**", ".codex/**", ".superpowers/**", "test-results/**", "playwright-report/**"]
   },
   {
     files: ["scripts/**/*.mjs"],

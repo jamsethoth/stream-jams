@@ -31,6 +31,22 @@ import {
 } from "./editor-state.js";
 
 describe("alert editor history", () => {
+  it("preserves video soundtrack settings and outputs across copies, undo, redo, and revert", () => {
+    const document = createDocument();
+    const video: AlertLayer = { ...layerBase("video", "Video", 2), type: "video", assetId: "clip", playEmbeddedAudio: false, audioVolume: 0.3 };
+    const initial = { ...addLayer(document, video), outputs: { browserSource: false, deviceRouteIds: ["private"] } };
+    const copied = duplicateLayer(initial, "video", "video-copy");
+    expect(copied.layers.find(layer => layer.id === "video-copy")).toMatchObject({ playEmbeddedAudio: false, audioVolume: 0.3 });
+    expect(copied.outputs).toEqual(initial.outputs);
+    expect(copyAlertDesign(initial, document).outputs).toEqual(document.outputs);
+    expect(copyAlertDesign(initial, document).layers).toEqual(initial.layers);
+    const state = createEditorState(initial);
+    const edited = applyEditorUpdate(state, current => updateLayer(current, "video", layer => layer.type === "video" ? { ...layer, playEmbeddedAudio: true, audioVolume: 0.8 } : layer));
+    expect(undoEditorUpdate(edited).document).toEqual(initial);
+    expect(redoEditorUpdate(undoEditorUpdate(edited)).document).toEqual(edited.document);
+    expect(revertEditorChanges(edited).document).toEqual(initial);
+    expect(edited.document.outputs).toEqual(initial.outputs);
+  });
   it("bounds undo history and supports undo, redo, and branched edits", () => {
     const initial = createDocument();
     let state = createEditorState(initial, 2);
@@ -238,7 +254,7 @@ describe("alert editor layer operations", () => {
 
   it("adds and deletes a layer with profile layouts and normalized ordering", () => {
     const document = createDocument();
-    const video: AlertLayer = {
+    const video: AlertLayer = { playEmbeddedAudio: false, audioVolume: 1,
       ...layerBase("layer-video", "Celebration", 99),
       type: "video",
       assetId: "asset-video"
@@ -544,7 +560,7 @@ function layerBase(id: string, name: string, order: number) {
 }
 
 function createDocument(): AlertEditorDocument {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
@@ -8,6 +9,7 @@ import type {
   AudioPlaybackSink,
   ConfigStore,
   DesktopAudioTransport,
+  DesktopOverlayTransport,
   SecretRef,
   SecretStore,
   TwitchCustomRewardCatalog
@@ -266,6 +268,37 @@ it("serves audio routes over loopback, observes global mute, and retains binding
   }
 });
 
+it.each([false, true])("configures desktop visuals without playback, preserving service on transport failure=%s", async (fails) => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-desktop-visual-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const transport: DesktopOverlayTransport = {
+    configure: vi.fn(async () => { if (fails) throw new Error("desktop unavailable"); }), prepare: vi.fn(async () => "ready" as const),
+    start: vi.fn(async () => {}), stop: vi.fn(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {})
+  };
+  try {
+    const options = { homeDirectory: testRoot, webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)), environment: {}, secretStore: new TestSecretStore(),
+      scheduleRecurring: () => ({ scheduled: true }), cancelRecurring: () => {}, desktopOverlayTransport: transport };
+    composition = await createRuntimeAppComposition(options);
+    expect(transport.configure).toHaveBeenCalledWith(expect.objectContaining({ kind: "desktop", enabled: false, displayId: null }));
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const surfaces = await composition.app.inject({ method: "GET", url: "/overlay-surfaces", headers: managementAuthHeaders(session) });
+    expect(surfaces.statusCode).toBe(200);
+    expect(surfaces.json()).toMatchObject({ surfaces: expect.arrayContaining([expect.objectContaining({ id: "desktop:primary" })]) });
+    const saved = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "selected-monitor", opacity: 0.7, layers: [] };
+    composition.database.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ? WHERE id = 'desktop:primary'").run(JSON.stringify(saved));
+    await composition.close();
+    composition = await createRuntimeAppComposition(options);
+    expect(transport.configure).toHaveBeenLastCalledWith({ ...saved, layers: [{ moduleId: "alerts", visible: false }] });
+    expect(transport.prepare).not.toHaveBeenCalled();
+    expect(transport.start).not.toHaveBeenCalled();
+  } finally {
+    await composition?.close();
+    await rm(testRoot, { recursive: true, force: true });
+  }
+  expect(transport.close).toHaveBeenCalledTimes(2);
+});
+
 it("applies persisted mute before wiring the desktop transport for device playback", async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-desktop-audio-runtime-"));
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
@@ -296,7 +329,7 @@ it("applies persisted mute before wiring the desktop transport for device playba
     await mkdir(join(testRoot, "assets", "audio"), { recursive: true });
     await writeFile(join(testRoot, "assets", "audio", "tone.mp3"), Buffer.from([1, 2, 3]));
     composition.database.connection.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run("tone", "tone.mp3", "audio", "audio/mpeg", 3, "sha256:test", "audio/tone.mp3");
+      .run("tone", "tone.mp3", "audio", "audio/mpeg", 3, `sha256:${createHash("sha256").update(Buffer.from([1, 2, 3])).digest("hex")}`, "audio/tone.mp3");
     const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
     const headers = managementAuthHeaders(session);
     const created = await composition.app.inject({
@@ -318,7 +351,7 @@ it("applies persisted mute before wiring the desktop transport for device playba
       audio: [{
         documentId: "document", durationMs: 3_000,
         outputs: { browserSource: false, deviceRouteIds: [route.id] },
-        layers: [{ layerId: "sound", assetId: "tone", volume: 0.5 }]
+        layers: [{ sourceKind: "audio", layerId: "sound", assetId: "tone", volume: 0.5 }]
       }]
     });
 

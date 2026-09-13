@@ -823,6 +823,37 @@ describe("AlertEditorService", () => {
     expect(harness.documents.save).not.toHaveBeenCalled();
   });
 
+  it("saves a device-only video soundtrack without a visual profile", async () => {
+    const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
+    const document = await harness.service.getDocument(rule.id);
+    const deviceOnly: AlertEditorDocument = {
+      ...document,
+      outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] },
+      layers: [
+        ...document.layers,
+        {
+          id: "layer-video",
+          name: "Video soundtrack",
+          type: "video",
+          visible: true,
+          order: document.layers.length,
+          assetId: "asset-video",
+          playEmbeddedAudio: true,
+          audioVolume: 0.5,
+          animation: document.layers[0]!.animation
+        }
+      ],
+      targetProfiles: document.targetProfiles.map(profile => ({
+        ...profile,
+        enabled: false,
+        reviewState: "needs-review" as const
+      }))
+    };
+
+    await expect(harness.service.saveDocument(rule.id, deviceOnly)).resolves.toEqual(deviceOnly);
+    expect(harness.documents.save).toHaveBeenCalledWith(deviceOnly);
+  });
+
   it("rejects a document when every enabled profile still needs review", async () => {
     const generated = await createHarness().service.getDocument(rule.id);
     const stored: AlertEditorDocument = {
@@ -1096,7 +1127,7 @@ describe("AlertEditorService", () => {
         documentId: rule.id,
         durationMs: 5_000,
         outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
-        layers: [{ layerId: "layer-audio", assetId: "asset-chime", volume: 0.65 }]
+        layers: [{ sourceKind: "audio", layerId: "layer-audio", assetId: "asset-chime", volume: 0.65 }]
       }]
     }));
   });
@@ -1366,6 +1397,8 @@ describe("AlertEditorService", () => {
       id: "layer-gif",
       name: "Animated image",
       type: "video" as const,
+      playEmbeddedAudio: true,
+      audioVolume: 1,
       visible: true,
       order: document.layers.length,
       animation: document.layers[0]!.animation,
@@ -1389,7 +1422,7 @@ describe("AlertEditorService", () => {
       document: candidate,
       targetProfileId: "landscape",
       samplePayload: { userName: "James" },
-      includeAudio: false,
+      includeAudio: true,
       includeTts: false
     });
 
@@ -1399,6 +1432,61 @@ describe("AlertEditorService", () => {
           variantId: rule.id,
           overlayInstruction: expect.objectContaining({
             visual: expect.objectContaining({ assetId: "asset-gif", mediaType: "gif" })
+          })
+        })
+      ])
+    }));
+    const playback = harness.enqueueTest.mock.calls[0]![0];
+    expect(playback.alerts.some(alert => alert.overlayInstruction.audio?.assetId === "asset-gif")).toBe(false);
+    expect(playback.audio.flatMap(audio => audio.layers).some(layer => layer.assetId === "asset-gif")).toBe(false);
+  });
+
+  it("includes an enabled video soundtrack in Browser Source test playback", async () => {
+    const harness = createHarness(false, async (assetId) => assetId === "asset-video" ? "video" : null);
+    const document = await harness.service.getDocument(rule.id);
+    const videoLayer = {
+      id: "layer-video",
+      name: "Flashbang",
+      type: "video" as const,
+      playEmbeddedAudio: true,
+      audioVolume: 0.4,
+      visible: true,
+      order: document.layers.length,
+      animation: document.layers[0]!.animation,
+      assetId: "asset-video"
+    };
+    const candidate: AlertEditorDocument = {
+      ...document,
+      layers: [...document.layers, videoLayer],
+      targetProfiles: document.targetProfiles.map((profile) => profile.id === "landscape"
+        ? {
+            ...profile,
+            layerLayouts: [
+              ...profile.layerLayouts,
+              { layerId: videoLayer.id, x: 10, y: 20, width: 320, height: 180, zIndex: 1 }
+            ]
+          }
+        : profile)
+    };
+
+    await harness.service.sendTest(rule.id, {
+      document: candidate,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James" },
+      includeAudio: true,
+      includeTts: false
+    });
+
+    expect(harness.enqueueTest).toHaveBeenCalledWith(expect.objectContaining({
+      alerts: expect.arrayContaining([
+        expect.objectContaining({
+          overlayInstruction: expect.objectContaining({
+            visual: expect.objectContaining({ assetId: "asset-video", mediaType: "video" })
+          })
+        }),
+        expect.objectContaining({
+          overlayInstruction: expect.objectContaining({
+            audio: { assetId: "asset-video", volume: 0.4, sourceKind: "video-soundtrack" }
           })
         })
       ])
@@ -1432,7 +1520,7 @@ describe("AlertEditorService", () => {
         expect.objectContaining({
           variantId: rule.id,
           overlayInstruction: expect.objectContaining({
-            audio: { assetId: "asset-audio", volume: 0.65 }
+            audio: { assetId: "asset-audio", volume: 0.65, sourceKind: "audio" }
           })
         })
       ])

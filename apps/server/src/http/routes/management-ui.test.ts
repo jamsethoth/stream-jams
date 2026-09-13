@@ -949,7 +949,7 @@ class StubManagementUiQueryService {
   }
 
   async getAlertEditorDocument() {
-    return {
+    return { schemaVersion: 1,
       id: "alert-follow",
       setId: "set-default",
       providerKind: "twitch" as const,

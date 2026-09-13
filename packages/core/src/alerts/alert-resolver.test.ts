@@ -10,6 +10,77 @@ import { compatibilityAlertTextBoxStyle, compatibilityAlertTextStyle } from "./t
 import * as core from "../index.js";
 
 describe("DefaultAlertResolver", () => {
+  it.each([undefined, "landscape"] as const)("projects independent video soundtracks on browser target %s without a visual layout", targetProfileId => {
+    const rule = createRule({ variants: [createVariant({ audioAssetId: "stale-audio" })] });
+    const original = createEditorDocument(rule);
+    const video = { id: "video", name: "Video", type: "video" as const, assetId: "clip", visible: true, order: 7, animation, playEmbeddedAudio: true, audioVolume: 0.3 };
+    const document: AlertEditorDocument = { ...original, layers: [...original.layers, video, { ...video, id: "video2", audioVolume: 0.7 }] };
+    const result = createResolver().resolveMatches({ matches: [createMatch(rule, createCheerEvent())], target: { ...target, ...(targetProfileId === undefined ? {} : { targetProfileId }) }, editorDocuments: new Map([[document.id, document]]) });
+    const audio = result.filter(alert => alert.overlayInstruction.audio !== null);
+    expect(audio.map(alert => alert.overlayInstruction.audio)).toEqual([
+      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio" },
+      { assetId: "clip", volume: 0.3, sourceKind: "video-soundtrack" },
+      { assetId: "clip", volume: 0.7, sourceKind: "video-soundtrack" }
+    ]);
+    expect(new Set(audio.map(alert => alert.overlayInstruction.id)).size).toBe(3);
+    expect(audio.every(alert => alert.overlayInstruction.visual === null)).toBe(true);
+    expect(audio.every(alert => alert.desktopVisualEligible !== true)).toBe(true);
+  });
+
+  it.each([
+    { playEmbeddedAudio: true, visible: true, browserSource: true, expected: 1 },
+    { playEmbeddedAudio: false, visible: true, browserSource: true, expected: 0 },
+    { playEmbeddedAudio: true, visible: false, browserSource: true, expected: 0 },
+    { playEmbeddedAudio: true, visible: true, browserSource: false, expected: 0 }
+  ])("honors soundtrack and output choices without changing visual instructions: %j", choices => {
+    const rule = createRule();
+    const original = createEditorDocument(rule);
+    const document: AlertEditorDocument = { ...original,
+      outputs: { browserSource: choices.browserSource, deviceRouteIds: ["private"] },
+      layers: [...original.layers, { id: "video", name: "Video", type: "video", assetId: "clip", order: 7, animation, visible: choices.visible, playEmbeddedAudio: choices.playEmbeddedAudio, audioVolume: 0.4 }],
+      targetProfiles: original.targetProfiles.map(profile => ({ ...profile, layerLayouts: [...profile.layerLayouts, { layerId: "video", x: 0, y: 0, width: 320, height: 180, zIndex: 7 }] })) };
+    const before = structuredClone(document);
+    const result = createResolver().resolveMatches({ matches: [createMatch(rule, createCheerEvent())], target: { ...target, targetProfileId: "landscape" }, editorDocuments: new Map([[document.id, document]]) });
+    expect(result.filter(alert => alert.overlayInstruction.audio?.assetId === "clip")).toHaveLength(choices.expected);
+    expect(result.filter(alert => alert.overlayInstruction.audio?.assetId === "asset-audio")).toHaveLength(choices.browserSource ? 1 : 0);
+    const visuals = result.filter(alert => alert.overlayInstruction.visual?.assetId === "clip");
+    expect(visuals).toHaveLength(choices.visible ? 1 : 0);
+    expect(visuals.every(alert => alert.overlayInstruction.audio === null)).toBe(true);
+    expect(document).toEqual(before);
+  });
+
+  it("renders a GIF visual without projecting its stale embedded-audio setting", () => {
+    const rule = createRule();
+    const original = createEditorDocument(rule);
+    const video = { id: "video", name: "Video or GIF", type: "video" as const, assetId: "clip", order: 7, animation, visible: true, playEmbeddedAudio: true, audioVolume: 0.4 };
+    const document: AlertEditorDocument = {
+      ...original,
+      layers: [...original.layers, video],
+      targetProfiles: original.targetProfiles.map(profile => ({
+        ...profile,
+        layerLayouts: [...profile.layerLayouts, { layerId: video.id, x: 0, y: 0, width: 320, height: 180, zIndex: 7 }]
+      }))
+    };
+
+    const result = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent())],
+      target: { ...target, targetProfileId: "landscape" },
+      editorDocuments: new Map([[document.id, document]]),
+      visualAssetMediaTypes: { clip: "gif" }
+    });
+
+    expect(result.some(alert => alert.overlayInstruction.visual?.mediaType === "gif")).toBe(true);
+    expect(result.some(alert => alert.overlayInstruction.audio?.assetId === "clip")).toBe(false);
+  });
+
+  it.each(["disabled", "needs-review"])("does not project browser soundtrack for a %s profile", state => {
+    const rule = createRule();
+    const original = createEditorDocument(rule);
+    const document: AlertEditorDocument = { ...original,
+      layers: [{ id: "video", name: "Video", type: "video", assetId: "clip", order: 0, animation, visible: true, playEmbeddedAudio: true, audioVolume: 1 }],
+      targetProfiles: original.targetProfiles.map(profile => ({ ...profile, enabled: state !== "disabled", reviewState: state === "needs-review" ? "needs-review" : "ready" })) };
+    expect(createResolver().resolveMatches({ matches: [createMatch(rule, createCheerEvent())], target: { ...target, targetProfileId: "landscape" }, editorDocuments: new Map([[document.id, document]]) })).toEqual([]);
+  });
   it("resolves canonical visible audio without profile readiness, enabled state, or asset deduplication", () => {
     expect(core).toHaveProperty("resolveAlertAudio");
     const original = createEditorDocument(createRule());
@@ -26,8 +97,8 @@ describe("DefaultAlertResolver", () => {
     expect(core.resolveAlertAudio(document)).toEqual({
       documentId: document.id, durationMs: document.durationMs, outputs: document.outputs,
       layers: [
-        { layerId: "first", assetId: "asset-audio", volume: 0.5 },
-        { layerId: "second", assetId: "asset-audio", volume: 0.5 }
+        { sourceKind: "audio", layerId: "first", assetId: "asset-audio", volume: 0.5 },
+        { sourceKind: "audio", layerId: "second", assetId: "asset-audio", volume: 0.5 }
       ]
     });
     expect(core.resolveAlertAudio({ ...document, layers: [] })).toBeNull();
@@ -63,7 +134,8 @@ describe("DefaultAlertResolver", () => {
       editorDocuments: new Map([[document.id, document]])
     });
     expect(alerts.flatMap(alert => alert.overlayInstruction.audio ?? [])).toEqual([
-      { assetId: "asset-audio", volume: 0.5 }, { assetId: "asset-audio", volume: 0.25 }
+      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio" },
+      { assetId: "asset-audio", volume: 0.25, sourceKind: "audio" }
     ]);
     expect(alerts.filter(alert => alert.overlayInstruction.text !== null)).toHaveLength(1);
   });
@@ -445,7 +517,7 @@ describe("DefaultAlertResolver", () => {
       mediaType: "gif",
       layout: { layerId: "layer-image", x: 40, y: 30, width: 320, height: 240, zIndex: 2 }
     });
-    expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5 });
+    expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5, sourceKind: "audio" });
     expect(resolved[3]?.overlayInstruction.tts).toEqual({
       mode: "remote-trigger",
       text: "Read Profile Viewer",
@@ -692,7 +764,7 @@ function createVariant(overrides: Partial<AlertVariant> = {}): AlertVariant {
 }
 
 function createEditorDocument(rule: AlertRule): AlertEditorDocument {
-  return {
+  return { schemaVersion: 1,
     id: rule.id,
     setId: rule.collectionIds[0]!,
     providerKind: "twitch",

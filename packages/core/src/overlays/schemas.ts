@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { playbackTimingSchema } from "./playback-timing.js";
 import {
   alertTextBoxStyleSchema,
   alertTextStyleSchema,
@@ -38,7 +39,8 @@ export const overlayVisualInstructionSchema = z.object({
 
 export const overlayAudioInstructionSchema = z.object({
   assetId: nonEmptyStringSchema,
-  volume: z.number().min(0).max(1)
+  volume: z.number().min(0).max(1),
+  sourceKind: z.enum(["audio", "video-soundtrack"]).optional()
 });
 
 export const overlayTextInstructionSchema = z.object({
@@ -63,6 +65,7 @@ export const overlayPresetAnimationInstructionSchema = z.object({
 });
 
 export const overlayInstructionSchema = z.object({
+  timing: playbackTimingSchema.optional(),
   id: nonEmptyStringSchema,
   overlayId: nonEmptyStringSchema,
   moduleId: nonEmptyStringSchema,
@@ -80,6 +83,7 @@ export const overlayInstructionSchema = z.object({
 });
 
 export const overlayModuleSnapshotSchema = z.object({
+  surfaceLayer: z.object({ visible: z.boolean(), zIndex: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).strict().optional(),
   moduleId: nonEmptyStringSchema,
   enabled: z.boolean(),
   instructions: z.array(overlayInstructionSchema)

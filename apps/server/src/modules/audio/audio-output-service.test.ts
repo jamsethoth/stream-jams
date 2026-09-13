@@ -137,7 +137,7 @@ it("snapshots bindings before asynchronous discovery and uses fresh bindings on 
   const audio: ResolvedAlertAudio[] = [{
     documentId: "alert", durationMs: 3000,
     outputs: { browserSource: false, deviceRouteIds: [route.id] },
-    layers: [{ layerId: "one", assetId: "tone", volume: 0.5 }, { layerId: "two", assetId: "tone", volume: 0.25 }]
+    layers: [{ sourceKind: "audio", layerId: "one", assetId: "tone", volume: 0.5 }, { sourceKind: "audio", layerId: "two", assetId: "tone", volume: 0.25 }]
   }];
   expect(f.service).toHaveProperty("preparePlayback");
   const devices = deferred<Array<{ deviceId: string; label: string }>>();
@@ -167,7 +167,7 @@ it("reports missing/unbound routes without fallback while retaining healthy dest
   const audio: ResolvedAlertAudio[] = [{
     documentId: "alert", durationMs: 3000,
     outputs: { browserSource: true, deviceRouteIds: [healthy.id, alias.id, unbound.id, "deleted"] },
-    layers: [{ layerId: "one", assetId: "tone", volume: 0.5 }, { layerId: "two", assetId: "tone", volume: 0.25 }]
+    layers: [{ sourceKind: "audio", layerId: "one", assetId: "tone", volume: 0.5 }, { sourceKind: "audio", layerId: "two", assetId: "tone", volume: 0.25 }]
   }];
   expect(await f.service.preparePlayback("first", audio)).toEqual({
     unavailableRouteIds: [unbound.id, "deleted"],

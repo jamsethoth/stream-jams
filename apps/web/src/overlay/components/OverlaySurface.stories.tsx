@@ -70,6 +70,26 @@ export const TextOnly: Story = {
   }
 };
 
+export const SharedModuleLayers: Story = {
+  args: {
+    composition: { ...textOnlyOverlayComposition, modules: [
+      ...textOnlyOverlayComposition.modules.map(module => ({ ...module, surfaceLayer: { visible: true, zIndex: 2 } })),
+      { moduleId: "lower-module", enabled: true, surfaceLayer: { visible: true, zIndex: 1 }, instructions: [
+        { id: "lower-shape", overlayId: textOnlyOverlayComposition.overlayId, moduleId: "lower-module", purpose: "live", scope: "unified",
+          visual: null, audio: null, text: null, tts: null, durationMs: 120000,
+          shape: { fill: "#087A6AFF", layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 999999 } } }
+      ] }
+    ] }, muted: true, resolveAssetUrl
+  },
+  parameters: { docs: { description: { story: "A lower module's large internal z-index cannot cover a higher module. Surface visibility and ordering do not remove audio nodes." } } }
+};
+
+export const HiddenModule: Story = {
+  args: { composition: { ...mediaOverlayComposition, modules: mediaOverlayComposition.modules.map(module => ({
+    ...module, surfaceLayer: { visible: false, zIndex: 0 }
+  })) }, muted: true, resolveAssetUrl }
+};
+
 export const CompatibilityTextStyle: Story = {
   args: {
     composition: styledTextComposition("landscape", compatibilityAlertTextStyle, compatibilityAlertTextBoxStyle),

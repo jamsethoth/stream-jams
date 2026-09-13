@@ -1,8 +1,9 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   alertCollectionSchema,
-  alertEditorDocumentSchema,
+  parseStoredAlertEditorDocument,
   audioOutputRouteSchema,
+  surfaceConfigurationSchema,
   alertRuleSchema,
   assetMetadataUpdateInputSchema,
   normalizeModerationSettings,
@@ -35,6 +36,7 @@ interface TableDefinition {
 
 const tableDefinitions = [
   table("overlay_module_config", ["module_id", "enabled", "config_json", "updated_at"], ["module_id"], ["config_json"]),
+  table("overlay_surfaces", ["id", "kind", "configuration_json", "updated_at"], ["id"], ["configuration_json"]),
   table("alert_collections", ["id", "name", "enabled"], ["id"]),
   table("alert_rules", ["id", "name", "event_type", "enabled", "cooldown_seconds", "priority"], ["id"]),
   table("asset_metadata", ["id", "original_file_name", "media_type", "mime_type", "size_bytes", "checksum"], ["id"]),
@@ -92,7 +94,10 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     for (const definition of tableDefinitions) {
       const select = definition.select ?? `SELECT ${definition.columns.join(", ")} FROM ${definition.name}`;
       const rows = this.connection.prepare(`${select} ORDER BY ${definition.orderBy.join(", ")}`).all();
-      tables[definition.name] = rows.map(toPlainRecord);
+      tables[definition.name] = rows.map(row => {
+        const record = toPlainRecord(row);
+        return definition.name === "overlay_surfaces" ? portableSurfaceRow(record) : record;
+      });
     }
 
     const providerReconnectMetadata = this.connection
@@ -154,6 +159,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     for (const definition of tableDefinitions) {
       const rows = configuration.tables[definition.name];
       if (rows === undefined) {
+        if (definition.name === "overlay_surfaces") continue; // Pre-surface archives migrate to disabled defaults.
         errors.push(`Required backup table "${definition.name}" is missing.`);
         continue;
       }
@@ -216,6 +222,13 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
           }
           continue;
         }
+        if (definition.name === "overlay_surfaces") {
+          const rows = input.tables.overlay_surfaces ?? [{ id: "desktop:primary", kind: "desktop",
+            configuration_json: JSON.stringify({ id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] }),
+            updated_at: new Date().toISOString() }];
+          for (const row of rows) insertCapturedRows(this.connection, definition.name, [portableSurfaceRow(row)]);
+          continue;
+        }
         if (definition.name === "alert_moderation_settings") {
           const placeholders = definition.columns.map(() => "?").join(", ");
           const statement = this.connection.prepare(
@@ -238,7 +251,9 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
         const placeholders = definition.columns.map(() => "?").join(", ");
         const statement = this.connection.prepare(`INSERT INTO ${definition.name} (${definition.columns.join(", ")}) VALUES (${placeholders})`);
         for (const row of input.tables[definition.name] ?? []) {
-          statement.run(...definition.columns.map((column) => row[column] as SQLInputValue));
+          statement.run(...definition.columns.map((column) => definition.name === "alert_editor_documents" && column === "document_json"
+            ? JSON.stringify(parseStoredAlertEditorDocument(parseJsonValue(row[column])))
+            : row[column] as SQLInputValue));
         }
       }
     });
@@ -247,6 +262,11 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
 
 function isSqliteRestorePoint(value: unknown): value is SqliteConfigurationRestorePoint {
   return typeof value === "object" && value !== null && "marker" in value && value.marker === restorePointMarker && "tables" in value;
+}
+
+function portableSurfaceRow(row: BackupRow): BackupRow {
+  const config = surfaceConfigurationSchema.parse(JSON.parse(String(row.configuration_json)));
+  return { ...row, configuration_json: JSON.stringify(config.kind === "desktop" ? { ...config, enabled: false, displayId: null } : config) };
 }
 
 function insertCapturedRows(connection: DatabaseSync, tableName: string, rows: readonly BackupRow[]): void {
@@ -323,6 +343,12 @@ function visitJson(value: unknown, path: readonly string[]): string | null {
 
 function validateDomainRows(tables: BackupConfiguration["tables"]): readonly string[] {
   const errors: string[] = [];
+  for (const [index, row] of (tables.overlay_surfaces ?? []).entries()) {
+    const parsed = surfaceConfigurationSchema.safeParse(parseJsonValue(row.configuration_json));
+    if (!parsed.success || parsed.data.id !== row.id || parsed.data.kind !== row.kind) {
+      errors.push(`overlay_surfaces[${index}] contains invalid surface configuration or identity.`);
+    }
+  }
 
   const moderationRows = tables.alert_moderation_settings ?? [];
   if (moderationRows.length !== 1) {
@@ -500,12 +526,17 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
   }
   const audioRouteIds = new Set((tables.audio_output_routes ?? []).map(row => row.id));
   for (const [index, row] of (tables.alert_editor_documents ?? []).entries()) {
-    const result = alertEditorDocumentSchema.safeParse(parseJsonValue(row.document_json));
-    pushSchemaError(errors, `alert_editor_documents[${index}]`, result);
-    if (result.success && result.data.id !== row.alert_id) {
+    let document;
+    try {
+      document = parseStoredAlertEditorDocument(parseJsonValue(row.document_json));
+    } catch {
+      errors.push(`alert_editor_documents[${index}] failed domain validation.`);
+      continue;
+    }
+    if (document.id !== row.alert_id) {
       errors.push(`alert_editor_documents[${index}].alert_id does not match document_json.id.`);
     }
-    if (result.success && result.data.outputs.deviceRouteIds.some(id => !audioRouteIds.has(id))) {
+    if (document.outputs.deviceRouteIds.some(id => !audioRouteIds.has(id))) {
       errors.push(`alert_editor_documents[${index}] references a missing audio route.`);
     }
   }
@@ -532,6 +563,7 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
   const errors: string[] = [];
   const constraints = [
     ["overlay_module_config", ["module_id"]],
+    ["overlay_surfaces", ["id"]],
     ["alert_collections", ["id"]],
     ["alert_rules", ["id"]],
     ["asset_metadata", ["id"]],

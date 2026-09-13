@@ -52,69 +52,81 @@ export function createHttpAssetApi(options: HttpAssetApiOptions = {}): AssetApi 
     return session;
   }
 
-  async function managementHeaders(extraHeaders: HeadersInit = {}, includeCsrf = false): Promise<HeadersInit> {
-    const session = await getSession();
-    return {
-      ...extraHeaders,
-      authorization: `Bearer ${session.id}`,
-      ...(includeCsrf ? { "x-stream-jams-csrf": session.csrfToken } : {})
-    };
+  function invalidateSession(session: ManagementSessionResponse): void {
+    if (sessionId === session.id) {
+      sessionId = null;
+      csrfToken = null;
+    }
+  }
+
+  async function requestWithSession(
+    path: string,
+    createOptions: (session: ManagementSessionResponse) => RequestInit,
+    fallbackMessage: string
+  ): Promise<Response> {
+    let session = await getSession();
+    let response = await fetcher(path, createOptions(session));
+    if (response.status === 401) {
+      invalidateSession(session);
+      session = await getSession();
+      response = await fetcher(path, createOptions(session));
+    }
+    if (!response.ok) {
+      throw new Error(await readHttpError(response, fallbackMessage));
+    }
+    return response;
   }
 
   return {
     async listAssets() {
-      const response = await fetcher("/assets", {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load assets."));
-      }
+      const response = await requestWithSession("/assets", (session) => ({
+        headers: { authorization: `Bearer ${session.id}` }
+      }), "Unable to load assets.");
 
       return (await response.json()) as readonly AssetRecord[];
     },
 
     async importAsset(file: File) {
-      const response = await fetcher("/assets/import", {
+      const body = await file.arrayBuffer();
+      const response = await requestWithSession("/assets/import", (session) => ({
         method: "POST",
-        headers: await managementHeaders({
+        headers: {
           "content-type": "application/octet-stream",
           "x-stream-jams-file-name": file.name,
-          "x-stream-jams-mime-type": file.type || "application/octet-stream"
-        }, true),
-        body: await file.arrayBuffer()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to import asset."));
-      }
+          "x-stream-jams-mime-type": file.type || "application/octet-stream",
+          authorization: `Bearer ${session.id}`,
+          "x-stream-jams-csrf": session.csrfToken
+        },
+        body
+      }), "Unable to import asset.");
 
       return (await response.json()) as AssetRecord;
     },
 
     async getAssetFile(assetId) {
-      const response = await fetcher(`/assets/${encodeURIComponent(assetId)}/file`, {
-        headers: await managementHeaders()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to load asset preview."));
-      }
+      const path = `/assets/${encodeURIComponent(assetId)}/file`;
+      const response = await requestWithSession(path, (session) => ({
+        headers: { authorization: `Bearer ${session.id}` }
+      }), "Unable to load asset preview.");
 
       return response.blob();
     },
 
     async replaceAsset(assetId, file, confirmImpact) {
-      const response = await fetcher(`/assets/${encodeURIComponent(assetId)}/replace`, {
+      const path = `/assets/${encodeURIComponent(assetId)}/replace`;
+      const body = await file.arrayBuffer();
+      const response = await requestWithSession(path, (session) => ({
         method: "POST",
-        headers: await managementHeaders({
+        headers: {
           "content-type": "application/octet-stream",
           "x-stream-jams-confirm-impact": String(confirmImpact),
           "x-stream-jams-file-name": file.name,
-          "x-stream-jams-mime-type": file.type || "application/octet-stream"
-        }, true),
-        body: await file.arrayBuffer()
-      });
-      if (!response.ok) {
-        throw new Error(await readHttpError(response, "Unable to replace asset."));
-      }
+          "x-stream-jams-mime-type": file.type || "application/octet-stream",
+          authorization: `Bearer ${session.id}`,
+          "x-stream-jams-csrf": session.csrfToken
+        },
+        body
+      }), "Unable to replace asset.");
 
       return (await response.json()) as AssetRecord;
     }

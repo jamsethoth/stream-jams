@@ -36,7 +36,7 @@ it("checks references in the same transaction as saves and deletes, whichever wi
   db.connection.exec("INSERT INTO alert_rules VALUES ('alert-a', 'Follow', 'follow', 0, 0, 0)");
   const routes = new SqliteAudioOutputRouteRepository(db.connection);
   const documents = new SqliteAlertEditorDocumentRepository(db.connection);
-  const document = alertEditorDocumentSchema.parse({
+  const document = alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "alert-a", setId: "set-a", providerKind: "twitch", eventType: "follow", kind: "default",
     parentAlertId: null, name: "Follow", enabled: false, conditions: [], durationMs: 1000,
     outputs: { browserSource: false, deviceRouteIds: [route.id] }, layers: [],

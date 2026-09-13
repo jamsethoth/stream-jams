@@ -7,6 +7,7 @@ const phases = new Set([
   "app-ready", "quit-requested", "decision-accepted", "decision-cancelled",
   "service-stop-requested", "service-stop-completed", "service-stop-failed",
   "audio-close-requested", "audio-closed", "windows-destroy-requested", "windows-destroyed",
+  "overlay-close-requested", "overlay-closed",
   "electron-quit-requested", "electron-before-quit", "electron-will-quit", "electron-quit",
   "query-session-end", "session-end"
 ]);

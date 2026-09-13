@@ -14,6 +14,7 @@ import {
   type OverlayModuleSnapshotRequest
 } from "./overlay-composition-service.js";
 import type { OverlayModuleSnapshot } from "./types.js";
+import type { SurfaceConfiguration } from "./surface-configuration.js";
 
 const now = new Date("2026-05-30T04:00:00.000Z");
 
@@ -70,6 +71,38 @@ class RecordingRuntime implements OverlayModuleRuntime {
 }
 
 describe("overlay composition service", () => {
+  it("uses independent topmost-first surface rows without suppressing audio or changing module outputs", async () => {
+    const surfaces: SurfaceConfiguration[] = [
+      { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1,
+        layers: [{ moduleId: "alerts", visible: false }, { moduleId: "second", visible: true }] },
+      { id: "unified-browser:overlay-main", kind: "unified-browser", overlayId: "overlay-main",
+        layers: [{ moduleId: "alerts", visible: false }, { moduleId: "second", visible: true }] }
+    ];
+    const runtime: OverlayModuleRuntime = {
+      async getModuleSnapshot(request) {
+        return { moduleId: request.moduleId, enabled: true, instructions: [{ ...createInstruction(request),
+          audio: { assetId: "sound", volume: 1 },
+          visual: { assetId: "image", mediaType: "image", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } }
+        }] };
+      }
+    };
+    const disabled = new Set<string>();
+    const service = new DefaultOverlayCompositionService({ runtime,
+      configService: { async getModuleConfig(moduleId) { return { moduleId, enabled: !disabled.has(moduleId), config: {}, updatedAt: now.toISOString() }; } },
+      surfaceRepository: { async list() { return surfaces; } }
+    });
+    const request = { overlayId: "overlay-main", purpose: "live" as const, enabledModuleIds: ["alerts", "second"] };
+    const composition = await service.resolveUnifiedOutput(request);
+    expect(composition.modules.map(module => module.moduleId)).toEqual(["second", "alerts"]);
+    expect(composition.modules[1]).toMatchObject({ surfaceLayer: { visible: false, zIndex: 1 } });
+    expect(composition.modules[1]?.instructions[0]).toMatchObject({ id: "unified-live-instruction", visual: { assetId: "image" }, audio: { assetId: "sound", volume: 1 } });
+    expect((await service.resolveModuleOutput({ ...request, moduleId: "alerts" })).modules[0]?.instructions[0]?.visual).not.toBeNull();
+    surfaces[0]!.layers.reverse();
+    expect(await service.resolveUnifiedOutput(request)).toEqual(composition);
+    disabled.add("second");
+    expect((await service.resolveUnifiedOutput(request)).modules.map(module => module.moduleId)).toEqual(["alerts"]);
+  });
+
   it("resolves enabled module-specific overlay output", async () => {
     const runtime = new RecordingRuntime();
     const { compositionService } = createCompositionService(runtime);

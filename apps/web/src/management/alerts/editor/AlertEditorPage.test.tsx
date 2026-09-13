@@ -2,6 +2,7 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
+  type AssetLibraryItem,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
   type RegisteredProviderView,
@@ -65,6 +66,240 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("seeks newly ready preview media while paused without starting it", async () => {
+    const play = vi.fn(async () => undefined);
+    const audios: { readyState: number; currentTime: number; onloadedmetadata: (() => void) | null }[] = [];
+    vi.stubGlobal("Audio", class { readyState = 0; currentTime = 0; onloadedmetadata: (() => void) | null = null; volume = 1; play = play; pause = vi.fn(); constructor() { audios.push(this); } });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(audios[0]).toBeDefined());
+    const audio = audios[0]!;
+    expect(play).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("slider", { name: "Preview position" }), { target: { value: "1500" } });
+    await act(async () => { audio.readyState = 1; audio.onloadedmetadata?.(); });
+    expect(audio.currentTime).toBe(1.5);
+    expect(play).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Resume preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+  });
+
+  it("bounds pending preview fetches while the preview is paused", async () => {
+    let finish!: (blob: Blob) => void;
+    vi.spyOn(assetApi, "getAssetFile").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const play = vi.fn(async () => undefined);
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, durationMs: 30000, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("button", { name: "Pause preview" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText("Local preview media could not be played")).toBeInTheDocument();
+    await act(async () => { finish(new Blob(["silent"])); });
+    expect(play).not.toHaveBeenCalled();
+  });
+  it("pauses soundtrack preview, seeks without starting audio, and resumes at the selected playhead", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    const audios: { currentTime: number }[] = [];
+    vi.stubGlobal("Audio", class { readyState = 1; currentTime = 0; volume = 1; play = play; pause = pause; constructor() { audios.push(this); } });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+    const audio = audios[0]!;
+    await user.click(screen.getByRole("button", { name: "Pause preview" }));
+    expect(pause).toHaveBeenCalledOnce();
+    fireEvent.change(screen.getByRole("slider", { name: "Preview position" }), { target: { value: "1200" } });
+    expect(audio.currentTime).toBe(1.2);
+    expect(play).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Resume preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+    expect(audio.currentTime).toBeCloseTo(1.2, 1);
+  });
+  it("keeps ended soundtrack media available for timeline seek and resume", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    const audios: { currentTime: number; onended: (() => void) | null }[] = [];
+    vi.stubGlobal("Audio", class {
+      readyState = 1;
+      currentTime = 0;
+      onended: (() => void) | null = null;
+      volume = 1;
+      play = play;
+      pause = pause;
+      constructor() { audios.push(this); }
+    });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+    const audio = audios[0]!;
+    act(() => audio.onended?.());
+    fireEvent.change(screen.getByRole("slider", { name: "Preview position" }), { target: { value: "500" } });
+    await user.click(screen.getByRole("button", { name: "Resume preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+    expect(audio.currentTime).toBeCloseTo(0.5, 1);
+  });
+  it("new video audio stays enabled when a separate audio layer is added", async () => {
+    const items: AssetLibraryItem[] = ["video", "audio"].map((type) => ({
+      id: type, displayName: type, originalFileName: type, mediaType: type as "video" | "audio", mimeType: type === "video" ? "video/webm" : "audio/ogg", sizeBytes: 3,
+      width: null, height: null, durationMs: 1000, health: "available", tags: [], createdAt: "2026-09-10T00:00:00Z", updatedAt: "2026-09-10T00:00:00Z", usage: { assetId: type, totalUsageCount: 0, usages: [] }
+    }));
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor(editorDocument(), items);
+    await user.click(await screen.findByRole("button", { name: "Video/GIF" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+    expect(await screen.findByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(1);
+    await user.click(screen.getByRole("button", { name: "Audio" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+    await user.click(screen.getByText("Video or GIF", { selector: ".alert-editor-inspector__layer-list span" }));
+    expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
+    expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    expect(saveAlertEditorDocument.mock.calls[0]![1].layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 1 });
+  });
+
+  it("adds a GIF with embedded audio disabled", async () => {
+    const { user } = renderWorkspaceEditor(editorDocument(), [assetLibraryItem("gif")]);
+
+    await user.click(await screen.findByRole("button", { name: "Video/GIF" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+
+    expect(await screen.findByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  });
+
+  it("disables embedded audio when a video layer is changed to a GIF", async () => {
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = {
+      ...source,
+      layers: source.layers.map(layer => layer.type === "audio"
+        ? { ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 0.6 }
+        : layer)
+    };
+    const { user } = renderWorkspaceEditor(document, [assetLibraryItem("gif")]);
+
+    await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
+    await user.click(screen.getByRole("button", { name: "Choose asset" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+
+    expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  });
+
+  it("edits saved silent video soundtrack through undo redo and confirmed save", async () => {
+    const { user, saveAlertEditorDocument } = renderStarterThemeEditor();
+    await user.click(await screen.findByText("Loop", { selector: ".alert-editor-inspector__layer-list span" }));
+    const toggle = () => screen.getByRole("checkbox", { name: "Play embedded audio" });
+    expect(toggle()).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+    await user.click(toggle());
+    expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Embedded audio volume" }), { target: { value: "0.35" } });
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(1);
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(toggle()).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    const saved = saveAlertEditorDocument.mock.calls[0]![1];
+    expect(saved.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 0.35 });
+    expect(saved.layers.find(layer => layer.type === "audio")).toMatchObject({ volume: 0.4 });
+    expect(saved.outputs).toEqual({ browserSource: true, deviceRouteIds: [] });
+  });
+
+  it("sends video-only device audio without ready visuals and disables test when soundtrack is off", async () => {
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.map(layer => layer.type === "audio" ? {
+      ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 0.6
+    } : layer) };
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("button", { name: "Send test" }));
+    expect(sendAlertEditorTest).toHaveBeenCalledWith(document.id, expect.objectContaining({ document, targetProfileId: null, includeAudio: true }));
+    await user.click(screen.getByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
+    await user.click(screen.getByRole("checkbox", { name: "Play embedded audio" }));
+    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+  });
+
+  it("previews enabled soundtracks locally by explicit opt-in even with no selected outputs", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = pause; });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, outputs: { browserSource: false, deviceRouteIds: [] }, layers: source.layers.map(layer => layer.type === "audio" ? {
+      ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 0.6
+    } : layer) };
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("button", { name: "Preview" }));
+    expect(play).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getAllByRole("button", { name: "Replay preview" }).at(-1)!);
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+    expect(sendAlertEditorTest).not.toHaveBeenCalled();
+    await user.click(screen.getAllByRole("button", { name: "Replay preview" }).at(-1)!);
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+    expect(pause).toHaveBeenCalledOnce();
+    cleanup();
+    expect(pause).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not start a pending soundtrack fetch after preview unmount", async () => {
+    const play = vi.fn(async () => undefined);
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
+    let finish!: (blob: Blob) => void;
+    const getAssetFile = vi.spyOn(assetApi, "getAssetFile").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(getAssetFile).toHaveBeenCalled());
+    cleanup();
+    await act(async () => { finish(new Blob(["silent"], { type: "video/webm" })); });
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("stops soundtrack preview and revokes its URL at the declared duration", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = pause; });
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(play).toHaveBeenCalledOnce();
+    await act(async () => { await vi.advanceTimersByTimeAsync(document.durationMs); });
+    expect(pause).toHaveBeenCalledOnce();
+    expect(revoke).toHaveBeenCalledOnce();
+  });
   it("confirms changed audio content on active device-only alerts without changing outputs", async () => {
     const { user, saveAlertEditorDocument } = renderWorkspaceEditor(routedEditorDocument());
     await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
@@ -113,7 +348,7 @@ describe("AlertEditorPage", () => {
     expect(browser()).toBeChecked();
     await user.click(browser());
     expect(browser()).not.toBeChecked();
-    expect(screen.getByText(/Explicit audio is silent/)).toBeInTheDocument();
+    expect(screen.getByText(/Audio layers and enabled soundtracks are silent/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(browser()).toBeChecked();
     await user.click(screen.getByRole("button", { name: "Redo" }));
@@ -127,7 +362,7 @@ describe("AlertEditorPage", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     expect(saveAlertEditorDocument.mock.calls[0]![1].outputs).toEqual({ browserSource: false, deviceRouteIds: [] });
-    expect(screen.getByText(/Videos are visual-only/)).toBeInTheDocument();
+    expect(screen.getByText(/Videos with embedded audio off stay silent/)).toBeInTheDocument();
   });
 
   it("requires confirmation before applying a starter theme", async () => {
@@ -2358,7 +2593,7 @@ describe("AlertEditorPage", () => {
     const user = userEvent.setup();
     const play = vi.fn(async () => undefined);
     const speak = vi.fn();
-    vi.stubGlobal("Audio", class { volume = 1; play = play; });
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
     vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
     const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
@@ -2436,7 +2671,7 @@ describe("AlertEditorPage", () => {
     const play = vi.fn(async () => undefined);
     const speak = vi.fn();
     const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
-    vi.stubGlobal("Audio", class { volume = 1; play = play; });
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
     vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
     let rejectTts: ((cause: unknown) => void) | undefined;
@@ -3763,7 +3998,26 @@ function routedEditorDocument(): AlertEditorDocument {
   };
 }
 
-function renderWorkspaceEditor(document = editorDocument()) {
+function assetLibraryItem(mediaType: "gif" | "video"): AssetLibraryItem {
+  return {
+    id: `asset-${mediaType}`,
+    displayName: mediaType === "gif" ? "Animated image" : "Video",
+    originalFileName: mediaType === "gif" ? "animated.gif" : "video.webm",
+    mediaType,
+    mimeType: mediaType === "gif" ? "image/gif" : "video/webm",
+    sizeBytes: 3,
+    width: 320,
+    height: 180,
+    durationMs: mediaType === "gif" ? null : 1_000,
+    health: "available",
+    tags: [],
+    createdAt: "2026-09-10T00:00:00Z",
+    updatedAt: "2026-09-10T00:00:00Z",
+    usage: { assetId: `asset-${mediaType}`, totalUsageCount: 0, usages: [] }
+  };
+}
+
+function renderWorkspaceEditor(document = editorDocument(), libraryItems: AssetLibraryItem[] = []) {
   const user = userEvent.setup();
   const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
   const sendAlertEditorTest = vi.fn<AlertEditorPageApi["sendAlertEditorTest"]>(async (_alertId, request) => ({
@@ -3791,7 +4045,7 @@ function renderWorkspaceEditor(document = editorDocument()) {
           getAlertSet: vi.fn(async () => alertSetDetail()),
           listRegisteredProviders: vi.fn(async () => []),
           getAssetChangeImpact: vi.fn(),
-          listAssetLibraryItems: vi.fn(async () => []),
+          listAssetLibraryItems: vi.fn(async () => libraryItems),
           deleteAsset: vi.fn(),
           updateAssetMetadata: vi.fn(),
           saveAlertEditorDocument,
@@ -3848,7 +4102,7 @@ function renderStarterThemeEditor() {
         ? { ...layer, template: "Custom hello, {userName}!" }
         : layer),
       { id: "layer-shape", name: "Backdrop", type: "shape", visible: true, order: 2, fill: "#112233FF", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
-      { id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+      { playEmbeddedAudio: false, audioVolume: 1, id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
       { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 4, assetId: "asset-audio", volume: 0.4, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
       { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 5, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
     ],
@@ -3915,7 +4169,7 @@ const assetApi: AssetApi = {
 };
 
 function editorDocument(): AlertEditorDocument {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",
