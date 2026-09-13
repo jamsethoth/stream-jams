@@ -71,12 +71,14 @@ test("packaged Screen Effects persists definitions and restarts with empty runti
     await expect(testDialog).toContainText("OBS Browser Source visual");
     if (desktopOutputAvailable) await expect(testDialog).toContainText("Desktop overlay visual");
     await management.getByRole("button", { name: "Confirm live test" }).click();
-    await expect(management.getByRole("status")).toContainText("Live Test queued");
 
     if (desktopOutputAvailable) {
+      await expect(management.getByRole("status")).toContainText("Live Test queued");
       const overlay = await windowByUrl(desktop, "stream-jams-overlay://surface/");
       await expect(overlay.locator("video")).toHaveCount(1);
       await expect.poll(() => overlay.locator("video").evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.05);
+    } else {
+      await expect(management.getByRole("alert")).toContainText("Live Test was not queued: unavailable output.");
     }
     expect(errors).toEqual([]);
 
