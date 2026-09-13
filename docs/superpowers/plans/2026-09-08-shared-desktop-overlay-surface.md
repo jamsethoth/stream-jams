@@ -8,11 +8,11 @@
 
 **Tech Stack:** Existing Electron, React/Vite, TypeScript/Zod, Fastify/SQLite, Vitest, Storybook, and Playwright; no new rendering framework.
 
-**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/design.md), [normative scenarios](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/specs/shared-overlay-surfaces/spec.md), [OpenSpec tasks](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/tasks.md).
+**Spec:** [Change design](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/design.md), [normative scenarios](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/specs/shared-overlay-surfaces/spec.md), [OpenSpec tasks](../../../openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/tasks.md).
 
 ## Global constraints
 
-All [execution-index constraints](2026-09-08-screen-effects-implementation.md#global-constraints) apply. In particular: Windows only; one explicitly bound monitor; first-use disabled; transparent/frameless/click-through/non-focusable/topmost/no taskbar; no exclusive-full-screen guarantee; retain hardware acceleration disabled; Landscape `1920 × 1080` uniform fit; no copyable desktop URL; desktop has no audio/TTS authority. Ownership expires within 10 seconds; occurrence watchdog is duration plus 5 seconds; one automatic renderer recreation, then explicit Retry, with no interrupted replay.
+Windows only; one explicitly bound monitor; first-use disabled; transparent/frameless/click-through/non-focusable/topmost/no taskbar; no exclusive-full-screen guarantee; retain hardware acceleration disabled; Landscape `1920 × 1080` uniform fit; no copyable desktop URL; desktop has no audio/TTS authority. Ownership expires within 10 seconds; occurrence watchdog is duration plus 5 seconds; one automatic renderer recreation, then explicit Retry, with no interrupted replay.
 
 ## File ownership and integration seams
 
@@ -20,7 +20,7 @@ All [execution-index constraints](2026-09-08-screen-effects-implementation.md#gl
 | --- | --- |
 | `packages/core/src/overlay-modules/surface-configuration.ts` | Surface schemas, complete-order validation, registry reconciliation, repository interface |
 | `packages/core/src/overlays/desktop-visual-transport.ts` | Private visual batch/recipient contracts and strict schemas |
-| `packages/core/src/overlays/playback-timing.ts` | Occurrence timing and late-recipient offset calculation; reused by routed audio |
+| `packages/core/src/overlays/playback-timing.ts` | Validated occurrence timing shared with routed audio |
 | `apps/server/src/modules/overlay-surfaces/` | SQLite configuration and service-side desktop delivery adapter |
 | `apps/desktop/src/overlay/` | Native window policy, preload, host, worker transport; no React imports |
 | `apps/web/src/desktop-overlay/` | Production visual renderer entry; no Node/Electron imports |
@@ -150,7 +150,6 @@ September 9 source checkpoint: timing, strict visual-only transport, host/preloa
 
 ```ts
 export interface PlaybackTiming { startsAtEpochMs: number; endsAtEpochMs: number }
-export function playbackOffsetMs(timing: PlaybackTiming, nowEpochMs: number): number | null;
 export interface VisualRecipientKey {
   surfaceId: string; moduleId: string; occurrenceId: string; generation: number;
 }
@@ -170,19 +169,9 @@ export interface DesktopOverlayTransport {
 }
 ```
 
-`OverlayInstruction` is the existing core type, but the desktop boundary schema rejects non-null `audio` or `tts`; it also verifies every instruction's module identity and permitted visual/text/shape fields. `playbackOffsetMs` returns `null` at/after the end, otherwise `max(0, now - start)`; recipients wait until start if it is in the future. Validate finite integer epochs and `0 < end - start <= 120000`.
+`OverlayInstruction` is the existing core type, but the desktop boundary schema rejects non-null `audio` or `tts`; it also verifies every instruction's module identity and permitted visual/text/shape fields. Recipients reject playback at or after the end, otherwise seek to `max(0, now - start)` and wait until start if it is in the future. Validate finite integer epochs and `0 < end - start <= 120000`.
 
-- [ ] Write the timing and strict-boundary regressions before the transport:
-
-```ts
-import { expect, it } from "vitest";
-import { playbackOffsetMs } from "./playback-timing.js";
-it("late attachment cannot restart or extend an occurrence", () => {
-  const timing = { startsAtEpochMs: 1000, endsAtEpochMs: 11000 };
-  expect(playbackOffsetMs(timing, 4000)).toBe(3000);
-  expect(playbackOffsetMs(timing, 11000)).toBeNull();
-});
-```
+- [ ] Write timing-schema and strict-boundary regressions before the transport, plus fake-clock recipient tests proving that late attachment seeks without restarting or extending an occurrence.
 
 - [ ] Run `corepack.cmd pnpm exec vitest run packages/core/src/overlays/playback-timing.test.ts packages/core/src/overlays/desktop-visual-transport.test.ts`; expect missing timing/transport exports or rejected expected cases.
 - [ ] Add discriminated `prepare/start/stop/complete/error/ready` messages with recipient key and request ID, plus worker-generation envelopes analogous to existing audio IPC. Reject unknown fields, stale worker/renderer generations, wrong owned sender, non-top frames, and messages after disposal. Add an `overlay-lease` heartbeat every 2 seconds and invalidate ownership after 10 seconds. Bound pending maps to admitted occurrences; settle and delete every entry/timer on stop, completion, loss, or deadline.
@@ -285,7 +274,7 @@ it("does not save or open the HUD while choosing a display", async () => {
 - Modify: `docs/verification/shared-desktop-overlay.md`, `tests/desktop/overlay-window.spec.ts`, `tests/desktop/windows-lifecycle.spec.ts`, `docs/product-plan.md`, `docs/backlog.md`, `docs/mvp-runbook.md`.
 - Track completion in `openspec/changes/archive/2026-09-12-add-shared-desktop-overlay-surface/tasks.md` only after evidence exists.
 
-- [ ] Run the [shared verification commands](2026-09-08-screen-effects-implementation.md#shared-verification-ledger) and `openspec.cmd validate add-shared-desktop-overlay-surface --strict`. Capture actual exit/results and diagnose failures; do not conflate focused tests with full-suite success.
+- [ ] Run the repository lint, typecheck, unit, build, Storybook, E2E, desktop-package, desktop-test, and strict OpenSpec gates. Capture actual exit/results and diagnose failures; do not conflate focused tests with full-suite success.
 - [ ] Rebuild/restart only the authorized runtime, check health and reload. Using neutral media, verify Alerts on desktop with no OBS connected, Alerts on both, independent layer changes, separate audio continuing when a visual is hidden, and no playback on settings selection. With approval to open the actual source, verify OBS alpha and module-specific source behavior.
 - [ ] Repeat selected-display loss/rebind, two displays/mixed DPI, management hidden, renderer crash twice/Retry, service loss, and Quit with native process-exit evidence. Include 1080p/1440p smoothness and focus/input evidence from S1-1. A true exclusive-full-screen game obscuring the window is a documented limitation, not permission to add injection.
 - [ ] Reconcile the matrix below with test names and manual evidence links in the verification report. Update setup copy with windowed/borderless and explicit monitor requirements. Sync completed specs and update backlog status through the approved workflow; do not claim the downstream module is built. Prepare final local handoff; publish/merge only if separately requested.

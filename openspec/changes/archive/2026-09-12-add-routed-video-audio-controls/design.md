@@ -1,6 +1,6 @@
 ## Context
 
-The current `alert-audio-routing` specification deliberately keeps all alert video silent. Audio resolution, route binding snapshots, bounded asset transport and a dedicated player already exist. The [approved design](../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md) expands media-audio support without changing output selections or TTS.
+The current `alert-audio-routing` specification deliberately keeps all alert video silent. Audio resolution, route binding snapshots, bounded asset transport and a dedicated player already exist. This change expands media-audio support without changing output selections or TTS.
 
 ## Goals / Non-Goals
 

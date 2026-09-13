@@ -174,7 +174,7 @@ export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, re
 export type { SurfaceLayer, SurfaceConfiguration, SurfaceRepository } from "./overlay-modules/surface-configuration.js";
 export { visualRecipientKeySchema } from "./overlays/visual-recipient.js";
 export type { VisualRecipientKey } from "./overlays/visual-recipient.js";
-export { playbackTimingSchema, playbackOffsetMs } from "./overlays/playback-timing.js";
+export { playbackTimingSchema } from "./overlays/playback-timing.js";
 export type { PlaybackTiming } from "./overlays/playback-timing.js";
 export { desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, maxDesktopVisualTransferBytes, visualMediaType } from "./overlays/desktop-visual-transport.js";
 export type { DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";

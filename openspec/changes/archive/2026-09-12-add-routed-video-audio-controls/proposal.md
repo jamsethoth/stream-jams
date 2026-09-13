@@ -25,7 +25,6 @@ The current alert routing implementation keeps video layers silent. Streamers ne
 
 Touches core alert document/schema migration, media-audio resolution and transport, `AudioOutputService`, `DesktopAudioSink`, the desktop player, browser renderer, alert editor, and compatibility tests. Depends on the merged audio-routing foundation; independently implementable of the desktop visual surface, but delivered second in the agreed sequence. Does not change the separate video-shoutout proposal or TTS provider routing.
 
-See [approved design and research](../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md).
 
 ## Non-goals
 

@@ -13,11 +13,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 
 ## Planned Changes
 
-Completed desktop/tray, alert-routing, shared desktop-surface, and routed video-soundtrack requirements are maintained in durable OpenSpec capabilities and their archives. The following proposals are artifact-ready; downstream implementation still requires its listed dependencies.
-
-| ID | Feature | Status | Priority | Dependencies | OpenSpec |
-| --- | --- | --- | --- | --- | --- |
-| BL-047 | Screen Effects and merged multi-module queue operations | Planned | P1 | Implemented and synced shared desktop-surface and routed video-audio foundations | [add-screen-effects-module](../openspec/changes/add-screen-effects-module/proposal.md) |
+No promoted backlog items are currently awaiting implementation. Completed desktop/tray, alert-routing, shared desktop-surface, and routed video-soundtrack requirements are maintained in durable OpenSpec capabilities and their archives.
 
 ## Alert Authoring And Assets
 
@@ -56,6 +52,7 @@ Completed desktop/tray, alert-routing, shared desktop-surface, and routed video-
 | --- | --- | --- | --- | --- | --- |
 | BL-027 | Startup module selection/setup wizard | Trigger-based | P3 | Multiple shipped overlay modules | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
 | BL-028 | Music widget and additional overlay modules | Deferred | P2 | A separately approved module slice | [Product plan](product-plan.md) |
+| BL-047 | Screen Effects and merged multi-module queue operations | Deferred | P1 | A separately approved design and apply-ready OpenSpec change | The shared desktop-surface and routed video-audio foundations are implemented; promote this module in its own scoped change. |
 | BL-029 | Expanded output management, connected-client history, route-key audit, and OBS-aware readiness | Deferred | P3 | Output workflow outgrows the current Alerts section | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-030 | Desktop installer, signing, publishing, updater, and `safeStorage` migration | Deferred | P2 | Implemented desktop foundation and a separately approved distribution/credential-migration change | Runnable Windows folder and tray lifecycle are implemented; distribution and credential migration remain separate. [Desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md); [Product plan](product-plan.md) |
 | BL-031 | Docker delivery | Deferred | P3 | Supported self-hosted deployment requirement | [Product plan](product-plan.md) |
@@ -67,9 +64,9 @@ Completed desktop/tray, alert-routing, shared desktop-surface, and routed video-
 | BL-037 | Alert scheduling | Deferred | P3 | A concrete scheduling workflow and safe clock/time-zone semantics | [Product plan](product-plan.md) |
 | BL-038 | Full operator console expansion for intake, event review, and attention workflows | Deferred | P2 | BL-001 and demonstrated live-operation needs | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-041 | Production web bundle splitting and performance budget | Deferred | P2 | Production entry chunk remains above Vite's 500 kB advisory threshold | Measure management startup, define an initial-load budget, and lazy-load heavy management surfaces, especially the alert editor, without weakening overlay reliability. |
-| BL-048 | Cross-platform desktop overlay support | Deferred | P3 | Windows surface proven; named macOS/Linux packaging, input, display and audio acceptance targets | Windows first. [Screen Effects design](superpowers/specs/2026-09-07-screen-effects-design.md) |
-| BL-049 | Exclusive-full-screen desktop overlay compatibility evaluation | Evidence-dependent | P3 | Demonstrated need beyond windowed/borderless; explicit backend and anti-cheat/support-risk decision | No graphics injection or automatic game-setting changes are authorized by the shared desktop surface or BL-047. [Design boundary](superpowers/specs/2026-09-07-screen-effects-design.md#shared-visual-surface) |
-| BL-050 | Optional cloud service deployment with a local desktop bridge | Deferred candidate | P3 | Explicit deployment need, local-device ownership boundary and separately approved authentication/transport model | Current app remains local-first; this does not reopen marketplace or general cloud sync. [Design boundary](superpowers/specs/2026-09-07-screen-effects-design.md#product-boundaries) |
+| BL-048 | Cross-platform desktop overlay support | Deferred | P3 | Windows surface proven; named macOS/Linux packaging, input, display and audio acceptance targets | Windows first. [Shared-surface verification](verification/shared-desktop-overlay.md) |
+| BL-049 | Exclusive-full-screen desktop overlay compatibility evaluation | Evidence-dependent | P3 | Demonstrated need beyond windowed/borderless; explicit backend and anti-cheat/support-risk decision | No graphics injection or automatic game-setting changes are authorized by the shared desktop surface or BL-047. [Shared-surface requirements](../openspec/specs/shared-overlay-surfaces/spec.md) |
+| BL-050 | Optional cloud service deployment with a local desktop bridge | Deferred candidate | P3 | Explicit deployment need, local-device ownership boundary and separately approved authentication/transport model | Current app remains local-first; this does not reopen marketplace or general cloud sync. [Product plan](product-plan.md) |
 | BL-051 | Automatic desktop display reconnection after display ID changes | Deferred | P2 | Implemented shared desktop surface; validated Windows hardware-identity matching and an approved persistence/recovery design | Save reliable physical-monitor identity and automatically rebind only when exactly one current monitor matches. Missing or ambiguous identity requires explicit selection; never fall back to the primary display or match solely by name/position. Recovery applies to future effects only, with no interrupted-content replay. Observed during the September 10 test; the user reported a driver update/display refresh, but causality is unconfirmed. [Test evidence](verification/shared-desktop-overlay.md#integrated-representative-video-attempt--september-10); [Windows monitor identity](https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmimonitorid). |
 
 ## Known Issues

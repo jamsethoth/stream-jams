@@ -2,24 +2,24 @@
 
 > **For agentic workers:** Use `superpowers:executing-plans` inline, task by task. Use `superpowers:subagent-driven-development` only when the user chooses delegation. Steps use checkboxes; commit checkpoints require authorization.
 
-**Goal:** Let users independently enable video soundtracks and separate sounds, with the existing item-wide Browser Source and selected-device outputs, starting in Alerts and reusable by Screen Effects.
+**Goal:** Let users independently enable video soundtracks and separate sounds, with the existing item-wide Browser Source and selected-device outputs, starting in Alerts and reusable by future modules.
 
 **Architecture:** Migrate legacy documents without enabling sound, resolve enabled sources once before visual expansion, and deliver soundtrack media through the existing audio transport. Muted visual video and routed soundtrack share occurrence timing. Reusable editor controls preserve draft/Undo/Save behavior without introducing global audio UI.
 
 **Tech Stack:** Existing core Zod/TypeScript, SQLite, React, browser/Electron media elements and explicit output routing, Vitest/Storybook/Playwright. No extraction service, FFmpeg, new device driver, or codec dependency.
 
-**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/design.md), [new audio requirements](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/routed-video-audio/spec.md), [routing delta](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/alert-audio-routing/spec.md), [Operator delta](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/alert-playback-operator-controls/spec.md), [OpenSpec tasks](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/tasks.md).
+**Spec:** [Change design](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/design.md), [new audio requirements](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/routed-video-audio/spec.md), [routing delta](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/alert-audio-routing/spec.md), [Operator delta](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/specs/alert-playback-operator-controls/spec.md), [OpenSpec tasks](../../../openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/tasks.md).
 
 ## Global constraints
 
-All [execution-index constraints](2026-09-08-screen-effects-implementation.md#global-constraints) apply. New video `Play embedded audio` defaults on; legacy saved videos migrate off. Each source has volume `[0,1]`; each item retains `{ browserSource, deviceRouteIds }`. No implicit video muting when a separate sound is selected. All visual video elements are internally muted. Retain 25 MiB per transported audio asset, 100 MiB per batch, 5-second preparation, duration-plus-5-second outer expiry, 2-second stop acknowledgement/destruction, explicit device binding/no fallback, authoritative mute, and unchanged TTS/video-shoutout behavior. Local marker onset/drift target is 150 ms, not a universal or sample-perfect guarantee.
+New video `Play embedded audio` defaults on; legacy saved videos migrate off. Each source has volume `[0,1]`; each item retains `{ browserSource, deviceRouteIds }`. No implicit video muting when a separate sound is selected. All visual video elements are internally muted. Retain 25 MiB per transported audio asset, 100 MiB per batch, 5-second preparation, duration-plus-5-second outer expiry, 2-second stop acknowledgement/destruction, explicit device binding/no fallback, authoritative mute, and unchanged TTS/video-shoutout behavior. Local marker onset/drift target is 150 ms, not a universal or sample-perfect guarantee.
 
 ## File ownership and shared contracts
 
 | Area | Responsibility |
 | --- | --- |
 | `packages/core/src/management/alert-document-compatibility.ts` | First document version and legacy read/import migration |
-| `packages/core/src/audio/media-audio.ts` | Source normalization usable by Alerts and Screen Effects |
+| `packages/core/src/audio/media-audio.ts` | Source normalization reusable across overlay modules |
 | `packages/core/src/overlays/playback-timing.ts` | Common occurrence clock; consume slice 1's implementation, or introduce the same contract if this slice runs first |
 | `apps/server/src/modules/audio/desktop-audio-sink.ts` | Trusted bounded media bytes and one route-binding snapshot |
 | `apps/desktop/src/audio/` | Existing shared player extended for soundtrack decoding, seeking, and cancellation |
@@ -143,32 +143,16 @@ return enabled.map(({ layerId, assetId, volume, sourceKind }) => ({ layerId, ass
 
 **Interfaces**
 
-- Consume `PlaybackTiming = { startsAtEpochMs: number; endsAtEpochMs: number }` and `playbackOffsetMs(timing: PlaybackTiming, nowEpochMs: number): number | null`.
+- Consume `PlaybackTiming = { startsAtEpochMs: number; endsAtEpochMs: number }` and derive each recipient's bounded offset from the shared epoch.
 - Add occurrence `timing: PlaybackTiming` to new audio batches and soundtrack browser instructions; derive `startDeadlineMs` and `deadlineMs` from that same occurrence, not each media element's load time.
 - Extend `PlayerMediaElement` with typed `currentTime`, `readyState`, and metadata/seek readiness needed by the existing player adapter. Use existing `DeviceAudioResult` for settled destination results; no additional audio player per module.
 
-- [ ] Write a fake-clock late-seek regression against the common offset function, and player tests whose fake media element exposes a writable `currentTime` and records `play()` order:
-
-```ts
-import { expect, it } from "vitest";
-import { playbackOffsetMs } from "./playback-timing.js";
-it("does not give a delayed soundtrack a fresh duration", () => {
-  const timing = { startsAtEpochMs: 1000, endsAtEpochMs: 11000 };
-  expect(playbackOffsetMs(timing, 3500)).toBe(2500);
-  expect(playbackOffsetMs(timing, 11500)).toBeNull();
-});
-```
+- [ ] Write fake-clock late-seek regressions in the actual recipients, using fake media elements with writable `currentTime` and recorded `play()` order.
 
 - [ ] Run `corepack.cmd pnpm exec vitest run apps/desktop/src/audio/device-audio-player.test.ts apps/web/src/overlay/components/OverlaySurface.test.tsx`; expect the new scheduled-start/late-seek/cancel cases to fail even if the shared timing helper already passes.
 - [ ] Choose one start epoch after bounded service-side preflight with a small scheduling lead (initial implementation choice: 100 ms), and one end epoch from duration. Ready recipients wait for that epoch; late-ready recipients seek to current offset before playing. If metadata/seek does not become ready within the 5-second preparation bound, or the end is already past, fail that recipient closed. Healthy recipients do not wait indefinitely for a missing device or browser.
 
-```ts
-const offsetMs = playbackOffsetMs(timing, nowEpochMs);
-if (offsetMs === null) return "expired";
-element.currentTime = offsetMs / 1000;
-```
-
-This fragment belongs after metadata readiness and before `play()`; the caller waits for seek completion or verifies the position, and uses a bounded timeout. `timing`, `nowEpochMs`, and `element` are the task's existing batch clock and `PlayerMediaElement`, not independent per-recipient clocks. Test future start separately so the element does not play early.
+The offset calculation belongs after metadata readiness and before `play()`; the caller rejects an expired occurrence, seeks to `max(0, nowEpochMs - timing.startsAtEpochMs)`, waits for seek completion or verifies the position, and uses a bounded timeout. `timing`, `nowEpochMs`, and `element` are the task's existing batch clock and `PlayerMediaElement`, not independent per-recipient clocks. Test future start separately so the element does not play early.
 
 - [ ] Keep every visual `<video muted>` in production, preview, and explicit tests. Render the soundtrack as a separate routed media source only when enabled. Do not key a soundtrack by visual-profile expansion. For video with no audio track, settle normally by media end/duration; an unsupported codec is a failure; neither may wait forever for nonexistent track metadata. Clear timers/listeners and revoke Blob URLs on completion, failure, cancellation, and disposal.
 - [ ] Preserve global mute before play and during preparation, and unmute only currently owned sources. Scope normal stop by occurrence ID. Preserve the 2-second host stop/destruction silence boundary and duration-plus-5-second watchdog; destruction settles every pending batch in that host, including future concurrent modules. Ignore late generation completions. Test stop-before-ready, trackless media, never-ready, unseekable media, partial device failure, repeated stop, expired media, mute/seek races, and hidden management.
@@ -223,7 +207,7 @@ it("does not change the video switch when a separate sound appears", () => {
 - Modify: `docs/verification/routed-video-audio.md`, `tests/desktop/video-audio.spec.ts`, `docs/mvp-runbook.md`.
 - Update: `openspec/changes/archive/2026-09-12-add-routed-video-audio-controls/tasks.md`, `docs/product-plan.md`, `docs/backlog.md` only as work and spec sync complete.
 
-- [ ] Run the [shared verification commands](2026-09-08-screen-effects-implementation.md#shared-verification-ledger) and `openspec.cmd validate add-routed-video-audio-controls --strict`. Record actual outputs; classify failures rather than weakening tests or declaring partial success a pass.
+- [ ] Run the repository lint, typecheck, unit, build, Storybook, E2E, desktop-package, desktop-test, and strict OpenSpec gates. Record actual outputs; classify failures rather than weakening tests or declaring partial success a pass.
 - [ ] Rebuild/restart the authorized runtime and verify the new workflow with neutral media. Test one explicit physical device, two distinct devices, Browser Source-only, combined, no destinations, same-device aliases, and a missing bound device. Confirm old saved Alert video remains silent after upgrade/reload/import and new video follows the toggle.
 - [ ] Test toggle off/on, separate-only/both sources, global mute/unmute, ordinary skip, hidden management, multiple target profiles, duration expiry, trackless video, codec failure, and 2-second forced audio-host destruction. Verify no unintended soundtrack copies and no fallback device. If slice 1 is delivered, verify desktop visual expansion does not add a device soundtrack; otherwise record desktop acceptance as outside this slice's current baseline.
 - [ ] Measure fixture onset/drift against the 150 ms local gate and report OBS/Desktop Audio monitoring recapture risks. A headphone destination does not prove OBS cannot hear it. Keep TTS and the separate video-shoutout proposal unchanged. Map every scenario to evidence, sync completed specs, update docs/backlog, and hand off without publishing or merging implicitly.

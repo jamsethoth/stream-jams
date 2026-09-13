@@ -25,7 +25,7 @@ None. Existing module browser-source URLs and desktop service ownership remain i
 
 Extends `apps/desktop`, `packages/core/src/overlay-modules`, `packages/core/src/overlays`, server composition/recipient tracking, typed persistence, Settings, and `OverlaySurface`. Depends on merged Windows desktop runtime and alert audio routing at `61642ae`; does not depend on Screen Effects or the unimplemented video-shoutout proposal.
 
-See [approved design and research](../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md). Implementation must pass an early packaged-Windows transparent-video feasibility gate while preserving the existing hardware-acceleration shutdown workaround.
+Implementation must pass an early packaged-Windows transparent-video feasibility gate while preserving the existing hardware-acceleration shutdown workaround.
 
 ## Non-goals
 

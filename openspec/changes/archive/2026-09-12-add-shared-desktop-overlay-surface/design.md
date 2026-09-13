@@ -1,6 +1,6 @@
 ## Context
 
-The merged Windows runtime owns a local service, management window, tray and sandboxed audio player. `OverlayComposition` contains module snapshots, but visual delivery still centers on browser clients. The [approved cross-slice design](../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md) defines a reusable desktop recipient and independent per-surface stacking.
+The merged Windows runtime owns a local service, management window, tray and sandboxed audio player. `OverlayComposition` contains module snapshots, but visual delivery still centers on browser clients. This change defines a reusable desktop recipient and independent per-surface stacking.
 
 ## Goals / Non-Goals
 
