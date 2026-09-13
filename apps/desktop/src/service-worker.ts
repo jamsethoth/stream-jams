@@ -39,7 +39,7 @@ parent.on("message", ({ data }: { data: unknown }) => {
     void runtime.then(async (started) => {
       if (stopping) return;
       const { desktop } = await started.composition.configStore.readConfig();
-      send({ type: "ready", generation: request.generation, requestId: request.requestId, url: started.url, closeToTray: desktop.closeToTray, muted: started.composition.playbackCoordinator.getSnapshot().muted });
+      send({ type: "ready", generation: request.generation, requestId: request.requestId, url: started.url, closeToTray: desktop.closeToTray, muted: started.composition.playbackOperationsService.getSnapshot().muted });
     }).catch((error: unknown) => {
       audio?.dispose();
       overlay?.dispose();
@@ -61,7 +61,7 @@ parent.on("message", ({ data }: { data: unknown }) => {
   }
   if (stopping) return;
   void runtime.then(async ({ composition }) => {
-    const result = request.muted ? await composition.playbackCoordinator.mute() : await composition.playbackCoordinator.unmute();
+    const result = await composition.playbackOperationsService.setSafety({ muted: request.muted });
     send({ type: "playback-state-changed", generation: request.generation, requestId: request.requestId, muted: result.muted });
   }).catch(() => send({ type: "command-failed", generation: request.generation, requestId: request.requestId, message: "Mute could not be saved. Check the operator controls and data-directory permissions." }));
 });

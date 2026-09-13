@@ -1,20 +1,21 @@
 import { PlaybackQueueItemNotFoundError, type Logger, type PlaybackQueueSnapshot } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
+import { PlaybackOperationsConflictError } from "../../modules/playback/playback-operations-service.js";
 import { sendHttpError } from "../errors.js";
 
 export interface PlaybackRouteCoordinator {
   getSnapshot(): PlaybackQueueSnapshot;
-  pause(): Promise<PlaybackQueueSnapshot>;
-  resume(): Promise<PlaybackQueueSnapshot>;
-  mute(): Promise<PlaybackQueueSnapshot>;
-  unmute(): Promise<PlaybackQueueSnapshot>;
-  setDoNotDisturb(enabled: boolean): Promise<PlaybackQueueSnapshot>;
-  skipCurrent(): PlaybackQueueSnapshot | Promise<PlaybackQueueSnapshot>;
-  replayRecent(itemId: string): PlaybackQueueSnapshot;
+}
+
+export interface LegacyPlaybackOperationsService {
+  setSafety(patch: Partial<Pick<PlaybackQueueSnapshot, "paused" | "muted" | "doNotDisturb">>): Promise<unknown>;
+  skip(moduleId: "alerts", occurrenceId: string): Promise<unknown>;
+  replay(moduleId: "alerts", occurrenceId: string): Promise<unknown>;
 }
 
 export interface PlaybackRouteDependencies {
   readonly playbackCoordinator: PlaybackRouteCoordinator;
+  readonly legacyPlaybackOperationsService: LegacyPlaybackOperationsService;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly runtimeLogger?: Logger | undefined;
@@ -25,29 +26,30 @@ export function registerPlaybackRoutes(app: FastifyInstance, dependencies: Playb
 
   app.get("/playback", { preHandler }, async () => dependencies.playbackCoordinator.getSnapshot());
   app.post("/playback/pause", { preHandler }, async (request) => {
-    const snapshot = await dependencies.playbackCoordinator.pause();
+    await dependencies.legacyPlaybackOperationsService.setSafety({ paused: true });
     await logPlaybackTransition(dependencies, request.id, "pause");
-    return snapshot;
+    return dependencies.playbackCoordinator.getSnapshot();
   });
   app.post("/playback/resume", { preHandler }, async (request) => {
-    const snapshot = await dependencies.playbackCoordinator.resume();
+    await dependencies.legacyPlaybackOperationsService.setSafety({ paused: false });
     await logPlaybackTransition(dependencies, request.id, "resume");
-    return snapshot;
+    return dependencies.playbackCoordinator.getSnapshot();
   });
   app.post("/playback/mute", { preHandler }, async (request) => {
-    const snapshot = await dependencies.playbackCoordinator.mute();
+    await dependencies.legacyPlaybackOperationsService.setSafety({ muted: true });
     await logPlaybackTransition(dependencies, request.id, "mute");
-    return snapshot;
+    return dependencies.playbackCoordinator.getSnapshot();
   });
   app.post("/playback/unmute", { preHandler }, async (request) => {
-    const snapshot = await dependencies.playbackCoordinator.unmute();
+    await dependencies.legacyPlaybackOperationsService.setSafety({ muted: false });
     await logPlaybackTransition(dependencies, request.id, "unmute");
-    return snapshot;
+    return dependencies.playbackCoordinator.getSnapshot();
   });
   app.post("/playback/skip", { preHandler }, async (request) => {
-    const snapshot = await dependencies.playbackCoordinator.skipCurrent();
+    const current = dependencies.playbackCoordinator.getSnapshot().current;
+    if (current !== null) await dependencies.legacyPlaybackOperationsService.skip("alerts", current.id);
     await logPlaybackTransition(dependencies, request.id, "skip");
-    return snapshot;
+    return dependencies.playbackCoordinator.getSnapshot();
   });
   app.post("/playback/do-not-disturb", { preHandler }, async (request, reply) => {
     const payload = parseDoNotDisturbPayload(request.body);
@@ -58,9 +60,9 @@ export function registerPlaybackRoutes(app: FastifyInstance, dependencies: Playb
       });
     }
 
-    const snapshot = await dependencies.playbackCoordinator.setDoNotDisturb(payload.enabled);
+    await dependencies.legacyPlaybackOperationsService.setSafety({ doNotDisturb: payload.enabled });
     await logPlaybackTransition(dependencies, request.id, "do-not-disturb", { enabled: payload.enabled });
-    return snapshot;
+    return dependencies.playbackCoordinator.getSnapshot();
   });
   app.post("/playback/replay", { preHandler }, async (request, reply) => {
     const payload = parseReplayPayload(request.body);
@@ -72,14 +74,14 @@ export function registerPlaybackRoutes(app: FastifyInstance, dependencies: Playb
     }
 
     try {
-      const snapshot = dependencies.playbackCoordinator.replayRecent(payload.itemId);
+      await dependencies.legacyPlaybackOperationsService.replay("alerts", payload.itemId);
       await logPlaybackTransition(dependencies, request.id, "replay", { itemId: payload.itemId });
-      return snapshot;
+      return dependencies.playbackCoordinator.getSnapshot();
     } catch (error) {
-      if (isPlaybackQueueItemNotFoundError(error)) {
+      if (isPlaybackQueueItemNotFoundError(error) || error instanceof PlaybackOperationsConflictError) {
         return sendHttpError(reply, 404, {
           code: "PLAYBACK_QUEUE_ITEM_NOT_FOUND",
-          message: error.message
+          message: `Playback queue item "${payload.itemId}" was not found`
         });
       }
 

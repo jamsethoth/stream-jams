@@ -143,6 +143,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     ]);
     expect(JSON.stringify(snapshot)).not.toContain("machine-only-effect-device");
     expect(snapshot.tables.module_playback_settings).toEqual([
+      expect.objectContaining({ module_id: "alerts", paused: 0, cooldown_seconds: 0 }),
       expect.objectContaining({ module_id: "screen-effects", paused: 1, cooldown_seconds: 7 })
     ]);
     expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
@@ -182,7 +183,10 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     await expect(effects.list()).resolves.toEqual([]);
     expect(database.connection.prepare(
       "SELECT module_id, paused, cooldown_seconds FROM module_playback_settings"
-    ).all()).toEqual([{ module_id: "screen-effects", paused: 0, cooldown_seconds: 0 }]);
+    ).all()).toEqual([
+      { module_id: "alerts", paused: 0, cooldown_seconds: 0 },
+      { module_id: "screen-effects", paused: 0, cooldown_seconds: 0 }
+    ]);
   });
 
   it("exports unbound desktop settings and preserves local bindings only in rollback points", () => {

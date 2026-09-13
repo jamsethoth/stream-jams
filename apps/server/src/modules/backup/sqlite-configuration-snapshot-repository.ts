@@ -265,12 +265,12 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
           continue;
         }
         if (definition.name === "module_playback_settings") {
-          const rows = input.tables.module_playback_settings ?? [{
-            module_id: "screen-effects",
+          const rows = input.tables.module_playback_settings ?? ["alerts", "screen-effects"].map((moduleId) => ({
+            module_id: moduleId,
             paused: 0,
             cooldown_seconds: 0,
             updated_at: new Date().toISOString()
-          }];
+          }));
           insertCapturedRows(this.connection, definition.name, rows);
           continue;
         }
@@ -663,18 +663,18 @@ function validateScreenEffects(tables: BackupConfiguration["tables"]): readonly 
   }
 
   const settings = tables.module_playback_settings ?? [];
-  if (settings.length !== 1 || settings[0]?.module_id !== "screen-effects") {
-    errors.push("module_playback_settings must contain exactly one Screen Effects row.");
+  if (!sameStrings(settings.map((row) => String(row.module_id)).sort(), ["alerts", "screen-effects"])) {
+    errors.push("module_playback_settings must contain exactly one Alerts and one Screen Effects row.");
   }
   for (const [index, row] of settings.entries()) {
     if (
-      row.module_id !== "screen-effects" ||
+      row.module_id !== "alerts" && row.module_id !== "screen-effects" ||
       row.paused !== 0 && row.paused !== 1 ||
       !Number.isInteger(row.cooldown_seconds) ||
       Number(row.cooldown_seconds) < 0 ||
       Number(row.cooldown_seconds) > 86_400
     ) {
-      errors.push(`module_playback_settings[${index}] contains invalid Screen Effects settings.`);
+      errors.push(`module_playback_settings[${index}] contains invalid module settings.`);
     }
   }
   return errors;

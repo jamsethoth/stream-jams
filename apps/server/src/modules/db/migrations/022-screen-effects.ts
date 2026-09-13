@@ -60,7 +60,9 @@ CREATE TABLE module_playback_settings (
 );
 
 INSERT INTO module_playback_settings (module_id, paused, cooldown_seconds, updated_at)
-VALUES ('screen-effects', 0, 0, CURRENT_TIMESTAMP);
+VALUES
+  ('alerts', 0, 0, CURRENT_TIMESTAMP),
+  ('screen-effects', 0, 0, CURRENT_TIMESTAMP);
 
 CREATE INDEX screen_effect_variants_effect_order
   ON screen_effect_variants(effect_id, position);

@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { createHttpPlaybackApi } from "./playback-api.js";
 
 const snapshot = {
-  current: null,
+  revision: 4,
+  owners: [{ moduleId: "alerts", paused: false }, { moduleId: "screen-effects", paused: false }],
+  current: [],
   queued: [],
   recent: [],
   paused: false,
@@ -30,25 +32,37 @@ describe("createHttpPlaybackApi", () => {
     await api.mute();
     await api.unmute();
     await api.setDoNotDisturb(true);
-    await api.skip();
-    await api.replay("recent-1");
+    await api.skip("screen-effects", "current-1");
+    await api.remove("alerts", "pending-1");
+    await api.replay("alerts", "recent-1");
+    await api.clear("screen-effects", 2, 4);
+    await api.setModulePaused("screen-effects", true);
 
     expect(requests.map(({ path }) => path)).toEqual([
-      "/playback",
+      "/playback/operations",
       "/playback/pause",
+      "/playback/operations",
       "/playback/resume",
+      "/playback/operations",
       "/playback/mute",
+      "/playback/operations",
       "/playback/unmute",
+      "/playback/operations",
       "/playback/do-not-disturb",
-      "/playback/skip",
-      "/playback/replay"
+      "/playback/operations",
+      "/playback/operations/screen-effects/current-1/skip",
+      "/playback/operations/alerts/pending-1/remove",
+      "/playback/operations/alerts/recent-1/replay",
+      "/playback/operations/screen-effects/clear",
+      "/playback/operations/screen-effects/pause"
     ]);
     expect(requests[0]?.init?.headers).toMatchObject({ authorization: "Bearer mgmt_operator" });
-    expect(requests.slice(1).every(({ init }) =>
+    expect(requests.filter(({ init }) => init?.method === "POST").every(({ init }) =>
       (init?.headers as Record<string, string>)["x-stream-jams-csrf"] === "csrf_operator"
     )).toBe(true);
-    expect(requests[5]?.init?.body).toBe(JSON.stringify({ enabled: true }));
-    expect(requests[7]?.init?.body).toBe(JSON.stringify({ itemId: "recent-1" }));
+    expect(requests.find(({ path }) => path === "/playback/do-not-disturb")?.init?.body).toBe(JSON.stringify({ enabled: true }));
+    expect(requests.find(({ path }) => path.endsWith("/clear"))?.init?.body).toBe(JSON.stringify({ expectedPendingCount: 2, observedRevision: 4 }));
+    expect(requests.at(-1)?.init?.body).toBe(JSON.stringify({ paused: true }));
     expect(setItem).not.toHaveBeenCalled();
   });
 

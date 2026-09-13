@@ -160,11 +160,11 @@ it("serves audio routes over loopback, observes global mute, and retains binding
     const created = await fetch(`${address}/audio/routes`, { method: "POST", headers, body: JSON.stringify({ name: "Private", deviceId: "test-device" }) });
     expect(created.status).toBe(201);
     const route = await created.json() as { id: string };
-    await composition.playbackCoordinator.mute();
+    await composition.playbackOperationsService.setSafety({ muted: true });
     const muted = await fetch(`${address}/audio/routes/${route.id}/test`, { method: "POST", headers, body: "{}" });
     expect(await muted.json()).toEqual({ routeId: route.id, muted: true });
     expect(testOutput).not.toHaveBeenCalled();
-    await composition.playbackCoordinator.unmute();
+    await composition.playbackOperationsService.setSafety({ muted: false });
     const played = await fetch(`${address}/audio/routes/${route.id}/test`, { method: "POST", headers, body: "{}" });
     expect(await played.json()).toEqual({ routeId: route.id, muted: false });
     expect(testOutput).toHaveBeenCalledExactlyOnceWith("test-device");

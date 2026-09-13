@@ -28,6 +28,10 @@ import {
 import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
 import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/routes/overlays.js";
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
+import {
+  registerPlaybackOperationsRoutes,
+  type PlaybackOperationsRouteDependencies
+} from "./http/routes/playback-operations.js";
 import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.js";
 import { registerTwitchAuthRoutes, type TwitchAuthRouteDependencies } from "./http/routes/twitch-auth.js";
 import { registerTwitchEventSubRoutes, type TwitchEventSubRouteDependencies } from "./http/routes/twitch-eventsub.js";
@@ -69,6 +73,7 @@ export interface ServerAppDependencies
     Partial<AlertRuleRouteDependencies>,
     Partial<AlertCollectionRouteDependencies>,
     Partial<PlaybackRouteDependencies>,
+    Partial<PlaybackOperationsRouteDependencies>,
     Partial<TtsRouteDependencies>,
     Partial<TwitchAuthRouteDependencies>,
     Partial<TwitchEventSubRouteDependencies>,
@@ -221,6 +226,13 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     }
 
     registerPlaybackRoutes(app, dependencies);
+  }
+
+  if (dependencies.playbackOperationsService !== undefined) {
+    if (!hasPlaybackOperationsRouteDependencies(dependencies)) {
+      throw new Error("Playback operations routes require service, management auth, and rate-limit hooks");
+    }
+    registerPlaybackOperationsRoutes(app, dependencies);
   }
 
   if (dependencies.ttsService !== undefined) {
@@ -438,6 +450,17 @@ function hasPlaybackRouteDependencies(
 ): dependencies is ServerAppDependencies & PlaybackRouteDependencies {
   return (
     dependencies.playbackCoordinator !== undefined &&
+    dependencies.legacyPlaybackOperationsService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasPlaybackOperationsRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & PlaybackOperationsRouteDependencies {
+  return (
+    dependencies.playbackOperationsService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

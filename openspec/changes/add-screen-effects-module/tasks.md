@@ -28,10 +28,10 @@
 
 ## 5. Merged authoritative operations
 
-- [ ] 5.1 Add a narrow queue-owner adapter and merged server projection carrying module/occurrence identity, queue positions, sanitized summaries, timestamps and stable tie-breaks; test that projection order never drives scheduling.
-- [ ] 5.2 Centralize global safety through existing serialized persistence with module pauses separate; test failure atomicity, global resume while one module is paused, existing DND advancement hold and restoration before new playback.
-- [ ] 5.3 Add protected module-qualified skip/remove/replay/clear/pause commands; test stale skip after replacement, wrong owner/state, expired IDs, clear-only-pending and auth/CSRF/origin/rate limits while retaining the legacy Alerts adapter.
-- [ ] 5.4 Extend `operator/playback-api.ts` and `OperatorApp.tsx` with multiple current rows, merged pending/recent lists, module labels/positions and scoped controls. Preserve no-editing navigation, stale-state recovery, visibility-aware polling and accessible focus/status behavior.
+- [x] 5.1 Add a narrow queue-owner adapter and merged server projection carrying module/occurrence identity, queue positions, sanitized summaries, timestamps and stable tie-breaks; test that projection order never drives scheduling.
+- [x] 5.2 Centralize global safety through existing serialized persistence with module pauses separate; test failure atomicity, global resume while one module is paused, existing DND advancement hold and restoration before new playback.
+- [x] 5.3 Add protected module-qualified skip/remove/replay/clear/pause commands; test stale skip after replacement, wrong owner/state, expired IDs, clear-only-pending and auth/CSRF/origin/rate limits while retaining the legacy Alerts adapter.
+- [x] 5.4 Extend `operator/playback-api.ts` and `OperatorApp.tsx` with multiple current rows, merged pending/recent lists, module labels/positions and scoped controls. Preserve no-editing navigation, stale-state recovery, visibility-aware polling and accessible focus/status behavior.
 
 ## 6. Management and UI coverage
 

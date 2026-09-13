@@ -15,6 +15,11 @@ export interface PlaybackQueue {
   completeCurrent(): PlaybackQueueSnapshot;
   skipCurrent(): PlaybackQueueSnapshot;
   replayRecent(itemId: string): PlaybackQueueSnapshot;
+  remove(itemId: string): boolean;
+  clearPending(): number;
+  isModulePaused(): boolean;
+  setModulePaused(paused: boolean): PlaybackQueueSnapshot;
+  setSafetyState(state: PlaybackSafetyState): PlaybackQueueSnapshot;
   pause(): PlaybackQueueSnapshot;
   resume(): PlaybackQueueSnapshot;
   mute(): PlaybackQueueSnapshot;
@@ -27,6 +32,7 @@ export interface PlaybackQueueDependencies {
   readonly generateId: () => string;
   readonly recentLimit?: number;
   readonly initialSafetyState?: PlaybackSafetyState;
+  readonly initialModulePaused?: boolean;
 }
 
 export class PlaybackQueueItemNotFoundError extends Error {
@@ -50,6 +56,7 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
   #paused = false;
   #muted = false;
   #doNotDisturb = false;
+  #modulePaused = false;
   #nextSequence = 0;
 
   constructor(dependencies: PlaybackQueueDependencies) {
@@ -59,6 +66,7 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
     this.#paused = dependencies.initialSafetyState?.paused ?? false;
     this.#muted = dependencies.initialSafetyState?.muted ?? false;
     this.#doNotDisturb = dependencies.initialSafetyState?.doNotDisturb ?? false;
+    this.#modulePaused = dependencies.initialModulePaused ?? false;
   }
 
   getSnapshot(): PlaybackQueueSnapshot {
@@ -110,6 +118,37 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
     });
   }
 
+  remove(itemId: string): boolean {
+    const index = this.#queued.findIndex((candidate) => candidate.id === itemId);
+    if (index < 0) return false;
+    this.#queued.splice(index, 1);
+    return true;
+  }
+
+  clearPending(): number {
+    const count = this.#queued.length;
+    this.#queued = [];
+    return count;
+  }
+
+  isModulePaused(): boolean {
+    return this.#modulePaused;
+  }
+
+  setModulePaused(paused: boolean): PlaybackQueueSnapshot {
+    this.#modulePaused = paused;
+    this.#maybeStartNext(this.#now());
+    return this.#snapshot();
+  }
+
+  setSafetyState(state: PlaybackSafetyState): PlaybackQueueSnapshot {
+    this.#paused = state.paused;
+    this.#muted = state.muted;
+    this.#doNotDisturb = state.doNotDisturb;
+    this.#maybeStartNext(this.#now());
+    return this.#snapshot();
+  }
+
   pause(): PlaybackQueueSnapshot {
     this.#paused = true;
     return this.#snapshot();
@@ -155,7 +194,7 @@ export class DefaultPlaybackQueue implements PlaybackQueue {
   }
 
   #maybeStartNext(now: string): void {
-    if (this.#current !== null || this.#paused || this.#doNotDisturb || this.#queued.length === 0) {
+    if (this.#current !== null || this.#modulePaused || this.#paused || this.#doNotDisturb || this.#queued.length === 0) {
       return;
     }
 

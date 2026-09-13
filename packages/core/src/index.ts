@@ -221,6 +221,7 @@ export type * from "./playback/types.js";
 export { defaultPlaybackSafetyState } from "./playback/types.js";
 export type * from "./playback/playback-queue.js";
 export { DefaultPlaybackQueue, PlaybackQueueItemNotFoundError } from "./playback/playback-queue.js";
+export * from "./playback/operations.js";
 export type * from "./playback/cooldown-service.js";
 export { DefaultPlaybackCooldownService } from "./playback/cooldown-service.js";
 export type * from "./playback/dedupe-service.js";

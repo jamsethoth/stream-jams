@@ -384,6 +384,37 @@ export class PlaybackCoordinator {
     return this.#stopOccurrenceAndAdvance(current.id, "skipped");
   }
 
+  async skip(occurrenceId: string): Promise<boolean> {
+    if (this.#queue.getSnapshot().current?.id !== occurrenceId) return false;
+    await this.#stopOccurrenceAndAdvance(occurrenceId, "skipped");
+    return true;
+  }
+
+  remove(occurrenceId: string): boolean {
+    return this.#queue.remove(occurrenceId);
+  }
+
+  clearPending(): number {
+    return this.#queue.clearPending();
+  }
+
+  setModulePaused(paused: boolean): PlaybackQueueSnapshot {
+    return this.#deliverCurrent(this.#queue.setModulePaused(paused));
+  }
+
+  async applySafetyState(state: PlaybackSafetyState): Promise<PlaybackQueueSnapshot> {
+    const snapshot = this.#deliverCurrent(this.#queue.setSafetyState(state));
+    try {
+      this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    } catch {
+      // A browser transport failure must not prevent device mute from being applied.
+    }
+    await Promise.allSettled([
+      this.#audioPlaybackSink?.setMuted(snapshot.muted)
+    ]);
+    return snapshot;
+  }
+
   replayRecent(itemId: string): PlaybackQueueSnapshot {
     return this.#deliverCurrent(this.#queue.replayRecent(itemId));
   }

@@ -24,4 +24,15 @@ describe("SqliteEffectModuleSettingsRepository", () => {
     await expect(repository.save({ paused: false, cooldownSeconds: 86_401 })).rejects.toThrow();
     await expect(repository.get()).resolves.toEqual({ paused: false, cooldownSeconds: 0 });
   });
+
+  it("keeps the Alerts module pause independent from Screen Effects", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const alerts = new SqliteEffectModuleSettingsRepository(database.connection, undefined, "alerts");
+    const effects = new SqliteEffectModuleSettingsRepository(database.connection);
+
+    await alerts.save({ paused: true, cooldownSeconds: 0 });
+
+    await expect(alerts.get()).resolves.toEqual({ paused: true, cooldownSeconds: 0 });
+    await expect(effects.get()).resolves.toEqual({ paused: false, cooldownSeconds: 0 });
+  });
 });
