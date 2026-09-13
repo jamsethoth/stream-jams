@@ -306,3 +306,5 @@ export {
   screenEffectDocumentSchema
 } from "./screen-effects/schemas.js";
 export { chooseWeightedVariant, resolveEffectContent } from "./screen-effects/variant-resolver.js";
+export * from "./screen-effects/authoring.js";
+export * from "./screen-effects/layout.js";

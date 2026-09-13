@@ -36,7 +36,9 @@ The implementation retains management-session authorization, CSRF/origin checks 
 
 Task 2.1 is complete. The red run of `corepack.cmd pnpm exec vitest run packages/core/src/screen-effects` failed because the new schema/resolver modules did not exist. After the minimal implementation, the focused suite passed 24 tests across two files. It covers disabled 10-second/priority-0 construction, invalid empty saved content, audio-only effects, independent video soundtrack and explicit sound controls, duration/weight/cooldown/layout/animation bounds, safe IDs, strict unknown-field rejection, duplicate variants/bindings, deterministic weighted boundaries, disabled-weighted fallback, and deep snapshot isolation.
 
-`corepack.cmd pnpm typecheck` passed after the implementation. Focused ESLint initially rejected a control-character regular expression under `no-control-regex`; the validator was replaced with the equivalent character-code predicate, after which focused ESLint and all 24 tests passed. Task 2.2 remains open until immutable copy/edit/save authoring state is implemented and verified with its UI boundary.
+`corepack.cmd pnpm typecheck` passed after the implementation. Focused ESLint initially rejected a control-character regular expression under `no-control-regex`; the validator was replaced with the equivalent character-code predicate, after which focused ESLint and all 24 tests passed.
+
+Task 2.2 is complete. The core now provides bounded immutable edit history, Undo/Redo/Revert, explicit validated save settlement, safe variant copying and whole-effect duplication with caller-supplied stable IDs. Copies never share nested media/output state and duplicated effects remain disabled. A narrow 1920×1080 contain-fit helper centers effects on landscape, wider, taller and portrait outputs without stretching; it is the shared calculation for later browser and desktop delivery, not a general composition engine. The complete core Screen Effects suite passed 34 tests across four files, with focused lint and workspace typecheck passing.
 
 ## Persistence checkpoint
 
