@@ -16,7 +16,7 @@ export function AlertAudioOutputs({ value, status, loading, error, onChange }: {
   }
   return <div className="alert-editor-inspector"><fieldset>
     <legend>Audio outputs</legend>
-    <p>All visible audio layers use these outputs. Each layer keeps its own volume. Save to apply changes.</p>
+    <p>All visible audio layers and enabled video soundtracks use these outputs. Each source keeps its own volume. Save to apply changes.</p>
     <label className="alert-editor-inspector__check"><input checked={value.browserSource} onChange={(event) => onChange({ ...value, browserSource: event.currentTarget.checked })} type="checkbox" />Browser Source</label>
     {routes.map(({ route, state }) => <label className="alert-editor-inspector__check" key={route.id}>
       <input checked={value.deviceRouteIds.includes(route.id)} onChange={(event) => toggleRoute(route.id, event.currentTarget.checked)} type="checkbox" />
@@ -26,7 +26,7 @@ export function AlertAudioOutputs({ value, status, loading, error, onChange }: {
     {loading && status === null ? <p role="status">Loading audio routes…</p> : null}
     {error === null ? null : <p role="status">Audio route status could not refresh. {error} {status === null ? "Saved selections are retained." : "Showing last-known status."}</p>}
     {status?.capability.available === false ? <p>Device routing is unavailable. {status.capability.nextStep}</p> : null}
-    {!value.browserSource && value.deviceRouteIds.length === 0 ? <p>Explicit audio is silent: no outputs selected. TTS is unchanged.</p> : null}
+    {!value.browserSource && value.deviceRouteIds.length === 0 ? <p>Audio layers and enabled soundtracks are silent: no outputs selected. TTS is unchanged.</p> : null}
     {status?.muted ? <p>Global mute is on. Audio remains muted on all selected outputs.</p> : null}
     <p><a href="/manage/settings#audio-outputs">Configure audio outputs</a>. Preview plays locally only; it never uses these device routes. TTS routing is unchanged.</p>
   </fieldset></div>;

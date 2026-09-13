@@ -380,7 +380,9 @@ export const alertLayerSchema = z.discriminatedUnion("type", [
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("video"),
-    assetId: nonEmptyStringSchema
+    assetId: nonEmptyStringSchema,
+    playEmbeddedAudio: z.boolean(),
+    audioVolume: z.number().finite().min(0).max(1)
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("audio"),
@@ -588,6 +590,7 @@ function nonNegativeNumber(value: unknown): boolean {
 }
 
 export const alertEditorDocumentSchema = z.object({
+  schemaVersion: z.literal(1),
   id: nonEmptyStringSchema,
   setId: nonEmptyStringSchema,
   providerKind: providerKindSchema,

@@ -264,12 +264,18 @@ export class ConfigurationBackupService {
     const archive = parsed.data;
     const blockers: ActionableManagementError[] = [];
     const warnings: ActionableManagementError[] = [];
-    if (archive.manifest.schemaVersion !== this.#options.schemaVersion) {
+    const legacySurfaceUpgrade = [20, 21].includes(this.#options.schemaVersion) && archive.manifest.schemaVersion === 19
+      && archive.configuration.tables.overlay_surfaces === undefined;
+    const legacyVideoUpgrade = this.#options.schemaVersion === 21 && archive.manifest.schemaVersion === 20;
+    if (archive.manifest.schemaVersion !== this.#options.schemaVersion && !legacySurfaceUpgrade && !legacyVideoUpgrade) {
       blockers.push(blocker(
         "Backup schema is not supported",
         `This backup uses schema ${archive.manifest.schemaVersion}; this app requires schema ${this.#options.schemaVersion}.`,
         "Open the backup with a compatible Stream Jams version, then export it again."
       ));
+    }
+    if (archive.manifest.schemaVersion >= 20 && archive.configuration.tables.overlay_surfaces === undefined) {
+      blockers.push(blocker("Backup surface configuration is missing", "Schema 20 and later require surface settings.", "Export a new backup from the source installation."));
     }
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));

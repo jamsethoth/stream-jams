@@ -3,6 +3,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { HttpResponseError } from "./http/errors.js";
 import { AudioOutputError } from "./modules/audio/audio-output-error.js";
 import { registerAudioOutputRoutes, type AudioOutputRouteDependencies } from "./http/routes/audio-outputs.js";
+import { registerSurfaceSettingsRoutes, type SurfaceSettingsRouteDependencies } from "./http/routes/overlay-surfaces.js";
 import { registerAlertRoutes, type AlertRuleRouteDependencies } from "./http/routes/alerts.js";
 import { registerAlertCollectionRoutes, type AlertCollectionRouteDependencies } from "./http/routes/collections.js";
 import { registerAssetRoutes, type AssetRouteDependencies } from "./http/routes/assets.js";
@@ -51,6 +52,7 @@ export interface ServerAppDependencies
   extends Partial<ServerConfigRouteDependencies>,
     Partial<DesktopConfigRouteDependencies>,
     Partial<AudioOutputRouteDependencies>,
+    Partial<SurfaceSettingsRouteDependencies>,
     Partial<ConfigurationBackupRouteDependencies>,
     Partial<ManagementSessionRouteDependencies>,
     Partial<ManagementUiRouteDependencies>,
@@ -81,6 +83,13 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
   registerServerErrorHandler(app, dependencies);
 
   registerHealthRoutes(app, dependencies.metadata);
+  if (dependencies.surfaceSettingsService !== undefined) {
+    if (dependencies.managementAuthPreHandler === undefined || dependencies.managementRateLimitPreHandler === undefined) {
+      throw new Error("Overlay surface settings require management auth and rate-limit hooks");
+    }
+    registerSurfaceSettingsRoutes(app, { surfaceSettingsService: dependencies.surfaceSettingsService,
+      managementAuthPreHandler: dependencies.managementAuthPreHandler, managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler });
+  }
   if (dependencies.audioOutputService !== undefined) {
     if (dependencies.managementAuthPreHandler === undefined || dependencies.managementRateLimitPreHandler === undefined) {
       throw new Error("Audio outputs require management auth and rate-limit hooks");

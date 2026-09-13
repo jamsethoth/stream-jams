@@ -1104,7 +1104,7 @@ function output(targetProfileId: "landscape" | "vertical", purpose: "live") {
 }
 
 function editorDocument(): AlertEditorDocument {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

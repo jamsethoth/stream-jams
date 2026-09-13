@@ -65,15 +65,15 @@ Authorized operators SHALL be able to pause or resume queue advancement, mute or
 
 #### Scenario: Alert audio is muted
 - **WHEN** an operator mutes alert audio
-- **THEN** connected browser sources immediately mute explicit alert audio and browser speech, and alert video layers remain silent
+- **THEN** connected browser sources immediately mute explicit alert audio, enabled video soundtracks and browser speech
 - **AND** local device elements immediately receive the same muted state
 - **AND** reconnecting browser sources and recreated device players receive the authoritative muted state before new playback
 - **AND** remote TTS is not triggered for items that begin while muted
 
 #### Scenario: Alert audio is unmuted
 - **WHEN** an operator unmutes alert audio
-- **THEN** connected and reconnecting browser sources and local device players receive the authoritative unmuted state for explicit audio
-- **AND** alert video layers remain silent
+- **THEN** connected and reconnecting browser sources and local device players receive the authoritative unmuted state for explicit audio and enabled video soundtracks
+- **AND** enabled video soundtracks receive the same unmuted state while visual video elements remain internally muted
 - **AND** future items may trigger configured remote TTS normally
 - **AND** the system does not claim it can recall speech already handed to an external TTS provider
 

@@ -16,6 +16,13 @@ async function contents(file: string): Promise<string> {
 }
 
 describe("shutdown phase evidence", () => {
+  it("retains the bounded overlay teardown phases", async () => {
+    const { file } = await fixture();
+    const log = new ShutdownLog(file);
+    log.record("overlay-close-requested"); log.record("overlay-closed"); log.close();
+    await expect.poll(async () => (await contents(file)).trim().split("\n").length).toBe(2);
+    expect((await contents(file)).trim().split("\n").map(line => JSON.parse(line).phase)).toEqual(["overlay-close-requested", "overlay-closed"]);
+  });
   it("does not create evidence when disabled or given a relative path", async () => {
     const { root, file } = await fixture();
     for (const path of [undefined, relative(process.cwd(), file)]) {

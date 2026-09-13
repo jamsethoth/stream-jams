@@ -54,6 +54,62 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+function videoAudioStoryDocument(playEmbeddedAudio: boolean, separateAudio = false, silentOutputs = false): AlertEditorDocument {
+  const base = editorDocument();
+  // Controls-only media layers have no canvas layout and never fetch or play media.
+  // Existing canvas imagery continues to use the tiny checked-in SVG asset.
+  return { ...base, outputs: { browserSource: !silentOutputs, deviceRouteIds: [] }, layers: [...base.layers,
+    { id: "video-controls", name: "Video soundtrack", type: "video", assetId: "storybook-video-controls", visible: true, order: 2, animation: base.layers[0]!.animation, playEmbeddedAudio, audioVolume: 0.4 },
+    ...(separateAudio ? [{ id: "sound-controls", name: "Separate sound", type: "audio" as const, assetId: "storybook-audio-controls", visible: true, order: 3, animation: base.layers[0]!.animation, volume: 0.5 }] : [])
+  ] };
+}
+
+function videoAudioStoryApi(playEmbeddedAudio: boolean, separateAudio = false, silentOutputs = false) {
+  const value = videoAudioStoryDocument(playEmbeddedAudio, separateAudio, silentOutputs);
+  return createStoryManagementApi({ getAlertEditorDocument: async () => value, getAlertVariationAuthoringContext: async () => variationContext(value), getAlertSet: async () => alertSetDetail() });
+}
+
+export const SavedVideoSoundtrackOff: Story = {
+  args: { managementApi: videoAudioStoryApi(false) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
+    await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    await expect(canvas.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  }
+};
+
+export const VideoSoundtrackWithSeparateSound: Story = {
+  args: { managementApi: videoAudioStoryApi(true, true) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
+    await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
+    await expect(canvas.getByText(/Both the video soundtrack and separate audio will play/)).toBeVisible();
+  }
+};
+
+export const VideoSoundtrackDraftUndo: Story = {
+  args: { managementApi: videoAudioStoryApi(false) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
+    await userEvent.click(canvas.getByRole("checkbox", { name: "Play embedded audio" }));
+    await expect(canvas.getByText("Unsaved")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
+    await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+  }
+};
+
+export const EnabledSoundtrackWithoutOutputs: Story = {
+  args: { managementApi: videoAudioStoryApi(true, false, true) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
+    await expect(canvas.getByText(/Audio layers and enabled soundtracks are silent/)).toBeVisible();
+  }
+};
+
 export const AlertWideAudioOutputs: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -1065,7 +1121,7 @@ function editorDocument(): AlertEditorDocument {
     delayMs: 0,
     easing: "ease-out"
   });
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

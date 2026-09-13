@@ -20,6 +20,8 @@ import { overlayKeyLookupIndexesMigration } from "./migrations/016-overlay-key-l
 import { alertTextStyleDefaultsMigration } from "./migrations/017-alert-text-style-defaults.js";
 import { alertModerationSettingsMigration } from "./migrations/018-alert-moderation-settings.js";
 import { audioOutputRoutesMigration } from "./migrations/019-audio-output-routes.js";
+import { overlaySurfacesMigration } from "./migrations/020-overlay-surfaces.js";
+import { alertVideoAudioMigration } from "./migrations/021-alert-video-audio.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -51,7 +53,9 @@ const migrations = [
   overlayKeyLookupIndexesMigration,
   alertTextStyleDefaultsMigration,
   alertModerationSettingsMigration,
-  audioOutputRoutesMigration
+  audioOutputRoutesMigration,
+  overlaySurfacesMigration,
+  alertVideoAudioMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

@@ -43,6 +43,7 @@ export interface OverlayModuleConfig<TConfig = unknown> {
 }
 
 export interface OverlayModuleSnapshot {
+  readonly surfaceLayer?: { readonly visible: boolean; readonly zIndex: number } | undefined;
   readonly moduleId: string;
   readonly enabled: boolean;
   readonly instructions: readonly OverlayInstruction[];

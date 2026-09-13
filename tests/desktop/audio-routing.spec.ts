@@ -140,7 +140,7 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
   }, () => finishDesktop(desktop, root, ownedPids, desktopProcess));
 });
 
-test("approved packaged capability check plays two explicit outputs independently, together, and after restart", async () => {
+test("approved packaged capability check plays two explicit outputs independently, together, and after restart", { tag: "@hardware" }, async () => {
   test.skip(process.env.STREAM_JAMS_AUDIO_TEST !== "1", "Physical audio output requires explicit approval.");
   const labels = process.env.STREAM_JAMS_AUDIO_TEST_OUTPUTS?.split("|").map((label) => label.trim()).filter(Boolean) ?? [];
   expect(labels, "Set STREAM_JAMS_AUDIO_TEST_OUTPUTS to two exact labels separated by |").toHaveLength(2);

@@ -30,6 +30,32 @@ vi.mock("./overlay-client.js", async () => {
 });
 
 describe("OverlayApp playback lifecycle", () => {
+  it("applies queued and live unified layers without restarting active instructions", () => {
+    window.history.replaceState(null, "", "/overlay/unified/live/test-local");
+    render(<OverlayApp />);
+    act(() => {
+      clientHarness.onMessage?.({ type: "audio-state", muted: false });
+      clientHarness.onMessage?.({ type: "surface-layers", layers: [{ moduleId: "alerts", visible: false }] });
+      clientHarness.onMessage?.({ type: "composition", composition: {
+        overlayId: "default", purpose: "live", scope: "unified", modules: [{ moduleId: "alerts", enabled: true, instructions: [{
+          id: "layer-test", overlayId: "default", moduleId: "alerts", purpose: "live", scope: "unified", visual: null, audio: null, tts: null,
+          text: { text: "Layer content", layout: { x: 0, y: 0, width: 300, height: 80, zIndex: 100 } }, durationMs: 1000
+        }] }]
+      } });
+    });
+    const element = screen.getByText("Layer content");
+    expect(element).not.toBeVisible();
+    act(() => {
+      vi.advanceTimersByTime(500);
+      clientHarness.onMessage?.({ type: "surface-layers", layers: [{ moduleId: "future", visible: false }, { moduleId: "alerts", visible: true }] });
+    });
+    expect(screen.getByText("Layer content")).toBe(element);
+    expect(element).toBeVisible();
+    expect(clientHarness.reportStarted).toHaveBeenCalledTimes(1);
+    act(() => vi.advanceTimersByTime(500));
+    expect(clientHarness.reportCompleted).toHaveBeenCalledWith("layer-test");
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");

@@ -1,4 +1,5 @@
-import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { dirname, isAbsolute, resolve, sep } from "node:path";
 import { posix } from "node:path";
@@ -75,26 +76,20 @@ export class LocalAssetStore implements MediaAssetStore {
   async readBounded(storagePath: string, maxBytes: number): Promise<Buffer> {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 0) throw new RangeError("Asset read limit must be a nonnegative safe integer");
     const absolutePath = this.#resolveStoragePath(storagePath);
-    let handle;
     try {
-      handle = await open(absolutePath, "r");
-      const file = await handle.stat();
+      const file = await stat(absolutePath);
       if (!file.isFile() || file.size > maxBytes) throw new AssetReadLimitExceededError(storagePath, maxBytes);
       const chunks: Buffer[] = [];
       let total = 0;
-      while (true) {
-        const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, maxBytes - total + 1));
-        const { bytesRead } = await handle.read(chunk, 0, chunk.byteLength, null);
-        if (bytesRead === 0) return Buffer.concat(chunks, total);
-        total += bytesRead;
+      for await (const chunk of createReadStream(absolutePath, { highWaterMark: Math.min(64 * 1024, maxBytes + 1) })) {
+        total += chunk.byteLength;
         if (total > maxBytes) throw new AssetReadLimitExceededError(storagePath, maxBytes);
-        chunks.push(chunk.subarray(0, bytesRead));
+        chunks.push(chunk);
       }
+      return Buffer.concat(chunks, total);
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") throw new AssetFileNotFoundError(storagePath);
       throw error;
-    } finally {
-      await handle?.close();
     }
   }
 

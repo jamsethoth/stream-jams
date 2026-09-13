@@ -63,6 +63,10 @@ export function OverlayApp() {
           else setComposition((current) => appendInstruction(current, route, message.instruction));
         } else if (message.type === "audio-state") {
           setMuted(message.muted);
+        } else if (message.type === "surface-layers") {
+          if (route.scope !== "unified") return;
+          if (!compositionReceivedRef.current) queueMutation(message);
+          else setComposition(current => current === null ? null : applySurfaceLayers(current, message.layers));
         } else if (message.type === "stop") {
           if (!compositionReceivedRef.current) queueMutation(message);
           else setComposition((current) => removeInstructions(current, message.instructionIds));
@@ -122,16 +126,31 @@ export function OverlayApp() {
   );
 }
 
-type OverlayMutation = Extract<OverlayClientMessage, { readonly type: "playback" | "stop" }>;
+type OverlayMutation = Extract<OverlayClientMessage, { readonly type: "playback" | "stop" | "surface-layers" }>;
 
 function applyMutation(
   composition: OverlayComposition,
   route: NonNullable<ReturnType<typeof parseOverlayRoute>>,
   mutation: OverlayMutation
 ): OverlayComposition {
+  if (mutation.type === "surface-layers") return applySurfaceLayers(composition, mutation.layers);
   return mutation.type === "playback"
     ? appendInstruction(composition, route, mutation.instruction)
     : removeInstructions(composition, mutation.instructionIds) ?? composition;
+}
+
+function applySurfaceLayers(composition: OverlayComposition, layers: Extract<OverlayClientMessage, { type: "surface-layers" }>["layers"]): OverlayComposition {
+  if (composition.scope !== "unified") return composition;
+  const existing = new Map(composition.modules.map(module => [module.moduleId, module]));
+  const modules: OverlayModuleSnapshot[] = layers.map((layer, index) => ({
+    ...(existing.get(layer.moduleId) ?? { moduleId: layer.moduleId, enabled: true, instructions: [] }),
+    surfaceLayer: { visible: layer.visible, zIndex: layers.length - index }
+  }));
+  // Removed registry rows retain their audio/completion owner until its normal end.
+  for (const module of composition.modules) {
+    if (!layers.some(layer => layer.moduleId === module.moduleId)) modules.push({ ...module, surfaceLayer: { visible: false, zIndex: 0 } });
+  }
+  return { ...composition, modules };
 }
 
 function appendInstruction(

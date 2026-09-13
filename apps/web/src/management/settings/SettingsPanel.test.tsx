@@ -10,9 +10,32 @@ import type { AudioApi } from "../audio/audio-api.js";
 import type { ManagementApi } from "../management-api.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 import { SettingsPanel } from "./SettingsPanel.js";
+import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
+
+vi.mock("./overlay-surfaces-api.js", () => ({ defaultSurfaceSettingsApi: {
+  load: async () => ({ surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null } }),
+  save: vi.fn(), retry: vi.fn()
+} }));
 
 describe("SettingsPanel", () => {
   afterEach(() => cleanup());
+
+  it("saves both server and surface drafts through the shared navigation guard", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    const value = { surfaces: [{ id: "unified-browser:default", kind: "unified-browser" as const, overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable" as const, message: null } };
+    const surfaceApi: SurfaceSettingsApi = { load: async () => value, save: vi.fn(async surface => ({ ...value, surfaces: [surface] })), retry: vi.fn() };
+    window.history.replaceState(null, "", "/manage/settings");
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} managementApi={managementApi} surfaceApi={surfaceApi} /></DirtyNavigationProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "Show alerts on Unified browser: default" }));
+    const port = screen.getByLabelText("Port");
+    await user.clear(port); await user.type(port, "40123");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    await user.click(await screen.findByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/manage"));
+    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
+    expect(surfaceApi.save).toHaveBeenCalledWith(expect.objectContaining({ layers: [{ moduleId: "alerts", visible: false }] }));
+  });
 
   it("saves the desktop opt-out explicitly and does not show it in CLI mode", async () => {
     const managementApi = createManagementApi({ getDesktopConfig: async () => ({ available: true, closeToTray: true }) });
@@ -351,9 +374,9 @@ function createAudioApi(): AudioApi {
   };
 }
 
-function SettingsNavigationHarness({ audioApi, managementApi }: { readonly audioApi: AudioApi; readonly managementApi: SettingsApi }) {
+function SettingsNavigationHarness({ audioApi, managementApi, surfaceApi }: { readonly audioApi: AudioApi; readonly managementApi: SettingsApi; readonly surfaceApi?: SurfaceSettingsApi }) {
   const navigation = useManagementNavigation();
-  return <><button onClick={() => navigation.requestNavigation({ id: "home" })} type="button">Go home</button><SettingsPanel audioApi={audioApi} managementApi={managementApi} />{navigation.guard}</>;
+  return <><button onClick={() => navigation.requestNavigation({ id: "home" })} type="button">Go home</button><SettingsPanel audioApi={audioApi} surfaceApi={surfaceApi} managementApi={managementApi} />{navigation.guard}</>;
 }
 
 function backupArchive(): ConfigurationBackupArchive {

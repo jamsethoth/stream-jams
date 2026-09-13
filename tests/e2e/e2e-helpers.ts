@@ -53,6 +53,9 @@ interface OverlayInstruction {
 }
 
 export async function mockManagementShell(page: Page): Promise<void> {
+  await page.route("**/overlay-surfaces", route => route.fulfill({ json: {
+    surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null }
+  } }));
   await page.route("**/audio/status", (route) => route.fulfill({ json: {
     capability: { available: false, devices: [], reason: "desktop-unavailable", nextStep: "Open the desktop app to use device outputs." }, muted: false, routes: []
   } }));

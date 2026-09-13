@@ -18,6 +18,7 @@
   "scripts": {
     "desktop:package": "corepack pnpm build && node scripts/stage-desktop.mjs && corepack pnpm --filter @stream-jams/desktop package",
     "test:desktop": "playwright test --config playwright.desktop.config.ts",
+    "test:desktop:hardware": "playwright test --config playwright.hardware.config.ts",
     "dev": "corepack pnpm --parallel --filter @stream-jams/server --filter @stream-jams/web dev",
     "start:local": "corepack pnpm build && node apps/server/dist/index.js",
     "build": "corepack pnpm -r build",
@@ -42,6 +43,6 @@
     "jsdom": "29.1.1",
     "typescript": "6.0.3",
     "typescript-eslint": "8.61.1",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
   }
 }

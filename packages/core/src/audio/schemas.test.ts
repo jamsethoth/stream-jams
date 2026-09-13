@@ -10,7 +10,7 @@ function audioSchema(name: string): Schema {
   expect(value, `Public contract ${name}`).toBeDefined();
   return value as Schema;
 }
-const legacyDocument = {
+const legacyDocument = { schemaVersion: 1,
   id: "alert-a", setId: "set-a", providerKind: "twitch", eventType: "follow",
   kind: "default", parentAlertId: null, name: "Follow", enabled: false,
   conditions: [], durationMs: 1000, layers: [],
@@ -54,17 +54,21 @@ describe("alert-wide audio outputs", () => {
 });
 
 describe("named audio route contracts", () => {
+  it("normalizes missing legacy audio source kinds and rejects unsupported kinds", () => {
+    expect(core.resolvedAudioLayerSchema.parse({ layerId: "sound", assetId: "asset", volume: 1 })).toEqual({ sourceKind: "audio", layerId: "sound", assetId: "asset", volume: 1 });
+    expect(core.resolvedAudioLayerSchema.safeParse({ sourceKind: "remote", layerId: "sound", assetId: "asset", volume: 1 }).success).toBe(false);
+  });
   it("validates runtime playback contracts without allowing implicit devices or invalid volume", () => {
     const schema = audioSchema("deviceAudioBatchSchema");
     const batch = {
       playbackId: "occurrence-a", documentId: "alert-a", durationMs: 1000, muted: false,
-      layers: [{ layerId: "sound", assetId: "asset-a", volume: 0.5 }],
+      layers: [{ sourceKind: "audio", layerId: "sound", assetId: "asset-a", volume: 0.5 }],
       destinations: [{ deviceId: "device-a", routeIds: ["route-a"] }]
     };
     expect(schema.parse(batch)).toEqual(batch);
     for (const invalid of [
       { durationMs: 0 }, { muted: "false" },
-      { layers: [{ layerId: "sound", assetId: "asset-a", volume: 2 }] },
+      { layers: [{ sourceKind: "audio", layerId: "sound", assetId: "asset-a", volume: 2 }] },
       { destinations: [{ deviceId: "default", routeIds: ["route-a"] }] },
       { destinations: [{ deviceId: "device-a", routeIds: [] }] }
     ]) expect(schema.safeParse({ ...batch, ...invalid }).success).toBe(false);

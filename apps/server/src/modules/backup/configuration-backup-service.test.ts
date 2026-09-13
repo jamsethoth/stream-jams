@@ -128,11 +128,29 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
+  it.each([19, 20])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      archive.manifest.schemaVersion = schemaVersion;
+      if (schemaVersion === 19) {
+        archive.manifest.configurationRecordCount -= archive.configuration.tables.overlay_surfaces?.length ?? 0;
+        delete archive.configuration.tables.overlay_surfaces;
+      }
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+      expect(preflight.state).toBe("valid");
+      await target.service.restore({ archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true });
+      const snapshot = target.snapshotRepository.snapshot();
+      expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
+    } finally { target.database.close(); }
+  });
+
   it("explicitly rejects an older database schema even when the archive format is supported", async () => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
-      archive.manifest.schemaVersion = currentSchemaVersion - 1;
+      archive.manifest.schemaVersion = 18;
       delete archive.configuration.tables.audio_output_routes;
       archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
       const previous = target.snapshotRepository.captureRestorePoint();
@@ -141,7 +159,7 @@ describe("ConfigurationBackupService", () => {
 
       expect(preflight.state).toBe("invalid");
       expect(preflight.blockers).toEqual(expect.arrayContaining([
-        expect.objectContaining({ summary: "Backup schema is not supported", cause: expect.stringContaining(`schema ${currentSchemaVersion - 1}`) })
+        expect.objectContaining({ summary: "Backup schema is not supported", cause: expect.stringContaining("schema 18") })
       ]));
       await expect(target.service.restore({
         archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true
@@ -907,7 +925,7 @@ async function seedRoutedAlerts(database: StreamJamsDatabase): Promise<void> {
     field: "channelPointReward", operator: "equals", value: "reward-routed"
   }));
   const documents = new SqliteAlertEditorDocumentRepository(database.connection);
-  const document: AlertEditorDocument = {
+  const document: AlertEditorDocument = { schemaVersion: 1,
     id: "rule-routed", setId: "set-default", providerKind: "twitch", eventType: "channel_point_redemption",
     kind: "default", parentAlertId: null, name: "Routed reward", enabled: false,
     conditions: [], variantConditions: [], weight: 1, priority: null,

@@ -5,6 +5,7 @@ import { overlayInstructionSchema } from "../overlays/schemas.js";
 import { isoDateTimeSchema, nonEmptyStringSchema } from "../shared/schemas.js";
 
 export const resolvedAlertSchema = z.object({
+  desktopVisualEligible: z.literal(true).optional(),
   id: nonEmptyStringSchema,
   sourceEventId: nonEmptyStringSchema,
   ruleId: nonEmptyStringSchema,

@@ -37,24 +37,31 @@ describe("AlertSetManagementService", () => {
     const document = await fixture.alertEditorService.getDocument(source.id);
     expect(document.outputs).toEqual({ browserSource: true, deviceRouteIds: [] });
     const outputs = { browserSource: false, deviceRouteIds: ["private", "stream"] };
-    await fixture.documents.save({ ...document, outputs });
+    const video = { id: "video", name: "Video", type: "video" as const, visible: true, order: document.layers.length,
+      animation: document.layers[0]!.animation, assetId: "clip", playEmbeddedAudio: true, audioVolume: 0.25 };
+    await fixture.documents.save({ ...document, outputs, layers: [...document.layers, video] });
     const first = await fixture.service.createAlertVariation(source.id, { name: "First" });
     const sibling = await fixture.service.createAlertVariation(source.id, { name: "Sibling" });
     const firstDocument = (await fixture.documents.find(first.id))!;
     expect(firstDocument.outputs).toEqual(outputs);
-    await fixture.documents.save({ ...firstDocument, outputs: { browserSource: false, deviceRouteIds: [] } });
+    expect(firstDocument.layers.find(layer => layer.type === "video")).toEqual(video);
+    await fixture.documents.save({ ...firstDocument, outputs: { browserSource: false, deviceRouteIds: [] },
+      layers: firstDocument.layers.map(layer => layer.type === "video" ? { ...layer, playEmbeddedAudio: false, audioVolume: 0.8 } : layer) });
     expect((await fixture.documents.find(sibling.id))?.outputs).toEqual(outputs);
+    expect((await fixture.documents.find(sibling.id))?.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 0.25 });
     expect((await fixture.alertEditorService.getDocument(source.id)).outputs).toEqual(outputs);
     const variationCopy = await fixture.service.duplicateManagedAlert(sibling.id);
     const defaultCopy = await fixture.service.duplicateManagedAlert(source.id);
     for (const copy of [variationCopy, defaultCopy]) {
       const copied = (await fixture.documents.find(copy.id))!;
       expect(copied).toMatchObject({ enabled: false, outputs });
+      expect(copied.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 0.25, assetId: "clip" });
       expect(copied.targetProfiles.every(profile => !profile.enabled && profile.reviewState === "needs-review")).toBe(true);
     }
     const setCopy = await fixture.service.duplicateSet(starter!.id, { name: "Copied" });
     const copiedAlert = (await fixture.service.getSet(setCopy.id)).inventory.find(row => row.name === source.name && row.kind === "default")!;
     expect((await fixture.documents.find(copiedAlert.id))?.outputs).toEqual(outputs);
+    expect((await fixture.documents.find(copiedAlert.id))?.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 0.25 });
   });
 
   it("auto-creates an active starter set with disabled needs-review alerts", async () => {

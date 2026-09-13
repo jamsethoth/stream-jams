@@ -27,7 +27,9 @@ const expectedMigrations = [
   "016-overlay-key-lookup-indexes",
   "017-alert-text-style-defaults",
   "018-alert-moderation-settings",
-  "019-audio-output-routes"
+  "019-audio-output-routes",
+  "020-overlay-surfaces",
+  "021-alert-video-audio"
 ] as const;
 
 const expectedTables = [
@@ -47,6 +49,7 @@ const expectedTables = [
   "event_logs",
   "overlay_keys",
   "overlay_module_config",
+  "overlay_surfaces",
   "playback_logs",
   "provider_registrations",
   "schema_migrations",
@@ -428,7 +431,8 @@ describe("Stream Jams SQLite database", () => {
     database.connection.exec(`
       DROP TABLE alert_moderation_settings;
       DROP TABLE audio_output_routes;
-      DELETE FROM schema_migrations WHERE id IN ('018-alert-moderation-settings', '019-audio-output-routes');
+      DROP TABLE overlay_surfaces;
+      DELETE FROM schema_migrations WHERE id IN ('018-alert-moderation-settings', '019-audio-output-routes', '020-overlay-surfaces', '021-alert-video-audio');
     `);
 
     database.runMigrations();
@@ -437,6 +441,7 @@ describe("Stream Jams SQLite database", () => {
     expect(listAppliedMigrations(database.connection)).toEqual(expectedMigrations);
     const restored = database.connection.prepare("SELECT document_json FROM alert_editor_documents WHERE alert_id = ?").get("text-style");
     expect(JSON.parse(String(restored?.document_json))).toEqual({
+      schemaVersion: 1,
       layers: [
         {
           id: "text",

@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { LocalRuntimeStartupError, startLocalRuntime, type StartedLocalRuntime } from "@stream-jams/server/runtime";
 import { workerRequestSchema, type WorkerMessage } from "./desktop-ipc.js";
 import { WorkerAudioClient } from "./audio/worker-audio-client.js";
+import { WorkerOverlayClient } from "./overlay/worker-overlay-client.js";
 
 const parent = process.parentPort;
 if (parent == null) throw new Error("The service worker requires an owned utility process.");
@@ -11,6 +12,7 @@ let generation: number | null = null;
 let runtime: Promise<StartedLocalRuntime> | null = null;
 let stopping = false;
 let audio: WorkerAudioClient | null = null;
+let overlay: WorkerOverlayClient | null = null;
 function send(message: WorkerMessage): void { parent!.postMessage(message); }
 
 parent.on("message", ({ data }: { data: unknown }) => {
@@ -18,14 +20,17 @@ parent.on("message", ({ data }: { data: unknown }) => {
   if (!parsed.success) return;
   const request = parsed.data;
   if (request.type === "audio-response") { audio?.receive(request); return; }
+  if (request.type === "overlay-response") { overlay?.receive(request); return; }
   if (request.type === "start") {
     if (runtime !== null || stopping) return;
     generation = request.generation;
     audio = new WorkerAudioClient(generation, send);
+    overlay = new WorkerOverlayClient(generation, send);
     runtime = startLocalRuntime({
       homeDirectory: homedir(),
       webBuildDirectory: resolve(import.meta.dirname, "../web"),
       desktopAudioTransport: audio,
+      desktopOverlayTransport: overlay,
       desktopHost: {
         onConfigChanged(config) { send({ type: "desktop-config-changed", generation: request.generation, requestId: null, closeToTray: config.closeToTray }); },
         onPlaybackStateChanged(state) { send({ type: "playback-state-changed", generation: request.generation, requestId: null, muted: state.muted }); }
@@ -37,6 +42,7 @@ parent.on("message", ({ data }: { data: unknown }) => {
       send({ type: "ready", generation: request.generation, requestId: request.requestId, url: started.url, closeToTray: desktop.closeToTray, muted: started.composition.playbackCoordinator.getSnapshot().muted });
     }).catch((error: unknown) => {
       audio?.dispose();
+      overlay?.dispose();
       send({ type: "failed", generation: request.generation, requestId: request.requestId, message: error instanceof LocalRuntimeStartupError ? error.message : "The local service could not start. Check the configured data paths and runtime dependencies, then retry." });
     });
     return;
@@ -47,9 +53,10 @@ parent.on("message", ({ data }: { data: unknown }) => {
     stopping = true;
     void runtime.then((started) => started.close()).then(() => {
       audio?.dispose();
+      overlay?.dispose();
       send({ type: "stopped", generation: request.generation, requestId: request.requestId });
       process.exit(0);
-    }).catch(() => { audio?.dispose(); process.exit(1); });
+    }).catch(() => { audio?.dispose(); overlay?.dispose(); process.exit(1); });
     return;
   }
   if (stopping) return;

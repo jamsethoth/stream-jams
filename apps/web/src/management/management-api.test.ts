@@ -1224,7 +1224,7 @@ function backupRestoreResult() {
 }
 
 function editorDocument() {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

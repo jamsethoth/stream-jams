@@ -1,3 +1,6 @@
+import type { MediaAudioKind } from "./media-audio.js";
+import type { PlaybackTiming } from "../overlays/playback-timing.js";
+
 export interface AlertAudioOutputs {
   readonly browserSource: boolean;
   readonly deviceRouteIds: readonly string[];
@@ -38,6 +41,7 @@ export interface AudioDeviceHost {
 }
 
 export interface ResolvedAudioLayer {
+  readonly sourceKind: MediaAudioKind;
   readonly layerId: string;
   readonly assetId: string;
   readonly volume: number;
@@ -51,6 +55,8 @@ export interface ResolvedAlertAudio {
 }
 
 export interface DeviceAudioBatch {
+  /** New occurrences carry a shared epoch; absent only for legacy audio callers. */
+  readonly timing?: PlaybackTiming | undefined;
   readonly playbackId: string;
   readonly documentId: string;
   readonly durationMs: number;

@@ -3,6 +3,8 @@ import type { ResolvedAlertAudio } from "../audio/types.js";
 import type { OverlayInstruction } from "../overlays/types.js";
 
 export interface ResolvedAlert {
+  /** Set only by resolution of an enabled, reviewed Landscape document. */
+  readonly desktopVisualEligible?: true | undefined;
   readonly id: string;
   readonly sourceEventId: string;
   readonly ruleId: string;

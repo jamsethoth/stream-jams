@@ -24,3 +24,9 @@ it("allows explicit silence and never plays audio on selection", async () => {
   expect(onChange).toHaveBeenCalledWith({ browserSource: false, deviceRouteIds: [] });
   expect(screen.getByText(/Service unavailable/)).toBeInTheDocument();
 });
+
+it("explains that no outputs silence both explicit audio and enabled soundtracks", () => {
+  render(<AlertAudioOutputs value={{ browserSource: false, deviceRouteIds: [] }} status={null} loading={false} error={null} onChange={vi.fn()} />);
+  expect(screen.getByText(/Audio layers and enabled soundtracks are silent/)).toBeInTheDocument();
+  expect(screen.getByText(/All visible audio layers and enabled video soundtracks use these outputs/)).toBeInTheDocument();
+});

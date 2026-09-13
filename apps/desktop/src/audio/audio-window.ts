@@ -27,11 +27,11 @@ const contentSecurityPolicy = [
   "frame-ancestors 'none'"
 ].join("; ");
 
-export function registerAudioPlayerScheme(): void {
+export function registerAudioPlayerScheme(additionalSchemes: Electron.CustomScheme[] = []): void {
   protocol.registerSchemesAsPrivileged([{
     scheme: AUDIO_SCHEME,
     privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
-  }]);
+  }, ...additionalSchemes]);
 }
 
 function requestOrigin(requestingUrl: string): string {

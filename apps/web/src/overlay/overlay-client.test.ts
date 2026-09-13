@@ -15,6 +15,15 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("overlay-client", () => {
+  it("validates complete layer control payloads and rejects duplicate or malformed rows", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+    const layers = [{ moduleId: "alerts", visible: false }];
+    for (const value of [layers, [...layers, ...layers], [{ moduleId: "alerts", visible: "yes" }], [{ ...layers[0], rawKey: "no" }]]) {
+      FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.surface-layers", layers: value }));
+    }
+    expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "surface-layers", layers });
+  });
   it("parses module and unified overlay routes without query-string credentials", () => {
     expect(parseOverlayRoute("/overlay/modules/alerts/test/ovl_moduleKey?key=ovl_queryKey")).toEqual({
       overlayId: "default",

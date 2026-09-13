@@ -10,7 +10,7 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
     capability: { available: true, devices: [{ deviceId: "fake-private", label: "Private endpoint" }, { deviceId: "fake-stream", label: "Stream endpoint" }], reason: null, nextStep: null },
     muted: false, routes: []
   };
-  let saved = alertEditorDocumentSchema.parse({
+  let saved = alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "routing-alert", setId: "routing-set", providerKind: "twitch", eventType: "follow", kind: "default", parentAlertId: null,
     name: "Routing example", enabled: true, conditions: [], durationMs: 2_000,
     outputs: { browserSource: false, deviceRouteIds: [] },

@@ -24,6 +24,7 @@ import {
   type ConfigStore,
   type DesktopConfig,
   type DesktopAudioTransport,
+  type DesktopOverlayTransport,
   type PlaybackSafetyState,
   type AlertBrowserSourceView,
   type ProviderLiveStatus,
@@ -140,11 +141,16 @@ import { onceAsync } from "./once-async.js";
 import { AudioOutputService } from "../modules/audio/audio-output-service.js";
 import { DesktopAudioSink } from "../modules/audio/desktop-audio-sink.js";
 import { SqliteAudioOutputRouteRepository } from "../modules/audio/sqlite-audio-output-route-repository.js";
+import { SqliteSurfaceRepository } from "../modules/overlay-surfaces/sqlite-surface-repository.js";
+import { DesktopVisualSink } from "../modules/overlay-surfaces/desktop-visual-sink.js";
+import { SurfaceSettingsService } from "../modules/overlay-surfaces/surface-settings-service.js";
+import { DesktopVisualAssetResolver } from "../modules/overlay-surfaces/desktop-visual-asset-resolver.js";
 
 export interface RuntimeAppCompositionOptions {
   readonly audioDeviceHost?: AudioDeviceHost;
   readonly audioPlaybackSink?: AudioPlaybackSink;
   readonly desktopAudioTransport?: DesktopAudioTransport;
+  readonly desktopOverlayTransport?: DesktopOverlayTransport;
   readonly desktopHost?: {
     onConfigChanged(config: DesktopConfig): void;
     onPlaybackStateChanged(state: PlaybackSafetyState): void;
@@ -267,6 +273,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const managementOriginPreHandler = createManagementOriginPreHandler(managementOriginPolicy);
   const overlayModuleRegistry = createDefaultOverlayModuleRegistry();
+  const surfaceRepository = new SqliteSurfaceRepository(database.connection, overlayModuleRegistry);
+  const desktopVisualSink = options.desktopOverlayTransport === undefined ? undefined : new DesktopVisualSink({
+    transport: options.desktopOverlayTransport, surfaces: surfaceRepository,
+    assets: new DesktopVisualAssetResolver({ assetRepository, assetStore })
+  });
+  if (desktopVisualSink !== undefined) cleanups.push(() => desktopVisualSink.close());
   const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
     registry: overlayModuleRegistry,
     repository: new SqliteOverlayModuleConfigRepository(database.connection),
@@ -314,6 +326,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
+  if (options.desktopOverlayTransport !== undefined) {
+    const surface = (await surfaceRepository.list()).find(surface => surface.kind === "desktop");
+    try { if (surface?.kind === "desktop") await desktopVisualSink!.configure(surface); }
+    catch {
+      await runtimeLogger.error("Desktop overlay could not be configured. Other outputs remain available.", {
+        module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
+        metadata: { nextStep: "Check the selected display and explicitly retry the desktop overlay in Settings." }
+      }).catch(() => undefined);
+    }
+  }
   const speakerBotSocketFactory = options.speakerBotSocketFactory ?? createNodeProviderWebSocket;
   const ttsProviderRegistry = createDefaultTtsProviderRegistry({
     speakerBot: {
@@ -441,6 +463,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     overlayPlaybackSink: overlayGateway,
     audioOutputService,
     ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
+    ...(desktopVisualSink === undefined ? {} : { desktopVisualSink }),
     ttsService,
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId,
@@ -890,6 +913,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     clearOldLogs: () => localMaintenanceService.clearOldLogs()
   });
   const overlayCompositionService = new DefaultOverlayCompositionService({
+    surfaceRepository,
     configService: overlayModuleConfigService,
     runtime: {
       async getModuleSnapshot(request) {
@@ -914,7 +938,22 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }
   });
+  for (const surface of await surfaceRepository.list()) {
+    if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
+  }
+  const surfaceSettingsService = new SurfaceSettingsService({
+    surfaces: surfaceRepository,
+    ...(options.desktopOverlayTransport === undefined ? {} : { host: {
+      configure: config => desktopVisualSink!.configure(config),
+      retry: () => options.desktopOverlayTransport!.retry(),
+      ...(options.desktopOverlayTransport.getStatus === undefined ? {} : { getStatus: () => options.desktopOverlayTransport!.getStatus!() })
+    } }),
+    moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
+    changed: async surface => { if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface); },
+    runMutation: work => maintenanceGate.runIntake(work)
+  });
   const app = createServerApp({
+    surfaceSettingsService,
     metadata: {
       appName: "stream-jams",
       version: "0.0.0"

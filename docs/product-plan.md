@@ -41,6 +41,8 @@ The app should support two browser-source URL styles:
 
 Alerts are the first module, but the output model should not assume alerts are the only module.
 
+After the MVP, the Windows desktop runtime adds one opt-in shared visual surface for registered modules. It uses explicit display selection, independent topmost-first module layers, transparent click-through rendering, and aspect-preserving content fit. Desktop visibility is independent of browser-source output, module queues, and selected audio destinations; unavailable or disconnected displays fail closed without moving or replaying content elsewhere.
+
 Example local routes:
 
 ```text

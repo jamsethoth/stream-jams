@@ -37,14 +37,41 @@ describe("createHttpAssetApi", () => {
 
     await expect(api.replaceAsset("asset_1", file, true)).resolves.toEqual(assetRecord());
   });
+
+  it("renews an expired management session and retries an asset upload once", async () => {
+    const file = new File([new Uint8Array([9, 8, 7])], "sound.wav", { type: "audio/wav" });
+    let sessionNumber = 0;
+    let uploadNumber = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/auth/management/sessions") {
+        sessionNumber += 1;
+        return jsonResponse({ id: `session_asset_${sessionNumber}`, csrfToken: `csrf_asset_${sessionNumber}` });
+      }
+      expect(String(input)).toBe("/assets/import");
+      uploadNumber += 1;
+      expect(init?.headers).toMatchObject({
+        authorization: `Bearer session_asset_${uploadNumber}`,
+        "x-stream-jams-csrf": `csrf_asset_${uploadNumber}`
+      });
+      expect(new Uint8Array(init?.body as ArrayBuffer)).toEqual(new Uint8Array([9, 8, 7]));
+      return uploadNumber === 1
+        ? jsonResponse({ error: { code: "MANAGEMENT_SESSION_UNAUTHORIZED", message: "Management session is not authorized" } }, 401)
+        : jsonResponse({ ...assetRecord(), originalFileName: "sound.wav", mediaType: "audio", mimeType: "audio/wav" });
+    });
+    const api = createHttpAssetApi({ fetch: fetcher });
+
+    await expect(api.importAsset(file)).resolves.toMatchObject({ originalFileName: "sound.wav", mediaType: "audio" });
+    expect(sessionNumber).toBe(2);
+    expect(uploadNumber).toBe(2);
+  });
 });
 
 function sessionResponse(): Response {
   return jsonResponse({ id: "session_asset", csrfToken: "csrf_asset" });
 }
 
-function jsonResponse(body: unknown): Response {
-  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
 function assetRecord() {

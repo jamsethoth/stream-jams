@@ -3,9 +3,11 @@ import {
   deviceAudioBatchSchema,
   maxAudioTransportAssetBytes,
   maxAudioTransportBatchBytes,
+  prepareTimedMedia,
   type AudioOutputDevice,
   type DeviceAudioBatch,
-  type DeviceAudioResult
+  type DeviceAudioResult,
+  type PlaybackTiming
 } from "@stream-jams/core";
 
 const START_TIMEOUT_MS = 5_000;
@@ -19,6 +21,9 @@ export interface AudioPlayerAsset {
 }
 
 export interface PlayerMediaElement {
+  currentTime: number;
+  readonly readyState: number;
+  readonly seeking: boolean;
   volume: number;
   muted: boolean;
   setSinkId(id: string): Promise<void>;
@@ -50,6 +55,7 @@ export interface DeviceAudioPlayRequest {
 type AttemptOutcome = "complete" | "cancelled" | "failed";
 
 interface ElementAttempt {
+  readonly preparation: AbortController;
   readonly element: PlayerMediaElement;
   readonly deviceId: string;
   readonly routeIds: readonly string[];
@@ -86,6 +92,7 @@ function occurrenceKey(generation: number, batch: DeviceAudioBatch): string {
 }
 
 function cleanupElement(attempt: ElementAttempt, ended: EventListener, error: EventListener): void {
+  attempt.preparation.abort();
   if (attempt.startTimer !== null) {
     clearTimeout(attempt.startTimer);
     attempt.startTimer = null;
@@ -180,7 +187,7 @@ export class DeviceAudioPlayer {
           occurrence.attempts.push(attempt);
           element.volume = layer.volume;
           element.muted = this.#currentMuted;
-          this.#startAttempt(occurrence, attempt, request.deadlineMs, request.startDeadlineMs);
+          this.#startAttempt(occurrence, attempt, request.deadlineMs, request.startDeadlineMs, request.batch.timing);
         } catch {
           for (const routeId of destination.routeIds) occurrence.failedRouteIds.add(routeId);
         }
@@ -251,6 +258,7 @@ export class DeviceAudioPlayer {
     let resolve!: (outcome: AttemptOutcome) => void;
     const completion = new Promise<AttemptOutcome>((done) => { resolve = done; });
     const attempt: ElementAttempt = {
+      preparation: new AbortController(),
       element,
       deviceId,
       routeIds,
@@ -274,7 +282,7 @@ export class DeviceAudioPlayer {
     return attempt;
   }
 
-  #startAttempt(occurrence: ActiveOccurrence, attempt: ElementAttempt, deadlineMs: number, upstreamStartDeadlineMs?: number): void {
+  #startAttempt(occurrence: ActiveOccurrence, attempt: ElementAttempt, deadlineMs: number, upstreamStartDeadlineMs?: number, timing?: PlaybackTiming): void {
     const startDeadlineMs = Math.min(deadlineMs, this.#now() + START_TIMEOUT_MS, upstreamStartDeadlineMs ?? Infinity);
     const startDelay = Math.max(0, startDeadlineMs - this.#now());
     attempt.startTimer = setTimeout(() => attempt.finish("failed"), startDelay);
@@ -287,6 +295,11 @@ export class DeviceAudioPlayer {
         await attempt.element.setSinkId(attempt.deviceId);
         if (!this.#isCurrent(occurrence, attempt)) return;
         if (this.#now() >= startDeadlineMs) { attempt.finish("failed"); return; }
+        if (timing !== undefined) {
+          await prepareTimedMedia(attempt.element, timing, { signal: attempt.preparation.signal, deadlineMs: startDeadlineMs, now: this.#now });
+          if (!this.#isCurrent(occurrence, attempt)) return;
+          if (this.#now() >= Math.min(startDeadlineMs, timing.endsAtEpochMs)) { attempt.finish("failed"); return; }
+        }
         attempt.element.muted = this.#currentMuted;
         const playPromise = attempt.element.play();
         if (!this.#isCurrent(occurrence, attempt)) return;

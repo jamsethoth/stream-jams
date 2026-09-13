@@ -1765,7 +1765,7 @@ function boldPopRaidDocument(): AlertEditorDocument {
     eventType: "raid",
     themeId: "bold-pop"
   });
-  return alertEditorDocumentSchema.parse({
+  return alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "alert-raid-bold-pop",
     setId: "set-default",
     providerKind: "twitch",
@@ -1806,7 +1806,7 @@ function reThemeRaidDocument(): AlertEditorDocument {
     { layerId: "layer-image", x: 120, y: 140, width: 480, height: 360, zIndex: 1 },
     { layerId: "layer-video", x: 1_240, y: 140, width: 560, height: 315, zIndex: 2 }
   ];
-  return alertEditorDocumentSchema.parse({
+  return alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "alert-raid-retheme",
     setId: "set-default",
     providerKind: "twitch",
@@ -1846,7 +1846,7 @@ function reThemeRaidDocument(): AlertEditorDocument {
         animation
       },
       { id: "layer-image", name: "Old raid image", type: "image", visible: true, order: 1, assetId: "asset-theme-image", animation },
-      { id: "layer-video", name: "Old raid video", type: "video", visible: true, order: 2, assetId: "asset-theme-video", animation },
+      { id: "layer-video", name: "Old raid video", type: "video", visible: true, order: 2, assetId: "asset-theme-video", animation, playEmbeddedAudio: false, audioVolume: 1 },
       { id: "layer-audio", name: "Raid soundtrack", type: "audio", visible: true, order: 3, assetId: "asset-theme-audio", volume: 0.65, animation },
       { id: "layer-tts", name: "Raid voice", type: "tts", visible: true, order: 4, enabled: true, providerId: "speakerbot", template: "Raid incoming from {userName}", animation }
     ],
@@ -1905,7 +1905,7 @@ function editorSaveReviewIssue(
 }
 
 function alertEditorDocument() {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

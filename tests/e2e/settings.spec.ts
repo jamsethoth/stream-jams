@@ -1,5 +1,54 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
+import type { SurfaceConfiguration, SurfaceSettingsView } from "@stream-jams/core";
+
+test("overlay surfaces keep independent drafts and apply only explicit saves", async ({ page }, testInfo) => {
+  await mockManagementShell(page);
+  await mockSettingsSummary(page);
+  await page.route("**/config/server", route => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
+  let view: SurfaceSettingsView = { surfaces: [
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [{ moduleId: "alerts", visible: false }, { moduleId: "future-module", visible: false }] },
+    { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }
+  ], desktop: { available: true, displays: [{ id: "portrait", label: "Portrait display", bounds: { x: -1080, y: 0, width: 1080, height: 1920 }, scaleFactor: 1 }], state: "disabled", message: null } };
+  const writes: SurfaceConfiguration[] = [];
+  await page.route("**/overlay-surfaces", route => route.fulfill({ json: view }));
+  await page.route("**/overlay-surfaces/*", async route => {
+    expect(route.request().method()).toBe("PUT");
+    expect(route.request().headers()["x-stream-jams-csrf"]).toBe("csrf_e2e");
+    const config = route.request().postDataJSON() as SurfaceConfiguration;
+    writes.push(config); view = { ...view, surfaces: view.surfaces.map(saved => saved.id === config.id ? config : saved),
+      desktop: config.kind === "desktop" ? { ...view.desktop, state: config.enabled ? "ready" : "disabled" } : view.desktop };
+    await route.fulfill({ json: view });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/manage/settings#overlay-surfaces");
+  await expect(page.getByRole("heading", { name: "Overlay surfaces" })).toBeVisible();
+  await page.getByLabel("Desktop display").selectOption("portrait");
+  await page.getByLabel("Enable desktop overlay").check();
+  await page.getByRole("checkbox", { name: "Show alerts on Desktop overlay" }).check();
+  await page.getByRole("button", { name: "Move future-module up on Desktop overlay" }).click();
+  await page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }).uncheck();
+  expect(writes).toEqual([]);
+  await page.getByRole("button", { name: "Save Desktop overlay" }).click();
+  await expect(page.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toMatchObject({ enabled: true, displayId: "portrait", layers: [{ moduleId: "future-module", visible: false }, { moduleId: "alerts", visible: true }] });
+  await page.getByRole("button", { name: "Save Unified browser: default" }).click();
+  await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByLabel("Enable desktop overlay")).toBeChecked();
+  await expect(page.getByRole("button", { name: "Move future-module up on Desktop overlay" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
+  await page.getByRole("heading", { name: "Overlay surfaces" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("overlay-settings-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel("Desktop display")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath("overlay-settings-narrow.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
 
 test("settings persists server port changes and rejects invalid ports", async ({ page }) => {
   await mockManagementShell(page);
