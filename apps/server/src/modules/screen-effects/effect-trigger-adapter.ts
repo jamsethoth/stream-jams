@@ -14,7 +14,7 @@ export interface StreamerBotEffectTriggerContext {
 }
 
 export interface EffectTriggerSink {
-  handleTriggers(triggers: readonly EffectTrigger[]): Promise<void>;
+  handleTriggers(triggers: readonly EffectTrigger[]): Promise<unknown>;
 }
 
 export class MissingStreamerBotEventIdError extends Error {

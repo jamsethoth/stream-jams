@@ -6,6 +6,7 @@ import {
   DefaultAlertResolver,
   DefaultAlertService,
   DefaultAssetValidator,
+  DefaultEffectQueue,
   DefaultMediaImportPipeline,
   DefaultModerationService,
   DefaultOverlayCompositionService,
@@ -59,6 +60,8 @@ import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
+import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
+import { SqliteEffectModuleSettingsRepository } from "../modules/screen-effects/sqlite-effect-module-settings-repository.js";
 import { ConfigurationBackupService } from "../modules/backup/configuration-backup-service.js";
 import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
 import { RuntimeMaintenanceGate } from "../modules/backup/runtime-maintenance-gate.js";
@@ -244,6 +247,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const assetRepository = new SqliteAssetRepository(database.connection);
   const effectRepository = new SqliteEffectRepository(database.connection, now);
+  const effectModuleSettingsRepository = new SqliteEffectModuleSettingsRepository(database.connection, now);
+  const initialEffectModuleSettings = await effectModuleSettingsRepository.get();
   const twitchAccountRepository = new SqliteTwitchAccountRepository(database.connection);
   const assetStore = new LocalAssetStore({ assetDirectory: initialConfig.storage.assetDirectory });
   const assetValidator = new DefaultAssetValidator();
@@ -398,6 +403,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: generatePlaybackQueueItemId,
     initialSafetyState: initialConfig.playback
   });
+  const effectQueue = new DefaultEffectQueue({
+    modulePaused: initialEffectModuleSettings.paused
+  });
   const maintenanceGate = new RuntimeMaintenanceGate();
   let desktopAudioSink: DesktopAudioSink | undefined;
   if (options.desktopAudioTransport !== undefined) {
@@ -419,13 +427,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   }
   const audioDeviceHost = options.audioDeviceHost ?? options.desktopAudioTransport;
   const audioPlaybackSink = options.audioPlaybackSink ?? desktopAudioSink;
+  const audioOutputRouteRepository = new SqliteAudioOutputRouteRepository(database.connection);
   const audioOutputService = new AudioOutputService({
-    routes: new SqliteAudioOutputRouteRepository(database.connection),
+    routes: audioOutputRouteRepository,
     ...(audioDeviceHost === undefined ? {} : { host: audioDeviceHost }),
     isMuted: () => playbackQueue.getSnapshot().muted,
     runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
     runTest: work => maintenanceGate.runIntake(work)
   });
+  const playbackCooldownService = new DefaultPlaybackCooldownService();
+  const playbackDedupeService = new DefaultPlaybackDedupeService();
   const playbackCoordinator = new PlaybackCoordinator({
     alertService,
     matcher: new DefaultAlertMatcher(),
@@ -434,8 +445,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       moderationService
     }),
     queue: playbackQueue,
-    cooldownService: new DefaultPlaybackCooldownService(),
-    dedupeService: new DefaultPlaybackDedupeService(),
+    cooldownService: playbackCooldownService,
+    dedupeService: playbackDedupeService,
     defaultTarget: {
       overlayId: "default",
       purpose: "live",
@@ -475,8 +486,57 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return playback;
     }
   });
+  const effectAdmissionService = new EffectAdmissionService({
+    repository: effectRepository,
+    queue: effectQueue,
+    dedupe: playbackDedupeService,
+    cooldowns: playbackCooldownService,
+    getModuleCooldownSeconds: async () => (await effectModuleSettingsRepository.get()).cooldownSeconds,
+    generateOccurrenceId: generateEffectOccurrenceId,
+    now: () => now().getTime(),
+    validateReferences: async (content) => {
+      const assetIds = [
+        ...(content.variant.visual === null ? [] : [content.variant.visual.assetId]),
+        ...(content.variant.sound === null ? [] : [content.variant.sound.assetId])
+      ];
+      const assets = await assetRepository.findManyByIds(assetIds);
+      const visual = content.variant.visual;
+      if (
+        visual !== null
+        && assets.get(visual.assetId)?.mediaType !== (visual.mediaType === "video" ? "video" : "image")
+      ) {
+        return false;
+      }
+      if (
+        content.variant.sound !== null
+        && assets.get(content.variant.sound.assetId)?.mediaType !== "audio"
+      ) {
+        return false;
+      }
+      return content.variant.outputs.deviceRouteIds.every(
+        (routeId) => audioOutputRouteRepository.findById(routeId) !== null
+      );
+    },
+    onOutcome: async (result) => {
+      if (result.status !== "processed") return;
+      const rejected = result.outcomes.filter((outcome) => outcome.status !== "queued");
+      if (rejected.length === 0) return;
+      await runtimeLogger.warn("Screen Effects event admission rejected local candidates", {
+        module: "screen-effects",
+        source: "screen-effects.event-admission",
+        correlationId: `event:${result.eventId}`,
+        processingId: null,
+        metadata: {
+          rejectedCount: rejected.length,
+          effectIds: rejected.map((outcome) => outcome.effectId).join(","),
+          reasons: rejected.map((outcome) => outcome.status).join(",")
+        }
+      });
+    }
+  });
   const eventPipeline = new EventPipeline({
     playbackCoordinator,
+    effectTriggerSink: effectAdmissionService,
     diagnosticsLogRepository,
     generateId: generateEventPipelineId,
     onEffectError: (error, triggers) => runtimeLogger.error("Screen Effects trigger handling failed", {
@@ -1213,6 +1273,10 @@ function generateEventPipelineId(kind: "event-log" | "alert-match-log" | "playba
 
 function generatePlaybackQueueItemId(): string {
   return `playback_item_${randomBytes(16).toString("base64url")}`;
+}
+
+function generateEffectOccurrenceId(): string {
+  return `screen_effect_${randomBytes(16).toString("base64url")}`;
 }
 
 function generateOverlayClientId(): string {

@@ -52,6 +52,16 @@ describe("DefaultPlaybackCooldownService", () => {
       ])
     ).toEqual([{ ruleId: "rule-raid", eventType: "raid", cooldownSeconds: 10, label: "ready" }]);
   });
+
+  it("tracks generic cooldown keys in independent module namespaces", () => {
+    const cooldowns = new DefaultPlaybackCooldownService();
+
+    cooldowns.recordPlaybackKey("screen-effects-effect", "effect-1", 10);
+
+    expect(cooldowns.canPlayKey("screen-effects-effect", "effect-1", 10)).toBe(false);
+    expect(cooldowns.canPlayKey("alerts", "effect-1", 10)).toBe(true);
+    expect(cooldowns.canPlayKey("screen-effects-effect", "effect-2", 10)).toBe(true);
+  });
 });
 
 class MutableClock {
