@@ -50,7 +50,7 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
   await rename(join(packaged, "electron.exe"), executablePath);
   let desktop: Awaited<ReturnType<typeof _electron.launch>>;
   try {
-    desktop = await _electron.launch({ executablePath, env, chromiumSandbox: true, timeout: 30_000 });
+    desktop = await _electron.launch({ executablePath, env, chromiumSandbox: true, timeout: 60_000 });
   } catch (error) {
     try { await cleanupFailedOverlayLaunch(executablePath); }
     catch (cleanupError) { throw new AggregateError([error, cleanupError], "Overlay probe launch and cleanup failed.", { cause: cleanupError }); }

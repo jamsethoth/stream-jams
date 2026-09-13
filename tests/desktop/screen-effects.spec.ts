@@ -7,7 +7,8 @@ import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
 
 const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 
-test("packaged Screen Effects persists definitions and restarts with empty runtime queues", async () => {
+test("packaged Screen Effects persists definitions and restarts with empty runtime queues", { tag: "@hardware" }, async () => {
+  test.skip(process.env.STREAM_JAMS_SCREEN_EFFECTS_TEST !== "1", "Physical desktop output requires explicit approval.");
   await access(executablePath);
   const root = await mkdtemp(join(tmpdir(), "stream-jams-screen-effects-"));
   const port = await unusedPort();
