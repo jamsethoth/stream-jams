@@ -64,7 +64,7 @@ export const NewDisabledDraft: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByLabelText("Effect name")).toHaveValue("New Screen Effect");
-    await expect(canvas.getByRole("checkbox", { name: "Enabled" })).toBeDisabled();
+    await expect(canvas.getByRole("checkbox", { name: /^Enabled$/u })).toBeDisabled();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
   }
 };

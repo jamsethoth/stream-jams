@@ -26,6 +26,12 @@ test("Operator targets independent Alert and Screen Effects queues", async ({ co
       const body = request.postDataJSON() as { expectedPendingCount: number; observedRevision: number };
       expect(body).toEqual({ expectedPendingCount: 1, observedRevision: state.revision });
       state = { ...state, revision: state.revision + 1, queued: state.queued.filter((item) => item.moduleId !== "screen-effects") };
+    } else if (path.endsWith("/effect-recent/replay")) {
+      state = {
+        ...state,
+        revision: state.revision + 1,
+        queued: [...state.queued, row("screen-effects", "effect-replay", "Original effect snapshot", "queued", 1)]
+      };
     }
     await route.fulfill({ contentType: "application/json", json: state });
   });
@@ -57,12 +63,17 @@ test("Operator targets independent Alert and Screen Effects queues", async ({ co
   await dialog.getByRole("button", { name: "Clear pending" }).click();
   await expect(page.getByRole("heading", { name: "Pending (1)" })).toBeVisible();
 
+  await page.getByRole("button", { name: "Replay Original effect snapshot in Screen Effects" }).click();
+  await expect(page.getByText("Original effect snapshot").last()).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pending (2)" })).toBeVisible();
+
   expect(mutations).toEqual([
     "/playback/operations/screen-effects/effect-current/skip",
     "/playback/operations/screen-effects/pause",
     "/playback/pause",
     "/playback/resume",
-    "/playback/operations/screen-effects/clear"
+    "/playback/operations/screen-effects/clear",
+    "/playback/operations/screen-effects/effect-recent/replay"
   ]);
 });
 
@@ -72,7 +83,10 @@ function snapshot() {
     owners: [{ moduleId: "alerts", paused: false }, { moduleId: "screen-effects", paused: false }],
     current: [row("alerts", "alert-current", "Alert current", "playing"), row("screen-effects", "effect-current", "Flash sweep", "playing")],
     queued: [row("alerts", "alert-next", "Alert queued", "queued", 1), row("screen-effects", "effect-next", "Effect queued", "queued", 2)],
-    recent: [row("alerts", "alert-recent", "Recent alert", "completed")],
+    recent: [
+      row("alerts", "alert-recent", "Recent alert", "completed"),
+      row("screen-effects", "effect-recent", "Original effect snapshot", "completed")
+    ],
     paused: false,
     muted: false,
     doNotDisturb: false
