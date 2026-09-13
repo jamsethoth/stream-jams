@@ -7,9 +7,8 @@ import { _electron, expect, test, type Page } from "@playwright/test";
 import { recordNeutralClip } from "../fixtures/create-media-fixtures.js";
 import { windowByUrl } from "./audio-harness.js";
 
-// Capability evidence only: the production transport still rejects video MIME
-// until the separately tested soundtrack change is implemented. Never capture
-// management credentials or emit physical audio in this test.
+// Capability evidence only. Never capture management credentials or emit
+// physical audio in this test.
 test.use({ trace: "off", screenshot: "off", video: "off" });
 
 for (const format of [
