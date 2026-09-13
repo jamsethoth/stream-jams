@@ -31,3 +31,9 @@ Both required foundations are present on the implementation baseline:
 ## Security and scope invariants
 
 The implementation retains management-session authorization, CSRF/origin checks and mutation rate limits; overlay credentials cannot authorize Operator or management calls. Provider payload text cannot select local media, routes, URLs, or commands. `/operator` remains separate from authoring, and no second simultaneous provider, marketplace, remote upload/fetch, arbitrary code, graphics injection, cloud delivery, or cross-platform desktop promise is introduced.
+
+## Core document checkpoint
+
+Task 2.1 is complete. The red run of `corepack.cmd pnpm exec vitest run packages/core/src/screen-effects` failed because the new schema/resolver modules did not exist. After the minimal implementation, the focused suite passed 24 tests across two files. It covers disabled 10-second/priority-0 construction, invalid empty saved content, audio-only effects, independent video soundtrack and explicit sound controls, duration/weight/cooldown/layout/animation bounds, safe IDs, strict unknown-field rejection, duplicate variants/bindings, deterministic weighted boundaries, disabled-weighted fallback, and deep snapshot isolation.
+
+`corepack.cmd pnpm typecheck` passed after the implementation. Focused ESLint initially rejected a control-character regular expression under `no-control-regex`; the validator was replaced with the equivalent character-code predicate, after which focused ESLint and all 24 tests passed. Task 2.2 remains open until immutable copy/edit/save authoring state is implemented and verified with its UI boundary.
