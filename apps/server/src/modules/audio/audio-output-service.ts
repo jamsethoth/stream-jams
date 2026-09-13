@@ -95,7 +95,18 @@ export class AudioOutputService {
       const current = this.#requireRoute(id);
       if (binding !== undefined && binding.deviceId !== current.deviceId && !input.data.confirmLiveImpact) {
         const references = this.dependencies.routes.findReferences(id);
-        if (references.length > 0) throw new AudioOutputError(409, "AUDIO_ROUTE_CONFIRMATION_REQUIRED", "Changing this binding affects alerts using the route.", "Review the listed alerts and confirm the binding change.", [id], references);
+        const owners = this.dependencies.routes.findModuleReferences(id);
+        if (owners.length > 0) {
+          throw new AudioOutputError(
+            409,
+            "AUDIO_ROUTE_CONFIRMATION_REQUIRED",
+            "Changing this binding affects saved playback items using the route.",
+            "Review the listed Alerts and Screen Effects, then confirm the binding change.",
+            [id],
+            references,
+            owners
+          );
+        }
       }
       const route = { ...current, name: input.data.name ?? current.name, ...binding };
       this.dependencies.routes.save(route);

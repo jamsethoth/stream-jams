@@ -633,7 +633,7 @@ function sendAssetCommandError(reply: Parameters<typeof sendHttpError>[0], error
     return reply.status(409).send({
       error: {
         code: "ASSET_IN_USE",
-        message: "This asset is still used by alerts. Reassign those usages before deleting it."
+        message: "This asset is still in use. Reassign the listed Alerts and Screen Effects before deleting it."
       },
       impact: error.impact
     });

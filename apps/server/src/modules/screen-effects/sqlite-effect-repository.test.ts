@@ -9,7 +9,8 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   createInMemoryStreamJamsDatabase,
-  openStreamJamsDatabase
+  openStreamJamsDatabase,
+  runInTransaction
 } from "../db/database.js";
 import { SqliteAssetRepository } from "../assets/sqlite-asset-repository.js";
 import { SqliteAudioOutputRouteRepository } from "../audio/sqlite-audio-output-route-repository.js";
@@ -92,6 +93,35 @@ describe("SqliteEffectRepository", () => {
     expect(database.connection.prepare(
       "SELECT route_id FROM screen_effect_audio_routes ORDER BY position"
     ).all()).toEqual([{ route_id: route.id }]);
+  });
+
+  it("serializes effect saves against asset deletion without dangling references", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
+    const assets = new SqliteAssetRepository(database.connection);
+    const effects = new SqliteEffectRepository(database.connection);
+    const document = effectDocument();
+
+    expect(() => runInTransaction(database.connection, () => {
+      assets.deleteSync("asset-tone");
+      effects.saveSync(document);
+    })).toThrow(/missing or incompatible/iu);
+    await expect(assets.findById("asset-tone")).resolves.not.toBeNull();
+    await expect(effects.find(document.id)).resolves.toBeNull();
+
+    expect(() => runInTransaction(database.connection, () => {
+      effects.saveSync(document);
+      assets.deleteSync("asset-tone");
+    })).toThrow(/foreign key constraint/iu);
+    await expect(assets.findById("asset-tone")).resolves.not.toBeNull();
+    await expect(effects.find(document.id)).resolves.toBeNull();
+
+    await effects.save(document);
+    expect(() => runInTransaction(database.connection, () => {
+      assets.deleteSync("asset-tone");
+    })).toThrow(/foreign key constraint/iu);
+    await expect(assets.findById("asset-tone")).resolves.not.toBeNull();
+    await expect(effects.find(document.id)).resolves.toEqual(document);
   });
 });
 

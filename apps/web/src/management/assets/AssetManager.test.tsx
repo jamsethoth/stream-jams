@@ -228,6 +228,7 @@ function impactFor(item: AssetLibraryItem): AssetChangeImpact {
   return {
     assetId: item.id,
     usage: item.usage,
+    owners: [],
     canDelete: item.usage.totalUsageCount === 0,
     requiresConfirmation: item.usage.totalUsageCount > 0,
     warnings: item.usage.totalUsageCount > 0 ? ["1 alert usage will update everywhere."] : []

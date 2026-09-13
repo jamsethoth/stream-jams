@@ -58,6 +58,7 @@ import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
+import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
 import { ConfigurationBackupService } from "../modules/backup/configuration-backup-service.js";
 import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
 import { RuntimeMaintenanceGate } from "../modules/backup/runtime-maintenance-gate.js";
@@ -242,6 +243,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: generateAlertConfigurationId
   });
   const assetRepository = new SqliteAssetRepository(database.connection);
+  const effectRepository = new SqliteEffectRepository(database.connection, now);
   const twitchAccountRepository = new SqliteTwitchAccountRepository(database.connection);
   const assetStore = new LocalAssetStore({ assetDirectory: initialConfig.storage.assetDirectory });
   const assetValidator = new DefaultAssetValidator();
@@ -772,7 +774,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     metadataRepository: new SqliteAssetLibraryMetadataRepository(database.connection),
     assetStore,
     alertRepository,
+    effectRepository,
     ruleMetadataRepository: alertSetMetadataRepository,
+    deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
+      () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))
+    ),
     clock: now
   });
   const configurationBackupService = new ConfigurationBackupService({

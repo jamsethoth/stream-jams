@@ -4,6 +4,7 @@ interface BackendErrorEnvelope {
     readonly id?: unknown;
     readonly message?: unknown;
     readonly nextStep?: unknown;
+    readonly owners?: unknown;
     readonly references?: unknown;
   };
 }
@@ -13,11 +14,19 @@ export interface HttpErrorReference {
   readonly name: string;
 }
 
+export interface HttpErrorOwner {
+  readonly moduleId: string;
+  readonly ownerId: string;
+  readonly ownerName: string;
+  readonly variantId: string | null;
+}
+
 export interface HttpErrorDetails {
   readonly message: string;
   readonly code: string | null;
   readonly referenceId: string | null;
   readonly nextStep: string | null;
+  readonly owners: readonly HttpErrorOwner[];
   readonly references: readonly HttpErrorReference[];
 }
 
@@ -32,6 +41,21 @@ export async function readHttpErrorDetails(response: Response, fallback: string)
     const code = typeof body.error?.code === "string" ? body.error.code : null;
     const referenceId = typeof body.error?.id === "string" ? body.error.id : null;
     const nextStep = typeof body.error?.nextStep === "string" ? body.error.nextStep : null;
+    const owners = Array.isArray(body.error?.owners)
+      ? body.error.owners.flatMap((owner): HttpErrorOwner[] => {
+          if (typeof owner !== "object" || owner === null) return [];
+          if (!("moduleId" in owner) || typeof owner.moduleId !== "string") return [];
+          if (!("ownerId" in owner) || typeof owner.ownerId !== "string") return [];
+          if (!("ownerName" in owner) || typeof owner.ownerName !== "string") return [];
+          if (!("variantId" in owner) || (owner.variantId !== null && typeof owner.variantId !== "string")) return [];
+          return [{
+            moduleId: owner.moduleId,
+            ownerId: owner.ownerId,
+            ownerName: owner.ownerName,
+            variantId: owner.variantId
+          }];
+        })
+      : [];
     const references = Array.isArray(body.error?.references)
       ? body.error.references.flatMap((reference): HttpErrorReference[] => {
           if (typeof reference !== "object" || reference === null) return [];
@@ -40,9 +64,9 @@ export async function readHttpErrorDetails(response: Response, fallback: string)
           return [{ alertId: reference.alertId, name: reference.name }];
         })
       : [];
-    return { message, code, referenceId, nextStep, references };
+    return { message, code, referenceId, nextStep, owners, references };
   } catch {
-    return { message: fallback, code: null, referenceId: null, nextStep: null, references: [] };
+    return { message: fallback, code: null, referenceId: null, nextStep: null, owners: [], references: [] };
   }
 }
 

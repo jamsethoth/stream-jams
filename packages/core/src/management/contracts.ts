@@ -733,6 +733,12 @@ export const assetMetadataUpdateInputSchema = z.object({
 export const assetChangeImpactSchema = z.object({
   assetId: nonEmptyStringSchema,
   usage: assetUsageSummarySchema,
+  owners: z.array(z.object({
+    moduleId: nonEmptyStringSchema,
+    ownerId: nonEmptyStringSchema,
+    ownerName: nonEmptyStringSchema,
+    variantId: nonEmptyStringSchema.nullable()
+  }).strict()).default([]),
   canDelete: z.boolean(),
   requiresConfirmation: z.boolean(),
   warnings: z.array(nonEmptyStringSchema)

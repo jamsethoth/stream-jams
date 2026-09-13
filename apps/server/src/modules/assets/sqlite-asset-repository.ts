@@ -85,6 +85,10 @@ export class SqliteAssetRepository implements AssetRepository {
   }
 
   async delete(assetId: string): Promise<void> {
+    this.deleteSync(assetId);
+  }
+
+  deleteSync(assetId: string): void {
     this.#connection.prepare("DELETE FROM asset_metadata WHERE id = ?").run(assetId);
   }
 }

@@ -1,10 +1,16 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { alertEditorDocumentSchema } from "@stream-jams/core";
+import {
+  alertEditorDocumentSchema,
+  createScreenEffectDocument,
+  screenEffectDocumentSchema
+} from "@stream-jams/core";
 import { expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, openStreamJamsDatabase, runInTransaction } from "../db/database.js";
 import { SqliteAlertEditorDocumentRepository } from "../alerts/sqlite-alert-editor-document-repository.js";
+import { SqliteAssetRepository } from "../assets/sqlite-asset-repository.js";
+import { SqliteEffectRepository } from "../screen-effects/sqlite-effect-repository.js";
 import { SqliteAudioOutputRouteRepository } from "./sqlite-audio-output-route-repository.js";
 
 const route = { id: "route-a", name: "Headphones", deviceId: "device-a", deviceLabel: "XLR headphones" };
@@ -61,3 +67,72 @@ it("checks references in the same transaction as saves and deletes, whichever wi
   })).toThrow();
   expect(routes.findById("new")).toBeNull();
 });
+
+it("reports module-qualified effect owners and serializes effect saves against route deletion", async () => {
+  using db = createInMemoryStreamJamsDatabase();
+  const routes = new SqliteAudioOutputRouteRepository(db.connection);
+  const effects = new SqliteEffectRepository(db.connection);
+  await new SqliteAssetRepository(db.connection).save({
+    id: "asset-tone",
+    originalFileName: "tone.wav",
+    mediaType: "audio",
+    mimeType: "audio/wav",
+    sizeBytes: 4,
+    checksum: "sha256:test-tone",
+    storagePath: "assets/asset-tone.wav"
+  });
+  routes.save(route);
+  const effect = audioEffect("effect-route-owner", "variant-route-owner");
+  await effects.save(effect);
+
+  expect(routes.findReferences(route.id)).toEqual([]);
+  expect(routes.findModuleReferences(route.id)).toEqual([{
+    moduleId: "screen-effects",
+    ownerId: effect.id,
+    ownerName: effect.name,
+    variantId: effect.variants[0]!.id
+  }]);
+  expect(() => routes.delete(route.id)).toThrow(expect.objectContaining({
+    code: "AUDIO_ROUTE_REFERENCED",
+    owners: [{
+      moduleId: "screen-effects",
+      ownerId: effect.id,
+      ownerName: effect.name,
+      variantId: effect.variants[0]!.id
+    }]
+  }));
+
+  await effects.remove(effect.id);
+  const raced = audioEffect("effect-raced", "variant-raced");
+  expect(() => runInTransaction(db.connection, () => {
+    effects.saveSync(raced);
+    routes.delete(route.id);
+  })).toThrow();
+  await expect(effects.find(raced.id)).resolves.toBeNull();
+  expect(routes.findById(route.id)).toEqual(route);
+
+  routes.delete(route.id);
+  expect(() => runInTransaction(db.connection, () => {
+    routes.save(route);
+    effects.saveSync(raced);
+    routes.delete(route.id);
+  })).toThrow();
+  await expect(effects.find(raced.id)).resolves.toBeNull();
+  expect(routes.findById(route.id)).toBeNull();
+});
+
+function audioEffect(effectId: string, variantId: string) {
+  const draft = createScreenEffectDocument({
+    id: effectId,
+    name: "Route owner",
+    defaultVariantId: variantId
+  });
+  return screenEffectDocumentSchema.parse({
+    ...draft,
+    variants: [{
+      ...draft.variants[0]!,
+      sound: { assetId: "asset-tone", volume: 0.25 },
+      outputs: { browserSource: false, deviceRouteIds: [route.id] }
+    }]
+  });
+}

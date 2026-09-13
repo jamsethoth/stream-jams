@@ -145,7 +145,7 @@ function fixture() {
   const managementApi: AssetLibraryManagementApi = {
     listAssetLibraryItems: vi.fn(async () => [imageItem, audioItem]),
     updateAssetMetadata: vi.fn(async (_assetId, input) => ({ ...imageItem, id: "asset-new", displayName: input.displayName, tags: input.tags })),
-    getAssetChangeImpact: vi.fn(async () => ({ assetId: "asset-image", usage: imageItem.usage, canDelete: false, requiresConfirmation: true, warnings: [] })),
+    getAssetChangeImpact: vi.fn(async () => ({ assetId: "asset-image", usage: imageItem.usage, owners: [], canDelete: false, requiresConfirmation: true, warnings: [] })),
     deleteAsset: vi.fn(async () => undefined)
   };
   const assetApi: AssetApi = {

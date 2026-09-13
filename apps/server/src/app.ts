@@ -300,7 +300,7 @@ function registerServerErrorHandler(app: FastifyInstance, dependencies: ServerAp
     if (error instanceof AudioOutputError) {
       return reply.status(error.statusCode).send({ error: {
         code: error.code, message: error.message, nextStep: error.nextStep,
-        routeIds: error.routeIds, references: error.references
+        routeIds: error.routeIds, references: error.references, owners: error.owners
       } });
     }
     const response = toServerErrorResponse(error);

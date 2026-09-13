@@ -1,4 +1,4 @@
-import { formatHttpError, readHttpErrorDetails, type HttpErrorReference } from "./http-errors.js";
+import { formatHttpError, readHttpErrorDetails, type HttpErrorOwner, type HttpErrorReference } from "./http-errors.js";
 
 export interface HttpManagementClientOptions {
   readonly fetch?: typeof fetch;
@@ -33,7 +33,8 @@ export class ManagementHttpError extends Error {
     readonly code: string | null,
     readonly referenceId: string | null,
     readonly nextStep: string | null = null,
-    readonly references: readonly HttpErrorReference[] = []
+    readonly references: readonly HttpErrorReference[] = [],
+    readonly owners: readonly HttpErrorOwner[] = []
   ) {
     super(message);
     this.name = "ManagementHttpError";
@@ -47,7 +48,8 @@ async function createManagementHttpError(response: Response, fallback: string): 
     details.code,
     details.referenceId,
     details.nextStep,
-    details.references
+    details.references,
+    details.owners
   );
 }
 

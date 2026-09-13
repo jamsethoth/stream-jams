@@ -99,7 +99,12 @@ it("returns safe reference conflicts and requires confirmation before rebinding 
   db.connection.prepare("INSERT INTO alert_editor_documents VALUES (?, ?, ?)").run("alert-a", JSON.stringify({ name: "Follow", outputs: { browserSource: false, deviceRouteIds: ["route-a"] } }), "2026-09-05");
   const deleted = await app.inject({ method: "DELETE", url: "/audio/routes/route-a", headers });
   expect(deleted.statusCode, deleted.body).toBe(409);
-  expect(deleted.json()).toMatchObject({ error: { code: "AUDIO_ROUTE_REFERENCED", references: [{ alertId: "alert-a", name: "Follow" }], nextStep: expect.any(String) } });
+  expect(deleted.json()).toMatchObject({ error: {
+    code: "AUDIO_ROUTE_REFERENCED",
+    references: [{ alertId: "alert-a", name: "Follow" }],
+    owners: [{ moduleId: "alerts", ownerId: "alert-a", ownerName: "Follow", variantId: null }],
+    nextStep: expect.any(String)
+  } });
   expect((await app.inject({ method: "PATCH", url: "/audio/routes/route-a", headers, payload: { deviceId: null } })).statusCode).toBe(409);
   expect((await app.inject({ method: "PATCH", url: "/audio/routes/route-a", headers, payload: { deviceId: null, confirmLiveImpact: true } })).statusCode).toBe(200);
   expect(host.testOutput).not.toHaveBeenCalled();

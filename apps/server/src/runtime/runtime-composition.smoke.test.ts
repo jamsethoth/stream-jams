@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  createScreenEffectDocument,
   moduleOverlayWebSocketPath,
   type AlertEditorDocument,
   type AlertRule,
@@ -34,6 +35,8 @@ import type {
 import { runtimeSecretStoreUnavailableMessage } from "../modules/security/runtime-secret-store.js";
 import type { StreamerBotSocket } from "../modules/streamerbot/streamerbot-client.js";
 import type { SpeakerBotSocket } from "../modules/tts/speakerbot-client.js";
+import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
+import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
 
 const temporaryDirectories: string[] = [];
@@ -45,6 +48,65 @@ afterEach(async () => {
 });
 
 describe("runtime app composition smoke", () => {
+  it("reports Screen Effect owners through the live asset-management composition", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket
+    });
+    runtimeCompositions.push(composition);
+    const asset = {
+      id: "asset-screen-effect",
+      originalFileName: "effect.png",
+      mediaType: "image" as const,
+      mimeType: "image/png",
+      sizeBytes: 4,
+      checksum: "sha256:screen-effect",
+      storagePath: "image/effect.png"
+    };
+    await new SqliteAssetRepository(composition.database.connection).save(asset);
+    const draft = createScreenEffectDocument({
+      id: "effect-runtime",
+      name: "Runtime effect",
+      defaultVariantId: "variant-default"
+    });
+    await new SqliteEffectRepository(composition.database.connection).save({
+      ...draft,
+      variants: [{
+        ...draft.variants[0]!,
+        visual: {
+          mediaType: "image",
+          assetId: asset.id,
+          layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+        },
+        visualOutputs: { browserSource: true, desktop: false }
+      }]
+    });
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const response = await composition.app.inject({
+      method: "GET",
+      url: `/management/assets/${asset.id}/change-impact`,
+      headers: managementAuthHeaders(session)
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject({
+      canDelete: false,
+      owners: [{
+        moduleId: "screen-effects",
+        ownerId: "effect-runtime",
+        ownerName: "Runtime effect",
+        variantId: "variant-default"
+      }]
+    });
+  });
+
   it("restores the saved moderation policy before event intake synchronization can begin", async () => {
     const testRoot = await createTemporaryDirectory();
     const configStore = new StaticConfigStore(createConfig(testRoot));

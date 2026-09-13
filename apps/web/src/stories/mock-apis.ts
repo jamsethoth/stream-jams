@@ -169,7 +169,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
       const item = storyAssetLibraryItems.find((candidate) => candidate.id === assetId) ?? storyAssetLibraryItems[0]!;
       const warnings = item.usage.totalUsageCount > 0 ? [`${item.usage.totalUsageCount} alert usage will update everywhere.`] : [];
       if (candidateMediaType !== undefined && candidateMediaType !== item.mediaType) warnings.push(`Media type changes from ${item.mediaType} to ${candidateMediaType}.`);
-      return { assetId, usage: item.usage, canDelete: item.usage.totalUsageCount === 0, requiresConfirmation: warnings.length > 0, warnings };
+      return { assetId, usage: item.usage, owners: [], canDelete: item.usage.totalUsageCount === 0, requiresConfirmation: warnings.length > 0, warnings };
     },
     async deleteAsset() {
       return undefined;

@@ -23,6 +23,13 @@ export interface AudioRouteReference {
   readonly name: string;
 }
 
+export interface ModuleMediaReference {
+  readonly moduleId: string;
+  readonly ownerId: string;
+  readonly ownerName: string;
+  readonly variantId: string | null;
+}
+
 export interface AudioDestination {
   readonly deviceId: string;
   readonly routeIds: readonly string[];

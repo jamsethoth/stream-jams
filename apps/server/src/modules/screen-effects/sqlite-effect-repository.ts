@@ -44,6 +44,10 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
   }
 
   async save(candidate: ScreenEffectDocument): Promise<void> {
+    this.saveSync(candidate);
+  }
+
+  saveSync(candidate: ScreenEffectDocument): void {
     const document = screenEffectDocumentSchema.parse(candidate);
     runInTransaction(this.#connection, () => {
       this.#validateReferences(document);
