@@ -42,6 +42,6 @@
 
 ## 7. Acceptance and handoff
 
-- [ ] 7.1 Run affected regressions and the `corepack.cmd pnpm` lint, typecheck, test, build, build-storybook, test:storybook:ci, test:e2e and test:desktop scripts; classify failures instead of claiming partial checks as full acceptance.
+- [x] 7.1 Run affected regressions and the `corepack.cmd pnpm` lint, typecheck, test, build, build-storybook, test:storybook:ci, test:e2e and test:desktop scripts; classify failures instead of claiming partial checks as full acceptance.
 - [ ] 7.2 Rebuild/restart the authorized runtime, wait for health and verify management-to-Operator-to-OBS/desktop delivery with neutral media and explicit physical audio routes. Record independent skips, missing-monitor behavior and bounded Quit in `docs/verification/screen-effects.md`.
-- [ ] 7.3 Reconcile all scenarios with implementation/evidence, run `openspec.cmd validate add-screen-effects-module --strict`, and update product/runbook/backlog after completed implementation and spec sync. Keep marketplace, cross-platform/cloud/fullscreen injection and unrelated modules deferred; do not publish or merge without approval.
+- [x] 7.3 Reconcile all scenarios with implementation/evidence, run `openspec.cmd validate add-screen-effects-module --strict`, and update product/runbook/backlog after completed implementation and spec sync. Keep marketplace, cross-platform/cloud/fullscreen injection and unrelated modules deferred; do not publish or merge without approval.

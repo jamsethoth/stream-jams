@@ -140,6 +140,8 @@ MVP module scope:
 - Do not implement a music widget in MVP, but keep the module interfaces compatible with a future `stream-jams-music-widget` integration.
 - Support exactly one configurable canvas per module in the MVP. The module canvas controls placement for that module's overlay elements, and the configured canvas can be exposed through live and test browser-source variants.
 
+The approved post-MVP Screen Effects follow-on implements the second usable overlay module. Operators can author disabled-by-default local media effects with trusted Twitch reward or configured Streamer.bot bindings, bounded priority/cooldown/weighted variants, and independent browser, desktop and named-device destinations. Screen Effects owns a sequential bounded queue that can run concurrently with Alerts; the Operator surface merges their state for display and module-qualified controls without merging their schedulers. Definitions and safety settings persist, while active, pending and recent occurrences never replay automatically after restart. See the [Screen Effects specification](../openspec/specs/screen-effects/spec.md), [multi-module operations specification](../openspec/specs/multi-module-playback-operations/spec.md), and [runbook](mvp-runbook.md#screen-effects).
+
 ## Twitch MVP Scope
 
 Twitch is the first event provider.
@@ -491,6 +493,7 @@ The canonical post-MVP list, current priorities, dependency triggers, rejected d
 - No OBS WebSocket or native OBS plugin features are planned for the MVP.
 - Alerts are the first overlay module, not the only long-term overlay feature.
 - The MVP includes the module platform foundation but only implements the Alerts module.
+- The post-MVP Screen Effects module uses module-specific, unified and opt-in desktop surfaces while retaining an independent queue.
 - Future modules may use separate module-specific overlay URLs or participate in unified overlay URLs.
 - Exactly one alert set is active at a time; overlapping active sets are not planned without a new product decision.
 - All matching active alerts play sequentially for a single event.

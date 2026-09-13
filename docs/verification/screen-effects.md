@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation started on 2026-09-13 from `f2bb518692121eaa9b6f4230a250176bab9a766f`, the fetched `origin/main`, on `codex/add-screen-effects-module`. This record is incremental: unchecked OpenSpec tasks and physical-output gates remain incomplete until their named evidence is added.
+Implementation and automated acceptance completed on 2026-09-13 from `f2bb518692121eaa9b6f4230a250176bab9a766f`, the fetched `origin/main`, on `codex/add-screen-effects-module`. The sole remaining acceptance gate is the explicitly authorized human observation checklist below; no physical audio was emitted during automated validation.
 
 ## Foundation gate
 
@@ -11,7 +11,7 @@ Both required foundations are present on the implementation baseline:
 - `add-shared-desktop-overlay-surface` is archived with every task checked, its capability is synced at `openspec/specs/shared-overlay-surfaces/spec.md`, and packaged Windows/OBS acceptance is recorded in `docs/verification/shared-desktop-overlay.md`.
 - `add-routed-video-audio-controls` is archived with every task checked, its capabilities are synced at `openspec/specs/routed-video-audio/spec.md`, `openspec/specs/alert-audio-routing/spec.md`, and `openspec/specs/alert-playback-operator-controls/spec.md`, and packaged/physical-device/OBS acceptance is recorded in `docs/verification/routed-video-audio.md`.
 - The Screen Effects Operator and audio-route deltas retain the inherited routed soundtrack, authoritative mute, occurrence-scoped stop, and route-binding snapshot scenarios.
-- The latest baseline migration is `021-alert-video-audio`; Screen Effects will use `022-screen-effects`. The configuration backup archive envelope remains version 2.
+- The prior baseline migration was `021-alert-video-audio`; Screen Effects uses `022-screen-effects`. The configuration backup archive envelope remains version 2.
 
 ## Existing adapter map
 
@@ -113,3 +113,34 @@ Tasks 6.3 and 6.4 are complete. The full production Storybook interaction gate p
 The Screen Effects browser workflow covers local disabled creation, valid media selection, first save, reload, copy with new stable IDs, explicit enable confirmation, silent Preview, exact-variant Live Test confirmation and destination naming. A second workflow proves no-output Test refusal and failed enabled-save draft retention. The multi-module Operator workflow covers concurrent current rows, effect-scoped skip/pause/clear and exact retained effect replay. The surface workflow now uses the registered `screen-effects` layer rather than a placeholder and preserves explicit order/visibility after reload. The typed restore workflow shows a restored effect disabled after confirmation. These focused Playwright runs passed three authoring/Operator cases and two surface/restore cases; production event-to-queue, snapshot, concurrency and restart semantics remain backed by the previously recorded server/runtime integration suites rather than browser-only fixture behavior.
 
 `corepack.cmd pnpm desktop:package` built the current workspace successfully. The new isolated packaged desktop workflow used a temporary config, database, asset directory and Electron profile; it enumerated a real desktop display, enabled the Screen Effects surface, uploaded the checked-in neutral trackless video, created/enabled/tested the effect, observed video progress in the private `stream-jams-overlay://surface/` renderer, and shut down. Relaunching the same isolated profile retained the enabled definition while Operator reported zero current, pending and recent occurrences. The focused desktop test passed and removed its owned temporary profile after native exit. This is automated renderer evidence, not human confirmation of physical display composition, OBS capture, click-through behavior or audible routing.
+
+## Final automated acceptance
+
+The final repository gates passed on 2026-09-13:
+
+- `corepack.cmd pnpm lint`
+- `corepack.cmd pnpm typecheck`
+- `corepack.cmd pnpm test`: 231 files and 1,969 Vitest tests, plus four native-exit/audio-fixture Node tests
+- `corepack.cmd pnpm build`
+- `corepack.cmd pnpm build-storybook`
+- `corepack.cmd pnpm test:storybook:ci`: 223 interactions in 22 suites
+- `corepack.cmd pnpm test:e2e`: 37 browser workflows
+- `corepack.cmd pnpm test:desktop`: 25 packaged-desktop tests
+
+The first full browser run encountered `net::ERR_NO_BUFFER_SPACE` before one pre-existing Alert editor navigation. Its focused rerun passed, and the complete 37-test browser suite then passed unchanged; this was classified as transient Windows socket exhaustion rather than a product regression. A stale module-registry unit expectation initially listed Alerts as the only registered module; it was corrected to assert both registered modules, its focused regression passed, and the full unit gate then passed.
+
+Canonical specs now include Screen Effects, multi-module playback operations, and the Screen Effects extensions to named audio routes and Operator controls. The product plan and runbook describe the delivered behavior, and the implemented BL-047 row has been removed from the deferred backlog. Marketplace, cross-platform/cloud delivery, exclusive-full-screen injection and unrelated overlay modules remain deferred.
+
+## Human physical acceptance — only remaining gate
+
+Use the packaged app and neutral local media; do not use a live provider account or a secret production Browser Source URL in evidence. Before starting, explicitly approve the two exact physical audio-output labels if audible routing will be tested.
+
+1. Create and enable one neutral Screen Effect with OBS visual, desktop visual, Browser Source audio and the approved named-device routes selected. Confirm that merely selecting or saving remains silent.
+2. Add the Screen Effects module Browser Source to OBS and bind the desktop surface to the intended physical monitor. Trigger **Live Test**, then confirm the same occurrence appears in Operator while OBS and the desktop show the effect in their configured layer order without stretching.
+3. Confirm the approved audio routes independently. Check that an unselected device stays silent and that OBS Desktop Audio/monitoring does not accidentally recapture a route intended to be private. The separate `corepack pnpm test:desktop:hardware` tone suite may support this observation only after its environment gate is intentionally enabled.
+4. While an Alert is active, trigger and then skip a Screen Effect. Confirm only the effect stops and the Alert's healthy visual/audio playback continues.
+5. Make the selected monitor unavailable or temporarily bind a known-unavailable display. Confirm the desktop effect fails closed, does not move to another display and does not replay when the display returns; independently confirm healthy OBS/audio recipients continue.
+6. Close management to the tray during an effect, reopen it, and confirm playback ownership persists. Then use tray **Quit** and confirm the effect clears, the listener stops and the packaged process exits within the existing bounded shutdown policy.
+7. Restart the same profile. Confirm the definition and safety settings persist, hardware bindings are unchanged unless a portable restore was performed, and Operator has no restored current, pending or recent occurrences.
+
+Record the display, OBS source/profile, approved route labels, observed result for each step and Quit timing here. After those observations pass, task 7.2 can be checked and the change will be ready for human merge approval without any remaining implementation gate.

@@ -29,9 +29,20 @@ describe("overlay module routes", () => {
           entryPoint: "overlay/modules/alerts",
           supportedOutputs: ["module", "unified"]
         }
+      }),
+      expect.objectContaining({
+        id: "screen-effects",
+        displayName: "Screen Effects",
+        defaultEnabled: false,
+        renderer: {
+          entryPoint: "overlay/modules/screen-effects",
+          supportedOutputs: ["module", "unified"]
+        }
       })
     ]);
-    expect(response.json()[0]).not.toHaveProperty("configSchema");
+    expect(response.json()).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ configSchema: expect.anything() })])
+    );
   });
 
   it("returns default module config before any config has been saved", async () => {

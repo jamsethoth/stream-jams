@@ -67,6 +67,20 @@ Each surface has independent drafts, visibility and topmost-first ordering. Use 
 
 Disconnecting the selected display clears its desktop content without moving it elsewhere or replaying on reconnection. Choose and save another display explicitly to rebind. **Retry desktop output** uses saved settings and restores future playback only. Closing management to the tray does not stop the surface; normal Quit clears it. CLI operation cannot provide a native desktop surface, but unified-browser layer settings remain editable. Portable backups preserve layers/opacity while resetting desktop enablement and display binding.
 
+## Screen Effects
+
+Open **Modules → Screen Effects** to create a definition. A new effect starts disabled and selecting media never plays it. Choose one local image, GIF or video and/or one local sound, set a duration from 1 through 120 seconds, then select visual and audio destinations explicitly. Video soundtrack and separate sound can both be enabled with independent volumes; they share the variant's Browser Source and named-device selections. An audio-only effect is valid when at least one explicit audio destination is usable.
+
+Add one or more trusted triggers. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** is a local silent visual check. **Live Test** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation.
+
+For OBS, copy the Screen Effects module Browser Source from its inventory setup panel or include the module in a unified surface. For the Windows overlay, open **Settings → Overlay surfaces**, show `screen-effects` on the explicitly bound desktop surface, place it in the desired topmost-first order, and save. Visual membership is independent from Browser Source or named-device audio; do not add both a module-specific and unified browser source with audio enabled unless duplicate audio is intentional.
+
+Use `/operator` during a stream. Alerts and Screen Effects may appear under **Now playing** simultaneously. Pending and recent rows identify their owning module, and skip, remove, replay, clear and module-pause actions affect only that owner. Global Pause, Mute and Do Not Disturb remain shared. Definitions and safety settings survive restart, but current, pending and recent occurrences do not replay.
+
+Missing displays, browser recipients, assets or audio routes fail closed without choosing a replacement output. Portable restore preserves definitions but disables them and clears local hardware bindings for review. Marketplace content, remote media, arbitrary code, cloud/LAN delivery, cross-platform desktop output and exclusive-full-screen injection remain outside this module.
+
+The ordinary automated suite uses isolated profiles and silent media. Physical acceptance is deliberately separate: build the packaged app, use neutral local media, configure an OBS Screen Effects source and an explicit desktop display, bind only the approved named audio routes, and observe independent OBS/desktop/audio behavior. Run the existing `test:desktop:hardware` audio capability suite only after approving its two exact device labels as described above. Record physical observations, an unavailable-monitor check and bounded tray Quit in [Screen Effects verification](verification/screen-effects.md); do not treat automated private-renderer playback as physical approval.
+
 ## Management Security
 
 Management API access uses a local management session plus browser-origin protections. The management session bootstrap response includes a bearer session id and a session-bound CSRF token. The management UI sends the bearer token on management API requests and sends `X-Stream-Jams-CSRF` on state-changing `POST`, `PUT`, `PATCH`, and `DELETE` requests.
