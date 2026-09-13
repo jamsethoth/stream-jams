@@ -44,6 +44,7 @@ test("packaged Screen Effects persists definitions and restarts with empty runti
       await management.getByLabel("Enable desktop overlay").check();
       await management.getByRole("checkbox", { name: "Show screen-effects on Desktop overlay" }).check();
       await management.getByRole("button", { name: "Save Desktop overlay" }).click();
+      await expect(management.getByText(/Desktop (?:overlay settings saved|settings saved; output needs attention)\./u)).toBeVisible();
       await expect(management.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
     } else {
       console.info("No desktop display was enumerated; physical display delivery remains in the explicit hardware suite.");
