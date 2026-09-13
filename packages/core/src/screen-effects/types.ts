@@ -80,3 +80,22 @@ export interface CreateScreenEffectDocumentInput {
   readonly name: string;
   readonly defaultVariantId: string;
 }
+
+export type EffectTrigger =
+  | {
+      readonly kind: "twitch-reward";
+      readonly eventId: string;
+      readonly occurredAt: string;
+      readonly broadcasterId: string;
+      readonly rewardId: string;
+      readonly summary: string;
+    }
+  | {
+      readonly kind: "streamerbot-event";
+      readonly eventId: string;
+      readonly occurredAt: string;
+      readonly providerId: string;
+      readonly sourceKey: string;
+      readonly eventType: string;
+      readonly summary: string;
+    };

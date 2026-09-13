@@ -5,7 +5,8 @@ import type {
   ProviderSetupInput,
   ProviderValidationResult,
   ProviderVoiceTestResult,
-  SecretRef
+  SecretRef,
+  StreamerBotSubscriptionSelection
 } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
@@ -13,6 +14,8 @@ import {
   ProviderActivationBlockedError,
   ProviderActivationConfirmationRequiredError,
   ProviderManagementService,
+  StreamerBotSubscriptionSelectionUnavailableError,
+  StreamerBotSubscriptionWrongProviderError,
   type ProviderManagementAdapter
 } from "./provider-management-service.js";
 import { SqliteProviderRegistrationRepository } from "./sqlite-provider-registration-repository.js";
@@ -87,7 +90,14 @@ describe("ProviderManagementService", () => {
     expect(second.status).toBe("registered");
     expect(second.provider?.provider.active).toBe(false);
     expect(second.provider?.provider.intakeState).toBe("inactive");
-    expect(second.provider?.configuration).toEqual({ protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" });
+    expect(second.provider?.configuration).toEqual({
+      protocol: "ws",
+      host: "127.0.0.1",
+      port: 8080,
+      endpoint: "/",
+      twitchBroadcasterId: null,
+      externalSubscriptions: []
+    });
     expect(secrets.values.get("streamerbot:provider-2:password")).toBe("secret");
   });
 
@@ -217,7 +227,148 @@ describe("ProviderManagementService", () => {
       }
     );
   });
+
+  it("lists and atomically updates active Streamer.bot subscriptions", async () => {
+    const applied: Array<{
+      previous: readonly StreamerBotSubscriptionSelection[];
+      next: readonly StreamerBotSubscriptionSelection[];
+    }> = [];
+    service = createSubscriptionService(repository, secrets, {
+      getCatalog: async () => ({ Twitch: ["RewardRedemption"], OBS: ["SceneChanged", "RecordingStarted"] }),
+      async replaceExternalSubscriptions(_providerId, previous, next) {
+        applied.push({ previous, next });
+      }
+    });
+    const registered = await service.registerProvider(streamerBotSetup());
+    if (registered.status !== "registered") throw new Error("Expected Streamer.bot registration");
+
+    await expect(service.getStreamerBotSubscriptions(registered.provider.provider.id)).resolves.toMatchObject({
+      available: true,
+      sources: [
+        { sourceKey: "OBS", eventTypes: ["RecordingStarted", "SceneChanged"] },
+        { sourceKey: "Twitch", eventTypes: ["RewardRedemption"] }
+      ],
+      selected: []
+    });
+
+    const updated = await service.updateStreamerBotSubscriptions(registered.provider.provider.id, {
+      twitchBroadcasterId: "broadcaster-1",
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    });
+
+    expect(applied).toEqual([{ previous: [], next: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }] }]);
+    expect(updated).toMatchObject({
+      selected: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+      twitchBroadcasterId: "broadcaster-1",
+      unavailableSelections: []
+    });
+    await expect(service.getProvider(registered.provider.provider.id)).resolves.toMatchObject({
+      configuration: {
+        twitchBroadcasterId: "broadcaster-1",
+        externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+      }
+    });
+  });
+
+  it("rejects wrong providers and vanished advertised selections before persistence", async () => {
+    let applyCount = 0;
+    service = createSubscriptionService(repository, secrets, {
+      getCatalog: async () => ({ OBS: ["SceneChanged"] }),
+      async replaceExternalSubscriptions() { applyCount += 1; }
+    });
+    const bot = await service.registerProvider(streamerBotSetup());
+    const speaker = await service.registerProvider(speakerBotSetup());
+    if (bot.status !== "registered" || speaker.status !== "registered") throw new Error("Expected registrations");
+
+    await expect(service.getStreamerBotSubscriptions(speaker.provider.provider.id)).rejects.toBeInstanceOf(
+      StreamerBotSubscriptionWrongProviderError
+    );
+    await expect(service.updateStreamerBotSubscriptions(bot.provider.provider.id, {
+      twitchBroadcasterId: null,
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["Missing"] }]
+    })).rejects.toBeInstanceOf(StreamerBotSubscriptionSelectionUnavailableError);
+    expect(applyCount).toBe(0);
+    await expect(service.getProvider(bot.provider.provider.id)).resolves.toMatchObject({
+      configuration: { externalSubscriptions: [] }
+    });
+  });
+
+  it("does not persist subscriptions when live apply fails", async () => {
+    service = createSubscriptionService(repository, secrets, {
+      getCatalog: async () => ({ OBS: ["SceneChanged"] }),
+      async replaceExternalSubscriptions() { throw new Error("apply failed"); }
+    });
+    const bot = await service.registerProvider(streamerBotSetup());
+    if (bot.status !== "registered") throw new Error("Expected Streamer.bot registration");
+
+    await expect(service.updateStreamerBotSubscriptions(bot.provider.provider.id, {
+      twitchBroadcasterId: null,
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    })).rejects.toThrow("apply failed");
+    await expect(service.getProvider(bot.provider.provider.id)).resolves.toMatchObject({
+      configuration: { externalSubscriptions: [] }
+    });
+  });
+
+  it("rolls live subscriptions back when durable persistence fails", async () => {
+    const applied: Array<{
+      previous: readonly StreamerBotSubscriptionSelection[];
+      next: readonly StreamerBotSubscriptionSelection[];
+    }> = [];
+    service = createSubscriptionService(repository, secrets, {
+      getCatalog: async () => ({ OBS: ["SceneChanged"] }),
+      async replaceExternalSubscriptions(_providerId, previous, next) { applied.push({ previous, next }); }
+    });
+    const bot = await service.registerProvider(streamerBotSetup());
+    if (bot.status !== "registered") throw new Error("Expected Streamer.bot registration");
+    database.connection.exec(`
+      CREATE TRIGGER reject_provider_subscription_update
+      BEFORE UPDATE ON provider_registrations
+      BEGIN
+        SELECT RAISE(FAIL, 'persistence failed');
+      END
+    `);
+
+    await expect(service.updateStreamerBotSubscriptions(bot.provider.provider.id, {
+      twitchBroadcasterId: null,
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    })).rejects.toThrow("persistence failed");
+    expect(applied).toEqual([
+      { previous: [], next: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }] },
+      { previous: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }], next: [] }
+    ]);
+  });
 });
+
+function createSubscriptionService(
+  repository: SqliteProviderRegistrationRepository,
+  secrets: InMemorySecrets,
+  runtime: {
+  getCatalog(providerId: string): Promise<Record<string, readonly string[]>>;
+  replaceExternalSubscriptions(
+    providerId: string,
+    previous: readonly StreamerBotSubscriptionSelection[],
+    next: readonly StreamerBotSubscriptionSelection[]
+  ): Promise<void>;
+  }
+): ProviderManagementService {
+  let id = 0;
+  return new ProviderManagementService({
+    repository,
+    adapters: new Map([
+      ["streamerbot", successfulAdapter("active")],
+      ["speakerbot", successfulAdapter(null)]
+    ]),
+    secretStore: secrets,
+    getActivationImpact: async () => emptyImpact,
+    getUsedByAlertCount: async () => 0,
+    streamerBotSubscriptions: runtime,
+    getVerifiedTwitchBroadcasterId: async () => "broadcaster-1",
+    generateId: () => `provider-subscriptions-${++id}`,
+    generateReferenceId: () => "provider-ref-1",
+    now: () => new Date("2026-07-15T12:00:00.000Z")
+  });
+}
 
 const emptyImpact: ProviderActivationImpact = {
   matchedAlertCount: 0,

@@ -8,6 +8,8 @@ import {
   providerValidationResultSchema,
   providerVoiceTestResultSchema,
   registeredProviderDetailSchema,
+  streamerBotSubscriptionCatalogSchema,
+  streamerBotSubscriptionUpdateInputSchema,
   ttsProviderSafetySettingsSchema,
   type ActionableManagementError,
   type Logger,
@@ -22,6 +24,9 @@ import {
   type RegisteredProviderDetail,
   type RegisteredProviderView,
   type SecretRef,
+  type StreamerBotSubscriptionCatalog,
+  type StreamerBotSubscriptionSelection,
+  type StreamerBotSubscriptionUpdateInput,
   type TtsProviderSafetySettings
 } from "@stream-jams/core";
 import type {
@@ -49,7 +54,18 @@ export interface ProviderManagementServiceOptions {
   readonly generateReferenceId: () => string;
   readonly logger?: Pick<Logger, "error"> | undefined;
   readonly onEventSourceChanged?: (() => void | Promise<void>) | undefined;
+  readonly streamerBotSubscriptions?: StreamerBotSubscriptionRuntime | undefined;
+  readonly getVerifiedTwitchBroadcasterId?: (() => Promise<string | null>) | undefined;
   readonly now?: () => Date;
+}
+
+export interface StreamerBotSubscriptionRuntime {
+  getCatalog(providerId: string): Promise<Record<string, readonly string[]>>;
+  replaceExternalSubscriptions(
+    providerId: string,
+    previous: readonly StreamerBotSubscriptionSelection[],
+    next: readonly StreamerBotSubscriptionSelection[]
+  ): Promise<void>;
 }
 
 interface SecretStoreBoundary {
@@ -85,6 +101,42 @@ export class ProviderRegistrationNotFoundError extends Error {
   }
 }
 
+export class StreamerBotSubscriptionWrongProviderError extends Error {
+  readonly code = "STREAMERBOT_SUBSCRIPTIONS_WRONG_PROVIDER";
+
+  constructor() {
+    super("Streamer.bot subscriptions require a Streamer.bot provider");
+    this.name = "StreamerBotSubscriptionWrongProviderError";
+  }
+}
+
+export class StreamerBotSubscriptionInactiveError extends Error {
+  readonly code = "STREAMERBOT_SUBSCRIPTIONS_INACTIVE";
+
+  constructor() {
+    super("Only the active Streamer.bot provider can update subscriptions");
+    this.name = "StreamerBotSubscriptionInactiveError";
+  }
+}
+
+export class StreamerBotSubscriptionSelectionUnavailableError extends Error {
+  readonly code = "STREAMERBOT_SUBSCRIPTION_UNAVAILABLE";
+
+  constructor(readonly unavailableSelections: readonly StreamerBotSubscriptionSelection[]) {
+    super("One or more selected Streamer.bot events are no longer advertised");
+    this.name = "StreamerBotSubscriptionSelectionUnavailableError";
+  }
+}
+
+export class StreamerBotBroadcasterUnverifiedError extends Error {
+  readonly code = "STREAMERBOT_BROADCASTER_UNVERIFIED";
+
+  constructor() {
+    super("The selected Twitch broadcaster is not the currently verified catalog account");
+    this.name = "StreamerBotBroadcasterUnverifiedError";
+  }
+}
+
 export class ProviderManagementService {
   readonly #repository: SqliteProviderRegistrationRepository;
   readonly #adapters: ReadonlyMap<ProviderKind, ProviderManagementAdapter>;
@@ -95,6 +147,8 @@ export class ProviderManagementService {
   readonly #generateReferenceId: () => string;
   readonly #logger: Pick<Logger, "error"> | null;
   readonly #onEventSourceChanged: () => void | Promise<void>;
+  readonly #streamerBotSubscriptions: StreamerBotSubscriptionRuntime | null;
+  readonly #getVerifiedTwitchBroadcasterId: () => Promise<string | null>;
   readonly #now: () => Date;
 
   constructor(options: ProviderManagementServiceOptions) {
@@ -107,6 +161,8 @@ export class ProviderManagementService {
     this.#generateReferenceId = options.generateReferenceId;
     this.#logger = options.logger ?? null;
     this.#onEventSourceChanged = options.onEventSourceChanged ?? (() => {});
+    this.#streamerBotSubscriptions = options.streamerBotSubscriptions ?? null;
+    this.#getVerifiedTwitchBroadcasterId = options.getVerifiedTwitchBroadcasterId ?? (async () => null);
     this.#now = options.now ?? (() => new Date());
   }
 
@@ -271,6 +327,75 @@ export class ProviderManagementService {
     return (await this.#toDetail(deactivated)).provider;
   }
 
+  async getStreamerBotSubscriptions(providerId: string): Promise<StreamerBotSubscriptionCatalog> {
+    const record = await this.#requireStreamerBot(providerId);
+    const configuration = readStreamerBotConfiguration(record);
+    if (!record.provider.active || this.#streamerBotSubscriptions === null) {
+      return toStreamerBotSubscriptionCatalog(record.provider.id, configuration, null);
+    }
+
+    const catalog = await this.#streamerBotSubscriptions.getCatalog(providerId);
+    return toStreamerBotSubscriptionCatalog(record.provider.id, configuration, catalog);
+  }
+
+  async updateStreamerBotSubscriptions(
+    providerId: string,
+    input: StreamerBotSubscriptionUpdateInput
+  ): Promise<StreamerBotSubscriptionCatalog> {
+    const parsed = streamerBotSubscriptionUpdateInputSchema.parse(input);
+    const record = await this.#requireStreamerBot(providerId);
+    if (!record.provider.active || this.#streamerBotSubscriptions === null) {
+      throw new StreamerBotSubscriptionInactiveError();
+    }
+
+    if (parsed.twitchBroadcasterId !== null) {
+      const verifiedBroadcasterId = await this.#getVerifiedTwitchBroadcasterId();
+      if (verifiedBroadcasterId !== parsed.twitchBroadcasterId) {
+        throw new StreamerBotBroadcasterUnverifiedError();
+      }
+    }
+
+    const configuration = readStreamerBotConfiguration(record);
+    const catalog = await this.#streamerBotSubscriptions.getCatalog(providerId);
+    const unavailable = unavailableSelections(parsed.externalSubscriptions, catalog);
+    if (unavailable.length > 0) {
+      throw new StreamerBotSubscriptionSelectionUnavailableError(unavailable);
+    }
+
+    await this.#streamerBotSubscriptions.replaceExternalSubscriptions(
+      providerId,
+      configuration.externalSubscriptions,
+      parsed.externalSubscriptions
+    );
+    try {
+      await this.#repository.save({
+        ...record,
+        configuration: {
+          protocol: configuration.protocol,
+          host: configuration.host,
+          port: configuration.port,
+          endpoint: configuration.endpoint,
+          twitchBroadcasterId: parsed.twitchBroadcasterId,
+          externalSubscriptions: parsed.externalSubscriptions
+        },
+        updatedAt: this.#now().toISOString()
+      });
+    } catch (error) {
+      await this.#streamerBotSubscriptions.replaceExternalSubscriptions(
+        providerId,
+        parsed.externalSubscriptions,
+        configuration.externalSubscriptions
+      );
+      throw error;
+    }
+
+    return toStreamerBotSubscriptionCatalog(providerId, {
+      ...configuration,
+      twitchBroadcasterId: parsed.twitchBroadcasterId,
+      externalSubscriptions: parsed.externalSubscriptions
+    }, catalog);
+  }
+
   async getTtsSafety(providerId: string): Promise<TtsProviderSafetySettings> {
     const record = await this.#requireRecord(providerId);
     if (record.ttsSafety === null) {
@@ -340,6 +465,14 @@ export class ProviderManagementService {
     return record;
   }
 
+  async #requireStreamerBot(providerId: string): Promise<ProviderRegistrationRecord> {
+    const record = await this.#requireRecord(providerId);
+    if (record.provider.kind !== "streamerbot") {
+      throw new StreamerBotSubscriptionWrongProviderError();
+    }
+    return record;
+  }
+
   async #failedValidation(summary: string, cause: string, nextStep: string): Promise<ProviderValidationResult> {
     return providerValidationResultSchema.parse({
       valid: false,
@@ -374,6 +507,54 @@ export class ProviderManagementService {
     });
     return error;
   }
+}
+
+type StreamerBotConfiguration = Extract<
+  ReturnType<typeof providerSetupInputSchema.parse>,
+  { readonly kind: "streamerbot" }
+>["configuration"];
+
+function readStreamerBotConfiguration(record: ProviderRegistrationRecord): StreamerBotConfiguration {
+  const parsed = providerSetupInputSchema.parse({
+    name: record.provider.name,
+    kind: "streamerbot",
+    configuration: record.configuration
+  });
+  if (parsed.kind !== "streamerbot") throw new StreamerBotSubscriptionWrongProviderError();
+  return parsed.configuration;
+}
+
+function toStreamerBotSubscriptionCatalog(
+  providerId: string,
+  configuration: StreamerBotConfiguration,
+  catalog: Record<string, readonly string[]> | null
+): StreamerBotSubscriptionCatalog {
+  const sources = catalog === null
+    ? []
+    : Object.entries(catalog)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([sourceKey, eventTypes]) => ({ sourceKey, eventTypes: [...eventTypes].sort() }));
+  return streamerBotSubscriptionCatalogSchema.parse({
+    providerId,
+    available: catalog !== null,
+    sources,
+    selected: configuration.externalSubscriptions,
+    unavailableSelections: catalog === null
+      ? configuration.externalSubscriptions
+      : unavailableSelections(configuration.externalSubscriptions, catalog),
+    twitchBroadcasterId: configuration.twitchBroadcasterId
+  });
+}
+
+function unavailableSelections(
+  selections: readonly StreamerBotSubscriptionSelection[],
+  catalog: Record<string, readonly string[]>
+): StreamerBotSubscriptionSelection[] {
+  return selections.flatMap((selection) => {
+    const available = new Set(catalog[selection.sourceKey] ?? []);
+    const eventTypes = selection.eventTypes.filter((eventType) => !available.has(eventType));
+    return eventTypes.length === 0 ? [] : [{ sourceKey: selection.sourceKey, eventTypes }];
+  });
 }
 
 function providerCredential(input: ProviderSetupInput): string | null {

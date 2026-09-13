@@ -1,14 +1,25 @@
 import { randomBytes } from "node:crypto";
-import { normalizedStreamEventSchema, type NormalizedStreamEvent } from "@stream-jams/core";
+import {
+  effectTriggerSchema,
+  normalizedStreamEventSchema,
+  type EffectTrigger,
+  type NormalizedStreamEvent
+} from "@stream-jams/core";
 import {
   getTwitchEventSubDiagnosticContext,
   getTwitchEventSubMessageId,
   normalizeTwitchEventSubNotification,
   TwitchEventNormalizationError
 } from "../twitch/twitch-event-normalizer.js";
+import { createNormalizedEffectTriggers } from "../screen-effects/effect-trigger-adapter.js";
 
 export type EventIngestionResult =
   | { readonly status: "accepted"; readonly event: NormalizedStreamEvent }
+  | { readonly status: "duplicate"; readonly messageId: string }
+  | { readonly status: "rejected"; readonly message: string; readonly referenceId: string };
+
+export type EffectTriggerIngestionResult =
+  | { readonly status: "accepted"; readonly eventId: string }
   | { readonly status: "duplicate"; readonly messageId: string }
   | { readonly status: "rejected"; readonly message: string; readonly referenceId: string };
 
@@ -24,7 +35,7 @@ export interface EventIngestionStatus {
 }
 
 export interface EventIngestionDiagnostic {
-  readonly code: "EVENT_INGESTION_FAILED" | "NORMALIZED_STREAM_EVENT_SCHEMA_INVALID";
+  readonly code: "EVENT_INGESTION_FAILED" | "NORMALIZED_STREAM_EVENT_SCHEMA_INVALID" | "EFFECT_TRIGGER_SCHEMA_INVALID";
   readonly message: string;
   readonly referenceId: string;
   readonly ingestProvider?: "twitch" | "streamerbot" | undefined;
@@ -34,7 +45,8 @@ export interface EventIngestionDiagnostic {
 }
 
 export interface EventSink {
-  handleEvent(event: NormalizedStreamEvent): void | Promise<void>;
+  handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]): void | Promise<void>;
+  handleTriggers?(triggers: readonly EffectTrigger[]): void | Promise<void>;
 }
 
 export interface EventIngestionServiceOptions {
@@ -76,11 +88,54 @@ export class EventIngestionService {
     return this.#status;
   }
 
-  async ingestNormalizedEvent(event: unknown): Promise<EventIngestionResult> {
+  async ingestNormalizedEvent(
+    event: unknown,
+    effectTriggers?: readonly EffectTrigger[]
+  ): Promise<EventIngestionResult> {
     return this.#deliverNormalizedEvent(event, {
       duplicateMessage: "Duplicate normalized stream event ignored",
       failureMessage: "Normalized stream event ingestion failed"
-    });
+    }, effectTriggers);
+  }
+
+  async ingestEffectTriggers(eventId: string, triggers: unknown): Promise<EffectTriggerIngestionResult> {
+    const parsed = effectTriggerSchema.array().min(1).safeParse(triggers);
+    if (!parsed.success || eventId.trim().length === 0 || parsed.data.some((trigger) => trigger.eventId !== eventId)) {
+      return this.#reject({
+        code: "EFFECT_TRIGGER_SCHEMA_INVALID",
+        message: "Screen Effects triggers failed schema validation",
+        ingestProvider: "streamerbot"
+      });
+    }
+
+    if (this.#seenMessageIds.has(eventId) || this.#inFlightMessageIds.has(eventId)) {
+      this.#status = {
+        ...this.#status,
+        state: this.#status.state === "idle" ? "ready" : this.#status.state,
+        duplicateCount: this.#status.duplicateCount + 1,
+        message: "Duplicate Streamer.bot event ignored"
+      };
+      return { status: "duplicate", messageId: eventId };
+    }
+
+    this.#inFlightMessageIds.add(eventId);
+    try {
+      if (this.#sink.handleTriggers === undefined) {
+        throw new Error("Screen Effects trigger sink is unavailable");
+      }
+      await this.#sink.handleTriggers(parsed.data);
+      this.#rememberMessageId(eventId);
+      this.#markAccepted();
+      return { status: "accepted", eventId };
+    } catch {
+      return this.#reject({
+        code: "EVENT_INGESTION_FAILED",
+        message: "Streamer.bot effect trigger ingestion failed",
+        ingestProvider: "streamerbot"
+      });
+    } finally {
+      this.#inFlightMessageIds.delete(eventId);
+    }
   }
 
   async ingestTwitchEventSubNotification(message: unknown): Promise<EventIngestionResult> {
@@ -117,7 +172,8 @@ export class EventIngestionService {
 
   async #deliverNormalizedEvent(
     event: unknown,
-    messages: { readonly duplicateMessage: string; readonly failureMessage: string }
+    messages: { readonly duplicateMessage: string; readonly failureMessage: string },
+    effectTriggers?: readonly EffectTrigger[]
   ): Promise<EventIngestionResult> {
     const parsed = normalizedStreamEventSchema.safeParse(event);
     if (!parsed.success) {
@@ -129,6 +185,16 @@ export class EventIngestionService {
     }
 
     const normalizedEvent = parsed.data;
+    const parsedTriggers = effectTriggerSchema.array().safeParse(
+      effectTriggers ?? createNormalizedEffectTriggers(normalizedEvent)
+    );
+    if (!parsedTriggers.success || parsedTriggers.data.some((trigger) => trigger.eventId !== normalizedEvent.id)) {
+      return this.#reject({
+        code: "EFFECT_TRIGGER_SCHEMA_INVALID",
+        message: "Screen Effects triggers failed schema validation",
+        ...getNormalizedEventDiagnosticContext(normalizedEvent)
+      });
+    }
     const diagnosticContext = getNormalizedEventDiagnosticContext(normalizedEvent);
     if (this.#seenMessageIds.has(normalizedEvent.id) || this.#inFlightMessageIds.has(normalizedEvent.id)) {
       this.#status = {
@@ -142,18 +208,9 @@ export class EventIngestionService {
 
     this.#inFlightMessageIds.add(normalizedEvent.id);
     try {
-      await this.#sink.handleEvent(normalizedEvent);
+      await this.#sink.handleEvent(normalizedEvent, parsedTriggers.data);
       this.#rememberMessageId(normalizedEvent.id);
-      this.#status = {
-        state: "ready",
-        acceptedCount: this.#status.acceptedCount + 1,
-        duplicateCount: this.#status.duplicateCount,
-        rejectedCount: this.#status.rejectedCount,
-        lastEventAt: this.#now().toISOString(),
-        lastErrorAt: this.#status.lastErrorAt,
-        message: null,
-        referenceId: null
-      };
+      this.#markAccepted();
       return { status: "accepted", event: normalizedEvent };
     } catch {
       return this.#reject({ code: "EVENT_INGESTION_FAILED", message: messages.failureMessage, ...diagnosticContext });
@@ -162,7 +219,24 @@ export class EventIngestionService {
     }
   }
 
-  async #reject(diagnostic: Omit<EventIngestionDiagnostic, "referenceId">): Promise<EventIngestionResult> {
+  #markAccepted(): void {
+    this.#status = {
+      state: "ready",
+      acceptedCount: this.#status.acceptedCount + 1,
+      duplicateCount: this.#status.duplicateCount,
+      rejectedCount: this.#status.rejectedCount,
+      lastEventAt: this.#now().toISOString(),
+      lastErrorAt: this.#status.lastErrorAt,
+      message: null,
+      referenceId: null
+    };
+  }
+
+  async #reject(diagnostic: Omit<EventIngestionDiagnostic, "referenceId">): Promise<{
+    readonly status: "rejected";
+    readonly message: string;
+    readonly referenceId: string;
+  }> {
     const referenceId = this.#generateReferenceId();
     const { message } = diagnostic;
     this.#status = {

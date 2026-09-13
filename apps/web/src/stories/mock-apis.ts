@@ -57,6 +57,26 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getProvider() {
       throw new Error("No provider detail configured for this story.");
     },
+    async getStreamerBotSubscriptions(providerId) {
+      return {
+        providerId,
+        available: false,
+        sources: [],
+        selected: [],
+        unavailableSelections: [],
+        twitchBroadcasterId: null
+      };
+    },
+    async updateStreamerBotSubscriptions(providerId, input) {
+      return {
+        providerId,
+        available: true,
+        sources: input.externalSubscriptions,
+        selected: input.externalSubscriptions,
+        unavailableSelections: [],
+        twitchBroadcasterId: input.twitchBroadcasterId
+      };
+    },
     async activateProvider() {
       throw new Error("No provider activation configured for this story.");
     },

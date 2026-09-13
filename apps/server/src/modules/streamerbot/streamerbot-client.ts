@@ -14,6 +14,7 @@ export interface StreamerBotConnectionInput {
 }
 
 export interface StreamerBotEventEnvelope {
+  readonly id?: string | undefined;
   readonly timeStamp: string;
   readonly event: {
     readonly source: string;
@@ -732,6 +733,7 @@ function parseEventEnvelope(message: Record<string, unknown>): StreamerBotEventE
   }
 
   return {
+    ...(typeof message.id === "string" && message.id.length > 0 ? { id: message.id } : {}),
     timeStamp: message.timeStamp,
     event: {
       source: message.event.source,

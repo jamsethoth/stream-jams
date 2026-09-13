@@ -429,7 +429,14 @@ describe("management UI contract routes", () => {
     });
     expect(registration.statusCode).toBe(201);
     expect(registration.json()).toEqual(expect.objectContaining({ status: "registered" }));
-    expect(service.registeredSetups).toEqual([setup]);
+    expect(service.registeredSetups).toEqual([{
+      ...setup,
+      configuration: {
+        ...setup.configuration,
+        externalSubscriptions: [],
+        twitchBroadcasterId: null
+      }
+    }]);
   });
 
   it("deactivates a registered provider through an explicit command", async () => {

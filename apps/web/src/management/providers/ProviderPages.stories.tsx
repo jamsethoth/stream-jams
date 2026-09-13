@@ -102,6 +102,33 @@ export const ConfiguredEventSources: Story = {
   args: { managementApi: providerApi([activeTwitch, inactiveStreamerBot]) }
 };
 
+export const StreamerBotEffectSubscriptions: Story = {
+  args: {
+    managementApi: providerApi(
+      [{ ...inactiveStreamerBot, active: true, intakeState: "active", liveStatus: "healthy" }],
+      {
+        getTwitchStatus: async () => connectedTwitchStatus,
+        getStreamerBotSubscriptions: async () => ({
+          providerId: inactiveStreamerBot.id,
+          available: true,
+          sources: [
+            { sourceKey: "Custom", eventTypes: ["Jump", "Spin"] },
+            { sourceKey: "OBS", eventTypes: ["RecordingStarted", "SceneChanged"] }
+          ],
+          selected: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+          unavailableSelections: [],
+          twitchBroadcasterId: connectedTwitchStatus.account.accountId
+        })
+      }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("checkbox", { name: "SceneChanged" })).toBeChecked();
+    await expect(canvas.getByLabelText("Twitch reward broadcaster")).toHaveValue("provider-story");
+  }
+};
+
 export const TwitchReady: Story = {
   args: { managementApi: providerApi([], { getTwitchStatus: async () => connectedTwitchStatus }) },
   play: async ({ canvasElement }) => {

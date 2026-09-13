@@ -20,6 +20,7 @@ import {
   positiveIntegerSchema
 } from "../shared/schemas.js";
 import { ttsVoiceSchema } from "../tts/schemas.js";
+import { streamerBotSubscriptionSelectionSchema } from "../events/schemas.js";
 
 export const managementErrorSeveritySchema = z.enum(["info", "warning", "error", "critical"]);
 
@@ -106,6 +107,38 @@ const websocketProviderConfigurationSchema = z
   })
   .strict();
 
+const safeStreamerBotIdentitySchema = nonEmptyStringSchema.max(120).refine(
+  (value) => Array.from(value).every((character) => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && !(code >= 127 && code <= 159);
+  }),
+  "Streamer.bot event identities cannot contain control characters"
+);
+
+const boundedStreamerBotSubscriptionSelectionSchema = streamerBotSubscriptionSelectionSchema.extend({
+  sourceKey: safeStreamerBotIdentitySchema,
+  eventTypes: z.array(safeStreamerBotIdentitySchema).min(1).max(100)
+}).strict();
+
+const configuredStreamerBotSubscriptionsSchema = z.array(
+  boundedStreamerBotSubscriptionSelectionSchema
+).max(100).superRefine((selections, context) => {
+  const identities = selections.flatMap((selection) =>
+    selection.eventTypes.map((eventType) => `${JSON.stringify(selection.sourceKey)}:${JSON.stringify(eventType)}`)
+  );
+  if (new Set(identities).size !== identities.length) {
+    context.addIssue({
+      code: "custom",
+      message: "Each Streamer.bot source and event type pair must be unique"
+    });
+  }
+});
+
+const streamerBotProviderConfigurationSchema = websocketProviderConfigurationSchema.extend({
+  twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable().default(null),
+  externalSubscriptions: configuredStreamerBotSubscriptionsSchema.default([])
+}).strict();
+
 export const providerSetupInputSchema = z.discriminatedUnion("kind", [
   providerSetupBaseSchema.extend({
     kind: z.literal("twitch"),
@@ -113,7 +146,7 @@ export const providerSetupInputSchema = z.discriminatedUnion("kind", [
   }).strict(),
   providerSetupBaseSchema.extend({
     kind: z.literal("streamerbot"),
-    configuration: websocketProviderConfigurationSchema,
+    configuration: streamerBotProviderConfigurationSchema,
     credential: z.string().max(4_096).nullable().optional()
   }).strict(),
   providerSetupBaseSchema.extend({
@@ -125,6 +158,20 @@ export const providerSetupInputSchema = z.discriminatedUnion("kind", [
     configuration: z.object({}).strict()
   }).strict()
 ]);
+
+export const streamerBotSubscriptionUpdateInputSchema = z.object({
+  twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable(),
+  externalSubscriptions: configuredStreamerBotSubscriptionsSchema
+}).strict();
+
+export const streamerBotSubscriptionCatalogSchema = z.object({
+  providerId: nonEmptyStringSchema.max(120),
+  available: z.boolean(),
+  sources: z.array(boundedStreamerBotSubscriptionSelectionSchema).max(100),
+  selected: configuredStreamerBotSubscriptionsSchema,
+  unavailableSelections: configuredStreamerBotSubscriptionsSchema,
+  twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable()
+}).strict();
 
 export const providerValidationResultSchema = z.object({
   valid: z.boolean(),
@@ -1064,7 +1111,9 @@ export type TargetProfileId = z.infer<typeof targetProfileIdSchema>;
 export type TargetProfileDefinition = z.infer<typeof targetProfileDefinitionSchema>;
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 export type ProviderKind = z.infer<typeof providerKindSchema>;
-export type ProviderSetupInput = z.infer<typeof providerSetupInputSchema>;
+export type ProviderSetupInput = z.input<typeof providerSetupInputSchema>;
+export type StreamerBotSubscriptionUpdateInput = z.infer<typeof streamerBotSubscriptionUpdateInputSchema>;
+export type StreamerBotSubscriptionCatalog = z.infer<typeof streamerBotSubscriptionCatalogSchema>;
 export type ProviderValidationResult = z.infer<typeof providerValidationResultSchema>;
 export type RegisteredProviderView = z.infer<typeof registeredProviderViewSchema>;
 export type ProviderLiveStatus = z.infer<typeof providerLiveStatusSchema>;

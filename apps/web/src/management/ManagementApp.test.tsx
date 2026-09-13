@@ -529,6 +529,22 @@ function createManagementApi(): ManagementApi {
         ttsSafety: null
       };
     }),
+    getStreamerBotSubscriptions: vi.fn(async (providerId) => ({
+      providerId,
+      available: false,
+      sources: [],
+      selected: [],
+      unavailableSelections: [],
+      twitchBroadcasterId: null
+    })),
+    updateStreamerBotSubscriptions: vi.fn(async (providerId, input) => ({
+      providerId,
+      available: true,
+      sources: input.externalSubscriptions,
+      selected: input.externalSubscriptions,
+      unavailableSelections: [],
+      twitchBroadcasterId: input.twitchBroadcasterId
+    })),
     activateProvider: vi.fn(async (providerId) => ({
       provider: { ...(eventProviders.find((provider) => provider.id === providerId) ?? eventProviders[0]!), active: true },
       replacedProviderId: "provider-twitch",

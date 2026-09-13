@@ -1,4 +1,4 @@
-import type { NormalizedStreamEvent } from "@stream-jams/core";
+import type { EffectTrigger, NormalizedStreamEvent } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { normalizeStreamerBotEvent } from "../streamerbot/streamerbot-event-normalizer.js";
 import { EventIngestionService } from "./event-ingestion-service.js";
@@ -254,6 +254,57 @@ describe("EventIngestionService", () => {
       referenceId: null
     });
   });
+
+  it("derives trusted direct Twitch reward triggers after normalization", async () => {
+    const delivered: { event: NormalizedStreamEvent; triggers: readonly EffectTrigger[] }[] = [];
+    const service = new EventIngestionService({
+      sink: {
+        handleEvent(event, triggers) {
+          delivered.push({ event, triggers });
+        }
+      }
+    });
+
+    await service.ingestTwitchEventSubNotification(rewardNotification("message-reward"));
+
+    expect(delivered[0]?.triggers).toEqual([{
+      kind: "twitch-reward",
+      eventId: "message-reward",
+      occurredAt: "2026-05-30T12:00:00.000Z",
+      broadcasterId: "broadcaster-1",
+      rewardId: "reward-1",
+      summary: "Hydrate"
+    }]);
+  });
+
+  it("deduplicates custom-only Streamer.bot trigger batches at ingress", async () => {
+    const batches: Array<readonly EffectTrigger[]> = [];
+    const trigger: EffectTrigger = {
+      kind: "streamerbot-event",
+      eventId: "custom-event-1",
+      occurredAt: "2026-05-30T12:00:00.000Z",
+      providerId: "provider-streamerbot",
+      sourceKey: "OBS",
+      eventType: "SceneChanged",
+      summary: "Scene changed"
+    };
+    const service = new EventIngestionService({
+      sink: {
+        handleEvent() {},
+        async handleTriggers(triggers) { batches.push([...triggers]); }
+      }
+    });
+
+    await expect(service.ingestEffectTriggers("custom-event-1", [trigger])).resolves.toEqual({
+      status: "accepted",
+      eventId: "custom-event-1"
+    });
+    await expect(service.ingestEffectTriggers("custom-event-1", [trigger])).resolves.toEqual({
+      status: "duplicate",
+      messageId: "custom-event-1"
+    });
+    expect(batches).toEqual([[trigger]]);
+  });
 });
 
 function followNotification(messageId: string) {
@@ -316,6 +367,37 @@ function streamOnlineNotification(messageId: string, startedAt: string) {
         id: "stream-1",
         type: "live",
         started_at: startedAt
+      }
+    }
+  };
+}
+
+function rewardNotification(messageId: string) {
+  return {
+    metadata: {
+      message_id: messageId,
+      message_type: "notification",
+      message_timestamp: "2026-05-30T12:00:00.000Z",
+      subscription_type: "channel.channel_points_custom_reward_redemption.add",
+      subscription_version: "1"
+    },
+    payload: {
+      subscription: {
+        id: "subscription-reward",
+        type: "channel.channel_points_custom_reward_redemption.add",
+        version: "1",
+        condition: { broadcaster_user_id: "broadcaster-1" }
+      },
+      event: {
+        id: messageId,
+        broadcaster_user_id: "broadcaster-1",
+        broadcaster_user_name: "Streamer",
+        user_id: "viewer-1",
+        user_name: "Viewer",
+        user_input: "",
+        status: "fulfilled",
+        redeemed_at: "2026-05-30T12:00:00.000Z",
+        reward: { id: "reward-1", title: "Hydrate", cost: 100 }
       }
     }
   };

@@ -3,7 +3,9 @@ import {
   evaluateProviderActivation,
   providerCapabilityForKind,
   providerRegistrationAttemptSchema,
-  providerSetupInputSchema
+  providerSetupInputSchema,
+  streamerBotSubscriptionCatalogSchema,
+  streamerBotSubscriptionUpdateInputSchema
 } from "./contracts.js";
 
 describe("provider management contracts", () => {
@@ -30,7 +32,77 @@ describe("provider management contracts", () => {
       configuration: {}
     }
   ] as const)("accepts $kind provider setup", (input) => {
+    expect(providerSetupInputSchema.parse(input)).toEqual(input.kind === "streamerbot"
+      ? {
+          ...input,
+          configuration: {
+            ...input.configuration,
+            externalSubscriptions: [],
+            twitchBroadcasterId: null
+          }
+        }
+      : input);
+  });
+
+  it("validates Streamer.bot-only subscription and broadcaster configuration", () => {
+    const input = {
+      name: "Local Streamer.bot",
+      kind: "streamerbot" as const,
+      configuration: {
+        protocol: "ws" as const,
+        host: "127.0.0.1",
+        port: 8080,
+        endpoint: "/",
+        twitchBroadcasterId: "broadcaster-1",
+        externalSubscriptions: [
+          { sourceKey: "OBS", eventTypes: ["SceneChanged"] },
+          { sourceKey: "Custom", eventTypes: ["Jump", "Spin"] }
+        ]
+      }
+    };
+
     expect(providerSetupInputSchema.parse(input)).toEqual(input);
+    expect(providerSetupInputSchema.safeParse({
+      name: "Speaker.bot",
+      kind: "speakerbot",
+      configuration: input.configuration
+    }).success).toBe(false);
+  });
+
+  it("rejects duplicate Streamer.bot subscription identities", () => {
+    expect(providerSetupInputSchema.safeParse({
+      name: "Local Streamer.bot",
+      kind: "streamerbot",
+      configuration: {
+        protocol: "ws",
+        host: "127.0.0.1",
+        port: 8080,
+        endpoint: "/",
+        twitchBroadcasterId: null,
+        externalSubscriptions: [
+          { sourceKey: "OBS", eventTypes: ["SceneChanged", "SceneChanged"] }
+        ]
+      }
+    }).success).toBe(false);
+  });
+
+  it("validates bounded Streamer.bot subscription catalog and update contracts", () => {
+    expect(streamerBotSubscriptionUpdateInputSchema.parse({
+      twitchBroadcasterId: "broadcaster-1",
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    })).toEqual({
+      twitchBroadcasterId: "broadcaster-1",
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    });
+
+    expect(streamerBotSubscriptionCatalogSchema.parse({
+      providerId: "provider-streamerbot",
+      available: true,
+      sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged", "RecordingStarted"] }],
+      selected: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+      unavailableSelections: [],
+      twitchBroadcasterId: "broadcaster-1"
+    }).available).toBe(true);
   });
 
   it("rejects provider-specific configuration on the wrong kind", () => {

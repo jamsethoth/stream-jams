@@ -478,7 +478,18 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const eventPipeline = new EventPipeline({
     playbackCoordinator,
     diagnosticsLogRepository,
-    generateId: generateEventPipelineId
+    generateId: generateEventPipelineId,
+    onEffectError: (error, triggers) => runtimeLogger.error("Screen Effects trigger handling failed", {
+      module: "screen-effects",
+      source: "screen-effects.event-admission",
+      correlationId: triggers[0] === undefined ? "event:screen-effects:unknown" : `event:${triggers[0].eventId}`,
+      processingId: null,
+      metadata: {
+        errorName: error.name,
+        eventIds: Array.from(new Set(triggers.map((trigger) => trigger.eventId))),
+        triggerKinds: triggers.map((trigger) => trigger.kind)
+      }
+    })
   });
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
   const eventIngestionService = new EventIngestionService({
@@ -499,8 +510,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       });
     },
     ingestionService: {
-      ingestNormalizedEvent: (event) =>
-        maintenanceGate.runIntake(() => eventIngestionService.ingestNormalizedEvent(event))
+      ingestNormalizedEvent: (event, effectTriggers) =>
+        maintenanceGate.runIntake(() => eventIngestionService.ingestNormalizedEvent(event, effectTriggers)),
+      ingestEffectTriggers: (eventId, triggers) =>
+        maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers))
     },
     generateReferenceId: generateEventSourceReferenceId,
     onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
@@ -617,6 +630,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: () => `provider_${randomBytes(16).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
     logger: runtimeLogger,
+    streamerBotSubscriptions: streamerBotRuntimeService,
+    getVerifiedTwitchBroadcasterId: async () =>
+      (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null,
     onEventSourceChanged: syncEventSourceRuntime,
     now
   });
@@ -977,6 +993,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ttsService,
     twitchAuthService,
     twitchRewardCatalogService,
+    streamerBotSubscriptionService: providerManagementService,
     twitchEventSubStatusService: twitchEventSubRuntimeService,
     diagnosticsService,
     configurationBackupService,

@@ -13,7 +13,7 @@
 
 ## 3. Event admission and independent queue
 
-- [ ] 3.1 Reuse normalized Twitch reward/catalog identities and configured Streamer.bot source/type subscriptions. Test renamed/missing rewards, unsubscribed events, safe summaries and rejection of payload-selected files/routes/commands without provider switching.
+- [x] 3.1 Reuse normalized Twitch reward/catalog identities and configured Streamer.bot source/type subscriptions. Test renamed/missing rewards, unsubscribed events, safe summaries and rejection of payload-selected files/routes/commands without provider switching.
 - [ ] 3.2 Implement module-scoped dedupe, module/effect cooldowns and the 100-pending cap; test redelivery, one event reaching both modules, deterministic intentional multiple bindings, no cooldown on rejection and no overflow eviction.
 - [ ] 3.3 Implement one-current Screen Effects queue with priority/FIFO ordering and 25 recent items; test no preemption/overlap, safety holds, audio-only/no-output cases, bounded recipient completion and no restart replay.
 - [ ] 3.4 Snapshot variant/content/audio settings/route IDs/duration at admission and replay with a new occurrence ID/fresh bindings; test queued edits, no reroll, missing references and expired history.

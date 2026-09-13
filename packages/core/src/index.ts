@@ -299,6 +299,7 @@ export {
   createScreenEffectDocument,
   effectBindingIdentity,
   effectBindingSchema,
+  effectTriggerSchema,
   effectSoundSchema,
   effectVariantSchema,
   effectVisualOutputsSchema,
@@ -306,5 +307,6 @@ export {
   screenEffectDocumentSchema
 } from "./screen-effects/schemas.js";
 export { chooseWeightedVariant, resolveEffectContent } from "./screen-effects/variant-resolver.js";
+export { matchesEffectBinding } from "./screen-effects/trigger-matcher.js";
 export * from "./screen-effects/authoring.js";
 export * from "./screen-effects/layout.js";

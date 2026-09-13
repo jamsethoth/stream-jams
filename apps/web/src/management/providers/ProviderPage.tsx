@@ -8,6 +8,8 @@ import type {
   ProviderValidationResult,
   RegisteredProviderDetail,
   RegisteredProviderView,
+  StreamerBotSubscriptionCatalog,
+  StreamerBotSubscriptionSelection,
   TtsProviderSafetySettings
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
@@ -27,6 +29,8 @@ export type ProviderPageApi = Pick<
   | "validateProvider"
   | "registerProvider"
   | "getProvider"
+  | "getStreamerBotSubscriptions"
+  | "updateStreamerBotSubscriptions"
   | "activateProvider"
   | "deactivateProvider"
   | "getProviderActivationImpact"
@@ -457,6 +461,7 @@ export function ProviderPage({
               capability={capability}
               detail={detail}
               impact={impact}
+              managementApi={managementApi}
               onActivate={capability === "tts" && selectedProvider !== null ? () => void requestActivation(selectedProvider) : null}
               onReconnect={capability === "event-source" && detail.provider.kind === "twitch" && (
                 eventSourceLiveStatus(detail.provider) === "error"
@@ -566,6 +571,7 @@ function ProviderDetail({
   capability,
   detail,
   impact,
+  managementApi,
   onActivate,
   onReconnect,
   onSafetyChange,
@@ -577,6 +583,7 @@ function ProviderDetail({
   readonly capability: ProviderCapability;
   readonly detail: RegisteredProviderDetail;
   readonly impact: ProviderActivationImpact | null;
+  readonly managementApi: ProviderPageApi;
   readonly onActivate: (() => void) | null;
   readonly onReconnect: (() => void) | null;
   readonly onSafetyChange: (safety: TtsProviderSafetySettings) => void;
@@ -650,6 +657,10 @@ function ProviderDetail({
         </section>
       )}
 
+      {capability === "event-source" && provider.kind === "streamerbot" ? (
+        <StreamerBotSubscriptionEditor managementApi={managementApi} provider={provider} />
+      ) : null}
+
       {capability === "tts" && safety !== null ? (
         <>
           <section aria-labelledby="tts-safety-title" className="provider-page__subsection">
@@ -702,6 +713,173 @@ function ProviderDetail({
             <button disabled={voiceTestDisabled} onClick={onTestVoice} type="button">Test voice</button>
           </section>
         </>
+      ) : null}
+    </section>
+  );
+}
+
+function StreamerBotSubscriptionEditor({
+  managementApi,
+  provider
+}: {
+  readonly managementApi: ProviderPageApi;
+  readonly provider: RegisteredProviderView;
+}) {
+  const [catalog, setCatalog] = useState<StreamerBotSubscriptionCatalog | null>(null);
+  const [selected, setSelected] = useState<readonly StreamerBotSubscriptionSelection[]>([]);
+  const [savedSelected, setSavedSelected] = useState<readonly StreamerBotSubscriptionSelection[]>([]);
+  const [broadcasterId, setBroadcasterId] = useState<string | null>(null);
+  const [savedBroadcasterId, setSavedBroadcasterId] = useState<string | null>(null);
+  const [twitchStatus, setTwitchStatus] = useState<TwitchConnectionStatusView | null>(null);
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCatalog(null);
+    setError(null);
+    void Promise.all([
+      managementApi.getStreamerBotSubscriptions(provider.id),
+      managementApi.getTwitchStatus()
+    ]).then(([loadedCatalog, loadedTwitch]) => {
+      if (cancelled) return;
+      setCatalog(loadedCatalog);
+      setSelected(loadedCatalog.selected);
+      setSavedSelected(loadedCatalog.selected);
+      setBroadcasterId(loadedCatalog.twitchBroadcasterId);
+      setSavedBroadcasterId(loadedCatalog.twitchBroadcasterId);
+      setTwitchStatus(loadedTwitch);
+      setConfirmed(false);
+    }).catch((cause: unknown) => {
+      if (!cancelled) setError(cause instanceof Error ? cause.message : "Unable to load Streamer.bot subscriptions.");
+    });
+    return () => { cancelled = true; };
+  }, [managementApi, provider.id]);
+
+  const dirty = JSON.stringify(selected) !== JSON.stringify(savedSelected)
+    || broadcasterId !== savedBroadcasterId;
+
+  const persist = useCallback(async () => {
+    if (!dirty) return true;
+    if (!confirmed) {
+      setError("Confirm the live subscription impact before saving.");
+      return false;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await managementApi.updateStreamerBotSubscriptions(provider.id, {
+        twitchBroadcasterId: broadcasterId,
+        externalSubscriptions: selected.map((selection) => ({
+          sourceKey: selection.sourceKey,
+          eventTypes: [...selection.eventTypes]
+        }))
+      });
+      setCatalog(updated);
+      setSelected(updated.selected);
+      setSavedSelected(updated.selected);
+      setBroadcasterId(updated.twitchBroadcasterId);
+      setSavedBroadcasterId(updated.twitchBroadcasterId);
+      setConfirmed(false);
+      return true;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update Streamer.bot subscriptions.");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }, [broadcasterId, confirmed, dirty, managementApi, provider.id, selected]);
+
+  const discard = useCallback(() => {
+    setSelected(savedSelected);
+    setBroadcasterId(savedBroadcasterId);
+    setConfirmed(false);
+    setError(null);
+  }, [savedBroadcasterId, savedSelected]);
+
+  useDirtyNavigationSource({
+    id: `streamerbot-subscriptions-${provider.id}`,
+    dirty,
+    summary: "Streamer.bot event subscriptions have unsaved changes.",
+    save: persist,
+    discard
+  });
+
+  function toggle(sourceKey: string, eventType: string, checked: boolean) {
+    setSelected((current) => {
+      const existing = current.find((selection) => selection.sourceKey === sourceKey);
+      const nextTypes = checked
+        ? Array.from(new Set([...(existing?.eventTypes ?? []), eventType])).sort()
+        : (existing?.eventTypes ?? []).filter((candidate) => candidate !== eventType);
+      const withoutSource = current.filter((selection) => selection.sourceKey !== sourceKey);
+      return nextTypes.length === 0
+        ? withoutSource
+        : [...withoutSource, { sourceKey, eventTypes: nextTypes }].sort((left, right) => left.sourceKey.localeCompare(right.sourceKey));
+    });
+    setConfirmed(false);
+  }
+
+  return (
+    <section aria-labelledby="streamerbot-subscriptions-title" className="provider-page__subsection">
+      <h4 id="streamerbot-subscriptions-title">Screen Effects event subscriptions</h4>
+      <p>Select only the Streamer.bot source and event types that Screen Effects may use. Alert Twitch intake remains subscribed separately.</p>
+      {error === null ? null : <p role="alert">{error}</p>}
+      {catalog === null && error === null ? <p>Loading Streamer.bot event catalog...</p> : null}
+      {catalog?.available === false ? <p>Activate and connect this Streamer.bot provider to edit subscriptions.</p> : null}
+      {catalog?.unavailableSelections.length ? (
+        <p role="alert">Some saved event types are no longer advertised. Review and save this configuration.</p>
+      ) : null}
+      {catalog?.available ? (
+        <form className="provider-page__form" onSubmit={(event) => { event.preventDefault(); void persist(); }}>
+          <label>
+            <span>Twitch reward broadcaster</span>
+            <select
+              onChange={(event) => { setBroadcasterId(event.currentTarget.value || null); setConfirmed(false); }}
+              value={broadcasterId ?? ""}
+            >
+              <option value="">No verified Twitch reward association</option>
+              {twitchStatus?.connected ? (
+                <option value={twitchStatus.account.accountId}>
+                  {twitchStatus.account.displayName} (@{twitchStatus.account.login})
+                </option>
+              ) : null}
+              {broadcasterId !== null && (!twitchStatus?.connected || twitchStatus.account.accountId !== broadcasterId) ? (
+                <option value={broadcasterId}>Unavailable saved broadcaster ({broadcasterId})</option>
+              ) : null}
+            </select>
+          </label>
+          <fieldset>
+            <legend>Allowed source and event types</legend>
+            {catalog.sources.map((source) => (
+              <div key={source.sourceKey}>
+                <strong>{source.sourceKey}</strong>
+                {source.eventTypes.map((eventType) => (
+                  <label key={`${source.sourceKey}:${eventType}`}>
+                    <input
+                      checked={selected.some((selection) =>
+                        selection.sourceKey === source.sourceKey && selection.eventTypes.includes(eventType)
+                      )}
+                      onChange={(event) => toggle(source.sourceKey, eventType, event.currentTarget.checked)}
+                      type="checkbox"
+                    />
+                    <span>{eventType}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
+          </fieldset>
+          {dirty ? (
+            <label>
+              <input checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} type="checkbox" />
+              <span>I understand saving changes the active Streamer.bot subscriptions immediately.</span>
+            </label>
+          ) : null}
+          <div className="provider-page__actions">
+            <button className="provider-page__secondary-action" disabled={!dirty || busy} onClick={discard} type="button">Discard</button>
+            <button disabled={!dirty || !confirmed || busy} type="submit">{busy ? "Saving..." : "Save subscriptions"}</button>
+          </div>
+        </form>
       ) : null}
     </section>
   );

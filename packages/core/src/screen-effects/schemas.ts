@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { alertAudioOutputsSchema } from "../audio/schemas.js";
 import { overlayPresetAnimationInstructionSchema } from "../overlays/schemas.js";
-import { overlayElementLayoutSchema } from "../shared/schemas.js";
+import { isoDateTimeSchema, overlayElementLayoutSchema } from "../shared/schemas.js";
 import type {
   CreateScreenEffectDocumentInput,
   EffectBinding,
+  EffectTrigger,
   EffectVariant,
   ScreenEffectDocument
 } from "./types.js";
@@ -23,6 +24,13 @@ const boundedIdentityTextSchema = z.string().trim().min(1).max(120).refine(
 );
 const safeIntegerSchema = z.number().int().refine(Number.isSafeInteger, "Priority must be a safe integer");
 const volumeSchema = z.number().finite().min(0).max(1);
+const triggerSummarySchema = z.string().trim().min(1).max(256).refine(
+  (value) => Array.from(value).every((character) => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && code !== 127;
+  }),
+  "Event summaries cannot contain control characters"
+);
 
 const twitchRewardBindingSchema = z.object({
   id: storageSafeIdSchema,
@@ -43,6 +51,26 @@ export const effectBindingSchema = z.discriminatedUnion("kind", [
   twitchRewardBindingSchema,
   streamerBotEventBindingSchema
 ]) satisfies z.ZodType<EffectBinding>;
+
+export const effectTriggerSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("twitch-reward"),
+    eventId: boundedIdentityTextSchema,
+    occurredAt: isoDateTimeSchema,
+    broadcasterId: storageSafeIdSchema,
+    rewardId: storageSafeIdSchema,
+    summary: triggerSummarySchema
+  }).strict(),
+  z.object({
+    kind: z.literal("streamerbot-event"),
+    eventId: boundedIdentityTextSchema,
+    occurredAt: isoDateTimeSchema,
+    providerId: storageSafeIdSchema,
+    sourceKey: boundedIdentityTextSchema,
+    eventType: boundedIdentityTextSchema,
+    summary: triggerSummarySchema
+  }).strict()
+]) satisfies z.ZodType<EffectTrigger>;
 
 const effectLayoutSchema = overlayElementLayoutSchema.strict();
 const imageEffectVisualSchema = z.object({

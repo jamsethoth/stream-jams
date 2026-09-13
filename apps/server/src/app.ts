@@ -35,6 +35,10 @@ import {
   registerTwitchRewardCatalogRoutes,
   type TwitchRewardCatalogRouteDependencies
 } from "./http/routes/twitch-reward-catalog.js";
+import {
+  registerStreamerBotSubscriptionRoutes,
+  type StreamerBotSubscriptionRouteDependencies
+} from "./http/routes/streamerbot-subscriptions.js";
 import { registerWebShellRoutes, type WebShellRenderer } from "./http/routes/web-shell.js";
 import { createRedactor } from "./modules/security/redactor.js";
 
@@ -68,7 +72,8 @@ export interface ServerAppDependencies
     Partial<TtsRouteDependencies>,
     Partial<TwitchAuthRouteDependencies>,
     Partial<TwitchEventSubRouteDependencies>,
-    Partial<TwitchRewardCatalogRouteDependencies> {
+    Partial<TwitchRewardCatalogRouteDependencies>,
+    Partial<StreamerBotSubscriptionRouteDependencies> {
   readonly metadata: ServerAppMetadata;
   readonly webBuildDirectory?: string;
   readonly webShellRenderer?: WebShellRenderer;
@@ -248,6 +253,13 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     }
 
     registerTwitchRewardCatalogRoutes(app, dependencies);
+  }
+
+  if (dependencies.streamerBotSubscriptionService !== undefined) {
+    if (!hasStreamerBotSubscriptionRouteDependencies(dependencies)) {
+      throw new Error("Streamer.bot subscription routes require service, management auth, and rate-limit hooks");
+    }
+    registerStreamerBotSubscriptionRoutes(app, dependencies);
   }
 
   if (dependencies.serverConfigService !== undefined) {
@@ -466,6 +478,16 @@ function hasTwitchRewardCatalogRouteDependencies(
 ): dependencies is ServerAppDependencies & TwitchRewardCatalogRouteDependencies {
   return (
     dependencies.twitchRewardCatalogService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasStreamerBotSubscriptionRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & StreamerBotSubscriptionRouteDependencies {
+  return (
+    dependencies.streamerBotSubscriptionService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

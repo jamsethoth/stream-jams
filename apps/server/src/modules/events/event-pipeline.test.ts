@@ -8,6 +8,7 @@ import {
   type AlertRule,
   type AlertVariant,
   type EventLogRecord,
+  type EffectTrigger,
   type NormalizedStreamEvent,
   type OverlayInstruction,
   type PlaybackLogRecord,
@@ -133,6 +134,70 @@ describe("EventPipeline", () => {
     expect(diagnostics.eventLogs.at(-1)).toMatchObject({
       errorMessage: "Playback unavailable"
     });
+  });
+
+  it("fans one accepted event out to Alerts and Screen Effects", async () => {
+    const diagnostics = new RecordingDiagnosticsRepository();
+    const playback = new RecordingPlaybackCoordinator({
+      status: "no-matches",
+      matchedRuleIds: [],
+      enqueuedAlertIds: [],
+      snapshot: emptySnapshot()
+    });
+    const effectBatches: Array<readonly EffectTrigger[]> = [];
+    const pipeline = new EventPipeline({
+      diagnosticsLogRepository: diagnostics,
+      playbackCoordinator: playback,
+      effectTriggerSink: { async handleTriggers(triggers) { effectBatches.push([...triggers]); } },
+      generateId: (kind) => `${kind}-1`
+    });
+    const triggers: readonly EffectTrigger[] = [{
+      kind: "streamerbot-event",
+      eventId: "event-follow",
+      occurredAt: "2026-05-30T12:00:00.000Z",
+      providerId: "provider-streamerbot",
+      sourceKey: "Custom",
+      eventType: "FollowMirror",
+      summary: "Follow mirror"
+    }];
+
+    await pipeline.handleEvent(createFollowEvent(), triggers);
+
+    expect(playback.events).toEqual([createFollowEvent()]);
+    expect(effectBatches).toEqual([triggers]);
+    expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed"]);
+  });
+
+  it("keeps Alert processing successful when Screen Effects rejects a batch", async () => {
+    const diagnostics = new RecordingDiagnosticsRepository();
+    const playback = new RecordingPlaybackCoordinator({
+      status: "no-matches",
+      matchedRuleIds: [],
+      enqueuedAlertIds: [],
+      snapshot: emptySnapshot()
+    });
+    const errors: Error[] = [];
+    const pipeline = new EventPipeline({
+      diagnosticsLogRepository: diagnostics,
+      playbackCoordinator: playback,
+      effectTriggerSink: { async handleTriggers() { throw new Error("Effect queue unavailable"); } },
+      onEffectError(error) { errors.push(error); },
+      generateId: (kind) => `${kind}-1`
+    });
+
+    await expect(pipeline.handleEvent(createFollowEvent(), [{
+      kind: "streamerbot-event",
+      eventId: "event-follow",
+      occurredAt: "2026-05-30T12:00:00.000Z",
+      providerId: "provider-streamerbot",
+      sourceKey: "Custom",
+      eventType: "FollowMirror",
+      summary: "Follow mirror"
+    }])).resolves.toBeUndefined();
+
+    expect(playback.events).toHaveLength(1);
+    expect(errors.map((error) => error.message)).toEqual(["Effect queue unavailable"]);
+    expect(diagnostics.eventLogs.map((entry) => entry.status)).toEqual(["received", "processed"]);
   });
 });
 
