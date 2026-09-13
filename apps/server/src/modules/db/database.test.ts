@@ -29,7 +29,8 @@ const expectedMigrations = [
   "018-alert-moderation-settings",
   "019-audio-output-routes",
   "020-overlay-surfaces",
-  "021-alert-video-audio"
+  "021-alert-video-audio",
+  "022-screen-effects"
 ] as const;
 
 const expectedTables = [
@@ -47,12 +48,17 @@ const expectedTables = [
   "asset_metadata",
   "audio_output_routes",
   "event_logs",
+  "module_playback_settings",
   "overlay_keys",
   "overlay_module_config",
   "overlay_surfaces",
   "playback_logs",
   "provider_registrations",
   "schema_migrations",
+  "screen_effect_audio_routes",
+  "screen_effect_bindings",
+  "screen_effect_variants",
+  "screen_effects",
   "twitch_accounts"
 ];
 
@@ -429,10 +435,21 @@ describe("Stream Jams SQLite database", () => {
     `);
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
+      DROP TABLE screen_effect_audio_routes;
+      DROP TABLE screen_effect_bindings;
+      DROP TABLE screen_effect_variants;
+      DROP TABLE screen_effects;
+      DROP TABLE module_playback_settings;
       DROP TABLE alert_moderation_settings;
       DROP TABLE audio_output_routes;
       DROP TABLE overlay_surfaces;
-      DELETE FROM schema_migrations WHERE id IN ('018-alert-moderation-settings', '019-audio-output-routes', '020-overlay-surfaces', '021-alert-video-audio');
+      DELETE FROM schema_migrations WHERE id IN (
+        '018-alert-moderation-settings',
+        '019-audio-output-routes',
+        '020-overlay-surfaces',
+        '021-alert-video-audio',
+        '022-screen-effects'
+      );
     `);
 
     database.runMigrations();

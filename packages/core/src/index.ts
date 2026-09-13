@@ -294,6 +294,7 @@ export * from "./management/alert-document-compatibility.js";
 export * from "./audio/media-audio.js";
 export * from "./audio/prepare-timed-media.js";
 export type * from "./screen-effects/types.js";
+export type * from "./screen-effects/repository.js";
 export {
   createScreenEffectDocument,
   effectBindingIdentity,
