@@ -94,7 +94,7 @@ test(`packaged decoder silently plays and seeks ${format.name} soundtracks and t
   } catch (error) { failures.push(error); }
   const evidence = { root, format, packageSha256, mainPid, launcherPid: child.pid, capturedPids: [...pids], exitCode: child.exitCode, signal: child.signalCode,
     results, failures: failures.map(failure => failure instanceof Error ? failure.message : "Unknown failure"),
-    limitation: "Silent decoder plus production device-only soundtrack delivery; not physical marker timing or OBS acceptance." };
+    limitation: "Silent decoder plus production device-only soundtrack delivery when an explicit output is available; not physical marker timing or OBS acceptance." };
   await writeFile(join(root, "evidence.json"), JSON.stringify(evidence, null, 2));
   await testInfo.attach("silent-decoder-evidence", { body: JSON.stringify(evidence), contentType: "application/json" });
   console.info(`Silent video codec evidence retained: ${root}`);
@@ -117,8 +117,8 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
   const devices = await api<{ available: boolean; devices: { deviceId: string }[] }>("/audio/devices");
   expect(devices.available).toBe(true);
   const device = devices.devices[0];
-  expect(device, "An explicit connected device is required for this silent transport probe").toBeDefined();
-  const route = await api<{ id: string }>("/audio/routes", "POST", { name: "Silent soundtrack probe", deviceId: device!.deviceId });
+  if (device === undefined) return { productionDeviceSoundtrack: false, reason: "no-explicit-audio-output" };
+  const route = await api<{ id: string }>("/audio/routes", "POST", { name: "Silent soundtrack probe", deviceId: device.deviceId });
   const imported = await fetch(`${base}/assets/import`, { method: "POST", headers: {
     ...headers, "content-type": "application/octet-stream", "x-stream-jams-file-name": `neutral.${extension}`, "x-stream-jams-mime-type": `video/${extension}`
   }, body: Buffer.from(bytes), signal: AbortSignal.timeout(5000) });
@@ -139,7 +139,7 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
     const audio = element as HTMLAudioElement;
     return { currentTime: audio.currentTime, muted: audio.muted, volume: audio.volume, sinkId: audio.sinkId, error: audio.error?.code ?? null };
   }));
-  expect(samples.every(sample => sample.muted && sample.volume === 0 && sample.sinkId === device!.deviceId && sample.error === null)).toBe(true);
+  expect(samples.every(sample => sample.muted && sample.volume === 0 && sample.sinkId === device.deviceId && sample.error === null)).toBe(true);
   expect(Math.abs(samples[0]!.currentTime - samples[1]!.currentTime)).toBeLessThan(0.15);
   await expect(player.locator("audio")).toHaveCount(0, { timeout: 7000 });
   await expect.poll(async () => (await api<{ current: unknown }>("/playback")).current).toBeNull();
