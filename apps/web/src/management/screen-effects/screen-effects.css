@@ -106,6 +106,17 @@
   padding: 12px;
 }
 
+.screen-effect-editor__context-error {
+  background: var(--color-negative-soft);
+  border: 1px solid var(--color-negative);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.screen-effect-editor__context-error ul {
+  margin-block: 8px;
+}
+
 .screen-effect-preview__canvas {
   align-items: center;
   aspect-ratio: 16 / 9;

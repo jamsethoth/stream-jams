@@ -155,6 +155,42 @@ describe("EffectAdmissionService", () => {
     });
   });
 
+  it("serializes cooldown admission across distinct concurrent events", async () => {
+    const queue = new DefaultEffectQueue();
+    let releaseFirstValidation: (() => void) | undefined;
+    const firstValidationBlocked = new Promise<void>((resolve) => {
+      releaseFirstValidation = resolve;
+    });
+    let validationCalls = 0;
+    let firstValidationStarted: (() => void) | undefined;
+    const firstValidationEntered = new Promise<void>((resolve) => {
+      firstValidationStarted = resolve;
+    });
+    const admission = service({
+      documents: () => [effect("cooled", { cooldownSeconds: 60 })],
+      queue,
+      validateReferences: async () => {
+        validationCalls += 1;
+        if (validationCalls === 1) {
+          firstValidationStarted?.();
+          await firstValidationBlocked;
+        }
+        return true;
+      }
+    });
+
+    const first = admission.handleTriggers([trigger("event-first")]);
+    await firstValidationEntered;
+    const second = admission.handleTriggers([trigger("event-second")]);
+    await Promise.resolve();
+    releaseFirstValidation?.();
+
+    const results = await Promise.all([first, second]);
+    expect(results.map((result) => result.outcomes[0]?.status).sort()).toEqual(["cooldown", "queued"]);
+    expect(validationCalls).toBe(1);
+    expect(queue.snapshot().queued).toHaveLength(1);
+  });
+
   it("checks module cooldown once so one event can intentionally admit multiple effects", async () => {
     const admission = service({
       documents: () => [effect("second"), effect("first", { priority: 1 })],

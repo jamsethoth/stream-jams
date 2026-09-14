@@ -5,7 +5,11 @@ import { getDesktopBridge } from "../management/desktop/desktop-bridge.js";
 import { formatDateTime } from "../management/foundation/formatters.js";
 import { StatusBadge, type StatusBadgeTone } from "../management/foundation/StatusBadge.js";
 import { ManagementHttpError } from "../management/management-http-client.js";
-import { createHttpPlaybackApi, type PlaybackApi } from "./playback-api.js";
+import {
+  createHttpPlaybackApi,
+  PlaybackOperationsConflictError,
+  type PlaybackApi
+} from "./playback-api.js";
 
 const normalPollDelayMs = 2_000;
 const maximumPollDelayMs = 15_000;
@@ -139,6 +143,11 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
       setRefreshError(null);
       setAnnouncement(message);
     } catch (error) {
+      if (error instanceof PlaybackOperationsConflictError) {
+        requestRevisionRef.current += 1;
+        applySnapshot(error.snapshot);
+        setRefreshError(null);
+      }
       setCommandError(toOperatorError(error, "The playback command failed."));
     } finally {
       pendingRef.current = false;

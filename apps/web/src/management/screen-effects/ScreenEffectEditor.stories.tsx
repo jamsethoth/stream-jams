@@ -132,6 +132,24 @@ export const FailedSaveRetainsDraft: Story = {
   }
 };
 
+export const PartialContextFailure: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getTwitchStatus: async () => {
+        throw new Error("Twitch connection status could not be loaded (ref-story-context).");
+      }
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const alert = await canvas.findByRole("alert");
+    await expect(alert).toHaveTextContent("Some editor context could not be loaded.");
+    await expect(alert).toHaveTextContent("Twitch connection");
+    await expect(canvas.getByRole("button", { name: "Retry editor context" })).toBeVisible();
+    await expect(canvas.getByLabelText("Effect name")).toHaveValue("Neutral effect");
+  }
+};
+
 export const LiveTestConfirmation: Story = {
   args: { api: createApi(effect({ enabled: true, separateSound: true })) },
   play: async ({ canvasElement }) => {

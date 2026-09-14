@@ -478,20 +478,43 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   const validateEffectOutputAvailability = async (content: EffectContentSnapshot) => {
     const { variant } = content;
-    const hasBrowserContent = (variant.visual !== null && variant.visualOutputs.browserSource)
-      || (variant.outputs.browserSource && (
-        variant.sound !== null
-        || (variant.visual?.mediaType === "video" && variant.visual.playEmbeddedAudio)
-      ));
-    const browserReady = hasBrowserContent && overlayGateway.clientStates.some(
+    const hasBrowserVisual = variant.visual !== null && variant.visualOutputs.browserSource;
+    const hasBrowserAudio = variant.outputs.browserSource && (
+      variant.sound !== null
+      || (variant.visual?.mediaType === "video" && variant.visual.playEmbeddedAudio)
+    );
+    const connectedModuleSource = overlayGateway.clientStates.some(
       (client) => client.connectionState === "connected"
         && client.overlayId === "default"
         && client.purpose === "live"
-        && (
-          (client.scope === "module" && client.moduleId === "screen-effects" && (client.targetProfileId ?? null) === null)
-          || (client.scope === "unified" && client.moduleId === null && (client.targetProfileId ?? null) === null)
-        )
+        && client.scope === "module"
+        && client.moduleId === "screen-effects"
+        && (client.targetProfileId ?? null) === null
     );
+    const connectedUnifiedSource = overlayGateway.clientStates.some(
+      (client) => client.connectionState === "connected"
+        && client.overlayId === "default"
+        && client.purpose === "live"
+        && client.scope === "unified"
+        && client.moduleId === null
+        && (client.targetProfileId ?? null) === null
+    );
+    let unifiedVisualEnabled = false;
+    if (hasBrowserVisual && connectedUnifiedSource) {
+      const surface = (await surfaceRepository.list()).find(
+        (candidate) => candidate.kind === "unified-browser" && candidate.overlayId === "default"
+      );
+      unifiedVisualEnabled = surface?.layers.some(
+        (layer) => layer.moduleId === "screen-effects" && layer.visible
+      ) ?? false;
+    }
+    const browserReady = isEffectBrowserOutputReady({
+      hasBrowserVisual,
+      hasBrowserAudio,
+      connectedModuleSource,
+      connectedUnifiedSource,
+      unifiedVisualEnabled
+    });
 
     let desktopReady = false;
     if (variant.visual !== null && variant.visualOutputs.desktop && options.desktopOverlayTransport !== undefined) {
@@ -1185,9 +1208,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (outcome.status === "queued") await effectPlaybackCoordinator.startNext();
       return outcome;
     },
-    runMutation: work => maintenanceGate.runConfigurationMutation(
-      () => runInTransaction(database.connection, work)
-    ),
+    runMutation: work => maintenanceGate.runIntake(work),
     async isTwitchRewardAvailable(broadcasterId, rewardId) {
       const account = await twitchAccountRepository.findConnectedAccount();
       if (account?.accountId !== broadcasterId) return false;
@@ -1474,6 +1495,23 @@ function generateResolvedAlertId(kind: "resolved-alert" | "overlay-instruction")
 
 function generateEventPipelineId(kind: "event-log" | "alert-match-log" | "playback-log" | "processing"): string {
   return `event_pipeline_${kind}_${randomBytes(16).toString("base64url")}`;
+}
+
+export function isEffectBrowserOutputReady(input: {
+  readonly hasBrowserVisual: boolean;
+  readonly hasBrowserAudio: boolean;
+  readonly connectedModuleSource: boolean;
+  readonly connectedUnifiedSource: boolean;
+  readonly unifiedVisualEnabled: boolean;
+}): boolean {
+  const visualReady = input.hasBrowserVisual && (
+    input.connectedModuleSource
+    || (input.connectedUnifiedSource && input.unifiedVisualEnabled)
+  );
+  const audioReady = input.hasBrowserAudio && (
+    input.connectedModuleSource || input.connectedUnifiedSource
+  );
+  return visualReady || audioReady;
 }
 
 function generatePlaybackQueueItemId(): string {

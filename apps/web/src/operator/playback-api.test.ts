@@ -75,6 +75,30 @@ describe("createHttpPlaybackApi", () => {
 
     await expect(createHttpPlaybackApi({ fetch: fetcher }).getSnapshot()).rejects.toThrow();
   });
+
+  it("retains the authoritative snapshot returned with an operation conflict", async () => {
+    const conflictSnapshot = { ...snapshot, revision: 5, current: [] };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/auth/management/sessions"
+        ? jsonResponse({ id: "mgmt_operator", csrfToken: "csrf_operator" })
+        : jsonResponse({
+            error: {
+              code: "PLAYBACK_OPERATION_CONFLICT",
+              message: "The requested occurrence is no longer current."
+            },
+            snapshot: conflictSnapshot
+          }, { status: 409 })
+    );
+
+    const error = await createHttpPlaybackApi({ fetch: fetcher })
+      .skip("screen-effects", "stale-occurrence")
+      .catch((cause: unknown) => cause);
+
+    expect(error).toMatchObject({
+      name: "PlaybackOperationsConflictError",
+      snapshot: conflictSnapshot
+    });
+  });
 });
 
 function jsonResponse(body: unknown, init: ResponseInit = {}): Response {

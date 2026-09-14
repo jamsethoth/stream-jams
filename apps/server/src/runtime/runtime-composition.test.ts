@@ -43,6 +43,46 @@ const toEventSourceRuntimeError = (runtimeComposition as {
   readonly toEventSourceRuntimeError?: RuntimeErrorConverter;
 }).toEventSourceRuntimeError;
 
+type EffectBrowserReadinessEvaluator = (input: {
+  readonly hasBrowserVisual: boolean;
+  readonly hasBrowserAudio: boolean;
+  readonly connectedModuleSource: boolean;
+  readonly connectedUnifiedSource: boolean;
+  readonly unifiedVisualEnabled: boolean;
+}) => boolean;
+
+const isEffectBrowserOutputReady = (runtimeComposition as {
+  readonly isEffectBrowserOutputReady?: EffectBrowserReadinessEvaluator;
+}).isEffectBrowserOutputReady;
+
+describe("isEffectBrowserOutputReady", () => {
+  it("keeps hidden unified visuals unavailable while allowing selected browser audio", () => {
+    expect(isEffectBrowserOutputReady).toBeTypeOf("function");
+
+    expect(isEffectBrowserOutputReady!({
+      hasBrowserVisual: true,
+      hasBrowserAudio: false,
+      connectedModuleSource: false,
+      connectedUnifiedSource: true,
+      unifiedVisualEnabled: false
+    })).toBe(false);
+    expect(isEffectBrowserOutputReady!({
+      hasBrowserVisual: false,
+      hasBrowserAudio: true,
+      connectedModuleSource: false,
+      connectedUnifiedSource: true,
+      unifiedVisualEnabled: false
+    })).toBe(true);
+    expect(isEffectBrowserOutputReady!({
+      hasBrowserVisual: true,
+      hasBrowserAudio: false,
+      connectedModuleSource: true,
+      connectedUnifiedSource: false,
+      unifiedVisualEnabled: false
+    })).toBe(true);
+  });
+});
+
 describe("toEventSourceRuntimeError", () => {
   it("keeps the inline recovery text and gates Diagnostics by the runtime reference", () => {
     expect(toEventSourceRuntimeError).toBeTypeOf("function");
