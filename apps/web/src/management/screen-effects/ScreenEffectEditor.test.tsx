@@ -2,9 +2,10 @@ import {
   createScreenEffectDocument,
   screenEffectDocumentSchema,
   type AssetLibraryItem,
+  type RegisteredProviderView,
   type ScreenEffectDocument
 } from "@stream-jams/core";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../assets/asset-api.js";
@@ -86,9 +87,80 @@ describe("ScreenEffectEditor", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Storage failed");
     expect(screen.getByLabelText("Effect name")).toHaveValue("Unsaved effect name");
   });
+
+  it("preserves edits made while a save request is in flight", async () => {
+    const user = userEvent.setup();
+    const saved = enabledEffect(false);
+    const api = effectApi(saved);
+    let finishSave!: () => void;
+    vi.mocked(api.update).mockImplementation(async (_id, candidate) => new Promise((resolve) => {
+      finishSave = () => resolve(candidate);
+    }));
+    renderEditor({ api, create: false, document: saved });
+
+    const name = await screen.findByLabelText("Effect name");
+    await user.clear(name);
+    await user.type(name, "Submitted name");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.update).toHaveBeenCalledOnce());
+
+    await user.clear(name);
+    await user.type(name, "Edited while saving");
+    await act(async () => finishSave());
+
+    expect(name).toHaveValue("Edited while saving");
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+  });
+
+  it("marks unadvertised Streamer.bot bindings unavailable and omits them from new trigger choices", async () => {
+    const saved = screenEffectDocumentSchema.parse({
+      ...enabledEffect(false),
+      bindings: [{
+        id: "binding-missing",
+        kind: "streamerbot-event",
+        providerId: "provider-streamerbot",
+        sourceKey: "OBS",
+        eventType: "MissingEvent"
+      }]
+    });
+    const streamerBotProvider: RegisteredProviderView = {
+      id: "provider-streamerbot",
+      name: "Streamer.bot",
+      kind: "streamerbot",
+      capability: "event-source",
+      active: true,
+      connectionState: "connected",
+      intakeState: "active",
+      liveStatus: "healthy",
+      validatedAt: "2026-09-13T12:00:00.000Z",
+      error: null,
+      usedByAlertCount: 0
+    };
+    const providerManagementApi = managementApi({
+      listRegisteredProviders: vi.fn(async () => [streamerBotProvider]),
+      getStreamerBotSubscriptions: vi.fn(async () => ({
+        providerId: "provider-streamerbot",
+        available: true,
+        sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+        selected: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+        unavailableSelections: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+        twitchBroadcasterId: null
+      }))
+    });
+
+    renderEditor({ api: effectApi(saved), create: false, document: saved, managementApi: providerManagementApi });
+
+    expect(await screen.findByText("Unavailable — review event source setup")).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "OBS / MissingEvent" })).not.toBeInTheDocument();
+  });
 });
 
-function renderEditor(options: { readonly api: ScreenEffectsApi; readonly create: boolean; readonly document?: ScreenEffectDocument }) {
+function renderEditor(options: {
+  readonly api: ScreenEffectsApi;
+  readonly create: boolean;
+  readonly document?: ScreenEffectDocument;
+  readonly managementApi?: ManagementApi;
+}) {
   render(<DirtyNavigationProvider><ScreenEffectEditor
     api={options.api}
     assetApi={assetApi()}
@@ -96,7 +168,7 @@ function renderEditor(options: { readonly api: ScreenEffectsApi; readonly create
     create={options.create}
     effectId={options.document?.id ?? "effect-new"}
     generateId={(prefix) => `${prefix}-new`}
-    managementApi={managementApi()}
+    managementApi={options.managementApi ?? managementApi()}
     onBack={() => {}}
   /></DirtyNavigationProvider>);
 }
@@ -146,13 +218,14 @@ function asset(id: string, displayName: string, mediaType: "image" | "video" | "
   };
 }
 
-function managementApi(): ManagementApi {
+function managementApi(overrides: Partial<ManagementApi> = {}): ManagementApi {
   return {
     listAssetLibraryItems: vi.fn(async () => assets),
     getTwitchStatus: vi.fn(async () => ({ connected: false, authorizationState: "disconnected", missingScopes: [], account: null })),
     getTwitchCustomRewards: vi.fn(async () => ({ rewards: [] })),
     listRegisteredProviders: vi.fn(async () => []),
-    getStreamerBotSubscriptions: vi.fn(async () => { throw new Error("not configured"); })
+    getStreamerBotSubscriptions: vi.fn(async () => { throw new Error("not configured"); }),
+    ...overrides
   } as unknown as ManagementApi;
 }
 

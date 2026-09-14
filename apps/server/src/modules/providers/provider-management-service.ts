@@ -63,9 +63,9 @@ export interface StreamerBotSubscriptionRuntime {
   getCatalog(providerId: string): Promise<Record<string, readonly string[]>>;
   replaceExternalSubscriptions(
     providerId: string,
-    previous: readonly StreamerBotSubscriptionSelection[],
-    next: readonly StreamerBotSubscriptionSelection[]
-  ): Promise<void>;
+    next: readonly StreamerBotSubscriptionSelection[],
+    broadcasterId: string | null
+  ): Promise<{ rollback(): Promise<void> }>;
 }
 
 interface SecretStoreBoundary {
@@ -150,6 +150,7 @@ export class ProviderManagementService {
   readonly #streamerBotSubscriptions: StreamerBotSubscriptionRuntime | null;
   readonly #getVerifiedTwitchBroadcasterId: () => Promise<string | null>;
   readonly #now: () => Date;
+  #pendingStreamerBotSubscriptionMutation: Promise<unknown> = Promise.resolve();
 
   constructor(options: ProviderManagementServiceOptions) {
     this.#repository = options.repository;
@@ -338,7 +339,18 @@ export class ProviderManagementService {
     return toStreamerBotSubscriptionCatalog(record.provider.id, configuration, catalog);
   }
 
-  async updateStreamerBotSubscriptions(
+  updateStreamerBotSubscriptions(
+    providerId: string,
+    input: StreamerBotSubscriptionUpdateInput
+  ): Promise<StreamerBotSubscriptionCatalog> {
+    const result = this.#pendingStreamerBotSubscriptionMutation.then(
+      () => this.#updateStreamerBotSubscriptions(providerId, input)
+    );
+    this.#pendingStreamerBotSubscriptionMutation = result.catch(() => undefined);
+    return result;
+  }
+
+  async #updateStreamerBotSubscriptions(
     providerId: string,
     input: StreamerBotSubscriptionUpdateInput
   ): Promise<StreamerBotSubscriptionCatalog> {
@@ -362,10 +374,10 @@ export class ProviderManagementService {
       throw new StreamerBotSubscriptionSelectionUnavailableError(unavailable);
     }
 
-    await this.#streamerBotSubscriptions.replaceExternalSubscriptions(
+    const runtimeMutation = await this.#streamerBotSubscriptions.replaceExternalSubscriptions(
       providerId,
-      configuration.externalSubscriptions,
-      parsed.externalSubscriptions
+      parsed.externalSubscriptions,
+      parsed.twitchBroadcasterId
     );
     try {
       await this.#repository.save({
@@ -381,11 +393,15 @@ export class ProviderManagementService {
         updatedAt: this.#now().toISOString()
       });
     } catch (error) {
-      await this.#streamerBotSubscriptions.replaceExternalSubscriptions(
-        providerId,
-        parsed.externalSubscriptions,
-        configuration.externalSubscriptions
-      );
+      try {
+        await runtimeMutation.rollback();
+      } catch (rollbackError) {
+        throw new AggregateError(
+          [error, rollbackError],
+          "Provider persistence failed and the live Streamer.bot subscription rollback also failed",
+          { cause: rollbackError }
+        );
+      }
       throw error;
     }
 

@@ -37,6 +37,7 @@ export class PlaybackOperationsService {
   readonly #applySafety: PlaybackOperationsServiceOptions["applySafety"];
   readonly #onSafetyApplyFailure: NonNullable<PlaybackOperationsServiceOptions["onSafetyApplyFailure"]> | null;
   #safety: PlaybackSafetyState;
+  #pendingSafetyMutation: Promise<unknown> = Promise.resolve();
   #revision = 0;
   #fingerprint: string | null = null;
 
@@ -64,7 +65,13 @@ export class PlaybackOperationsService {
     return mergeOperations(ownerSnapshots, this.#safety, this.#revision);
   }
 
-  async setSafety(patch: Partial<PlaybackSafetyState>): Promise<MergedOperationsSnapshot> {
+  setSafety(patch: Partial<PlaybackSafetyState>): Promise<MergedOperationsSnapshot> {
+    const result = this.#pendingSafetyMutation.then(() => this.#setSafety(patch));
+    this.#pendingSafetyMutation = result.catch(() => undefined);
+    return result;
+  }
+
+  async #setSafety(patch: Partial<PlaybackSafetyState>): Promise<MergedOperationsSnapshot> {
     const candidate = playbackSafetyStateSchema.parse({ ...this.#safety, ...patch });
     const persisted = playbackSafetyStateSchema.parse(await this.#persistSafety(patch));
     if (

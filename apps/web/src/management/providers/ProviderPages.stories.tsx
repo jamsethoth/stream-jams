@@ -129,6 +129,29 @@ export const StreamerBotEffectSubscriptions: Story = {
   }
 };
 
+export const StreamerBotUnavailableSubscription: Story = {
+  args: {
+    managementApi: providerApi(
+      [{ ...inactiveStreamerBot, active: true, intakeState: "active", liveStatus: "healthy" }],
+      {
+        getStreamerBotSubscriptions: async () => ({
+          providerId: inactiveStreamerBot.id,
+          available: true,
+          sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+          selected: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+          unavailableSelections: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+          twitchBroadcasterId: null
+        })
+      }
+    )
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("alert")).toHaveTextContent("no longer advertised");
+    await expect(canvas.getByRole("checkbox", { name: "MissingEvent (no longer advertised)" })).toBeChecked();
+  }
+};
+
 export const TwitchReady: Story = {
   args: { managementApi: providerApi([], { getTwitchStatus: async () => connectedTwitchStatus }) },
   play: async ({ canvasElement }) => {

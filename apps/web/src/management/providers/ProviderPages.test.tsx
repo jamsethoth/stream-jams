@@ -220,6 +220,47 @@ describe("provider pages", () => {
     }));
   });
 
+  it("lets operators explicitly remove saved Streamer.bot events that are no longer advertised", async () => {
+    const user = userEvent.setup();
+    const activeBot = { ...inactiveStreamerBot, active: true, intakeState: "active" as const, liveStatus: "healthy" as const };
+    const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>(
+      async (providerId, input) => ({
+        providerId,
+        available: true,
+        sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+        selected: input.externalSubscriptions,
+        unavailableSelections: [],
+        twitchBroadcasterId: input.twitchBroadcasterId
+      })
+    );
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeBot]),
+      getProvider: vi.fn(async () => detail(activeBot)),
+      getStreamerBotSubscriptions: vi.fn(async () => ({
+        providerId: activeBot.id,
+        available: true,
+        sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+        selected: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+        unavailableSelections: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+        twitchBroadcasterId: null
+      })),
+      updateStreamerBotSubscriptions
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    const unavailable = await screen.findByRole("checkbox", { name: "MissingEvent (no longer advertised)" });
+    expect(unavailable).toBeChecked();
+    await user.click(unavailable);
+    await user.click(screen.getByRole("checkbox", { name: /I understand saving changes/ }));
+    await user.click(screen.getByRole("button", { name: "Save subscriptions" }));
+
+    await waitFor(() => expect(updateStreamerBotSubscriptions).toHaveBeenCalledWith(activeBot.id, {
+      twitchBroadcasterId: null,
+      externalSubscriptions: []
+    }));
+  });
+
   it("reconnects an existing Twitch provider without registering a duplicate", async () => {
     const user = userEvent.setup();
     const failedTwitch = {

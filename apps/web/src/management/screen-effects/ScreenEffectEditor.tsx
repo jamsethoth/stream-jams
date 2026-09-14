@@ -4,8 +4,9 @@ import {
   createScreenEffectAuthoringState,
   createScreenEffectDocument,
   createVideoAudioSettings,
+  isStreamerBotSubscriptionAvailable,
   isScreenEffectAuthoringDirty,
-  markScreenEffectSaved,
+  reconcileScreenEffectSaved,
   redoScreenEffectEdit,
   revertScreenEffectEdits,
   screenEffectDocumentSchema,
@@ -134,7 +135,9 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       const saved = persisted
         ? await props.api.update(props.effectId, parsed.data, confirmLiveImpact)
         : await props.api.create(parsed.data);
-      setState((current) => current === null ? null : markScreenEffectSaved(current, saved));
+      setState((current) => current === null
+        ? null
+        : reconcileScreenEffectSaved(current, parsed.data, saved));
       setPersisted(true);
       setNotice("Screen Effect saved.");
       setError(null);
@@ -454,14 +457,19 @@ function AddTriggerControls({ add, context, generateId }: {
 }) {
   const [rewardId, setRewardId] = useState("");
   const [streamerSelection, setStreamerSelection] = useState("");
-  const streamerOptions = context.streamerBot?.selected.flatMap((selection) =>
-    selection.eventTypes.map((eventType) => ({
-      value: JSON.stringify([selection.sourceKey, eventType]),
-      label: `${selection.sourceKey} / ${eventType}`,
-      sourceKey: selection.sourceKey,
-      eventType
-    }))
-  ) ?? [];
+  const streamerBot = context.streamerBot;
+  const streamerOptions = streamerBot === null ? [] : streamerBot.selected.flatMap((selection) =>
+    selection.eventTypes.flatMap((eventType) =>
+      isStreamerBotSubscriptionAvailable(streamerBot, selection.sourceKey, eventType)
+        ? [{
+            value: JSON.stringify([selection.sourceKey, eventType]),
+            label: `${selection.sourceKey} / ${eventType}`,
+            sourceKey: selection.sourceKey,
+            eventType
+          }]
+        : []
+    )
+  );
   return <div className="screen-effect-trigger-adders">
     <label>Twitch reward<select aria-label="Twitch reward" onChange={(event) => setRewardId(event.currentTarget.value)} value={rewardId}><option value="">Choose a configured reward</option>{context.rewards.map((reward) => <option key={reward.id} value={reward.id}>{reward.title}</option>)}</select></label>
     <button disabled={rewardId === "" || context.twitch?.connected !== true} onClick={() => {
@@ -593,9 +601,7 @@ function bindingAvailable(binding: EffectBinding, context: EditorContext): boole
       && context.rewards.some((reward) => reward.id === binding.rewardId);
   }
   return context.streamerBot?.providerId === binding.providerId
-    && context.streamerBot.selected.some((selection) =>
-      selection.sourceKey === binding.sourceKey && selection.eventTypes.includes(binding.eventType)
-    );
+    && isStreamerBotSubscriptionAvailable(context.streamerBot, binding.sourceKey, binding.eventType);
 }
 
 function effectDestinationNames(variant: EffectVariant, routeNames: ReadonlyMap<string, string>): string[] {
