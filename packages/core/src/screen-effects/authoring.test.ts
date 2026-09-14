@@ -8,6 +8,7 @@ import {
   isScreenEffectAuthoringDirty,
   markScreenEffectSaved,
   parseScreenEffectForSave,
+  reconcileScreenEffectSaved,
   redoScreenEffectEdit,
   revertScreenEffectEdits,
   undoScreenEffectEdit
@@ -41,6 +42,26 @@ describe("Screen Effect authoring", () => {
     }));
     expect(() => parseScreenEffectForSave(invalid.document)).toThrow(/visual|sound/iu);
     expect(revertScreenEffectEdits(invalid).document).toEqual(state.savedDocument);
+  });
+
+  it("updates the saved baseline without replacing edits made after submission", () => {
+    const initial = createScreenEffectAuthoringState(effectDocument());
+    const submitted = applyScreenEffectEdit(initial, (document) => ({ ...document, name: "Submitted" }));
+    const editedWhileSaving = applyScreenEffectEdit(submitted, (document) => ({ ...document, name: "Edited later" }));
+
+    const reconciled = reconcileScreenEffectSaved(
+      editedWhileSaving,
+      submitted.document,
+      submitted.document
+    );
+
+    expect(reconciled.document.name).toBe("Edited later");
+    expect(reconciled.savedDocument.name).toBe("Submitted");
+    expect(isScreenEffectAuthoringDirty(reconciled)).toBe(true);
+
+    const undone = undoScreenEffectEdit(reconciled);
+    expect(undone.document.name).toBe("Submitted");
+    expect(isScreenEffectAuthoringDirty(undone)).toBe(false);
   });
 
   it("copies variants and duplicates effects with caller-owned stable IDs and no shared nested state", () => {

@@ -33,6 +33,7 @@ export interface EffectPlaybackCoordinatorOptions {
   readonly isModuleEnabled?: (() => boolean | Promise<boolean>) | undefined;
   readonly validateReferences?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
   readonly validateOutputAvailability?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
+  readonly onStopFailure?: ((error: unknown, occurrenceId: string) => void | Promise<void>) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -71,6 +72,7 @@ export class EffectPlaybackCoordinator {
   readonly #isModuleEnabled: () => boolean | Promise<boolean>;
   readonly #validateReferences: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
   readonly #validateOutputAvailability: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
+  readonly #onStopFailure: (error: unknown, occurrenceId: string) => void | Promise<void>;
   readonly #now: () => number;
   #active: ActivePlayback | null = null;
   #closed = false;
@@ -87,6 +89,7 @@ export class EffectPlaybackCoordinator {
     this.#isModuleEnabled = options.isModuleEnabled ?? (() => true);
     this.#validateReferences = options.validateReferences ?? (() => true);
     this.#validateOutputAvailability = options.validateOutputAvailability ?? (() => true);
+    this.#onStopFailure = options.onStopFailure ?? (() => {});
     this.#now = options.now ?? Date.now;
   }
 
@@ -99,13 +102,15 @@ export class EffectPlaybackCoordinator {
     if (!enabled) {
       return { moduleId: "screen-effects", enabled: false, instructions: [] };
     }
-    const instructions = this.#active?.browserInstructions.filter((instruction) =>
+    const instructions = this.#active !== null && !this.#active.finished
+      ? this.#active.browserInstructions.filter((instruction) =>
       instruction.overlayId === request.overlayId
       && instruction.moduleId === request.moduleId
       && instruction.purpose === request.purpose
       && instruction.scope === request.scope
       && (instruction.targetProfileId ?? null) === (request.targetProfileId ?? null)
-    ) ?? [];
+      )
+      : [];
     return {
       moduleId: "screen-effects",
       enabled,
@@ -213,7 +218,11 @@ export class EffectPlaybackCoordinator {
     };
     this.#active = state;
     state.timer = this.#scheduleTimer(
-      () => { void this.#stopAndComplete(occurrence.id, "failed"); },
+      () => {
+        void this.#stopAndComplete(occurrence.id, "failed").catch((error: unknown) => {
+          void Promise.resolve(this.#onStopFailure(error, occurrence.id)).catch(() => undefined);
+        });
+      },
       occurrence.content.variant.durationMs + COMPLETION_GRACE_MS
     );
 
@@ -338,13 +347,18 @@ export class EffectPlaybackCoordinator {
       ...(this.#audioPlaybackSink === null ? [] : [this.#audioPlaybackSink.stop(state.transportId)]),
       ...(this.#desktopVisualSink === null ? [] : [this.#desktopVisualSink.stop(state.transportId)])
     ];
-    state.stopping = Promise.allSettled(stops).then(() => {
-      if (this.#active !== state) return false;
-      const completed = this.#queue.complete(occurrenceId, status, this.#now());
-      this.#active = null;
-      if (!this.#closed) this.#scheduleNext();
-      return completed;
-    });
+    state.stopping = Promise.all(stops)
+      .then(() => {
+        if (this.#active !== state) return false;
+        const completed = this.#queue.complete(occurrenceId, status, this.#now());
+        this.#active = null;
+        if (!this.#closed) this.#scheduleNext();
+        return completed;
+      })
+      .catch((error: unknown) => {
+        if (this.#active === state) state.stopping = null;
+        throw error;
+      });
     return state.stopping;
   }
 

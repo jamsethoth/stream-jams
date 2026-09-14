@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   evaluateProviderActivation,
+  isStreamerBotSubscriptionAvailable,
   providerCapabilityForKind,
   providerRegistrationAttemptSchema,
   providerSetupInputSchema,
@@ -103,6 +104,21 @@ describe("provider management contracts", () => {
       unavailableSelections: [],
       twitchBroadcasterId: "broadcaster-1"
     }).available).toBe(true);
+  });
+
+  it("requires a Streamer.bot subscription to be selected and currently advertised", () => {
+    const catalog = streamerBotSubscriptionCatalogSchema.parse({
+      providerId: "provider-streamerbot",
+      available: true,
+      sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+      selected: [{ sourceKey: "OBS", eventTypes: ["SceneChanged", "MissingEvent"] }],
+      unavailableSelections: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+      twitchBroadcasterId: null
+    });
+
+    expect(isStreamerBotSubscriptionAvailable(catalog, "OBS", "SceneChanged")).toBe(true);
+    expect(isStreamerBotSubscriptionAvailable(catalog, "OBS", "MissingEvent")).toBe(false);
+    expect(isStreamerBotSubscriptionAvailable(catalog, "Custom", "SceneChanged")).toBe(false);
   });
 
   it("rejects provider-specific configuration on the wrong kind", () => {

@@ -40,7 +40,7 @@ export function applyScreenEffectEdit(
   update: (document: ScreenEffectDocument) => ScreenEffectDocument
 ): ScreenEffectAuthoringState {
   const document = update(structuredClone(state.document));
-  if (JSON.stringify(document) === JSON.stringify(state.document)) return state;
+  if (documentsEqual(document, state.document)) return state;
   return {
     ...state,
     document,
@@ -85,16 +85,33 @@ export function markScreenEffectSaved(
   };
 }
 
+export function reconcileScreenEffectSaved(
+  state: ScreenEffectAuthoringState,
+  submittedDocument: ScreenEffectDocument,
+  savedDocument: ScreenEffectDocument
+): ScreenEffectAuthoringState {
+  const submitted = parseScreenEffectForSave(submittedDocument);
+  const saved = parseScreenEffectForSave(savedDocument);
+  if (documentsEqual(state.document, submitted)) {
+    return markScreenEffectSaved(state, saved);
+  }
+  return { ...state, savedDocument: saved };
+}
+
 export function revertScreenEffectEdits(state: ScreenEffectAuthoringState): ScreenEffectAuthoringState {
   return createScreenEffectAuthoringState(state.savedDocument, state.historyLimit);
 }
 
 export function isScreenEffectAuthoringDirty(state: ScreenEffectAuthoringState): boolean {
-  return state.document !== state.savedDocument;
+  return !documentsEqual(state.document, state.savedDocument);
 }
 
 export function parseScreenEffectForSave(document: ScreenEffectDocument): ScreenEffectDocument {
   return screenEffectDocumentSchema.parse(structuredClone(document));
+}
+
+function documentsEqual(left: ScreenEffectDocument, right: ScreenEffectDocument): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 export function copyScreenEffectVariant(

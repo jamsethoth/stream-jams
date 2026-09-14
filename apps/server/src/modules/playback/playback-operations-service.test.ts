@@ -98,6 +98,34 @@ describe("PlaybackOperationsService", () => {
     expect(operations.getSnapshot().muted).toBe(false);
   });
 
+  it("serializes concurrent global safety updates before computing their next state", async () => {
+    let persisted: PlaybackSafetyState = { paused: false, muted: false, doNotDisturb: false };
+    let pending: Promise<unknown> = Promise.resolve();
+    const applied: PlaybackSafetyState[] = [];
+    const operations = service({
+      persistSafety(patch) {
+        const result = pending.then(() => {
+          persisted = { ...persisted, ...patch };
+          return persisted;
+        });
+        pending = result.catch(() => undefined);
+        return result;
+      },
+      async applySafety(state) {
+        applied.push(state);
+      }
+    });
+
+    await Promise.all([
+      operations.setSafety({ paused: true }),
+      operations.setSafety({ muted: true })
+    ]);
+
+    expect(persisted).toEqual({ paused: true, muted: true, doNotDisturb: false });
+    expect(operations.getSnapshot()).toMatchObject({ paused: true, muted: true, doNotDisturb: false });
+    expect(applied.at(-1)).toEqual({ paused: true, muted: true, doNotDisturb: false });
+  });
+
   it("keeps a module pause when global playback resumes", async () => {
     const effects = owner("screen-effects", { paused: true });
     let safety = { paused: true, muted: false, doNotDisturb: false };

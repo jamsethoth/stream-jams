@@ -18,6 +18,7 @@ import {
   NoopMediaTranscodingStage,
   createAppVersion,
   createDefaultOverlayModuleRegistry,
+  isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
   type ActionableManagementError,
   type AudioDeviceHost,
@@ -583,6 +584,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     isModuleEnabled: isEffectModuleEnabled,
     validateReferences: validateEffectReferences,
     validateOutputAvailability: validateEffectOutputAvailability,
+    onStopFailure: (error, occurrenceId) => runtimeLogger.error("Screen Effects local outputs did not acknowledge stop.", {
+      module: "screen-effects",
+      source: "screen-effects.playback-stop-failed",
+      correlationId: generateRuntimeReferenceId(),
+      processingId: null,
+      metadata: {
+        occurrenceId,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        nextStep: "Review Diagnostics and retry Skip. The queue remains held until local outputs acknowledge stop."
+      }
+    }),
     now: () => now().getTime()
   });
   const effectAdmissionService = new EffectAdmissionService({
@@ -1194,9 +1206,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           return false;
         }
         const catalog = await providerManagementService.getStreamerBotSubscriptions(providerId);
-        return catalog.selected.some(
-          (selection) => selection.sourceKey === sourceKey && selection.eventTypes.includes(eventType)
-        );
+        return isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType);
       } catch {
         return false;
       }

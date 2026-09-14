@@ -232,20 +232,42 @@ export class StreamerBotRuntimeService {
 
   async replaceExternalSubscriptions(
     providerId: string,
-    previous: readonly StreamerBotSubscriptionSelection[],
-    next: readonly StreamerBotSubscriptionSelection[]
-  ): Promise<void> {
+    next: readonly StreamerBotSubscriptionSelection[],
+    broadcasterId: string | null
+  ): Promise<{ rollback(): Promise<void> }> {
     this.#assertActiveProvider(providerId);
-    const catalog = await this.#client.getEvents();
-    const unavailable = next.some((selection) => {
-      const advertised = catalog[selection.sourceKey];
-      return advertised === undefined || selection.eventTypes.some((eventType) => !advertised.includes(eventType));
-    });
-    if (unavailable) {
-      throw new Error("One or more selected Streamer.bot events are no longer advertised");
+    const previous = this.#externalSubscriptions.map(cloneSelection);
+    const previousBroadcasterId = this.#twitchBroadcasterId;
+    await this.#applyExternalSubscriptions(next, true);
+    this.#twitchBroadcasterId = broadcasterId;
+    let rolledBack = false;
+    return {
+      rollback: async () => {
+        if (rolledBack) return;
+        this.#assertActiveProvider(providerId);
+        this.#twitchBroadcasterId = previousBroadcasterId;
+        await this.#applyExternalSubscriptions(previous, false);
+        rolledBack = true;
+      }
+    };
+  }
+
+  async #applyExternalSubscriptions(
+    next: readonly StreamerBotSubscriptionSelection[],
+    validateAvailability: boolean
+  ): Promise<void> {
+    if (validateAvailability) {
+      const catalog = await this.#client.getEvents();
+      const unavailable = next.some((selection) => {
+        const advertised = catalog[selection.sourceKey];
+        return advertised === undefined || selection.eventTypes.some((eventType) => !advertised.includes(eventType));
+      });
+      if (unavailable) {
+        throw new Error("One or more selected Streamer.bot events are no longer advertised");
+      }
     }
 
-    const before = mergeSubscriptionSelections(this.#requiredSubscriptions, previous);
+    const before = mergeSubscriptionSelections(this.#requiredSubscriptions, this.#externalSubscriptions);
     const after = mergeSubscriptionSelections(this.#requiredSubscriptions, next);
     const additions = subtractSubscriptionSelections(after, before);
     const removals = subtractSubscriptionSelections(before, after);

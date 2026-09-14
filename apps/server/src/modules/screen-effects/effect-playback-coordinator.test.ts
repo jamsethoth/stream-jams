@@ -71,6 +71,7 @@ function harness(item: EffectOccurrence, options: {
   queue.enqueue(item);
   const delivered: OverlayInstruction[] = [];
   const audioBatches: DeviceAudioBatch[] = [];
+  const stopFailures: Array<{ readonly error: unknown; readonly occurrenceId: string }> = [];
   const browser = {
     deliverPlaybackInstruction: vi.fn((instruction: OverlayInstruction) => {
       delivered.push(instruction);
@@ -115,6 +116,7 @@ function harness(item: EffectOccurrence, options: {
     isModuleEnabled: options.isModuleEnabled ?? (() => true),
     validateReferences: options.validateReferences ?? (() => true),
     validateOutputAvailability: options.validateOutputAvailability ?? (() => true),
+    onStopFailure(error, occurrenceId) { stopFailures.push({ error, occurrenceId }); },
     now: () => Date.now()
   });
   return {
@@ -125,7 +127,8 @@ function harness(item: EffectOccurrence, options: {
     audio,
     desktop,
     delivered,
-    audioBatches
+    audioBatches,
+    stopFailures
   };
 }
 
@@ -239,6 +242,46 @@ describe("EffectPlaybackCoordinator", () => {
     await expect(alertBatch).resolves.toEqual({ failedRouteIds: [] });
   });
 
+  it("holds the queue until a rejected local stop is retried successfully", async () => {
+    const setup = harness(occurrence("current"));
+    setup.queue.enqueue({ ...occurrence("next", "visual"), sequence: 1 });
+    setup.audio.stop.mockRejectedValueOnce(new Error("silence not acknowledged"));
+    await setup.coordinator.startNext();
+
+    await expect(setup.coordinator.skip("current")).rejects.toThrow("silence not acknowledged");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(setup.queue.snapshot()).toMatchObject({
+      current: { id: "current" },
+      queued: [{ id: "next" }]
+    });
+
+    await expect(setup.coordinator.skip("current")).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(setup.queue.snapshot().current?.id).toBe("next");
+  });
+
+  it("does not resync browser instructions after a local stop is rejected", async () => {
+    const setup = harness(occurrence("current"));
+    setup.audio.stop.mockRejectedValueOnce(new Error("silence not acknowledged"));
+    await setup.coordinator.startNext();
+
+    await expect(setup.coordinator.skip("current")).rejects.toThrow("silence not acknowledged");
+
+    await expect(setup.coordinator.getModuleSnapshot({
+      overlayId: "default",
+      moduleId: "screen-effects",
+      purpose: "live",
+      scope: "module",
+      targetProfileId: null
+    })).resolves.toEqual({
+      moduleId: "screen-effects",
+      enabled: true,
+      instructions: []
+    });
+  });
+
   it("settles no-output work as failed instead of wedging the queue", async () => {
     const { coordinator, queue } = harness(occurrence("missing"), { noOutputs: true });
 
@@ -261,6 +304,22 @@ describe("EffectPlaybackCoordinator", () => {
 
     expect(browser.stopPlaybackInstructions).toHaveBeenCalled();
     expect(queue.snapshot().recent[0]).toMatchObject({ id: "watchdog", status: "failed" });
+  });
+
+  it("retains an expired occurrence for explicit retry when its local stop is rejected", async () => {
+    const setup = harness(occurrence("watchdog-retry", "audio"));
+    setup.audio.stop.mockRejectedValueOnce(new Error("silence not acknowledged"));
+    await setup.coordinator.startNext();
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(setup.queue.snapshot().current?.id).toBe("watchdog-retry");
+    expect(setup.stopFailures).toEqual([{
+      error: expect.objectContaining({ message: "silence not acknowledged" }),
+      occurrenceId: "watchdog-retry"
+    }]);
+
+    await expect(setup.coordinator.skip("watchdog-retry")).resolves.toBe(true);
+    expect(setup.queue.snapshot().recent[0]).toMatchObject({ id: "watchdog-retry", status: "skipped" });
   });
 
   it("cancels pending device preparation and ignores its late result after skip", async () => {

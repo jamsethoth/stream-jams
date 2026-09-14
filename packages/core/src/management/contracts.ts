@@ -173,6 +173,20 @@ export const streamerBotSubscriptionCatalogSchema = z.object({
   twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable()
 }).strict();
 
+export function isStreamerBotSubscriptionAvailable(
+  catalog: z.infer<typeof streamerBotSubscriptionCatalogSchema>,
+  sourceKey: string,
+  eventType: string
+): boolean {
+  return catalog.available
+    && catalog.selected.some((selection) =>
+      selection.sourceKey === sourceKey && selection.eventTypes.includes(eventType)
+    )
+    && catalog.sources.some((source) =>
+      source.sourceKey === sourceKey && source.eventTypes.includes(eventType)
+    );
+}
+
 export const providerValidationResultSchema = z.object({
   valid: z.boolean(),
   connectionState: providerConnectionStateSchema,

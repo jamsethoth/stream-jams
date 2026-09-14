@@ -869,6 +869,29 @@ function StreamerBotSubscriptionEditor({
               </div>
             ))}
           </fieldset>
+          {catalog.unavailableSelections.length > 0 ? (
+            <fieldset>
+              <legend>Unavailable saved source and event types</legend>
+              <p>Clear entries that Streamer.bot no longer advertises, then save the configuration.</p>
+              {catalog.unavailableSelections.map((selection) => (
+                <div key={selection.sourceKey}>
+                  <strong>{selection.sourceKey}</strong>
+                  {selection.eventTypes.map((eventType) => (
+                    <label key={`${selection.sourceKey}:${eventType}`}>
+                      <input
+                        checked={selected.some((candidate) =>
+                          candidate.sourceKey === selection.sourceKey && candidate.eventTypes.includes(eventType)
+                        )}
+                        onChange={(event) => toggle(selection.sourceKey, eventType, event.currentTarget.checked)}
+                        type="checkbox"
+                      />
+                      <span>{eventType} (no longer advertised)</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </fieldset>
+          ) : null}
           {dirty ? (
             <label>
               <input checked={confirmed} onChange={(event) => setConfirmed(event.currentTarget.checked)} type="checkbox" />
