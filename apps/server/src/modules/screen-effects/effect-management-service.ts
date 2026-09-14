@@ -66,6 +66,7 @@ export class EffectManagementService {
   readonly #isTwitchRewardAvailable: NonNullable<EffectManagementServiceOptions["isTwitchRewardAvailable"]>;
   readonly #isStreamerBotSelectionConfigured: NonNullable<EffectManagementServiceOptions["isStreamerBotSelectionConfigured"]>;
   readonly #runMutation: NonNullable<EffectManagementServiceOptions["runMutation"]>;
+  #mutationTail = Promise.resolve();
 
   constructor(options: EffectManagementServiceOptions) {
     this.#repository = options.repository;
@@ -91,7 +92,7 @@ export class EffectManagementService {
       throw new EffectLiveImpactConfirmationRequiredError();
     }
     await this.#validateBindings(document.bindings);
-    return this.#runMutation(async () => {
+    return this.#runSerializedMutation(async () => {
       if (await this.#repository.find(document.id) !== null) {
         throw new EffectDefinitionConflictError(document.id);
       }
@@ -110,7 +111,7 @@ export class EffectManagementService {
       throw new EffectDefinitionConflictError(document.id);
     }
     await this.#validateBindings(document.bindings);
-    return this.#runMutation(async () => {
+    return this.#runSerializedMutation(async () => {
       const current = await this.get(effectId);
       if (JSON.stringify(current) === JSON.stringify(document)) return current;
       if ((current.enabled || document.enabled) && !confirmLiveImpact) {
@@ -122,7 +123,7 @@ export class EffectManagementService {
   }
 
   async remove(effectId: string): Promise<void> {
-    await this.#runMutation(async () => {
+    await this.#runSerializedMutation(async () => {
       await this.get(effectId);
       await this.#repository.remove(effectId);
     });
@@ -153,5 +154,11 @@ export class EffectManagementService {
         );
       if (!available) throw new EffectBindingUnavailableError(binding.id);
     }
+  }
+
+  async #runSerializedMutation<T>(work: () => Promise<T>): Promise<T> {
+    const mutation = this.#mutationTail.then(() => this.#runMutation(work));
+    this.#mutationTail = mutation.then(() => undefined, () => undefined);
+    return mutation;
   }
 }

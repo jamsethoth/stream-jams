@@ -1670,6 +1670,7 @@ function createSequentialPlaybackQueue(itemCount: number): PlaybackQueue {
           alerts: [createResolvedAlert(event.id, `resolved-${index}`, `instruction-${index}`)],
           audio: [],
           priority: 0,
+          sequence: index,
           status: "playing",
           enqueuedAt: "2026-05-30T12:00:00.000Z",
           startedAt: "2026-05-30T12:00:00.000Z",

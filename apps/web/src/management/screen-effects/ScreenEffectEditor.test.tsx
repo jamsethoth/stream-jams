@@ -88,6 +88,36 @@ describe("ScreenEffectEditor", () => {
     expect(screen.getByLabelText("Effect name")).toHaveValue("Unsaved effect name");
   });
 
+  it("keeps successful editor context visible and reports retryable source failures", async () => {
+    const user = userEvent.setup();
+    const getTwitchStatus = vi.fn()
+      .mockRejectedValueOnce(new Error("Twitch status unavailable (ref-effect-context)"))
+      .mockResolvedValueOnce({
+        connected: false,
+        authorizationState: "disconnected",
+        missingScopes: [],
+        account: null
+      });
+    renderEditor({
+      api: effectApi(enabledEffect(false)),
+      create: false,
+      document: enabledEffect(false),
+      managementApi: managementApi({ getTwitchStatus })
+    });
+
+    expect(await screen.findByLabelText("Effect name")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent("Twitch connection");
+    expect(screen.getByRole("alert")).toHaveTextContent("ref-effect-context");
+
+    await user.click(screen.getByRole("button", { name: "Choose visual asset" }));
+    expect(await screen.findByRole("button", { name: /Image one/u })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Retry editor context" }));
+
+    await waitFor(() => expect(screen.queryByText("Some editor context could not be loaded.")).not.toBeInTheDocument());
+    expect(getTwitchStatus).toHaveBeenCalledTimes(2);
+  });
+
   it("preserves edits made while a save request is in flight", async () => {
     const user = userEvent.setup();
     const saved = enabledEffect(false);

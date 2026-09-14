@@ -83,7 +83,6 @@ export function toAlertOwnerSnapshot(
 ): OwnerOperationsSnapshot {
   const mapRow = (
     item: NonNullable<PlaybackQueueSnapshot["current"]>,
-    sequence: number,
     moduleQueuePosition: number | null
   ): OperationRow => ({
     moduleId: "alerts",
@@ -93,15 +92,15 @@ export function toAlertOwnerSnapshot(
     status: item.status,
     enqueuedAtMs: Date.parse(item.enqueuedAt),
     completedAtMs: item.completedAt === null ? null : Date.parse(item.completedAt),
-    sequence,
+    sequence: item.sequence,
     moduleQueuePosition
   });
   return ownerOperationsSnapshotSchema.parse({
     moduleId: "alerts",
     paused,
-    current: snapshot.current === null ? null : mapRow(snapshot.current, 0, null),
-    queued: snapshot.queued.map((item, index) => mapRow(item, index, index + 1)),
-    recent: snapshot.recent.map((item, index) => mapRow(item, index, null))
+    current: snapshot.current === null ? null : mapRow(snapshot.current, null),
+    queued: snapshot.queued.map((item, index) => mapRow(item, index + 1)),
+    recent: snapshot.recent.map((item) => mapRow(item, null))
   });
 }
 

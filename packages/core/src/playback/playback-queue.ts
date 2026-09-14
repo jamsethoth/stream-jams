@@ -42,9 +42,7 @@ export class PlaybackQueueItemNotFoundError extends Error {
   }
 }
 
-interface InternalPlaybackQueueItem extends PlaybackQueueItem {
-  readonly sequence: number;
-}
+type InternalPlaybackQueueItem = PlaybackQueueItem;
 
 export class DefaultPlaybackQueue implements PlaybackQueue {
   readonly #clock: () => Date;
@@ -240,6 +238,7 @@ function toPlaybackQueueItem(item: InternalPlaybackQueueItem): PlaybackQueueItem
     alerts: item.alerts,
     audio: item.audio,
     priority: item.priority,
+    sequence: item.sequence,
     status: item.status,
     enqueuedAt: item.enqueuedAt,
     startedAt: item.startedAt,

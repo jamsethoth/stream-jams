@@ -95,6 +95,7 @@ export class EffectAdmissionService {
   readonly #validateOutputAvailability: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly #isModuleEnabled: () => Promise<boolean>;
   readonly #onOutcome: NonNullable<EffectAdmissionServiceOptions["onOutcome"]>;
+  #admissionTail = Promise.resolve();
   #nextSequence = 0;
 
   constructor(options: EffectAdmissionServiceOptions) {
@@ -139,7 +140,11 @@ export class EffectAdmissionService {
       return this.#report({ status: "no-matches", eventId, outcomes: [] });
     }
 
-    return this.#admitMatches(eventId, matches, moduleCooldownSeconds);
+    const admission = this.#admissionTail.then(
+      () => this.#admitMatches(eventId, matches, moduleCooldownSeconds)
+    );
+    this.#admissionTail = admission.then(() => undefined, () => undefined);
+    return admission;
   }
 
   async testEffect(effectId: string): Promise<EffectAdmissionOutcome> {

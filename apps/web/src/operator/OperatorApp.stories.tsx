@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
-import type { PlaybackApi } from "./playback-api.js";
+import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 
 const meta = {
   title: "Operator/Playback Console",
@@ -62,11 +62,27 @@ export const InitialFailure: Story = {
 };
 
 export const StaleSkipConflict: Story = {
-  args: { api: createApi(activeSnapshot(), { skip: async () => { throw new ManagementHttpError("The current playback changed before it could be skipped.", "PLAYBACK_OPERATION_CONFLICT", null); } }) },
+  args: {
+    api: createApi(activeSnapshot(), {
+      skip: async () => {
+        const refreshed = activeSnapshot();
+        throw new PlaybackOperationsConflictError(
+          "The current playback changed before it could be skipped.",
+          {
+            ...refreshed,
+            revision: refreshed.revision + 1,
+            current: refreshed.current.filter((item) => item.moduleId !== "screen-effects")
+          }
+        );
+      }
+    })
+  },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
     await expect(await canvas.findByText("Playback command failed")).toBeVisible();
+    await expect(canvas.getByRole("heading", { name: "Now playing (1)" })).toBeVisible();
+    await expect(canvas.queryByText("Flash sweep")).not.toBeInTheDocument();
   }
 };
 

@@ -86,6 +86,50 @@ describe("EffectManagementService", () => {
     await expect(service.create(candidate)).rejects.toBeInstanceOf(EffectDefinitionConflictError);
   });
 
+  it("serializes concurrent creates through conflict detection and persistence", async () => {
+    const values = new Map<string, ScreenEffectDocument>();
+    let releaseFirstFind: (() => void) | undefined;
+    const firstFindBlocked = new Promise<void>((resolve) => {
+      releaseFirstFind = resolve;
+    });
+    let firstFindStarted: (() => void) | undefined;
+    const firstFindEntered = new Promise<void>((resolve) => {
+      firstFindStarted = resolve;
+    });
+    let findCalls = 0;
+    const repository: ScreenEffectRepository = {
+      list: async () => [...values.values()],
+      find: async (id) => {
+        findCalls += 1;
+        const foundAtStart = values.get(id) ?? null;
+        if (findCalls === 1) {
+          firstFindStarted?.();
+          await firstFindBlocked;
+        }
+        return foundAtStart;
+      },
+      save: async (item) => { values.set(item.id, structuredClone(item)); },
+      remove: async (id) => { values.delete(id); }
+    };
+    const service = new EffectManagementService({
+      repository,
+      testEffectVariant: async () => ({ effectId: "effect-one", status: "queued" })
+    });
+    const candidate = document();
+
+    const first = service.create(candidate);
+    await firstFindEntered;
+    const second = service.create(candidate);
+    await Promise.resolve();
+    releaseFirstFind?.();
+    const results = await Promise.allSettled([first, second]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected")).toEqual([
+      expect.objectContaining({ reason: expect.any(EffectDefinitionConflictError) })
+    ]);
+  });
+
   it("requires confirmation before enabling or changing a live effect", async () => {
     const existing = document();
     const { repository, service } = fixture([existing]);

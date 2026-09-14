@@ -366,6 +366,7 @@ function queueResult(event: NormalizedStreamEvent): PlaybackEnqueueResult {
           }
         ],
         priority: 1,
+        sequence: 0,
         status: "playing",
         enqueuedAt: "2026-05-30T12:00:00.000Z",
         startedAt: "2026-05-30T12:00:00.000Z",

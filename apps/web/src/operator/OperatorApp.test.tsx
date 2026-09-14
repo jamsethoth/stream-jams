@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
-import type { PlaybackApi } from "./playback-api.js";
+import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 
 afterEach(() => {
   cleanup();
@@ -51,6 +51,33 @@ describe("OperatorApp", () => {
     expect(playbackApi.skip).toHaveBeenCalledWith("screen-effects", "occ-effect");
     expect(playbackApi.remove).toHaveBeenCalledWith("screen-effects", "queued-effect");
     expect(playbackApi.replay).toHaveBeenCalledWith("alerts", "recent-alert");
+  });
+
+  it("applies the authoritative snapshot returned by a stale command conflict", async () => {
+    const user = userEvent.setup();
+    const refreshed = {
+      ...snapshot(),
+      revision: 8,
+      current: snapshot().current.filter((item) => item.moduleId !== "screen-effects")
+    };
+    const playbackApi = api({
+      skip: vi.fn(async () => {
+        throw new PlaybackOperationsConflictError(
+          "The current playback changed before it could be skipped.",
+          refreshed
+        );
+      })
+    });
+    render(<OperatorApp api={playbackApi} />);
+    await screen.findByText("Flash sweep");
+
+    await user.click(screen.getByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The current playback changed before it could be skipped."
+    );
+    expect(screen.queryByText("Flash sweep")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Now playing (1)" })).toBeVisible();
   });
 
   it("pauses one module and confirms a scoped clear with count and revision", async () => {

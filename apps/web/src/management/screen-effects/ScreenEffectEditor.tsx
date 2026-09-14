@@ -51,6 +51,12 @@ interface EditorContext {
   readonly twitch: TwitchConnectionStatusView | null;
   readonly rewards: readonly TwitchCustomReward[];
   readonly streamerBot: StreamerBotSubscriptionCatalog | null;
+  readonly failures: readonly EditorContextFailure[];
+}
+
+interface EditorContextFailure {
+  readonly source: string;
+  readonly detail: string;
 }
 
 const emptyContext: EditorContext = {
@@ -58,7 +64,8 @@ const emptyContext: EditorContext = {
   routeNames: new Map(),
   twitch: null,
   rewards: [],
-  streamerBot: null
+  streamerBot: null,
+  failures: []
 };
 const visualMediaTypes = ["image", "gif", "video"] as const;
 const soundMediaTypes = ["audio"] as const;
@@ -70,6 +77,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
   const [context, setContext] = useState<EditorContext>(emptyContext);
   const [loading, setLoading] = useState(true);
+  const [contextRetrying, setContextRetrying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -118,6 +126,15 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     setState((current) => current === null ? null : applyScreenEffectEdit(current, update));
     setNotice(null);
   }, []);
+
+  const retryEditorContext = useCallback(async () => {
+    setContextRetrying(true);
+    try {
+      setContext(await loadEditorContext(props.managementApi, props.audioApi, context));
+    } finally {
+      setContextRetrying(false);
+    }
+  }, [context, props.audioApi, props.managementApi]);
 
   const save = useCallback(async (confirmLiveImpact = false) => {
     if (state === null) return false;
@@ -187,6 +204,21 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     />
     {notice === null ? null : <p role="status">{notice}</p>}
     {error === null ? null : <p role="alert">{error}</p>}
+    {context.failures.length === 0 ? null : (
+      <section className="screen-effect-editor__context-error" role="alert">
+        <strong>Some editor context could not be loaded.</strong>
+        <ul>{context.failures.map((failure) => (
+          <li key={failure.source}><strong>{failure.source}:</strong> {failure.detail}</li>
+        ))}</ul>
+        <p>Data that loaded successfully remains available. Retry before relying on missing assets, routes, or trigger choices.</p>
+        <button
+          className="button button--secondary"
+          disabled={contextRetrying}
+          onClick={() => void retryEditorContext()}
+          type="button"
+        >{contextRetrying ? "Retrying editor context…" : "Retry editor context"}</button>
+      </section>
+    )}
     {validation?.success === false ? <p className="screen-effect-editor__validation" role="status">Draft needs attention: {firstValidationMessage(validation.error)}</p> : null}
     <div className="screen-effect-editor__workspace">
       <DocumentPanel document={document} edit={edit} isNew={!persisted} />
@@ -550,36 +582,57 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
   </ModalSurface>;
 }
 
-async function loadEditorContext(managementApi: ManagementApi, audioApi: AudioApi): Promise<EditorContext> {
-  const [assetsResult, audioResult, twitchResult, streamerResult] = await Promise.allSettled([
+async function loadEditorContext(
+  managementApi: ManagementApi,
+  audioApi: AudioApi,
+  previous: EditorContext = emptyContext
+): Promise<EditorContext> {
+  const [assetsResult, audioResult, twitchStatusResult, streamerResult] = await Promise.allSettled([
     managementApi.listAssetLibraryItems(),
     audioApi.getStatus(),
-    loadTwitchContext(managementApi),
+    managementApi.getTwitchStatus(),
     loadStreamerBotContext(managementApi)
   ]);
-  const twitch = twitchResult.status === "fulfilled" ? twitchResult.value.status : null;
+  let rewardsResult: PromiseSettledResult<readonly TwitchCustomReward[]> | null = null;
+  if (twitchStatusResult.status === "fulfilled") {
+    if (twitchStatusResult.value.connected) {
+      const [rewardEnvelopeResult] = await Promise.allSettled([managementApi.getTwitchCustomRewards()]);
+      rewardsResult = rewardEnvelopeResult.status === "fulfilled"
+        ? { status: "fulfilled", value: rewardEnvelopeResult.value.rewards }
+        : rewardEnvelopeResult;
+    } else {
+      rewardsResult = { status: "fulfilled", value: [] };
+    }
+  }
+  const failures = [
+    toContextFailure("Asset library", assetsResult, "The asset library could not be loaded."),
+    toContextFailure("Audio outputs", audioResult, "Audio output routes could not be loaded."),
+    toContextFailure("Twitch connection", twitchStatusResult, "Twitch connection status could not be loaded."),
+    ...(rewardsResult === null
+      ? []
+      : [toContextFailure("Twitch rewards", rewardsResult, "Twitch rewards could not be loaded.")]),
+    toContextFailure("Streamer.bot events", streamerResult, "Streamer.bot subscriptions could not be loaded.")
+  ].filter((failure): failure is EditorContextFailure => failure !== null);
   return {
-    assets: assetsResult.status === "fulfilled" ? assetsResult.value : [],
+    assets: assetsResult.status === "fulfilled" ? assetsResult.value : previous.assets,
     routeNames: new Map(audioResult.status === "fulfilled"
       ? audioResult.value.routes.map((status) => [status.route.id, status.route.name] as const)
-      : []),
-    twitch,
-    rewards: twitchResult.status === "fulfilled" ? twitchResult.value.rewards : [],
-    streamerBot: streamerResult.status === "fulfilled" ? streamerResult.value : null
+      : previous.routeNames),
+    twitch: twitchStatusResult.status === "fulfilled" ? twitchStatusResult.value : previous.twitch,
+    rewards: rewardsResult?.status === "fulfilled" ? rewardsResult.value : previous.rewards,
+    streamerBot: streamerResult.status === "fulfilled" ? streamerResult.value : previous.streamerBot,
+    failures
   };
 }
 
-async function loadTwitchContext(managementApi: ManagementApi): Promise<{
-  readonly status: TwitchConnectionStatusView;
-  readonly rewards: readonly TwitchCustomReward[];
-}> {
-  const status = await managementApi.getTwitchStatus();
-  if (!status.connected) return { status, rewards: [] };
-  try {
-    return { status, rewards: (await managementApi.getTwitchCustomRewards()).rewards };
-  } catch {
-    return { status, rewards: [] };
-  }
+function toContextFailure(
+  source: string,
+  result: PromiseSettledResult<unknown>,
+  fallback: string
+): EditorContextFailure | null {
+  return result.status === "fulfilled"
+    ? null
+    : { source, detail: message(result.reason, fallback) };
 }
 
 async function loadStreamerBotContext(managementApi: ManagementApi): Promise<StreamerBotSubscriptionCatalog | null> {
