@@ -57,6 +57,18 @@ const configuredSummary: HomeSetupSummary = {
     ],
     outputs: []
   },
+  alertConfiguration: {
+    state: "attention",
+    enabledAlertCount: 1,
+    items: [{
+      alertId: "follow-default",
+      name: "New follower",
+      eventType: "follow",
+      state: "review-needed",
+      message: "Finish reviewing the Landscape profile.",
+      actionRoute: "/manage/modules/alerts/editor/follow-default?set=default&event=follow&profile=landscape"
+    }]
+  },
   actionableProblems: [providerError]
 };
 
@@ -80,6 +92,10 @@ describe("HomePanel", () => {
     const setup = screen.getByRole("heading", { name: "Setup readiness" });
     expect(problems.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Next action")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Alert configuration" })).toBeInTheDocument();
+    expect(screen.getByText("New follower")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Review alert" })).toHaveAttribute("href", configuredSummary.alertConfiguration.items[0]!.actionRoute);
+    expect(screen.getByText(/Connection and delivery still require/)).toBeInTheDocument();
     const completed = screen.getByText("Completed setup (1)");
     expect(completed.closest("details")).not.toHaveAttribute("open");
   });

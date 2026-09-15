@@ -509,6 +509,8 @@
   display: block;
 }
 
+.alert-sets-page__condition-detail { margin-top: 1px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; overflow-wrap: anywhere; }
+
 .alert-sets-page__table tbody th small,
 .alert-sets-page__table tbody td > small {
   color: var(--color-text-muted);

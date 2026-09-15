@@ -12,6 +12,7 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatBytes, formatCount, formatDate } from "../foundation/formatters.js";
+import { formatIdentifierLabel } from "../foundation/presentation-labels.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { AssetPicker } from "./AssetPicker.js";
 import { AssetPreview } from "./AssetPreview.js";
@@ -347,5 +348,5 @@ function usageHref(usage: AssetLibraryItem["usage"]["usages"][number]): string {
 }
 
 function healthTone(health: AssetLibraryItem["health"]): "positive" | "warning" | "negative" { return health === "available" ? "positive" : health === "missing" ? "warning" : "negative"; }
-function formatLabel(value: string): string { return value.split("-").map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" "); }
+function formatLabel(value: string): string { return formatIdentifierLabel(value); }
 function formatDuration(value: number): string { return `${(value / 1000).toFixed(1)} s`; }

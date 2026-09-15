@@ -330,8 +330,8 @@ export const GroupedInventoryStates: Story = {
     await expect(await canvas.findByRole("button", { name: /Collapse Follow/u })).toHaveTextContent("2 defaults");
     await expect(canvas.getByText("Relative weight 3; the selected sample's result depends on eligible alerts.")).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: /Collapse future_celebration/u })).toBeVisible();
-    await expect(canvas.queryByRole("button", { name: /Add alert for future_celebration/u })).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /Collapse Future celebration/u })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /Add alert for Future celebration/u })).not.toBeInTheDocument();
     await userEvent.type(canvas.getByLabelText("Search"), "large community");
     await expect(canvas.getByRole("button", { name: /Collapse Community gift/u })).toHaveAttribute("aria-expanded", "true");
   }

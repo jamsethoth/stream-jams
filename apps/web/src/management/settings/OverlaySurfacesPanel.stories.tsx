@@ -29,11 +29,11 @@ export const IndependentDrafts: Story = {
   args: { api: api() },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Move future-module up on Desktop overlay" }));
-    await userEvent.click(canvas.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Move Future module up on Desktop overlay" }));
+    await userEvent.click(canvas.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" }));
     await userEvent.click(canvas.getByRole("button", { name: "Save Desktop overlay" }));
     await expect(canvas.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
-    await expect(canvas.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
+    await expect(canvas.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).not.toBeChecked();
   }
 };
 export const CliUnavailable: Story = { args: { api: api({ ...view(), desktop: { available: false, displays: [], state: "unavailable", message: "Desktop output requires the Windows desktop application. Unified browser settings remain available." } }) } };
@@ -44,7 +44,7 @@ export const SavedButRuntimeFailed: Story = {
   args: { api: api({ ...view(), desktop: { ...view().desktop, state: "failed", message: "Settings were saved, but the desktop renderer failed. Use Retry to restore future alerts." } }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Move future-module up on Desktop overlay" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Move Future module up on Desktop overlay" }));
     await userEvent.click(canvas.getByRole("button", { name: "Save Desktop overlay" }));
     await expect(await canvas.findByText("Desktop settings saved; output needs attention.")).toBeVisible();
   }

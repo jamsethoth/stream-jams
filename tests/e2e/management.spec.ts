@@ -45,6 +45,7 @@ test("management Home prioritizes problems and incomplete setup", async ({ page 
       { id: "tts-provider", label: "TTS provider", state: "complete", actionLabel: "Review TTS provider", actionRoute: "/manage/tts-providers" }
     ],
     activeAlertSet: null,
+    alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] },
     actionableProblems: [{
       summary: "Event intake stopped",
       cause: "The event source disconnected.",

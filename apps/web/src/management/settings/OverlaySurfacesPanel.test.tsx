@@ -15,19 +15,25 @@ function harness() {
   const api = { load: vi.fn<SurfaceSettingsApi["load"]>(async () => structuredClone(view)), save: vi.fn<SurfaceSettingsApi["save"]>(async value => { view = { ...view, surfaces: view.surfaces.map(surface => surface.id === value.id ? value : surface) }; return structuredClone(view); }), retry: vi.fn<SurfaceSettingsApi["retry"]>(async () => structuredClone(view)) };
   return { api, get view() { return view; }, set view(value: SurfaceSettingsView) { view = value; } };
 }
+it("shows readable known and unknown module names without changing saved IDs", async () => {
+  const { api } = harness();
+  render(<OverlaySurfacesPanel api={api} />);
+  expect(await screen.findByRole("checkbox", { name: "Show Alerts on Desktop overlay" })).toBeVisible();
+  expect(screen.getByRole("checkbox", { name: "Show Future on Desktop overlay" })).toBeVisible();
+});
 it("keeps local independent drafts and explicitly saves only the selected surface", async () => {
   const { api } = harness(); const user = userEvent.setup(); render(<OverlaySurfacesPanel api={api} />);
   await user.click(await screen.findByRole("checkbox", { name: "Enable desktop overlay" }));
-  await user.click(screen.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }));
+  await user.click(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" }));
   expect(api.save).not.toHaveBeenCalled(); expect(api.retry).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save Desktop overlay" }));
   expect(api.save).toHaveBeenCalledTimes(1); expect(api.save.mock.calls[0]![0]).toMatchObject({ kind: "desktop", enabled: true });
-  expect(screen.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).not.toBeChecked();
   expect(screen.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
 });
 it("provides keyboard ordering and sends the complete top-first row list", async () => {
   const { api } = harness(); const user = userEvent.setup(); render(<OverlaySurfacesPanel api={api} />);
-  const up = await screen.findByRole("button", { name: "Move future up on Desktop overlay" }); up.focus(); await user.keyboard("{Enter}");
+  const up = await screen.findByRole("button", { name: "Move Future up on Desktop overlay" }); up.focus(); await user.keyboard("{Enter}");
   await user.click(screen.getByRole("button", { name: "Save Desktop overlay" }));
   expect(api.save.mock.calls[0]![0].layers).toEqual([{ moduleId: "future", visible: false }, { moduleId: "alerts", visible: true }]);
 });
@@ -40,7 +46,7 @@ it("keeps desktop unavailable in CLI while unified controls remain editable", as
   const state = harness(); state.view = { ...state.view, desktop: { available: false, displays: [], state: "unavailable", message: "Use Windows desktop." } };
   render(<OverlaySurfacesPanel api={state.api} />);
   expect(await screen.findByRole("checkbox", { name: "Enable desktop overlay" })).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).toBeEnabled(); expect(screen.getByText("Use Windows desktop.")).toBeVisible();
+  expect(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).toBeEnabled(); expect(screen.getByText("Use Windows desktop.")).toBeVisible();
 });
 it("refreshes capabilities while preserving dirty drafts and retains stale state on refresh failure", async () => {
   vi.useFakeTimers(); const state = harness(); render(<OverlaySurfacesPanel api={state.api} />); await act(async () => {});

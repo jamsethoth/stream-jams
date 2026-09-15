@@ -504,6 +504,41 @@ describe("AlertSetsPage", () => {
     expect(within(dialog).getByRole("button", { name: "Create alert" })).toBeEnabled();
   });
 
+  it("loads reward titles once for inventory condition summaries", async () => {
+    const source = detail();
+    source.inventory = source.inventory.map((candidate) => candidate.id === "alert-reward" ? {
+      ...candidate,
+      conditions: [{ field: "channelPointReward" as const, operator: "oneOf" as const, value: ["reward-hydrate"] }]
+    } : candidate);
+    const getTwitchCustomRewards = vi.fn(async () => ({ rewards: twitchRewards() }));
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source),
+      getTwitchCustomRewards
+    })} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("Channel point reward is one of Hydrate")).toBeVisible();
+    expect(getTwitchCustomRewards).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an unavailable reward ID visible when the catalog cannot load", async () => {
+    const source = detail();
+    source.inventory = source.inventory.map((candidate) => candidate.id === "alert-reward" ? {
+      ...candidate,
+      conditions: [{ field: "channelPointReward" as const, operator: "oneOf" as const, value: ["reward-retired"] }]
+    } : candidate);
+    const getTwitchCustomRewards = vi.fn(async () => { throw new Error("Twitch unavailable"); });
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source),
+      getTwitchCustomRewards
+    })} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("Channel point reward is one of Unavailable reward")).toBeVisible();
+    expect(screen.getByText("Reward ID: reward-retired")).toBeVisible();
+    await waitFor(() => expect(getTwitchCustomRewards).toHaveBeenCalledOnce());
+  });
+
   it("cancels Add alert without sending a create request", async () => {
     const createAlert = vi.fn();
     const user = userEvent.setup();
@@ -582,11 +617,11 @@ describe("AlertSetsPage", () => {
     const showUnused = screen.getByRole("checkbox", { name: "Show unused event types" });
     expect(showUnused).not.toBeChecked();
     expect(screen.queryByRole("button", { name: "Expand Resubscription alerts" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Collapse future_provider_event alerts" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Future provider event alerts" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeInTheDocument();
     expect(screen.getByText("Orphan follow")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable Follow event" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add alert for future_provider_event" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add alert for Future provider event" })).not.toBeInTheDocument();
     await user.click(showUnused);
     expect(screen.getByRole("button", { name: "Expand Resubscription alerts" })).toHaveAttribute("aria-expanded", "false");
     await user.click(showUnused);

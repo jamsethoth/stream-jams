@@ -25,6 +25,7 @@ const configuredSummary: HomeSetupSummary = {
     validationIssues: [],
     outputs: []
   },
+  alertConfiguration: { state: "configured", enabledAlertCount: 6, items: [] },
   actionableProblems: []
 };
 
@@ -42,6 +43,7 @@ export const FirstRun: Story = {
       getHomeSetupSummary: async () => ({
         readiness: configuredSummary.readiness.map((item) => ({ ...item, state: "action-required" as const })),
         activeAlertSet: null,
+        alertConfiguration: { state: "no-active-set" as const, enabledAlertCount: 0, items: [] },
         actionableProblems: []
       })
     })
@@ -57,7 +59,8 @@ export const PartiallyConfigured: Story = {
           ...item,
           state: index < 2 ? "complete" as const : "action-required" as const
         })),
-        activeAlertSet: null
+        activeAlertSet: null,
+        alertConfiguration: { state: "no-active-set" as const, enabledAlertCount: 0, items: [] }
       })
     })
   },
@@ -85,6 +88,18 @@ export const NeedsAttentionFirst: Story = {
       getHomeSetupSummary: async () => ({
         ...configuredSummary,
         readiness: [{ ...configuredSummary.readiness[0]!, state: "blocked" }],
+        alertConfiguration: {
+          state: "attention",
+          enabledAlertCount: 6,
+          items: [{
+            alertId: "follow-default",
+            name: "New follower",
+            eventType: "follow",
+            state: "review-needed",
+            message: "Finish reviewing the Landscape profile.",
+            actionRoute: "/manage/modules/alerts/editor/follow-default?set=set-default&event=follow&profile=landscape"
+          }]
+        },
         actionableProblems: [{
           summary: "Event source needs attention",
           cause: "Event intake is unavailable.",
@@ -102,5 +117,6 @@ export const NeedsAttentionFirst: Story = {
     const problems = await canvas.findByRole("heading", { name: "Needs attention" });
     const setup = canvas.getByRole("heading", { name: "Setup readiness" });
     await expect(Boolean(problems.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    await expect(canvas.getByText("New follower")).toBeVisible();
   }
 };

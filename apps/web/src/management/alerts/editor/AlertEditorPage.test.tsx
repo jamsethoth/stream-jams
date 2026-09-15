@@ -1995,7 +1995,7 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("button", { name: /Expand Resubscription/u })).not.toBeInTheDocument();
     await user.click(showUnused);
     expect(screen.getByRole("button", { name: /Expand Resubscription/u })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("button", { name: /Collapse future_celebration/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Collapse Future celebration/u })).toBeInTheDocument();
     expect(screen.getByText("Variation of New raid")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
 

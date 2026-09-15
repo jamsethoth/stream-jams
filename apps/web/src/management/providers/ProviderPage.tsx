@@ -686,18 +686,24 @@ function ProviderDetail({
                   </select>
                 )}
               </label>
-              <label>
-                <span>Volume</span>
-                <input max={1} min={0} onChange={(event) => onSafetyChange({ ...safety, volume: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.volume} />
-              </label>
-              <label>
-                <span>Minimum rate</span>
-                <input min={0.1} onChange={(event) => onSafetyChange({ ...safety, minimumRate: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.minimumRate} />
-              </label>
-              <label>
-                <span>Maximum rate</span>
-                <input min={0.1} onChange={(event) => onSafetyChange({ ...safety, maximumRate: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.maximumRate} />
-              </label>
+              <div className="provider-page__field-with-guidance">
+                <label>
+                  <span>Volume (0–1)</span>
+                  <input aria-describedby="tts-volume-guidance" max={1} min={0} onChange={(event) => onSafetyChange({ ...safety, volume: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.volume} />
+                </label>
+                <p id="tts-volume-guidance">1 = 100% volume; 0 = silent</p>
+              </div>
+              <div className="provider-page__rate-fields">
+                <label>
+                  <span>Minimum rate (×)</span>
+                  <input aria-describedby="tts-rate-guidance" min={0.1} onChange={(event) => onSafetyChange({ ...safety, minimumRate: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.minimumRate} />
+                </label>
+                <label>
+                  <span>Maximum rate (×)</span>
+                  <input aria-describedby="tts-rate-guidance" min={0.1} onChange={(event) => onSafetyChange({ ...safety, maximumRate: Number(event.currentTarget.value) })} required step={0.1} type="number" value={safety.maximumRate} />
+                </label>
+                <p id="tts-rate-guidance">1× is normal speed; 0.5× is half speed; 2× is double speed.</p>
+              </div>
               <label>
                 <span>Maximum text length</span>
                 <input min={1} onChange={(event) => onSafetyChange({ ...safety, maximumTextLength: Number(event.currentTarget.value) })} required step={1} type="number" value={safety.maximumTextLength} />

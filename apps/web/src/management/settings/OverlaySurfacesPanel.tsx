@@ -2,6 +2,7 @@ import { surfaceConfigurationSchema, type ActionableManagementError, type Surfac
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
+import { formatModuleLabel } from "../foundation/presentation-labels.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { defaultSurfaceSettingsApi, type SurfaceSettingsApi } from "./overlay-surfaces-api.js";
@@ -12,11 +13,12 @@ export interface OverlaySurfacesPanelProps {
   readonly api?: SurfaceSettingsApi | undefined;
   readonly onDirtyChange?: ((dirty: boolean) => void) | undefined;
   readonly manageNavigation?: boolean | undefined;
+  readonly onSummaryChange?: ((summary: { readonly count: number; readonly state: "loading" | "ready" | "attention" }) => void) | undefined;
 }
 type Model = { view: SurfaceSettingsView | null; drafts: ReadonlyMap<string, SurfaceConfiguration> };
 
 export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, OverlaySurfacesPanelProps>(function OverlaySurfacesPanel(
-  { api = defaultSurfaceSettingsApi, onDirtyChange, manageNavigation = true }, ref
+  { api = defaultSurfaceSettingsApi, onDirtyChange, manageNavigation = true, onSummaryChange }, ref
 ) {
   const [model, setModel] = useState<Model>({ view: null, drafts: new Map() });
   const [loading, setLoading] = useState(true);
@@ -55,6 +57,12 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
   const dirtyDrafts = [...model.drafts.values()].filter(draft => !same(draft, model.view?.surfaces.find(surface => surface.id === draft.id)));
   const dirty = dirtyDrafts.length > 0;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useEffect(() => {
+    onSummaryChange?.({
+      count: model.view?.surfaces.length ?? 0,
+      state: loading && model.view === null ? "loading" : refreshError !== null || actionError !== null || model.view?.desktop.state === "failed" ? "attention" : "ready"
+    });
+  }, [actionError, loading, model.view, onSummaryChange, refreshError]);
 
   const saveValues = useCallback(async (values: readonly SurfaceConfiguration[]): Promise<boolean> => {
     if (busyRef.current) return false;
@@ -134,8 +142,8 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
           <p>Modules are listed topmost first. Visibility changes affect this surface only.</p>
           {draft.layers.length === 0 ? <p>No registered modules on this surface.</p> : <ol className="overlay-surfaces__layers" aria-label={`${name} module order`}>
             {draft.layers.map((layer, index) => <li key={layer.moduleId}>
-              <label className="overlay-surfaces__checkbox"><input type="checkbox" aria-label={`Show ${layer.moduleId} on ${name}`} checked={layer.visible} onChange={event => edit({ ...draft, layers: draft.layers.map(row => row.moduleId === layer.moduleId ? { ...row, visible: event.currentTarget.checked } : row) })} />{layer.moduleId}</label>
-              <div className="overlay-surfaces__row-actions"><button type="button" aria-label={`Move ${layer.moduleId} up on ${name}`} disabled={index === 0} onClick={() => move(draft, index, -1)}>Up</button><button type="button" aria-label={`Move ${layer.moduleId} down on ${name}`} disabled={index === draft.layers.length - 1} onClick={() => move(draft, index, 1)}>Down</button></div>
+              <label className="overlay-surfaces__checkbox"><input type="checkbox" aria-label={`Show ${formatModuleLabel(layer.moduleId)} on ${name}`} checked={layer.visible} onChange={event => edit({ ...draft, layers: draft.layers.map(row => row.moduleId === layer.moduleId ? { ...row, visible: event.currentTarget.checked } : row) })} />{formatModuleLabel(layer.moduleId)}</label>
+              <div className="overlay-surfaces__row-actions"><button type="button" aria-label={`Move ${formatModuleLabel(layer.moduleId)} up on ${name}`} disabled={index === 0} onClick={() => move(draft, index, -1)}>Up</button><button type="button" aria-label={`Move ${formatModuleLabel(layer.moduleId)} down on ${name}`} disabled={index === draft.layers.length - 1} onClick={() => move(draft, index, 1)}>Down</button></div>
             </li>)}
           </ol>}
         </fieldset>

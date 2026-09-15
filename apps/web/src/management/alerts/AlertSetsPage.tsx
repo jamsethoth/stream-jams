@@ -20,6 +20,7 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
+import { formatEventLabel } from "../foundation/presentation-labels.js";
 import type { ManagementApi } from "../management-api.js";
 import { AlertThemeChooser } from "./AlertThemeChooser.js";
 import { alertTestNotice } from "./alert-test-notice.js";
@@ -129,6 +130,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
   const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const [rewardTitleContext, setRewardTitleContext] = useState<{ readonly setId: string; readonly key: string; readonly titles: ReadonlyMap<string, string> } | null>(null);
   const browserSourceRefreshFailed = useRef(false);
   const effectLoadGeneration = useRef(0);
   const disclosureSetId = useRef<string | null>(null);
@@ -209,10 +211,29 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     createAlertRewardSelection,
     null
   ), [createAlertRewardSelection, detail]);
+  const rewardIdsKey = useMemo(() => [...new Set((detail?.inventory ?? []).flatMap((alert) => alert.conditions.flatMap((condition) =>
+    condition.field === "channelPointReward" && Array.isArray(condition.value) ? condition.value.map(String) : []
+  )))].sort().join("\u0000"), [detail?.inventory]);
+  const rewardSetId = detail?.overview.id ?? null;
+  const rewardTitles = rewardTitleContext?.setId === rewardSetId && rewardTitleContext.key === rewardIdsKey
+    ? rewardTitleContext.titles
+    : null;
   const loadTwitchCustomRewards = useCallback(
     () => managementApi.getTwitchCustomRewards(),
     [managementApi]
   );
+
+  useEffect(() => {
+    setRewardTitleContext(null);
+    if (rewardIdsKey === "" || rewardSetId === null) return;
+    let cancelled = false;
+    void managementApi.getTwitchCustomRewards()
+      .then(({ rewards }) => {
+        if (!cancelled) setRewardTitleContext({ setId: rewardSetId, key: rewardIdsKey, titles: new Map(rewards.map((reward) => [reward.id, reward.title])) });
+      })
+      .catch(() => { if (!cancelled) setRewardTitleContext({ setId: rewardSetId, key: rewardIdsKey, titles: new Map() }); });
+    return () => { cancelled = true; };
+  }, [managementApi, rewardIdsKey, rewardSetId]);
 
   useEffect(() => {
     const setId = detail?.overview.id ?? null;
@@ -767,6 +788,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       filtered={filteredEventGroups}
                       groups={eventGroups}
                       issues={expandedDetail.overview.validationIssues}
+                      rewardTitles={rewardTitles}
                       onEventFilter={setEventFilter}
                       onAdd={() => openCreateAlertDialog()}
                       onAddForEvent={openCreateAlertDialog}
@@ -866,6 +888,7 @@ function AlertInventory({
   filtered,
   groups,
   issues,
+  rewardTitles,
   onAdd,
   onAddForEvent,
   onCreateVariation,
@@ -898,6 +921,7 @@ function AlertInventory({
   readonly filtered: FilteredAlertEventGroups;
   readonly groups: readonly AlertEventGroup[];
   readonly issues: readonly AlertValidationIssue[];
+  readonly rewardTitles: ReadonlyMap<string, string> | null;
   readonly onAdd: () => void;
   readonly onAddForEvent: (eventType: StreamEventType) => void;
   readonly onCreateVariation: (alert: AlertInventoryRow) => void;
@@ -971,6 +995,7 @@ function AlertInventory({
                       defaults={group.defaults}
                       fullGroup={fullGroup}
                       issues={issues}
+                      rewardTitles={rewardTitles}
                       onCreateVariation={onCreateVariation}
                       onDelete={onDelete}
                       onDuplicate={onDuplicate}
@@ -994,6 +1019,7 @@ function AlertInventory({
                         defaults={[]}
                         fullGroup={fullGroup}
                         issues={issues}
+                        rewardTitles={rewardTitles}
                         onCreateVariation={onCreateVariation}
                         onDelete={onDelete}
                         onDuplicate={onDuplicate}
@@ -1026,6 +1052,7 @@ function AlertRowsTable({
   defaults,
   fullGroup,
   issues,
+  rewardTitles,
   onCreateVariation,
   onDelete,
   onDuplicate,
@@ -1044,6 +1071,7 @@ function AlertRowsTable({
   readonly defaults: FilteredAlertEventGroup["defaults"];
   readonly fullGroup: AlertEventGroup;
   readonly issues: readonly AlertValidationIssue[];
+  readonly rewardTitles: ReadonlyMap<string, string> | null;
   readonly onCreateVariation: (alert: AlertInventoryRow) => void;
   readonly onDelete: (alert: AlertInventoryRow) => void;
   readonly onDuplicate: (alert: AlertInventoryRow) => void;
@@ -1080,12 +1108,12 @@ function AlertRowsTable({
             const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
-            const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known);
+            const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known, rewardTitles);
             return (
               <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
                 <th scope="row">
                   <span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"} · {formatProvider(alert.providerKind)} catalog</small>
-                  {summary.conditionSummaries.map((condition) => <small key={condition}>{condition}</small>)}
+                  {summary.conditionSummaries.map((condition, index) => <small key={`${condition}-${index}`}>{condition}{summary.conditionDetails[index] === null ? null : <span className="alert-sets-page__condition-detail">{summary.conditionDetails[index]}</span>}</small>)}
                   {summary.prioritySummary === null ? null : <small>{summary.prioritySummary}</small>}
                   {summary.weightSummary === null ? null : <small>{summary.weightSummary}</small>}
                 </th>
@@ -1416,7 +1444,7 @@ function maskRouteKey(url: string): string {
 }
 
 function formatEventType(value: string): string {
-  return value.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
+  return formatEventLabel(value);
 }
 
 function formatProvider(value: string): string {

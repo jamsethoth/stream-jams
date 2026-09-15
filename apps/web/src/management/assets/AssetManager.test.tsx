@@ -30,6 +30,19 @@ describe("AssetManager", () => {
     expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
   });
 
+  it("shows readable event labels while retaining the stored filter value", async () => {
+    const rewardItem = {
+      ...imageItem,
+      usage: { ...imageItem.usage, usages: imageItem.usage.usages.map((usage) => ({ ...usage, eventType: "channel_point_redemption" as const })) }
+    };
+    const fixture = createFixture({ listAssetLibraryItems: vi.fn(async () => [rewardItem]) });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+
+    expect(await screen.findByText(/Default \/ Channel point redemption \/ Landscape, Vertical/)).toBeVisible();
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
+    expect(screen.getByRole("option", { name: "Channel point redemption" })).toHaveValue("channel_point_redemption");
+  });
+
   it("shows only retry when the initial asset-library load fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const user = userEvent.setup();

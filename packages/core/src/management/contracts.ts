@@ -858,9 +858,25 @@ export const homeReadinessItemSchema = z.object({
   actionRoute: nonEmptyStringSchema
 });
 
+export const homeAlertConfigurationItemSchema = z.object({
+  alertId: nonEmptyStringSchema,
+  name: nonEmptyStringSchema,
+  eventType: nonEmptyStringSchema,
+  state: z.enum(["review-needed", "unavailable"]),
+  message: nonEmptyStringSchema,
+  actionRoute: nonEmptyStringSchema
+});
+
+export const homeAlertConfigurationSummarySchema = z.object({
+  state: z.enum(["no-active-set", "no-enabled-alerts", "configured", "attention", "unavailable"]),
+  enabledAlertCount: nonNegativeIntegerSchema,
+  items: z.array(homeAlertConfigurationItemSchema)
+});
+
 export const homeSetupSummarySchema = z.object({
   readiness: z.array(homeReadinessItemSchema),
   activeAlertSet: alertSetOverviewSchema.nullable(),
+  alertConfiguration: homeAlertConfigurationSummarySchema,
   actionableProblems: z.array(actionableManagementErrorSchema)
 });
 
