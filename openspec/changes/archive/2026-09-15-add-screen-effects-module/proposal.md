@@ -27,7 +27,7 @@ Chat-triggered jumpscares and other local media effects need their own authoring
 
 Builds on the implemented, accepted, spec-synced `add-shared-desktop-overlay-surface` and `add-routed-video-audio-controls` foundations. Extends core module/queue contracts, typed SQLite repositories and backup validation, event fan-out, audio batch ownership, protected APIs, management authoring, browser sources, and Operator. The video-shoutout module remains an independent proposal, not a dependency or a shipped layer.
 
-See [approved design and research](../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md).
+See [approved design and research](../../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md).
 
 ## Non-goals
 

@@ -21,12 +21,13 @@ The first local Corepack invocation could not read the user-level pnpm cache fro
 
 The first PR #105 CI run passed every job except `windows-desktop`. Its native-style probe exhausted the fixed 10-second PowerShell child-process timeout, and its port-conflict dialog check exhausted Playwright's implicit 5-second poll while that runner required 8.4 seconds for an earlier packaged-service startup. The latest `main` run at the branch base had already failed the same native-style probe before this change, confirming that failure was not introduced by artifact publication.
 
-The two test-only corrections preserve every assertion while allowing the existing hosted runner bounds: 30 seconds for the cold PowerShell native-style probe and 25 seconds for the asynchronous startup-failure dialog. Both exact failing cases then passed 2/2 locally, followed by the complete packaged desktop suite at 24/24, ESLint, and typechecking. The corrective hosted run remains pending.
+The two test-only corrections preserve every assertion while allowing the existing hosted runner bounds: 30 seconds for the cold PowerShell native-style probe and 25 seconds for the asynchronous startup-failure dialog. Both exact failing cases then passed 2/2 locally, followed by the complete packaged desktop suite at 24/24, ESLint, and typechecking. The corrected package and publication path subsequently passed on `main` as recorded below.
 
-## Remaining hosted acceptance
+## Hosted acceptance
 
-- [ ] After publication is explicitly authorized, push the implementation ref and manually dispatch `CI` for that exact ref.
-- [ ] Confirm the successful Windows job exposes the traceable artifact name, authenticated URL, SHA-256 digest, ref, full commit SHA, unsigned status, and 30-day retention in its summary.
-- [ ] Download through authenticated GitHub access, compare the downloaded archive's SHA-256 digest with the workflow summary, extract the complete folder, then exercise an isolated launch and native Quit.
+- GitHub Actions [run 34927763002](https://github.com/jamsethoth/stream-jams/actions/runs/34927763002) completed successfully for a push to `main` at commit `103609141980b663dc3d43d3f43e0fe7ef137d95`.
+- The published artifact was `stream-jams-windows-x64-main-103609141980b663dc3d43d3f43e0fe7ef137d95`, 170,544,034 bytes, with expiry `2026-10-15T04:14:16Z`. Its name identifies Windows x64, the `main` ref, and the full source commit; the expiry confirms the configured 30-day retention boundary.
+- GitHub reported SHA-256 `5db6b85d55b672f781014b68871f4f45fda18a6d82f9ef3a6b568d491d8837f5`. It exactly matched the downloaded archive at `C:\Users\James\Downloads\stream-jams-windows-x64-main-103609141980b663dc3d43d3f43e0fe7ef137d95.zip`.
+- The user confirmed the complete folder was downloaded through authenticated access, extracted, launched successfully, and exited through native Quit.
 
-Until those hosted checks pass, local packaging proves the upload input is runnable but does not prove GitHub publication, retention, download authorization, or archive round-trip behavior. No live user profile, credential, or secret overlay URL is required for the remaining check.
+This closes the hosted publication, retention, authenticated-download, integrity, extraction, launch, and native-Quit acceptance gap. It does not add or certify an installer, code signing, a durable release channel, automatic updates, startup integration, a Windows service, portable user state, or credential migration.
