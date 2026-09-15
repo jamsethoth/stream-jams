@@ -27,6 +27,13 @@ export const Inventory: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Neutral burst")).toBeVisible();
+    const browserSources = canvas.getByRole("region", { name: "Browser sources" });
+    const liveLabel = within(browserSources).getByText("Screen Effects Live");
+    await expect(liveLabel).toBeVisible();
+    await expect(getComputedStyle(liveLabel.parentElement!).display).toBe("grid");
+    await expect(within(browserSources).getByText("URL available")).toBeVisible();
+    await expect(within(browserSources).getByText("Screen Effects Test")).toBeVisible();
+    await expect(within(browserSources).getByText("create required")).toBeVisible();
     await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
     await expect(args.onEdit).toHaveBeenCalledWith(savedEffect.id, false);
   }
@@ -60,19 +67,34 @@ function createApi(
 ): ScreenEffectsApi {
   return {
     list: async () => documents,
-    listBrowserSources: async () => [{
-      id: "effects-live",
-      label: "Screen Effects live",
-      purpose: "live",
-      overlayId: "default",
-      scope: "module",
-      moduleId: "screen-effects",
-      targetProfileId: null,
-      enabled: true,
-      keyId: "effects-key",
-      url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_story",
-      status: "available"
-    }],
+    listBrowserSources: async () => [
+      {
+        id: "effects-live",
+        label: "Screen Effects Live",
+        purpose: "live",
+        overlayId: "default",
+        scope: "module",
+        moduleId: "screen-effects",
+        targetProfileId: null,
+        enabled: true,
+        keyId: "effects-key",
+        url: "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_story",
+        status: "available"
+      },
+      {
+        id: "effects-test",
+        label: "Screen Effects Test",
+        purpose: "test",
+        overlayId: "default",
+        scope: "module",
+        moduleId: "screen-effects",
+        targetProfileId: null,
+        enabled: true,
+        keyId: null,
+        url: null,
+        status: "create-required"
+      }
+    ],
     getModuleEnabled: async () => true,
     setModuleEnabled: async (enabled) => enabled,
     createBrowserSource: async (source) => source,

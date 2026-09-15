@@ -52,7 +52,7 @@
 }
 
 .screen-effects-list > li > div:first-child,
-.screen-effects-browser-sources li {
+.screen-effects-browser-sources li > div:first-child {
   display: grid;
   gap: 4px;
 }

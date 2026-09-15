@@ -12,10 +12,26 @@ describe("ScreenEffectsPage", () => {
     render(<ScreenEffectsPage api={api()} generateId={(prefix) => `${prefix}-new`} onEdit={vi.fn()} />);
 
     expect(await screen.findByText("Confetti")).toBeInTheDocument();
-    expect(screen.getByText("Screen Effects live")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Reveal Screen Effects live Browser Source URL" }));
-    expect(screen.getByLabelText("Screen Effects live Browser Source URL")).toHaveTextContent("/overlay/modules/screen-effects/live/");
+    expect(screen.getByText("Screen Effects Live")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Reveal Screen Effects Live Browser Source URL" }));
+    expect(screen.getByLabelText("Screen Effects Live Browser Source URL")).toHaveTextContent("/overlay/modules/screen-effects/live/");
     expect(screen.getByRole("link", { name: "Review trigger setup" })).toHaveAttribute("href", "/manage/event-sources");
+  });
+
+  it("shows each browser-source purpose once", async () => {
+    render(<ScreenEffectsPage
+      api={api({ includeTestSource: true, status: "create-required", url: null })}
+      onEdit={vi.fn()}
+    />);
+
+    const browserSources = await screen.findByRole("region", { name: "Browser sources" });
+    const liveSource = within(browserSources).getByText("Screen Effects Live").closest("li");
+    const testSource = within(browserSources).getByText("Screen Effects Test").closest("li");
+
+    expect(liveSource).not.toBeNull();
+    expect(testSource).not.toBeNull();
+    expect(within(liveSource!).getByText("create required")).toBeInTheDocument();
+    expect(within(testSource!).getByText("create required")).toBeInTheDocument();
   });
 
   it("opens a local new draft and confirms live enable changes", async () => {
@@ -60,7 +76,7 @@ describe("ScreenEffectsPage", () => {
     await screen.findByText("Confetti");
 
     await user.click(screen.getByRole("button", { name: "Regenerate URL" }));
-    const dialog = screen.getByRole("dialog", { name: "Regenerate Screen Effects live URL?" });
+    const dialog = screen.getByRole("dialog", { name: "Regenerate Screen Effects Live URL?" });
     const confirm = within(dialog).getByRole("button", { name: "Regenerate URL" });
     expect(confirm).toBeDisabled();
     await user.type(within(dialog).getByLabelText("Type REGENERATE to continue"), "REGENERATE");
@@ -82,13 +98,14 @@ function effect(): ScreenEffectDocument {
 
 function api(options: {
   readonly moduleEnabled?: boolean;
+  readonly includeTestSource?: boolean;
   readonly status?: "available" | "create-required" | "regenerate-required";
   readonly url?: string | null;
 } = {}): ScreenEffectsApi {
   const document = effect();
   const source = {
     id: "source-one",
-    label: "Screen Effects live",
+    label: "Screen Effects Live",
     purpose: "live" as const,
     overlayId: "default",
     scope: "module" as const,
@@ -99,9 +116,17 @@ function api(options: {
     url: options.url === undefined ? "http://127.0.0.1:39187/overlay/modules/screen-effects/live/ovl_secret" : options.url,
     status: options.status ?? "available"
   };
+  const testSource = {
+    ...source,
+    id: "source-two",
+    label: "Screen Effects Test",
+    purpose: "test" as const,
+    keyId: options.status === "create-required" ? null : "source-key-two",
+    url: options.url === undefined ? "http://127.0.0.1:39187/overlay/modules/screen-effects/test/ovl_secret" : options.url
+  };
   return {
     list: vi.fn(async () => [document]),
-    listBrowserSources: vi.fn(async () => [source]),
+    listBrowserSources: vi.fn(async () => options.includeTestSource === true ? [source, testSource] : [source]),
     getModuleEnabled: vi.fn(async () => options.moduleEnabled ?? true),
     setModuleEnabled: vi.fn(async (enabled) => enabled),
     createBrowserSource: vi.fn(async () => ({ ...source, keyId: "created-key", url: "http://127.0.0.1/created", status: "available" as const })),
