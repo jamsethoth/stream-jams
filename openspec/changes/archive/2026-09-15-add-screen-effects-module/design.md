@@ -1,10 +1,10 @@
 ## Context
 
-The app has one alert-specific queue/coordinator, normalized event sources, explicit audio routes and a registry/composition service. The two preceding slices delivered a shared visual recipient and routed soundtracks. This design builds on those contracts; see the [approved product design](../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md).
+The app has one alert-specific queue/coordinator, normalized event sources, explicit audio routes and a registry/composition service. The two preceding slices delivered a shared visual recipient and routed soundtracks. This design builds on those contracts; see the [approved product design](../../../../docs/superpowers/specs/2026-09-07-screen-effects-design.md).
 
 ## Goals / Non-Goals
 
-Execution details: [Screen Effects and merged operations implementation plan](../../../docs/superpowers/plans/2026-09-08-screen-effects-module.md). The baseline has external-event contracts but no live custom Streamer.bot subscription workflow; task S3-3 implements explicit configuration in the existing provider setup before those triggers can run. Bindings do not change subscriptions automatically.
+Execution details: [Screen Effects and merged operations implementation plan](../../../../docs/superpowers/plans/2026-09-08-screen-effects-module.md). The baseline has external-event contracts but no live custom Streamer.bot subscription workflow; task S3-3 implements explicit configuration in the existing provider setup before those triggers can run. Bindings do not change subscriptions automatically.
 
 **Goals:** Trusted local reward-triggered media; sequential effects concurrent with Alerts; independent visual/audio targets; merged authoritative operations with correctly scoped controls.
 

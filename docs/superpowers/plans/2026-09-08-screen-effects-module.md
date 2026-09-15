@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing TypeScript/Zod core, Fastify/SQLite repositories, React management/Operator, Electron visual/audio hosts, Vitest/Storybook/Playwright. No marketplace, plugin loader, external media service, or second provider connection.
 
-**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/add-screen-effects-module/design.md), [effect scenarios](../../../openspec/changes/add-screen-effects-module/specs/screen-effects/spec.md), [operations scenarios](../../../openspec/changes/add-screen-effects-module/specs/multi-module-playback-operations/spec.md), [Operator delta](../../../openspec/changes/add-screen-effects-module/specs/alert-playback-operator-controls/spec.md), [route-reference delta](../../../openspec/changes/add-screen-effects-module/specs/alert-audio-routing/spec.md), [OpenSpec tasks](../../../openspec/changes/add-screen-effects-module/tasks.md).
+**Spec:** [Product design](../specs/2026-09-07-screen-effects-design.md), [change design](../../../openspec/changes/archive/2026-09-15-add-screen-effects-module/design.md), [effect scenarios](../../../openspec/changes/archive/2026-09-15-add-screen-effects-module/specs/screen-effects/spec.md), [operations scenarios](../../../openspec/changes/archive/2026-09-15-add-screen-effects-module/specs/multi-module-playback-operations/spec.md), [Operator delta](../../../openspec/changes/archive/2026-09-15-add-screen-effects-module/specs/alert-playback-operator-controls/spec.md), [route-reference delta](../../../openspec/changes/archive/2026-09-15-add-screen-effects-module/specs/alert-audio-routing/spec.md), [OpenSpec tasks](../../../openspec/changes/archive/2026-09-15-add-screen-effects-module/tasks.md).
 
 ## Global constraints
 
@@ -388,7 +388,7 @@ This is the immutable update inside `updateEffectVariant`; reject an unknown var
 
 - Create: `tests/desktop/screen-effects.spec.ts`, `docs/verification/screen-effects.md`.
 - Modify: `tests/e2e/screen-effects.spec.ts`, `tests/e2e/multi-module-operator.spec.ts`, `docs/product-plan.md`, `docs/backlog.md`, `docs/mvp-runbook.md`.
-- Update implementation evidence/checkmarks in `openspec/changes/add-screen-effects-module/tasks.md` only when each corresponding gate is satisfied.
+- Update implementation evidence/checkmarks in `openspec/changes/archive/2026-09-15-add-screen-effects-module/tasks.md` only when each corresponding gate is satisfied.
 
 - [ ] Run the [shared verification commands](2026-09-08-screen-effects-implementation.md#shared-verification-ledger) and `openspec.cmd validate add-screen-effects-module --strict`. Revalidate the overlapping Alert/Operator deltas against both delivered foundations; retain all inherited soundtrack/mute scenarios. Record actual gate outcomes and classify any failures without weakening tests.
 - [ ] Rebuild/restart the authorized runtime, verify health, reload management, and follow create → save → enable → explicit test → Operator → OBS/desktop with neutral media. Verify Twitch reward and configured Streamer.bot fixtures independently under the single-active-provider model; do not mutate live channel rewards for QA.
