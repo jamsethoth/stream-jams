@@ -1097,8 +1097,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => changePreviewPlayback(false, Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Test draft</button>
           <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
-          <p className="alert-editor-page__preview-help">Preview renders this draft locally. Audio and TTS follow the preview options.</p>
-          <p className="alert-editor-page__test-summary">Draft input · Browser {sendDeviceOnly ? "none" : profileLabel(profileId)} · Devices {testDeviceNames.join(", ") || "none"} · Audio {sendIncludeAudio ? "included" : "excluded"} · TTS {sendIncludeTts ? "included" : "excluded"}</p>
+          <p className="alert-editor-page__preview-help">Preview renders this draft locally. Audio and TTS follow the preview options. · Draft input · Browser {sendDeviceOnly ? "none" : profileLabel(profileId)} · Devices {testDeviceNames.join(", ") || "none"} · Audio {sendIncludeAudio ? "included" : "excluded"} · TTS {sendIncludeTts ? "included" : "excluded"}</p>
         </div>
       </header>
 

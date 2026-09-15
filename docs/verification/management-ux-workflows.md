@@ -5,7 +5,8 @@
 - Baseline: `origin/main` at `386b35a`; slice branch `codex/simplify-management-ux-workflows`; specification commit `f60c191`.
 - Full application: production build served by the repository Fastify runtime on unused loopback port `39227`.
 - Data: ignored disposable config, SQLite data, and assets under `test-results/ux-full-app`; default starter data plus one synthetic Screen Effect using a repository image.
-- Safety: the user's configured service and data were not used or stopped. No Browser Source URL was created or revealed, the Screen Effects module remained disabled, and the saved-test confirmation was cancelled without queueing output.
+- Safety: all deliberate QA used the isolated service and disposable store. No user service was stopped, no Browser Source URL was created or revealed, the disposable Screen Effects module remained disabled, and the saved-test confirmation was cancelled without queueing output.
+- Boundary deviation: a later restart followed Playwright cleanup, which had removed the ignored disposable config. The runtime therefore reported the default port `39187`; it was stopped immediately from that startup evidence before any browser was opened or action invoked. The process may have opened the default configured store during startup, so this is not represented as fully isolated validation.
 
 ## Evidence Boundaries
 
