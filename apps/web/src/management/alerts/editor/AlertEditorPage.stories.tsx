@@ -376,6 +376,11 @@ export const GroupedEventNavigation: Story = {
     await waitFor(() => expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
     await expect(canvas.getByText("Variation of New raid")).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
+    const showUnused = canvas.getByRole("checkbox", { name: "Show unused event types" });
+    await expect(showUnused).not.toBeChecked();
+    await expect(canvas.queryByRole("button", { name: /Resubscription alerts/u })).not.toBeInTheDocument();
+    await userEvent.click(showUnused);
+    await expect(canvas.getByRole("button", { name: /Resubscription alerts/u })).toBeVisible();
     await userEvent.click(canvas.getByRole("button", { name: /Collapse Raid/u }));
     await userEvent.type(canvas.getByLabelText("Search alerts"), "large raid");
     await expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");

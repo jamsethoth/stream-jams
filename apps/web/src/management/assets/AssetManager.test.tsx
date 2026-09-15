@@ -16,7 +16,9 @@ describe("AssetManager", () => {
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
 
     await screen.findByRole("button", { name: "Follower burst" });
-    expect(screen.getByText("Filters", { selector: "summary" }).closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("More filters", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("searchbox", { name: "Search assets" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Type")).toBeInTheDocument();
     expect(screen.getByText("seasonal")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /New follower/ })).toHaveAttribute(
       "href",
@@ -82,11 +84,22 @@ describe("AssetManager", () => {
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
     await screen.findByRole("button", { name: "Follower burst" });
 
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
     await userEvent.selectOptions(screen.getByLabelText("Usage"), "unused");
     await userEvent.click(screen.getByRole("checkbox", { name: "seasonal" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "audio" }));
 
     expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
+    expect(screen.getByLabelText("3 active secondary filters")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
+    expect(screen.getByText("More filters", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
+    expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
+    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.queryByLabelText(/active secondary filters/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Follower burst" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
   });
 

@@ -1,6 +1,7 @@
 import { expect, test, type BrowserContext } from "@playwright/test";
 
 test("management opens the focused Operator console and global controls apply returned state", async ({ context, page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   let state = activeSnapshot();
   const commands: string[] = [];
   await installManagementSession(context);
@@ -29,6 +30,10 @@ test("management opens the focused Operator console and global controls apply re
   await expect(page.getByRole("heading", { name: "Operator Console" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
   await expect(page.getByText("Current follow")).toBeVisible();
+  await expect(page.getByText("Current sweep")).toBeVisible();
+  const currentCards = page.getByRole("heading", { name: "Now playing (2)" }).locator("xpath=following-sibling::ol[1]/li");
+  await expect(currentCards).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
   const pause = page.getByRole("button", { name: "Pause all queues" });
   await pause.focus();
@@ -52,6 +57,24 @@ test("management opens the focused Operator console and global controls apply re
   ]);
   await page.getByRole("link", { name: "Back to management" }).click();
   await expect(page).toHaveURL(/\/manage$/u);
+});
+
+test("healthy phone layout exposes current playback and Skip without scrolling", async ({ context, page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installManagementSession(context);
+  await context.route(/^https?:\/\/[^/]+\/playback\/operations$/u, (route) => route.fulfill({ contentType: "application/json", json: activeSnapshot() }));
+
+  await page.goto("/operator");
+  const nowPlaying = page.getByRole("heading", { name: "Now playing (2)" });
+  const firstSkip = page.getByRole("button", { name: "Skip Current follow in Alerts" });
+  await expect(nowPlaying).toBeVisible();
+  await expect(firstSkip).toBeVisible();
+  const [headingBox, skipBox] = await Promise.all([nowPlaying.boundingBox(), firstSkip.boundingBox()]);
+  expect(headingBox).not.toBeNull();
+  expect(skipBox).not.toBeNull();
+  expect(headingBox!.y + headingBox!.height).toBeLessThanOrEqual(844);
+  expect(skipBox!.y + skipBox!.height).toBeLessThanOrEqual(844);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
 test("a failed later refresh retains the safe snapshot and links Diagnostics", async ({ context, page }) => {
@@ -78,7 +101,7 @@ function activeSnapshot() {
   return {
     revision: 2,
     owners: [{ moduleId: "alerts", paused: false }, { moduleId: "screen-effects", paused: false }],
-    current: [row("alerts", "current", "Current follow", "playing")],
+    current: [row("alerts", "current", "Current follow", "playing"), row("screen-effects", "current-effect", "Current sweep", "playing")],
     queued: [row("alerts", "next", "Next follow", "queued", 1)],
     recent: [row("alerts", "recent", "Recent follow", "completed")],
     paused: false,

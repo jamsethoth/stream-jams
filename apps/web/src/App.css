@@ -247,7 +247,10 @@ textarea {
 }
 
 .management-brand {
+  align-items: center;
   border-bottom: 1px solid var(--color-border);
+  display: flex;
+  justify-content: space-between;
   margin: 0 4px 18px;
   padding: 0 8px 18px;
 }
@@ -259,11 +262,15 @@ textarea {
   margin: 0 0 3px;
 }
 
-.management-brand span {
+.management-brand__current {
   color: var(--color-text-muted);
   font-size: 12px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.management-nav__trigger {
+  display: none;
 }
 
 .management-sidebar .management-nav {
@@ -416,7 +423,7 @@ a:focus-visible {
 }
 
 .operator-section {
-  margin-top: 28px;
+  margin-top: 20px;
 }
 
 .operator-section__heading {
@@ -436,6 +443,19 @@ a:focus-visible {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 14px;
+}
+
+.operator-module-list {
+  gap: 8px;
+}
+
+.operator-module-item {
+  padding-block: 10px;
+}
+
+.operator-module-heading {
+  font-size: 16px;
+  margin: 0;
 }
 
 .operator-item__summary > div {
@@ -987,52 +1007,42 @@ a:focus-visible {
     padding-bottom: 10px;
   }
 
-  .management-sidebar .management-nav > ul {
-    display: flex;
-    overflow-x: auto;
+  .management-nav__trigger {
+    display: inline-flex;
   }
 
-  .management-sidebar .management-nav > ul > li {
-    flex: 0 0 auto;
+  .management-sidebar .management-nav {
+    display: none;
+  }
+
+  .management-sidebar .management-nav--mobile-open {
+    display: block;
+  }
+
+  .management-sidebar .management-nav > ul {
+    display: grid;
   }
 
   .management-sidebar .management-nav a {
-    border-bottom: 3px solid transparent;
-    border-left: 0;
-    white-space: nowrap;
+    border-left: 3px solid transparent;
   }
 
   .management-sidebar .management-nav a[aria-current="page"] {
-    border-bottom-color: var(--color-accent);
+    border-left-color: var(--color-accent);
   }
 
-  .management-sidebar .management-nav__group,
   .management-sidebar__footer {
     display: none;
   }
 
   .management-sidebar .management-nav ul.management-nav__children {
-    display: block;
-    margin: 0;
+    display: grid;
   }
 }
 
 @media (max-width: 640px) {
   :root {
     --space-page: 16px;
-  }
-
-  .management-sidebar .management-nav > ul {
-    flex-wrap: wrap;
-    overflow-x: visible;
-  }
-
-  .management-sidebar .management-nav > ul > li {
-    flex: 1 1 auto;
-  }
-
-  .management-sidebar .management-nav a {
-    text-align: center;
   }
 
   .management-page-header__row,

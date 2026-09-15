@@ -1,14 +1,15 @@
 import type { VideoAudioSettings } from "@stream-jams/core";
 
-export function MediaAudioControls({ value, hasSeparateAudio, onChange, disabled = false }: {
+export function MediaAudioControls({ value, hasSeparateAudio, onChange, disabled = false, checkboxClassName = "alert-editor-inspector__check" }: {
   readonly value: VideoAudioSettings;
   readonly hasSeparateAudio: boolean;
   readonly onChange: (value: VideoAudioSettings) => void;
   readonly disabled?: boolean;
+  readonly checkboxClassName?: string;
 }) {
   return <fieldset disabled={disabled}>
     <legend>Video audio</legend>
-    <label className="alert-editor-inspector__check">
+    <label className={checkboxClassName}>
       <input type="checkbox" checked={value.playEmbeddedAudio} onChange={(event) => onChange({ ...value, playEmbeddedAudio: event.currentTarget.checked })} />
       Play embedded audio
     </label>

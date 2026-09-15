@@ -379,6 +379,7 @@ test("diagnostics workspace preserves correction context and copies sanitized ev
   await expect(page).toHaveURL(/\/modules\/alerts\?diagnostic=ref-output-e2e#browser-sources$/);
   await expect(page.getByRole("heading", { name: "Browser sources" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Browser sources" })).toBeInViewport();
+  await page.getByRole("button", { name: "Navigation" }).click();
   await page.getByRole("link", { name: "Diagnostics" }).click();
 
   await page.getByPlaceholder("Reference ID or message").fill("");

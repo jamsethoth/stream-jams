@@ -56,8 +56,6 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [setFilter, setSetFilter] = useState("all");
   const [eventFilter, setEventFilter] = useState("all");
   const [tagFilters, setTagFilters] = useState<readonly string[]>([]);
-  const [compactFilters, setCompactFilters] = useState(false);
-  const [filtersExpanded, setFiltersExpanded] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [tags, setTags] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -66,15 +64,6 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const [replacement, setReplacement] = useState<ReplacementState | null>(null);
   const [deleteItem, setDeleteItem] = useState<AssetLibraryItem | null>(null);
   const hasLoadedItems = useRef(false);
-
-  useEffect(() => {
-    const media = window.matchMedia?.("(max-width: 700px)");
-    if (media === undefined) return;
-    const update = () => setCompactFilters(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -118,6 +107,8 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
   const allTags = useMemo(() => [...new Set(items.flatMap((item) => item.tags))].sort(), [items]);
   const setOptions = useMemo(() => uniqueUsageOptions(items, "set"), [items]);
   const eventOptions = useMemo(() => uniqueUsageOptions(items, "event"), [items]);
+  const activeSecondaryFilterCount = [usageFilter, healthFilter, moduleFilter, setFilter, eventFilter]
+    .filter((value) => value !== "all").length + tagFilters.length;
   const filtered = useMemo(() => items.filter((item) => {
     const query = search.trim().toLowerCase();
     const textMatch = query === "" || [item.displayName, item.originalFileName, item.mimeType, ...item.tags]
@@ -266,11 +257,13 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
       {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
 
-      <details className="asset-library__filter-disclosure" onToggle={(event) => { if (compactFilters) setFiltersExpanded(event.currentTarget.open); }} open={!compactFilters || filtersExpanded}>
-        <summary>Filters</summary>
+      <div className="asset-library__primary-filters" aria-label="Primary asset filters">
+        <label className="asset-library__search"><span>Search assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
+        <FilterSelect label="Type" onChange={setMediaType} value={mediaType} options={["all", "image", "gif", "video", "audio"]} />
+      </div>
+      <details className="asset-library__filter-disclosure">
+        <summary>More filters {activeSecondaryFilterCount > 0 ? <span aria-label={`${activeSecondaryFilterCount} active secondary filters`}>{activeSecondaryFilterCount}</span> : null}</summary>
         <div className="asset-library__filters" aria-label="Asset filters">
-          <label className="asset-library__search"><span>Search assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
-          <FilterSelect label="Type" onChange={setMediaType} value={mediaType} options={["all", "image", "gif", "video", "audio"]} />
           <FilterSelect label="Usage" onChange={setUsageFilter} value={usageFilter} options={["all", "used", "unused"]} />
           <FilterSelect label="Health" onChange={setHealthFilter} value={healthFilter} options={["all", "available", "missing", "broken"]} />
           <FilterSelect label="Module" onChange={setModuleFilter} value={moduleFilter} options={["all", "alerts"]} />
@@ -278,6 +271,7 @@ export function AssetManager({ assetApi, managementApi }: AssetManagerProps) {
           <label><span>Event</span><select onChange={(event) => setEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All</option>{eventOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
         </div>
         {allTags.length === 0 ? null : <fieldset className="asset-library__tag-filters"><legend>Tags (match all)</legend>{allTags.map((tag) => <label key={tag}><input checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} type="checkbox" />{tag}</label>)}</fieldset>}
+        <button className="button button--secondary button--compact" disabled={activeSecondaryFilterCount === 0} onClick={() => { setUsageFilter("all"); setHealthFilter("all"); setModuleFilter("all"); setSetFilter("all"); setEventFilter("all"); setTagFilters([]); }} type="button">Clear filters</button>
       </details>
 
       {loading ? <p className="management-empty">Loading asset library...</p> : null}

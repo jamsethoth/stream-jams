@@ -83,7 +83,10 @@ export const VideoWithSeparateSound: Story = {
   args: { api: createApi(effect({ video: true, separateSound: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
+    const embeddedAudio = await canvas.findByRole("checkbox", { name: "Play embedded audio" });
+    await expect(embeddedAudio).toBeChecked();
+    await expect(embeddedAudio.closest("label")).toHaveClass("screen-effects-check");
+    await expect(canvas.getByRole("checkbox", { name: /^OBS Browser Source$/u }).closest("label")).toHaveClass("screen-effects-check");
     await expect(canvas.getByText(/Both the video soundtrack and separate audio will play/u)).toBeVisible();
   }
 };
