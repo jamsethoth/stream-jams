@@ -124,6 +124,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [eventFilter, setEventFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [profileFilter, setProfileFilter] = useState("all");
+  const [showUnusedEventTypes, setShowUnusedEventTypes] = useState(false);
   const [browserSourceStatusUpdatedAt, setBrowserSourceStatusUpdatedAt] = useState<string | null>(null);
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
@@ -190,12 +191,15 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     detail?.inventory ?? [],
     detail?.overview.validationIssues ?? []
   ), [detail]);
-  const filteredEventGroups = useMemo(() => filterAlertEventGroups(eventGroups, {
+  const visibleEventGroups = useMemo(() => showUnusedEventTypes
+    ? eventGroups
+    : eventGroups.filter((group) => group.defaultCount + group.variationCount > 0), [eventGroups, showUnusedEventTypes]);
+  const filteredEventGroups = useMemo(() => filterAlertEventGroups(visibleEventGroups, {
     query,
     eventType: eventFilter,
     ...(statusFilter === "all" ? {} : { status: statusFilter as "enabled" | "disabled" }),
     ...(profileFilter === "all" ? {} : { profileId: profileFilter as TargetProfileId })
-  }), [eventFilter, eventGroups, profileFilter, query, statusFilter]);
+  }), [eventFilter, profileFilter, query, statusFilter, visibleEventGroups]);
   const expandedEventKeys = useMemo(() => new Set([
     ...manualExpandedEventKeys,
     ...filteredEventGroups.forcedOpenKeys
@@ -775,6 +779,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       onQuery={setQuery}
                       onReset={(alert) => setAlertMutation({ action: "reset", alert })}
                       onStatusFilter={setStatusFilter}
+                      onShowUnusedEventTypes={setShowUnusedEventTypes}
                       onTest={requestInlineTest}
                       onTestProfile={(alert, targetProfileId) => void sendInlineTest(alert, targetProfileId)}
                       onToggle={(alert) => void toggleAlert(alert)}
@@ -787,6 +792,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       profileFilter={profileFilter}
                       query={query}
                       statusFilter={statusFilter}
+                      showUnusedEventTypes={showUnusedEventTypes}
                       testMenuAlertId={testMenuAlertId}
                       testMenuProfileIds={testMenuProfileIds}
                       testingAlertId={testingAlertId}
@@ -872,6 +878,7 @@ function AlertInventory({
   onQuery,
   onReset,
   onStatusFilter,
+  onShowUnusedEventTypes,
   onTest,
   onTestProfile,
   onToggle,
@@ -879,6 +886,7 @@ function AlertInventory({
   profileFilter,
   query,
   statusFilter,
+  showUnusedEventTypes,
   testMenuAlertId,
   testMenuProfileIds,
   testingAlertId,
@@ -902,6 +910,7 @@ function AlertInventory({
   readonly onQuery: (value: string) => void;
   readonly onReset: (alert: AlertInventoryRow) => void;
   readonly onStatusFilter: (value: string) => void;
+  readonly onShowUnusedEventTypes: (value: boolean) => void;
   readonly onTest: (alert: AlertInventoryRow) => void;
   readonly onTestProfile: (alert: AlertInventoryRow, targetProfileId: TargetProfileId) => void;
   readonly onToggle: (alert: AlertInventoryRow) => void;
@@ -909,6 +918,7 @@ function AlertInventory({
   readonly profileFilter: string;
   readonly query: string;
   readonly statusFilter: string;
+  readonly showUnusedEventTypes: boolean;
   readonly testMenuAlertId: string | null;
   readonly testMenuProfileIds: readonly TargetProfileId[];
   readonly testingAlertId: string | null;
@@ -921,6 +931,7 @@ function AlertInventory({
         <label><span>Event</span><select onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</select></label>
         <label><span>Status</span><select onChange={(event) => onStatusFilter(event.currentTarget.value)} value={statusFilter}><option value="all">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
         <label><span>Profile</span><select onChange={(event) => onProfileFilter(event.currentTarget.value)} value={profileFilter}><option value="all">All profiles</option><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label>
+        <label className="alert-sets-page__unused-events"><input checked={showUnusedEventTypes} onChange={(event) => onShowUnusedEventTypes(event.currentTarget.checked)} type="checkbox" /><span>Show unused event types</span></label>
       </div>
       <div className="alert-sets-page__event-groups">
         {filtered.groups.map((group) => {
@@ -1005,7 +1016,7 @@ function AlertInventory({
           );
         })}
       </div>
-      {filtered.groups.length === 0 ? <div className="alert-sets-page__empty-row"><p>No alerts match these filters.</p><button onClick={() => { onQuery(""); onEventFilter("all"); onStatusFilter("all"); onProfileFilter("all"); }} type="button">Clear filters</button></div> : null}
+      {filtered.groups.length === 0 ? <div className="alert-sets-page__empty-row">{groups.every((group) => group.defaultCount + group.variationCount === 0) && !filtered.hasActiveFilters ? <p>No alerts configured yet.</p> : <><p>No alerts match these filters.</p><button onClick={() => { onQuery(""); onEventFilter("all"); onStatusFilter("all"); onProfileFilter("all"); }} type="button">Clear filters</button></>}</div> : null}
     </section>
   );
 }

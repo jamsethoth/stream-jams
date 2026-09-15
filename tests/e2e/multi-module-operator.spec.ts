@@ -60,6 +60,16 @@ test("Operator targets independent Alert and Screen Effects queues", async ({ co
   await page.getByRole("button", { name: "Clear pending" }).nth(1).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toContainText("Clear 1 pending Screen Effects item?");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("button", { name: "Clear pending" })).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  const clearTrigger = page.getByRole("button", { name: "Clear pending" }).nth(1);
+  await expect(clearTrigger).toBeFocused();
+  await clearTrigger.press("Enter");
   await dialog.getByRole("button", { name: "Clear pending" }).click();
   await expect(page.getByRole("heading", { name: "Pending (1)" })).toBeVisible();
 

@@ -185,6 +185,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTab>("layers");
   const [search, setSearch] = useState("");
+  const [showUnusedEventTypes, setShowUnusedEventTypes] = useState(false);
   const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(new Set());
   const disclosureSetId = useRef<string | null>(null);
   const [canvasViews, setCanvasViews] = useState<Partial<Record<TargetProfileId, CanvasViewState>>>({});
@@ -522,7 +523,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setDetail?.inventory ?? [],
     setDetail?.overview.validationIssues ?? []
   ), [setDetail]);
-  const filteredEventGroups = useMemo(() => filterAlertEventGroups(eventGroups, { query: search }), [eventGroups, search]);
+  const visibleEventGroups = useMemo(() => showUnusedEventTypes
+    ? eventGroups
+    : eventGroups.filter((group) => group.defaultCount + group.variationCount > 0), [eventGroups, showUnusedEventTypes]);
+  const filteredEventGroups = useMemo(() => filterAlertEventGroups(visibleEventGroups, { query: search }), [search, visibleEventGroups]);
   const filteredAlerts = useMemo(() => filteredEventGroups.groups.flatMap((group) => [
     ...group.defaults.flatMap(({ alert, variations }) => [alert, ...variations]),
     ...group.orphanVariations
@@ -1124,6 +1128,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <div><strong>{setDetail?.overview.name ?? "Alert set"}</strong><span>{setDetail?.inventory.length ?? 0} alerts</span></div>
           </div>
           <label className="alert-editor-page__search"><span>Search alerts</span><input aria-label="Search alerts" onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>
+          <label className="alert-editor-page__unused-events"><input checked={showUnusedEventTypes} onChange={(event) => setShowUnusedEventTypes(event.currentTarget.checked)} type="checkbox" />Show unused event types</label>
           <nav aria-label="Alert editor selection" className="alert-editor-page__event-navigation">
             {filteredEventGroups.groups.map((group) => {
               const expanded = expandedEventKeys.has(group.key);

@@ -533,6 +533,7 @@ describe("AlertSetsPage", () => {
   });
 
   it("renders canonical event disclosures, unknown events, and labelled orphan variations", async () => {
+    const user = userEvent.setup();
     const source = detail();
     const follow = source.inventory[0]!;
     source.inventory = [
@@ -560,12 +561,53 @@ describe("AlertSetsPage", () => {
     expect(followToggle).toHaveTextContent("2 defaults");
     expect(followToggle).toHaveTextContent("2 variations");
     expect(followToggle).toHaveTextContent("Warning");
-    expect(screen.getByRole("button", { name: "Expand Resubscription alerts" })).toHaveAttribute("aria-expanded", "false");
+    const showUnused = screen.getByRole("checkbox", { name: "Show unused event types" });
+    expect(showUnused).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: "Expand Resubscription alerts" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Collapse future_provider_event alerts" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeInTheDocument();
     expect(screen.getByText("Orphan follow")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable Follow event" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add alert for future_provider_event" })).not.toBeInTheDocument();
+    await user.click(showUnused);
+    expect(screen.getByRole("button", { name: "Expand Resubscription alerts" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(showUnused);
+    expect(screen.queryByRole("button", { name: "Expand Resubscription alerts" })).not.toBeInTheDocument();
+  });
+
+  it("keeps disabled and invalid configured events visible while hiding unused events", async () => {
+    const source = detail();
+    source.overview = {
+      ...source.overview,
+      validationIssues: [{
+        ...issue("follow-blocker", "blocker", "FOLLOW_BLOCKER", "Repair the configured follow alert."),
+        alertId: source.inventory[0]!.id,
+        eventType: "follow"
+      }]
+    };
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source)
+    })} onEditAlert={vi.fn()} />);
+
+    const follow = await screen.findByRole("button", { name: "Collapse Follow alerts" });
+    expect(follow).toHaveTextContent("0 enabled");
+    expect(follow).toHaveTextContent("Blocker");
+    expect(screen.queryByRole("button", { name: "Expand Cheer alerts" })).not.toBeInTheDocument();
+  });
+
+  it("shows a create action and unused-event access for an empty configured set", async () => {
+    const source = detail();
+    source.inventory = [];
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source)
+    })} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("No alerts configured yet.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add alert" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Show unused event types" })).not.toBeChecked();
+    expect(screen.queryByText("No alerts match these filters.")).not.toBeInTheDocument();
   });
 
   it("keeps an alert-specific blocker off sibling defaults in the same event", async () => {
@@ -617,7 +659,8 @@ describe("AlertSetsPage", () => {
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={alertSetsApi({ createAlert, getAlertSet })} onEditAlert={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "Add alert for Resubscription" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Show unused event types" }));
+    await user.click(screen.getByRole("button", { name: "Add alert for Resubscription" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
     expect(within(dialog).getByLabelText("Event type")).toBeDisabled();
     expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();

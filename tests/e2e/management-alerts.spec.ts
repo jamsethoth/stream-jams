@@ -169,6 +169,7 @@ test("management alerts reviews the starter set and safely manages its landscape
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/manage");
+  await page.getByRole("button", { name: "Navigation" }).click();
   await page.getByRole("link", { name: "Alerts" }).click();
 
   const browserSources = page.getByRole("region", { name: "Browser sources" });
@@ -389,6 +390,7 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
 
   await page.goto("/manage/modules/alerts");
   const selectedSet = page.getByRole("region", { name: "Default alert set" });
+  await selectedSet.getByRole("checkbox", { name: "Show unused event types" }).check();
   await selectedSet.getByRole("button", { name: "Add alert for Community gift received" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add alert" });
   await expect(createDialog.getByLabel("Event type")).toBeDisabled();
@@ -502,6 +504,7 @@ test("management alerts creates a Raid alert from the selected Bold Pop theme", 
 
   await page.goto("/manage/modules/alerts");
   const selectedSet = page.getByRole("region", { name: "Default alert set" });
+  await selectedSet.getByRole("checkbox", { name: "Show unused event types" }).check();
   await selectedSet.getByRole("button", { name: "Add alert for Raid" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add alert" });
   const boldPopChoice = createDialog.getByRole("radio", { name: "Bold Pop" });
@@ -1442,6 +1445,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   });
 
   await page.goto("/manage");
+  await page.getByRole("button", { name: "Navigation" }).click();
   await page.getByRole("link", { name: "Alerts" }).click();
   const tabletAlertRow = page.getByRole("row", { name: /New follower/u });
   await expect(tabletAlertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();

@@ -124,4 +124,9 @@ Images: C:/Users/James/.codex/visualizations/2026/09/15/01a0a5da-5be8-7732-9f0a-
 
 These fixtures support the findings but are not acceptance evidence for the corrected build.
 
+## Full-application evidence addendum (2026-09-15 handoff clarification)
+
+The original six findings were source-based and the subsequent visual audit used Storybook fixtures; neither alone represents the user's installed app, data, or production configuration. Acceptance for this implementation therefore uses the production React build served by the real local Fastify runtime from this worktree, real management/operator routing, and a temporary config/SQLite/assets root populated only with representative synthetic data. The fixture uses an unused loopback port, does not connect output clients, does not dispatch live tests, does not touch user configuration, and removes its temporary profile after each run. Operator current/queued items are supplied by one browser-route stub because those transient occurrences are not persisted; the full application shell, auth bootstrap, layout, and other management data use the task-owned runtime.
+
+Baseline identity was `origin/main` `386b35a`; the full-app reproduction build included local operator corrections after specification commit `8a4f710`, while the alert, navigation, Screen Effects, and asset-filter surfaces remained unchanged from that baseline. Full-app checks confirmed the remaining four findings and accepted the corrected operator modal/order behavior. Storybook remains component coverage, not full-app acceptance. Any blocked full-app scenario must stay incomplete and be reported explicitly.
 

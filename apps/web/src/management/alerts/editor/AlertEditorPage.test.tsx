@@ -1965,6 +1965,10 @@ describe("AlertEditorPage", () => {
     expect(selectedEvent).toHaveAttribute("aria-expanded", "true");
     expect(selectedEvent).toBeDisabled();
     await waitFor(() => expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
+    const showUnused = screen.getByRole("checkbox", { name: "Show unused event types" });
+    expect(showUnused).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: /Expand Resubscription/u })).not.toBeInTheDocument();
+    await user.click(showUnused);
     expect(screen.getByRole("button", { name: /Expand Resubscription/u })).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByRole("button", { name: /Collapse future_celebration/u })).toBeInTheDocument();
     expect(screen.getByText("Variation of New raid")).toBeVisible();

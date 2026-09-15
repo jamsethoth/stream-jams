@@ -2,6 +2,8 @@
 
 The current frontend already has a shared modal focus trap, grouped alert event projections, route-guarded management navigation, scoped Screen Effects controls, and a typed asset-filter model. The audit corrections therefore change presentation and focus lifecycle at existing React boundaries rather than introducing new domain models. The applicable MVP UX sections are Operator Console, Information Architecture, Visual Foundation accessibility/responsive scope, Cross-Cutting Confirmation Pattern, Alert Sets, Alert Editor, and Asset Library. All six corrections are within the implemented product surface; no backlog item, runtime contract, or output destination is promoted.
 
+Source inspection and Storybook fixtures are diagnostic inputs only. Final acceptance uses the built production UI served by a task-owned local runtime on an unused loopback port with a disposable synthetic SQLite/assets profile. The fixture must not read or mutate user configuration, connect real outputs, or dispatch live tests. Where transient operator state cannot be persisted, the fixture may stub only that response while retaining the real served shell, routing, auth bootstrap, and layout; this limitation is recorded separately from full runtime-state acceptance.
+
 ## Goals / Non-Goals
 
 **Goals:**

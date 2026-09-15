@@ -382,10 +382,11 @@ function MediaPanel({ asset, onChoose, onRemove, selected, update }: {
     {visual === null ? null : <>
       <LayoutFields selected={selected} update={update} />
       <div className="screen-effects-fields-inline">
-        <label><input checked={selected.visualOutputs.browserSource} onChange={(event) => { const browserSource = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, browserSource } })); }} type="checkbox" />OBS Browser Source</label>
-        <label><input checked={selected.visualOutputs.desktop} onChange={(event) => { const desktop = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, desktop } })); }} type="checkbox" />Desktop overlay</label>
+        <label className="screen-effects-check"><input checked={selected.visualOutputs.browserSource} onChange={(event) => { const browserSource = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, browserSource } })); }} type="checkbox" />OBS Browser Source</label>
+        <label className="screen-effects-check"><input checked={selected.visualOutputs.desktop} onChange={(event) => { const desktop = event.currentTarget.checked; update((variant) => ({ ...variant, visualOutputs: { ...variant.visualOutputs, desktop } })); }} type="checkbox" />Desktop overlay</label>
       </div>
       {visual.mediaType === "video" ? <MediaAudioControls
+        checkboxClassName="screen-effects-check"
         hasSeparateAudio={selected.sound !== null}
         onChange={(value) => update((variant) => ({
           ...variant,

@@ -29,7 +29,9 @@ describe("OperatorApp", () => {
   it("shows simultaneous current items and real per-module pending positions", async () => {
     render(<OperatorApp api={api()} />);
 
-    expect(await screen.findByRole("heading", { name: "Now playing (2)" })).toBeVisible();
+    const nowPlaying = await screen.findByRole("heading", { name: "Now playing (2)" });
+    const moduleQueues = screen.getByRole("heading", { name: "Module queues" });
+    expect(nowPlaying.compareDocumentPosition(moduleQueues) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("Large raid")).toBeVisible();
     expect(screen.getByText("Flash sweep")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Pending (2)" })).toBeVisible();
@@ -94,6 +96,53 @@ describe("OperatorApp", () => {
     expect(dialog).toHaveTextContent("Clear 1 pending Screen Effects item?");
     await user.click(within(dialog).getByRole("button", { name: "Clear pending" }));
     expect(playbackApi.clear).toHaveBeenCalledWith("screen-effects", 1, 7);
+  });
+
+  it("contains clear confirmation focus and restores its keyboard trigger on dismissal", async () => {
+    const user = userEvent.setup();
+    const playbackApi = api();
+    render(<OperatorApp api={playbackApi} />);
+    await screen.findByText("Large raid");
+    const trigger = screen.getAllByRole("button", { name: "Clear pending" })[1]!;
+
+    trigger.focus();
+    await user.keyboard("{Enter}");
+    const dialog = screen.getByRole("dialog");
+    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+    const confirm = within(dialog).getByRole("button", { name: "Clear pending" });
+    expect(cancel).toHaveFocus();
+
+    await user.tab({ shift: true });
+    expect(confirm).toHaveFocus();
+    await user.tab();
+    expect(cancel).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+    expect(playbackApi.clear).not.toHaveBeenCalled();
+
+    await user.keyboard("{Enter}");
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    expect(trigger).toHaveFocus();
+    expect(playbackApi.clear).not.toHaveBeenCalled();
+  });
+
+  it("restores clear confirmation focus to the module heading when refresh disables the trigger", async () => {
+    vi.useFakeTimers();
+    const refreshed = { ...snapshot(), revision: 8, queued: snapshot().queued.filter((item) => item.moduleId !== "screen-effects") };
+    const getSnapshot = vi.fn().mockResolvedValueOnce(snapshot()).mockResolvedValue(refreshed);
+    render(<OperatorApp api={api({ getSnapshot })} />);
+    await act(async () => { await Promise.resolve(); });
+    const trigger = screen.getAllByRole("button", { name: "Clear pending" })[1]!;
+    trigger.focus();
+    await act(async () => { trigger.click(); });
+    expect(screen.getByRole("dialog")).toBeVisible();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(trigger).toBeDisabled();
+    await act(async () => { window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })); });
+
+    expect(screen.getByRole("heading", { name: "Screen Effects" })).toHaveFocus();
   });
 
   it("runs global safety as one pending command and announces the result", async () => {

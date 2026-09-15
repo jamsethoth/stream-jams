@@ -193,6 +193,13 @@
   font-weight: 700;
 }
 
+.alert-editor-page__unused-events {
+  align-items: center;
+  display: flex;
+  font-size: 13px;
+  gap: 6px;
+}
+
 .alert-editor-inspector__variables {
   display: grid;
   gap: 6px;
