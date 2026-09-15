@@ -71,7 +71,7 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
       Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class OverlayProbeNative { [DllImport("user32.dll", EntryPoint="GetWindowLongPtrW")] public static extern IntPtr GetWindowLongPtr(IntPtr window, int index); }';
       $overlayProbeStyle = [OverlayProbeNative]::GetWindowLongPtr([IntPtr]::new([long]${handle}), -20).ToInt64();
       ConvertTo-Json -Compress @{ toolWindow = (($overlayProbeStyle -band 0x80) -ne 0); appWindow = (($overlayProbeStyle -band 0x40000) -ne 0); noActivate = (($overlayProbeStyle -band 0x8000000) -ne 0); transparent = (($overlayProbeStyle -band 0x20) -ne 0) }
-    `], { windowsHide: true, timeout: 10_000 });
+    `], { windowsHide: true, timeout: 30_000 });
     const styles = JSON.parse(stdout) as unknown;
     await testInfo.attach("native-window-styles", { body: stdout, contentType: "application/json" });
     // Electron 44.1.1 uses ITaskbarList::DeleteTab for skipTaskbar, not WS_EX_TOOLWINDOW.

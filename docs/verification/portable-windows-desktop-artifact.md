@@ -17,6 +17,12 @@ This is an implementation record, not durable release certification. No branch, 
 
 The first local Corepack invocation could not read the user-level pnpm cache from restricted execution. Repeating the unchanged package command with approved cache access completed successfully; this was an execution-boundary issue rather than a product or test failure.
 
+## Pull request CI follow-up
+
+The first PR #105 CI run passed every job except `windows-desktop`. Its native-style probe exhausted the fixed 10-second PowerShell child-process timeout, and its port-conflict dialog check exhausted Playwright's implicit 5-second poll while that runner required 8.4 seconds for an earlier packaged-service startup. The latest `main` run at the branch base had already failed the same native-style probe before this change, confirming that failure was not introduced by artifact publication.
+
+The two test-only corrections preserve every assertion while allowing the existing hosted runner bounds: 30 seconds for the cold PowerShell native-style probe and 25 seconds for the asynchronous startup-failure dialog. Both exact failing cases then passed 2/2 locally, followed by the complete packaged desktop suite at 24/24, ESLint, and typechecking. The corrective hosted run remains pending.
+
 ## Remaining hosted acceptance
 
 - [ ] After publication is explicitly authorized, push the implementation ref and manually dispatch `CI` for that exact ref.

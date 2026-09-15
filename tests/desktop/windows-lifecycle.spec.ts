@@ -53,7 +53,10 @@ test("an occupied port is reported without changing the port or terminating its 
     desktop = await launch(fixture);
     mainPid = await desktop.evaluate(() => process.pid);
     await holdNativeFailureDialog(desktop);
-    await expect.poll(() => nativeDialogMessages(desktop!)).toEqual(expect.arrayContaining([
+    await expect.poll(
+      () => nativeDialogMessages(desktop!),
+      { timeout: 25_000 }
+    ).toEqual(expect.arrayContaining([
       expect.stringContaining(String(fixture.port))
     ]));
     expect(listener.listening).toBe(true);
