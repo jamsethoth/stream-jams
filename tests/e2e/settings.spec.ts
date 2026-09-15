@@ -7,8 +7,8 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
   await mockSettingsSummary(page);
   await page.route("**/config/server", route => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
   let view: SurfaceSettingsView = { surfaces: [
-    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [{ moduleId: "alerts", visible: false }, { moduleId: "future-module", visible: false }] },
-    { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [{ moduleId: "alerts", visible: false }, { moduleId: "screen-effects", visible: false }] },
+    { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }, { moduleId: "screen-effects", visible: false }] }
   ], desktop: { available: true, displays: [{ id: "portrait", label: "Portrait display", bounds: { x: -1080, y: 0, width: 1080, height: 1920 }, scaleFactor: 1 }], state: "disabled", message: null } };
   const writes: SurfaceConfiguration[] = [];
   await page.route("**/overlay-surfaces", route => route.fulfill({ json: view }));
@@ -27,19 +27,19 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
   await page.getByLabel("Desktop display").selectOption("portrait");
   await page.getByLabel("Enable desktop overlay").check();
   await page.getByRole("checkbox", { name: "Show alerts on Desktop overlay" }).check();
-  await page.getByRole("button", { name: "Move future-module up on Desktop overlay" }).click();
+  await page.getByRole("button", { name: "Move screen-effects up on Desktop overlay" }).click();
   await page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }).uncheck();
   expect(writes).toEqual([]);
   await page.getByRole("button", { name: "Save Desktop overlay" }).click();
   await expect(page.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
   expect(writes).toHaveLength(1);
-  expect(writes[0]).toMatchObject({ enabled: true, displayId: "portrait", layers: [{ moduleId: "future-module", visible: false }, { moduleId: "alerts", visible: true }] });
+  expect(writes[0]).toMatchObject({ enabled: true, displayId: "portrait", layers: [{ moduleId: "screen-effects", visible: false }, { moduleId: "alerts", visible: true }] });
   await page.getByRole("button", { name: "Save Unified browser: default" }).click();
   await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeDisabled();
   await page.reload();
   await expect(page.getByLabel("Enable desktop overlay")).toBeChecked();
-  await expect(page.getByRole("button", { name: "Move future-module up on Desktop overlay" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move screen-effects up on Desktop overlay" })).toBeDisabled();
   await expect(page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
   await page.getByRole("heading", { name: "Overlay surfaces" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("overlay-settings-desktop.png"), fullPage: true });
@@ -132,6 +132,11 @@ test("settings exports and restores only after validated typed confirmation", as
       }
     });
   });
+  await page.route("**/screen-effects", async (route) => route.fulfill({ json: [restoredScreenEffect()] }));
+  await page.route("**/management/overlay-outputs", async (route) => route.fulfill({ json: [] }));
+  await page.route("**/overlay-modules/screen-effects/config", async (route) => route.fulfill({ json: {
+    moduleId: "screen-effects", enabled: false, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
+  } }));
 
   await page.goto("/manage/settings");
   const downloadPromise = page.waitForEvent("download");
@@ -155,6 +160,9 @@ test("settings exports and restores only after validated typed confirmation", as
   expect(restoreRequests[0]).toMatchObject({ archiveId: preflight.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true });
   await expect(page.getByText("Update browser-source URLs")).toBeVisible();
   await expect(page.getByText("Reconnect Twitch")).toBeVisible();
+  await page.getByRole("link", { name: "Screen Effects" }).click();
+  const restoredEffect = page.getByText("Restored Screen Effect").locator("xpath=ancestor::li");
+  await expect(restoredEffect).toContainText("Disabled");
 });
 
 async function mockSettingsSummary(page: Page): Promise<void> {
@@ -198,5 +206,36 @@ function backupPreflight() {
     runtime: { intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 },
     blockers: [],
     warnings: [{ summary: "Browser-source URLs will change", cause: "Route keys are excluded.", nextStep: "Update OBS after restore.", severity: "warning", occurredAt: null, referenceId: null, correction: null }]
+  };
+}
+
+function restoredScreenEffect() {
+  return {
+    schemaVersion: 1,
+    id: "effect-restored",
+    name: "Restored Screen Effect",
+    enabled: false,
+    description: null,
+    category: "Restored",
+    priority: 0,
+    cooldownSeconds: 0,
+    bindings: [],
+    variants: [{
+      id: "variant-restored",
+      name: "Default",
+      kind: "default",
+      enabled: true,
+      weight: 1,
+      visual: {
+        mediaType: "image",
+        assetId: "asset-restored",
+        layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+      },
+      sound: null,
+      animation: null,
+      durationMs: 10_000,
+      outputs: { browserSource: false, deviceRouteIds: [] },
+      visualOutputs: { browserSource: true, desktop: false }
+    }]
   };
 }

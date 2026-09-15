@@ -140,7 +140,10 @@ class StreamerBotProviderAdapter implements ProviderManagementAdapter {
     });
 
     client.connect({
-      ...input.configuration,
+      protocol: input.configuration.protocol,
+      host: input.configuration.host,
+      port: input.configuration.port,
+      endpoint: input.configuration.endpoint,
       ...(input.credential === undefined ? {} : { password: input.credential })
     });
 

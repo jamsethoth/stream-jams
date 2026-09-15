@@ -20,6 +20,7 @@ import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
 import { ManagementHttpError } from "../management-http-client.js";
+import type { HttpErrorOwner } from "../http-errors.js";
 import type { AudioApi } from "./audio-api.js";
 import { useAudioStatus } from "./use-audio-status.js";
 import "./audio-outputs-panel.css";
@@ -37,6 +38,7 @@ interface ConflictState {
   readonly routeId: string;
   readonly summary: string;
   readonly nextStep: string;
+  readonly owners: readonly HttpErrorOwner[];
   readonly references: readonly { readonly alertId: string; readonly name: string }[];
 }
 
@@ -106,7 +108,8 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
           kind: "rebind",
           routeId: draft.id,
           summary: cause.message,
-          nextStep: cause.nextStep ?? "Review the affected alerts, then confirm the binding change.",
+          nextStep: cause.nextStep ?? "Review the affected Alerts and Screen Effects, then confirm the binding change.",
+          owners: cause.owners,
           references: cause.references
         });
       } else {
@@ -201,7 +204,8 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
           kind: "delete",
           routeId: route.id,
           summary: cause.message,
-          nextStep: cause.nextStep ?? "Remove this route from the listed alerts before deleting it.",
+          nextStep: cause.nextStep ?? "Remove this route from the listed Alerts and Screen Effects before deleting it.",
+          owners: cause.owners,
           references: cause.references
         });
       } else {
@@ -363,15 +367,33 @@ function DeviceSelect({ available, devices, disabled, label, onChange, route, va
 }
 
 function ConflictNotice({ busy, conflict, onConfirm }: { readonly busy: boolean; readonly conflict: ConflictState; readonly onConfirm: (() => void) | null }) {
+  const owners = conflict.owners.length > 0
+    ? conflict.owners
+    : conflict.references.map((reference) => ({
+        moduleId: "alerts",
+        ownerId: reference.alertId,
+        ownerName: reference.name,
+        variantId: null
+      }));
   return (
     <section className="audio-outputs__conflict" role="alert">
-      <strong>{conflict.kind === "rebind" ? "Confirm affected alerts before rebinding" : "Output is still used by alerts"}</strong>
+      <strong>{conflict.kind === "rebind" ? "Confirm affected items before rebinding" : "Output is still in use"}</strong>
       <p>{conflict.summary}</p>
-      {conflict.references.length === 0 ? null : <ul>{conflict.references.map((reference) => <li key={reference.alertId}>{reference.name}</li>)}</ul>}
+      {owners.length === 0 ? null : <ul>{owners.map((owner) => (
+        <li key={`${owner.moduleId}:${owner.ownerId}:${owner.variantId ?? ""}`}>
+          {moduleLabel(owner.moduleId)}: {owner.ownerName}
+        </li>
+      ))}</ul>}
       <p><span className="management-error-banner__label">Next step:</span> {conflict.nextStep}</p>
       {onConfirm === null ? null : <button disabled={busy} onClick={onConfirm} type="button">Confirm binding change</button>}
     </section>
   );
+}
+
+function moduleLabel(moduleId: string): string {
+  if (moduleId === "alerts") return "Alerts";
+  if (moduleId === "screen-effects") return "Screen Effects";
+  return moduleId;
 }
 
 function updateDraft(

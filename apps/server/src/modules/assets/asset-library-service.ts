@@ -11,6 +11,8 @@ import {
   type AssetMetadataUpdateInput,
   type AssetRecord,
   type AssetRepository,
+  type ModuleMediaReference,
+  type ScreenEffectRepository,
   type TargetProfileId
 } from "@stream-jams/core";
 import type { AlertSetMetadataRepository } from "../alerts/alert-set-management-service.js";
@@ -44,6 +46,8 @@ export interface AssetLibraryServiceOptions {
   readonly assetStore: AssetLibraryStore;
   readonly alertRepository: Pick<AlertRepository, "listCollections" | "listRules">;
   readonly ruleMetadataRepository: Pick<AlertSetMetadataRepository, "findRule">;
+  readonly effectRepository?: Pick<ScreenEffectRepository, "list"> | undefined;
+  readonly deletePersistedAsset?: ((assetId: string) => void) | undefined;
   readonly clock?: () => Date;
 }
 
@@ -56,7 +60,7 @@ export class AssetLibraryNotFoundError extends Error {
 
 export class AssetLibraryInUseError extends Error {
   constructor(readonly impact: AssetChangeImpact) {
-    super(`Asset "${impact.assetId}" is used by ${impact.usage.totalUsageCount} alert contexts`);
+    super(`Asset "${impact.assetId}" is used by ${impact.owners.length} saved playback contexts`);
     this.name = "AssetLibraryInUseError";
   }
 }
@@ -112,9 +116,20 @@ export class AssetLibraryService {
 
   async getChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact> {
     const item = await this.getItem(assetId);
+    const effectOwners = await this.#effectOwners(assetId);
+    const alertOwners = item.usage.usages.map((usage): ModuleMediaReference => ({
+      moduleId: "alerts",
+      ownerId: usage.alertId,
+      ownerName: usage.alertName,
+      variantId: null
+    }));
+    const owners = uniqueOwners([...alertOwners, ...effectOwners]);
     const warnings: string[] = [];
     if (item.usage.totalUsageCount > 0) {
       warnings.push(`${item.usage.totalUsageCount} alert usage${item.usage.totalUsageCount === 1 ? "" : "s"} will update everywhere.`);
+    }
+    if (effectOwners.length > 0) {
+      warnings.push(`${effectOwners.length} Screen Effect usage${effectOwners.length === 1 ? "" : "s"} will update everywhere.`);
     }
     if (candidateMediaType !== undefined && candidateMediaType !== item.mediaType) {
       warnings.push(`Media type changes from ${item.mediaType} to ${candidateMediaType}; review every affected layer.`);
@@ -122,7 +137,8 @@ export class AssetLibraryService {
     return {
       assetId,
       usage: item.usage,
-      canDelete: item.usage.totalUsageCount === 0,
+      owners,
+      canDelete: owners.length === 0,
       requiresConfirmation: warnings.length > 0,
       warnings
     };
@@ -135,8 +151,12 @@ export class AssetLibraryService {
     const metadata = await this.#options.metadataRepository.find(assetId);
     const stagedDeletion = await this.#options.assetStore.stageDelete(record.storagePath);
     try {
-      await this.#options.metadataRepository.delete(assetId);
-      await this.#options.assetRepository.delete(assetId);
+      if (this.#options.deletePersistedAsset === undefined) {
+        await this.#options.metadataRepository.delete(assetId);
+        await this.#options.assetRepository.delete(assetId);
+      } else {
+        this.#options.deletePersistedAsset(assetId);
+      }
       await stagedDeletion.commit();
     } catch (error) {
       const recovery = await Promise.allSettled([
@@ -242,6 +262,26 @@ export class AssetLibraryService {
     }
     return usage;
   }
+
+  async #effectOwners(assetId: string): Promise<readonly ModuleMediaReference[]> {
+    const effects = await this.#options.effectRepository?.list() ?? [];
+    return effects.flatMap((effect) => effect.variants.flatMap((variant) => {
+      const referenced = variant.visual?.assetId === assetId || variant.sound?.assetId === assetId;
+      return referenced ? [{
+        moduleId: "screen-effects",
+        ownerId: effect.id,
+        ownerName: effect.name,
+        variantId: variant.id
+      }] : [];
+    }));
+  }
+}
+
+function uniqueOwners(owners: readonly ModuleMediaReference[]): ModuleMediaReference[] {
+  return [...new Map(owners.map((owner) => [
+    `${owner.moduleId}:${owner.ownerId}:${owner.variantId ?? ""}`,
+    owner
+  ])).values()];
 }
 
 function isForeignKeyConstraintError(error: unknown): boolean {

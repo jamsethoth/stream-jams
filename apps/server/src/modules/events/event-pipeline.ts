@@ -1,6 +1,7 @@
 import type {
   AlertMatchLogRecord,
   DiagnosticsLogRepository,
+  EffectTrigger,
   EventLogRecord,
   NormalizedStreamEvent,
   PlaybackLogRecord,
@@ -10,6 +11,7 @@ import type {
 } from "@stream-jams/core";
 import type { EventSink } from "./event-ingestion-service.js";
 import type { PlaybackCoordinator, PlaybackEnqueueResult } from "../playback/playback-coordinator.js";
+import type { EffectTriggerSink } from "../screen-effects/effect-trigger-adapter.js";
 
 export interface EventPipelineIdGenerator {
   (kind: "event-log" | "alert-match-log" | "playback-log" | "processing"): string;
@@ -22,6 +24,8 @@ export interface EventPipelineOptions {
     "appendEventLog" | "appendAlertMatchLog" | "appendPlaybackLog"
   >;
   readonly generateId: EventPipelineIdGenerator;
+  readonly effectTriggerSink?: EffectTriggerSink | undefined;
+  readonly onEffectError?: ((error: Error, triggers: readonly EffectTrigger[]) => void | Promise<void>) | undefined;
   readonly now?: (() => Date) | undefined;
 }
 
@@ -32,25 +36,32 @@ export class EventPipeline implements EventSink {
     "appendEventLog" | "appendAlertMatchLog" | "appendPlaybackLog"
   >;
   readonly #generateId: EventPipelineIdGenerator;
+  readonly #effectTriggerSink: EffectTriggerSink | null;
+  readonly #onEffectError: (error: Error, triggers: readonly EffectTrigger[]) => void | Promise<void>;
   readonly #now: () => Date;
 
   constructor(options: EventPipelineOptions) {
     this.#playbackCoordinator = options.playbackCoordinator;
     this.#diagnosticsLogRepository = options.diagnosticsLogRepository;
     this.#generateId = options.generateId;
+    this.#effectTriggerSink = options.effectTriggerSink ?? null;
+    this.#onEffectError = options.onEffectError ?? (() => {});
     this.#now = options.now ?? (() => new Date());
   }
 
-  async handleEvent(event: NormalizedStreamEvent): Promise<void> {
+  async handleEvent(event: NormalizedStreamEvent, triggers: readonly EffectTrigger[] = []): Promise<void> {
     const processingId = this.#generateId("processing") as ProcessingId;
     const correlationId = createCorrelationId(event);
     await this.#appendEventLog(event, "received", correlationId, processingId, null);
+    const effectDelivery = this.#deliverEffects(triggers);
 
     try {
       const result = await this.#playbackCoordinator.enqueueEvent(event);
       await this.#appendPlaybackRecords(event, result, correlationId, processingId);
+      await effectDelivery;
       await this.#appendEventLog(event, "processed", correlationId, processingId, null);
     } catch (error) {
+      await effectDelivery;
       await this.#appendEventLog(
         event,
         "failed",
@@ -59,6 +70,26 @@ export class EventPipeline implements EventSink {
         error instanceof Error ? error.message : "Event pipeline failed"
       );
       throw error;
+    }
+  }
+
+  async handleTriggers(triggers: readonly EffectTrigger[]): Promise<void> {
+    await this.#deliverEffects(triggers);
+  }
+
+  async #deliverEffects(triggers: readonly EffectTrigger[]): Promise<void> {
+    if (triggers.length === 0 || this.#effectTriggerSink === null) return;
+    try {
+      await this.#effectTriggerSink.handleTriggers(triggers);
+    } catch (error) {
+      try {
+        await this.#onEffectError(
+          error instanceof Error ? error : new Error("Screen Effects trigger handling failed"),
+          triggers
+        );
+      } catch {
+        // Diagnostics must not turn an isolated Screen Effects failure into an Alert failure.
+      }
     }
   }
 

@@ -1,0 +1,147 @@
+.screen-effects-page,
+.screen-effect-editor {
+  display: grid;
+  gap: 24px;
+}
+
+.screen-effects-section-header,
+.screen-effect-editor__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.screen-effect-editor__header {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.screen-effect-editor__actions,
+.screen-effects-list__actions,
+.screen-effect-trigger-adders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.screen-effects-list,
+.screen-effects-browser-sources ul,
+.screen-effect-triggers ul {
+  display: grid;
+  gap: 12px;
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+}
+
+.screen-effects-list > li,
+.screen-effects-browser-sources li,
+.screen-effect-triggers li {
+  align-items: center;
+  background: var(--color-surface-subtle);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 16px;
+}
+
+.screen-effects-list > li > div:first-child,
+.screen-effects-browser-sources li {
+  display: grid;
+  gap: 4px;
+}
+
+.screen-effect-editor__workspace {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(16rem, 0.75fr) minmax(24rem, 1.5fr);
+}
+
+.screen-effect-editor label,
+.screen-effect-trigger-adders label {
+  display: grid;
+  gap: 4px;
+}
+
+.screen-effects-fields-inline {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  margin-block: 12px;
+}
+
+.screen-effects-check {
+  align-items: center;
+  display: flex !important;
+  gap: 8px !important;
+}
+
+.screen-effect-variant fieldset {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  margin-block: 16px;
+  padding: 16px;
+}
+
+.screen-effect-variant-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-block: 16px;
+}
+
+.screen-effect-variant-tabs [aria-selected="true"] {
+  outline: 2px solid var(--color-focus);
+}
+
+.screen-effect-editor__validation {
+  background: var(--color-warning-soft);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.screen-effect-editor__context-error {
+  background: var(--color-negative-soft);
+  border: 1px solid var(--color-negative);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.screen-effect-editor__context-error ul {
+  margin-block: 8px;
+}
+
+.screen-effect-preview__canvas {
+  align-items: center;
+  aspect-ratio: 16 / 9;
+  background: #11131a;
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  max-height: 60vh;
+  overflow: hidden;
+}
+
+.screen-effect-preview__canvas img,
+.screen-effect-preview__canvas video {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+}
+
+@media (max-width: 900px) {
+  .screen-effect-editor__workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .screen-effects-section-header,
+  .screen-effect-editor__header {
+    flex-direction: column;
+  }
+}

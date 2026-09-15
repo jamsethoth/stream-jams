@@ -44,6 +44,24 @@ it("projects editor layout metadata into the strict visual-only transport", asyn
   expect(resolve.mock.calls[0]![0].instructions[0]?.text?.layout).toEqual(original.text!.layout);
   await sink.close();
 });
+it("delivers a Screen Effects visual through the shared desktop sink", async () => {
+  const { sink, list, config, resolve } = harness();
+  list.mockResolvedValue([{
+    ...config,
+    layers: [
+      { moduleId: "alerts", visible: true },
+      { moduleId: "screen-effects", visible: true }
+    ]
+  }]);
+
+  await sink.play("effect-key", [{ ...instruction(), moduleId: "screen-effects" }], 0);
+
+  expect(resolve.mock.calls[0]![0].key).toMatchObject({
+    moduleId: "screen-effects",
+    occurrenceId: "effect-key"
+  });
+  await sink.close();
+});
 it("cannot overwrite an explicit rebind or start late preparation on its replacement display", async () => {
   const { sink, list, resolve, transport, config } = harness();
   let finish!: (batch: DesktopVisualBatch) => void;

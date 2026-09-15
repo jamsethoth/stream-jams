@@ -7,7 +7,7 @@ export interface DesktopVisualSinkDependencies {
   now?: () => number;
 }
 type Group = { key: VisualRecipientKey; input: Omit<DesktopVisualBatch, "assets"> | null; endsAt: number; timer: ReturnType<typeof setTimeout> | undefined };
-type Playback = { id: string; groups: Group[]; finished: boolean; running: boolean; starts: number; stopsSettled: boolean; resolve(): void; reject(error: Error): void; stopping: Promise<void> | null };
+type Playback = { id: string; moduleId: string; groups: Group[]; finished: boolean; running: boolean; starts: number; stopsSettled: boolean; resolve(): void; reject(error: Error): void; stopping: Promise<void> | null };
 
 export class DesktopVisualSink {
   readonly #now: () => number;
@@ -38,9 +38,14 @@ export class DesktopVisualSink {
 
   async play(occurrenceId: string, instructions: readonly OverlayInstruction[], startsAtEpochMs: number): Promise<void> {
     if (this.#closed || this.#configuring || this.#current.has(occurrenceId)) throw unavailable();
+    const moduleId = instructions.find(instruction =>
+      instruction.targetProfileId === "landscape"
+      && (instruction.visual != null || instruction.text != null || instruction.shape != null)
+    )?.moduleId;
+    if (moduleId === undefined) return;
     const grouped = new Map<number, DesktopVisualBatch["instructions"]>();
     for (const instruction of instructions) {
-      if (instruction.moduleId !== "alerts" || instruction.targetProfileId !== "landscape" || (instruction.visual == null && instruction.text == null && instruction.shape == null)) continue;
+      if (instruction.moduleId !== moduleId || instruction.targetProfileId !== "landscape" || (instruction.visual == null && instruction.text == null && instruction.shape == null)) continue;
       const timing = desktopVisualBatchSchema.shape.timing.parse({ startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + instruction.durationMs });
       const visual = desktopVisualInstructionSchema.parse({ ...overlayInstructionSchema.parse(instruction), timing, audio: null, tts: null });
       const group = grouped.get(visual.durationMs) ?? [];
@@ -51,14 +56,14 @@ export class DesktopVisualSink {
     if (admitted + grouped.size > 64 || this.#generation + grouped.size > Number.MAX_SAFE_INTEGER) throw unavailable();
     const groups: Group[] = [];
     for (const [duration, original] of grouped) {
-      const key = desktopVisualBatchSchema.shape.key.parse({ surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId, generation: ++this.#generation });
+      const key = desktopVisualBatchSchema.shape.key.parse({ surfaceId: "desktop:primary", moduleId, occurrenceId, generation: ++this.#generation });
       const duplicates = new Set(original.map(instruction => instruction.id)).size !== original.length;
       const normalized = duplicates ? original.map((instruction, index) => ({ ...instruction, id: `${index}:${instruction.id}` })) : original;
       const endsAt = startsAtEpochMs + duration;
       groups.push({ key, endsAt, input: { key, timing: { startsAtEpochMs, endsAtEpochMs: endsAt }, instructions: normalized }, timer: undefined });
     }
     return new Promise<void>((resolve, reject) => {
-      const record: Playback = { id: occurrenceId, groups, finished: false, running: false, starts: 0, stopsSettled: true, resolve, reject, stopping: null };
+      const record: Playback = { id: occurrenceId, moduleId, groups, finished: false, running: false, starts: 0, stopsSettled: true, resolve, reject, stopping: null };
       this.#current.set(occurrenceId, record); this.#admitted.add(record);
       // Establish every obligation before any synchronous ready/complete reply.
       for (const group of groups) {
@@ -101,7 +106,7 @@ export class DesktopVisualSink {
     if (record.finished || this.#closed) return;
     const config = configs.find(surface => surface.kind === "desktop");
     if (config === undefined || config.kind !== "desktop") { this.#complete(record); return; }
-    if (!config.enabled || config.displayId === null || !config.layers.some(layer => layer.moduleId === "alerts" && layer.visible)) { this.#complete(record); return; }
+    if (!config.enabled || config.displayId === null || !config.layers.some(layer => layer.moduleId === record.moduleId && layer.visible)) { this.#complete(record); return; }
     for (const group of record.groups) {
       if (record.finished || this.#closed || group.input === null) return;
       if (this.#now() >= group.endsAt) { void this.#cancel(record); return; }

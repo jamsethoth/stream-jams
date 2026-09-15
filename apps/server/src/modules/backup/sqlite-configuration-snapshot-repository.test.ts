@@ -1,10 +1,12 @@
 import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
+  createScreenEffectDocument,
   type ConfigurationBackupArchive
 } from "@stream-jams/core";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
+import { SqliteEffectRepository } from "../screen-effects/sqlite-effect-repository.js";
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
 
 describe("SqliteConfigurationSnapshotRepository", () => {
@@ -53,6 +55,11 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "alert_rule_management_metadata",
       "asset_library_metadata",
       "audio_output_routes",
+      "screen_effects",
+      "screen_effect_variants",
+      "screen_effect_bindings",
+      "screen_effect_audio_routes",
+      "module_playback_settings",
       "alert_editor_documents",
       "alert_moderation_settings"
     ]);
@@ -86,6 +93,100 @@ describe("SqliteConfigurationSnapshotRepository", () => {
         boxStyle: compatibilityAlertTextBoxStyle
       }]
     });
+  });
+
+  it("round-trips portable Screen Effects disabled and accepts legacy snapshots without effect tables", async () => {
+    const effects = new SqliteEffectRepository(database.connection);
+    database.connection.prepare("INSERT INTO audio_output_routes VALUES (?, ?, ?, ?)").run(
+      "route-effect",
+      "Effect headphones",
+      "machine-only-effect-device",
+      "Machine effect headphones"
+    );
+    const draft = createScreenEffectDocument({
+      id: "effect-backup",
+      name: "Backup effect",
+      defaultVariantId: "variant-backup"
+    });
+    const saved = {
+      ...draft,
+      enabled: true,
+      variants: [{
+        ...draft.variants[0]!,
+        visual: {
+          mediaType: "image" as const,
+          assetId: "asset-follow",
+          layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+        },
+        outputs: { browserSource: false, deviceRouteIds: ["route-effect"] },
+        visualOutputs: { browserSource: true, desktop: true }
+      }]
+    };
+    await effects.save(saved);
+    database.connection.prepare(
+      "UPDATE module_playback_settings SET paused = 1, cooldown_seconds = 7 WHERE module_id = 'screen-effects'"
+    ).run();
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const restorePoint = repository.captureRestorePoint();
+    const snapshot = repository.snapshot();
+
+    expect(snapshot.tables.screen_effects).toEqual([
+      expect.objectContaining({ id: saved.id, enabled: 0 })
+    ]);
+    expect(snapshot.tables.screen_effect_variants).toHaveLength(1);
+    expect(snapshot.tables.screen_effect_bindings).toEqual([]);
+    expect(snapshot.tables.screen_effect_audio_routes).toEqual([
+      { variant_id: "variant-backup", route_id: "route-effect", position: 0 }
+    ]);
+    expect(snapshot.tables.audio_output_routes).toEqual([
+      { id: "route-effect", name: "Effect headphones", device_id: null, device_label: null }
+    ]);
+    expect(JSON.stringify(snapshot)).not.toContain("machine-only-effect-device");
+    expect(snapshot.tables.module_playback_settings).toEqual([
+      expect.objectContaining({ module_id: "alerts", paused: 0, cooldown_seconds: 0 }),
+      expect.objectContaining({ module_id: "screen-effects", paused: 1, cooldown_seconds: 7 })
+    ]);
+    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+    const enabledPortableEffect = structuredClone(snapshot.tables);
+    enabledPortableEffect.screen_effects![0]!.enabled = 1;
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: enabledPortableEffect }).join(" "))
+      .toMatch(/disabled in a portable backup/iu);
+    const mismatchedVariant = structuredClone(snapshot.tables);
+    mismatchedVariant.screen_effect_variants![0]!.visual_asset_id = "missing-asset";
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: mismatchedVariant })).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/does not match its document JSON/iu),
+        expect.stringMatching(/missing asset_metadata/iu)
+      ])
+    );
+    const partialEffectTables = structuredClone(snapshot.tables);
+    delete partialEffectTables.screen_effect_bindings;
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: partialEffectTables }).join(" "))
+      .toMatch(/Screen Effects backup tables are incomplete/iu);
+
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    await expect(effects.find(saved.id)).resolves.toEqual({ ...saved, enabled: false });
+    expect(database.connection.prepare(
+      "SELECT device_id, device_label FROM audio_output_routes WHERE id = 'route-effect'"
+    ).get()).toEqual({ device_id: null, device_label: null });
+    repository.restoreRestorePoint(restorePoint);
+    await expect(effects.find(saved.id)).resolves.toEqual(saved);
+
+    const legacyTables = structuredClone(snapshot.tables);
+    delete legacyTables.screen_effects;
+    delete legacyTables.screen_effect_variants;
+    delete legacyTables.screen_effect_bindings;
+    delete legacyTables.screen_effect_audio_routes;
+    delete legacyTables.module_playback_settings;
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: legacyTables })).toEqual([]);
+    repository.replace({ tables: legacyTables, assets: [seededAsset()] });
+    await expect(effects.list()).resolves.toEqual([]);
+    expect(database.connection.prepare(
+      "SELECT module_id, paused, cooldown_seconds FROM module_playback_settings"
+    ).all()).toEqual([
+      { module_id: "alerts", paused: 0, cooldown_seconds: 0 },
+      { module_id: "screen-effects", paused: 0, cooldown_seconds: 0 }
+    ]);
   });
 
   it("exports unbound desktop settings and preserves local bindings only in rollback points", () => {
@@ -245,9 +346,32 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     ]);
   });
 
-  it("keeps portable table mappings aligned with migrated columns", () => {
+  it("keeps portable table mappings aligned with migrated columns", async () => {
     database.connection.prepare("INSERT INTO audio_output_routes VALUES (?, ?, ?, ?)")
       .run("route-a", "Private", "local-endpoint", "Local headset");
+    const effectDraft = createScreenEffectDocument({
+      id: "effect-mapping",
+      name: "Mapping effect",
+      defaultVariantId: "variant-mapping"
+    });
+    await new SqliteEffectRepository(database.connection).save({
+      ...effectDraft,
+      bindings: [{
+        id: "binding-mapping",
+        kind: "twitch-reward",
+        broadcasterId: "broadcaster-mapping",
+        rewardId: "reward-mapping"
+      }],
+      variants: [{
+        ...effectDraft.variants[0]!,
+        visual: {
+          mediaType: "image",
+          assetId: "asset-follow",
+          layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+        },
+        outputs: { browserSource: false, deviceRouteIds: ["route-a"] }
+      }]
+    });
     const snapshot = new SqliteConfigurationSnapshotRepository(database.connection).snapshot();
     const intentionallyExcludedColumns = new Map([
       ["asset_metadata", new Set(["storage_path"])],

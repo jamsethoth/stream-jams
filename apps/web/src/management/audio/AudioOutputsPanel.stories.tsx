@@ -58,8 +58,9 @@ export const DeletionConflict: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Delete Headphones" }));
     await userEvent.click(within(document.body).getByRole("button", { name: "Delete output" }));
-    await expect(await canvas.findByText("New follower")).toBeVisible();
-    await expect(canvas.getByText("Large raid")).toBeVisible();
+    const conflict = await canvas.findByRole("alert");
+    await expect(conflict).toHaveTextContent("New follower");
+    await expect(conflict).toHaveTextContent("Large raid");
   }
 };
 

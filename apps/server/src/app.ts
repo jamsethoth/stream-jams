@@ -28,6 +28,10 @@ import {
 import { registerOverlayModuleRoutes, type OverlayModuleRouteDependencies } from "./http/routes/overlay-modules.js";
 import { registerOverlayRoutes, type OverlayRouteDependencies } from "./http/routes/overlays.js";
 import { registerPlaybackRoutes, type PlaybackRouteDependencies } from "./http/routes/playback.js";
+import {
+  registerPlaybackOperationsRoutes,
+  type PlaybackOperationsRouteDependencies
+} from "./http/routes/playback-operations.js";
 import { registerTtsRoutes, type TtsRouteDependencies } from "./http/routes/tts.js";
 import { registerTwitchAuthRoutes, type TwitchAuthRouteDependencies } from "./http/routes/twitch-auth.js";
 import { registerTwitchEventSubRoutes, type TwitchEventSubRouteDependencies } from "./http/routes/twitch-eventsub.js";
@@ -35,6 +39,14 @@ import {
   registerTwitchRewardCatalogRoutes,
   type TwitchRewardCatalogRouteDependencies
 } from "./http/routes/twitch-reward-catalog.js";
+import {
+  registerStreamerBotSubscriptionRoutes,
+  type StreamerBotSubscriptionRouteDependencies
+} from "./http/routes/streamerbot-subscriptions.js";
+import {
+  registerScreenEffectRoutes,
+  type ScreenEffectRouteDependencies
+} from "./http/routes/screen-effects.js";
 import { registerWebShellRoutes, type WebShellRenderer } from "./http/routes/web-shell.js";
 import { createRedactor } from "./modules/security/redactor.js";
 
@@ -65,10 +77,13 @@ export interface ServerAppDependencies
     Partial<AlertRuleRouteDependencies>,
     Partial<AlertCollectionRouteDependencies>,
     Partial<PlaybackRouteDependencies>,
+    Partial<PlaybackOperationsRouteDependencies>,
     Partial<TtsRouteDependencies>,
     Partial<TwitchAuthRouteDependencies>,
     Partial<TwitchEventSubRouteDependencies>,
-    Partial<TwitchRewardCatalogRouteDependencies> {
+    Partial<TwitchRewardCatalogRouteDependencies>,
+    Partial<StreamerBotSubscriptionRouteDependencies>,
+    Partial<ScreenEffectRouteDependencies> {
   readonly metadata: ServerAppMetadata;
   readonly webBuildDirectory?: string;
   readonly webShellRenderer?: WebShellRenderer;
@@ -218,6 +233,20 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     registerPlaybackRoutes(app, dependencies);
   }
 
+  if (dependencies.playbackOperationsService !== undefined) {
+    if (!hasPlaybackOperationsRouteDependencies(dependencies)) {
+      throw new Error("Playback operations routes require service, management auth, and rate-limit hooks");
+    }
+    registerPlaybackOperationsRoutes(app, dependencies);
+  }
+
+  if (dependencies.effectManagementService !== undefined) {
+    if (!hasScreenEffectRouteDependencies(dependencies)) {
+      throw new Error("Screen Effects routes require service, management auth, and rate-limit hooks");
+    }
+    registerScreenEffectRoutes(app, dependencies);
+  }
+
   if (dependencies.ttsService !== undefined) {
     if (!hasTtsRouteDependencies(dependencies)) {
       throw new Error("TTS routes require service, management auth, and rate-limit hooks");
@@ -248,6 +277,13 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     }
 
     registerTwitchRewardCatalogRoutes(app, dependencies);
+  }
+
+  if (dependencies.streamerBotSubscriptionService !== undefined) {
+    if (!hasStreamerBotSubscriptionRouteDependencies(dependencies)) {
+      throw new Error("Streamer.bot subscription routes require service, management auth, and rate-limit hooks");
+    }
+    registerStreamerBotSubscriptionRoutes(app, dependencies);
   }
 
   if (dependencies.serverConfigService !== undefined) {
@@ -300,7 +336,7 @@ function registerServerErrorHandler(app: FastifyInstance, dependencies: ServerAp
     if (error instanceof AudioOutputError) {
       return reply.status(error.statusCode).send({ error: {
         code: error.code, message: error.message, nextStep: error.nextStep,
-        routeIds: error.routeIds, references: error.references
+        routeIds: error.routeIds, references: error.references, owners: error.owners
       } });
     }
     const response = toServerErrorResponse(error);
@@ -426,6 +462,27 @@ function hasPlaybackRouteDependencies(
 ): dependencies is ServerAppDependencies & PlaybackRouteDependencies {
   return (
     dependencies.playbackCoordinator !== undefined &&
+    dependencies.legacyPlaybackOperationsService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasPlaybackOperationsRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & PlaybackOperationsRouteDependencies {
+  return (
+    dependencies.playbackOperationsService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasScreenEffectRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & ScreenEffectRouteDependencies {
+  return (
+    dependencies.effectManagementService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );
@@ -466,6 +523,16 @@ function hasTwitchRewardCatalogRouteDependencies(
 ): dependencies is ServerAppDependencies & TwitchRewardCatalogRouteDependencies {
   return (
     dependencies.twitchRewardCatalogService !== undefined &&
+    dependencies.managementAuthPreHandler !== undefined &&
+    dependencies.managementRateLimitPreHandler !== undefined
+  );
+}
+
+function hasStreamerBotSubscriptionRouteDependencies(
+  dependencies: ServerAppDependencies
+): dependencies is ServerAppDependencies & StreamerBotSubscriptionRouteDependencies {
+  return (
+    dependencies.streamerBotSubscriptionService !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );

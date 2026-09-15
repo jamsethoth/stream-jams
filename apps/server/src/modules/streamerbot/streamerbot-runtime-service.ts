@@ -1,5 +1,6 @@
 import {
   providerSetupInputSchema,
+  type EffectTrigger,
   type NormalizedStreamEvent,
   type SecretStore,
   type StreamerBotSubscriptionSelection
@@ -15,6 +16,7 @@ import type {
   StreamerBotConnectionState,
   StreamerBotEventEnvelope
 } from "./streamerbot-client.js";
+import { createStreamerBotEffectTriggers } from "../screen-effects/effect-trigger-adapter.js";
 import {
   normalizeStreamerBotEvent,
   StreamerBotEventNormalizationError
@@ -35,6 +37,7 @@ export interface StreamerBotRuntimeClient {
   getStatus(): StreamerBotClientStatus;
   getEvents(): Promise<Record<string, readonly string[]>>;
   subscribe(selections: readonly StreamerBotSubscriptionSelection[]): Promise<void>;
+  unsubscribe(selections: readonly StreamerBotSubscriptionSelection[]): Promise<void>;
 }
 
 export interface StreamerBotRuntimeDiagnostic {
@@ -66,7 +69,18 @@ export interface StreamerBotRuntimeServiceOptions {
     onEvent: (envelope: StreamerBotEventEnvelope) => void | Promise<void>
   ) => StreamerBotRuntimeClient;
   readonly ingestionService: {
-    ingestNormalizedEvent(event: NormalizedStreamEvent): Promise<EventIngestionResult>;
+    ingestNormalizedEvent(
+      event: NormalizedStreamEvent,
+      effectTriggers?: readonly EffectTrigger[]
+    ): Promise<EventIngestionResult>;
+    ingestEffectTriggers(
+      eventId: string,
+      triggers: readonly EffectTrigger[]
+    ): Promise<
+      | { readonly status: "accepted"; readonly eventId: string }
+      | { readonly status: "duplicate"; readonly messageId: string }
+      | { readonly status: "rejected"; readonly message: string; readonly referenceId: string }
+    >;
   };
   readonly generateReferenceId: () => string;
   readonly onDiagnostic?: ((entry: StreamerBotRuntimeDiagnostic) => void | Promise<void>) | undefined;
@@ -81,6 +95,15 @@ interface RuntimeIssue {
   readonly message: string;
   readonly occurredAt: string;
   readonly referenceId: string;
+}
+
+export class StreamerBotRuntimeUnavailableError extends Error {
+  readonly code = "STREAMERBOT_RUNTIME_UNAVAILABLE";
+
+  constructor() {
+    super("The active Streamer.bot connection is unavailable");
+    this.name = "StreamerBotRuntimeUnavailableError";
+  }
 }
 
 export class StreamerBotRuntimeService {
@@ -99,6 +122,9 @@ export class StreamerBotRuntimeService {
   #missingEventTypes: readonly string[] = [];
   #issue: RuntimeIssue | null = null;
   #ingestionIssue: RuntimeIssue | null = null;
+  #externalSubscriptions: readonly StreamerBotSubscriptionSelection[] = [];
+  #twitchBroadcasterId: string | null = null;
+  #requiredSubscriptions: readonly StreamerBotSubscriptionSelection[] = [];
 
   constructor(options: StreamerBotRuntimeServiceOptions) {
     this.#repository = options.repository;
@@ -134,6 +160,9 @@ export class StreamerBotRuntimeService {
     this.#missingEventTypes = [];
     this.#issue = null;
     this.#ingestionIssue = null;
+    this.#externalSubscriptions = [];
+    this.#twitchBroadcasterId = null;
+    this.#requiredSubscriptions = [];
 
     const connection = await this.#connectionInput(active);
     if (connection === null) return this.getStatus();
@@ -172,6 +201,9 @@ export class StreamerBotRuntimeService {
     this.#missingEventTypes = [];
     this.#issue = null;
     this.#ingestionIssue = null;
+    this.#externalSubscriptions = [];
+    this.#twitchBroadcasterId = null;
+    this.#requiredSubscriptions = [];
   }
 
   getStatus(): StreamerBotRuntimeStatus {
@@ -193,6 +225,70 @@ export class StreamerBotRuntimeService {
     };
   }
 
+  async getCatalog(providerId: string): Promise<Record<string, readonly string[]>> {
+    this.#assertActiveProvider(providerId);
+    return cloneCatalog(await this.#client.getEvents());
+  }
+
+  async replaceExternalSubscriptions(
+    providerId: string,
+    next: readonly StreamerBotSubscriptionSelection[],
+    broadcasterId: string | null
+  ): Promise<{ rollback(): Promise<void> }> {
+    this.#assertActiveProvider(providerId);
+    const previous = this.#externalSubscriptions.map(cloneSelection);
+    const previousBroadcasterId = this.#twitchBroadcasterId;
+    await this.#applyExternalSubscriptions(next, true);
+    this.#twitchBroadcasterId = broadcasterId;
+    let rolledBack = false;
+    return {
+      rollback: async () => {
+        if (rolledBack) return;
+        this.#assertActiveProvider(providerId);
+        this.#twitchBroadcasterId = previousBroadcasterId;
+        await this.#applyExternalSubscriptions(previous, false);
+        rolledBack = true;
+      }
+    };
+  }
+
+  async #applyExternalSubscriptions(
+    next: readonly StreamerBotSubscriptionSelection[],
+    validateAvailability: boolean
+  ): Promise<void> {
+    if (validateAvailability) {
+      const catalog = await this.#client.getEvents();
+      const unavailable = next.some((selection) => {
+        const advertised = catalog[selection.sourceKey];
+        return advertised === undefined || selection.eventTypes.some((eventType) => !advertised.includes(eventType));
+      });
+      if (unavailable) {
+        throw new Error("One or more selected Streamer.bot events are no longer advertised");
+      }
+    }
+
+    const before = mergeSubscriptionSelections(this.#requiredSubscriptions, this.#externalSubscriptions);
+    const after = mergeSubscriptionSelections(this.#requiredSubscriptions, next);
+    const additions = subtractSubscriptionSelections(after, before);
+    const removals = subtractSubscriptionSelections(before, after);
+    if (additions.length > 0) await this.#client.subscribe(additions);
+    try {
+      if (removals.length > 0) await this.#client.unsubscribe(removals);
+    } catch (error) {
+      if (additions.length > 0) {
+        try { await this.#client.unsubscribe(additions); } catch { /* keep the original transport failure */ }
+      }
+      throw error;
+    }
+    this.#externalSubscriptions = next.map(cloneSelection);
+  }
+
+  #assertActiveProvider(providerId: string): void {
+    if (this.#activeProviderId !== providerId || this.#client.getStatus().state !== "connected") {
+      throw new StreamerBotRuntimeUnavailableError();
+    }
+  }
+
   async #connectionInput(record: ProviderRegistrationRecord): Promise<StreamerBotConnectionInput | null> {
     const parsed = providerSetupInputSchema.safeParse({
       kind: "streamerbot",
@@ -204,8 +300,17 @@ export class StreamerBotRuntimeService {
       return null;
     }
 
+    this.#externalSubscriptions = parsed.data.configuration.externalSubscriptions;
+    this.#twitchBroadcasterId = parsed.data.configuration.twitchBroadcasterId;
+    const connection = {
+      protocol: parsed.data.configuration.protocol,
+      host: parsed.data.configuration.host,
+      port: parsed.data.configuration.port,
+      endpoint: parsed.data.configuration.endpoint
+    } satisfies StreamerBotConnectionInput;
+
     if (record.secretRef === null) {
-      return parsed.data.configuration;
+      return connection;
     }
 
     let password: string | null;
@@ -219,7 +324,7 @@ export class StreamerBotRuntimeService {
       await this.#recordIssue("error", "Streamer.bot password is unavailable", "error");
       return null;
     }
-    return { ...parsed.data.configuration, password };
+    return { ...connection, password };
   }
 
   async #waitForConnection(): Promise<void> {
@@ -249,7 +354,14 @@ export class StreamerBotRuntimeService {
       throw new Error("Streamer.bot did not expose any supported Twitch events");
     }
 
-    await this.#client.subscribe([{ sourceKey, eventTypes: subscribed }]);
+    this.#requiredSubscriptions = [{ sourceKey, eventTypes: subscribed }];
+    const configured = this.#externalSubscriptions.filter((selection) => {
+        const advertised = available[selection.sourceKey];
+        return advertised !== undefined && selection.eventTypes.every((eventType) => advertised.includes(eventType));
+      });
+    const selections = mergeSubscriptionSelections(this.#requiredSubscriptions, configured);
+    await this.#client.subscribe(selections);
+    this.#externalSubscriptions = configured.map(cloneSelection);
     this.#subscribedEventTypes = subscribed;
     this.#missingEventTypes = missing;
     if (missing.length > 0) {
@@ -264,7 +376,13 @@ export class StreamerBotRuntimeService {
   async #handleEvent(envelope: StreamerBotEventEnvelope): Promise<void> {
     try {
       const result = normalizeStreamerBotEvent(envelope);
-      if (result.status === "unsupported") {
+      const normalizedEvent = result.status === "normalized" ? result.event : null;
+      const effectTriggers = createStreamerBotEffectTriggers(envelope, normalizedEvent, {
+        providerId: this.#activeProviderId ?? "streamerbot",
+        twitchBroadcasterId: this.#twitchBroadcasterId,
+        externalSubscriptions: this.#externalSubscriptions
+      });
+      if (result.status === "unsupported" && effectTriggers.length === 0) {
         await this.#emitDiagnostic({
           level: "info",
           message: "Unsupported Streamer.bot event was ignored",
@@ -275,7 +393,9 @@ export class StreamerBotRuntimeService {
         return;
       }
 
-      const ingestion = await this.#ingestionService.ingestNormalizedEvent(result.event);
+      const ingestion = result.status === "normalized"
+        ? await this.#ingestionService.ingestNormalizedEvent(result.event, effectTriggers)
+        : await this.#ingestionService.ingestEffectTriggers(effectTriggers[0]?.eventId ?? "", effectTriggers);
       if (ingestion.status === "rejected") {
         this.#ingestionIssue = this.#createIssue("degraded", ingestion.message, ingestion.referenceId);
       } else if (ingestion.status === "accepted") {
@@ -340,6 +460,44 @@ export class StreamerBotRuntimeService {
       };
     }
   }
+}
+
+function mergeSubscriptionSelections(
+  required: readonly StreamerBotSubscriptionSelection[],
+  configured: readonly StreamerBotSubscriptionSelection[]
+): StreamerBotSubscriptionSelection[] {
+  const merged = new Map<string, string[]>();
+  for (const selection of [...required, ...configured]) {
+    const eventTypes = merged.get(selection.sourceKey) ?? [];
+    for (const eventType of selection.eventTypes) {
+      if (!eventTypes.includes(eventType)) eventTypes.push(eventType);
+    }
+    merged.set(selection.sourceKey, eventTypes);
+  }
+  return Array.from(merged, ([sourceKey, eventTypes]) => ({ sourceKey, eventTypes }));
+}
+
+function subtractSubscriptionSelections(
+  selections: readonly StreamerBotSubscriptionSelection[],
+  excluded: readonly StreamerBotSubscriptionSelection[]
+): StreamerBotSubscriptionSelection[] {
+  const excludedPairs = new Set(excluded.flatMap((selection) =>
+    selection.eventTypes.map((eventType) => `${JSON.stringify(selection.sourceKey)}:${JSON.stringify(eventType)}`)
+  ));
+  return selections.flatMap((selection) => {
+    const eventTypes = selection.eventTypes.filter((eventType) =>
+      !excludedPairs.has(`${JSON.stringify(selection.sourceKey)}:${JSON.stringify(eventType)}`)
+    );
+    return eventTypes.length === 0 ? [] : [{ sourceKey: selection.sourceKey, eventTypes }];
+  });
+}
+
+function cloneSelection(selection: StreamerBotSubscriptionSelection): StreamerBotSubscriptionSelection {
+  return { sourceKey: selection.sourceKey, eventTypes: [...selection.eventTypes] };
+}
+
+function cloneCatalog(catalog: Record<string, readonly string[]>): Record<string, readonly string[]> {
+  return Object.fromEntries(Object.entries(catalog).map(([sourceKey, eventTypes]) => [sourceKey, [...eventTypes]]));
 }
 
 function safeRuntimeFailure(error: unknown): string {

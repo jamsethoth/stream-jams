@@ -128,11 +128,21 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
       archive.manifest.schemaVersion = schemaVersion;
+      for (const tableName of [
+        "screen_effects",
+        "screen_effect_variants",
+        "screen_effect_bindings",
+        "screen_effect_audio_routes",
+        "module_playback_settings"
+      ]) {
+        archive.manifest.configurationRecordCount -= archive.configuration.tables[tableName]?.length ?? 0;
+        delete archive.configuration.tables[tableName];
+      }
       if (schemaVersion === 19) {
         archive.manifest.configurationRecordCount -= archive.configuration.tables.overlay_surfaces?.length ?? 0;
         delete archive.configuration.tables.overlay_surfaces;
@@ -144,6 +154,23 @@ describe("ConfigurationBackupService", () => {
       const snapshot = target.snapshotRepository.snapshot();
       expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toMatchObject({ enabled: false, displayId: null });
     } finally { target.database.close(); }
+  });
+
+  it("rejects a schema-22 archive with incomplete Screen Effects tables", async () => {
+    const target = createRealService();
+    try {
+      const archive = await target.service.exportArchive();
+      delete archive.configuration.tables.screen_effect_bindings;
+      archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
+      const preflight = await target.service.preflight(archive);
+
+      expect(preflight.state).toBe("invalid");
+      expect(preflight.blockers).toEqual(expect.arrayContaining([
+        expect.objectContaining({ summary: "Backup Screen Effects configuration is missing" })
+      ]));
+    } finally {
+      target.database.close();
+    }
   });
 
   it("explicitly rejects an older database schema even when the archive format is supported", async () => {

@@ -1,5 +1,11 @@
 import type { DatabaseSync } from "node:sqlite";
-import { audioOutputRouteSchema, type AudioOutputRoute, type AudioOutputRouteRepository, type AudioRouteReference } from "@stream-jams/core";
+import {
+  audioOutputRouteSchema,
+  type AudioOutputRoute,
+  type AudioOutputRouteRepository,
+  type AudioRouteReference,
+  type ModuleMediaReference
+} from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
 import { AudioOutputError } from "./audio-output-error.js";
 
@@ -23,6 +29,43 @@ export class SqliteAudioOutputRouteRepository implements AudioOutputRouteReposit
     `).all(id).map(row => ({ alertId: String(row.alert_id), name: String(row.name) }));
   }
 
+  findModuleReferences(id: string): readonly ModuleMediaReference[] {
+    const alerts = this.connection.prepare(`
+      SELECT DISTINCT
+        alert_id AS owner_id,
+        json_extract(document_json, '$.name') AS owner_name,
+        CASE
+          WHEN json_extract(document_json, '$.kind') = 'variation' THEN alert_id
+          ELSE NULL
+        END AS variant_id
+      FROM alert_editor_documents, json_each(document_json, '$.outputs.deviceRouteIds')
+      WHERE json_each.value = ?
+      ORDER BY alert_id
+    `).all(id).map(row => ({
+      moduleId: "alerts",
+      ownerId: String(row.owner_id),
+      ownerName: String(row.owner_name),
+      variantId: row.variant_id === null ? null : String(row.variant_id)
+    }));
+    const effects = this.connection.prepare(`
+      SELECT DISTINCT
+        effects.id AS owner_id,
+        effects.name AS owner_name,
+        variants.id AS variant_id
+      FROM screen_effect_audio_routes AS routes
+      JOIN screen_effect_variants AS variants ON variants.id = routes.variant_id
+      JOIN screen_effects AS effects ON effects.id = variants.effect_id
+      WHERE routes.route_id = ?
+      ORDER BY effects.id, variants.position
+    `).all(id).map(row => ({
+      moduleId: "screen-effects",
+      ownerId: String(row.owner_id),
+      ownerName: String(row.owner_name),
+      variantId: String(row.variant_id)
+    }));
+    return [...alerts, ...effects];
+  }
+
   save(candidate: AudioOutputRoute): void {
     const route = audioOutputRouteSchema.parse(candidate);
     runInTransaction(this.connection, () => {
@@ -38,7 +81,18 @@ export class SqliteAudioOutputRouteRepository implements AudioOutputRouteReposit
   delete(id: string): void {
     runInTransaction(this.connection, () => {
       const references = this.findReferences(id);
-      if (references.length > 0) throw new AudioOutputError(409, "AUDIO_ROUTE_REFERENCED", "This route is still referenced by alerts.", "Remove the route from the listed alerts before deleting it.", [id], references);
+      const owners = this.findModuleReferences(id);
+      if (owners.length > 0) {
+        throw new AudioOutputError(
+          409,
+          "AUDIO_ROUTE_REFERENCED",
+          "This route is still referenced by saved playback items.",
+          "Remove the route from the listed Alerts and Screen Effects before deleting it.",
+          [id],
+          references,
+          owners
+        );
+      }
       this.connection.prepare("DELETE FROM audio_output_routes WHERE id = ?").run(id);
     });
   }

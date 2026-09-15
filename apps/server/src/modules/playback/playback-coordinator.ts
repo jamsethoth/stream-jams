@@ -22,6 +22,7 @@ import type {
 import { resolveAlertAudio } from "@stream-jams/core";
 import type { AudioPlaybackSink, PlaybackQueueItem } from "@stream-jams/core";
 import type { AudioOutputService } from "../audio/audio-output-service.js";
+import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
 
 type PlaybackAudioOutputService = Pick<AudioOutputService, "preparePlayback"> & Partial<Pick<AudioOutputService, "listRoutes">>;
 
@@ -86,7 +87,8 @@ export interface PlaybackCoordinatorDependencies {
 }
 
 interface DevicePlaybackState {
-  readonly id: string;
+  readonly occurrenceId: string;
+  readonly transportId: string;
   cancelled: boolean;
   settled: boolean;
   stopping: Promise<void> | null;
@@ -382,6 +384,37 @@ export class PlaybackCoordinator {
     return this.#stopOccurrenceAndAdvance(current.id, "skipped");
   }
 
+  async skip(occurrenceId: string): Promise<boolean> {
+    if (this.#queue.getSnapshot().current?.id !== occurrenceId) return false;
+    await this.#stopOccurrenceAndAdvance(occurrenceId, "skipped");
+    return true;
+  }
+
+  remove(occurrenceId: string): boolean {
+    return this.#queue.remove(occurrenceId);
+  }
+
+  clearPending(): number {
+    return this.#queue.clearPending();
+  }
+
+  setModulePaused(paused: boolean): PlaybackQueueSnapshot {
+    return this.#deliverCurrent(this.#queue.setModulePaused(paused));
+  }
+
+  async applySafetyState(state: PlaybackSafetyState): Promise<PlaybackQueueSnapshot> {
+    const snapshot = this.#deliverCurrent(this.#queue.setSafetyState(state));
+    try {
+      this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
+    } catch {
+      // A browser transport failure must not prevent device mute from being applied.
+    }
+    await Promise.allSettled([
+      this.#audioPlaybackSink?.setMuted(snapshot.muted)
+    ]);
+    return snapshot;
+  }
+
   replayRecent(itemId: string): PlaybackQueueSnapshot {
     return this.#deliverCurrent(this.#queue.replayRecent(itemId));
   }
@@ -459,11 +492,18 @@ export class PlaybackCoordinator {
       this.#devicePlayback = null;
       this.#desktopPlayback = null;
       const startsAtEpochMs = Date.now() + 100;
+      const transportId = effectOccurrenceKey("alerts", snapshot.current.id);
       const desktopInstructions = snapshot.current.alerts.filter(alert => alert.desktopVisualEligible === true).map(alert => alert.overlayInstruction).filter(instruction =>
         instruction.moduleId === "alerts" && instruction.scope === "module" && instruction.targetProfileId === "landscape" &&
         (instruction.visual !== null || instruction.text !== null || instruction.shape != null));
       if (this.#desktopVisualSink !== null && desktopInstructions.length > 0) {
-        this.#desktopPlayback = { id: snapshot.current.id, cancelled: false, settled: false, stopping: null };
+        this.#desktopPlayback = {
+          occurrenceId: snapshot.current.id,
+          transportId,
+          cancelled: false,
+          settled: false,
+          stopping: null
+        };
       }
       const browserInstructions = (this.#overlayPlaybackSink === null ? [] : snapshot.current.alerts).map(alert => ({
         ...alert.overlayInstruction,
@@ -480,7 +520,13 @@ export class PlaybackCoordinator {
       }
       // Register device and browser work before either sink can report completion.
       if (snapshot.current.audio.length > 0 && this.#audioPlaybackSink !== null && this.#audioOutputService !== null) {
-        const state = { id: snapshot.current.id, cancelled: false, settled: false, stopping: null };
+        const state = {
+          occurrenceId: snapshot.current.id,
+          transportId,
+          cancelled: false,
+          settled: false,
+          stopping: null
+        };
         this.#devicePlayback = state;
         this.#preparationTimer = this.#scheduleTimer(
           () => { void this.#expireDevicePreparation(snapshot.current!, state); },
@@ -534,7 +580,7 @@ export class PlaybackCoordinator {
   async #dispatchDeviceAudio(item: PlaybackQueueItem, state: DevicePlaybackState, startsAtEpochMs: number): Promise<void> {
     const active = () => !this.#closed && !state.cancelled && this.#devicePlayback === state;
     try {
-      const prepared = await this.#audioOutputService!.preparePlayback(item.id, item.audio);
+      const prepared = await this.#audioOutputService!.preparePlayback(state.transportId, item.audio);
       if (this.#devicePlayback === state) this.#clearPreparationTimer();
       if (!active()) return;
       if (prepared.unavailableRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, prepared.unavailableRouteIds);
@@ -553,7 +599,7 @@ export class PlaybackCoordinator {
       }));
       if (requiresExplicitStop && active()) {
         try {
-          state.stopping ??= this.#audioPlaybackSink!.stop(item.id);
+          state.stopping ??= this.#audioPlaybackSink!.stop(state.transportId);
           await state.stopping;
         } catch {
           state.stopping = null;
@@ -579,15 +625,15 @@ export class PlaybackCoordinator {
   }
 
   async #dispatchDesktop(instructions: readonly OverlayInstruction[], startsAt: number, state: DevicePlaybackState): Promise<void> {
-    try { await this.#desktopVisualSink!.play(state.id, instructions, startsAt); }
+    try { await this.#desktopVisualSink!.play(state.transportId, instructions, startsAt); }
     catch {
       if (!state.cancelled) void this.#logger?.error("Desktop visual playback unavailable. Browser and audio outputs continue independently.", {
-        module: "overlay-surfaces", source: "desktop-overlay.playback.failed", correlationId: this.#generateReferenceId?.() ?? state.id, processingId: null,
-        metadata: { playbackId: state.id, nextStep: "Check the selected display and retry the desktop overlay in Settings. Interrupted content is not replayed." }
+        module: "overlay-surfaces", source: "desktop-overlay.playback.failed", correlationId: this.#generateReferenceId?.() ?? state.occurrenceId, processingId: null,
+        metadata: { playbackId: state.occurrenceId, nextStep: "Check the selected display and retry the desktop overlay in Settings. Interrupted content is not replayed." }
       }).catch(() => undefined);
     } finally {
       state.settled = true;
-      if (!this.#closed && !state.cancelled && this.#desktopPlayback === state && this.#queue.getSnapshot().current?.id === state.id && this.#canCompleteCurrent()) this.completeCurrent();
+      if (!this.#closed && !state.cancelled && this.#desktopPlayback === state && this.#queue.getSnapshot().current?.id === state.occurrenceId && this.#canCompleteCurrent()) this.completeCurrent();
     }
   }
 
@@ -597,7 +643,7 @@ export class PlaybackCoordinator {
     state.cancelled = true;
     void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds));
     try {
-      state.stopping ??= this.#audioPlaybackSink!.stop(item.id);
+      state.stopping ??= this.#audioPlaybackSink!.stop(state.transportId);
       await state.stopping;
     } catch {
       state.stopping = null;
@@ -631,11 +677,11 @@ export class PlaybackCoordinator {
       this.#pendingClientsByInstructionId.clear();
       this.#browserDispatchComplete = true;
       const desktopStop = desktop === null || this.#desktopVisualSink === null ? null :
-        (desktop.stopping ??= this.#desktopVisualSink.stop(playbackId));
+        (desktop.stopping ??= this.#desktopVisualSink.stop(desktop.transportId));
       // Start both independent stops before waiting for either output.
       void desktopStop?.catch(() => undefined);
       if (state !== null && this.#audioPlaybackSink !== null) {
-        state.stopping ??= this.#audioPlaybackSink.stop(playbackId);
+        state.stopping ??= this.#audioPlaybackSink.stop(state.transportId);
         try {
           await state.stopping;
         } catch (error) {

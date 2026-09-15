@@ -107,7 +107,13 @@ describe("createManagementHttpClient", () => {
               code: "AUDIO_ROUTE_REFERENCED",
               message: "This route is still referenced by alerts.",
               nextStep: "Remove the route from the listed alerts before deleting it.",
-              references: [{ alertId: "alert-a", name: "New follower" }]
+              references: [{ alertId: "alert-a", name: "New follower" }],
+              owners: [{
+                moduleId: "screen-effects",
+                ownerId: "effect-a",
+                ownerName: "Jump scare",
+                variantId: "variant-a"
+              }]
             }
           }, { status: 409 })
     );
@@ -118,7 +124,13 @@ describe("createManagementHttpClient", () => {
     expect(error).toBeInstanceOf(ManagementHttpError);
     expect(error).toMatchObject({
       nextStep: "Remove the route from the listed alerts before deleting it.",
-      references: [{ alertId: "alert-a", name: "New follower" }]
+      references: [{ alertId: "alert-a", name: "New follower" }],
+      owners: [{
+        moduleId: "screen-effects",
+        ownerId: "effect-a",
+        ownerName: "Jump scare",
+        variantId: "variant-a"
+      }]
     });
   });
 

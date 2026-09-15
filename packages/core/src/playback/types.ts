@@ -18,6 +18,7 @@ export interface PlaybackQueueItem {
   readonly alerts: readonly ResolvedAlert[];
   readonly audio: readonly ResolvedAlertAudio[];
   readonly priority: number;
+  readonly sequence: number;
   readonly status: "queued" | "playing" | "completed" | "skipped";
   readonly enqueuedAt: string;
   readonly startedAt: string | null;

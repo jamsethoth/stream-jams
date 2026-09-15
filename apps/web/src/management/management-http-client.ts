@@ -1,4 +1,4 @@
-import { formatHttpError, readHttpErrorDetails, type HttpErrorReference } from "./http-errors.js";
+import { formatHttpError, readHttpErrorDetails, type HttpErrorOwner, type HttpErrorReference } from "./http-errors.js";
 
 export interface HttpManagementClientOptions {
   readonly fetch?: typeof fetch;
@@ -33,7 +33,10 @@ export class ManagementHttpError extends Error {
     readonly code: string | null,
     readonly referenceId: string | null,
     readonly nextStep: string | null = null,
-    readonly references: readonly HttpErrorReference[] = []
+    readonly references: readonly HttpErrorReference[] = [],
+    readonly owners: readonly HttpErrorOwner[] = [],
+    readonly status: number | null = null,
+    readonly conflictSnapshot: unknown = null
   ) {
     super(message);
     this.name = "ManagementHttpError";
@@ -41,13 +44,24 @@ export class ManagementHttpError extends Error {
 }
 
 async function createManagementHttpError(response: Response, fallback: string): Promise<ManagementHttpError> {
+  const payloadResponse = response.clone();
   const details = await readHttpErrorDetails(response, fallback);
+  const payload = await payloadResponse.json().catch(() => null) as unknown;
+  const conflictSnapshot = details.code === "PLAYBACK_OPERATION_CONFLICT"
+    && typeof payload === "object"
+    && payload !== null
+    && "snapshot" in payload
+    ? payload.snapshot
+    : null;
   return new ManagementHttpError(
     formatHttpError(details),
     details.code,
     details.referenceId,
     details.nextStep,
-    details.references
+    details.references,
+    details.owners,
+    response.status,
+    conflictSnapshot
   );
 }
 

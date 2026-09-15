@@ -46,21 +46,21 @@ Authorized management users SHALL create, rename, bind, inspect, explicitly test
 - **THEN** a stable route ID and its binding persist across app restart
 
 #### Scenario: Unknown route is assigned
-- **WHEN** an alert save references a nonexistent route ID
+- **WHEN** an alert or Screen Effect save references a nonexistent route ID
 - **THEN** validation rejects the save without changing the prior document
 
 #### Scenario: Referenced route deletion is attempted
-- **WHEN** deletion targets a route referenced by saved alerts
-- **THEN** the server rejects it with an affected-alert list
-- **AND** concurrent alert saves cannot create a dangling reference during deletion
+- **WHEN** deletion targets a route referenced by saved alerts or Screen Effect variants
+- **THEN** the server rejects it with a module-qualified affected-item list
+- **AND** concurrent saves in either module cannot create a dangling reference during deletion
 
 #### Scenario: Duplicate device aliases are selected
 - **WHEN** two selected named routes resolve to the same explicit device ID
 - **THEN** each audio layer plays once on that device rather than doubling its sound
 
 #### Scenario: Route is rebound during playback
-- **WHEN** a user confirms rebinding a route while an alert is playing
-- **THEN** the active occurrence keeps its original binding and future starts use the new binding
+- **WHEN** a user confirms rebinding a route while one or more module occurrences are playing
+- **THEN** every active occurrence keeps its original binding and future starts in either module use the new binding
 
 ### Requirement: Device Playback Is Independent Of Visual Recipients
 The runtime SHALL normalize device audio once per selected alert before visual-target expansion and SHALL allow eligible device-audio-only queue items. Device playback SHALL NOT require a connected or visually ready Browser Source profile.

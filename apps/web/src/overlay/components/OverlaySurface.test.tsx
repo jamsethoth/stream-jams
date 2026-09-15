@@ -16,6 +16,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
@@ -450,6 +451,45 @@ describe("OverlaySurface", () => {
       });
     }
   );
+
+  it("remeasures the profile canvas when its root changes size without a window resize event", () => {
+    let notifyResize: ResizeObserverCallback | undefined;
+    const observer: ResizeObserver = {
+      disconnect: vi.fn(),
+      observe: vi.fn(),
+      unobserve: vi.fn()
+    };
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback: ResizeObserverCallback) {
+        notifyResize = callback;
+      }
+      disconnect = observer.disconnect;
+      observe = observer.observe;
+      unobserve = observer.unobserve;
+    });
+    setViewport(2_560, 1_392);
+    render(
+      <OverlaySurface
+        composition={composition(instruction())}
+        resolveAssetUrl={(assetId) => `/assets/${assetId}`}
+      />
+    );
+
+    expect(screen.getByTestId("overlay-profile-canvas")).toHaveStyle({
+      transform: `translate(-50%, -50%) scale(${1_392 / 1_080})`
+    });
+    expect(notifyResize).toBeTypeOf("function");
+
+    act(() => {
+      notifyResize!([{
+        contentRect: { width: 2_560, height: 1_440 }
+      } as ResizeObserverEntry], observer);
+    });
+
+    expect(screen.getByTestId("overlay-profile-canvas")).toHaveStyle({
+      transform: `translate(-50%, -50%) scale(${1_440 / 1_080})`
+    });
+  });
 
   it("lets user-generated text determine its own direction", () => {
     render(

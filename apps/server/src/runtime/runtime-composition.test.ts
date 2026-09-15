@@ -43,6 +43,46 @@ const toEventSourceRuntimeError = (runtimeComposition as {
   readonly toEventSourceRuntimeError?: RuntimeErrorConverter;
 }).toEventSourceRuntimeError;
 
+type EffectBrowserReadinessEvaluator = (input: {
+  readonly hasBrowserVisual: boolean;
+  readonly hasBrowserAudio: boolean;
+  readonly connectedModuleSource: boolean;
+  readonly connectedUnifiedSource: boolean;
+  readonly unifiedVisualEnabled: boolean;
+}) => boolean;
+
+const isEffectBrowserOutputReady = (runtimeComposition as {
+  readonly isEffectBrowserOutputReady?: EffectBrowserReadinessEvaluator;
+}).isEffectBrowserOutputReady;
+
+describe("isEffectBrowserOutputReady", () => {
+  it("keeps hidden unified visuals unavailable while allowing selected browser audio", () => {
+    expect(isEffectBrowserOutputReady).toBeTypeOf("function");
+
+    expect(isEffectBrowserOutputReady!({
+      hasBrowserVisual: true,
+      hasBrowserAudio: false,
+      connectedModuleSource: false,
+      connectedUnifiedSource: true,
+      unifiedVisualEnabled: false
+    })).toBe(false);
+    expect(isEffectBrowserOutputReady!({
+      hasBrowserVisual: false,
+      hasBrowserAudio: true,
+      connectedModuleSource: false,
+      connectedUnifiedSource: true,
+      unifiedVisualEnabled: false
+    })).toBe(true);
+    expect(isEffectBrowserOutputReady!({
+      hasBrowserVisual: true,
+      hasBrowserAudio: false,
+      connectedModuleSource: true,
+      connectedUnifiedSource: false,
+      unifiedVisualEnabled: false
+    })).toBe(true);
+  });
+});
+
 describe("toEventSourceRuntimeError", () => {
   it("keeps the inline recovery text and gates Diagnostics by the runtime reference", () => {
     expect(toEventSourceRuntimeError).toBeTypeOf("function");
@@ -160,11 +200,11 @@ it("serves audio routes over loopback, observes global mute, and retains binding
     const created = await fetch(`${address}/audio/routes`, { method: "POST", headers, body: JSON.stringify({ name: "Private", deviceId: "test-device" }) });
     expect(created.status).toBe(201);
     const route = await created.json() as { id: string };
-    await composition.playbackCoordinator.mute();
+    await composition.playbackOperationsService.setSafety({ muted: true });
     const muted = await fetch(`${address}/audio/routes/${route.id}/test`, { method: "POST", headers, body: "{}" });
     expect(await muted.json()).toEqual({ routeId: route.id, muted: true });
     expect(testOutput).not.toHaveBeenCalled();
-    await composition.playbackCoordinator.unmute();
+    await composition.playbackOperationsService.setSafety({ muted: false });
     const played = await fetch(`${address}/audio/routes/${route.id}/test`, { method: "POST", headers, body: "{}" });
     expect(await played.json()).toEqual({ routeId: route.id, muted: false });
     expect(testOutput).toHaveBeenCalledExactlyOnceWith("test-device");
@@ -289,7 +329,13 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
     composition.database.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ? WHERE id = 'desktop:primary'").run(JSON.stringify(saved));
     await composition.close();
     composition = await createRuntimeAppComposition(options);
-    expect(transport.configure).toHaveBeenLastCalledWith({ ...saved, layers: [{ moduleId: "alerts", visible: false }] });
+    expect(transport.configure).toHaveBeenLastCalledWith({
+      ...saved,
+      layers: [
+        { moduleId: "alerts", visible: false },
+        { moduleId: "screen-effects", visible: false }
+      ]
+    });
     expect(transport.prepare).not.toHaveBeenCalled();
     expect(transport.start).not.toHaveBeenCalled();
   } finally {

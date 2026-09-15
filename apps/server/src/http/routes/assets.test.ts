@@ -423,6 +423,7 @@ async function createAppWithAssets(options: {
                 }]
               : []
           },
+          owners: [],
           canDelete: !requiresConfirmation,
           requiresConfirmation,
           warnings: requiresConfirmation ? ["1 alert usage will update everywhere."] : []

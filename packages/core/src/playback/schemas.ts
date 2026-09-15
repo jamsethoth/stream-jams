@@ -19,6 +19,7 @@ export const playbackQueueItemSchema = z.object({
   alerts: z.array(resolvedAlertSchema),
   audio: z.array(resolvedAlertAudioSchema).default([]),
   priority: z.number().int(),
+  sequence: z.number().int().nonnegative(),
   status: z.enum(["queued", "playing", "completed", "skipped"]),
   enqueuedAt: isoDateTimeSchema,
   startedAt: isoDateTimeSchema.nullable(),

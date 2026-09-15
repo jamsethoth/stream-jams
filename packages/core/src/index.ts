@@ -221,6 +221,7 @@ export type * from "./playback/types.js";
 export { defaultPlaybackSafetyState } from "./playback/types.js";
 export type * from "./playback/playback-queue.js";
 export { DefaultPlaybackQueue, PlaybackQueueItemNotFoundError } from "./playback/playback-queue.js";
+export * from "./playback/operations.js";
 export type * from "./playback/cooldown-service.js";
 export { DefaultPlaybackCooldownService } from "./playback/cooldown-service.js";
 export type * from "./playback/dedupe-service.js";
@@ -293,3 +294,23 @@ export * from "./audio/transport.js";
 export * from "./management/alert-document-compatibility.js";
 export * from "./audio/media-audio.js";
 export * from "./audio/prepare-timed-media.js";
+export type * from "./screen-effects/types.js";
+export type * from "./screen-effects/repository.js";
+export {
+  createScreenEffectDocument,
+  effectBindingIdentity,
+  effectBindingSchema,
+  effectTriggerSchema,
+  effectSoundSchema,
+  effectVariantSchema,
+  effectVisualOutputsSchema,
+  effectVisualSchema,
+  screenEffectDocumentSchema
+} from "./screen-effects/schemas.js";
+export { chooseWeightedVariant, resolveEffectContent } from "./screen-effects/variant-resolver.js";
+export { matchesEffectBinding } from "./screen-effects/trigger-matcher.js";
+export * from "./screen-effects/effect-queue.js";
+export * from "./screen-effects/module-definition.js";
+export * from "./screen-effects/authoring.js";
+export * from "./screen-effects/effect-queue.js";
+export * from "./screen-effects/layout.js";

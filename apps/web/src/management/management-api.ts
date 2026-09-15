@@ -25,6 +25,7 @@ import {
   providerVoiceTestResultSchema,
   registeredProviderDetailSchema,
   registeredProviderViewSchema,
+  streamerBotSubscriptionCatalogSchema,
   ttsProviderSafetySettingsSchema,
   twitchCustomRewardCatalogSchema,
   type AlertEditorDocument,
@@ -64,6 +65,8 @@ import {
   type ProviderVoiceTestResult,
   type RegisteredProviderDetail,
   type RegisteredProviderView,
+  type StreamerBotSubscriptionCatalog,
+  type StreamerBotSubscriptionUpdateInput,
   type TtsProviderSafetySettings,
   type TwitchCustomRewardCatalog
 } from "@stream-jams/core";
@@ -262,6 +265,11 @@ export interface ManagementApi {
   validateProvider(input: ProviderSetupInput): Promise<ProviderValidationResult>;
   registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
   getProvider(providerId: string): Promise<RegisteredProviderDetail>;
+  getStreamerBotSubscriptions(providerId: string): Promise<StreamerBotSubscriptionCatalog>;
+  updateStreamerBotSubscriptions(
+    providerId: string,
+    input: StreamerBotSubscriptionUpdateInput
+  ): Promise<StreamerBotSubscriptionCatalog>;
   activateProvider(providerId: string, confirmWarnings?: boolean): Promise<ProviderActivationResult>;
   deactivateProvider(providerId: string): Promise<RegisteredProviderView>;
   getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
@@ -429,6 +437,24 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
         `/management/providers/${encodeURIComponent(providerId)}`,
         registeredProviderDetailSchema,
         "Unable to load provider."
+      );
+    },
+
+    getStreamerBotSubscriptions(providerId) {
+      return getContract(
+        `/providers/${encodeURIComponent(providerId)}/streamerbot-subscriptions`,
+        streamerBotSubscriptionCatalogSchema,
+        "Unable to load Streamer.bot subscriptions."
+      );
+    },
+
+    async updateStreamerBotSubscriptions(providerId, input) {
+      return streamerBotSubscriptionCatalogSchema.parse(
+        await client.putJson<unknown>(
+          `/providers/${encodeURIComponent(providerId)}/streamerbot-subscriptions`,
+          input,
+          "Unable to update Streamer.bot subscriptions."
+        )
       );
     },
 

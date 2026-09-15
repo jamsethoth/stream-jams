@@ -299,6 +299,7 @@ function createService(
     getAssetChangeImpact: async (assetId) => ({
       assetId,
       usage: { assetId, totalUsageCount: 0, usages: [] },
+      owners: [],
       canDelete: true,
       requiresConfirmation: false,
       warnings: []

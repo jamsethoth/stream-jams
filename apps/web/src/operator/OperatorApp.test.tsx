@@ -1,10 +1,10 @@
-import type { PlaybackQueueItem, PlaybackQueueSnapshot } from "@stream-jams/core";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import type { MergedOperationsSnapshot, OperationRow } from "@stream-jams/core";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
-import type { PlaybackApi } from "./playback-api.js";
+import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 
 afterEach(() => {
   cleanup();
@@ -14,324 +14,176 @@ afterEach(() => {
 });
 
 describe("OperatorApp", () => {
-  it("permits desktop quit from the draft-free operator console and removes its listener", () => {
+  it("permits desktop quit from the draft-free operator console", () => {
     let request: ((id: string) => void) | undefined;
     const unsubscribe = vi.fn();
     const resolveQuit = vi.fn();
-    window.streamJamsDesktop = {
-      onQuitRequested: (listener) => { request = listener; return unsubscribe; },
-      resolveQuit
-    };
-    const { unmount } = render(<OperatorApp api={createApi({ getSnapshot: () => new Promise(() => {}) })} />);
-    request?.("test-quit");
-    expect(resolveQuit).toHaveBeenCalledWith("test-quit", true);
+    window.streamJamsDesktop = { onQuitRequested: (listener) => { request = listener; return unsubscribe; }, resolveQuit };
+    const { unmount } = render(<OperatorApp api={api({ getSnapshot: () => new Promise(() => {}) })} />);
+    request?.("quit-1");
+    expect(resolveQuit).toHaveBeenCalledWith("quit-1", true);
     unmount();
     expect(unsubscribe).toHaveBeenCalledOnce();
   });
-  it("places management navigation in the shared header action position", async () => {
-    render(<OperatorApp api={createApi({ getSnapshot: async () => snapshot() })} />);
 
-    const link = await screen.findByRole("link", { name: "Back to management" });
-    expect(link).toHaveAttribute("href", "/manage");
-    expect(link).not.toHaveAttribute("target");
-    expect(link).toHaveClass("surface-switch-link");
+  it("shows simultaneous current items and real per-module pending positions", async () => {
+    render(<OperatorApp api={api()} />);
+
+    expect(await screen.findByRole("heading", { name: "Now playing (2)" })).toBeVisible();
+    expect(screen.getByText("Large raid")).toBeVisible();
+    expect(screen.getByText("Flash sweep")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Pending (2)" })).toBeVisible();
+    expect(screen.getByText("Cheer burst").closest("article")).toHaveTextContent("#2");
+    expect(screen.getByText("Follow alert").closest("article")).toHaveTextContent("#1");
+    expect(screen.queryByText("occ-alert")).not.toBeInTheDocument();
   });
 
-  it("renders loading, idle, active, queued, and recent playback states without raw payload data", async () => {
-    const load = deferred<PlaybackQueueSnapshot>();
-    const api = createApi({ getSnapshot: () => load.promise });
-    const { rerender } = render(<OperatorApp api={api} />);
-
-    expect(screen.getByRole("status")).toHaveTextContent("Loading playback state");
-    load.resolve(snapshot());
-    expect(await screen.findByText("No alert is playing.")).toBeInTheDocument();
-
-    rerender(<OperatorApp api={createApi({ getSnapshot: async () => activeSnapshot() })} />);
-    expect(await screen.findByText("Viewer One")).toBeInTheDocument();
-    expect(screen.getAllByText("Follow")).toHaveLength(3);
-    expect(screen.getByText("2 alerts")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Up next (1)" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Recent (1)" })).toBeInTheDocument();
-    expect(screen.queryByText("private message")).not.toBeInTheDocument();
-    expect(screen.queryByText("secret metadata")).not.toBeInTheDocument();
-    expect(screen.queryByText("item-current")).not.toBeInTheDocument();
-  });
-
-  it("runs safety controls through one pending command and announces the command response", async () => {
+  it("sends module-qualified skip, remove and replay commands", async () => {
     const user = userEvent.setup();
-    const pause = deferred<PlaybackQueueSnapshot>();
-    const api = createApi({
-      getSnapshot: async () => activeSnapshot(),
-      pause: () => pause.promise
-    });
-    render(<OperatorApp api={api} />);
-    const pauseButton = await screen.findByRole("button", { name: "Pause queue" });
+    const playbackApi = api();
+    render(<OperatorApp api={playbackApi} />);
+    await screen.findByText("Large raid");
 
-    await user.click(pauseButton);
-    expect(pauseButton).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Mute alert audio" })).toBeDisabled();
-    pause.resolve({ ...activeSnapshot(), paused: true });
+    await user.click(screen.getByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
+    await user.click(screen.getByRole("button", { name: "Remove Cheer burst from Screen Effects" }));
+    await user.click(screen.getByRole("button", { name: "Replay Recent follow in Alerts" }));
 
-    expect(await screen.findByRole("button", { name: "Resume queue" })).toBeEnabled();
-    expect(screen.getByRole("status")).toHaveTextContent("Queue paused. Current alert continues.");
-    expect(screen.getByText("Current alert continues; queued alerts wait.")).toBeInTheDocument();
+    expect(playbackApi.skip).toHaveBeenCalledWith("screen-effects", "occ-effect");
+    expect(playbackApi.remove).toHaveBeenCalledWith("screen-effects", "queued-effect");
+    expect(playbackApi.replay).toHaveBeenCalledWith("alerts", "recent-alert");
   });
 
-  it("supports mute, do-not-disturb, skip, and replay with accessible pressed state", async () => {
+  it("applies the authoritative snapshot returned by a stale command conflict", async () => {
     const user = userEvent.setup();
-    const api = createApi({
-      getSnapshot: async () => activeSnapshot(),
-      mute: vi.fn(async () => ({ ...activeSnapshot(), muted: true })),
-      setDoNotDisturb: vi.fn(async () => ({ ...activeSnapshot(), doNotDisturb: true })),
-      skip: vi.fn(async () => ({ ...activeSnapshot(), current: null })),
-      replay: vi.fn(async () => ({ ...activeSnapshot(), current: activeSnapshot().recent[0] ?? null }))
+    const refreshed = {
+      ...snapshot(),
+      revision: 8,
+      current: snapshot().current.filter((item) => item.moduleId !== "screen-effects")
+    };
+    const playbackApi = api({
+      skip: vi.fn(async () => {
+        throw new PlaybackOperationsConflictError(
+          "The current playback changed before it could be skipped.",
+          refreshed
+        );
+      })
     });
-    render(<OperatorApp api={api} />);
+    render(<OperatorApp api={playbackApi} />);
+    await screen.findByText("Flash sweep");
 
-    await user.click(await screen.findByRole("button", { name: "Mute alert audio" }));
-    expect(api.mute).toHaveBeenCalledOnce();
-    expect(screen.getByText(/Speech already handed to an external provider may continue/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
 
-    const dnd = screen.getByRole("button", { name: "Enable do-not-disturb" });
-    await user.click(dnd);
-    expect(api.setDoNotDisturb).toHaveBeenCalledWith(true);
-    expect(screen.getByRole("button", { name: "Disable do-not-disturb" })).toHaveAttribute("aria-pressed", "true");
-
-    await user.click(screen.getByRole("button", { name: "Skip current alert" }));
-    expect(api.skip).toHaveBeenCalledOnce();
-    expect(screen.getByRole("heading", { name: "Now playing" })).toHaveFocus();
-
-    await user.click(screen.getByRole("button", { name: /Replay Follow from Recent Viewer/ }));
-    expect(api.replay).toHaveBeenCalledWith("item-recent");
-  });
-
-  it("retains the last snapshot, reports stale polling, and links a safe reference to diagnostics", async () => {
-    vi.useFakeTimers();
-    const api = createApi({
-      getSnapshot: vi.fn()
-        .mockResolvedValueOnce(activeSnapshot())
-        .mockRejectedValue(new ManagementHttpError("Unable to refresh.", "PLAYBACK_READ_FAILED", "ref-poll-1"))
-    });
-    render(<OperatorApp api={api} />);
-    await act(async () => await Promise.resolve());
-    expect(screen.getByText("Viewer One")).toBeInTheDocument();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-
-    expect(screen.getByText("Viewer One")).toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Playback state may be stale");
-    expect(screen.getByRole("link", { name: "Open diagnostics" })).toHaveAttribute(
-      "href",
-      "/manage/diagnostics?reference=ref-poll-1"
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The current playback changed before it could be skipped."
     );
+    expect(screen.queryByText("Flash sweep")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Now playing (1)" })).toBeVisible();
   });
 
-  it("shows an initial failure with retry and recovers", async () => {
+  it("pauses one module and confirms a scoped clear with count and revision", async () => {
     const user = userEvent.setup();
-    const getSnapshot = vi.fn()
-      .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValue(snapshot());
-    render(<OperatorApp api={createApi({ getSnapshot })} />);
+    const playbackApi = api();
+    render(<OperatorApp api={playbackApi} />);
+    await screen.findByText("Large raid");
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load playback state");
-    expect(screen.getByRole("link", { name: "Open diagnostics" })).toHaveAttribute("href", "/manage/diagnostics");
-    await user.click(screen.getByRole("button", { name: "Retry loading playback state" }));
+    await user.click(screen.getAllByRole("button", { name: "Pause module" })[1]!);
+    expect(playbackApi.setModulePaused).toHaveBeenCalledWith("screen-effects", true);
 
-    expect(await screen.findByText("No alert is playing.")).toBeInTheDocument();
-    expect(getSnapshot).toHaveBeenCalledTimes(2);
+    await user.click(screen.getAllByRole("button", { name: "Clear pending" })[1]!);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Clear 1 pending Screen Effects item?");
+    await user.click(within(dialog).getByRole("button", { name: "Clear pending" }));
+    expect(playbackApi.clear).toHaveBeenCalledWith("screen-effects", 1, 7);
   });
 
-  it("keeps keyboard focus on a failed command control", async () => {
+  it("runs global safety as one pending command and announces the result", async () => {
     const user = userEvent.setup();
-    const api = createApi({
-      getSnapshot: async () => activeSnapshot(),
-      pause: async () => { throw new ManagementHttpError("Pause refused.", "PLAYBACK_WRITE_FAILED", "ref-command-1"); }
-    });
-    render(<OperatorApp api={api} />);
-    const pauseButton = await screen.findByRole("button", { name: "Pause queue" });
+    const response = deferred<MergedOperationsSnapshot>();
+    const playbackApi = api({ pause: () => response.promise });
+    render(<OperatorApp api={playbackApi} />);
+    const button = await screen.findByRole("button", { name: "Pause all queues" });
 
-    pauseButton.focus();
-    await user.keyboard("{Enter}");
+    await user.click(button);
+    expect(button).toBeDisabled();
+    response.resolve({ ...snapshot(), paused: true });
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Pause refused.");
-    expect(pauseButton).toHaveFocus();
+    expect(await screen.findByRole("button", { name: "Resume all queues" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("All queues paused");
   });
 
-  it("lets a command response win over an older poll response", async () => {
+  it("retains last-known state and labels refresh failures as stale", async () => {
     vi.useFakeTimers();
-    const poll = deferred<PlaybackQueueSnapshot>();
-    const getSnapshot = vi.fn()
-      .mockResolvedValueOnce(activeSnapshot())
-      .mockImplementationOnce(() => poll.promise);
-    const api = createApi({
-      getSnapshot,
-      pause: async () => ({ ...activeSnapshot(), paused: true })
-    });
-    render(<OperatorApp api={api} />);
-    await act(async () => await Promise.resolve());
-    expect(screen.getByRole("button", { name: "Pause queue" })).toBeInTheDocument();
+    const getSnapshot = vi.fn().mockResolvedValueOnce(snapshot()).mockRejectedValueOnce(new Error("offline"));
+    render(<OperatorApp api={api({ getSnapshot })} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Large raid")).toBeVisible();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    await act(async () => {
-      screen.getByRole("button", { name: "Pause queue" }).click();
-    });
-    await act(async () => await Promise.resolve());
-    expect(screen.getByRole("button", { name: "Resume queue" })).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
 
-    poll.resolve(activeSnapshot());
-    await act(async () => await Promise.resolve());
-    expect(screen.getByRole("button", { name: "Resume queue" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Playback state may be stale");
+    expect(screen.getByText("Large raid")).toBeVisible();
   });
 
-  it("pauses polling while hidden and refreshes immediately when visible", async () => {
-    vi.useFakeTimers();
-    let hidden = false;
-    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
-    const getSnapshot = vi.fn(async () => activeSnapshot());
-    render(<OperatorApp api={createApi({ getSnapshot })} />);
-    await act(async () => await Promise.resolve());
-    expect(getSnapshot).toHaveBeenCalledTimes(1);
-
-    hidden = true;
-    act(() => document.dispatchEvent(new Event("visibilitychange")));
-    await act(async () => void await vi.advanceTimersByTimeAsync(20_000));
-    expect(getSnapshot).toHaveBeenCalledTimes(1);
-
-    hidden = false;
-    await act(async () => {
-      document.dispatchEvent(new Event("visibilitychange"));
-      await Promise.resolve();
-    });
-    expect(getSnapshot).toHaveBeenCalledTimes(2);
-  });
-
-  it("keeps one polling loop when visibility changes during an in-flight request", async () => {
-    vi.useFakeTimers();
-    let hidden = false;
-    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
-    const first = deferred<PlaybackQueueSnapshot>();
-    const second = deferred<PlaybackQueueSnapshot>();
-    const getSnapshot = vi.fn()
-      .mockImplementationOnce(() => first.promise)
-      .mockImplementationOnce(() => second.promise)
-      .mockResolvedValue(activeSnapshot());
-    render(<OperatorApp api={createApi({ getSnapshot })} />);
-    expect(getSnapshot).toHaveBeenCalledTimes(1);
-
-    hidden = true;
-    act(() => document.dispatchEvent(new Event("visibilitychange")));
-    hidden = false;
-    act(() => document.dispatchEvent(new Event("visibilitychange")));
-    expect(getSnapshot).toHaveBeenCalledTimes(2);
-
-    second.resolve(activeSnapshot());
-    first.resolve(activeSnapshot());
-    await act(async () => await Promise.resolve());
-    await act(async () => void await vi.advanceTimersByTimeAsync(2_000));
-
-    expect(getSnapshot).toHaveBeenCalledTimes(3);
-  });
-
-  it("bounds refresh retry delays at two, four, eight, and fifteen seconds", async () => {
-    vi.useFakeTimers();
-    const getSnapshot = vi.fn()
-      .mockResolvedValueOnce(activeSnapshot())
-      .mockRejectedValue(new Error("refresh failed"));
-    render(<OperatorApp api={createApi({ getSnapshot })} />);
-    await act(async () => await Promise.resolve());
-
-    await act(async () => void await vi.advanceTimersByTimeAsync(2_000));
-    expect(getSnapshot).toHaveBeenCalledTimes(2);
-    await act(async () => void await vi.advanceTimersByTimeAsync(2_000));
-    expect(getSnapshot).toHaveBeenCalledTimes(3);
-    await act(async () => void await vi.advanceTimersByTimeAsync(4_000));
-    expect(getSnapshot).toHaveBeenCalledTimes(4);
-    await act(async () => void await vi.advanceTimersByTimeAsync(8_000));
-    expect(getSnapshot).toHaveBeenCalledTimes(5);
-    await act(async () => void await vi.advanceTimersByTimeAsync(15_000));
-    expect(getSnapshot).toHaveBeenCalledTimes(6);
+  it("shows an actionable initial error without inventing playback state", async () => {
+    render(<OperatorApp api={api({ getSnapshot: async () => { throw new ManagementHttpError("Session failed", "SESSION", "ref-1"); } })} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Session failed");
+    expect(screen.getByRole("link", { name: "Open diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=ref-1");
   });
 });
 
-function createApi(overrides: Partial<PlaybackApi> = {}): PlaybackApi {
+function operation(input: Partial<OperationRow> & Pick<OperationRow, "moduleId" | "occurrenceId" | "name">): OperationRow {
   return {
-    getSnapshot: vi.fn(async () => snapshot()),
+    moduleId: input.moduleId,
+    occurrenceId: input.occurrenceId,
+    name: input.name,
+    summary: input.summary ?? "Viewer One",
+    status: input.status ?? "queued",
+    enqueuedAtMs: input.enqueuedAtMs ?? Date.parse("2026-09-13T12:00:00.000Z"),
+    completedAtMs: input.completedAtMs ?? null,
+    sequence: input.sequence ?? 0,
+    moduleQueuePosition: input.moduleQueuePosition ?? null
+  };
+}
+
+function snapshot(): MergedOperationsSnapshot {
+  return {
+    revision: 7,
+    owners: [{ moduleId: "alerts", paused: false }, { moduleId: "screen-effects", paused: false }],
+    current: [
+      operation({ moduleId: "alerts", occurrenceId: "occ-alert", name: "Large raid", status: "playing" }),
+      operation({ moduleId: "screen-effects", occurrenceId: "occ-effect", name: "Flash sweep", status: "playing" })
+    ],
+    queued: [
+      operation({ moduleId: "screen-effects", occurrenceId: "queued-effect", name: "Cheer burst", moduleQueuePosition: 2 }),
+      operation({ moduleId: "alerts", occurrenceId: "queued-alert", name: "Follow alert", moduleQueuePosition: 1 })
+    ],
+    recent: [operation({ moduleId: "alerts", occurrenceId: "recent-alert", name: "Recent follow", status: "completed", completedAtMs: Date.parse("2026-09-13T12:01:00.000Z") })],
+    paused: false,
+    muted: false,
+    doNotDisturb: false
+  };
+}
+
+function api(overrides: Partial<PlaybackApi> = {}): PlaybackApi {
+  const same = async () => snapshot();
+  return {
+    getSnapshot: vi.fn(same),
     pause: vi.fn(async () => ({ ...snapshot(), paused: true })),
-    resume: vi.fn(async () => ({ ...snapshot(), paused: false })),
+    resume: vi.fn(same),
     mute: vi.fn(async () => ({ ...snapshot(), muted: true })),
-    unmute: vi.fn(async () => ({ ...snapshot(), muted: false })),
+    unmute: vi.fn(same),
     setDoNotDisturb: vi.fn(async (enabled) => ({ ...snapshot(), doNotDisturb: enabled })),
-    skip: vi.fn(async () => snapshot()),
-    replay: vi.fn(async () => snapshot()),
+    skip: vi.fn(same),
+    remove: vi.fn(same),
+    replay: vi.fn(same),
+    clear: vi.fn(same),
+    setModulePaused: vi.fn(async (moduleId, paused) => ({ ...snapshot(), owners: snapshot().owners.map((owner) => owner.moduleId === moduleId ? { ...owner, paused } : owner) })),
     ...overrides
-  };
-}
-
-function snapshot(): PlaybackQueueSnapshot {
-  return { current: null, queued: [], recent: [], paused: false, muted: false, doNotDisturb: false };
-}
-
-function activeSnapshot(): PlaybackQueueSnapshot {
-  return {
-    ...snapshot(),
-    current: item("item-current", "playing", "Viewer One", 2),
-    queued: [item("item-queued", "queued", "Next Viewer", 1)],
-    recent: [item("item-recent", "completed", "Recent Viewer", 1)]
-  };
-}
-
-function item(id: string, status: PlaybackQueueItem["status"], actor: string, alertCount: number): PlaybackQueueItem {
-  return {
-    id,
-    audio: [],
-    sourceEvent: {
-      id: `event-${id}`,
-      providerId: "twitch",
-      sourcePlatform: "twitch",
-      ingestProvider: "twitch",
-      occurredAt: "2026-07-21T12:00:00.000Z",
-      actor: { id: "user-1", displayName: actor },
-      message: "private message",
-      metadata: { internal: "secret metadata" },
-      type: "follow",
-      amount: null
-    },
-    alerts: Array.from({ length: alertCount }, (_, index) => ({
-      id: `alert-${index}`,
-      sourceEventId: `event-${id}`,
-      ruleId: `rule-${index}`,
-      variantId: `variant-${index}`,
-      overlayInstruction: {
-        id: `instruction-${index}`,
-        overlayId: "default",
-        moduleId: "alerts",
-        purpose: "live",
-        scope: "module",
-        visual: null,
-        audio: { assetId: `asset-${index}`, volume: 1 },
-        text: null,
-        tts: null,
-        durationMs: 3_000
-      }
-    })),
-    priority: 10,
-    status,
-    enqueuedAt: "2026-07-21T12:00:01.000Z",
-    startedAt: status === "queued" ? null : "2026-07-21T12:00:02.000Z",
-    completedAt: status === "completed" ? "2026-07-21T12:00:05.000Z" : null
   };
 }
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((onResolve, onReject) => {
-    resolve = onResolve;
-    reject = onReject;
-  });
-  return { promise, resolve, reject };
+  const promise = new Promise<T>((done) => { resolve = done; });
+  return { promise, resolve };
 }

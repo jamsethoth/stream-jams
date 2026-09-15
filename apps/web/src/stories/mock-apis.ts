@@ -57,6 +57,26 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async getProvider() {
       throw new Error("No provider detail configured for this story.");
     },
+    async getStreamerBotSubscriptions(providerId) {
+      return {
+        providerId,
+        available: false,
+        sources: [],
+        selected: [],
+        unavailableSelections: [],
+        twitchBroadcasterId: null
+      };
+    },
+    async updateStreamerBotSubscriptions(providerId, input) {
+      return {
+        providerId,
+        available: true,
+        sources: input.externalSubscriptions,
+        selected: input.externalSubscriptions,
+        unavailableSelections: [],
+        twitchBroadcasterId: input.twitchBroadcasterId
+      };
+    },
     async activateProvider() {
       throw new Error("No provider activation configured for this story.");
     },
@@ -169,7 +189,7 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
       const item = storyAssetLibraryItems.find((candidate) => candidate.id === assetId) ?? storyAssetLibraryItems[0]!;
       const warnings = item.usage.totalUsageCount > 0 ? [`${item.usage.totalUsageCount} alert usage will update everywhere.`] : [];
       if (candidateMediaType !== undefined && candidateMediaType !== item.mediaType) warnings.push(`Media type changes from ${item.mediaType} to ${candidateMediaType}.`);
-      return { assetId, usage: item.usage, canDelete: item.usage.totalUsageCount === 0, requiresConfirmation: warnings.length > 0, warnings };
+      return { assetId, usage: item.usage, owners: [], canDelete: item.usage.totalUsageCount === 0, requiresConfirmation: warnings.length > 0, warnings };
     },
     async deleteAsset() {
       return undefined;

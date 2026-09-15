@@ -150,6 +150,24 @@ describe("DefaultPlaybackQueue", () => {
     expect(dndQueue.getSnapshot()).toMatchObject({ current: null, doNotDisturb: true });
   });
 
+  it("keeps the Alerts module paused when global playback resumes", () => {
+    const clock = new MutableClock("2026-05-30T12:00:00.000Z");
+    const queue = new DefaultPlaybackQueue({
+      clock: () => clock.now(),
+      generateId: () => "queue-item-1",
+      initialSafetyState: { paused: true, muted: false, doNotDisturb: false },
+      initialModulePaused: true
+    });
+    queue.enqueue({ sourceEvent: createCheerEvent(), alerts: [createResolvedAlert("paused-module")] });
+    queue.setSafetyState({ paused: false, muted: false, doNotDisturb: false });
+
+    expect(queue.getSnapshot()).toMatchObject({ current: null, queued: [{ id: "queue-item-1" }] });
+    expect(queue.isModulePaused()).toBe(true);
+
+    queue.setModulePaused(false);
+    expect(queue.getSnapshot()).toMatchObject({ current: { id: "queue-item-1" }, queued: [] });
+  });
+
   it("records completed and skipped items, replays known recent items, and rejects unknown replay IDs", () => {
     const clock = new MutableClock("2026-05-30T12:00:00.000Z");
     const queue = createQueue(clock);

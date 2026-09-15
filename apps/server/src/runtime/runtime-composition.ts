@@ -6,6 +6,7 @@ import {
   DefaultAlertResolver,
   DefaultAlertService,
   DefaultAssetValidator,
+  DefaultEffectQueue,
   DefaultMediaImportPipeline,
   DefaultModerationService,
   DefaultOverlayCompositionService,
@@ -17,6 +18,7 @@ import {
   NoopMediaTranscodingStage,
   createAppVersion,
   createDefaultOverlayModuleRegistry,
+  isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
   type ActionableManagementError,
   type AudioDeviceHost,
@@ -25,6 +27,9 @@ import {
   type DesktopConfig,
   type DesktopAudioTransport,
   type DesktopOverlayTransport,
+  type EffectContentSnapshot,
+  type OverlayModuleConfigService,
+  type OverlayModuleRuntime,
   type PlaybackSafetyState,
   type AlertBrowserSourceView,
   type ProviderLiveStatus,
@@ -58,6 +63,11 @@ import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
+import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
+import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
+import { EffectManagementService } from "../modules/screen-effects/effect-management-service.js";
+import { EffectPlaybackCoordinator } from "../modules/screen-effects/effect-playback-coordinator.js";
+import { SqliteEffectModuleSettingsRepository } from "../modules/screen-effects/sqlite-effect-module-settings-repository.js";
 import { ConfigurationBackupService } from "../modules/backup/configuration-backup-service.js";
 import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
 import { RuntimeMaintenanceGate } from "../modules/backup/runtime-maintenance-gate.js";
@@ -87,6 +97,8 @@ import {
 } from "../modules/overlays/overlay-output-management-service.js";
 import { SqliteOverlayAccessKeyRepository } from "../modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "../modules/playback/playback-coordinator.js";
+import { PlaybackOperationsService } from "../modules/playback/playback-operations-service.js";
+import { createAlertQueueOwner, createEffectQueueOwner } from "../modules/playback/playback-queue-owners.js";
 import { ManagementUiService } from "../modules/providers/management-ui-service.js";
 import { createProviderManagementAdapters } from "../modules/providers/provider-management-adapters.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
@@ -181,6 +193,8 @@ export interface RuntimeAppCompositionOptions {
 export interface RuntimeAppComposition {
   readonly desktopConfigService: DesktopConfigService;
   readonly playbackCoordinator: PlaybackCoordinator;
+  readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
+  readonly playbackOperationsService: PlaybackOperationsService;
   readonly app: FastifyInstance;
   readonly configStore: ConfigStore;
   readonly database: StreamJamsDatabase;
@@ -242,6 +256,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: generateAlertConfigurationId
   });
   const assetRepository = new SqliteAssetRepository(database.connection);
+  const effectRepository = new SqliteEffectRepository(database.connection, now);
+  const effectModuleSettingsRepository = new SqliteEffectModuleSettingsRepository(database.connection, now);
+  const alertModuleSettingsRepository = new SqliteEffectModuleSettingsRepository(database.connection, now, "alerts");
+  const initialEffectModuleSettings = await effectModuleSettingsRepository.get();
+  const initialAlertModuleSettings = await alertModuleSettingsRepository.get();
   const twitchAccountRepository = new SqliteTwitchAccountRepository(database.connection);
   const assetStore = new LocalAssetStore({ assetDirectory: initialConfig.storage.assetDirectory });
   const assetValidator = new DefaultAssetValidator();
@@ -370,6 +389,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     initialPlaybackMuted: initialConfig.playback.muted,
     onClientDisconnected(clientId) {
       playbackCoordinator.reportClientDisconnected(clientId);
+      effectPlaybackCoordinator.reportClientDisconnected(clientId);
     },
     onPlaybackReport(report) {
       if (report.status === "failed") {
@@ -389,12 +409,21 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       if (report.status === "completed" || report.status === "failed") {
         playbackCoordinator.reportInstructionFinished(report.clientId, report.instructionId);
+        effectPlaybackCoordinator.reportInstructionFinished(
+          report.clientId,
+          report.instructionId,
+          report.status === "failed"
+        );
       }
     }
   });
   const playbackQueue = new DefaultPlaybackQueue({
     generateId: generatePlaybackQueueItemId,
-    initialSafetyState: initialConfig.playback
+    initialSafetyState: initialConfig.playback,
+    initialModulePaused: initialAlertModuleSettings.paused
+  });
+  const effectQueue = new DefaultEffectQueue({
+    modulePaused: initialEffectModuleSettings.paused
   });
   const maintenanceGate = new RuntimeMaintenanceGate();
   let desktopAudioSink: DesktopAudioSink | undefined;
@@ -417,13 +446,106 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   }
   const audioDeviceHost = options.audioDeviceHost ?? options.desktopAudioTransport;
   const audioPlaybackSink = options.audioPlaybackSink ?? desktopAudioSink;
+  const audioOutputRouteRepository = new SqliteAudioOutputRouteRepository(database.connection);
   const audioOutputService = new AudioOutputService({
-    routes: new SqliteAudioOutputRouteRepository(database.connection),
+    routes: audioOutputRouteRepository,
     ...(audioDeviceHost === undefined ? {} : { host: audioDeviceHost }),
     isMuted: () => playbackQueue.getSnapshot().muted,
     runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
     runTest: work => maintenanceGate.runIntake(work)
   });
+  const playbackCooldownService = new DefaultPlaybackCooldownService();
+  const playbackDedupeService = new DefaultPlaybackDedupeService();
+  const isEffectModuleEnabled = async () =>
+    (await overlayModuleConfigService.getModuleConfig("screen-effects")).enabled;
+  const validateEffectReferences = async (content: EffectContentSnapshot) => {
+    const assetIds = [
+      ...(content.variant.visual === null ? [] : [content.variant.visual.assetId]),
+      ...(content.variant.sound === null ? [] : [content.variant.sound.assetId])
+    ];
+    const assets = await assetRepository.findManyByIds(assetIds);
+    const visual = content.variant.visual;
+    if (visual !== null && assets.get(visual.assetId)?.mediaType !== visual.mediaType) return false;
+    if (
+      content.variant.sound !== null
+      && assets.get(content.variant.sound.assetId)?.mediaType !== "audio"
+    ) {
+      return false;
+    }
+    return content.variant.outputs.deviceRouteIds.every(
+      (routeId) => audioOutputRouteRepository.findById(routeId) !== null
+    );
+  };
+  const validateEffectOutputAvailability = async (content: EffectContentSnapshot) => {
+    const { variant } = content;
+    const hasBrowserVisual = variant.visual !== null && variant.visualOutputs.browserSource;
+    const hasBrowserAudio = variant.outputs.browserSource && (
+      variant.sound !== null
+      || (variant.visual?.mediaType === "video" && variant.visual.playEmbeddedAudio)
+    );
+    const connectedModuleSource = overlayGateway.clientStates.some(
+      (client) => client.connectionState === "connected"
+        && client.overlayId === "default"
+        && client.purpose === "live"
+        && client.scope === "module"
+        && client.moduleId === "screen-effects"
+        && (client.targetProfileId ?? null) === null
+    );
+    const connectedUnifiedSource = overlayGateway.clientStates.some(
+      (client) => client.connectionState === "connected"
+        && client.overlayId === "default"
+        && client.purpose === "live"
+        && client.scope === "unified"
+        && client.moduleId === null
+        && (client.targetProfileId ?? null) === null
+    );
+    let unifiedVisualEnabled = false;
+    if (hasBrowserVisual && connectedUnifiedSource) {
+      const surface = (await surfaceRepository.list()).find(
+        (candidate) => candidate.kind === "unified-browser" && candidate.overlayId === "default"
+      );
+      unifiedVisualEnabled = surface?.layers.some(
+        (layer) => layer.moduleId === "screen-effects" && layer.visible
+      ) ?? false;
+    }
+    const browserReady = isEffectBrowserOutputReady({
+      hasBrowserVisual,
+      hasBrowserAudio,
+      connectedModuleSource,
+      connectedUnifiedSource,
+      unifiedVisualEnabled
+    });
+
+    let desktopReady = false;
+    if (variant.visual !== null && variant.visualOutputs.desktop && options.desktopOverlayTransport !== undefined) {
+      const surface = (await surfaceRepository.list()).find((candidate) => candidate.kind === "desktop");
+      const displayId = surface?.kind === "desktop" ? surface.displayId : null;
+      desktopReady = surface?.kind === "desktop"
+        && surface.enabled
+        && displayId !== null
+        && surface.layers.some((layer) => layer.moduleId === "screen-effects" && layer.visible);
+      if (desktopReady && options.desktopOverlayTransport.getStatus !== undefined) {
+        try {
+          const status = await options.desktopOverlayTransport.getStatus();
+          desktopReady = status.available
+            && status.state === "ready"
+            && status.displays.some((display) => display.id === displayId);
+        } catch {
+          desktopReady = false;
+        }
+      }
+    }
+
+    let deviceReady = false;
+    if (variant.outputs.deviceRouteIds.length > 0) {
+      const selectedRouteIds = new Set(variant.outputs.deviceRouteIds);
+      const status = await audioOutputService.getStatus();
+      deviceReady = status.routes.some(
+        (route) => selectedRouteIds.has(route.route.id) && route.state === "ready"
+      );
+    }
+    return browserReady || desktopReady || deviceReady;
+  };
   const playbackCoordinator = new PlaybackCoordinator({
     alertService,
     matcher: new DefaultAlertMatcher(),
@@ -432,8 +554,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       moderationService
     }),
     queue: playbackQueue,
-    cooldownService: new DefaultPlaybackCooldownService(),
-    dedupeService: new DefaultPlaybackDedupeService(),
+    cooldownService: playbackCooldownService,
+    dedupeService: playbackDedupeService,
     defaultTarget: {
       overlayId: "default",
       purpose: "live",
@@ -466,17 +588,128 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ...(desktopVisualSink === undefined ? {} : { desktopVisualSink }),
     ttsService,
     logger: runtimeLogger,
-    generateReferenceId: generateRuntimeReferenceId,
-    persistPlaybackSafetyState: async (patch) => {
+    generateReferenceId: generateRuntimeReferenceId
+  });
+  const effectPlaybackCoordinator = new EffectPlaybackCoordinator({
+    queue: effectQueue,
+    getSafety: () => {
+      const snapshot = playbackQueue.getSnapshot();
+      return {
+        paused: snapshot.paused,
+        muted: snapshot.muted,
+        doNotDisturb: snapshot.doNotDisturb
+      };
+    },
+    overlayPlaybackSink: overlayGateway,
+    audioOutputService,
+    ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
+    ...(desktopVisualSink === undefined ? {} : { desktopVisualSink }),
+    isModuleEnabled: isEffectModuleEnabled,
+    validateReferences: validateEffectReferences,
+    validateOutputAvailability: validateEffectOutputAvailability,
+    onStopFailure: (error, occurrenceId) => runtimeLogger.error("Screen Effects local outputs did not acknowledge stop.", {
+      module: "screen-effects",
+      source: "screen-effects.playback-stop-failed",
+      correlationId: generateRuntimeReferenceId(),
+      processingId: null,
+      metadata: {
+        occurrenceId,
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        nextStep: "Review Diagnostics and retry Skip. The queue remains held until local outputs acknowledge stop."
+      }
+    }),
+    now: () => now().getTime()
+  });
+  const effectAdmissionService = new EffectAdmissionService({
+    repository: effectRepository,
+    queue: effectQueue,
+    dedupe: playbackDedupeService,
+    cooldowns: playbackCooldownService,
+    getModuleCooldownSeconds: async () => (await effectModuleSettingsRepository.get()).cooldownSeconds,
+    generateOccurrenceId: generateEffectOccurrenceId,
+    now: () => now().getTime(),
+    validateReferences: validateEffectReferences,
+    validateOutputAvailability: validateEffectOutputAvailability,
+    isModuleEnabled: isEffectModuleEnabled,
+    onOutcome: async (result) => {
+      if (result.status !== "processed") return;
+      const rejected = result.outcomes.filter((outcome) => outcome.status !== "queued");
+      if (rejected.length === 0) return;
+      await runtimeLogger.warn("Screen Effects event admission rejected local candidates", {
+        module: "screen-effects",
+        source: "screen-effects.event-admission",
+        correlationId: `event:${result.eventId}`,
+        processingId: null,
+        metadata: {
+          rejectedCount: rejected.length,
+          effectIds: rejected.map((outcome) => outcome.effectId).join(","),
+          reasons: rejected.map((outcome) => outcome.status).join(",")
+        }
+      });
+    }
+  });
+  const playbackOperationsService = new PlaybackOperationsService({
+    owners: [
+      createAlertQueueOwner({
+        coordinator: playbackCoordinator,
+        isPaused: () => playbackQueue.isModulePaused(),
+        persistPaused: async (paused) => {
+          const current = await alertModuleSettingsRepository.get();
+          await alertModuleSettingsRepository.save({ ...current, paused });
+        }
+      }),
+      createEffectQueueOwner({
+        queue: effectQueue,
+        coordinator: effectPlaybackCoordinator,
+        replayRecent: (occurrenceId) => effectAdmissionService.replayRecent(occurrenceId),
+        persistPaused: async (paused) => {
+          const current = await effectModuleSettingsRepository.get();
+          await effectModuleSettingsRepository.save({ ...current, paused });
+        }
+      })
+    ],
+    initialSafety: initialConfig.playback,
+    persistSafety: async (patch) => {
       const { playback } = await configStore.updateConfig({ playback: patch });
-      options.desktopHost?.onPlaybackStateChanged(playback);
       return playback;
+    },
+    applySafety: async (state) => {
+      await playbackCoordinator.applySafetyState(state);
+      await effectPlaybackCoordinator.startNext();
+      options.desktopHost?.onPlaybackStateChanged(state);
+    },
+    onSafetyApplyFailure: async () => {
+      await runtimeLogger.error("Playback safety was saved but a local output did not acknowledge the change.", {
+        module: "playback",
+        source: "playback.safety.output-failed",
+        correlationId: generateRuntimeReferenceId(),
+        processingId: null,
+        metadata: { nextStep: "Review Diagnostics and retry the affected local output. The saved safety state remains authoritative." }
+      });
     }
   });
   const eventPipeline = new EventPipeline({
     playbackCoordinator,
+    effectTriggerSink: {
+      async handleTriggers(triggers) {
+        const result = await effectAdmissionService.handleTriggers(triggers);
+        await effectPlaybackCoordinator.startNext();
+        return result;
+      }
+    },
     diagnosticsLogRepository,
-    generateId: generateEventPipelineId
+    generateId: generateEventPipelineId,
+    onEffectError: (error, triggers) => runtimeLogger.error("Screen Effects trigger handling failed", {
+      module: "screen-effects",
+      source: "screen-effects.event-admission",
+      correlationId: triggers[0] === undefined ? "event:screen-effects:unknown" : `event:${triggers[0].eventId}`,
+      processingId: null,
+      metadata: {
+        errorName: error.name,
+        eventIds: Array.from(new Set(triggers.map((trigger) => trigger.eventId))),
+        triggerKinds: triggers.map((trigger) => trigger.kind)
+      }
+    })
   });
   const generateEventSourceReferenceId = generateRuntimeReferenceId;
   const eventIngestionService = new EventIngestionService({
@@ -497,8 +730,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       });
     },
     ingestionService: {
-      ingestNormalizedEvent: (event) =>
-        maintenanceGate.runIntake(() => eventIngestionService.ingestNormalizedEvent(event))
+      ingestNormalizedEvent: (event, effectTriggers) =>
+        maintenanceGate.runIntake(() => eventIngestionService.ingestNormalizedEvent(event, effectTriggers)),
+      ingestEffectTriggers: (eventId, triggers) =>
+        maintenanceGate.runIntake(() => eventIngestionService.ingestEffectTriggers(eventId, triggers))
     },
     generateReferenceId: generateEventSourceReferenceId,
     onDiagnostic: (entry) => writeStreamerBotRuntimeDiagnostic(runtimeLogger, entry),
@@ -615,6 +850,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: () => `provider_${randomBytes(16).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
     logger: runtimeLogger,
+    streamerBotSubscriptions: streamerBotRuntimeService,
+    getVerifiedTwitchBroadcasterId: async () =>
+      (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null,
     onEventSourceChanged: syncEventSourceRuntime,
     now
   });
@@ -772,7 +1010,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     metadataRepository: new SqliteAssetLibraryMetadataRepository(database.connection),
     assetStore,
     alertRepository,
+    effectRepository,
     ruleMetadataRepository: alertSetMetadataRepository,
+    deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
+      () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))
+    ),
     clock: now
   });
   const configurationBackupService = new ConfigurationBackupService({
@@ -788,7 +1030,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     async getRuntime() {
       const eventSubState = twitchEventSubRuntimeService.getStatus().state;
       const streamerBotState = streamerBotRuntimeService.getStatus().state;
-      const playback = playbackCoordinator.getSnapshot();
+      const playback = playbackOperationsService.getSnapshot();
       return {
         intakeActive:
           maintenanceGate.activeIntakeCount > 0 ||
@@ -798,7 +1040,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           streamerBotState === "connecting" ||
           streamerBotState === "connected" ||
           streamerBotState === "reconnecting",
-        playbackActive: playback.current !== null,
+        playbackActive: playback.current.length > 0,
         queuedPlaybackCount: playback.queued.length
       };
     },
@@ -828,12 +1070,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       moderationService.reloadSettings();
       await desktopConfigService.refresh();
       const { playback } = await configStore.readConfig();
-      await audioPlaybackSink?.setMuted(playback.muted);
-      if (playback.paused) playbackQueue.pause(); else playbackQueue.resume();
-      playbackQueue.setDoNotDisturb(playback.doNotDisturb);
-      if (playback.muted) playbackQueue.mute(); else playbackQueue.unmute();
-      overlayGateway.setPlaybackMuted(playback.muted);
-      options.desktopHost?.onPlaybackStateChanged(playback);
+      const [alertSettings, effectSettings] = await Promise.all([
+        alertModuleSettingsRepository.get(),
+        effectModuleSettingsRepository.get()
+      ]);
+      playbackQueue.setModulePaused(alertSettings.paused);
+      effectQueue.setModulePaused(effectSettings.paused);
+      await playbackOperationsService.restoreSafety(playback);
     },
     twitchCredentials: {
       async findConnectedAccountId() {
@@ -912,11 +1155,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     openDataFolder: () => localMaintenanceService.openDataFolder(),
     clearOldLogs: () => localMaintenanceService.clearOldLogs()
   });
-  const overlayCompositionService = new DefaultOverlayCompositionService({
-    surfaceRepository,
-    configService: overlayModuleConfigService,
-    runtime: {
-      async getModuleSnapshot(request) {
+  const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
+    ["alerts", {
+      async getModuleSnapshot(request: Parameters<EffectPlaybackCoordinator["getModuleSnapshot"]>[0]) {
         const current = playbackQueue.getSnapshot().current;
         const instructions = current === null
           ? []
@@ -924,17 +1165,25 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
               .map((alert) => alert.overlayInstruction)
               .filter(
                 (instruction) =>
-                  instruction.overlayId === request.overlayId &&
-                  instruction.moduleId === request.moduleId &&
-                  instruction.purpose === request.purpose &&
-                  instruction.scope === request.scope
+                  instruction.overlayId === request.overlayId
+                  && instruction.moduleId === request.moduleId
+                  && instruction.purpose === request.purpose
+                  && instruction.scope === request.scope
+                  && (instruction.targetProfileId ?? null) === (request.targetProfileId ?? null)
               );
-
-        return {
-          moduleId: request.moduleId,
-          enabled: true,
-          instructions
-        };
+        return { moduleId: "alerts", enabled: true, instructions };
+      }
+    }],
+    ["screen-effects", effectPlaybackCoordinator]
+  ]);
+  const overlayCompositionService = new DefaultOverlayCompositionService({
+    surfaceRepository,
+    configService: overlayModuleConfigService,
+    runtime: {
+      async getModuleSnapshot(request) {
+        const runtime = overlayModuleRuntimes.get(request.moduleId);
+        if (runtime === undefined) throw new Error(`Overlay module runtime "${request.moduleId}" is unavailable`);
+        return runtime.getModuleSnapshot(request);
       }
     }
   });
@@ -952,6 +1201,59 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     changed: async surface => { if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface); },
     runMutation: work => maintenanceGate.runIntake(work)
   });
+  const effectManagementService = new EffectManagementService({
+    repository: effectRepository,
+    async testEffectVariant(effectId, variantId) {
+      const outcome = await effectAdmissionService.testEffectVariant(effectId, variantId);
+      if (outcome.status === "queued") await effectPlaybackCoordinator.startNext();
+      return outcome;
+    },
+    runMutation: work => maintenanceGate.runIntake(work),
+    async isTwitchRewardAvailable(broadcasterId, rewardId) {
+      const account = await twitchAccountRepository.findConnectedAccount();
+      if (account?.accountId !== broadcasterId) return false;
+      try {
+        return (await twitchRewardCatalogService.listCustomRewards()).rewards.some(
+          (reward) => reward.id === rewardId
+        );
+      } catch {
+        return false;
+      }
+    },
+    async isStreamerBotSelectionConfigured(providerId, sourceKey, eventType) {
+      try {
+        const providers = await providerManagementService.listProviders("event-source");
+        if (!providers.some((provider) => provider.id === providerId && provider.kind === "streamerbot")) {
+          return false;
+        }
+        const catalog = await providerManagementService.getStreamerBotSubscriptions(providerId);
+        return isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType);
+      } catch {
+        return false;
+      }
+    }
+  });
+  const runtimeOverlayModuleConfigService: OverlayModuleConfigService = {
+    getModuleConfig: (moduleId) => overlayModuleConfigService.getModuleConfig(moduleId),
+    async saveModuleConfig(input) {
+      const config = await maintenanceGate.runConfigurationMutation(
+        () => overlayModuleConfigService.saveModuleConfig(input)
+      );
+      if (config.moduleId === "screen-effects" && !config.enabled) {
+        await effectPlaybackCoordinator.disable();
+      }
+      return config;
+    },
+    async setModuleEnabled(moduleId, enabled) {
+      const config = await maintenanceGate.runConfigurationMutation(
+        () => overlayModuleConfigService.setModuleEnabled(moduleId, enabled)
+      );
+      if (config.moduleId === "screen-effects" && !config.enabled) {
+        await effectPlaybackCoordinator.disable();
+      }
+      return config;
+    }
+  };
   const app = createServerApp({
     surfaceSettingsService,
     metadata: {
@@ -965,12 +1267,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     desktopConfigService,
     audioOutputService,
     overlayModuleRegistry,
-    overlayModuleConfigService,
+    overlayModuleConfigService: runtimeOverlayModuleConfigService,
     moderationService,
     runConfigurationMutation: (work) => maintenanceGate.runConfigurationMutation(work),
     ttsService,
     twitchAuthService,
     twitchRewardCatalogService,
+    streamerBotSubscriptionService: providerManagementService,
     twitchEventSubStatusService: twitchEventSubRuntimeService,
     diagnosticsService,
     configurationBackupService,
@@ -986,6 +1289,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetStore,
     assetLibraryService,
     playbackCoordinator,
+    legacyPlaybackOperationsService: playbackOperationsService,
+    playbackOperationsService,
+    effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,
       originPolicy: managementOriginPolicy,
@@ -1018,11 +1324,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   cleanups.push(() => maintenanceGate.stop());
   cleanups.push(() => playbackCoordinator.close());
+  cleanups.push(() => effectPlaybackCoordinator.close());
 
   return {
     app,
     desktopConfigService,
     playbackCoordinator,
+    effectPlaybackCoordinator,
+    playbackOperationsService,
     configStore,
     database,
     managementSessionService,
@@ -1188,8 +1497,29 @@ function generateEventPipelineId(kind: "event-log" | "alert-match-log" | "playba
   return `event_pipeline_${kind}_${randomBytes(16).toString("base64url")}`;
 }
 
+export function isEffectBrowserOutputReady(input: {
+  readonly hasBrowserVisual: boolean;
+  readonly hasBrowserAudio: boolean;
+  readonly connectedModuleSource: boolean;
+  readonly connectedUnifiedSource: boolean;
+  readonly unifiedVisualEnabled: boolean;
+}): boolean {
+  const visualReady = input.hasBrowserVisual && (
+    input.connectedModuleSource
+    || (input.connectedUnifiedSource && input.unifiedVisualEnabled)
+  );
+  const audioReady = input.hasBrowserAudio && (
+    input.connectedModuleSource || input.connectedUnifiedSource
+  );
+  return visualReady || audioReady;
+}
+
 function generatePlaybackQueueItemId(): string {
   return `playback_item_${randomBytes(16).toString("base64url")}`;
+}
+
+function generateEffectOccurrenceId(): string {
+  return `screen_effect_${randomBytes(16).toString("base64url")}`;
 }
 
 function generateOverlayClientId(): string {

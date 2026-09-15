@@ -264,10 +264,11 @@ export class ConfigurationBackupService {
     const archive = parsed.data;
     const blockers: ActionableManagementError[] = [];
     const warnings: ActionableManagementError[] = [];
-    const legacySurfaceUpgrade = [20, 21].includes(this.#options.schemaVersion) && archive.manifest.schemaVersion === 19
-      && archive.configuration.tables.overlay_surfaces === undefined;
-    const legacyVideoUpgrade = this.#options.schemaVersion === 21 && archive.manifest.schemaVersion === 20;
-    if (archive.manifest.schemaVersion !== this.#options.schemaVersion && !legacySurfaceUpgrade && !legacyVideoUpgrade) {
+    const supportedLegacyUpgrade = isSupportedLegacySchema(
+      this.#options.schemaVersion,
+      archive.manifest.schemaVersion
+    );
+    if (archive.manifest.schemaVersion !== this.#options.schemaVersion && !supportedLegacyUpgrade) {
       blockers.push(blocker(
         "Backup schema is not supported",
         `This backup uses schema ${archive.manifest.schemaVersion}; this app requires schema ${this.#options.schemaVersion}.`,
@@ -276,6 +277,17 @@ export class ConfigurationBackupService {
     }
     if (archive.manifest.schemaVersion >= 20 && archive.configuration.tables.overlay_surfaces === undefined) {
       blockers.push(blocker("Backup surface configuration is missing", "Schema 20 and later require surface settings.", "Export a new backup from the source installation."));
+    }
+    if (archive.manifest.schemaVersion >= 22) {
+      for (const tableName of screenEffectBackupTables) {
+        if (archive.configuration.tables[tableName] === undefined) {
+          blockers.push(blocker(
+            "Backup Screen Effects configuration is missing",
+            `Schema 22 and later require the ${tableName} table.`,
+            "Export a new backup from the source installation."
+          ));
+        }
+      }
     }
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
@@ -357,6 +369,13 @@ export class ConfigurationBackupService {
         ),
         correction: { label: "Open Audio outputs", route: "/manage/settings#audio-outputs" }
       });
+    }
+    if ((archive.configuration.tables.screen_effects?.length ?? 0) > 0) {
+      warnings.push(warning(
+        "Screen Effects will be restored disabled",
+        "Portable restore keeps effect definitions but does not resume automatic playback or local output bindings.",
+        "Review each effect, rebind local outputs, then enable only the effects you intend to use."
+      ));
     }
     warnings.push(warning("Restart Stream Jams after restore", "Server and logging preferences are written to local configuration while the current process remains active.", "Restart Stream Jams after completing provider and browser-source follow-up."));
 
@@ -573,6 +592,21 @@ export class ConfigurationBackupService {
       correction: { label: "Open Settings", route: "/manage/settings#backup-restore" }
     }, errorCause === undefined ? {} : { cause: errorCause });
   }
+}
+
+const screenEffectBackupTables = [
+  "screen_effects",
+  "screen_effect_variants",
+  "screen_effect_bindings",
+  "screen_effect_audio_routes",
+  "module_playback_settings"
+] as const;
+
+function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVersion: number): boolean {
+  if (currentSchemaVersion === 20) return archiveSchemaVersion === 19;
+  if (currentSchemaVersion === 21) return archiveSchemaVersion === 19 || archiveSchemaVersion === 20;
+  if (currentSchemaVersion === 22) return [19, 20, 21].includes(archiveSchemaVersion);
+  return false;
 }
 
 function settledFailures(results: readonly PromiseSettledResult<unknown>[]): readonly unknown[] {

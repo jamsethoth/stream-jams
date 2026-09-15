@@ -62,6 +62,12 @@ function createManagementApi(): ManagementApi {
     async getProvider() {
       throw new Error("not called");
     },
+    async getStreamerBotSubscriptions(providerId) {
+      return { providerId, available: false, sources: [], selected: [], unavailableSelections: [], twitchBroadcasterId: null };
+    },
+    async updateStreamerBotSubscriptions(providerId, input) {
+      return { providerId, available: true, sources: input.externalSubscriptions, selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId };
+    },
     async activateProvider() {
       throw new Error("not called");
     },

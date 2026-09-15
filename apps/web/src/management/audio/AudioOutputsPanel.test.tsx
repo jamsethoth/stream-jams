@@ -51,7 +51,7 @@ describe("AudioOutputsPanel", () => {
     expect(name).toHaveValue("Unsaved name");
   });
 
-  it("confirms deletion and shows referenced alert names from a conflict", async () => {
+  it("confirms deletion and shows module-qualified owner names from a conflict", async () => {
     const user = userEvent.setup();
     const api = createApi({
       deleteRoute: vi.fn(async () => {
@@ -60,7 +60,12 @@ describe("AudioOutputsPanel", () => {
           "AUDIO_ROUTE_REFERENCED",
           null,
           "Remove the route from the listed alerts before deleting it.",
-          [{ alertId: "alert-a", name: "New follower" }, { alertId: "alert-b", name: "Big raid" }]
+          [{ alertId: "alert-a", name: "New follower" }, { alertId: "alert-b", name: "Big raid" }],
+          [
+            { moduleId: "alerts", ownerId: "alert-a", ownerName: "New follower", variantId: null },
+            { moduleId: "alerts", ownerId: "alert-b", ownerName: "Big raid", variantId: null },
+            { moduleId: "screen-effects", ownerId: "effect-a", ownerName: "Jump scare", variantId: "variant-a" }
+          ]
         );
       })
     });
@@ -70,8 +75,9 @@ describe("AudioOutputsPanel", () => {
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText(/cannot be undone/i)).toBeVisible();
     await user.click(within(dialog).getByRole("button", { name: "Delete output" }));
-    expect(await screen.findByText("New follower")).toBeVisible();
-    expect(screen.getByText("Big raid")).toBeVisible();
+    expect(await screen.findByText("Alerts: New follower")).toBeVisible();
+    expect(screen.getByText("Alerts: Big raid")).toBeVisible();
+    expect(screen.getByText("Screen Effects: Jump scare")).toBeVisible();
     expect(screen.getByText("Remove the route from the listed alerts before deleting it.")).toBeVisible();
   });
 
@@ -92,8 +98,8 @@ describe("AudioOutputsPanel", () => {
     const route = await screen.findByRole("group", { name: "Headphones audio output" });
     await user.selectOptions(within(route).getByLabelText("Output device"), "endpoint-b");
     await user.click(within(route).getByRole("button", { name: "Save output" }));
-    expect(await screen.findByText("Confirm affected alerts before rebinding")).toBeVisible();
-    expect(screen.getByText("New follower")).toBeVisible();
+    expect(await screen.findByText("Confirm affected items before rebinding")).toBeVisible();
+    expect(screen.getByText("Alerts: New follower")).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Confirm binding change" }));
     expect(updateRoute).toHaveBeenLastCalledWith("route-a", {

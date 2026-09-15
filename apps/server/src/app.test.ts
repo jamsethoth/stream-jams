@@ -167,27 +167,6 @@ describe("createServerApp", () => {
         playbackCoordinator: {
           getSnapshot() {
             throw new Error("not called");
-          },
-          pause() {
-            throw new Error("not called");
-          },
-          resume() {
-            throw new Error("not called");
-          },
-          mute() {
-            throw new Error("not called");
-          },
-          unmute() {
-            throw new Error("not called");
-          },
-          setDoNotDisturb() {
-            throw new Error("not called");
-          },
-          skipCurrent() {
-            throw new Error("not called");
-          },
-          replayRecent() {
-            throw new Error("not called");
           }
         }
       })

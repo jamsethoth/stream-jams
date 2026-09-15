@@ -27,6 +27,17 @@ describe("DefaultPlaybackDedupeService", () => {
 
     expect(dedupe.accept(createCheerEvent({ id: "event-1" }))).toBe(true);
   });
+
+  it("keeps module namespaces independent and bounds retained identities", () => {
+    const dedupe = new DefaultPlaybackDedupeService({ windowMs: 60_000, maxEntries: 2 });
+
+    expect(dedupe.acceptKey("alerts", "event-1")).toBe(true);
+    expect(dedupe.acceptKey("screen-effects", "event-1")).toBe(true);
+    expect(dedupe.acceptKey("screen-effects", "event-1")).toBe(false);
+
+    expect(dedupe.acceptKey("screen-effects", "event-2")).toBe(true);
+    expect(dedupe.acceptKey("alerts", "event-1")).toBe(true);
+  });
 });
 
 class MutableClock {

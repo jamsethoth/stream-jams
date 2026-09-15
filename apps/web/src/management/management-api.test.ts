@@ -469,6 +469,38 @@ describe("createHttpManagementApi", () => {
     await expect(api.testProviderVoice("provider-speakerbot")).resolves.toEqual({ delivered: true, error: null });
   });
 
+  it("loads and updates validated Streamer.bot subscription catalogs", async () => {
+    const catalog = {
+      providerId: "provider-streamerbot",
+      available: true,
+      sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+      selected: [],
+      unavailableSelections: [],
+      twitchBroadcasterId: null
+    };
+    const update = {
+      twitchBroadcasterId: "broadcaster-1",
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      expect(url).toBe("/providers/provider-streamerbot/streamerbot-subscriptions");
+      if (init?.method === "PUT") {
+        expect(init.body).toBe(JSON.stringify(update));
+        return jsonResponse({ ...catalog, selected: update.externalSubscriptions, twitchBroadcasterId: update.twitchBroadcasterId });
+      }
+      return jsonResponse(catalog);
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getStreamerBotSubscriptions("provider-streamerbot")).resolves.toEqual(catalog);
+    await expect(api.updateStreamerBotSubscriptions("provider-streamerbot", update)).resolves.toMatchObject({
+      selected: update.externalSubscriptions,
+      twitchBroadcasterId: "broadcaster-1"
+    });
+  });
+
   it("loads Twitch status and runtime-validates Device Code start and poll responses", async () => {
     const status = {
       connected: true as const,
