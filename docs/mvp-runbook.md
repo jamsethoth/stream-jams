@@ -15,6 +15,20 @@ For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for
 
 The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. This is not an installer or a signed release. Windows may warn about an unsigned application.
 
+### Download a verified portable CI artifact
+
+Successful CI runs for pushes to `main` and explicitly dispatched refs publish the exact Windows x64 folder exercised by `pnpm test:desktop`. Pull-request jobs and failed or cancelled desktop jobs do not publish runnable artifacts. The artifact is an authenticated, short-lived convenience build rather than an installer or permanent release.
+
+1. In GitHub, open **Actions → CI** and choose a successful run for the intended ref and commit. Only an artifact whose ref is `main` represents current `main`; a manually dispatched run can target another ref.
+2. Open the `windows-desktop` job summary. Confirm the artifact name contains `stream-jams-windows-x64`, the intended ref, and the full commit SHA.
+3. Download the linked authenticated artifact before its 30-day retention expires. Compare the downloaded ZIP's SHA-256 from `Get-FileHash -Algorithm SHA256 <downloaded-zip>` with the digest in the job summary.
+4. Quit any running Stream Jams instance through the tray and wait for it to exit. Extract every file into a new application folder; do not launch `Stream Jams.exe` from inside the ZIP or copy the executable without its sibling files.
+5. Launch `Stream Jams.exe` from the extracted folder. After confirming the new build opens, replace or remove the previous application folder as desired.
+
+The artifact is unsigned, so Windows may display a warning. It contains portable application files only: configuration, databases, assets, and backups remain in the user's `.stream-jams` profile, while credentials remain in the operating-system keyring. Artifact replacement does not move or reset that persistent state. Downloads require GitHub authentication and are not a stable `latest` URL.
+
+Local implementation evidence and the remaining hosted Actions acceptance gap are recorded in [portable Windows desktop artifact verification](verification/portable-windows-desktop-artifact.md).
+
 The desktop main process owns one utility-process service, a sandboxed management window, and a tray icon. The service still owns Fastify, SQLite, provider connections, and configuration. The default loopback address, `.stream-jams` data profile, `STREAM_JAMS_CONFIG_PATH` override, and OS keyring adapter are unchanged. Quit any existing CLI service before using desktop with the same profile. An occupied port produces an actionable failure; desktop never kills that listener or chooses another port automatically.
 
 - By default, the window's X hides management to the tray. The service, overlays, and unsaved editor draft stay alive.
@@ -28,7 +42,7 @@ Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the fold
 
 Run the audible hardware suite only after receiving explicit approval for the two physical outputs. Set `STREAM_JAMS_AUDIO_TEST=1`, set `STREAM_JAMS_AUDIO_TEST_OUTPUTS` to two exact device labels separated by `|`, then run `corepack pnpm test:desktop:hardware`. The hardware suite plays brief tones independently, together, and again after restarting the packaged application. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
 
-Installers, signing, publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
+Installers, signing, durable release publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
 
 ## Alert audio outputs
 
