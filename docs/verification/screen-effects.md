@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation and automated acceptance completed on 2026-09-13 from `f2bb518692121eaa9b6f4230a250176bab9a766f`, the fetched `origin/main`, on `codex/add-screen-effects-module`. The sole remaining acceptance gate is the explicitly authorized human observation checklist below; no physical audio was emitted during automated validation.
+Implementation and automated acceptance completed on `codex/add-screen-effects-module`. Authorized physical acceptance completed on 2026-09-14 with neutral local media and the isolated acceptance profile described below. All implementation and OpenSpec acceptance gates are complete; human pull-request approval remains.
 
 ## Foundation gate
 
@@ -156,9 +156,9 @@ Six findings left open after the parallel review and its prerequisite merge were
 
 The focused affected set passed 128 tests across 13 files. Workspace lint, typecheck, the production build, and the production Storybook build passed. The full unit gate passed 232 Vitest files and 1,998 tests plus four native Node tests. The first Storybook interaction run passed 21 suites and 221 interactions but its last unrelated suite could not connect to Chromium over an ephemeral IPv6 loopback WebSocket; an unchanged full retry passed all 22 suites and 225 interactions, classifying the first result as a temporary browser-launch environment failure. All 37 Playwright browser workflows passed against the rebuilt local runtime.
 
-These repairs add no new physical-output evidence. The human acceptance below remains the only open OpenSpec task and was not checked by this follow-up.
+These repairs added no physical-output evidence at review time. The subsequently completed human acceptance is recorded below.
 
-## Human physical acceptance — only remaining gate
+## Human physical acceptance
 
 Use the packaged app and neutral local media; do not use a live provider account or a secret production Browser Source URL in evidence. Before starting, explicitly approve the two exact physical audio-output labels if audible routing will be tested.
 
@@ -170,4 +170,25 @@ Use the packaged app and neutral local media; do not use a live provider account
 6. Close management to the tray during an effect, reopen it, and confirm playback ownership persists. Then use tray **Quit** and confirm the effect clears, the listener stops and the packaged process exits within the existing bounded shutdown policy.
 7. Restart the same profile. Confirm the definition and safety settings persist, hardware bindings are unchanged unless a portable restore was performed, and Operator has no restored current, pending or recent occurrences.
 
-Record the display, OBS source/profile, approved route labels, observed result for each step and Quit timing here. After those observations pass, task 7.2 can be checked and the change will be ready for human merge approval without any remaining implementation gate.
+### Recorded result — 2026-09-14
+
+- The freshly packaged Windows app used an isolated configuration, database, asset directory and Electron profile. The selected desktop was **LG ULTRAGEAR** at 2560×1440. The module-specific **Screen Effects Live** source ran in OBS 32.2.2. No Browser Source URL or route key is recorded here.
+- The explicitly approved named-device routes were **SFX (Elgato Virtual Audio)** and **System (Elgato Virtual Audio)**. Selecting, editing and saving the neutral effect remained silent. During live playback, the OBS Browser Source, System and SFX meters were active and no unintended output was observed elsewhere.
+- The same live occurrence rendered on the LG desktop overlay and in OBS. A static-image control exposed a desktop startup race: the overlay canvas retained the 2560×1392 work area after the transparent window expanded to 2560×1440. `OverlaySurface` now observes its root content box, and its regression proves the canvas updates without relying on a `window.resize` event. The rebuilt package filled the LG from top to bottom with the expected equal horizontal image margins and no visible distortion; the OBS control also filled its source from top to bottom.
+- With a neutral Alert and Screen Effect playing concurrently, Operator showed both current items. Skipping the Screen Effect removed only its static image; the Alert remained current and its audio continued. Operator then reported the effect as skipped independently of the Alert.
+- Disconnecting the selected LG during the combined 30-second effect produced no desktop fallback on another monitor and no replay after reconnect. The OBS visual and Browser Source audio plus the System and SFX device routes continued for the whole occurrence. Operator correctly recorded the occurrence as failed because the selected desktop recipient became unavailable; that runtime result is distinct from the passing fail-closed acceptance scenario.
+- The first monitor-loss attempt also exposed a stalled OBS renderer: its WebSocket still appeared connected, but it returned no playback reports and the occurrence expired at duration plus five seconds. OBS **Refresh cache of current page** established a fresh connection; both a static control and the video-plus-embedded-audio control then rendered and reported successful completion before the corrected monitor-loss run.
+- Closing management to the tray during the effect and reopening it preserved playback ownership. Tray **Quit** was observed against the verified packaged executable: main PID 69044 and listener-owner PID 66504 exited, port 39187 was released, and the measured shutdown upper bound was 2,367 ms.
+- Restarting the same isolated profile produced a healthy packaged runtime with main PID 7844 and listener-owner PID 72524. Both effect definitions, the enabled LG surface and Screen Effects layer, the ready SFX/System bindings, and the global/module safety settings persisted. Operator restarted with zero current, pending and recent items.
+
+### Post-acceptance publication gates — 2026-09-14
+
+- The focused `OverlaySurface` regression passed 27 tests, including the content-box resize case that reproduces the packaged desktop race.
+- Strict OpenSpec validation, workspace lint and workspace typecheck passed.
+- The full unit gate passed 232 Vitest files and 1,999 tests plus all four native Node tests.
+- The production workspace build and production Storybook build passed with only the existing bundle-size warnings.
+- The Storybook interaction gate passed all 22 suites and 225 interactions; Playwright passed all 37 browser workflows.
+- The ordinary packaged desktop suite passed all 24 tests. The separate hardware suite discovered its two opt-in cases and skipped them without their approval environment gates; the authorized physical observations above supply the corresponding real-output evidence.
+- `git diff --check` passed after the final documentation update.
+
+Task 7.2 is complete. This change is ready for human pull-request approval without a remaining implementation or acceptance gate.

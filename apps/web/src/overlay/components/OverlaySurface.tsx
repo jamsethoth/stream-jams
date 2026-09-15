@@ -33,14 +33,25 @@ const testAudioActivationEvent = "stream-jams:test-audio-activation";
 
 export function OverlaySurface({ composition, muted = false, onPlaybackEvent, resolveAssetUrl }: OverlaySurfaceProps) {
   const [blockedTestAudioIds, setBlockedTestAudioIds] = useState<ReadonlySet<string>>(() => new Set());
+  const rootElementRef = useRef<HTMLDivElement | null>(null);
   const [viewport, setViewport] = useState(() => ({
     height: window.innerHeight,
     width: window.innerWidth
   }));
   useEffect(() => {
-    const updateViewport = () => setViewport({ height: window.innerHeight, width: window.innerWidth });
-    window.addEventListener("resize", updateViewport);
-    return () => window.removeEventListener("resize", updateViewport);
+    const updateViewport = (width: number, height: number) => setViewport((current) =>
+      current.width === width && current.height === height ? current : { height, width });
+    const updateWindowViewport = () => updateViewport(window.innerWidth, window.innerHeight);
+    const rootElement = rootElementRef.current;
+    const resizeObserver = rootElement === null || typeof ResizeObserver === "undefined" ? null : new ResizeObserver(([entry]) => {
+      if (entry !== undefined) updateViewport(entry.contentRect.width, entry.contentRect.height);
+    });
+    if (rootElement !== null) resizeObserver?.observe(rootElement);
+    window.addEventListener("resize", updateWindowViewport);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateWindowViewport);
+    };
   }, []);
   const setTestAudioBlocked = useCallback((instructionId: string, blocked: boolean) => {
     setBlockedTestAudioIds((current) => {
@@ -88,7 +99,7 @@ export function OverlaySurface({ composition, muted = false, onPlaybackEvent, re
     ));
 
   return (
-    <div className="overlay-root" data-testid="overlay-root" style={overlayRootStyle}>
+    <div className="overlay-root" data-testid="overlay-root" ref={rootElementRef} style={overlayRootStyle}>
       {profile === undefined ? instructions : (
         <div
           data-testid="overlay-profile-canvas"
