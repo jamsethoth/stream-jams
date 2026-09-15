@@ -523,10 +523,6 @@
   min-width: 78px;
 }
 
-.alert-sets-page__narrow-action {
-  display: none;
-}
-
 .alert-sets-page__variation-row th:first-child {
   border-left: 3px solid var(--color-accent);
   padding-left: 22px;
@@ -572,6 +568,14 @@
   justify-content: flex-end;
   margin-top: 6px;
   padding-top: 6px;
+}
+
+.alert-sets-page__test-summary {
+  color: var(--color-text-muted);
+  display: block;
+  font-size: 11px;
+  margin-top: 6px;
+  text-align: right;
 }
 
 .alert-sets-page__empty,
@@ -831,14 +835,6 @@
   .alert-sets-page__test-profiles {
     flex-wrap: wrap;
     justify-content: flex-start;
-  }
-
-  .alert-sets-page__wide-action {
-    display: none;
-  }
-
-  .alert-sets-page__narrow-action {
-    display: inline-flex;
   }
 
   .alert-sets-page__action-menu[open] > div {

@@ -49,6 +49,12 @@ Edit, Test saved, and Enable/Disable remain inline. Sample message, Add variatio
 - [Compact summaries could expose sensitive routing data] → Display only existing human-readable destination names; never render route keys or browser-source URLs.
 - [Moving actions into More adds one interaction] → Keep frequent actions inline and use native keyboard-operable disclosure with focus restoration tests.
 
+## Verification Boundary
+
+Source inspection establishes the original six workflow findings. Storybook exercises production components with controlled fixtures, but it is supporting evidence rather than full-app acceptance because its wrappers and mocked data can differ from the production shell. Final acceptance uses the built application from the current worktree, real management and operator routing, and a disposable local config and data store populated only with representative synthetic content.
+
+The focused-editor scrolling observation is withdrawn because the production shell already constrains editor height. Storybook media gaps, desktop-settings session gaps, and echo-only safety preview behavior remain fixture limitations and SHALL NOT drive product changes in this scope. Verification records distinguish source, Storybook, Playwright, and full-app evidence and do not confirm any live-output action.
+
 ## Migration Plan
 
 No data migration is required. Ship the frontend and documentation together; rollback is a normal code revert because persisted documents and APIs do not change.

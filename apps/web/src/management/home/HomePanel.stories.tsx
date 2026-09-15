@@ -1,5 +1,6 @@
 import type { HomeSetupSummary } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
+import { expect, within } from "storybook/test";
 import { createStoryManagementApi } from "../../stories/mock-apis.js";
 import { HomePanel } from "./HomePanel.js";
 
@@ -59,11 +60,47 @@ export const PartiallyConfigured: Story = {
         activeAlertSet: null
       })
     })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Next action")).toBeVisible();
+    await expect(canvas.getByText("Completed setup (2)").closest("details")).not.toHaveAttribute("open");
   }
 };
 
 export const Configured: Story = {
   args: {
     managementApi: createStoryManagementApi({ getHomeSetupSummary: async () => configuredSummary })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Setup is complete.")).toBeVisible();
+    await expect(canvas.getByText("Completed setup (4)").closest("details")).not.toHaveAttribute("open");
+  }
+};
+
+export const NeedsAttentionFirst: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getHomeSetupSummary: async () => ({
+        ...configuredSummary,
+        readiness: [{ ...configuredSummary.readiness[0]!, state: "blocked" }],
+        actionableProblems: [{
+          summary: "Event source needs attention",
+          cause: "Event intake is unavailable.",
+          nextStep: "Review the event source connection.",
+          severity: "error",
+          occurredAt: "2026-09-15T12:00:00.000Z",
+          referenceId: "ref-home-story",
+          correction: { label: "Open event sources", route: "/manage/event-sources" }
+        }]
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const problems = await canvas.findByRole("heading", { name: "Needs attention" });
+    const setup = canvas.getByRole("heading", { name: "Setup readiness" });
+    await expect(Boolean(problems.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
   }
 };

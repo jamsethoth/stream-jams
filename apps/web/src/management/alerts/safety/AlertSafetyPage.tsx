@@ -177,7 +177,7 @@ export function AlertSafetyPage({ managementApi }: AlertSafetyPageProps) {
 
       <section aria-labelledby="impact-heading" className="alert-safety-page__section">
         <h3 id="impact-heading">Shared alert policy</h3>
-        <p>Saved changes apply immediately to local Preview, Send test, live rendered alerts, browser speech, and provider TTS.</p>
+        <p>Saved changes apply immediately to local Preview, Test draft, live rendered alerts, browser speech, and provider TTS.</p>
         <p>Provider connection, voice, rate, volume, and provider registration safety remain on <a href="/manage/tts-providers">Review TTS provider settings</a>.</p>
       </section>
 

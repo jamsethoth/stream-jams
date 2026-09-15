@@ -76,6 +76,25 @@ describe("HomePanel", () => {
     expect(screen.getByText("1 warning")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Reconnect Twitch, then test the event source.");
     expect(screen.getByText("ref-home-17")).toBeInTheDocument();
+    const problems = screen.getByRole("heading", { name: "Needs attention" });
+    const setup = screen.getByRole("heading", { name: "Setup readiness" });
+    expect(problems.compareDocumentPosition(setup) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Next action")).toBeInTheDocument();
+    const completed = screen.getByText("Completed setup (1)");
+    expect(completed.closest("details")).not.toHaveAttribute("open");
+  });
+
+  it("keeps all-complete readiness concise with completed steps disclosed", async () => {
+    const complete = {
+      ...configuredSummary,
+      readiness: configuredSummary.readiness.map((item) => ({ ...item, state: "complete" as const })),
+      actionableProblems: []
+    };
+    render(<HomePanel managementApi={{ getHomeSetupSummary: vi.fn(async () => complete) }} />);
+
+    expect(await screen.findByText("Setup is complete.")).toBeInTheDocument();
+    expect(screen.getByText("Completed setup (2)").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("heading", { name: "Active alert set" })).toBeInTheDocument();
   });
 
   it("omits zero blocker and warning facts for a clean active set", async () => {

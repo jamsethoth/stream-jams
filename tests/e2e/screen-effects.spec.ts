@@ -105,10 +105,10 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   await page.getByRole("button", { name: "New effect" }).click();
 
   await expect(page.getByRole("checkbox", { name: "Enabled", exact: true })).toBeDisabled();
-  await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Choose visual asset" }).click();
   await page.getByRole("button", { name: "Use selected asset" }).click();
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Screen Effect saved");
   expect(createRequests).toHaveLength(1);
   expect(createRequests[0]).toMatchObject({
@@ -133,11 +133,12 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   await page.getByRole("button", { name: "Preview silently" }).click();
   await expect(page.getByRole("dialog", { name: "Default" })).toContainText("never sends provider events, device sound, or Browser Source audio");
   await page.getByRole("button", { name: "Close preview" }).click();
-  await page.getByRole("button", { name: "Live Test…" }).click();
-  const dialog = page.getByRole("dialog", { name: "Send live Screen Effect test?" });
+  await page.getByRole("button", { name: "Test saved…" }).click();
+  const dialog = page.getByRole("dialog", { name: "Test saved Screen Effect?" });
+  await expect(dialog).toContainText("Saved input");
   await expect(dialog).toContainText("OBS Browser Source visual");
   await dialog.getByRole("button", { name: "Confirm live test" }).click();
-  await expect(page.getByRole("status")).toContainText("Live Test queued");
+  await expect(page.getByRole("status")).toContainText("Saved test queued");
   expect(testRequests).toEqual([{
     variantId: (createRequests[0]!.variants as { id: string }[])[0]!.id,
     confirmLiveImpact: true
@@ -146,7 +147,7 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   await page.reload();
   await expect(page.getByLabel("Effect name")).toHaveValue("New Screen Effect");
   await expect(page.getByRole("checkbox", { name: "Enabled", exact: true })).toBeChecked();
-  await expect(page.getByRole("button", { name: "Live Test…" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Test saved…" })).toBeEnabled();
 
   await page.getByRole("button", { name: "Back" }).click();
   await page.getByRole("button", { name: "Copy", exact: true }).click();
@@ -183,15 +184,15 @@ test("blocks a no-output live test and retains an enabled draft after save failu
   await page.getByRole("button", { name: "Preview silently" }).click();
   await expect(page.getByRole("dialog", { name: "Default" })).toContainText("never sends provider events, device sound, or Browser Source audio");
   await page.getByRole("button", { name: "Close preview" }).click();
-  await page.getByRole("button", { name: "Live Test…" }).click();
-  const testDialog = page.getByRole("dialog", { name: "Send live Screen Effect test?" });
+  await page.getByRole("button", { name: "Test saved…" }).click();
+  const testDialog = page.getByRole("dialog", { name: "Test saved Screen Effect?" });
   await expect(testDialog).toContainText("No destination is selected");
   await expect(testDialog.getByRole("button", { name: "Confirm live test" })).toBeDisabled();
   await testDialog.getByRole("button", { name: "Cancel" }).click();
 
   const name = page.getByLabel("Effect name");
   await name.fill("Unsaved no-output effect");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.getByRole("button", { name: "Save live changes" }).click();
   await expect(page.getByRole("alert")).toContainText("Storage failed");
   await expect(name).toHaveValue("Unsaved no-output effect");

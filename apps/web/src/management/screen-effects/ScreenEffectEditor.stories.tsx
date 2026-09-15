@@ -109,7 +109,7 @@ export const NoOutputs: Story = {
   args: { api: createApi(effect({ enabled: true, noOutputs: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Live Test…" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Test saved…" }));
     await expect(within(document.body).getByRole("alert")).toHaveTextContent("No destination is selected");
     await expect(within(document.body).getByRole("button", { name: "Confirm live test" })).toBeDisabled();
   }
@@ -154,8 +154,9 @@ export const LiveTestConfirmation: Story = {
   args: { api: createApi(effect({ enabled: true, separateSound: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Live Test…" }));
-    const dialog = within(document.body).getByRole("dialog", { name: "Send live Screen Effect test?" });
+    await userEvent.click(await canvas.findByRole("button", { name: "Test saved…" }));
+    const dialog = within(document.body).getByRole("dialog", { name: "Test saved Screen Effect?" });
+    await expect(dialog).toHaveTextContent("Saved input");
     await expect(dialog).toHaveTextContent("OBS Browser Source visual");
     await expect(dialog).toHaveTextContent("OBS Browser Source audio");
     await expect(dialog).toHaveTextContent("Private headphones");

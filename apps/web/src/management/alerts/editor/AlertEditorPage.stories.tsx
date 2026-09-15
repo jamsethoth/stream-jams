@@ -280,7 +280,7 @@ export const InvalidShapeFill: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("alert")).toHaveTextContent("Badge has an invalid solid fill.");
     await expect(canvas.getByRole("button", { name: "Preview" })).toBeDisabled();
-    await expect(canvas.getByRole("button", { name: "Send test" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Test draft" })).toBeDisabled();
   }
 };
 
@@ -465,7 +465,7 @@ export const VerticalNeedsReview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: "Send test" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Test draft" })).toBeDisabled();
     const warning = (await canvas.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
     await expect(warning).not.toBeNull();
     const warningCanvas = within(warning as HTMLElement);
@@ -516,16 +516,16 @@ export const StarterThemeProfileInspection: Story = {
   }
 };
 
-export const OrdinaryDirtyProfileSwitchGuard: Story = {
+export const SharedDraftProfileSwitch: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const template = await canvas.findByRole("textbox", { name: "Message template" });
     await userEvent.clear(template);
     await userEvent.type(template, "Unsaved profile edit");
     await userEvent.click(canvas.getByRole("button", { name: /^Vertical/u }));
-    await expect(canvas.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+    await expect(canvas.getByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
     await expect(canvas.getByRole("textbox", { name: "Message template" })).toHaveValue("Unsaved profile edit");
-    await expect(within(globalThis.document.body).getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeVisible();
+    await expect(within(globalThis.document.body).queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   }
 };
 
@@ -894,7 +894,7 @@ export const InvalidRange: Story = {
     await expect(conditions.getByRole("alert")).toHaveTextContent("Raid viewers range minimum cannot exceed its maximum.");
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
-    await expect(canvas.getAllByRole("button", { name: "Send test" })[0]).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Test draft" })[0]).toBeDisabled();
   }
 };
 
@@ -919,7 +919,7 @@ export const InvalidRelativeChance: Story = {
     })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
-    await expect(canvas.getAllByRole("button", { name: "Send test" })[0]).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Test draft" })[0]).toBeDisabled();
     await expect(canvas.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent(
       "Correct the event settings to explain selection."
     );
@@ -1106,7 +1106,7 @@ export const DeliveryFailure: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Send test" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Test draft" }));
     await expect(await canvas.findByText("The alert test was not sent")).toBeVisible();
     await expect(canvas.getAllByText(/ref-story-output/)).toHaveLength(2);
   }

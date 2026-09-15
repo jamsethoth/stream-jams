@@ -84,7 +84,7 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
   await expect(output).toBeChecked();
   await page.getByRole("button", { name: "Preview", exact: true }).click();
   expect(tests).toEqual([]);
-  await page.getByRole("button", { name: "Send test", exact: true }).click();
+  await page.getByRole("button", { name: "Test draft", exact: true }).click();
   await expect(page.locator(".management-toast--success")).toContainText("Test queued on Private mix. Reference ref-routing.");
   expect(tests).toEqual([expect.objectContaining({ targetProfileId: null, includeAudio: true, document: expect.objectContaining({ outputs: { browserSource: false, deviceRouteIds: ["private"] } }) })]);
   await page.getByRole("button", { name: "Save", exact: true }).click();

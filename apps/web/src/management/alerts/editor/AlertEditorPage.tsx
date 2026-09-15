@@ -110,6 +110,15 @@ export interface AlertEditorPageProps {
 }
 
 type InspectorTab = "layers" | "alert" | "event";
+type LiveReadinessAction = "blocker" | "review-profile" | "enable-profile" | "enable-alert" | "activate-set" | null;
+
+interface LiveReadinessView {
+  readonly action: LiveReadinessAction;
+  readonly actionLabel: string | null;
+  readonly message: string;
+  readonly profileId: TargetProfileId | null;
+  readonly ready: boolean;
+}
 type PickerState = { readonly layerId: string | null; readonly type: "image" | "video" | "audio" };
 type ReportableActionError = ActionableManagementError & { readonly referenceId: string };
 type SaveWarningState = {
@@ -224,7 +233,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [starterThemeId, setStarterThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
   const [starterThemeError, setStarterThemeError] = useState<ActionableManagementError | null>(null);
   const [copyDesignSourceId, setCopyDesignSourceId] = useState("");
-  const [pendingProfileId, setPendingProfileId] = useState<TargetProfileId | null>(null);
   const [profileCopy, setProfileCopy] = useState<{ readonly sourceId: TargetProfileId; readonly targetId: TargetProfileId } | null>(null);
   const tabRefs = useRef<Record<InspectorTab, HTMLButtonElement | null>>({
     layers: null,
@@ -268,7 +276,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setLoadedSetId(undefined);
     setError(null);
     setNotice(null);
-    setPendingProfileId(null);
     setTtsProviders([]);
     setTtsProvidersLoaded(false);
     setTtsProviderError(null);
@@ -651,30 +658,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   function requestProfileSwitch(nextProfileId: TargetProfileId) {
     if (nextProfileId === profileId) return;
-    if (editor !== null && isEditorDirty(editor) && !starterThemeReviewHistory.current) {
-      setPendingProfileId(nextProfileId);
-      return;
-    }
+    resetLocalPreview();
     setProfileId(nextProfileId);
-  }
-
-  function discardAndSwitchProfile() {
-    if (pendingProfileId === null) return;
-    const nextProfileId = pendingProfileId;
-    discard();
-    setPendingProfileId(null);
-    setProfileId(nextProfileId);
-  }
-
-  async function saveAndSwitchProfile() {
-    if (pendingProfileId === null) return;
-    const nextProfileId = pendingProfileId;
-    setPendingProfileId(null);
-    try {
-      if (await saveForNavigation()) setProfileId(nextProfileId);
-    } catch {
-      // Save failures remain visible through the editor error banner.
-    }
   }
 
   function requestProfileCopy() {
@@ -1067,6 +1052,31 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const ttsLiveBlocked = hasEnabledTts(document) && activeTtsProvider === null;
   const hasDeviceAudio = sendIncludeAudio && document.outputs.deviceRouteIds.length > 0 && (resolveAlertAudio(document)?.layers.length ?? 0) > 0;
   const canSend = ((!sendDeviceOnly && profile.enabled && profile.reviewState === "ready") || hasDeviceAudio) && samplePayload !== null && sampleError === null && documentConditionError === null && documentStyleError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
+  const testDeviceNames = document.outputs.deviceRouteIds.map((id) => audioStatus.status?.routes.find(({ route }) => route.id === id)?.route.name ?? "Unavailable selected device");
+  const liveReadiness = deriveLiveReadiness(document, setDetail, isEditorDirty(editor), documentConditionError, documentStyleError);
+  const documentSetId = document.setId;
+
+  function focusReadinessControl(id: string) {
+    window.setTimeout(() => window.document.getElementById(id)?.focus(), 0);
+  }
+
+  function applyReadinessAction() {
+    if (liveReadiness.action === "blocker") {
+      if (documentConditionError !== null) setTab("event");
+      else if (documentStyleError !== null) setTab("layers");
+      focusReadinessControl("alert-editor-validation");
+      return;
+    }
+    if (liveReadiness.action === "activate-set") {
+      props.onBack(documentSetId);
+      return;
+    }
+    if (liveReadiness.profileId !== null) setProfileId(liveReadiness.profileId);
+    setTab("alert");
+    if (liveReadiness.action === "review-profile" && liveReadiness.profileId !== null) focusReadinessControl(`profile-review-${liveReadiness.profileId}`);
+    if (liveReadiness.action === "enable-profile" && liveReadiness.profileId !== null) focusReadinessControl(`profile-enabled-${liveReadiness.profileId}`);
+    if (liveReadiness.action === "enable-alert") focusReadinessControl("alert-enabled-control");
+  }
   return (
     <div className="alert-editor-page">
       <header className="alert-editor-page__header">
@@ -1085,8 +1095,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null} onClick={previewLocally} type="button">Preview</button>
           {preview ? <button className="button button--secondary" onClick={() => previewElapsedMs >= document.durationMs ? previewLocally() : changePreviewPlayback(!previewPlaying)} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= document.durationMs ? "Replay preview" : "Resume preview"}</button> : null}
           {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => changePreviewPlayback(false, Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
-          <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Send test</button>
+          <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Test draft</button>
           <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
+          <p className="alert-editor-page__preview-help">Preview renders this draft locally. Audio and TTS follow the preview options.</p>
+          <p className="alert-editor-page__test-summary">Draft input · Browser {sendDeviceOnly ? "none" : profileLabel(profileId)} · Devices {testDeviceNames.join(", ") || "none"} · Audio {sendIncludeAudio ? "included" : "excluded"} · TTS {sendIncludeTts ? "included" : "excluded"}</p>
         </div>
       </header>
 
@@ -1097,11 +1109,15 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
       {error === null ? null : <ManagementErrorToast error={error} onDismiss={() => setError(null)} />}
       {notice === null ? null : <ManagementToast notice={notice} onDismiss={() => setNotice(null)} />}
+      <section aria-labelledby="live-readiness-title" className={`alert-editor-page__live-readiness${liveReadiness.ready ? " alert-editor-page__live-readiness--ready" : ""}`}>
+        <div><strong id="live-readiness-title">Live readiness</strong><span>{liveReadiness.message}</span></div>
+        {liveReadiness.actionLabel === null ? null : <button className="button button--secondary button--compact" onClick={applyReadinessAction} type="button">{liveReadiness.actionLabel}</button>}
+      </section>
       {document.layers.some((layer) => layer.type === "video" && !layer.playEmbeddedAudio) ? <p>Videos with embedded audio off stay silent. Existing videos keep this setting until you enable Play embedded audio in Layers and save.</p> : null}
-      {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Event settings need correction: {documentConditionError} Open Event settings to fix it before saving or sending a test.</p>}
-      {documentStyleError === null ? null : <p className="alert-editor-page__condition-error" role="alert">Visual styles need correction: {documentStyleError} Correct the selected layer&apos;s highlighted style fields before saving, previewing, or sending a test.</p>}
+      {documentConditionError === null ? null : <p className="alert-editor-page__condition-error" id="alert-editor-validation" role="alert" tabIndex={-1}>Event settings need correction: {documentConditionError} Open Event settings to fix it before saving or testing the draft.</p>}
+      {documentStyleError === null ? null : <p className="alert-editor-page__condition-error" id={documentConditionError === null ? "alert-editor-validation" : undefined} role="alert" tabIndex={-1}>Visual styles need correction: {documentStyleError} Correct the selected layer&apos;s highlighted style fields before saving, previewing, or testing the draft.</p>}
       {validationIssues.length === 0 ? null : (
-        <section aria-label="Validation issues" className="alert-editor-page__validation">
+        <section aria-label="Validation issues" className="alert-editor-page__validation" id={documentConditionError === null && documentStyleError === null ? "alert-editor-validation" : undefined} tabIndex={-1}>
           <div>
             <strong>Validation issues</strong>
             <span>{profileLabel(profileId)} profile and set-wide checks</span>
@@ -1214,7 +1230,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             <div className="alert-editor-page__profile-warning" role="status">
               <strong>Needs review</strong>
               <span>This generated layout is editable but cannot be sent live until you mark it reviewed and enable it.</span>
-              <button className="button button--secondary button--compact" onClick={() => updateDocument((current) => updateProfile(current, profileId, { reviewState: "ready" }))} type="button">Mark reviewed</button>
+              <button className="button button--secondary button--compact" id={`profile-review-${profileId}`} onClick={() => updateDocument((current) => updateProfile(current, profileId, { reviewState: "ready" }))} type="button">Mark reviewed</button>
             </div>
           ) : null}
           <AlertCanvas
@@ -1285,8 +1301,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
               <AlertAudioOutputs value={document.outputs} status={audioStatus.status} loading={audioStatus.loading} error={audioStatus.error} onChange={(outputs) => updateDocument((current) => ({ ...current, outputs }))} /></>
             ) : (
-              <><div className="alert-editor-inspector"><fieldset><legend>Test destinations</legend><label className="alert-editor-inspector__check"><input checked={sendDeviceOnly} onChange={(event) => setSendDeviceOnly(event.currentTarget.checked)} type="checkbox" />Send test without a browser source (selected device outputs only)</label>
-              <p>Send test uses this draft and the selected audio outputs. Unavailable browser profiles are omitted; available device audio can still play. Preview stays local. TTS follows its existing provider.</p></fieldset></div>
+              <><div className="alert-editor-inspector"><fieldset><legend>Test destinations</legend><label className="alert-editor-inspector__check"><input checked={sendDeviceOnly} onChange={(event) => setSendDeviceOnly(event.currentTarget.checked)} type="checkbox" />Test draft without a browser source (selected device outputs only)</label>
+              <p>Test draft uses this draft and the selected audio outputs. Unavailable browser profiles are omitted; available device audio can still play. Preview stays local. TTS follows its existing provider.</p></fieldset></div>
               <AlertEventInspector
                 document={document}
                 key={`${document.id}:${eventInspectorRevision}`}
@@ -1389,19 +1405,6 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <div className="management-modal__actions">
             <button className="button button--secondary" disabled={busy} onClick={cancelSaveWarning} type="button">Cancel</button>
             <button className="button button--primary" disabled={busy} onClick={() => void confirmSaveWarning()} type="button">Save changes</button>
-          </div>
-        </div>
-      </ModalSurface>
-      <ModalSurface labelledBy="profile-switch-warning-title" onCancel={() => setPendingProfileId(null)} open={pendingProfileId !== null}>
-        <div className="alert-editor-page__save-warning">
-          <div>
-            <h2 id="profile-switch-warning-title">Switch profiles with unsaved changes?</h2>
-            <p>Choose whether to save or discard the current alert changes before opening {pendingProfileId === null ? "the other profile" : profileLabel(pendingProfileId)}.</p>
-          </div>
-          <div className="management-modal__actions">
-            <button className="button button--secondary" onClick={() => setPendingProfileId(null)} type="button">Cancel</button>
-            <button className="button button--secondary" onClick={discardAndSwitchProfile} type="button">Discard and switch</button>
-            <button className="button button--primary" onClick={() => void saveAndSwitchProfile()} type="button">Save and switch</button>
           </div>
         </div>
       </ModalSurface>
@@ -2066,14 +2069,14 @@ function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopy
       <h3>Alert settings</h3>
       <label><span>Alert name</span><input onChange={(event) => { const name = event.currentTarget.value; onChange((current) => ({ ...current, name })); }} value={document.name} /></label>
       <label><span>Duration (milliseconds)</span><input min="100" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => ({ ...current, durationMs })); }} type="number" value={document.durationMs} /></label>
-      <label className="alert-editor-inspector__check"><input checked={document.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
+      <label className="alert-editor-inspector__check"><input checked={document.enabled} id="alert-enabled-control" onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
       <button className="button button--secondary" onClick={onApplyTheme} type="button">Apply starter theme</button>
       <button className="button button--secondary" onClick={onCopyDesign} type="button">Copy design from...</button>
       <button className="button button--secondary" onClick={onCopyProfileLayout} type="button">Copy layout from {profileId === "landscape" ? "Vertical" : "Landscape"}</button>
       <section className="alert-editor-inspector__profile-state">
         <div><strong>{profileLabel(profileId)} profile</strong><StatusBadge label={profile.reviewState === "ready" ? "Reviewed" : "Needs review"} tone={profile.reviewState === "ready" ? "positive" : "warning"} /></div>
         {profile.reviewState === "needs-review" ? <button className="button button--secondary" onClick={() => onChange((current) => updateProfile(current, profileId, { reviewState: "ready" }))} type="button">Mark profile reviewed</button> : null}
-        <label className="alert-editor-inspector__check"><input checked={profile.enabled} disabled={profile.reviewState !== "ready"} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => updateProfile(current, profileId, { enabled })); }} type="checkbox" /><span>Use this profile for live alerts</span></label>
+        <label className="alert-editor-inspector__check"><input checked={profile.enabled} disabled={profile.reviewState !== "ready"} id={`profile-enabled-${profileId}`} onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => updateProfile(current, profileId, { enabled })); }} type="checkbox" /><span>Use this profile for live alerts</span></label>
       </section>
       <dl className="alert-editor-inspector__facts"><div><dt>Provider type</dt><dd>{document.providerKind}</dd></div><div><dt>Event</dt><dd>{formatEventType(document.eventType)}</dd></div><div><dt>Conditions</dt><dd>{document.conditions.length}</dd></div></dl>
     </div>
@@ -2094,6 +2097,37 @@ function alertDocumentVisualStyleError(document: AlertEditorDocument): string | 
     }
   }
   return null;
+}
+
+function deriveLiveReadiness(
+  document: AlertEditorDocument,
+  setDetail: AlertSetDetail | null,
+  dirty: boolean,
+  conditionError: string | null,
+  styleError: string | null
+): LiveReadinessView {
+  const inventory = setDetail?.inventory.find((candidate) => candidate.id === document.id);
+  const intendedIds = inventory?.targetProfileIds.length
+    ? inventory.targetProfileIds
+    : document.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id);
+  const relevantIssues = (setDetail?.overview.validationIssues ?? []).filter((issue) =>
+    (issue.alertId === null || issue.alertId === document.id)
+    && (issue.targetProfileId === null || intendedIds.includes(issue.targetProfileId))
+  );
+  const blocker = conditionError ?? styleError ?? relevantIssues.find((issue) => issue.severity === "blocker")?.message ?? null;
+  const prefix = dirty ? "Unsaved draft · " : "";
+  if (blocker !== null) return { action: "blocker", actionLabel: "Review blocker", message: `${prefix}Configuration blocked: ${blocker}`, profileId: null, ready: false };
+
+  const intendedProfiles = intendedIds.map((id) => document.targetProfiles.find((profile) => profile.id === id)).filter((profile): profile is AlertEditorDocument["targetProfiles"][number] => profile !== undefined);
+  const needsReview = intendedProfiles.find((profile) => profile.reviewState === "needs-review");
+  if (needsReview !== undefined) return { action: "review-profile", actionLabel: `Review ${profileLabel(needsReview.id)}`, message: `${prefix}${profileLabel(needsReview.id)} must be reviewed before it can be used.`, profileId: needsReview.id, ready: false };
+  const needsEnablement = intendedProfiles.find((profile) => !profile.enabled);
+  if (needsEnablement !== undefined) return { action: "enable-profile", actionLabel: `Enable ${profileLabel(needsEnablement.id)}`, message: `${prefix}${profileLabel(needsEnablement.id)} is reviewed but disabled.`, profileId: needsEnablement.id, ready: false };
+  if (!document.enabled) return { action: "enable-alert", actionLabel: "Enable alert", message: `${prefix}The alert is disabled.`, profileId: null, ready: false };
+  if (setDetail === null) return { action: null, actionLabel: null, message: `${prefix}Set activation status is unavailable. Configuration readiness is not confirmed.`, profileId: null, ready: false };
+  if (!setDetail.overview.active) return { action: "activate-set", actionLabel: "Review set activation", message: `${prefix}${setDetail.overview.name} is not the active alert set.`, profileId: null, ready: false };
+  if (intendedProfiles.length === 0) return { action: null, actionLabel: null, message: `${prefix}No intended profile is available. Configuration readiness is not confirmed.`, profileId: null, ready: false };
+  return { action: null, actionLabel: null, message: `${prefix}Configuration ready. Confirm connected outputs with Test draft; this is not delivery evidence.`, profileId: null, ready: true };
 }
 
 const DEFAULT_CANVAS_VIEW: CanvasViewState = { zoom: 100, scrollLeft: 0, scrollTop: 0 };

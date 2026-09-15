@@ -52,7 +52,7 @@ describe("ScreenEffectEditor", () => {
     );
   });
 
-  it("previews silently and confirms exact saved live-test destinations", async () => {
+  it("previews silently and confirms exact saved test destinations", async () => {
     const user = userEvent.setup();
     const saved = enabledEffect();
     const api = effectApi(saved);
@@ -63,11 +63,13 @@ describe("ScreenEffectEditor", () => {
     expect(api.test).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Close preview" }));
 
-    await user.click(screen.getByRole("button", { name: "Live Test…" }));
-    const dialog = screen.getByRole("dialog", { name: "Send live Screen Effect test?" });
+    await user.click(screen.getByRole("button", { name: "Test saved…" }));
+    const dialog = screen.getByRole("dialog", { name: "Test saved Screen Effect?" });
+    expect(dialog).toHaveTextContent("Saved input");
     expect(dialog).toHaveTextContent("OBS Browser Source visual");
     expect(dialog).toHaveTextContent("OBS Browser Source audio");
     expect(dialog).toHaveTextContent("Headphones");
+    expect(api.test).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Confirm live test" }));
     expect(api.test).toHaveBeenCalledWith(saved.id, saved.variants[0]!.id, true);
   });

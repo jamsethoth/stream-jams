@@ -29,7 +29,7 @@ export const ActiveSet: Story = {
     await expect(alertSets).toContainElement(selectedSet);
     await expect(alertSets).not.toContainElement(browserSources);
     await expect(within(selectedSet).getByRole("button", { name: "Collapse Default" })).toHaveAttribute("aria-expanded", "true");
-    await within(selectedSet).findByRole("button", { name: "Test New follower" });
+    await within(selectedSet).findByRole("button", { name: "Test saved New follower" });
   }
 };
 
@@ -96,7 +96,7 @@ export const NarrowRtlExpandedCopy: Story = {
     const canvas = within(canvasElement);
     await expect(document.documentElement).toHaveAttribute("dir", "rtl");
     await expect((await canvas.findAllByRole("button", { name: /Edit A very long localized/u }))[0]).toBeVisible();
-    await expect(canvas.getAllByRole("button", { name: /Test A very long localized/u })[0]).toBeVisible();
+    await expect(canvas.getAllByRole("button", { name: /Test saved A very long localized/u })[0]).toBeVisible();
   }
 };
 
@@ -312,7 +312,9 @@ export const DefaultWithVariations: Story = {
     const canvas = within(canvasElement);
     const variation = await canvas.findByRole("row", { name: /Large raid/u });
     await expect(variation).toHaveClass("alert-sets-page__variation-row");
+    await userEvent.click(canvas.getByLabelText("More actions for New raid"));
     await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
+    await expect(canvas.getAllByRole("button", { name: "Add variation to New raid" })).toHaveLength(1);
   }
 };
 

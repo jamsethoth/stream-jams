@@ -14,7 +14,9 @@
 
 The user requested correction planning for six source-audit findings and handoff to a GPT-5.6 Sol medium task. Execute the local corrections and validation in the new task. Do not push, create a PR, merge, change live configuration, trigger production output, or stop an existing user service without separate authorization. Local slice commits are permitted by the repository workflow. Do not add dependencies, redesign navigation, introduce bulk operations, or implement unrelated backlog features.
 
-The audit was source-based: no dependencies were installed in the originating worktree and no rendered walkthrough was completed. Confirm the findings against current source and isolated fixture-backed UI before changing behavior. Record any finding already resolved or contradicted by current behavior rather than forcing a change.
+The audit was source-based: no dependencies were installed in the originating worktree and no rendered walkthrough was completed. Storybook checks are useful component evidence but are not full-app reproduction or acceptance because shell sizing, routing, fixture volume, API/media mocks, connection state, and build identity can differ. Confirm each retained correction in an isolated full application built from the current worktree, using real management/operator routing and a disposable local data store with representative synthetic data. Record source, Storybook, and full-app evidence separately, and record any finding already resolved, fixture-only, or contradicted by full-app behavior rather than forcing a product change.
+
+The standalone editor scrolling observation is withdrawn as a confirmed product defect because the production focused shell constrains its height. Missing Storybook video assets, unmocked desktop-settings session calls, and echo-only safety-preview mocks are fixture limitations, not established runtime defects. Do not change production behavior solely to compensate for those fixture limitations.
 
 ## Task 1: Establish the implementation baseline and specification
 
@@ -22,8 +24,8 @@ The audit was source-based: no dependencies were installed in the originating wo
 - [ ] Read the frontend-change skill, frontend agent guide, UX specification, tokens, overlay error guidance, and applicable AGENTS.md instructions.
 - [ ] Inspect active OpenSpec changes for overlap. Create `simplify-management-ux-workflows` using the OpenSpec proposal workflow, covering only these six corrections. Relevant existing capabilities include `management-ui-ux`, `alert-configuration-management`, and `screen-effects`; inspect their exact requirements before writing deltas.
 - [ ] Reconcile changed preview labels, profile switching, testing labels, Home ordering, and row actions with existing UX requirements. Keep explicit Save and live-impact confirmation requirements. Create proposal, design, delta specs, and unchecked implementation tasks, then strict-validate. Commit the slice-specific specification before or with implementation.
-- [ ] Install existing locked dependencies if needed. Build core if required by web imports. Start an isolated Storybook or fixture-backed app on a verified unused loopback port. Do not attach test actions to the user's live service.
-- [ ] Capture baseline observations for alert inventory, the two-profile editor, Home incomplete/complete/blocked states, and Screen Effects testing. Do not capture secrets, route keys, personal data, or real browser-source URLs.
+- [ ] Install existing locked dependencies if needed. Build core if required by web imports. Use Storybook for component coverage, then start the built full application on a verified unused loopback port with a disposable config and data store. Do not attach test actions to the user's live service.
+- [ ] Capture source, Storybook, and full-app observations separately for alert inventory, the two-profile editor, Home incomplete/complete/blocked states, and Screen Effects testing. Record the baseline/build identity. Do not capture secrets, route keys, personal data, or real browser-source URLs.
 
 ## Task 2: Make preview and test actions describe their actual behavior
 
@@ -105,7 +107,7 @@ Show one primary next correction action, ordered as: known blockers, intended pr
 
 - [ ] Run focused regression tests after each behavioral slice, then affected package typechecks. Do not add tests solely to mirror text substitutions; reuse/update assertions in meaningful workflow tests.
 - [ ] Run repository frontend gates: `corepack.cmd pnpm lint`, `corepack.cmd pnpm typecheck`, `corepack.cmd pnpm test`, `corepack.cmd pnpm build`, `corepack.cmd pnpm --filter @stream-jams/web build-storybook`, `corepack.cmd pnpm --filter @stream-jams/web test-storybook:ci`, and applicable Playwright tests with `corepack.cmd pnpm test:e2e`. Diagnose failures before rerunning and report environmental gaps accurately.
-- [ ] Rebuild/restart only owned isolated services, wait for health, and verify the rebuilt workflow: Home next action → edit alert → review intended profile → switch/edit layouts → preview → test with visible destinations → save → return to inventory.
+- [ ] Rebuild/restart only owned isolated services, wait for health, and verify the rebuilt full-app workflow against a disposable local store: Home next action → edit alert → review intended profile → switch/edit layouts → preview → review test destinations → save → return to inventory. Do not confirm an output-producing action merely for QA.
 - [ ] Verify desktop and narrow management views, long names, empty/error/blocked states, keyboard navigation, focus restoration, and no secret exposure. Preserve the existing editor small-screen boundary; mobile canvas redesign is out of scope.
 - [ ] Update UX documentation to match the intentional changes and synchronize OpenSpec requirements through the matching workflow. Strict-validate the change and only complete tasks supported by evidence.
-- [ ] Report each of the six findings as corrected, already resolved, or blocked with evidence; summarize checks, rendered verification, limitations, and local commits. Stop before external publication.
+- [ ] Report each of the six findings as corrected, already resolved, fixture-only, contradicted, or blocked with evidence; distinguish source inspection, Storybook checks, and full-app validation. Stop before external publication.

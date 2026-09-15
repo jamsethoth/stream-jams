@@ -51,40 +51,64 @@ export function HomePanel({ managementApi }: HomePanelProps) {
   const blockers = activeSet?.validationIssues.filter((issue) => issue.severity === "blocker").length ?? 0;
   const warnings = activeSet?.validationIssues.filter((issue) => issue.severity === "warning").length ?? 0;
   const activeProfiles = activeSet?.targetProfiles.filter((profile) => profile.enabled) ?? [];
+  const incompleteReadiness = summary.readiness.filter((item) => item.state !== "complete");
+  const completedReadiness = summary.readiness.filter((item) => item.state === "complete");
 
   return (
     <div className="provider-page home-panel">
+      {summary.actionableProblems.length === 0 ? null : (
+        <section aria-labelledby="home-problems-title" className="provider-page__section">
+          <div className="provider-page__section-heading">
+            <div>
+              <h2 id="home-problems-title">Needs attention</h2>
+              <p>Problems blocking or degrading setup.</p>
+            </div>
+          </div>
+          <div className="provider-page__errors">
+            {summary.actionableProblems.map((error, index) => (
+              <ManagementErrorBanner error={error} key={error.referenceId ?? `${error.summary}-${index}`} />
+            ))}
+          </div>
+        </section>
+      )}
+
       <section aria-labelledby="setup-readiness-title" className="provider-page__section">
         <div className="provider-page__section-heading">
           <div>
             <h2 id="setup-readiness-title">Setup readiness</h2>
-            <p>Complete setup tasks before configuring live alert behavior.</p>
+            <p>{incompleteReadiness.length === 0 ? "Setup is complete." : "Complete setup tasks before configuring live alert behavior."}</p>
           </div>
           <StatusBadge
             label={`${summary.readiness.filter((item) => item.state === "complete").length} of ${summary.readiness.length} complete`}
             tone={summary.readiness.every((item) => item.state === "complete") ? "positive" : "info"}
           />
         </div>
-        <div className="provider-page__table-wrap">
+        {incompleteReadiness.length === 0 ? null : <div className="provider-page__table-wrap">
           <table className="provider-page__table">
             <thead>
               <tr>
                 <th scope="col">Setup item</th>
                 <th scope="col">Status</th>
-                <th scope="col">Next action</th>
+                <th scope="col">Action</th>
               </tr>
             </thead>
             <tbody>
-              {summary.readiness.map((item) => (
+              {incompleteReadiness.map((item, index) => (
                 <tr key={item.id}>
                   <th scope="row">{item.label}</th>
                   <td><StatusBadge label={formatState(item.state)} tone={readinessTone(item.state)} /></td>
-                  <td><a href={item.actionRoute}>{item.actionLabel}</a></td>
+                  <td>{index === 0 ? <strong>Next action</strong> : null}<a href={item.actionRoute}>{item.actionLabel}</a></td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </div>}
+        {completedReadiness.length === 0 ? null : (
+          <details className="home-panel__completed-setup">
+            <summary>Completed setup ({completedReadiness.length})</summary>
+            <ul>{completedReadiness.map((item) => <li key={item.id}><span>{item.label}</span><a href={item.actionRoute}>{item.actionLabel}</a></li>)}</ul>
+          </details>
+        )}
       </section>
 
       <section aria-labelledby="active-alert-set-title" className="provider-page__section">
@@ -118,22 +142,6 @@ export function HomePanel({ managementApi }: HomePanelProps) {
           </div>
         )}
       </section>
-
-      {summary.actionableProblems.length === 0 ? null : (
-        <section aria-labelledby="home-problems-title" className="provider-page__section">
-          <div className="provider-page__section-heading">
-            <div>
-              <h2 id="home-problems-title">Needs attention</h2>
-              <p>Problems blocking or degrading setup.</p>
-            </div>
-          </div>
-          <div className="provider-page__errors">
-            {summary.actionableProblems.map((error, index) => (
-              <ManagementErrorBanner error={error} key={error.referenceId ?? `${error.summary}-${index}`} />
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   );
 }

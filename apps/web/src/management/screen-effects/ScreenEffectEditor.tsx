@@ -303,7 +303,7 @@ function EditorHeader(props: {
       <button disabled={!props.canUndo} onClick={props.onUndo} type="button">Undo</button>
       <button disabled={!props.canRedo} onClick={props.onRedo} type="button">Redo</button>
       <button className="button button--secondary" onClick={props.onPreview} type="button">Preview silently</button>
-      <button disabled={props.testDisabled} onClick={props.onTest} type="button">Live Test…</button>
+      <button disabled={props.testDisabled} onClick={props.onTest} type="button">Test saved…</button>
       <button disabled={props.busy || !props.canSave} onClick={props.onSave} type="button">Save</button>
     </div>
   </header>;
@@ -558,11 +558,11 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
     try {
       const result = await api.test(document.id, variant.id, true);
       if (result.status === "queued") {
-        onNotice(`Live Test queued as ${result.occurrenceId ?? "a new occurrence"}. Pause or DND may hold it; review Operator for authoritative state.`);
+        onNotice(`Saved test queued as ${result.occurrenceId ?? "a new occurrence"}. Pause or DND may hold it; review Operator for authoritative state.`);
         onError(null);
         onClose();
       } else {
-        onError(`Live Test was not queued: ${result.status.replace("-", " ")}.`);
+        onError(`Saved test was not queued: ${result.status.replace("-", " ")}.`);
       }
     } catch (testError) {
       onError(message(testError, "The live Screen Effect test did not start."));
@@ -573,8 +573,8 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
   return <ModalSurface labelledBy="screen-effect-live-test-title" onCancel={onClose} open={open}>
     <div>
       <p className="management-eyebrow">Explicit live output</p>
-      <h2 id="screen-effect-live-test-title">Send live Screen Effect test?</h2>
-      <p>The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
+      <h2 id="screen-effect-live-test-title">Test saved Screen Effect?</h2>
+      <p>Saved input · The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
       <p>Selected destinations (current connection and device readiness are checked when you confirm):</p>
       {destinations.length === 0 ? <p role="alert">No destination is selected.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}
       <div className="management-modal__actions"><button className="button button--secondary" onClick={onClose} type="button">Cancel</button><button disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</button></div>

@@ -191,8 +191,8 @@ describe("AlertSetsPage", () => {
       sendAlertEditorTest
     })} onEditAlert={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "Test New follower" }));
-    await user.click(await screen.findByRole("button", { name: "Send New follower test to Vertical" }));
+    await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
+    await user.click(await screen.findByRole("button", { name: "Send New follower saved test to Vertical" }));
 
     await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", {
       document: saved,
@@ -205,6 +205,24 @@ describe("AlertSetsPage", () => {
     expect(screen.getByText("Test queued on Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
+  it("keeps the text-only sample separate from saved delivery and secondary actions", async () => {
+    const api = alertSetsApi();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    const row = await screen.findByRole("row", { name: /New follower/u });
+    expect(within(row).getByRole("button", { name: "Test saved New follower" })).toBeVisible();
+    expect(within(row).getAllByRole("button", { name: "Sample message New follower" })).toHaveLength(1);
+    expect(within(row).getAllByRole("button", { name: "Add variation to New follower" })).toHaveLength(1);
+
+    await user.click(within(row).getByText("More", { selector: "summary" }));
+    await user.click(within(row).getByRole("button", { name: "Sample message New follower" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Sample message for New follower" });
+    expect(dialog).toHaveTextContent("sample text, not the rendered alert design");
+    expect(api.sendAlertEditorTest).not.toHaveBeenCalled();
+  });
+
   it("sends saved device audio without inventing a ready browser profile", async () => {
     const source = detail();
     source.inventory = source.inventory.map((row) => ({ ...row, targetProfileIds: [] }));
@@ -213,7 +231,7 @@ describe("AlertSetsPage", () => {
     saved.targetProfiles = saved.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" as const }));
     const api = alertSetsApi({ getAlertSet: vi.fn(async () => source), getAlertEditorDocument: vi.fn(async () => saved) });
     render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
-    await userEvent.click(await screen.findByRole("button", { name: "Test New follower" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Test saved New follower" }));
     await waitFor(() => expect(api.sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({ document: saved, targetProfileId: null, includeAudio: true, includeTts: true })));
   });
 
@@ -227,7 +245,7 @@ describe("AlertSetsPage", () => {
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={alertSetsApi({ sendAlertEditorTest })} onEditAlert={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "Test New follower" }));
+    await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
 
     expect(await screen.findByText("err_inline_test_blocked")).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute(

@@ -1088,19 +1088,18 @@ function AlertRowsTable({
                 <td data-label="Actions">
                   <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                     <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</button>
-                    <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" onClick={() => onPreview(alert)} type="button">Preview</button>
-                    <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
-                    {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                    <button aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</button>
                     <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
                     <details className="alert-sets-page__action-menu"><summary aria-label={`More actions for ${alert.name}`} className="button button--secondary button--compact">More</summary><div role="group" aria-label={`Additional actions for ${alert.name}`}>
-                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" onClick={() => onPreview(alert)} type="button">Preview</button>
-                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                      <button aria-label={`Sample message ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Sample message</button>
+                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                       <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
                       <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
                       <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
                     </div></details>
                   </div>
-                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
+                  <small className="alert-sets-page__test-summary">Saved input · Browser {alert.targetProfileIds.map(formatProfile).join(", ") || "none"} · Selected device outputs · Audio and TTS included</small>
+                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
                 </td>
               </tr>
             );
@@ -1317,7 +1316,7 @@ function IssueGroup({ heading, issues }: { readonly heading: string; readonly is
 }
 
 function PreviewDialog({ alert, onCancel }: { readonly alert: AlertInventoryRow | null; readonly onCancel: () => void }) {
-  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Sample preview</span><h2 id="alert-preview-title">{alert?.name}</h2></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This uses built-in sample data and does not enter the live event flow.</p><div className="management-modal__actions"><button onClick={onCancel} type="button">Close</button></div></div></ModalSurface>;
+  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Text-only sample</span><h2 id="alert-preview-title">Sample message for {alert?.name}</h2></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This is sample text, not the rendered alert design. It uses built-in sample data and does not send a test or play media.</p><div className="management-modal__actions"><button onClick={onCancel} type="button">Close</button></div></div></ModalSurface>;
 }
 
 function RegenerateDialog({ busy, confirmation, onCancel, onChange, onConfirm, state }: { readonly busy: boolean; readonly confirmation: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onConfirm: () => void; readonly state: RegenerateDialogState | null }) {
