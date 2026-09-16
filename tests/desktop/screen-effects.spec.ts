@@ -34,6 +34,8 @@ test("packaged Screen Effects persists definitions and restarts with empty runti
     management.on("pageerror", (error) => errors.push(error.message));
 
     await management.getByRole("link", { name: "Settings", exact: true }).click();
+    const surfacesSummary = management.locator("summary").filter({ hasText: "Overlay surfaces" });
+    if (!await surfacesSummary.evaluate((summary) => (summary.parentElement as HTMLDetailsElement).open)) await surfacesSummary.click();
     const display = management.getByLabel("Desktop display");
     await display.locator('option:not([value=""])').first().waitFor({ state: "attached", timeout: 5_000 }).catch(() => undefined);
     const displayId = await display.locator("option").evaluateAll((options) =>
@@ -43,7 +45,7 @@ test("packaged Screen Effects persists definitions and restarts with empty runti
     if (desktopOutputAvailable) {
       await display.selectOption(displayId);
       await management.getByLabel("Enable desktop overlay").check();
-      await management.getByRole("checkbox", { name: "Show screen-effects on Desktop overlay" }).check();
+      await management.getByRole("checkbox", { name: "Show Screen Effects on Desktop overlay" }).check();
       await management.getByRole("button", { name: "Save Desktop overlay" }).click();
       await expect(management.getByText(/Desktop (?:overlay settings saved|settings saved; output needs attention)\./u)).toBeVisible();
       await expect(management.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
@@ -68,19 +70,19 @@ test("packaged Screen Effects persists definitions and restarts with empty runti
     await management.getByRole("button", { name: "Confirm change" }).click();
     await expect(management.getByText("Enabled", { exact: true })).toBeVisible();
     await management.getByRole("button", { name: "Edit", exact: true }).click();
-    await management.getByRole("button", { name: "Live Test…" }).click();
-    const testDialog = management.getByRole("dialog", { name: "Send live Screen Effect test?" });
+    await management.getByRole("button", { name: "Test saved…" }).click();
+    const testDialog = management.getByRole("dialog", { name: "Test saved Screen Effect?" });
     await expect(testDialog).toContainText("OBS Browser Source visual");
     if (desktopOutputAvailable) await expect(testDialog).toContainText("Desktop overlay visual");
     await management.getByRole("button", { name: "Confirm live test" }).click();
 
     if (desktopOutputAvailable) {
-      await expect(management.getByRole("status")).toContainText("Live Test queued");
+      await expect(management.getByRole("status")).toContainText("Saved test queued");
       const overlay = await windowByUrl(desktop, "stream-jams-overlay://surface/");
       await expect(overlay.locator("video")).toHaveCount(1);
       await expect.poll(() => overlay.locator("video").evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.05);
     } else {
-      await expect(management.getByRole("alert")).toContainText("Live Test was not queued: unavailable output.");
+      await expect(management.getByRole("alert")).toContainText("Saved test was not queued: unavailable output.");
     }
     expect(errors).toEqual([]);
 

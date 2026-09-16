@@ -66,11 +66,13 @@ test("packaged production host renders an isolated silent Landscape event withou
     expect(firstDisplay, "A connected display is required; do not silently fall back").toBeDefined();
     expect(desktop.windows().some(page => page.url() === overlayUrl)).toBe(false);
     await management.getByRole("link", { name: "Settings", exact: true }).click();
+    const surfacesSummary = management.locator("summary").filter({ hasText: "Overlay surfaces" });
+    if (!await surfacesSummary.evaluate((summary) => (summary.parentElement as HTMLDetailsElement).open)) await surfacesSummary.click();
     const panel = management.getByRole("form", { name: "Desktop overlay", exact: true });
     await expect(panel.getByLabel("Desktop display")).toBeEnabled();
     await panel.getByLabel("Desktop display").selectOption(firstDisplay!.id);
     await panel.getByLabel("Enable desktop overlay").check();
-    await panel.getByRole("checkbox", { name: "Show alerts on Desktop overlay", exact: true }).check();
+    await panel.getByRole("checkbox", { name: "Show Alerts on Desktop overlay", exact: true }).check();
     await panel.getByRole("button", { name: "Save Desktop overlay", exact: true }).click();
     await expect(panel.getByRole("button", { name: "Save Desktop overlay", exact: true })).toBeDisabled();
     await expect.poll(async () => (await api<SurfaceSettingsView>("/overlay-surfaces")).surfaces.find(surface => surface.kind === "desktop")).toMatchObject({ enabled: true, displayId: firstDisplay!.id });

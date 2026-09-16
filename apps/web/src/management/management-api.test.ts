@@ -64,6 +64,7 @@ describe("createHttpManagementApi", () => {
         "/management/home": {
           readiness: [],
           activeAlertSet: null,
+          alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] },
           actionableProblems: []
         },
         "/management/providers?capability=event-source": [

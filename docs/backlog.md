@@ -11,13 +11,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 - `Not planned` entries are deliberate product boundaries, not implementation suggestions. Reopening one requires an explicit product decision.
 - Priority means: `P0` next critical work, `P1` high value, `P2` useful follow-up, and `P3` low urgency or evidence-dependent.
 
-## Planned Changes
-
-| ID | Feature | Status | Priority | Dependency or trigger | Detail |
-| --- | --- | --- | --- | --- | --- |
-| BL-052 | Authenticated CI-published portable Windows desktop artifact | Planned | P2 | Existing packaged desktop job and successful packaged-runtime tests | Publish the tested unsigned Windows x64 folder as a short-lived Actions artifact without adding an installer or release channel. [OpenSpec](../openspec/changes/publish-portable-windows-desktop-artifact/proposal.md) |
-
-Completed desktop/tray, alert-routing, shared desktop-surface, and routed video-soundtrack requirements are maintained in durable OpenSpec capabilities and their archives.
+Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface, and routed video-soundtrack requirements are maintained in durable OpenSpec capabilities and their archives.
 
 ## Alert Authoring And Assets
 
@@ -57,7 +51,7 @@ Completed desktop/tray, alert-routing, shared desktop-surface, and routed video-
 | BL-027 | Startup module selection/setup wizard | Trigger-based | P3 | Multiple shipped overlay modules | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
 | BL-028 | Music widget and additional overlay modules | Deferred | P2 | A separately approved module slice | [Product plan](product-plan.md) |
 | BL-029 | Expanded output management, connected-client history, route-key audit, and OBS-aware readiness | Deferred | P3 | Output workflow outgrows the current Alerts section | [UI decisions](design/ui-refactor-decisions.md) |
-| BL-030 | Desktop installer, signing, durable releases, updater/startup/service integration, and `safeStorage` migration | Deferred | P2 | BL-052 use proves the package; separately approved release and credential-migration changes | The runnable folder and tray lifecycle are implemented, and authenticated short-lived CI artifact publication is promoted as BL-052. Installer, signing, durable release publication, automatic updates, startup-at-login, Windows service, and credential migration remain deferred. [Desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md); [Product plan](product-plan.md) |
+| BL-030 | Desktop installer, signing, durable releases, updater/startup/service integration, and `safeStorage` migration | Deferred | P2 | Separately approved release and credential-migration changes | The runnable folder, tray lifecycle, and authenticated short-lived CI artifact publication are implemented. Installer, signing, durable release publication, automatic updates, startup-at-login, Windows service, and credential migration remain deferred. [Desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md); [Product plan](product-plan.md) |
 | BL-031 | Docker delivery | Deferred | P3 | Supported self-hosted deployment requirement | [Product plan](product-plan.md) |
 | BL-032 | LAN overlay mode | Deferred | P3 | Authentication, origin policy, network warnings, and threat model | [Product plan](product-plan.md) |
 | BL-033 | User-owned cloud backup destination integration | Deferred | P3 | Stable backup format and explicit provider authorization | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |

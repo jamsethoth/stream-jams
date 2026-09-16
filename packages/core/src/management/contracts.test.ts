@@ -754,6 +754,11 @@ describe("management asset diagnostics home and backup contracts", () => {
           }
         ],
         activeAlertSet: alertSet,
+        alertConfiguration: {
+          state: "configured",
+          enabledAlertCount: 1,
+          items: []
+        },
         actionableProblems: [actionableError]
       }).success
     ).toBe(true);

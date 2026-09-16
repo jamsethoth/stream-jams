@@ -120,6 +120,8 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
     // Verify the rebuilt Settings UI against the real packaged service. This
     // route stays unbound and no UI Test action is invoked.
     await management.getByRole("link", { name: "Settings", exact: true }).click();
+    const audioSummary = management.locator("summary").filter({ hasText: "Audio outputs" });
+    if (!await audioSummary.evaluate((summary) => (summary.parentElement as HTMLDetailsElement).open)) await audioSummary.click();
     await expect(management.getByRole("heading", { name: "Audio outputs", exact: true })).toBeVisible();
     await management.getByLabel("New output name").fill("Silent UI route");
     await management.getByRole("button", { name: "Create output", exact: true }).click();

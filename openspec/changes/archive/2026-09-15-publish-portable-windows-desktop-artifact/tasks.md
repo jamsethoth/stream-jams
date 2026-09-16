@@ -21,5 +21,5 @@
 
 - [x] 4.1 Validate the workflow syntax and event conditions, including positive `main`/manual cases and negative pull-request/failure cases, without weakening the existing desktop gates.
 - [x] 4.2 Run `corepack.cmd pnpm desktop:package` and `corepack.cmd pnpm test:desktop` on Windows, confirming the upload path contains the tested self-contained package and no forbidden runtime state.
-- [ ] 4.3 After publication is explicitly authorized, dispatch the workflow on the implementation ref, verify the artifact name/summary/digest/retention, download it through authenticated access, compare its SHA-256 digest, extract the full folder, and exercise an isolated launch and native Quit.
+- [x] 4.3 After publication is explicitly authorized, dispatch the workflow on the implementation ref, verify the artifact name/summary/digest/retention, download it through authenticated access, compare its SHA-256 digest, extract the full folder, and exercise an isolated launch and native Quit.
 - [x] 4.4 Run `openspec.cmd validate publish-portable-windows-desktop-artifact --strict`, relevant documentation/link checks, and `git diff --check`; record any live Actions verification gap instead of treating local packaging as publication proof.

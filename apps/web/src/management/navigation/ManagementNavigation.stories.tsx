@@ -52,3 +52,23 @@ export const AlertSafetySelected: Story = {
     await expect(canvas.getByRole("link", { name: "Alerts" })).not.toHaveAttribute("aria-current");
   }
 };
+
+export const CompactNavigation: Story = {
+  args: {
+    activeRoute: { id: "assets" },
+    onNavigate: () => undefined
+  },
+  parameters: {
+    viewport: {
+      defaultViewport: "narrowPhone",
+      options: { narrowPhone: { name: "Narrow phone 390 x 844", styles: { width: "390px", height: "844px" } } }
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const trigger = canvasElement.querySelector(".management-nav__trigger");
+    await expect(trigger).not.toBeNull();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(canvas.getByText("Assets", { selector: ".management-brand__current" })).toBeVisible();
+  }
+};

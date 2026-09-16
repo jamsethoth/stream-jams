@@ -219,7 +219,7 @@ describe("ManagementApp", () => {
 
     await user.click(screen.getByRole("link", { name: "TTS providers" }));
     const ttsPanel = screen.getByRole("region", { name: "TTS providers content" });
-    const volume = await within(ttsPanel).findByLabelText("Volume");
+    const volume = await within(ttsPanel).findByLabelText("Volume (0–1)");
     await user.clear(volume);
     await user.type(volume, "0.5");
     await user.click(screen.getByRole("link", { name: "Assets" }));
@@ -487,6 +487,7 @@ function createManagementApi(): ManagementApi {
         }
       ],
       activeAlertSet: null,
+      alertConfiguration: { state: "no-active-set" as const, enabledAlertCount: 0, items: [] },
       actionableProblems: []
     })),
     getTwitchStatus: vi.fn(async () => ({ connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null })),

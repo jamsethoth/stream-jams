@@ -36,6 +36,42 @@ test("management diagnostics include backend error code and id", async ({ page }
   ).toBeVisible();
 });
 
+test("management Home prioritizes problems and incomplete setup", async ({ page }) => {
+  await page.route("**/auth/management/sessions", (route) => route.fulfill({ json: { id: "mgmt_home_e2e" } }));
+  await page.route("**/management/overlay-clients", (route) => route.fulfill({ json: [] }));
+  await page.route("**/management/home", (route) => route.fulfill({ json: {
+    readiness: [
+      { id: "event-source", label: "Event source", state: "blocked", actionLabel: "Resolve event source", actionRoute: "/manage/event-sources" },
+      { id: "tts-provider", label: "TTS provider", state: "complete", actionLabel: "Review TTS provider", actionRoute: "/manage/tts-providers" }
+    ],
+    activeAlertSet: null,
+    alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] },
+    actionableProblems: [{
+      summary: "Event intake stopped",
+      cause: "The event source disconnected.",
+      nextStep: "Reconnect the event source.",
+      severity: "error",
+      occurredAt: "2026-09-15T12:00:00.000Z",
+      referenceId: "ref-home-e2e",
+      correction: { label: "Open event sources", route: "/manage/event-sources" }
+    }]
+  } }));
+
+  await page.goto("/manage");
+
+  const problems = page.getByRole("heading", { name: "Needs attention" });
+  const setup = page.getByRole("heading", { name: "Setup readiness" });
+  await expect(problems).toBeVisible();
+  await expect(setup).toBeVisible();
+  expect((await problems.boundingBox())!.y).toBeLessThan((await setup.boundingBox())!.y);
+  await expect(page.getByText("Next action")).toBeVisible();
+  const completed = page.getByText("Completed setup (1)").locator("..");
+  await expect(completed).not.toHaveAttribute("open", "");
+  await completed.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(completed).toHaveAttribute("open", "");
+});
+
 test("event source onboarding connects validates and registers Twitch", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const startBodies: (string | null)[] = [];
@@ -344,6 +380,7 @@ test("diagnostics workspace preserves correction context and copies sanitized ev
   await expect(page).toHaveURL(/\/modules\/alerts\?diagnostic=ref-output-e2e#browser-sources$/);
   await expect(page.getByRole("heading", { name: "Browser sources" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Browser sources" })).toBeInViewport();
+  await page.getByRole("button", { name: "Navigation" }).click();
   await page.getByRole("link", { name: "Diagnostics" }).click();
 
   await page.getByPlaceholder("Reference ID or message").fill("");

@@ -16,7 +16,9 @@ describe("AssetManager", () => {
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
 
     await screen.findByRole("button", { name: "Follower burst" });
-    expect(screen.getByText("Filters", { selector: "summary" }).closest("details")).toHaveAttribute("open");
+    expect(screen.getByText("More filters", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("searchbox", { name: "Search assets" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Type")).toBeInTheDocument();
     expect(screen.getByText("seasonal")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /New follower/ })).toHaveAttribute(
       "href",
@@ -26,6 +28,19 @@ describe("AssetManager", () => {
     await userEvent.type(screen.getByRole("searchbox", { name: "Search assets" }), "chime");
     expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
+  });
+
+  it("shows readable event labels while retaining the stored filter value", async () => {
+    const rewardItem = {
+      ...imageItem,
+      usage: { ...imageItem.usage, usages: imageItem.usage.usages.map((usage) => ({ ...usage, eventType: "channel_point_redemption" as const })) }
+    };
+    const fixture = createFixture({ listAssetLibraryItems: vi.fn(async () => [rewardItem]) });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+
+    expect(await screen.findByText(/Default \/ Channel point redemption \/ Landscape, Vertical/)).toBeVisible();
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
+    expect(screen.getByRole("option", { name: "Channel point redemption" })).toHaveValue("channel_point_redemption");
   });
 
   it("shows only retry when the initial asset-library load fails", async () => {
@@ -82,11 +97,22 @@ describe("AssetManager", () => {
     render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
     await screen.findByRole("button", { name: "Follower burst" });
 
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
     await userEvent.selectOptions(screen.getByLabelText("Usage"), "unused");
     await userEvent.click(screen.getByRole("checkbox", { name: "seasonal" }));
     await userEvent.click(screen.getByRole("checkbox", { name: "audio" }));
 
     expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
+    expect(screen.getByLabelText("3 active secondary filters")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
+    expect(screen.getByText("More filters", { selector: "summary" }).closest("details")).not.toHaveAttribute("open");
+    expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
+    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(screen.queryByLabelText(/active secondary filters/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Follower burst" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Raid chime" })).toBeInTheDocument();
   });
 

@@ -8,6 +8,7 @@ import {
   type StreamEventType,
   type TargetProfileId
 } from "@stream-jams/core";
+import { formatEventLabel } from "../foundation/presentation-labels.js";
 
 export type AlertEventGroupStatus = "blocker" | "warning" | "needs-review" | "valid";
 
@@ -33,6 +34,7 @@ export interface AlertEventGroup {
 
 export interface AlertInventorySummary {
   readonly conditionSummaries: readonly string[];
+  readonly conditionDetails: readonly (string | null)[];
   readonly prioritySummary: string | null;
   readonly weightSummary: string | null;
 }
@@ -75,7 +77,7 @@ export function buildAlertEventGroups(
     ...unknownEventTypes.map((eventType) => ({
       eventType,
       catalogGroup: "Other",
-      label: eventType,
+      label: formatEventLabel(eventType),
       known: false
     }))
   ];
@@ -214,12 +216,10 @@ export function filterAlertEventGroups(
 export function summarizeAlertInventoryRow(
   row: AlertInventoryRow,
   siblings: readonly AlertInventoryRow[],
-  knownEvent: boolean
+  knownEvent: boolean,
+  rewardTitles: ReadonlyMap<string, string> | null = null
 ): AlertInventorySummary {
-  const conditionSummaries = row.conditions.map((condition) => knownEvent
-    ? formatAlertConditionSummary(row.eventType as StreamEventType, condition as AlertCondition)
-    : `Saved condition: ${condition.field} ${condition.operator} ${formatRawValue(condition.value)}`
-  );
+  const conditions = row.conditions.map((condition) => summarizeCondition(row, condition, knownEvent, rewardTitles));
   const priorityGroups = buildAlertPriorityGroups(siblings.map((candidate) => ({
     id: candidate.id,
     enabled: candidate.enabled,
@@ -229,11 +229,40 @@ export function summarizeAlertInventoryRow(
   })));
   const priorityIndex = priorityGroups.findIndex(({ variationIds }) => variationIds.includes(row.id));
   return {
-    conditionSummaries,
+    conditionSummaries: conditions.map(({ summary }) => summary),
+    conditionDetails: conditions.map(({ detail }) => detail),
     prioritySummary: priorityIndex < 0 ? null : `Priority group ${priorityIndex + 1} of ${priorityGroups.length}`,
     weightSummary: row.kind === "variation"
       ? `Relative weight ${row.weight}; the selected sample's result depends on eligible alerts.`
       : null
+  };
+}
+
+function summarizeCondition(
+  row: AlertInventoryRow,
+  condition: AlertInventoryRow["conditions"][number],
+  knownEvent: boolean,
+  rewardTitles: ReadonlyMap<string, string> | null
+): { readonly summary: string; readonly detail: string | null } {
+  if (condition.field === "channelPointReward" && Array.isArray(condition.value)) {
+    const missing: string[] = [];
+    const labels = condition.value.map((value) => {
+      const rewardId = String(value);
+      const title = rewardTitles?.get(rewardId);
+      if (title !== undefined) return title;
+      missing.push(rewardId);
+      return "Unavailable reward";
+    });
+    return {
+      summary: `Channel point reward is one of ${labels.join(", ")}`,
+      detail: missing.length === 0 ? null : `${missing.length === 1 ? "Reward ID" : "Reward IDs"}: ${missing.join(", ")}`
+    };
+  }
+  return {
+    summary: knownEvent
+      ? formatAlertConditionSummary(row.eventType as StreamEventType, condition as AlertCondition)
+      : `Saved condition: ${condition.field} ${condition.operator} ${formatRawValue(condition.value)}`,
+    detail: null
   };
 }
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation and automated acceptance completed on `codex/add-screen-effects-module`. Authorized physical acceptance completed on 2026-09-14 with neutral local media and the isolated acceptance profile described below. All implementation and OpenSpec acceptance gates are complete; human pull-request approval remains.
+Implementation and automated acceptance completed on `codex/add-screen-effects-module` and merged to `main` as `f6faf7a` in PR #102. Authorized physical acceptance completed on 2026-09-14 with neutral local media and the isolated acceptance profile described below. All implementation and OpenSpec acceptance gates are complete, the four delta specs are synchronized, and the change is archived at `openspec/changes/archive/2026-09-15-add-screen-effects-module`.
 
 ## Foundation gate
 

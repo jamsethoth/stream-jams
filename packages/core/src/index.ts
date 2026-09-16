@@ -266,6 +266,7 @@ export {
 export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplacement } from "./moderation/default-rules.js";
 
 export * from "./management/contracts.js";
+export * from "./management/alert-configuration-assessment.js";
 export * from "./management/alert-starter-themes.js";
 export * from "./management/twitch-reward-catalog.js";
 

@@ -29,22 +29,27 @@ export const IndependentDrafts: Story = {
   args: { api: api() },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Move future-module up on Desktop overlay" }));
-    await userEvent.click(canvas.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Move Future module up on Desktop overlay" }));
+    await userEvent.click(canvas.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" }));
     await userEvent.click(canvas.getByRole("button", { name: "Save Desktop overlay" }));
     await expect(canvas.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
-    await expect(canvas.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
+    await expect(canvas.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).not.toBeChecked();
   }
 };
 export const CliUnavailable: Story = { args: { api: api({ ...view(), desktop: { available: false, displays: [], state: "unavailable", message: "Desktop output requires the Windows desktop application. Unified browser settings remain available." } }) } };
 export const MissingDisplay: Story = { args: { api: api({ ...view(), desktop: { ...view().desktop, displays: [], state: "unavailable", message: "The saved left display is disconnected. Select a connected display and save; output will not fall back automatically." } }) } };
+export const UnusedDesktopUnavailable: Story = { args: { api: api({
+  ...view(),
+  surfaces: view().surfaces.map((surface) => surface.kind === "desktop" ? { ...surface, enabled: false } : surface),
+  desktop: { available: false, displays: [], state: "unavailable", message: "Desktop output is unavailable but is not enabled." }
+}) } };
 export const Loading: Story = { args: { api: api(view(), { load: async () => new Promise(() => {}) }) } };
 export const LoadFailure: Story = { args: { api: api(view(), { load: async () => { throw new Error("The local service is unavailable."); } }) } };
 export const SavedButRuntimeFailed: Story = {
   args: { api: api({ ...view(), desktop: { ...view().desktop, state: "failed", message: "Settings were saved, but the desktop renderer failed. Use Retry to restore future alerts." } }) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Move future-module up on Desktop overlay" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Move Future module up on Desktop overlay" }));
     await userEvent.click(canvas.getByRole("button", { name: "Save Desktop overlay" }));
     await expect(await canvas.findByText("Desktop settings saved; output needs attention.")).toBeVisible();
   }

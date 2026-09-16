@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
 import { formatCount } from "../foundation/formatters.js";
+import { formatEventLabel } from "../foundation/presentation-labels.js";
 import type { ManagementApi } from "../management-api.js";
 import "../providers/provider-pages.css";
 
@@ -51,40 +52,90 @@ export function HomePanel({ managementApi }: HomePanelProps) {
   const blockers = activeSet?.validationIssues.filter((issue) => issue.severity === "blocker").length ?? 0;
   const warnings = activeSet?.validationIssues.filter((issue) => issue.severity === "warning").length ?? 0;
   const activeProfiles = activeSet?.targetProfiles.filter((profile) => profile.enabled) ?? [];
+  const incompleteReadiness = summary.readiness.filter((item) => item.state !== "complete");
+  const completedReadiness = summary.readiness.filter((item) => item.state === "complete");
 
   return (
     <div className="provider-page home-panel">
+      {summary.actionableProblems.length === 0 ? null : (
+        <section aria-labelledby="home-problems-title" className="provider-page__section">
+          <div className="provider-page__section-heading">
+            <div>
+              <h2 id="home-problems-title">Needs attention</h2>
+              <p>Problems blocking or degrading setup.</p>
+            </div>
+          </div>
+          <div className="provider-page__errors">
+            {summary.actionableProblems.map((error, index) => (
+              <ManagementErrorBanner error={error} key={error.referenceId ?? `${error.summary}-${index}`} />
+            ))}
+          </div>
+        </section>
+      )}
+
       <section aria-labelledby="setup-readiness-title" className="provider-page__section">
         <div className="provider-page__section-heading">
           <div>
             <h2 id="setup-readiness-title">Setup readiness</h2>
-            <p>Complete setup tasks before configuring live alert behavior.</p>
+            <p>{incompleteReadiness.length === 0 ? "Setup is complete." : "Complete setup tasks before configuring live alert behavior."}</p>
           </div>
           <StatusBadge
             label={`${summary.readiness.filter((item) => item.state === "complete").length} of ${summary.readiness.length} complete`}
             tone={summary.readiness.every((item) => item.state === "complete") ? "positive" : "info"}
           />
         </div>
-        <div className="provider-page__table-wrap">
+        {incompleteReadiness.length === 0 ? null : <div className="provider-page__table-wrap">
           <table className="provider-page__table">
             <thead>
               <tr>
                 <th scope="col">Setup item</th>
                 <th scope="col">Status</th>
-                <th scope="col">Next action</th>
+                <th scope="col">Action</th>
               </tr>
             </thead>
             <tbody>
-              {summary.readiness.map((item) => (
+              {incompleteReadiness.map((item, index) => (
                 <tr key={item.id}>
                   <th scope="row">{item.label}</th>
                   <td><StatusBadge label={formatState(item.state)} tone={readinessTone(item.state)} /></td>
-                  <td><a href={item.actionRoute}>{item.actionLabel}</a></td>
+                  <td>{index === 0 ? <strong>Next action</strong> : null}<a href={item.actionRoute}>{item.actionLabel}</a></td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>}
+        {completedReadiness.length === 0 ? null : (
+          <details className="home-panel__completed-setup">
+            <summary>Completed setup ({completedReadiness.length})</summary>
+            <ul>{completedReadiness.map((item) => <li key={item.id}><span>{item.label}</span><a href={item.actionRoute}>{item.actionLabel}</a></li>)}</ul>
+          </details>
+        )}
+      </section>
+
+      <section aria-labelledby="alert-configuration-title" className="provider-page__section">
+        <div className="provider-page__section-heading">
+          <div>
+            <h2 id="alert-configuration-title">Alert configuration</h2>
+            <p>Checks saved content and review state for enabled alerts. Connection and delivery still require the existing Test and output workflows.</p>
+          </div>
+          <StatusBadge label={configurationLabel(summary.alertConfiguration.state)} tone={configurationTone(summary.alertConfiguration.state)} />
         </div>
+        {summary.alertConfiguration.items.length === 0 ? (
+          <p className="provider-page__empty">{configurationMessage(summary.alertConfiguration)}</p>
+        ) : (
+          <ul className="home-panel__configuration-items">
+            {summary.alertConfiguration.items.map((item) => (
+              <li key={item.alertId}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{formatEventLabel(item.eventType)}</span>
+                  <p>{item.message}</p>
+                </div>
+                <a href={item.actionRoute}>Review alert</a>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section aria-labelledby="active-alert-set-title" className="provider-page__section">
@@ -118,28 +169,36 @@ export function HomePanel({ managementApi }: HomePanelProps) {
           </div>
         )}
       </section>
-
-      {summary.actionableProblems.length === 0 ? null : (
-        <section aria-labelledby="home-problems-title" className="provider-page__section">
-          <div className="provider-page__section-heading">
-            <div>
-              <h2 id="home-problems-title">Needs attention</h2>
-              <p>Problems blocking or degrading setup.</p>
-            </div>
-          </div>
-          <div className="provider-page__errors">
-            {summary.actionableProblems.map((error, index) => (
-              <ManagementErrorBanner error={error} key={error.referenceId ?? `${error.summary}-${index}`} />
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   );
 }
 
 function readinessTone(state: HomeSetupSummary["readiness"][number]["state"]): StatusBadgeTone {
   return state === "complete" ? "positive" : state === "blocked" ? "negative" : "warning";
+}
+
+function configurationLabel(state: HomeSetupSummary["alertConfiguration"]["state"]): string {
+  if (state === "configured") return "No review flagged";
+  if (state === "attention") return "Review needed";
+  if (state === "unavailable") return "Unavailable";
+  if (state === "no-enabled-alerts") return "No enabled alerts";
+  return "No active set";
+}
+
+function configurationTone(state: HomeSetupSummary["alertConfiguration"]["state"]): StatusBadgeTone {
+  return state === "configured" ? "positive" : state === "attention" || state === "unavailable" ? "warning" : "info";
+}
+
+function configurationMessage(configuration: HomeSetupSummary["alertConfiguration"]): string {
+  if (configuration.state === "configured") {
+    return configuration.enabledAlertCount === 1
+      ? "1 enabled default or variation has no saved-configuration review flags."
+      : `${configuration.enabledAlertCount} enabled defaults or variations have no saved-configuration review flags.`;
+  }
+  if (configuration.state === "no-enabled-alerts") return "The active set has no enabled alerts.";
+  if (configuration.state === "no-active-set") return "Activate an alert set to review its enabled alert configuration.";
+  if (configuration.state === "unavailable") return "Enabled alert configuration could not be checked. Open Alerts and review the active set.";
+  return "Open the affected alerts and complete their configuration review.";
 }
 
 function formatState(value: string): string {

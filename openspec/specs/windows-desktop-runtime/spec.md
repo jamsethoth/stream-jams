@@ -115,11 +115,15 @@ The desktop shell SHALL use sandboxed, context-isolated renderers without Node i
 - **THEN** the shell blocks it or opens an explicitly permitted external HTTP(S) destination in the system browser without carrying desktop privileges
 
 ### Requirement: Desktop Scope Remains A Runnable Folder
-This change SHALL deliver the runnable Windows application folder without introducing an installer, signing, publishing, automatic updates, startup-at-login, a Windows service, or secret-store migration.
+The desktop delivery SHALL remain a runnable Windows application folder. CI SHALL be permitted to publish that existing folder as a short-lived authenticated workflow artifact only after packaged verification succeeds. The desktop delivery SHALL NOT introduce an installer, code signing, durable release publication, automatic updates, startup-at-login, a Windows service, portable user state, or secret-store migration.
 
 #### Scenario: Desktop build is completed
 - **WHEN** the packaging command succeeds
-- **THEN** it produces a runnable Windows x64 folder and does not publish, install, configure an update feed, or alter login startup behavior
+- **THEN** it produces a runnable Windows x64 folder and does not install, sign, create a durable release, configure an update feed, move user state beside the executable, or alter login startup behavior
+
+#### Scenario: Verified CI artifact is published
+- **WHEN** an eligible CI run packages and verifies the runnable Windows x64 folder successfully
+- **THEN** CI may expose that exact folder as a bounded authenticated workflow artifact without changing its runtime behavior, user-data paths, or credential storage
 
 ### Requirement: Shutdown Diagnostics Preserve Runtime Policy
 Opt-in instrumentation SHALL preserve persistent management/audio sessions, Save/Discard/Cancel decisions, close-to-tray behavior and the ten-second owned-worker timeout. It SHALL NOT add automatic native termination, restart, migration, a public control API or security overrides.
