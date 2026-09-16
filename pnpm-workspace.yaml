@@ -29,10 +29,14 @@ overrides:
 allowBuilds:
   electron: true
   '@swc/core': true
+  # Jest's haste map uses Parcel's native watcher. Its reviewed install script
+  # only rebuilds locally when npm_config_build_from_source is explicitly true.
+  '@parcel/watcher': true
   esbuild: true
   unrs-resolver: true
 onlyBuiltDependencies:
   - electron
   - '@swc/core'
+  - '@parcel/watcher'
   - esbuild
   - unrs-resolver

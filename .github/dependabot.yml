@@ -5,10 +5,18 @@ updates:
     schedule:
       interval: "weekly"
     groups:
-      npm-production:
+      npm-production-minor-patch:
+        applies-to: "version-updates"
         dependency-type: "production"
-      npm-development:
+        update-types:
+          - "minor"
+          - "patch"
+      npm-development-minor-patch:
+        applies-to: "version-updates"
         dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"

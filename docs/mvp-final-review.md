@@ -46,14 +46,14 @@ The rebuilt production service passed its health check and live verification: th
 
 ### P1: Add dependency update automation, not only audit reporting - resolved
 
-**Repo evidence:** `.github/dependabot.yml` now configures weekly grouped Dependabot version updates for npm workspace dependencies and GitHub Actions. CI still runs dependency review on PRs, CodeQL, and the intentionally non-blocking weekly `pnpm audit` workflow.
+**Repo evidence:** `.github/dependabot.yml` now configures weekly Dependabot version updates, grouping npm minor and patch updates by dependency type while leaving npm major updates as individual PRs. GitHub Actions updates remain grouped. CI still runs dependency review on PRs, CodeQL, and the intentionally non-blocking weekly `pnpm audit` workflow.
 
 **Why it matters:** Audit/reporting tells maintainers about known vulnerability or freshness issues, but it does not create routine update PRs. GitHub documents Dependabot version updates as repository `dependabot.yml` configuration that raises PRs, and the Dependabot options reference defines package ecosystems, schedules, and grouping options. Normal CI workflow permissions remain least-privilege: validation and audit workflows use `contents: read`, while CodeQL and dependency review declare only their required job-level additions.
 
 **Sources:** Dependabot options reference: https://docs.github.com/en/code-security/reference/supply-chain-security/dependabot-options-reference
 GitHub Actions `GITHUB_TOKEN` permissions: https://docs.github.com/en/actions/tutorials/authenticate-with-github_token
 
-**Validation:** `.github/dependabot.yml` uses Dependabot config syntax version `2`, `package-ecosystem: "npm"` at the repository root, `package-ecosystem: "github-actions"` at the repository root, weekly schedules, and groups for production dependencies, development dependencies, and GitHub Actions. Existing workflow permission blocks were reviewed and remain read-only by default except for documented job-level security scan and dependency review needs.
+**Validation:** `.github/dependabot.yml` uses Dependabot config syntax version `2`, `package-ecosystem: "npm"` at the repository root, `package-ecosystem: "github-actions"` at the repository root, weekly schedules, minor-and-patch npm groups for production and development dependencies, and a GitHub Actions group. Existing workflow permission blocks were reviewed and remain read-only by default except for documented job-level security scan and dependency review needs.
 
 ### P1: Add at least one production-entrypoint integration smoke test - resolved
 
