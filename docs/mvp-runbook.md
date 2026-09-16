@@ -123,7 +123,7 @@ Runtime logs are intended for local troubleshooting of provider activity, manage
 
 ## Dependency Updates
 
-Dependabot version updates are configured in `.github/dependabot.yml` for weekly grouped npm workspace dependency updates and weekly grouped GitHub Actions updates. Review Dependabot PRs like normal dependency changes: read the changelog or release notes for behavior changes, let CI run, and keep lockfile changes scoped to the update PR.
+Dependabot version updates are configured in `.github/dependabot.yml`. Weekly npm minor and patch updates are grouped by production or development dependency type, while npm major updates are opened individually for focused migration review. GitHub Actions updates remain grouped weekly. Review Dependabot PRs like normal dependency changes: read the changelog or release notes for behavior changes, let CI run, and keep lockfile changes scoped to the update PR.
 
 CI workflow defaults remain least-privilege. Normal validation workflows use read-only repository contents permissions, and jobs that need additional permissions declare them at the job level.
 
