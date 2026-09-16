@@ -34,3 +34,11 @@
 - [x] 6.1 Run lint, typecheck, full one-worker Vitest, supplemental Node tests, production build, Storybook build and tests, Playwright with reuse disabled, and strict OpenSpec validation
 - [x] 6.2 Self-review all four findings and safeguards, update this checklist accurately, and resolve material review findings
 - [x] 6.3 Commit the scoped local change with a human-readable summary and per-file change list; report final HEAD and worktree status without publishing
+
+## 7. PR 108 Review Corrections
+
+- [x] 7.1 Add failing regressions for enabled unavailable desktop surfaces, current draft profile intent, post-save readiness refresh, empty content, device-only audio, mixed output, and stale saved metadata
+- [x] 7.2 Correct Settings summary attention and update packaged desktop interactions for the disclosed Audio outputs and Overlay surfaces controls
+- [x] 7.3 Reuse a shared configuration-content assessment in Home and the alert editor, using canonical audio resolution and current editor documents
+- [x] 7.4 Refresh set facts after a successful alert save without discarding concurrent edits, and keep saved-but-unconfirmed failures explicit
+- [x] 7.5 Update stories and verification notes, run focused and full frontend gates, the safe desktop subset, and strict OpenSpec validation (physical output checks remain deferred; see `docs/verification/pr-108-review-corrections.md`)

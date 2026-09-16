@@ -38,6 +38,11 @@ export const IndependentDrafts: Story = {
 };
 export const CliUnavailable: Story = { args: { api: api({ ...view(), desktop: { available: false, displays: [], state: "unavailable", message: "Desktop output requires the Windows desktop application. Unified browser settings remain available." } }) } };
 export const MissingDisplay: Story = { args: { api: api({ ...view(), desktop: { ...view().desktop, displays: [], state: "unavailable", message: "The saved left display is disconnected. Select a connected display and save; output will not fall back automatically." } }) } };
+export const UnusedDesktopUnavailable: Story = { args: { api: api({
+  ...view(),
+  surfaces: view().surfaces.map((surface) => surface.kind === "desktop" ? { ...surface, enabled: false } : surface),
+  desktop: { available: false, displays: [], state: "unavailable", message: "Desktop output is unavailable but is not enabled." }
+}) } };
 export const Loading: Story = { args: { api: api(view(), { load: async () => new Promise(() => {}) }) } };
 export const LoadFailure: Story = { args: { api: api(view(), { load: async () => { throw new Error("The local service is unavailable."); } }) } };
 export const SavedButRuntimeFailed: Story = {

@@ -336,6 +336,45 @@ export const ReadyLandscape: Story = {
   }
 };
 
+export const EmptyContentNeedsReview: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ({ ...document, layers: [] }),
+      getAlertVariationAuthoringContext: async () => variationContext({ ...document, layers: [] }),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const readiness = within(await canvas.findByRole("region", { name: "Live readiness" }));
+    await expect(readiness.getByText(/no visible browser content or resolved device audio/)).toBeVisible();
+    await userEvent.click(readiness.getByRole("button", { name: "Review content" }));
+    await waitFor(() => expect(canvas.getByRole("button", { name: "Text" })).toHaveFocus());
+  }
+};
+
+const deviceOnlyDocument: AlertEditorDocument = {
+  ...document,
+  outputs: { browserSource: false, deviceRouteIds: ["story-private-output"] },
+  targetProfiles: document.targetProfiles.map((profile) => ({ ...profile, enabled: false })),
+  layers: [{ id: "sound", name: "Sound", type: "audio", visible: true, order: 0,
+    animation: document.layers[0]!.animation, assetId: "story-audio", volume: 0.5 }]
+};
+
+export const DeviceOnlyConfiguration: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => deviceOnlyDocument,
+      getAlertVariationAuthoringContext: async () => variationContext(deviceOnlyDocument),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+  }
+};
+
 export const StarterThemeConfirmation: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);

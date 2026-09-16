@@ -1,5 +1,6 @@
 import {
   applyAlertStarterTheme,
+  assessAlertConfiguration,
   alertFontPresets,
   alertFontWeights,
   alertTextBoxStyleSchema,
@@ -110,7 +111,7 @@ export interface AlertEditorPageProps {
 }
 
 type InspectorTab = "layers" | "alert" | "event";
-type LiveReadinessAction = "blocker" | "review-profile" | "enable-profile" | "enable-alert" | "activate-set" | null;
+type LiveReadinessAction = "blocker" | "review-content" | "review-profile" | "enable-profile" | "enable-alert" | "activate-set" | null;
 
 interface LiveReadinessView {
   readonly action: LiveReadinessAction;
@@ -186,6 +187,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const { editor, starterThemeReviewHistory } = editorSession;
   const [variationContext, setVariationContext] = useState<AlertVariationAuthoringContext | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
+  const [visualAssetMediaTypes, setVisualAssetMediaTypes] = useState<Readonly<Record<string, "image" | "gif" | "video">> | null>(null);
   const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
   const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
   const [ttsProvidersLoaded, setTtsProvidersLoaded] = useState(false);
@@ -274,6 +276,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setEditorSession(emptyAlertEditorSessionState);
     setVariationContext(null);
     setSetDetail(null);
+    setVisualAssetMediaTypes(null);
     setLoadedSetId(undefined);
     setError(null);
     setNotice(null);
@@ -335,6 +338,29 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       previewRequestIdRef.current += 1;
     };
   }, [props.alertId, props.managementApi, props.targetProfileId, resetEventInspectorDraft, resetLocalPreview]);
+
+  const soundtrackAssetKey = editor?.document.outputs.deviceRouteIds.length
+    && editor.document.targetProfiles.every((profile) => !profile.enabled)
+    ? editor.document.layers
+        .flatMap((layer) => layer.type === "video" && layer.visible && layer.playEmbeddedAudio ? [layer.assetId] : [])
+        .sort()
+        .join("\u0000")
+    : "";
+  useEffect(() => {
+    if (soundtrackAssetKey === "") {
+      setVisualAssetMediaTypes({});
+      return;
+    }
+    let active = true;
+    setVisualAssetMediaTypes(null);
+    void props.managementApi.listAssetLibraryItems().then((items) => {
+      if (!active) return;
+      setVisualAssetMediaTypes(Object.fromEntries(items.flatMap((item) => item.mediaType === "audio" ? [] : [[item.id, item.mediaType]])));
+    }).catch(() => {
+      if (active) setVisualAssetMediaTypes(null);
+    });
+    return () => { active = false; };
+  }, [props.managementApi, soundtrackAssetKey]);
 
   const showActionError = useCallback((nextError: ReportableActionError) => {
     setNotice(null);
@@ -411,7 +437,18 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         ? null
         : updateVariationContextAfterSave(current, saved, priorityAssignments ?? []));
       resetLocalPreview();
-      setNotice({ tone: "success", message: "Alert saved." });
+      try {
+        setSetDetail(await props.managementApi.getAlertSet(saved.setId));
+        setNotice({ tone: "success", message: "Alert saved." });
+      } catch (cause) {
+        setSetDetail(null);
+        showActionError(actionableError(
+          "Alert saved, but readiness could not be refreshed",
+          cause,
+          "Reload the editor to confirm the latest set validation and activation status."
+        ));
+        setNotice({ tone: "warning", message: "Alert saved; readiness is unconfirmed." });
+      }
     } catch (cause) {
       if (!confirmLiveImpact && isLiveImpactConfirmationRequired(cause)) throw cause;
       showActionError(actionableError("The alert was not saved", cause, "Review the selected profile and highlighted fields, then try again."));
@@ -1057,7 +1094,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const hasDeviceAudio = sendIncludeAudio && document.outputs.deviceRouteIds.length > 0 && (resolveAlertAudio(document)?.layers.length ?? 0) > 0;
   const canSend = ((!sendDeviceOnly && profile.enabled && profile.reviewState === "ready") || hasDeviceAudio) && samplePayload !== null && sampleError === null && documentConditionError === null && documentStyleError === null && (!sendIncludeTts || !ttsLiveBlocked) && !busy;
   const testDeviceNames = document.outputs.deviceRouteIds.map((id) => audioStatus.status?.routes.find(({ route }) => route.id === id)?.route.name ?? "Unavailable selected device");
-  const liveReadiness = deriveLiveReadiness(document, setDetail, isEditorDirty(editor), documentConditionError, documentStyleError);
+  const liveReadiness = deriveLiveReadiness(document, setDetail, isEditorDirty(editor), documentConditionError, documentStyleError, visualAssetMediaTypes);
   const documentSetId = document.setId;
 
   function focusReadinessControl(id: string) {
@@ -1065,6 +1102,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   function applyReadinessAction() {
+    if (liveReadiness.action === "review-content") {
+      setTab("layers");
+      focusReadinessControl("alert-editor-add-text");
+      return;
+    }
     if (liveReadiness.action === "blocker") {
       if (documentConditionError !== null) setTab("event");
       else if (documentStyleError !== null) setTab("layers");
@@ -1638,7 +1680,7 @@ function LayerInspector({
       <section>
         <div className="alert-editor-inspector__heading"><h3>Layers</h3><span>{document.layers.length}</span></div>
         <div className="alert-editor-inspector__add-row" aria-label="Add layer">
-          <button onClick={() => onAddSimple("text")} type="button">Text</button>
+          <button id="alert-editor-add-text" onClick={() => onAddSimple("text")} type="button">Text</button>
           <button onClick={() => onAddAsset("image")} type="button">Image</button>
           <button onClick={() => onAddAsset("video")} type="button">Video/GIF</button>
           <button onClick={() => onAddAsset("audio")} type="button">Audio</button>
@@ -2108,13 +2150,13 @@ function deriveLiveReadiness(
   setDetail: AlertSetDetail | null,
   dirty: boolean,
   conditionError: string | null,
-  styleError: string | null
+  styleError: string | null,
+  visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">> | null
 ): LiveReadinessView {
-  const inventory = setDetail?.inventory.find((candidate) => candidate.id === document.id);
-  const intendedIds = inventory?.targetProfileIds.length
-    ? inventory.targetProfileIds
-    : document.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id);
+  const intendedIds = document.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id);
   const relevantIssues = (setDetail?.overview.validationIssues ?? []).filter((issue) =>
+    !dirty
+    &&
     (issue.alertId === null || issue.alertId === document.id)
     && (issue.targetProfileId === null || intendedIds.includes(issue.targetProfileId))
   );
@@ -2122,15 +2164,22 @@ function deriveLiveReadiness(
   const prefix = dirty ? "Unsaved draft · " : "";
   if (blocker !== null) return { action: "blocker", actionLabel: "Review blocker", message: `${prefix}Configuration blocked: ${blocker}`, profileId: null, ready: false };
 
-  const intendedProfiles = intendedIds.map((id) => document.targetProfiles.find((profile) => profile.id === id)).filter((profile): profile is AlertEditorDocument["targetProfiles"][number] => profile !== undefined);
-  const needsReview = intendedProfiles.find((profile) => profile.reviewState === "needs-review");
-  if (needsReview !== undefined) return { action: "review-profile", actionLabel: `Review ${profileLabel(needsReview.id)}`, message: `${prefix}${profileLabel(needsReview.id)} must be reviewed before it can be used.`, profileId: needsReview.id, ready: false };
-  const needsEnablement = intendedProfiles.find((profile) => !profile.enabled);
-  if (needsEnablement !== undefined) return { action: "enable-profile", actionLabel: `Enable ${profileLabel(needsEnablement.id)}`, message: `${prefix}${profileLabel(needsEnablement.id)} is reviewed but disabled.`, profileId: needsEnablement.id, ready: false };
   if (!document.enabled) return { action: "enable-alert", actionLabel: "Enable alert", message: `${prefix}The alert is disabled.`, profileId: null, ready: false };
   if (setDetail === null) return { action: null, actionLabel: null, message: `${prefix}Set activation status is unavailable. Configuration readiness is not confirmed.`, profileId: null, ready: false };
   if (!setDetail.overview.active) return { action: "activate-set", actionLabel: "Review set activation", message: `${prefix}${setDetail.overview.name} is not the active alert set.`, profileId: null, ready: false };
-  if (intendedProfiles.length === 0) return { action: null, actionLabel: null, message: `${prefix}No intended profile is available. Configuration readiness is not confirmed.`, profileId: null, ready: false };
+  const needsAssetTypes = document.outputs.deviceRouteIds.length > 0
+    && document.targetProfiles.every((profile) => !profile.enabled)
+    && document.layers.some((layer) => layer.type === "video" && layer.visible && layer.playEmbeddedAudio);
+  if (needsAssetTypes && visualAssetMediaTypes === null) return { action: null, actionLabel: null, message: `${prefix}Asset details are unavailable. Configuration readiness is not confirmed.`, profileId: null, ready: false };
+  let assessment: ReturnType<typeof assessAlertConfiguration>;
+  try {
+    assessment = assessAlertConfiguration(document, visualAssetMediaTypes ?? {});
+  } catch {
+    return { action: null, actionLabel: null, message: `${prefix}Alert content could not be checked. Configuration readiness is not confirmed.`, profileId: null, ready: false };
+  }
+  if (assessment.issue === "profile-review" && assessment.profileId !== null) return { action: "review-profile", actionLabel: `Review ${profileLabel(assessment.profileId)}`, message: `${prefix}${profileLabel(assessment.profileId)} must be reviewed before it can be used.`, profileId: assessment.profileId, ready: false };
+  if (assessment.issue === "missing-profile") return { action: null, actionLabel: null, message: `${prefix}Enable and review a target profile for Browser Source output.`, profileId: null, ready: false };
+  if (assessment.issue === "empty-content") return { action: "review-content", actionLabel: "Review content", message: `${prefix}Configuration needs review because no visible browser content or resolved device audio is available.`, profileId: null, ready: false };
   return { action: null, actionLabel: null, message: `${prefix}Configuration ready. Confirm connected outputs with Test draft; this is not delivery evidence.`, profileId: null, ready: true };
 }
 

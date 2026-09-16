@@ -1,6 +1,6 @@
 import {
   homeSetupSummarySchema,
-  resolveAlertAudio,
+  assessAlertConfiguration,
   type AlertCreateInput,
   type AlertEditorDocument,
   type AlertEditorErrorReportInput,
@@ -185,7 +185,7 @@ export class ManagementUiService {
       ? null
       : Object.fromEntries(assets.flatMap((asset) => asset.mediaType === "audio" ? [] : [[asset.id, asset.mediaType]]));
     const items = documents.flatMap(({ alert, document }): HomeAlertConfigurationItem[] => {
-      const actionRoute = alertEditorRoute(alert.id, alert.setId, alert.eventType, alert.targetProfileIds[0]);
+      let actionRoute = alertEditorRoute(alert.id, alert.setId, alert.eventType, alert.targetProfileIds[0]);
       if (document === null) {
         return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "unavailable", message: "Saved alert details are unavailable.", actionRoute }];
       }
@@ -193,29 +193,24 @@ export class ManagementUiService {
         return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "review-needed", message: "The enabled alert inventory does not match its saved document.", actionRoute }];
       }
       const enabledProfiles = document.targetProfiles.filter((profile) => profile.enabled);
-      const hasVisibleBrowserLayer = document.layers.some((layer) => layer.visible && (
-        layer.type === "text" || layer.type === "image" || layer.type === "video" || layer.type === "shape" || (layer.type === "tts" && layer.enabled)
-      ));
+      actionRoute = alertEditorRoute(alert.id, alert.setId, alert.eventType, enabledProfiles[0]?.id);
       const needsDocumentAssetCatalog = enabledProfiles.length === 0
         && document.outputs.deviceRouteIds.length > 0
         && document.layers.some((layer) => layer.type === "video" && layer.visible && layer.playEmbeddedAudio);
       if (needsDocumentAssetCatalog && mediaTypes === null) {
         return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "unavailable", message: "Device audio could not be checked because asset details are unavailable.", actionRoute }];
       }
-      let audio: ReturnType<typeof resolveAlertAudio>;
+      let assessment: ReturnType<typeof assessAlertConfiguration>;
       try {
-        audio = resolveAlertAudio(document, mediaTypes ?? {});
+        assessment = assessAlertConfiguration(document, mediaTypes ?? {});
       } catch {
         return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "unavailable", message: "Saved alert audio could not be checked.", actionRoute }];
       }
-      const hasDeviceAudio = audio !== null && audio.outputs.deviceRouteIds.length > 0;
-      const hasBrowserContent = enabledProfiles.length > 0 && (hasVisibleBrowserLayer || audio?.outputs.browserSource === true);
-      if (hasDeviceAudio && !hasVisibleBrowserLayer && (audio?.outputs.browserSource !== true || enabledProfiles.length === 0)) return [];
       const profileIssues = detail.overview.validationIssues.filter((issue) =>
         issue.alertId === alert.id
         && (issue.targetProfileId === null || enabledProfiles.some((profile) => profile.id === issue.targetProfileId))
       );
-      if (enabledProfiles.some((profile) => profile.reviewState === "needs-review") || profileIssues.length > 0) {
+      if (assessment.issue === "profile-review" || (assessment.hasBrowserContent && profileIssues.length > 0)) {
         return [{
           alertId: alert.id,
           name: alert.name,
@@ -225,25 +220,21 @@ export class ManagementUiService {
           actionRoute
         }];
       }
-      if (enabledProfiles.length > 0) {
-        return hasBrowserContent ? [] : [{
+      if (assessment.issue === "empty-content") {
+        return [{
           alertId: alert.id,
           name: alert.name,
           eventType: alert.eventType,
           state: "review-needed",
-          message: "Review this alert because its enabled profile has no visible or audible browser content.",
+          message: "Review this alert because no visible browser content or resolved device audio is available.",
           actionRoute
         }];
       }
-
-      return hasDeviceAudio ? [] : [{
-        alertId: alert.id,
-        name: alert.name,
-        eventType: alert.eventType,
-        state: "review-needed",
-        message: "Review this alert because no enabled target profile or resolved device audio is available.",
-        actionRoute
+      if (assessment.issue === "missing-profile") return [{
+        alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "review-needed",
+        message: "Enable and review a target profile for Browser Source output.", actionRoute
       }];
+      return [];
     });
     return {
       state: items.length === 0 ? "configured" : items.some((item) => item.state === "review-needed") ? "attention" : "unavailable",

@@ -58,9 +58,11 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
   const dirty = dirtyDrafts.length > 0;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => {
+    const desktopInUse = model.view?.surfaces.some((surface) => surface.kind === "desktop" && surface.enabled) ?? false;
+    const desktopNeedsAttention = desktopInUse && (model.view?.desktop.state === "failed" || model.view?.desktop.state === "unavailable");
     onSummaryChange?.({
       count: model.view?.surfaces.length ?? 0,
-      state: loading && model.view === null ? "loading" : refreshError !== null || actionError !== null || model.view?.desktop.state === "failed" ? "attention" : "ready"
+      state: loading && model.view === null ? "loading" : refreshError !== null || actionError !== null || desktopNeedsAttention ? "attention" : "ready"
     });
   }, [actionError, loading, model.view, onSummaryChange, refreshError]);
 

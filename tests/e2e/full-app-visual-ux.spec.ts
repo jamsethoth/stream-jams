@@ -157,22 +157,26 @@ test.describe.serial("full application visual UX acceptance", () => {
       }))
     } }));
     await page.route(`${runtime.url}/overlay-surfaces`, (route) => route.fulfill({ json: {
-      surfaces: [{ id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "screen-effects", visible: true }, { moduleId: "alerts", visible: true }] }],
-      desktop: { available: false, displays: [], state: "unavailable", message: null }
+      surfaces: [
+        { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "missing-display", opacity: 1, layers: [{ moduleId: "alerts", visible: true }] },
+        { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "screen-effects", visible: true }, { moduleId: "alerts", visible: true }] }
+      ],
+      desktop: { available: false, displays: [], state: "unavailable", message: "The saved display is unavailable." }
     } }));
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto(`${runtime.url}/manage/settings`);
 
     const server = page.getByText("Server settings", { exact: true }).locator("..", { has: page.locator("small") }).locator("..");
     await expect(page.getByText("Audio outputs · 3 configured", { exact: true })).toBeVisible();
-    await expect(page.getByText("Overlay surfaces · 1 configured", { exact: true })).toBeVisible();
+    const surfacesSummary = page.getByText("Overlay surfaces · 2 configured · Needs attention", { exact: true });
+    await expect(surfacesSummary).toBeVisible();
+    await expect(page.getByText("The saved display is unavailable.", { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save server settings" })).toBeHidden();
     await captureEvidence(page, "settings-compact-desktop-light.png");
     await server.focus();
     await server.press("Enter");
-    await page.getByText("Overlay surfaces · 1 configured", { exact: true }).click();
     await expect(page.locator(".overlay-surfaces").getByText("Screen Effects", { exact: true })).toBeVisible();
-    await page.getByText("Overlay surfaces · 1 configured", { exact: true }).click();
+    await surfacesSummary.click();
     await expect(page.getByRole("button", { name: "Save server settings" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Export backup" })).toBeHidden();
     await captureEvidence(page, "settings-server-open-desktop-light.png");

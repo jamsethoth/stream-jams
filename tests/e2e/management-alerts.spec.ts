@@ -1319,6 +1319,54 @@ test("alert variation can be created edited duplicated and selectively deleted",
   ]);
 });
 
+test("focused alert editor sends empty-content readiness to the layer controls", async ({ page }) => {
+  await mockManagementShell(page);
+  const source = alertEditorDocument();
+  const document = { ...source, layers: [] };
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: true,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [{ id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 }],
+    validationIssues: [],
+    outputs: []
+  };
+  const detail = {
+    overview,
+    inventory: [{
+      id: "alert-follow",
+      setId: "set-default",
+      providerKind: "twitch",
+      eventType: "follow",
+      name: "New follower",
+      kind: "default",
+      enabled: true,
+      reviewState: "ready",
+      targetProfileIds: ["landscape"],
+      previewText: ""
+    }],
+    browserSources: []
+  };
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({ contentType: "application/json", json: [overview] }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({ contentType: "application/json", json: detail }));
+  await page.route("**/management/alerts/alert-follow/editor", (route) => route.fulfill({ contentType: "application/json", json: document }));
+  await page.route("**/management/alerts/alert-follow/editor/variation-context", (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext(document)
+  }));
+
+  await page.goto("/manage/modules/alerts/editor/alert-follow?profile=landscape");
+  const readiness = page.getByRole("region", { name: "Live readiness" });
+  await expect(readiness).toContainText("Configuration needs review because no visible browser content or resolved device audio is available.");
+  await readiness.getByRole("button", { name: "Review content" }).click();
+  await expect(page.getByRole("tab", { name: "Layers" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("button", { name: "Text", exact: true })).toBeFocused();
+});
+
 test("focused alert editor saves layouts and separates preview from test delivery", async ({ page }) => {
   await mockManagementShell(page);
   await page.setViewportSize({ width: 820, height: 768 });
@@ -1360,7 +1408,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
         kind: "default",
         enabled: true,
         reviewState: "ready",
-        targetProfileIds: ["landscape", "vertical"],
+        targetProfileIds: ["landscape"],
         previewText: "Thanks for following!"
       },
       {
@@ -1480,12 +1528,15 @@ test("focused alert editor saves layouts and separates preview from test deliver
   const focusedContent = await page.locator(".management-route-content--focused").boundingBox();
   expect(focusedContent?.width).toBeGreaterThan(1280);
   const landscapeReviewWarning = page.locator(".alert-editor-page__profile-warning");
+  await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Landscape must be reviewed");
   await expect(landscapeReviewWarning).toContainText("Needs review");
   await landscapeReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
+  await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Vertical must be reviewed");
   await expect(page.getByText("Unsaved", { exact: true })).toBeVisible();
   expect(savedDocuments).toHaveLength(0);
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Vertical must be reviewed");
   expect(savedDocuments).toHaveLength(1);
   expect(savedDocuments[0]).toMatchObject({
     targetProfiles: [

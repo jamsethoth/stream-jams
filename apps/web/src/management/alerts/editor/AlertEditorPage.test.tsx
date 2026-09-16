@@ -1926,6 +1926,120 @@ describe("AlertEditorPage", () => {
     expect(readiness).not.toHaveTextContent("Live ready");
   });
 
+  it("uses current draft profile intent instead of retained inventory targets", async () => {
+    const source = editorDocument();
+    renderWorkspaceEditor({
+      ...source,
+      targetProfiles: source.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: profile.id === "vertical",
+        reviewState: profile.id === "vertical" ? "needs-review" : "ready"
+      }))
+    });
+
+    const readiness = await screen.findByRole("region", { name: "Live readiness" });
+    expect(readiness).toHaveTextContent("Vertical must be reviewed");
+    expect(within(readiness).getByRole("button", { name: "Review Vertical" })).toBeVisible();
+  });
+
+  it("requires review for enabled alerts without browser content or device audio", async () => {
+    const { user } = renderWorkspaceEditor({ ...editorDocument(), layers: [] });
+
+    const readiness = await screen.findByRole("region", { name: "Live readiness" });
+    expect(readiness).toHaveTextContent(
+      "no visible browser content or resolved device audio is available"
+    );
+    await user.click(within(readiness).getByRole("button", { name: "Review content" }));
+    expect(screen.getByRole("tab", { name: "Layers" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Text" })).toHaveFocus());
+  });
+
+  it("accepts device-only audio without requiring a visual profile", async () => {
+    const source = editorDocument();
+    renderWorkspaceEditor({
+      ...source,
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{ id: "sound", name: "Sound", type: "audio", visible: true, order: 0, animation: source.layers[0]!.animation, assetId: "tone", volume: 0.5 }],
+      targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
+    });
+
+    expect(await screen.findByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+  });
+
+  it("keeps device-only soundtrack readiness unconfirmed when asset types are unavailable", async () => {
+    const source = editorDocument();
+    renderWorkspaceEditor({
+      ...source,
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{
+        id: "video", name: "Video", type: "video", visible: true, order: 0, animation: source.layers[0]!.animation,
+        assetId: "new-asset", playEmbeddedAudio: true, audioVolume: 0.5
+      }],
+      targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
+    }, new Error("asset catalog unavailable"));
+
+    await waitFor(() => expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent(
+      "Asset details are unavailable. Configuration readiness is not confirmed."
+    ));
+  });
+
+  it("refreshes device-only soundtrack eligibility when the selected asset changes", async () => {
+    const source = editorDocument();
+    const { user } = renderWorkspaceEditor({
+      ...source,
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{
+        id: "video", name: "Video", type: "video", visible: true, order: 0, animation: source.layers[0]!.animation,
+        assetId: "asset-video", playEmbeddedAudio: true, audioVolume: 0.5
+      }],
+      targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
+    }, [assetLibraryItem("video"), assetLibraryItem("gif")]);
+    expect(await screen.findByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+
+    await user.click(await screen.findByText("Video", { selector: ".alert-editor-inspector__layer-list span" }));
+    await user.click(screen.getByRole("button", { name: "Choose asset" }));
+    await user.click(await screen.findByRole("button", { name: /Animated image, gif/u }));
+    await user.click(screen.getByRole("button", { name: "Use selected asset" }));
+
+    await waitFor(() => expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Enable and review a target profile"));
+  });
+
+  it("refreshes saved set facts and does not retain stale document validation", async () => {
+    const baseSet = alertSetDetail();
+    const stale: AlertSetDetail = { ...baseSet, overview: { ...baseSet.overview, validationIssues: [{
+      id: "stale-blocker", severity: "blocker", code: "EMPTY_CONTENT", message: "Saved content was empty.", nextStep: "Add content.",
+      targetProfileId: "landscape", providerKind: "twitch", eventType: "follow", alertId: "alert-follow", referenceId: null
+    }] } };
+    const { user, getAlertSet } = renderWorkspaceEditor(editorDocument(), [], stale);
+    await screen.findByText("Saved content was empty.");
+    getAlertSet.mockResolvedValueOnce(alertSetDetail());
+
+    await user.click(screen.getByRole("textbox", { name: "Message template" }));
+    await user.paste(" updated");
+    expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Unsaved draft · Configuration ready");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(getAlertSet).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+    expect(screen.getByRole("region", { name: "Live readiness" })).not.toHaveTextContent("Saved content was empty");
+  });
+
+  it("reports a successful save whose readiness refresh fails as unconfirmed", async () => {
+    const { user, getAlertSet } = renderWorkspaceEditor();
+    await screen.findByRole("heading", { name: "New follower" });
+    getAlertSet.mockResolvedValueOnce(alertSetDetail()).mockRejectedValueOnce(new Error("refresh failed"));
+    await user.click(screen.getByRole("textbox", { name: "Message template" }));
+    await user.paste(" updated");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Alert saved, but readiness could not be refreshed")).toBeVisible();
+    expect(screen.getByText("Alert saved; readiness is unconfirmed.")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Set activation status is unavailable");
+    expect(screen.getByRole("region", { name: "Live readiness" })).not.toHaveTextContent("Configuration ready");
+    expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
+  });
+
   it("offers the highest-priority readiness correction through the existing control", async () => {
     const source = editorDocument();
     const { user } = renderWorkspaceEditor({ ...source, enabled: false });
@@ -4039,7 +4153,7 @@ function assetLibraryItem(mediaType: "gif" | "video"): AssetLibraryItem {
   };
 }
 
-function renderWorkspaceEditor(document = editorDocument(), libraryItems: AssetLibraryItem[] = []) {
+function renderWorkspaceEditor(document = editorDocument(), libraryItems: AssetLibraryItem[] | Error = [], initialSetDetail = alertSetDetail()) {
   const user = userEvent.setup();
   const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
   const sendAlertEditorTest = vi.fn<AlertEditorPageApi["sendAlertEditorTest"]>(async (_alertId, request) => ({
@@ -4057,6 +4171,7 @@ function renderWorkspaceEditor(document = editorDocument(), libraryItems: AssetL
   }));
   const onOpenAlert = vi.fn();
   const onBack = vi.fn();
+  const getAlertSet = vi.fn(async () => initialSetDetail);
   render(
     <DirtyNavigationProvider>
       <AlertEditorPage
@@ -4064,10 +4179,13 @@ function renderWorkspaceEditor(document = editorDocument(), libraryItems: AssetL
         assetApi={assetApi}
         managementApi={{
           getAlertEditorDocument: vi.fn(async () => document),
-          getAlertSet: vi.fn(async () => alertSetDetail()),
+          getAlertSet,
           listRegisteredProviders: vi.fn(async () => []),
           getAssetChangeImpact: vi.fn(),
-          listAssetLibraryItems: vi.fn(async () => libraryItems),
+          listAssetLibraryItems: vi.fn(async () => {
+            if (libraryItems instanceof Error) throw libraryItems;
+            return libraryItems;
+          }),
           deleteAsset: vi.fn(),
           updateAssetMetadata: vi.fn(),
           saveAlertEditorDocument,
@@ -4080,7 +4198,7 @@ function renderWorkspaceEditor(document = editorDocument(), libraryItems: AssetL
       />
     </DirtyNavigationProvider>
   );
-  return { user, saveAlertEditorDocument, sendAlertEditorTest, onOpenAlert, onBack };
+  return { user, saveAlertEditorDocument, sendAlertEditorTest, getAlertSet, onOpenAlert, onBack };
 }
 
 function renderLayerStyleEditor(document = editorDocument()) {

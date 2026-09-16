@@ -48,6 +48,25 @@ it("keeps desktop unavailable in CLI while unified controls remain editable", as
   expect(await screen.findByRole("checkbox", { name: "Enable desktop overlay" })).toBeDisabled();
   expect(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).toBeEnabled(); expect(screen.getByText("Use Windows desktop.")).toBeVisible();
 });
+it.each([
+  { enabled: true, state: "unavailable" as const, expected: "attention" },
+  { enabled: true, state: "failed" as const, expected: "attention" },
+  { enabled: false, state: "unavailable" as const, expected: "ready" },
+  { enabled: false, state: "failed" as const, expected: "ready" }
+])("reports $expected when desktop is $state and enabled is $enabled", async ({ enabled, state: desktopState, expected }) => {
+  const state = harness();
+  state.view = {
+    ...state.view,
+    surfaces: state.view.surfaces.map((surface) => surface.kind === "desktop" ? { ...surface, enabled } : surface),
+    desktop: { available: desktopState !== "unavailable", displays: [], state: desktopState, message: "Desktop output needs attention." }
+  };
+  const onSummaryChange = vi.fn();
+
+  render(<OverlaySurfacesPanel api={state.api} onSummaryChange={onSummaryChange} />);
+
+  await screen.findByText("Desktop output needs attention.");
+  expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 2, state: expected });
+});
 it("refreshes capabilities while preserving dirty drafts and retains stale state on refresh failure", async () => {
   vi.useFakeTimers(); const state = harness(); render(<OverlaySurfacesPanel api={state.api} />); await act(async () => {});
   fireEvent.click(screen.getByRole("checkbox", { name: "Enable desktop overlay" }));
