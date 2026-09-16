@@ -54,6 +54,62 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+function videoAudioStoryDocument(playEmbeddedAudio: boolean, separateAudio = false, silentOutputs = false): AlertEditorDocument {
+  const base = editorDocument();
+  // Controls-only media layers have no canvas layout and never fetch or play media.
+  // Existing canvas imagery continues to use the tiny checked-in SVG asset.
+  return { ...base, outputs: { browserSource: !silentOutputs, deviceRouteIds: [] }, layers: [...base.layers,
+    { id: "video-controls", name: "Video soundtrack", type: "video", assetId: "storybook-video-controls", visible: true, order: 2, animation: base.layers[0]!.animation, playEmbeddedAudio, audioVolume: 0.4 },
+    ...(separateAudio ? [{ id: "sound-controls", name: "Separate sound", type: "audio" as const, assetId: "storybook-audio-controls", visible: true, order: 3, animation: base.layers[0]!.animation, volume: 0.5 }] : [])
+  ] };
+}
+
+function videoAudioStoryApi(playEmbeddedAudio: boolean, separateAudio = false, silentOutputs = false) {
+  const value = videoAudioStoryDocument(playEmbeddedAudio, separateAudio, silentOutputs);
+  return createStoryManagementApi({ getAlertEditorDocument: async () => value, getAlertVariationAuthoringContext: async () => variationContext(value), getAlertSet: async () => alertSetDetail() });
+}
+
+export const SavedVideoSoundtrackOff: Story = {
+  args: { managementApi: videoAudioStoryApi(false) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
+    await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    await expect(canvas.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  }
+};
+
+export const VideoSoundtrackWithSeparateSound: Story = {
+  args: { managementApi: videoAudioStoryApi(true, true) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
+    await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
+    await expect(canvas.getByText(/Both the video soundtrack and separate audio will play/)).toBeVisible();
+  }
+};
+
+export const VideoSoundtrackDraftUndo: Story = {
+  args: { managementApi: videoAudioStoryApi(false) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
+    await userEvent.click(canvas.getByRole("checkbox", { name: "Play embedded audio" }));
+    await expect(canvas.getByText("Unsaved")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
+    await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+  }
+};
+
+export const EnabledSoundtrackWithoutOutputs: Story = {
+  args: { managementApi: videoAudioStoryApi(true, false, true) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
+    await expect(canvas.getByText(/Audio layers and enabled soundtracks are silent/)).toBeVisible();
+  }
+};
+
 export const AlertWideAudioOutputs: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -224,7 +280,7 @@ export const InvalidShapeFill: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("alert")).toHaveTextContent("Badge has an invalid solid fill.");
     await expect(canvas.getByRole("button", { name: "Preview" })).toBeDisabled();
-    await expect(canvas.getByRole("button", { name: "Send test" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Test draft" })).toBeDisabled();
   }
 };
 
@@ -280,6 +336,45 @@ export const ReadyLandscape: Story = {
   }
 };
 
+export const EmptyContentNeedsReview: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => ({ ...document, layers: [] }),
+      getAlertVariationAuthoringContext: async () => variationContext({ ...document, layers: [] }),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const readiness = within(await canvas.findByRole("region", { name: "Live readiness" }));
+    await expect(readiness.getByText(/no visible browser content or resolved device audio/)).toBeVisible();
+    await userEvent.click(readiness.getByRole("button", { name: "Review content" }));
+    await waitFor(() => expect(canvas.getByRole("button", { name: "Text" })).toHaveFocus());
+  }
+};
+
+const deviceOnlyDocument: AlertEditorDocument = {
+  ...document,
+  outputs: { browserSource: false, deviceRouteIds: ["story-private-output"] },
+  targetProfiles: document.targetProfiles.map((profile) => ({ ...profile, enabled: false })),
+  layers: [{ id: "sound", name: "Sound", type: "audio", visible: true, order: 0,
+    animation: document.layers[0]!.animation, assetId: "story-audio", volume: 0.5 }]
+};
+
+export const DeviceOnlyConfiguration: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => deviceOnlyDocument,
+      getAlertVariationAuthoringContext: async () => variationContext(deviceOnlyDocument),
+      getAlertSet: async () => alertSetDetail()
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+  }
+};
+
 export const StarterThemeConfirmation: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
@@ -320,6 +415,11 @@ export const GroupedEventNavigation: Story = {
     await waitFor(() => expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
     await expect(canvas.getByText("Variation of New raid")).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
+    const showUnused = canvas.getByRole("checkbox", { name: "Show unused event types" });
+    await expect(showUnused).not.toBeChecked();
+    await expect(canvas.queryByRole("button", { name: /Resubscription alerts/u })).not.toBeInTheDocument();
+    await userEvent.click(showUnused);
+    await expect(canvas.getByRole("button", { name: /Resubscription alerts/u })).toBeVisible();
     await userEvent.click(canvas.getByRole("button", { name: /Collapse Raid/u }));
     await userEvent.type(canvas.getByLabelText("Search alerts"), "large raid");
     await expect(canvas.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true");
@@ -409,7 +509,7 @@ export const VerticalNeedsReview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: "Send test" })).toBeDisabled();
+    await expect(canvas.getByRole("button", { name: "Test draft" })).toBeDisabled();
     const warning = (await canvas.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
     await expect(warning).not.toBeNull();
     const warningCanvas = within(warning as HTMLElement);
@@ -460,16 +560,16 @@ export const StarterThemeProfileInspection: Story = {
   }
 };
 
-export const OrdinaryDirtyProfileSwitchGuard: Story = {
+export const SharedDraftProfileSwitch: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     const template = await canvas.findByRole("textbox", { name: "Message template" });
     await userEvent.clear(template);
     await userEvent.type(template, "Unsaved profile edit");
     await userEvent.click(canvas.getByRole("button", { name: /^Vertical/u }));
-    await expect(canvas.getByRole("region", { name: "Landscape alert canvas" })).toBeVisible();
+    await expect(canvas.getByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
     await expect(canvas.getByRole("textbox", { name: "Message template" })).toHaveValue("Unsaved profile edit");
-    await expect(within(globalThis.document.body).getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeVisible();
+    await expect(within(globalThis.document.body).queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   }
 };
 
@@ -838,7 +938,7 @@ export const InvalidRange: Story = {
     await expect(conditions.getByRole("alert")).toHaveTextContent("Raid viewers range minimum cannot exceed its maximum.");
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
-    await expect(canvas.getAllByRole("button", { name: "Send test" })[0]).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Test draft" })[0]).toBeDisabled();
   }
 };
 
@@ -863,7 +963,7 @@ export const InvalidRelativeChance: Story = {
     })).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
     await expect(canvas.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
-    await expect(canvas.getAllByRole("button", { name: "Send test" })[0]).toBeDisabled();
+    await expect(canvas.getAllByRole("button", { name: "Test draft" })[0]).toBeDisabled();
     await expect(canvas.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent(
       "Correct the event settings to explain selection."
     );
@@ -1050,7 +1150,7 @@ export const DeliveryFailure: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Send test" }));
+    await userEvent.click(await canvas.findByRole("button", { name: "Test draft" }));
     await expect(await canvas.findByText("The alert test was not sent")).toBeVisible();
     await expect(canvas.getAllByText(/ref-story-output/)).toHaveLength(2);
   }
@@ -1065,7 +1165,7 @@ function editorDocument(): AlertEditorDocument {
     delayMs: 0,
     easing: "ease-out"
   });
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

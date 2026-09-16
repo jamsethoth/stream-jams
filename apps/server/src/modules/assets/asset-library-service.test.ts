@@ -1,4 +1,11 @@
-import type { AlertCollection, AlertRule, AssetRecord } from "@stream-jams/core";
+import {
+  createScreenEffectDocument,
+  screenEffectDocumentSchema,
+  type AlertCollection,
+  type AlertRule,
+  type AssetRecord,
+  type ScreenEffectDocument
+} from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import { AssetLibraryInUseError, AssetLibraryService, type AssetLibraryMetadata } from "./asset-library-service.js";
 
@@ -55,6 +62,28 @@ describe("AssetLibraryService", () => {
     await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toBeInstanceOf(AssetLibraryInUseError);
   });
 
+  it("reports module-qualified Screen Effect owners and blocks deletion", async () => {
+    const effect = imageEffect();
+    const fixture = createFixture({ rules: [], effects: [effect] });
+
+    await expect(fixture.service.getChangeImpact("asset-image-1")).resolves.toMatchObject({
+      canDelete: false,
+      owners: [{
+        moduleId: "screen-effects",
+        ownerId: effect.id,
+        ownerName: effect.name,
+        variantId: effect.variants[0]!.id
+      }],
+      warnings: ["1 Screen Effect usage will update everywhere."]
+    });
+    await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toMatchObject({
+      impact: {
+        canDelete: false,
+        owners: [expect.objectContaining({ moduleId: "screen-effects", ownerId: effect.id })]
+      }
+    });
+  });
+
   it("keeps unassigned rules with no target profiles visible to deletion guards", async () => {
     const unassignedRule = { ...rule, collectionIds: [] };
     const fixture = createFixture({ rules: [unassignedRule], targetProfileIds: [] });
@@ -107,6 +136,7 @@ function createFixture(options: {
   readonly targetProfileIds?: readonly ("landscape" | "vertical")[];
   readonly deleteError?: Error;
   readonly rulesAfterDeleteError?: readonly AlertRule[];
+  readonly effects?: readonly ScreenEffectDocument[];
 } = {}) {
   const assets = new MemoryAssetRepository([asset], options.deleteError);
   const metadata = new MemoryMetadataRepository();
@@ -132,6 +162,9 @@ function createFixture(options: {
           targetProfileIds: options.targetProfileIds ?? ["landscape", "vertical"]
         };
       }
+    },
+    effectRepository: {
+      async list() { return options.effects ?? []; }
     },
     clock: () => new Date("2026-07-15T08:00:00.000Z")
   });
@@ -208,3 +241,23 @@ const rule: AlertRule = {
   cooldownSeconds: 0,
   priority: 0
 };
+
+function imageEffect(): ScreenEffectDocument {
+  const draft = createScreenEffectDocument({
+    id: "effect-image-owner",
+    name: "Image owner",
+    defaultVariantId: "variant-image-owner"
+  });
+  return screenEffectDocumentSchema.parse({
+    ...draft,
+    variants: [{
+      ...draft.variants[0]!,
+      visual: {
+        mediaType: "image",
+        assetId: asset.id,
+        layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+      },
+      visualOutputs: { browserSource: true, desktop: false }
+    }]
+  });
+}

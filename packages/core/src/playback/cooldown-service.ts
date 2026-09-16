@@ -12,14 +12,18 @@ export interface PlaybackCooldownService {
   recordPlayback(subject: PlaybackCooldownSubject): void;
 }
 
+export interface PlaybackCooldownKeyService {
+  canPlayKey(namespace: string, key: string, cooldownSeconds: number): boolean;
+  recordPlaybackKey(namespace: string, key: string, cooldownSeconds: number): void;
+}
+
 export interface PlaybackCooldownServiceDependencies {
   readonly clock?: () => Date;
 }
 
-export class DefaultPlaybackCooldownService implements PlaybackCooldownService {
+export class DefaultPlaybackCooldownService implements PlaybackCooldownService, PlaybackCooldownKeyService {
   readonly #clock: () => Date;
-  readonly #ruleCooldownUntil = new Map<string, number>();
-  readonly #eventTypeCooldownUntil = new Map<StreamEventType, number>();
+  readonly #cooldownUntil = new Map<string, number>();
 
   constructor(dependencies: PlaybackCooldownServiceDependencies = {}) {
     this.#clock = dependencies.clock ?? (() => new Date());
@@ -33,9 +37,16 @@ export class DefaultPlaybackCooldownService implements PlaybackCooldownService {
     const now = this.#now();
     this.#purgeExpired(now);
     return (
-      (this.#ruleCooldownUntil.get(subject.ruleId) ?? 0) <= now &&
-      (this.#eventTypeCooldownUntil.get(subject.eventType) ?? 0) <= now
+      this.#isReady("alerts-rule", subject.ruleId, now) &&
+      this.#isReady("alerts-event-type", subject.eventType, now)
     );
+  }
+
+  canPlayKey(namespace: string, key: string, cooldownSeconds: number): boolean {
+    if (cooldownSeconds <= 0) return true;
+    const now = this.#now();
+    this.#purgeExpired(now);
+    return this.#isReady(namespace, key, now);
   }
 
   filterReady<TSubject extends PlaybackCooldownSubject>(subjects: readonly TSubject[]): readonly TSubject[] {
@@ -48,25 +59,33 @@ export class DefaultPlaybackCooldownService implements PlaybackCooldownService {
     }
 
     const expiresAt = this.#now() + subject.cooldownSeconds * 1000;
-    this.#ruleCooldownUntil.set(subject.ruleId, Math.max(this.#ruleCooldownUntil.get(subject.ruleId) ?? 0, expiresAt));
-    this.#eventTypeCooldownUntil.set(
-      subject.eventType,
-      Math.max(this.#eventTypeCooldownUntil.get(subject.eventType) ?? 0, expiresAt)
-    );
+    this.#record("alerts-rule", subject.ruleId, expiresAt);
+    this.#record("alerts-event-type", subject.eventType, expiresAt);
+  }
+
+  recordPlaybackKey(namespace: string, key: string, cooldownSeconds: number): void {
+    if (cooldownSeconds <= 0) return;
+    this.#record(namespace, key, this.#now() + cooldownSeconds * 1000);
   }
 
   #purgeExpired(now: number): void {
-    for (const [ruleId, expiresAt] of this.#ruleCooldownUntil) {
+    for (const [key, expiresAt] of this.#cooldownUntil) {
       if (expiresAt <= now) {
-        this.#ruleCooldownUntil.delete(ruleId);
+        this.#cooldownUntil.delete(key);
       }
     }
+  }
 
-    for (const [eventType, expiresAt] of this.#eventTypeCooldownUntil) {
-      if (expiresAt <= now) {
-        this.#eventTypeCooldownUntil.delete(eventType);
-      }
-    }
+  #isReady(namespace: string, key: string, now: number): boolean {
+    return (this.#cooldownUntil.get(JSON.stringify([namespace, key])) ?? 0) <= now;
+  }
+
+  #record(namespace: string, key: string, expiresAt: number): void {
+    const namespacedKey = JSON.stringify([namespace, key]);
+    this.#cooldownUntil.set(
+      namespacedKey,
+      Math.max(this.#cooldownUntil.get(namespacedKey) ?? 0, expiresAt)
+    );
   }
 
   #now(): number {

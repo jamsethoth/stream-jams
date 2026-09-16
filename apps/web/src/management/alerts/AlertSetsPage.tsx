@@ -20,6 +20,7 @@ import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } fro
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
+import { formatEventLabel } from "../foundation/presentation-labels.js";
 import type { ManagementApi } from "../management-api.js";
 import { AlertThemeChooser } from "./AlertThemeChooser.js";
 import { alertTestNotice } from "./alert-test-notice.js";
@@ -124,10 +125,12 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [eventFilter, setEventFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [profileFilter, setProfileFilter] = useState("all");
+  const [showUnusedEventTypes, setShowUnusedEventTypes] = useState(false);
   const [browserSourceStatusUpdatedAt, setBrowserSourceStatusUpdatedAt] = useState<string | null>(null);
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
   const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(() => new Set());
+  const [rewardTitleContext, setRewardTitleContext] = useState<{ readonly setId: string; readonly key: string; readonly titles: ReadonlyMap<string, string> } | null>(null);
   const browserSourceRefreshFailed = useRef(false);
   const effectLoadGeneration = useRef(0);
   const disclosureSetId = useRef<string | null>(null);
@@ -190,12 +193,15 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     detail?.inventory ?? [],
     detail?.overview.validationIssues ?? []
   ), [detail]);
-  const filteredEventGroups = useMemo(() => filterAlertEventGroups(eventGroups, {
+  const visibleEventGroups = useMemo(() => showUnusedEventTypes
+    ? eventGroups
+    : eventGroups.filter((group) => group.defaultCount + group.variationCount > 0), [eventGroups, showUnusedEventTypes]);
+  const filteredEventGroups = useMemo(() => filterAlertEventGroups(visibleEventGroups, {
     query,
     eventType: eventFilter,
     ...(statusFilter === "all" ? {} : { status: statusFilter as "enabled" | "disabled" }),
     ...(profileFilter === "all" ? {} : { profileId: profileFilter as TargetProfileId })
-  }), [eventFilter, eventGroups, profileFilter, query, statusFilter]);
+  }), [eventFilter, profileFilter, query, statusFilter, visibleEventGroups]);
   const expandedEventKeys = useMemo(() => new Set([
     ...manualExpandedEventKeys,
     ...filteredEventGroups.forcedOpenKeys
@@ -205,10 +211,29 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     createAlertRewardSelection,
     null
   ), [createAlertRewardSelection, detail]);
+  const rewardIdsKey = useMemo(() => [...new Set((detail?.inventory ?? []).flatMap((alert) => alert.conditions.flatMap((condition) =>
+    condition.field === "channelPointReward" && Array.isArray(condition.value) ? condition.value.map(String) : []
+  )))].sort().join("\u0000"), [detail?.inventory]);
+  const rewardSetId = detail?.overview.id ?? null;
+  const rewardTitles = rewardTitleContext?.setId === rewardSetId && rewardTitleContext.key === rewardIdsKey
+    ? rewardTitleContext.titles
+    : null;
   const loadTwitchCustomRewards = useCallback(
     () => managementApi.getTwitchCustomRewards(),
     [managementApi]
   );
+
+  useEffect(() => {
+    setRewardTitleContext(null);
+    if (rewardIdsKey === "" || rewardSetId === null) return;
+    let cancelled = false;
+    void managementApi.getTwitchCustomRewards()
+      .then(({ rewards }) => {
+        if (!cancelled) setRewardTitleContext({ setId: rewardSetId, key: rewardIdsKey, titles: new Map(rewards.map((reward) => [reward.id, reward.title])) });
+      })
+      .catch(() => { if (!cancelled) setRewardTitleContext({ setId: rewardSetId, key: rewardIdsKey, titles: new Map() }); });
+    return () => { cancelled = true; };
+  }, [managementApi, rewardIdsKey, rewardSetId]);
 
   useEffect(() => {
     const setId = detail?.overview.id ?? null;
@@ -763,6 +788,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       filtered={filteredEventGroups}
                       groups={eventGroups}
                       issues={expandedDetail.overview.validationIssues}
+                      rewardTitles={rewardTitles}
                       onEventFilter={setEventFilter}
                       onAdd={() => openCreateAlertDialog()}
                       onAddForEvent={openCreateAlertDialog}
@@ -775,6 +801,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       onQuery={setQuery}
                       onReset={(alert) => setAlertMutation({ action: "reset", alert })}
                       onStatusFilter={setStatusFilter}
+                      onShowUnusedEventTypes={setShowUnusedEventTypes}
                       onTest={requestInlineTest}
                       onTestProfile={(alert, targetProfileId) => void sendInlineTest(alert, targetProfileId)}
                       onToggle={(alert) => void toggleAlert(alert)}
@@ -787,6 +814,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                       profileFilter={profileFilter}
                       query={query}
                       statusFilter={statusFilter}
+                      showUnusedEventTypes={showUnusedEventTypes}
                       testMenuAlertId={testMenuAlertId}
                       testMenuProfileIds={testMenuProfileIds}
                       testingAlertId={testingAlertId}
@@ -860,6 +888,7 @@ function AlertInventory({
   filtered,
   groups,
   issues,
+  rewardTitles,
   onAdd,
   onAddForEvent,
   onCreateVariation,
@@ -872,6 +901,7 @@ function AlertInventory({
   onQuery,
   onReset,
   onStatusFilter,
+  onShowUnusedEventTypes,
   onTest,
   onTestProfile,
   onToggle,
@@ -879,6 +909,7 @@ function AlertInventory({
   profileFilter,
   query,
   statusFilter,
+  showUnusedEventTypes,
   testMenuAlertId,
   testMenuProfileIds,
   testingAlertId,
@@ -890,6 +921,7 @@ function AlertInventory({
   readonly filtered: FilteredAlertEventGroups;
   readonly groups: readonly AlertEventGroup[];
   readonly issues: readonly AlertValidationIssue[];
+  readonly rewardTitles: ReadonlyMap<string, string> | null;
   readonly onAdd: () => void;
   readonly onAddForEvent: (eventType: StreamEventType) => void;
   readonly onCreateVariation: (alert: AlertInventoryRow) => void;
@@ -902,6 +934,7 @@ function AlertInventory({
   readonly onQuery: (value: string) => void;
   readonly onReset: (alert: AlertInventoryRow) => void;
   readonly onStatusFilter: (value: string) => void;
+  readonly onShowUnusedEventTypes: (value: boolean) => void;
   readonly onTest: (alert: AlertInventoryRow) => void;
   readonly onTestProfile: (alert: AlertInventoryRow, targetProfileId: TargetProfileId) => void;
   readonly onToggle: (alert: AlertInventoryRow) => void;
@@ -909,6 +942,7 @@ function AlertInventory({
   readonly profileFilter: string;
   readonly query: string;
   readonly statusFilter: string;
+  readonly showUnusedEventTypes: boolean;
   readonly testMenuAlertId: string | null;
   readonly testMenuProfileIds: readonly TargetProfileId[];
   readonly testingAlertId: string | null;
@@ -921,6 +955,7 @@ function AlertInventory({
         <label><span>Event</span><select onChange={(event) => onEventFilter(event.currentTarget.value)} value={eventFilter}><option value="all">All events</option>{eventTypes.map((eventType) => <option key={eventType} value={eventType}>{formatEventType(eventType)}</option>)}</select></label>
         <label><span>Status</span><select onChange={(event) => onStatusFilter(event.currentTarget.value)} value={statusFilter}><option value="all">All statuses</option><option value="enabled">Enabled</option><option value="disabled">Disabled</option></select></label>
         <label><span>Profile</span><select onChange={(event) => onProfileFilter(event.currentTarget.value)} value={profileFilter}><option value="all">All profiles</option><option value="landscape">Landscape</option><option value="vertical">Vertical</option></select></label>
+        <label className="alert-sets-page__unused-events"><input checked={showUnusedEventTypes} onChange={(event) => onShowUnusedEventTypes(event.currentTarget.checked)} type="checkbox" /><span>Show unused event types</span></label>
       </div>
       <div className="alert-sets-page__event-groups">
         {filtered.groups.map((group) => {
@@ -960,6 +995,7 @@ function AlertInventory({
                       defaults={group.defaults}
                       fullGroup={fullGroup}
                       issues={issues}
+                      rewardTitles={rewardTitles}
                       onCreateVariation={onCreateVariation}
                       onDelete={onDelete}
                       onDuplicate={onDuplicate}
@@ -983,6 +1019,7 @@ function AlertInventory({
                         defaults={[]}
                         fullGroup={fullGroup}
                         issues={issues}
+                        rewardTitles={rewardTitles}
                         onCreateVariation={onCreateVariation}
                         onDelete={onDelete}
                         onDuplicate={onDuplicate}
@@ -1005,7 +1042,7 @@ function AlertInventory({
           );
         })}
       </div>
-      {filtered.groups.length === 0 ? <div className="alert-sets-page__empty-row"><p>No alerts match these filters.</p><button onClick={() => { onQuery(""); onEventFilter("all"); onStatusFilter("all"); onProfileFilter("all"); }} type="button">Clear filters</button></div> : null}
+      {filtered.groups.length === 0 ? <div className="alert-sets-page__empty-row">{groups.every((group) => group.defaultCount + group.variationCount === 0) && !filtered.hasActiveFilters ? <p>No alerts configured yet.</p> : <><p>No alerts match these filters.</p><button onClick={() => { onQuery(""); onEventFilter("all"); onStatusFilter("all"); onProfileFilter("all"); }} type="button">Clear filters</button></>}</div> : null}
     </section>
   );
 }
@@ -1015,6 +1052,7 @@ function AlertRowsTable({
   defaults,
   fullGroup,
   issues,
+  rewardTitles,
   onCreateVariation,
   onDelete,
   onDuplicate,
@@ -1033,6 +1071,7 @@ function AlertRowsTable({
   readonly defaults: FilteredAlertEventGroup["defaults"];
   readonly fullGroup: AlertEventGroup;
   readonly issues: readonly AlertValidationIssue[];
+  readonly rewardTitles: ReadonlyMap<string, string> | null;
   readonly onCreateVariation: (alert: AlertInventoryRow) => void;
   readonly onDelete: (alert: AlertInventoryRow) => void;
   readonly onDuplicate: (alert: AlertInventoryRow) => void;
@@ -1069,12 +1108,12 @@ function AlertRowsTable({
             const blockerCount = alertIssues.filter((issue) => issue.severity === "blocker").length;
             const warningCount = alertIssues.filter((issue) => issue.severity === "warning").length;
             const testMenuOpen = testMenuAlertId === alert.id;
-            const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known);
+            const summary = summarizeAlertInventoryRow(alert, siblings, fullGroup.known, rewardTitles);
             return (
               <tr className={alert.kind === "variation" ? "alert-sets-page__variation-row" : undefined} key={alert.id}>
                 <th scope="row">
                   <span>{alert.name}</span><small>{alert.kind === "default" ? "Default" : "Variation"} · {formatProvider(alert.providerKind)} catalog</small>
-                  {summary.conditionSummaries.map((condition) => <small key={condition}>{condition}</small>)}
+                  {summary.conditionSummaries.map((condition, index) => <small key={`${condition}-${index}`}>{condition}{summary.conditionDetails[index] === null ? null : <span className="alert-sets-page__condition-detail">{summary.conditionDetails[index]}</span>}</small>)}
                   {summary.prioritySummary === null ? null : <small>{summary.prioritySummary}</small>}
                   {summary.weightSummary === null ? null : <small>{summary.weightSummary}</small>}
                 </th>
@@ -1088,19 +1127,18 @@ function AlertRowsTable({
                 <td data-label="Actions">
                   <div className="alert-sets-page__row-actions alert-sets-page__alert-actions">
                     <button aria-label={`Edit ${alert.name}`} className="button button--secondary button--compact" id={alertRowFocusId(alert.id)} onClick={() => onEdit(alert)} type="button">Edit</button>
-                    <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" onClick={() => onPreview(alert)} type="button">Preview</button>
-                    <button aria-expanded={testMenuOpen} aria-label={`Test ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test"}</button>
-                    {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__wide-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                    <button aria-expanded={testMenuOpen} aria-label={`Test saved ${alert.name}`} className="button button--secondary button--compact" disabled={testingAlertId === alert.id} onClick={() => onTest(alert)} type="button">{testingAlertId === alert.id ? "Testing..." : "Test saved"}</button>
                     <button aria-label={`${alert.enabled ? "Disable" : "Enable"} ${alert.name}`} className="button button--compact alert-sets-page__toggle-action" disabled={busy} onClick={() => onToggle(alert)} type="button">{alert.enabled ? "Disable" : "Enable"}</button>
                     <details className="alert-sets-page__action-menu"><summary aria-label={`More actions for ${alert.name}`} className="button button--secondary button--compact">More</summary><div role="group" aria-label={`Additional actions for ${alert.name}`}>
-                      <button aria-label={`Preview ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" onClick={() => onPreview(alert)} type="button">Preview</button>
-                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact alert-sets-page__narrow-action" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
+                      <button aria-label={`Sample message ${alert.name}`} className="button button--secondary button--compact" onClick={() => onPreview(alert)} type="button">Sample message</button>
+                      {alert.kind === "default" ? <button aria-label={`Add variation to ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onCreateVariation(alert)} type="button">Add variation</button> : null}
                       <button aria-label={`Duplicate ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onDuplicate(alert)} type="button">Duplicate</button>
                       <button aria-label={`Reset ${alert.name}`} className="button button--secondary button--compact" disabled={busy} onClick={() => onReset(alert)} type="button">Reset</button>
                       <button aria-label={`Delete ${alert.name}`} className="button button--danger-quiet button--compact" disabled={busy} onClick={() => onDelete(alert)} type="button">Delete</button>
                     </div></details>
                   </div>
-                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
+                  <small className="alert-sets-page__test-summary">Saved input · Browser {alert.targetProfileIds.map(formatProfile).join(", ") || "none"} · Selected device outputs · Audio and TTS included</small>
+                  {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
                 </td>
               </tr>
             );
@@ -1317,7 +1355,7 @@ function IssueGroup({ heading, issues }: { readonly heading: string; readonly is
 }
 
 function PreviewDialog({ alert, onCancel }: { readonly alert: AlertInventoryRow | null; readonly onCancel: () => void }) {
-  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Sample preview</span><h2 id="alert-preview-title">{alert?.name}</h2></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This uses built-in sample data and does not enter the live event flow.</p><div className="management-modal__actions"><button onClick={onCancel} type="button">Close</button></div></div></ModalSurface>;
+  return <ModalSurface labelledBy="alert-preview-title" onCancel={onCancel} open={alert !== null}><div className="alert-sets-page__modal"><div><span className="alert-sets-page__eyebrow">Text-only sample</span><h2 id="alert-preview-title">Sample message for {alert?.name}</h2></div><div className="alert-sets-page__preview"><span>{alert?.previewText}</span></div><p>This is sample text, not the rendered alert design. Template variables may remain unresolved. It does not send a test or play media.</p><div className="management-modal__actions"><button onClick={onCancel} type="button">Close</button></div></div></ModalSurface>;
 }
 
 function RegenerateDialog({ busy, confirmation, onCancel, onChange, onConfirm, state }: { readonly busy: boolean; readonly confirmation: string; readonly onCancel: () => void; readonly onChange: (value: string) => void; readonly onConfirm: () => void; readonly state: RegenerateDialogState | null }) {
@@ -1406,7 +1444,7 @@ function maskRouteKey(url: string): string {
 }
 
 function formatEventType(value: string): string {
-  return value.split("_").map((part) => `${part[0]?.toUpperCase() ?? ""}${part.slice(1)}`).join(" ");
+  return formatEventLabel(value);
 }
 
 function formatProvider(value: string): string {

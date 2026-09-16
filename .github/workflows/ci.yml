@@ -178,6 +178,27 @@ jobs:
         run: pnpm test:desktop
         env:
           CI: true
+      - name: Prepare portable desktop artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        id: portable-desktop-metadata
+        run: node scripts/portable-desktop-artifact.mjs prepare
+      - name: Upload verified portable desktop artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        id: portable-desktop-artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.portable-desktop-metadata.outputs.artifact-name }}
+          path: apps/desktop/out/Stream Jams-win32-x64/
+          if-no-files-found: error
+          retention-days: 30
+          include-hidden-files: false
+      - name: Record portable desktop artifact
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          STREAM_JAMS_PORTABLE_ARTIFACT_NAME: ${{ steps.portable-desktop-metadata.outputs.artifact-name }}
+          STREAM_JAMS_PORTABLE_ARTIFACT_URL: ${{ steps.portable-desktop-artifact.outputs.artifact-url }}
+          STREAM_JAMS_PORTABLE_ARTIFACT_DIGEST: ${{ steps.portable-desktop-artifact.outputs.artifact-digest }}
+        run: node scripts/portable-desktop-artifact.mjs summarize
       - name: Upload desktop failure evidence
         if: failure()
         uses: actions/upload-artifact@v7

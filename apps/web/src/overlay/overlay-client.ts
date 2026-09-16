@@ -1,3 +1,4 @@
+import { surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayComposition,
   OverlayInstruction,
@@ -29,6 +30,7 @@ export interface OverlaySocketLike {
 }
 
 export type OverlayClientMessage =
+  | { readonly type: "surface-layers"; readonly layers: readonly SurfaceLayer[] }
   | {
       readonly type: "composition";
       readonly composition: OverlayComposition;
@@ -276,7 +278,12 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
     readonly muted?: unknown;
     readonly instructionIds?: unknown;
     readonly message?: unknown;
+    readonly layers?: unknown;
   };
+  if (candidate.type === "overlay.surface-layers") {
+    const layers = surfaceLayersSchema.safeParse(candidate.layers);
+    return layers.success ? { type: "surface-layers", layers: layers.data } : null;
+  }
   if (candidate.type === "overlay.playback" && typeof candidate.instruction === "object" && candidate.instruction !== null) {
     return {
       type: "playback",

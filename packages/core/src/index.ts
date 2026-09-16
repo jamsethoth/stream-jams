@@ -170,6 +170,17 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./overlay-modules/types.js";
+export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
+export type { SurfaceLayer, SurfaceConfiguration, SurfaceRepository } from "./overlay-modules/surface-configuration.js";
+export { visualRecipientKeySchema } from "./overlays/visual-recipient.js";
+export type { VisualRecipientKey } from "./overlays/visual-recipient.js";
+export { playbackTimingSchema } from "./overlays/playback-timing.js";
+export type { PlaybackTiming } from "./overlays/playback-timing.js";
+export { desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, maxDesktopVisualTransferBytes, visualMediaType } from "./overlays/desktop-visual-transport.js";
+export type { DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
+export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";
+export { selectedDesktopDisplaySchema, desktopOverlayStatusSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
+export type { SelectedDesktopDisplay, DesktopOverlayStatus, SurfaceSettingsView } from "./overlays/desktop-overlay-status.js";
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
 export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
@@ -210,6 +221,7 @@ export type * from "./playback/types.js";
 export { defaultPlaybackSafetyState } from "./playback/types.js";
 export type * from "./playback/playback-queue.js";
 export { DefaultPlaybackQueue, PlaybackQueueItemNotFoundError } from "./playback/playback-queue.js";
+export * from "./playback/operations.js";
 export type * from "./playback/cooldown-service.js";
 export { DefaultPlaybackCooldownService } from "./playback/cooldown-service.js";
 export type * from "./playback/dedupe-service.js";
@@ -254,6 +266,7 @@ export {
 export { defaultModerationSettings, blockedTermReplacement, strippedUrlReplacement } from "./moderation/default-rules.js";
 
 export * from "./management/contracts.js";
+export * from "./management/alert-configuration-assessment.js";
 export * from "./management/alert-starter-themes.js";
 export * from "./management/twitch-reward-catalog.js";
 
@@ -279,3 +292,26 @@ export {
   ttsVoiceSchema
 } from "./tts/schemas.js";
 export * from "./audio/transport.js";
+export * from "./management/alert-document-compatibility.js";
+export * from "./audio/media-audio.js";
+export * from "./audio/prepare-timed-media.js";
+export type * from "./screen-effects/types.js";
+export type * from "./screen-effects/repository.js";
+export {
+  createScreenEffectDocument,
+  effectBindingIdentity,
+  effectBindingSchema,
+  effectTriggerSchema,
+  effectSoundSchema,
+  effectVariantSchema,
+  effectVisualOutputsSchema,
+  effectVisualSchema,
+  screenEffectDocumentSchema
+} from "./screen-effects/schemas.js";
+export { chooseWeightedVariant, resolveEffectContent } from "./screen-effects/variant-resolver.js";
+export { matchesEffectBinding } from "./screen-effects/trigger-matcher.js";
+export * from "./screen-effects/effect-queue.js";
+export * from "./screen-effects/module-definition.js";
+export * from "./screen-effects/authoring.js";
+export * from "./screen-effects/effect-queue.js";
+export * from "./screen-effects/layout.js";

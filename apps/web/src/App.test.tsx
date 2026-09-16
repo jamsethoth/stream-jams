@@ -29,7 +29,7 @@ describe("App", () => {
 function createManagementApi(): ManagementApi {
   return {
     async getHomeSetupSummary() {
-      return { readiness: [], activeAlertSet: null, actionableProblems: [] };
+      return { readiness: [], activeAlertSet: null, alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] }, actionableProblems: [] };
     },
     async getTwitchStatus() {
       return { connected: false as const, authorizationState: "disconnected" as const, missingScopes: [], account: null };
@@ -61,6 +61,12 @@ function createManagementApi(): ManagementApi {
     },
     async getProvider() {
       throw new Error("not called");
+    },
+    async getStreamerBotSubscriptions(providerId) {
+      return { providerId, available: false, sources: [], selected: [], unavailableSelections: [], twitchBroadcasterId: null };
+    },
+    async updateStreamerBotSubscriptions(providerId, input) {
+      return { providerId, available: true, sources: input.externalSubscriptions, selected: input.externalSubscriptions, unavailableSelections: [], twitchBroadcasterId: input.twitchBroadcasterId };
     },
     async activateProvider() {
       throw new Error("not called");

@@ -163,8 +163,12 @@ Home shows setup readiness and next actions, not live moderation.
 
 MVP Home content:
 
+- Actionable problems appear before routine setup and active-set content.
 - Setup checklist for event sources, TTS providers, starter alert set review, and browser-source output URLs.
 - Checklist completion derived from app state, not manual checkboxes.
+- Incomplete setup items remain in their source order, with the first clearly identified as the next action.
+- Completed setup items remain available in a collapsed native `Completed setup (N)` disclosure.
+- When all items are complete, Home shows a concise completion summary instead of an expanded checklist.
 - Provider checklist items complete only when provider validates.
 - Starter alert review completes when the default set has at least one enabled valid alert or user marks starter review done.
 - Active alert set summary: set name, blocker/warning counts, enabled alert count, active target profiles.
@@ -376,7 +380,8 @@ Sets page contains:
 - A compact, collapsible Browser sources section above and outside alert-set management.
 - Full-width expandable alert-set list with inline set actions.
 - Alert inventory nested under the expanded selected set.
-- Inline alert actions for edit, preview, saved-alert test, and enable/disable.
+- Inline alert actions for `Edit`, `Test saved`, and enable/disable.
+- `Sample message`, eligible `Add variation`, duplicate, reset, and delete actions live once in the `More` disclosure at every width.
 - Validation rollups on set and alert rows.
 
 Status rules:
@@ -386,7 +391,9 @@ Status rules:
 - Collapsed sets retain blocker, warning, and needs-review counts.
 - Alert rows show counts without expanding full error text into the management list.
 - Focused alert editor shows alert-specific and set-wide validation details relevant to the selected target profile, including cause, next step, and reference ID when available.
-- Inline `Test` loads the saved alert document, uses a built-in sample, and sends through the same delivery API as editor `Send test`; multiple available profiles require explicit profile choice.
+- `Sample message` opens built-in text-only sample content and never renders the design, plays media, or sends a test.
+- Inline `Test saved` loads the saved alert document and sends through the alert delivery API; multiple available profiles require explicit profile choice.
+- The saved-test summary identifies saved input, intended browser profile names, selected device outputs when available, and included audio/TTS without exposing route keys or secret URLs.
 - Blockers prevent `Activate set`.
 - Warnings allow activation with confirmation.
 - Inactive valid set action: `Activate`.
@@ -477,7 +484,7 @@ Layout:
 - Left: selected set alert tree.
 - Center: alert preview canvas.
 - Right: inspector with layer list and alert/event controls.
-- Toolbar: `Preview`, `Send test`, save/revert controls, target profile switch.
+- Toolbar: `Preview`, `Test draft`, save/revert controls, target profile switch.
 
 Focused editor:
 
@@ -496,9 +503,17 @@ Dirty-state rules:
 - Save persists shared settings and touched target-profile layouts.
 - Save button remains `Save`; nearby dirty summary explains scope.
 - Dirty navigation guard: `Save and leave`, `Discard`, `Cancel`.
-- Switching set, alert, or target profile with unsaved changes uses same guard.
+- Switching sets, alerts, or leaving the editor with unsaved changes uses the same guard.
+- Landscape and Vertical select views of one shared draft. Switching profiles never saves, discards, enables, or marks a profile reviewed, and never interrupts with the dirty-navigation guard.
 - `Revert changes` applies current unsaved alert edits immediately when undo can restore; otherwise confirmation modal.
 - Version history is backlog.
+
+Live readiness:
+
+- One compact summary combines the active-set, alert-enabled, intended-profile review/enablement, and known validation facts for the current draft.
+- Unsaved changes are explicit. Configuration readiness does not claim connected output or delivery evidence; operators confirm outputs with `Test draft`.
+- The summary offers one correction action in this order: known blocker, intended profile review, intended profile enablement, alert enablement, then set activation.
+- Optional disabled profiles do not block readiness. Review, enablement, activation, saving, and testing remain explicit separate actions.
 
 ### Canvas
 
@@ -570,7 +585,7 @@ MVP animation is preset-based:
 
 Timeline/keyframe editing is backlog.
 
-### Preview And Send Test
+### Preview And Test Draft
 
 `Preview`:
 
@@ -581,7 +596,7 @@ Timeline/keyframe editing is backlog.
 - Audio and TTS muted by default.
 - Optional `Play audio` / `Play TTS`.
 
-`Send test to overlay`:
+`Test draft`:
 
 - Uses normalized alert playback pipeline after selecting test target.
 - Requires connected browser-source client for selected target profile.
@@ -591,12 +606,15 @@ Timeline/keyframe editing is backlog.
 - Includes audio and TTS by default when alert uses them.
 - Provides `Include audio` and `Include TTS` toggles for current editor session.
 - Marks events as test in logs/history.
+- A compact summary identifies draft input, selected browser profile, human-readable selected device destinations, and included audio/TTS.
 
 Full provider-event simulation through all enabled flows is Diagnostics/backlog.
 
+Screen Effects uses its separate saved-variant delivery contract: `Test saved…` lists live destinations and requires explicit confirmation before queueing. It does not imply alert-draft semantics.
+
 Preview controls:
 
-- Toolbar owns `Preview` and `Send test`.
+- Toolbar owns `Preview` and `Test draft`.
 - Canvas-local controls handle replay, pause/play, seek/scrub for current preview.
 - No send-test action inside canvas controls.
 

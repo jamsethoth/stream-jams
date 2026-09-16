@@ -2,6 +2,7 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   type AlertEditorDocument,
+  type AssetLibraryItem,
   type AlertSetDetail,
   type AlertVariationAuthoringContext,
   type RegisteredProviderView,
@@ -65,6 +66,240 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
+  it("seeks newly ready preview media while paused without starting it", async () => {
+    const play = vi.fn(async () => undefined);
+    const audios: { readyState: number; currentTime: number; onloadedmetadata: (() => void) | null }[] = [];
+    vi.stubGlobal("Audio", class { readyState = 0; currentTime = 0; onloadedmetadata: (() => void) | null = null; volume = 1; play = play; pause = vi.fn(); constructor() { audios.push(this); } });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(audios[0]).toBeDefined());
+    const audio = audios[0]!;
+    expect(play).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByRole("slider", { name: "Preview position" }), { target: { value: "1500" } });
+    await act(async () => { audio.readyState = 1; audio.onloadedmetadata?.(); });
+    expect(audio.currentTime).toBe(1.5);
+    expect(play).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Resume preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+  });
+
+  it("bounds pending preview fetches while the preview is paused", async () => {
+    let finish!: (blob: Blob) => void;
+    vi.spyOn(assetApi, "getAssetFile").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const play = vi.fn(async () => undefined);
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, durationMs: 30000, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    fireEvent.click(screen.getByRole("button", { name: "Pause preview" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+    expect(screen.getByText("Local preview media could not be played")).toBeInTheDocument();
+    await act(async () => { finish(new Blob(["silent"])); });
+    expect(play).not.toHaveBeenCalled();
+  });
+  it("pauses soundtrack preview, seeks without starting audio, and resumes at the selected playhead", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    const audios: { currentTime: number }[] = [];
+    vi.stubGlobal("Audio", class { readyState = 1; currentTime = 0; volume = 1; play = play; pause = pause; constructor() { audios.push(this); } });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+    const audio = audios[0]!;
+    await user.click(screen.getByRole("button", { name: "Pause preview" }));
+    expect(pause).toHaveBeenCalledOnce();
+    fireEvent.change(screen.getByRole("slider", { name: "Preview position" }), { target: { value: "1200" } });
+    expect(audio.currentTime).toBe(1.2);
+    expect(play).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Resume preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+    expect(audio.currentTime).toBeCloseTo(1.2, 1);
+  });
+  it("keeps ended soundtrack media available for timeline seek and resume", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    const audios: { currentTime: number; onended: (() => void) | null }[] = [];
+    vi.stubGlobal("Audio", class {
+      readyState = 1;
+      currentTime = 0;
+      onended: (() => void) | null = null;
+      volume = 1;
+      play = play;
+      pause = pause;
+      constructor() { audios.push(this); }
+    });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+    const audio = audios[0]!;
+    act(() => audio.onended?.());
+    fireEvent.change(screen.getByRole("slider", { name: "Preview position" }), { target: { value: "500" } });
+    await user.click(screen.getByRole("button", { name: "Resume preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+    expect(audio.currentTime).toBeCloseTo(0.5, 1);
+  });
+  it("new video audio stays enabled when a separate audio layer is added", async () => {
+    const items: AssetLibraryItem[] = ["video", "audio"].map((type) => ({
+      id: type, displayName: type, originalFileName: type, mediaType: type as "video" | "audio", mimeType: type === "video" ? "video/webm" : "audio/ogg", sizeBytes: 3,
+      width: null, height: null, durationMs: 1000, health: "available", tags: [], createdAt: "2026-09-10T00:00:00Z", updatedAt: "2026-09-10T00:00:00Z", usage: { assetId: type, totalUsageCount: 0, usages: [] }
+    }));
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor(editorDocument(), items);
+    await user.click(await screen.findByRole("button", { name: "Video/GIF" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+    expect(await screen.findByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(1);
+    await user.click(screen.getByRole("button", { name: "Audio" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+    await user.click(screen.getByText("Video or GIF", { selector: ".alert-editor-inspector__layer-list span" }));
+    expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
+    expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    expect(saveAlertEditorDocument.mock.calls[0]![1].layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 1 });
+  });
+
+  it("adds a GIF with embedded audio disabled", async () => {
+    const { user } = renderWorkspaceEditor(editorDocument(), [assetLibraryItem("gif")]);
+
+    await user.click(await screen.findByRole("button", { name: "Video/GIF" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+
+    expect(await screen.findByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  });
+
+  it("disables embedded audio when a video layer is changed to a GIF", async () => {
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = {
+      ...source,
+      layers: source.layers.map(layer => layer.type === "audio"
+        ? { ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 0.6 }
+        : layer)
+    };
+    const { user } = renderWorkspaceEditor(document, [assetLibraryItem("gif")]);
+
+    await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
+    await user.click(screen.getByRole("button", { name: "Choose asset" }));
+    await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
+
+    expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  });
+
+  it("edits saved silent video soundtrack through undo redo and confirmed save", async () => {
+    const { user, saveAlertEditorDocument } = renderStarterThemeEditor();
+    await user.click(await screen.findByText("Loop", { selector: ".alert-editor-inspector__layer-list span" }));
+    const toggle = () => screen.getByRole("checkbox", { name: "Play embedded audio" });
+    expect(toggle()).not.toBeChecked();
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+    await user.click(toggle());
+    expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Embedded audio volume" }), { target: { value: "0.35" } });
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(1);
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(toggle()).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    await user.click(screen.getByRole("button", { name: "Redo" }));
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
+    const saved = saveAlertEditorDocument.mock.calls[0]![1];
+    expect(saved.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 0.35 });
+    expect(saved.layers.find(layer => layer.type === "audio")).toMatchObject({ volume: 0.4 });
+    expect(saved.outputs).toEqual({ browserSource: true, deviceRouteIds: [] });
+  });
+
+  it("sends video-only device audio without ready visuals and disables test when soundtrack is off", async () => {
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.map(layer => layer.type === "audio" ? {
+      ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 0.6
+    } : layer) };
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("button", { name: "Test draft" }));
+    expect(sendAlertEditorTest).toHaveBeenCalledWith(document.id, expect.objectContaining({ document, targetProfileId: null, includeAudio: true }));
+    await user.click(screen.getByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
+    await user.click(screen.getByRole("checkbox", { name: "Play embedded audio" }));
+    expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
+  });
+
+  it("previews enabled soundtracks locally by explicit opt-in even with no selected outputs", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = pause; });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, outputs: { browserSource: false, deviceRouteIds: [] }, layers: source.layers.map(layer => layer.type === "audio" ? {
+      ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 0.6
+    } : layer) };
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("button", { name: "Preview" }));
+    expect(play).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getAllByRole("button", { name: "Replay preview" }).at(-1)!);
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+    expect(sendAlertEditorTest).not.toHaveBeenCalled();
+    await user.click(screen.getAllByRole("button", { name: "Replay preview" }).at(-1)!);
+    await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
+    expect(pause).toHaveBeenCalledOnce();
+    cleanup();
+    expect(pause).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not start a pending soundtrack fetch after preview unmount", async () => {
+    const play = vi.fn(async () => undefined);
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
+    let finish!: (blob: Blob) => void;
+    const getAssetFile = vi.spyOn(assetApi, "getAssetFile").mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(getAssetFile).toHaveBeenCalled());
+    cleanup();
+    await act(async () => { finish(new Blob(["silent"], { type: "video/webm" })); });
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it("stops soundtrack preview and revokes its URL at the declared duration", async () => {
+    const play = vi.fn(async () => undefined);
+    const pause = vi.fn();
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = pause; });
+    const revoke = vi.spyOn(URL, "revokeObjectURL");
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = { ...source, layers: source.layers.filter(layer => layer.type === "audio").map(layer => ({ ...layer, type: "video", playEmbeddedAudio: true, audioVolume: 1 })) };
+    const { user } = renderWorkspaceEditor(document);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(play).toHaveBeenCalledOnce();
+    await act(async () => { await vi.advanceTimersByTimeAsync(document.durationMs); });
+    expect(pause).toHaveBeenCalledOnce();
+    expect(revoke).toHaveBeenCalledOnce();
+  });
   it("confirms changed audio content on active device-only alerts without changing outputs", async () => {
     const { user, saveAlertEditorDocument } = renderWorkspaceEditor(routedEditorDocument());
     await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
@@ -84,14 +319,14 @@ describe("AlertEditorPage", () => {
     });
     await user.click(await screen.findByRole("button", { name: "Preview" }));
     expect(sendAlertEditorTest).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Send test" }));
+    await user.click(screen.getByRole("button", { name: "Test draft" }));
     expect(sendAlertEditorTest).toHaveBeenCalledWith(document.id, expect.objectContaining({ document, targetProfileId: null, includeAudio: true }));
     const notice = (await screen.findByText(/Test queued on Private headphones.*ref-device-only/)).closest(".management-toast");
     expect(notice).toHaveClass("management-toast--warning");
     expect(notice).toHaveTextContent("Not delivered to: Stream mix");
     await user.click(screen.getByRole("tab", { name: "Event" }));
     await user.click(screen.getByRole("checkbox", { name: "Send audio" }));
-    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Test draft" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
   });
 
   it("confirms output changes on an active alert even without ready visual profiles", async () => {
@@ -113,7 +348,7 @@ describe("AlertEditorPage", () => {
     expect(browser()).toBeChecked();
     await user.click(browser());
     expect(browser()).not.toBeChecked();
-    expect(screen.getByText(/Explicit audio is silent/)).toBeInTheDocument();
+    expect(screen.getByText(/Audio layers and enabled soundtracks are silent/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(browser()).toBeChecked();
     await user.click(screen.getByRole("button", { name: "Redo" }));
@@ -127,7 +362,7 @@ describe("AlertEditorPage", () => {
     await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     expect(saveAlertEditorDocument.mock.calls[0]![1].outputs).toEqual({ browserSource: false, deviceRouteIds: [] });
-    expect(screen.getByText(/Videos are visual-only/)).toBeInTheDocument();
+    expect(screen.getByText(/Videos with embedded audio off stay silent/)).toBeInTheDocument();
   });
 
   it("requires confirmation before applying a starter theme", async () => {
@@ -176,7 +411,7 @@ describe("AlertEditorPage", () => {
     expect(within(revertedDialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
   });
 
-  it("saves a starter theme without changing nonvisual settings and restores ordinary edit guards", async () => {
+  it("saves a starter theme without changing nonvisual settings and preserves later edits across profiles", async () => {
     const { user, saveAlertEditorDocument } = renderStarterThemeEditor();
     await user.click(await screen.findByRole("tab", { name: "Alert" }));
     await user.click(screen.getByRole("button", { name: "Apply starter theme" }));
@@ -211,7 +446,9 @@ describe("AlertEditorPage", () => {
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
     await user.paste("Ordinary edit after save");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
-    expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Ordinary edit after save");
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   });
 
   it("keeps the Layers inspector selection valid and clears stale theme guidance across history", async () => {
@@ -259,8 +496,7 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Before theme");
     expect(screen.queryByText("Starter theme applied.")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /^Landscape/u }));
-    let switchDialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
-    await user.click(within(switchDialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Redo" }));
     await waitFor(() => expect(screen.queryByText("Select a layer to edit it.")).not.toBeInTheDocument());
@@ -276,8 +512,9 @@ describe("AlertEditorPage", () => {
     await user.clear(screen.getByRole("textbox", { name: "Message template" }));
     await user.paste("Ordinary edit after revert");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
-    switchDialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
-    expect(switchDialog).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Ordinary edit after revert");
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   });
 
   it("preserves theme review provenance across multiple theme applications and history", async () => {
@@ -375,7 +612,9 @@ describe("AlertEditorPage", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Message template" }), { target: { value: "Before themes branched" } });
     expect(screen.getByRole("button", { name: "Redo" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: /^Landscape/u }));
-    expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Before themes branched");
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   });
 
   it("keeps an invalid transient draft intact when starter-theme application fails", async () => {
@@ -995,7 +1234,7 @@ describe("AlertEditorPage", () => {
       expect(screen.getByText("Relative chance must be a positive whole number.", { selector: "#alert-editor-relative-chance-error" })).toBeVisible();
       expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
       expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
-      expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+      expect(screen.getAllByRole("button", { name: "Test draft" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
       expect(explanation).toHaveTextContent("Correct the event settings to explain selection.");
       expect(explanation).not.toHaveTextContent(/relative chance|live selection|fallback/iu);
     }
@@ -1129,7 +1368,7 @@ describe("AlertEditorPage", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Session payload (JSON)" }), { target: { value: "{" } });
 
     expect(screen.getAllByRole("button", { name: /preview/iu }).every((button) => button.hasAttribute("disabled"))).toBe(true);
-    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Test draft" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
 
     await user.click(screen.getByRole("button", { name: "Save" }));
@@ -1335,7 +1574,7 @@ describe("AlertEditorPage", () => {
     expect(fontSize).toHaveAttribute("aria-invalid", "true");
     expect(within(typography).getByRole("alert")).toHaveTextContent("Font size must be between 8 and 512.");
     expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: "Undo" }));
@@ -1354,7 +1593,7 @@ describe("AlertEditorPage", () => {
     fireEvent.change(within(textBox).getByLabelText("Padding"), { target: { value: "257" } });
     expect(within(textBox).getByText("Padding must be between 0 and 256.")).toBeVisible();
     expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
 
     await user.click(screen.getByRole("button", { name: /CelebrationImage/u }));
@@ -1392,7 +1631,7 @@ describe("AlertEditorPage", () => {
 
     const visualStyleCorrection = screen.getByText(/^Visual styles need correction:/u);
     expect(visualStyleCorrection).toHaveTextContent(
-      "Correct the selected layer's highlighted style fields before saving, previewing, or sending a test."
+      "Correct the selected layer's highlighted style fields before saving, previewing, or testing the draft."
     );
     expect(visualStyleCorrection).not.toHaveTextContent("solid fill");
 
@@ -1548,7 +1787,7 @@ describe("AlertEditorPage", () => {
       "Visual styles need correction: Unsafe shape draft has an invalid solid fill."
     );
     expect(screen.getByRole("button", { name: "Preview" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 
@@ -1643,7 +1882,7 @@ describe("AlertEditorPage", () => {
     ));
   });
 
-  it("keeps local Preview separate from Send test and resets preview after editing", async () => {
+  it("keeps local Preview separate from Test draft and explains both destinations", async () => {
     const source = editorDocument();
     const { user, sendAlertEditorTest } = renderWorkspaceEditor({
       ...source,
@@ -1653,6 +1892,8 @@ describe("AlertEditorPage", () => {
     });
     const template = await screen.findByRole("textbox", { name: "Message template" });
     const canvas = within(screen.getByRole("region", { name: "Landscape alert canvas" }));
+    expect(screen.getByText(/Preview renders this draft locally/u)).toBeInTheDocument();
+    expect(screen.getByText(/Draft input.*Landscape.*Audio included.*TTS included/u)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Preview" }));
     expect(await screen.findByText("Local preview is running.")).toBeInTheDocument();
     expect(canvas.getByText("Moderated canvas text")).toBeInTheDocument();
@@ -1668,7 +1909,7 @@ describe("AlertEditorPage", () => {
     expect(canvas.getByText("Welcome, James! again")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Revert" }));
 
-    await user.click(screen.getByRole("button", { name: "Send test" }));
+    await user.click(screen.getByRole("button", { name: "Test draft" }));
     await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith(
       "alert-follow",
       expect.objectContaining({ targetProfileId: "landscape", includeAudio: true, includeTts: true })
@@ -1676,12 +1917,145 @@ describe("AlertEditorPage", () => {
     expect((await screen.findByText(/Test queued on Landscape.*ref-editor-test/)).closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
+  it("summarizes configuration readiness without claiming live delivery", async () => {
+    renderWorkspaceEditor();
+
+    const readiness = await screen.findByRole("region", { name: "Live readiness" });
+    expect(readiness).toHaveTextContent("Configuration ready");
+    expect(readiness).toHaveTextContent("Confirm connected outputs with Test draft");
+    expect(readiness).not.toHaveTextContent("Live ready");
+  });
+
+  it("uses current draft profile intent instead of retained inventory targets", async () => {
+    const source = editorDocument();
+    renderWorkspaceEditor({
+      ...source,
+      targetProfiles: source.targetProfiles.map((profile) => ({
+        ...profile,
+        enabled: profile.id === "vertical",
+        reviewState: profile.id === "vertical" ? "needs-review" : "ready"
+      }))
+    });
+
+    const readiness = await screen.findByRole("region", { name: "Live readiness" });
+    expect(readiness).toHaveTextContent("Vertical must be reviewed");
+    expect(within(readiness).getByRole("button", { name: "Review Vertical" })).toBeVisible();
+  });
+
+  it("requires review for enabled alerts without browser content or device audio", async () => {
+    const { user } = renderWorkspaceEditor({ ...editorDocument(), layers: [] });
+
+    const readiness = await screen.findByRole("region", { name: "Live readiness" });
+    expect(readiness).toHaveTextContent(
+      "no visible browser content or resolved device audio is available"
+    );
+    await user.click(within(readiness).getByRole("button", { name: "Review content" }));
+    expect(screen.getByRole("tab", { name: "Layers" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Text" })).toHaveFocus());
+  });
+
+  it("accepts device-only audio without requiring a visual profile", async () => {
+    const source = editorDocument();
+    renderWorkspaceEditor({
+      ...source,
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{ id: "sound", name: "Sound", type: "audio", visible: true, order: 0, animation: source.layers[0]!.animation, assetId: "tone", volume: 0.5 }],
+      targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
+    });
+
+    expect(await screen.findByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+  });
+
+  it("keeps device-only soundtrack readiness unconfirmed when asset types are unavailable", async () => {
+    const source = editorDocument();
+    renderWorkspaceEditor({
+      ...source,
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{
+        id: "video", name: "Video", type: "video", visible: true, order: 0, animation: source.layers[0]!.animation,
+        assetId: "new-asset", playEmbeddedAudio: true, audioVolume: 0.5
+      }],
+      targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
+    }, new Error("asset catalog unavailable"));
+
+    await waitFor(() => expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent(
+      "Asset details are unavailable. Configuration readiness is not confirmed."
+    ));
+  });
+
+  it("refreshes device-only soundtrack eligibility when the selected asset changes", async () => {
+    const source = editorDocument();
+    const { user } = renderWorkspaceEditor({
+      ...source,
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{
+        id: "video", name: "Video", type: "video", visible: true, order: 0, animation: source.layers[0]!.animation,
+        assetId: "asset-video", playEmbeddedAudio: true, audioVolume: 0.5
+      }],
+      targetProfiles: source.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" }))
+    }, [assetLibraryItem("video"), assetLibraryItem("gif")]);
+    expect(await screen.findByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+
+    await user.click(await screen.findByText("Video", { selector: ".alert-editor-inspector__layer-list span" }));
+    await user.click(screen.getByRole("button", { name: "Choose asset" }));
+    await user.click(await screen.findByRole("button", { name: /Animated image, gif/u }));
+    await user.click(screen.getByRole("button", { name: "Use selected asset" }));
+
+    await waitFor(() => expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Enable and review a target profile"));
+  });
+
+  it("refreshes saved set facts and does not retain stale document validation", async () => {
+    const baseSet = alertSetDetail();
+    const stale: AlertSetDetail = { ...baseSet, overview: { ...baseSet.overview, validationIssues: [{
+      id: "stale-blocker", severity: "blocker", code: "EMPTY_CONTENT", message: "Saved content was empty.", nextStep: "Add content.",
+      targetProfileId: "landscape", providerKind: "twitch", eventType: "follow", alertId: "alert-follow", referenceId: null
+    }] } };
+    const { user, getAlertSet } = renderWorkspaceEditor(editorDocument(), [], stale);
+    await screen.findByText("Saved content was empty.");
+    getAlertSet.mockResolvedValueOnce(alertSetDetail());
+
+    await user.click(screen.getByRole("textbox", { name: "Message template" }));
+    await user.paste(" updated");
+    expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Unsaved draft · Configuration ready");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(getAlertSet).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Configuration ready");
+    expect(screen.getByRole("region", { name: "Live readiness" })).not.toHaveTextContent("Saved content was empty");
+  });
+
+  it("reports a successful save whose readiness refresh fails as unconfirmed", async () => {
+    const { user, getAlertSet } = renderWorkspaceEditor();
+    await screen.findByRole("heading", { name: "New follower" });
+    getAlertSet.mockResolvedValueOnce(alertSetDetail()).mockRejectedValueOnce(new Error("refresh failed"));
+    await user.click(screen.getByRole("textbox", { name: "Message template" }));
+    await user.paste(" updated");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByText("Alert saved, but readiness could not be refreshed")).toBeVisible();
+    expect(screen.getByText("Alert saved; readiness is unconfirmed.")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Set activation status is unavailable");
+    expect(screen.getByRole("region", { name: "Live readiness" })).not.toHaveTextContent("Configuration ready");
+    expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
+  });
+
+  it("offers the highest-priority readiness correction through the existing control", async () => {
+    const source = editorDocument();
+    const { user } = renderWorkspaceEditor({ ...source, enabled: false });
+
+    const readiness = await screen.findByRole("region", { name: "Live readiness" });
+    await user.click(within(readiness).getByRole("button", { name: "Enable alert" }));
+    expect(screen.getByRole("tab", { name: "Alert" })).toHaveAttribute("aria-selected", "true");
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Alert enabled" })).toHaveFocus());
+  });
+
   it("keeps profile selection when navigating to an alert and blocks tests on disabled profiles", async () => {
     const { user, onOpenAlert } = renderWorkspaceEditor();
     await screen.findByRole("heading", { name: "New follower" });
     await user.click(screen.getByRole("button", { name: /Vertical/ }));
     expect(screen.getAllByText("Needs review").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: "Send test" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
 
     await user.type(screen.getByRole("searchbox", { name: "Search alerts" }), "raid");
     await user.click(screen.getByRole("button", { name: /New raid/ }));
@@ -1730,8 +2104,12 @@ describe("AlertEditorPage", () => {
     expect(selectedEvent).toHaveAttribute("aria-expanded", "true");
     expect(selectedEvent).toBeDisabled();
     await waitFor(() => expect(screen.getByRole("button", { name: /Collapse Raid/u })).toHaveAttribute("aria-expanded", "true"));
+    const showUnused = screen.getByRole("checkbox", { name: "Show unused event types" });
+    expect(showUnused).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: /Expand Resubscription/u })).not.toBeInTheDocument();
+    await user.click(showUnused);
     expect(screen.getByRole("button", { name: /Expand Resubscription/u })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("button", { name: /Collapse future_celebration/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Collapse Future celebration/u })).toBeInTheDocument();
     expect(screen.getByText("Variation of New raid")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
 
@@ -2059,7 +2437,7 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("dialog", { name: "Save changes to active alert?" })).not.toBeInTheDocument();
   });
 
-  it("guards profile switches for ordinary unsaved edits", async () => {
+  it("preserves one unsaved draft while switching profiles", async () => {
     const user = userEvent.setup();
     const saveAlertEditorDocument = vi.fn(async (_alertId: string, document: AlertEditorDocument) => document);
     render(
@@ -2086,32 +2464,24 @@ describe("AlertEditorPage", () => {
 
     const template = await screen.findByRole("textbox", { name: "Message template" });
     await user.clear(template);
-    await user.paste("Unsaved profile change");
-    await user.click(screen.getByRole("button", { name: /Vertical/ }));
-    let dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
-    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Unsaved profile change");
-    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+    await user.paste("Shared unsaved message");
+    await user.click(screen.getByRole("button", { name: /^Vertical/u }));
 
-    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: /Vertical/ }));
-    dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
-    await user.click(within(dialog).getByRole("button", { name: "Discard and switch" }));
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Thanks, {userName}!");
-    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+    expect(screen.getByText("Unsaved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Vertical/ })).toHaveTextContent("Needs review");
 
+    await user.click(screen.getByRole("tab", { name: "Layers" }));
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Shared unsaved message");
+    const xPosition = screen.getByLabelText("X");
+    await user.clear(xPosition);
+    await user.type(xPosition, "240");
+    await user.click(screen.getByRole("button", { name: /Vertical/ }));
     await user.click(screen.getByRole("button", { name: /Landscape/ }));
-    await user.clear(screen.getByRole("textbox", { name: "Message template" }));
-    await user.paste("Save before switching");
-    await user.click(screen.getByRole("button", { name: /Vertical/ }));
-    dialog = screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" });
-    await user.click(within(dialog).getByRole("button", { name: "Save and switch" }));
-    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
-    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Save before switching");
+    expect(screen.getByRole("region", { name: "Landscape alert canvas" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Shared unsaved message");
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
 
   it("allows an applied starter theme to be reviewed in both profiles without persisting it", async () => {
@@ -2158,7 +2528,7 @@ describe("AlertEditorPage", () => {
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
 
-  it("restores ordinary profile-switch guards after discarding an applied starter theme", async () => {
+  it("preserves ordinary edits across profiles after discarding an applied starter theme", async () => {
     const user = userEvent.setup();
     window.history.replaceState(null, "", "/manage/modules/alerts/editor/alert-follow");
     render(
@@ -2195,7 +2565,9 @@ describe("AlertEditorPage", () => {
     await user.clear(template);
     await user.paste("Ordinary edit after discard");
     await user.click(screen.getByRole("button", { name: /^Vertical/u }));
-    expect(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Vertical alert canvas" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Message template" })).toHaveValue("Ordinary edit after discard");
+    expect(screen.queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   });
 
   it("fits each canvas by default, remembers profile zoom, and confirms before replacing an edited target layout", async () => {
@@ -2242,7 +2614,6 @@ describe("AlertEditorPage", () => {
     expect(screen.getByLabelText("X")).toHaveValue(343);
 
     await user.click(screen.getByRole("button", { name: /Landscape/ }));
-    await user.click(within(screen.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).getByRole("button", { name: "Discard and switch" }));
     expect(screen.getByRole("status", { name: "Canvas zoom" })).toHaveTextContent("74%");
   });
 
@@ -2349,7 +2720,7 @@ describe("AlertEditorPage", () => {
     await user.paste('{"userName":"Invalid","raidViewers":0,"amount":0}');
     expect(screen.getByRole("alert")).toHaveTextContent("Raid viewer count must be a positive number.");
     expect(screen.getAllByRole("button", { name: "Preview" })[0]).toBeDisabled();
-    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Test draft" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(saveAlertEditorDocument).not.toHaveBeenCalled();
   });
@@ -2358,7 +2729,7 @@ describe("AlertEditorPage", () => {
     const user = userEvent.setup();
     const play = vi.fn(async () => undefined);
     const speak = vi.fn();
-    vi.stubGlobal("Audio", class { volume = 1; play = play; });
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
     vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
     const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
@@ -2436,7 +2807,7 @@ describe("AlertEditorPage", () => {
     const play = vi.fn(async () => undefined);
     const speak = vi.fn();
     const getAssetFile = vi.fn(async () => new Blob(["audio"], { type: "audio/mpeg" }));
-    vi.stubGlobal("Audio", class { volume = 1; play = play; });
+    vi.stubGlobal("Audio", class { volume = 1; play = play; pause = vi.fn(); });
     vi.stubGlobal("SpeechSynthesisUtterance", class { constructor(readonly text: string) {} });
     vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak });
     let rejectTts: ((cause: unknown) => void) | undefined;
@@ -3037,7 +3408,7 @@ describe("AlertEditorPage", () => {
     expect(explanation).toHaveTextContent("Reward ID is one of reward-hydrate");
     expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Replay preview" })).toBeEnabled();
-    for (const button of screen.getAllByRole("button", { name: "Send test" })) expect(button).toBeEnabled();
+    for (const button of screen.getAllByRole("button", { name: "Test draft" })) expect(button).toBeEnabled();
   });
 
   it("shows saved variation membership as Legacy while retaining exact reward ID authoring", async () => {
@@ -3409,7 +3780,7 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
-    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Test draft" }).every((button) => button.hasAttribute("disabled"))).toBe(true);
     await user.type(maximum, "5");
     expect(minimum).toHaveValue(10);
     expect(maximum).toHaveValue(5);
@@ -3504,7 +3875,7 @@ describe("AlertEditorPage", () => {
     expect(within(restoredConditions).getByRole("spinbutton", { name: "Rule conditions Raid viewers Maximum" })).toHaveValue(20);
     expect(within(restoredConditions).queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Preview" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
-    expect(screen.getAllByRole("button", { name: "Send test" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
+    expect(screen.getAllByRole("button", { name: "Test draft" }).every((button) => !button.hasAttribute("disabled"))).toBe(true);
   });
 
   it("does not carry invalid range drafts to a newly loaded alert document", async () => {
@@ -3763,7 +4134,26 @@ function routedEditorDocument(): AlertEditorDocument {
   };
 }
 
-function renderWorkspaceEditor(document = editorDocument()) {
+function assetLibraryItem(mediaType: "gif" | "video"): AssetLibraryItem {
+  return {
+    id: `asset-${mediaType}`,
+    displayName: mediaType === "gif" ? "Animated image" : "Video",
+    originalFileName: mediaType === "gif" ? "animated.gif" : "video.webm",
+    mediaType,
+    mimeType: mediaType === "gif" ? "image/gif" : "video/webm",
+    sizeBytes: 3,
+    width: 320,
+    height: 180,
+    durationMs: mediaType === "gif" ? null : 1_000,
+    health: "available",
+    tags: [],
+    createdAt: "2026-09-10T00:00:00Z",
+    updatedAt: "2026-09-10T00:00:00Z",
+    usage: { assetId: `asset-${mediaType}`, totalUsageCount: 0, usages: [] }
+  };
+}
+
+function renderWorkspaceEditor(document = editorDocument(), libraryItems: AssetLibraryItem[] | Error = [], initialSetDetail = alertSetDetail()) {
   const user = userEvent.setup();
   const saveAlertEditorDocument = vi.fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
   const sendAlertEditorTest = vi.fn<AlertEditorPageApi["sendAlertEditorTest"]>(async (_alertId, request) => ({
@@ -3781,6 +4171,7 @@ function renderWorkspaceEditor(document = editorDocument()) {
   }));
   const onOpenAlert = vi.fn();
   const onBack = vi.fn();
+  const getAlertSet = vi.fn(async () => initialSetDetail);
   render(
     <DirtyNavigationProvider>
       <AlertEditorPage
@@ -3788,10 +4179,13 @@ function renderWorkspaceEditor(document = editorDocument()) {
         assetApi={assetApi}
         managementApi={{
           getAlertEditorDocument: vi.fn(async () => document),
-          getAlertSet: vi.fn(async () => alertSetDetail()),
+          getAlertSet,
           listRegisteredProviders: vi.fn(async () => []),
           getAssetChangeImpact: vi.fn(),
-          listAssetLibraryItems: vi.fn(async () => []),
+          listAssetLibraryItems: vi.fn(async () => {
+            if (libraryItems instanceof Error) throw libraryItems;
+            return libraryItems;
+          }),
           deleteAsset: vi.fn(),
           updateAssetMetadata: vi.fn(),
           saveAlertEditorDocument,
@@ -3804,7 +4198,7 @@ function renderWorkspaceEditor(document = editorDocument()) {
       />
     </DirtyNavigationProvider>
   );
-  return { user, saveAlertEditorDocument, sendAlertEditorTest, onOpenAlert, onBack };
+  return { user, saveAlertEditorDocument, sendAlertEditorTest, getAlertSet, onOpenAlert, onBack };
 }
 
 function renderLayerStyleEditor(document = editorDocument()) {
@@ -3848,7 +4242,7 @@ function renderStarterThemeEditor() {
         ? { ...layer, template: "Custom hello, {userName}!" }
         : layer),
       { id: "layer-shape", name: "Backdrop", type: "shape", visible: true, order: 2, fill: "#112233FF", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
-      { id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
+      { playEmbeddedAudio: false, audioVolume: 1, id: "layer-video", name: "Loop", type: "video", visible: true, order: 3, assetId: "asset-video", animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } },
       { id: "layer-audio", name: "Sound", type: "audio", visible: true, order: 4, assetId: "asset-audio", volume: 0.4, animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } },
       { id: "layer-tts", name: "Speech", type: "tts", visible: true, order: 5, enabled: true, providerId: "speakerbot", template: "Speak {userName}", animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" } }
     ],
@@ -3915,7 +4309,7 @@ const assetApi: AssetApi = {
 };
 
 function editorDocument(): AlertEditorDocument {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

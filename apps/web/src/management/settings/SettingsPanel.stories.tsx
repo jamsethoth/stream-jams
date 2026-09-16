@@ -12,7 +12,10 @@ import { SettingsPanel } from "./SettingsPanel.js";
 const meta = {
   title: "Management/Settings/Backup and restore",
   component: SettingsPanel,
-  args: { audioApi: createAudioStoryApi(), managementApi: createSettingsStoryApi() },
+  args: { audioApi: createAudioStoryApi(), managementApi: createSettingsStoryApi(), surfaceApi: {
+    load: async () => ({ surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null } }),
+    save: async () => { throw new Error("No surface selected"); }, retry: async () => { throw new Error("Desktop unavailable"); }
+  } },
   parameters: { layout: "fullscreen" }
 } satisfies Meta<typeof SettingsPanel>;
 
@@ -35,6 +38,7 @@ export const ExportReady: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.click(await canvas.findByRole("button", { name: "Export backup" }));
     await expect(await canvas.findByRole("status")).toHaveTextContent("Backup exported");
   }
@@ -52,9 +56,10 @@ export const RestoreValidation: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.upload(await canvas.findByLabelText("Backup file"), backupFile());
     await expect(await canvas.findByText("Backup asset checksum does not match")).toBeVisible();
-    await expect(canvas.getByRole("button", { name: "Restore configuration" })).toBeDisabled();
+    await expect(canvas.queryByRole("button", { name: "Restore configuration" })).not.toBeInTheDocument();
   }
 };
 
@@ -71,6 +76,7 @@ export const LiveBlockedRestore: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.upload(await canvas.findByLabelText("Backup file"), backupFile());
     await expect(await canvas.findByText("Restore is blocked while Stream Jams is live")).toBeVisible();
   }
@@ -86,6 +92,7 @@ export const SafetyBackupFailure: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.upload(await canvas.findByLabelText("Backup file"), backupFile());
     await userEvent.type(await canvas.findByLabelText("Type RESTORE to confirm"), "RESTORE");
     await userEvent.click(canvas.getByRole("button", { name: "Restore configuration" }));
@@ -109,6 +116,7 @@ export const RouteKeyWarning: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.upload(await canvas.findByLabelText("Backup file"), backupFile());
     await userEvent.type(await canvas.findByLabelText("Type RESTORE to confirm"), "RESTORE");
     await userEvent.click(canvas.getByRole("button", { name: "Restore configuration" }));
@@ -120,6 +128,7 @@ export const RouteKeyWarning: Story = {
 export const MaintenanceSuccess: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.click(await canvas.findByRole("button", { name: "Open data folder" }));
     await expect(await canvas.findByRole("status")).toHaveTextContent("Data folder opened");
     await userEvent.click(canvas.getByRole("button", { name: "Clear old logs now" }));
@@ -133,6 +142,7 @@ export const MaintenanceBusy: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.click(await canvas.findByRole("button", { name: "Clear old logs now" }));
     await expect(canvas.getByRole("button", { name: "Clearing old logs..." })).toBeDisabled();
   }
@@ -148,6 +158,7 @@ export const MaintenanceFailure: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByText("Data and backup"));
     await userEvent.click(await canvas.findByRole("button", { name: "Open data folder" }));
     await expect(await canvas.findByText("Data folder was not opened")).toBeVisible();
     await expect(canvas.getByText("err_story_folder")).toBeVisible();

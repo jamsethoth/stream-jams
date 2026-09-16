@@ -20,6 +20,7 @@ import {
   positiveIntegerSchema
 } from "../shared/schemas.js";
 import { ttsVoiceSchema } from "../tts/schemas.js";
+import { streamerBotSubscriptionSelectionSchema } from "../events/schemas.js";
 
 export const managementErrorSeveritySchema = z.enum(["info", "warning", "error", "critical"]);
 
@@ -106,6 +107,38 @@ const websocketProviderConfigurationSchema = z
   })
   .strict();
 
+const safeStreamerBotIdentitySchema = nonEmptyStringSchema.max(120).refine(
+  (value) => Array.from(value).every((character) => {
+    const code = character.charCodeAt(0);
+    return code >= 32 && !(code >= 127 && code <= 159);
+  }),
+  "Streamer.bot event identities cannot contain control characters"
+);
+
+const boundedStreamerBotSubscriptionSelectionSchema = streamerBotSubscriptionSelectionSchema.extend({
+  sourceKey: safeStreamerBotIdentitySchema,
+  eventTypes: z.array(safeStreamerBotIdentitySchema).min(1).max(100)
+}).strict();
+
+const configuredStreamerBotSubscriptionsSchema = z.array(
+  boundedStreamerBotSubscriptionSelectionSchema
+).max(100).superRefine((selections, context) => {
+  const identities = selections.flatMap((selection) =>
+    selection.eventTypes.map((eventType) => `${JSON.stringify(selection.sourceKey)}:${JSON.stringify(eventType)}`)
+  );
+  if (new Set(identities).size !== identities.length) {
+    context.addIssue({
+      code: "custom",
+      message: "Each Streamer.bot source and event type pair must be unique"
+    });
+  }
+});
+
+const streamerBotProviderConfigurationSchema = websocketProviderConfigurationSchema.extend({
+  twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable().default(null),
+  externalSubscriptions: configuredStreamerBotSubscriptionsSchema.default([])
+}).strict();
+
 export const providerSetupInputSchema = z.discriminatedUnion("kind", [
   providerSetupBaseSchema.extend({
     kind: z.literal("twitch"),
@@ -113,7 +146,7 @@ export const providerSetupInputSchema = z.discriminatedUnion("kind", [
   }).strict(),
   providerSetupBaseSchema.extend({
     kind: z.literal("streamerbot"),
-    configuration: websocketProviderConfigurationSchema,
+    configuration: streamerBotProviderConfigurationSchema,
     credential: z.string().max(4_096).nullable().optional()
   }).strict(),
   providerSetupBaseSchema.extend({
@@ -125,6 +158,34 @@ export const providerSetupInputSchema = z.discriminatedUnion("kind", [
     configuration: z.object({}).strict()
   }).strict()
 ]);
+
+export const streamerBotSubscriptionUpdateInputSchema = z.object({
+  twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable(),
+  externalSubscriptions: configuredStreamerBotSubscriptionsSchema
+}).strict();
+
+export const streamerBotSubscriptionCatalogSchema = z.object({
+  providerId: nonEmptyStringSchema.max(120),
+  available: z.boolean(),
+  sources: z.array(boundedStreamerBotSubscriptionSelectionSchema).max(100),
+  selected: configuredStreamerBotSubscriptionsSchema,
+  unavailableSelections: configuredStreamerBotSubscriptionsSchema,
+  twitchBroadcasterId: safeStreamerBotIdentitySchema.nullable()
+}).strict();
+
+export function isStreamerBotSubscriptionAvailable(
+  catalog: z.infer<typeof streamerBotSubscriptionCatalogSchema>,
+  sourceKey: string,
+  eventType: string
+): boolean {
+  return catalog.available
+    && catalog.selected.some((selection) =>
+      selection.sourceKey === sourceKey && selection.eventTypes.includes(eventType)
+    )
+    && catalog.sources.some((source) =>
+      source.sourceKey === sourceKey && source.eventTypes.includes(eventType)
+    );
+}
 
 export const providerValidationResultSchema = z.object({
   valid: z.boolean(),
@@ -380,7 +441,9 @@ export const alertLayerSchema = z.discriminatedUnion("type", [
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("video"),
-    assetId: nonEmptyStringSchema
+    assetId: nonEmptyStringSchema,
+    playEmbeddedAudio: z.boolean(),
+    audioVolume: z.number().finite().min(0).max(1)
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("audio"),
@@ -588,6 +651,7 @@ function nonNegativeNumber(value: unknown): boolean {
 }
 
 export const alertEditorDocumentSchema = z.object({
+  schemaVersion: z.literal(1),
   id: nonEmptyStringSchema,
   setId: nonEmptyStringSchema,
   providerKind: providerKindSchema,
@@ -730,6 +794,12 @@ export const assetMetadataUpdateInputSchema = z.object({
 export const assetChangeImpactSchema = z.object({
   assetId: nonEmptyStringSchema,
   usage: assetUsageSummarySchema,
+  owners: z.array(z.object({
+    moduleId: nonEmptyStringSchema,
+    ownerId: nonEmptyStringSchema,
+    ownerName: nonEmptyStringSchema,
+    variantId: nonEmptyStringSchema.nullable()
+  }).strict()).default([]),
   canDelete: z.boolean(),
   requiresConfirmation: z.boolean(),
   warnings: z.array(nonEmptyStringSchema)
@@ -788,9 +858,25 @@ export const homeReadinessItemSchema = z.object({
   actionRoute: nonEmptyStringSchema
 });
 
+export const homeAlertConfigurationItemSchema = z.object({
+  alertId: nonEmptyStringSchema,
+  name: nonEmptyStringSchema,
+  eventType: nonEmptyStringSchema,
+  state: z.enum(["review-needed", "unavailable"]),
+  message: nonEmptyStringSchema,
+  actionRoute: nonEmptyStringSchema
+});
+
+export const homeAlertConfigurationSummarySchema = z.object({
+  state: z.enum(["no-active-set", "no-enabled-alerts", "configured", "attention", "unavailable"]),
+  enabledAlertCount: nonNegativeIntegerSchema,
+  items: z.array(homeAlertConfigurationItemSchema)
+});
+
 export const homeSetupSummarySchema = z.object({
   readiness: z.array(homeReadinessItemSchema),
   activeAlertSet: alertSetOverviewSchema.nullable(),
+  alertConfiguration: homeAlertConfigurationSummarySchema,
   actionableProblems: z.array(actionableManagementErrorSchema)
 });
 
@@ -1055,7 +1141,9 @@ export type TargetProfileId = z.infer<typeof targetProfileIdSchema>;
 export type TargetProfileDefinition = z.infer<typeof targetProfileDefinitionSchema>;
 export type ProviderCapability = z.infer<typeof providerCapabilitySchema>;
 export type ProviderKind = z.infer<typeof providerKindSchema>;
-export type ProviderSetupInput = z.infer<typeof providerSetupInputSchema>;
+export type ProviderSetupInput = z.input<typeof providerSetupInputSchema>;
+export type StreamerBotSubscriptionUpdateInput = z.infer<typeof streamerBotSubscriptionUpdateInputSchema>;
+export type StreamerBotSubscriptionCatalog = z.infer<typeof streamerBotSubscriptionCatalogSchema>;
 export type ProviderValidationResult = z.infer<typeof providerValidationResultSchema>;
 export type RegisteredProviderView = z.infer<typeof registeredProviderViewSchema>;
 export type ProviderLiveStatus = z.infer<typeof providerLiveStatusSchema>;

@@ -1,4 +1,4 @@
-import type { MouseEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import {
   managementPrimaryRoutes,
   type ManagementRoute,
@@ -11,13 +11,38 @@ export interface ManagementNavigationProps {
 }
 
 export function ManagementNavigation({ activeRoute, onNavigate }: ManagementNavigationProps) {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const activeLabel = findRouteLabel(activeRoute.id) ?? "Management";
+
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [activeRoute.id]);
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== "Escape" || !mobileOpen) return;
+    event.preventDefault();
+    setMobileOpen(false);
+    triggerRef.current?.focus();
+  }
+
   return (
-    <aside className="management-sidebar">
+    <aside className="management-sidebar" onKeyDown={handleKeyDown}>
       <div className="management-brand">
-        <h1>Stream Jams</h1>
-        <span>Management</span>
+        <div><h1>Stream Jams</h1><span className="management-brand__current">{activeLabel}</span></div>
+        <button
+          aria-controls="management-primary-navigation"
+          aria-expanded={mobileOpen}
+          aria-label="Navigation"
+          className="management-nav__trigger"
+          onClick={() => setMobileOpen((current) => !current)}
+          ref={triggerRef}
+          type="button"
+        >
+          Menu
+        </button>
       </div>
-      <nav aria-label="Primary" className="management-nav">
+      <nav aria-label="Primary" className={`management-nav${mobileOpen ? " management-nav--mobile-open" : ""}`} id="management-primary-navigation">
         <ul>
           {managementPrimaryRoutes.map((route) => (
             <li key={route.id}>
@@ -44,6 +69,15 @@ export function ManagementNavigation({ activeRoute, onNavigate }: ManagementNavi
       </div>
     </aside>
   );
+}
+
+function findRouteLabel(routeId: ManagementRoute["id"]): string | null {
+  for (const route of managementPrimaryRoutes) {
+    if (route.id === routeId) return route.label;
+    const child = route.childRoutes.find(({ id }) => id === routeId);
+    if (child !== undefined) return child.label;
+  }
+  return null;
 }
 
 function NavigationLink({

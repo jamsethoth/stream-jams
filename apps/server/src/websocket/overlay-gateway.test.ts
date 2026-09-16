@@ -10,6 +10,26 @@ import { describe, expect, it } from "vitest";
 import { OverlayGateway, type OverlayGatewaySocket } from "./overlay-gateway.js";
 
 describe("OverlayGateway", () => {
+  it("sends saved layers only to matching unified outputs, including reconnects", async () => {
+    const unified = { overlayId: "default", moduleId: null, purpose: "live", scope: "unified", rawKey: "test-unified" } as const;
+    const module = { ...unified, moduleId: "alerts", scope: "module", rawKey: "test-module" } as const;
+    const other = { ...unified, overlayId: "other" };
+    const gateway = createGateway({ allowed: [unified, module, other] });
+    const sockets = [new RecordingSocket(), new RecordingSocket(), new RecordingSocket()];
+    await gateway.registerClient(sockets[0]!, unified);
+    await gateway.registerClient(sockets[1]!, module);
+    await gateway.registerClient(sockets[2]!, other);
+    const surface = { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: false }] } as const;
+    gateway.setSurfaceLayers(surface);
+    const message = { type: "overlay.surface-layers", layers: surface.layers };
+    expect(sockets[0]!.messages.at(-1)).toEqual(message);
+    expect(sockets[1]!.messages).not.toContainEqual(message);
+    expect(sockets[2]!.messages).not.toContainEqual(message);
+    const reconnect = new RecordingSocket();
+    await gateway.registerClient(reconnect, unified);
+    expect(reconnect.messages.at(-1)).toEqual(message);
+  });
+
   it("sends authoritative audio state on connect and broadcasts mute and targeted stop changes", async () => {
     const gateway = createGateway({
       allowed: [{

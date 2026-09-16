@@ -1,4 +1,4 @@
-import type { NormalizedStreamEvent, SecretRef, StreamerBotSubscriptionSelection } from "@stream-jams/core";
+import type { EffectTrigger, NormalizedStreamEvent, SecretRef, StreamerBotSubscriptionSelection } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
 import type { ProviderRegistrationRecord } from "../providers/sqlite-provider-registration-repository.js";
 import type {
@@ -81,6 +81,215 @@ describe("StreamerBotRuntimeService", () => {
       { sourceKey: "Twitch", eventTypes: supportedEvents }
     ]);
     expect(client.subscriptions.flatMap((selection) => selection.eventTypes)).not.toContain("HypeTrainLevelUp");
+  });
+
+  it("unions explicit custom subscriptions with supported Twitch events without duplicates", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents, OBS: ["SceneChanged", "RecordingStarted"] });
+    const service = runtime({
+      client,
+      active: registration({
+        externalSubscriptions: [
+          { sourceKey: "Twitch", eventTypes: ["RewardRedemption"] },
+          { sourceKey: "OBS", eventTypes: ["SceneChanged"] }
+        ]
+      })
+    });
+
+    await service.syncActiveRegistration();
+
+    expect(client.subscriptionBatches).toEqual([[
+      { sourceKey: "Twitch", eventTypes: supportedEvents },
+      { sourceKey: "OBS", eventTypes: ["SceneChanged"] }
+    ]]);
+  });
+
+  it("forwards a configured custom event and ignores an unsubscribed event", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents, OBS: ["SceneChanged", "RecordingStarted"] });
+    const batches: Array<readonly EffectTrigger[]> = [];
+    const diagnostics: StreamerBotRuntimeDiagnostic[] = [];
+    const service = runtime({
+      client,
+      active: registration({ externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }] }),
+      async ingestEffectTriggers(_eventId, triggers) {
+        batches.push([...triggers]);
+        return { status: "accepted", eventId: triggers[0]?.eventId ?? "missing" };
+      },
+      onDiagnostic(entry) { diagnostics.push(entry); }
+    });
+    await service.syncActiveRegistration();
+
+    await client.emit({
+      timeStamp: "2026-07-17T12:04:00.000Z",
+      event: { source: "OBS", type: "SceneChanged" },
+      data: { eventId: "obs-event-1", sceneName: "Live", command: "not-trusted" }
+    });
+    await client.emit({
+      timeStamp: "2026-07-17T12:05:00.000Z",
+      event: { source: "OBS", type: "RecordingStarted" },
+      data: { eventId: "obs-event-2" }
+    });
+
+    expect(batches).toEqual([[{
+      kind: "streamerbot-event",
+      eventId: expect.stringMatching(/^streamerbot:[a-f0-9]{64}$/u),
+      occurredAt: "2026-07-17T12:04:00.000Z",
+      providerId: "provider-streamerbot",
+      sourceKey: "OBS",
+      eventType: "SceneChanged",
+      summary: "Live"
+    }]]);
+    expect(JSON.stringify(batches)).not.toContain("not-trusted");
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      level: "info",
+      message: "Unsupported Streamer.bot event was ignored",
+      source: "OBS",
+      type: "RecordingStarted"
+    }));
+  });
+
+  it("forwards reward and configured source/type facets together with one event ID", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents });
+    const deliveries: Array<{ event: NormalizedStreamEvent; triggers: readonly EffectTrigger[] }> = [];
+    const service = runtime({
+      client,
+      active: registration({
+        twitchBroadcasterId: "broadcaster-1",
+        externalSubscriptions: [{ sourceKey: "Twitch", eventTypes: ["RewardRedemption"] }]
+      }),
+      async ingestNormalizedEvent(event, triggers) {
+        deliveries.push({ event, triggers });
+        return { status: "accepted", event };
+      }
+    });
+    await service.syncActiveRegistration();
+
+    await client.emit({
+      timeStamp: "2026-07-17T12:04:00.000Z",
+      event: { source: "Twitch", type: "RewardRedemption" },
+      data: {
+        redemptionId: "redemption-1",
+        user: { id: "viewer-1", name: "Viewer" },
+        rewardId: "reward-1",
+        rewardName: "Renamed reward",
+        createdAt: "2026-07-17T12:04:00.000Z"
+      }
+    });
+
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]?.triggers).toEqual([
+      expect.objectContaining({ kind: "twitch-reward", broadcasterId: "broadcaster-1", rewardId: "reward-1" }),
+      expect.objectContaining({ kind: "streamerbot-event", sourceKey: "Twitch", eventType: "RewardRedemption" })
+    ]);
+    expect(new Set(deliveries[0]?.triggers.map((trigger) => trigger.eventId))).toEqual(
+      new Set([deliveries[0]?.event.id])
+    );
+  });
+
+  it("uses a broadcaster change immediately without reconnecting", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents });
+    const deliveries: Array<{ event: NormalizedStreamEvent; triggers: readonly EffectTrigger[] }> = [];
+    const subscriptions = [{ sourceKey: "Twitch", eventTypes: ["RewardRedemption"] }];
+    const service = runtime({
+      client,
+      active: registration({
+        twitchBroadcasterId: "broadcaster-old",
+        externalSubscriptions: subscriptions
+      }),
+      async ingestNormalizedEvent(event, triggers) {
+        deliveries.push({ event, triggers });
+        return { status: "accepted", event };
+      }
+    });
+    await service.syncActiveRegistration();
+
+    await service.replaceExternalSubscriptions(
+      "provider-streamerbot",
+      subscriptions,
+      "broadcaster-new"
+    );
+    await client.emit({
+      timeStamp: "2026-07-17T12:04:00.000Z",
+      event: { source: "Twitch", type: "RewardRedemption" },
+      data: {
+        redemptionId: "redemption-1",
+        user: { id: "viewer-1", name: "Viewer" },
+        rewardId: "reward-1",
+        rewardName: "Reward",
+        createdAt: "2026-07-17T12:04:00.000Z"
+      }
+    });
+
+    expect(deliveries[0]?.triggers).toContainEqual(
+      expect.objectContaining({
+        kind: "twitch-reward",
+        broadcasterId: "broadcaster-new",
+        rewardId: "reward-1"
+      })
+    );
+  });
+
+  it("rolls back to the actual runtime snapshot when a saved event stops being advertised", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents, OBS: ["MissingEvent"] });
+    const deliveries: Array<{ event: NormalizedStreamEvent; triggers: readonly EffectTrigger[] }> = [];
+    const staleSubscriptions = [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }];
+    const service = runtime({
+      client,
+      active: registration({
+        twitchBroadcasterId: "broadcaster-old",
+        externalSubscriptions: staleSubscriptions
+      }),
+      async ingestNormalizedEvent(event, triggers) {
+        deliveries.push({ event, triggers });
+        return { status: "accepted", event };
+      }
+    });
+    await service.syncActiveRegistration();
+    client.events = { Twitch: supportedEvents, OBS: ["SceneChanged"] };
+
+    const mutation = await service.replaceExternalSubscriptions(
+      "provider-streamerbot",
+      [],
+      "broadcaster-new"
+    );
+    await mutation.rollback();
+    await client.emit({
+      timeStamp: "2026-07-17T12:04:00.000Z",
+      event: { source: "Twitch", type: "RewardRedemption" },
+      data: {
+        redemptionId: "redemption-rollback",
+        user: { id: "viewer-1", name: "Viewer" },
+        rewardId: "reward-1",
+        rewardName: "Reward",
+        createdAt: "2026-07-17T12:04:00.000Z"
+      }
+    });
+
+    expect(client.subscriptionBatches.at(-1)).toContainEqual({
+      sourceKey: "OBS",
+      eventTypes: ["MissingEvent"]
+    });
+    expect(deliveries[0]?.triggers).toContainEqual(
+      expect.objectContaining({ kind: "twitch-reward", broadcasterId: "broadcaster-old" })
+    );
+  });
+
+  it("replaces custom subscriptions without unsubscribing required Twitch intake", async () => {
+    const client = new FakeClient({ Twitch: supportedEvents, OBS: ["SceneChanged", "RecordingStarted"] });
+    const previous = [
+      { sourceKey: "Twitch", eventTypes: ["RewardRedemption"] },
+      { sourceKey: "OBS", eventTypes: ["SceneChanged"] }
+    ];
+    const service = runtime({ client, active: registration({ externalSubscriptions: previous }) });
+    await service.syncActiveRegistration();
+
+    await expect(service.getCatalog("provider-streamerbot")).resolves.toEqual(client.events);
+    await service.replaceExternalSubscriptions("provider-streamerbot", [
+      { sourceKey: "OBS", eventTypes: ["RecordingStarted"] }
+    ], null);
+
+    expect(client.unsubscriptions).toEqual([{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]);
+    expect(client.unsubscriptions.flatMap((selection) => selection.eventTypes)).not.toContain("RewardRedemption");
+    expect(client.subscriptions.at(-1)).toEqual({ sourceKey: "OBS", eventTypes: ["RecordingStarted"] });
   });
 
   it("normalizes supported events and records unsupported events without forwarding raw payloads", async () => {
@@ -269,11 +478,13 @@ describe("StreamerBotRuntimeService", () => {
 class FakeClient implements StreamerBotRuntimeClient {
   readonly connectInputs: StreamerBotConnectionInput[] = [];
   readonly subscriptions: StreamerBotSubscriptionSelection[] = [];
+  readonly subscriptionBatches: StreamerBotSubscriptionSelection[][] = [];
+  readonly unsubscriptions: StreamerBotSubscriptionSelection[] = [];
   disconnectCount = 0;
   #status = status("idle");
   #onEvent: (envelope: StreamerBotEventEnvelope) => void | Promise<void> = () => {};
 
-  constructor(readonly events: Record<string, readonly string[]>) {}
+  constructor(public events: Record<string, readonly string[]>) {}
 
   setEventHandler(onEvent: (envelope: StreamerBotEventEnvelope) => void | Promise<void>) {
     this.#onEvent = onEvent;
@@ -302,7 +513,15 @@ class FakeClient implements StreamerBotRuntimeClient {
   }
 
   async subscribe(selections: readonly StreamerBotSubscriptionSelection[]): Promise<void> {
+    this.subscriptionBatches.push(selections.map((selection) => ({
+      sourceKey: selection.sourceKey,
+      eventTypes: [...selection.eventTypes]
+    })));
     this.subscriptions.push(...selections);
+  }
+
+  async unsubscribe(selections: readonly StreamerBotSubscriptionSelection[]): Promise<void> {
+    this.unsubscriptions.push(...selections);
   }
 
   async emit(envelope: StreamerBotEventEnvelope): Promise<void> {
@@ -314,8 +533,13 @@ function runtime(options: {
   readonly client: FakeClient;
   readonly active: ProviderRegistrationRecord | null;
   readonly getSecret?: (ref: SecretRef) => Promise<string | null>;
-  readonly ingestNormalizedEvent?: (event: NormalizedStreamEvent) => Promise<
+  readonly ingestNormalizedEvent?: (event: NormalizedStreamEvent, triggers: readonly EffectTrigger[]) => Promise<
     | { readonly status: "accepted"; readonly event: NormalizedStreamEvent }
+    | { readonly status: "duplicate"; readonly messageId: string }
+    | { readonly status: "rejected"; readonly message: string; readonly referenceId: string }
+  >;
+  readonly ingestEffectTriggers?: (eventId: string, triggers: readonly EffectTrigger[]) => Promise<
+    | { readonly status: "accepted"; readonly eventId: string }
     | { readonly status: "duplicate"; readonly messageId: string }
     | { readonly status: "rejected"; readonly message: string; readonly referenceId: string }
   >;
@@ -331,7 +555,8 @@ function runtime(options: {
       return options.client;
     },
     ingestionService: {
-      ingestNormalizedEvent: options.ingestNormalizedEvent ?? (async (event) => ({ status: "accepted", event }))
+      ingestNormalizedEvent: options.ingestNormalizedEvent ?? (async (event) => ({ status: "accepted", event })),
+      ingestEffectTriggers: options.ingestEffectTriggers ?? (async (eventId) => ({ status: "accepted", eventId }))
     },
     generateReferenceId: () => `ref-${++reference}`,
     onDiagnostic: options.onDiagnostic,
@@ -350,6 +575,8 @@ function runtime(options: {
 function registration(options: {
   readonly kind?: "streamerbot" | "twitch";
   readonly secretRef?: SecretRef | null;
+  readonly twitchBroadcasterId?: string | null;
+  readonly externalSubscriptions?: readonly StreamerBotSubscriptionSelection[];
 } = {}): ProviderRegistrationRecord {
   const kind = options.kind ?? "streamerbot";
   return {
@@ -366,7 +593,14 @@ function registration(options: {
       usedByAlertCount: 1
     },
     configuration: kind === "streamerbot"
-      ? { protocol: "ws", host: "127.0.0.1", port: 8080, endpoint: "/" }
+      ? {
+          protocol: "ws",
+          host: "127.0.0.1",
+          port: 8080,
+          endpoint: "/",
+          twitchBroadcasterId: options.twitchBroadcasterId ?? null,
+          externalSubscriptions: options.externalSubscriptions ?? []
+        }
       : {},
     availableVoices: [],
     secretRef: options.secretRef ?? null,

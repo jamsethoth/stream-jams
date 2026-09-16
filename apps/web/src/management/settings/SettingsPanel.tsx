@@ -17,6 +17,8 @@ import { MaskedValue } from "../foundation/MaskedValue.js";
 import { ThemeSwitcher } from "../foundation/ThemeSwitcher.js";
 import type { DesktopConfigView, ManagementApi, ServerConfigView } from "../management-api.js";
 import { DesktopSettingsPanel } from "./DesktopSettingsPanel.js";
+import { OverlaySurfacesPanel, type OverlaySurfacesPanelHandle } from "./OverlaySurfacesPanel.js";
+import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import "./settings-panel.css";
 
@@ -27,13 +29,16 @@ type SettingsApi = Pick<
 
 export interface SettingsPanelProps {
   readonly audioApi?: AudioApi | undefined;
+  readonly surfaceApi?: SurfaceSettingsApi | undefined;
   readonly managementApi: SettingsApi;
 }
 
 const defaultServerConfig: ServerConfigView = { host: "127.0.0.1", port: 39187 };
 
-export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: SettingsPanelProps) {
+export function SettingsPanel({ audioApi = defaultAudioApi, surfaceApi, managementApi }: SettingsPanelProps) {
   const audioPanelRef = useRef<AudioOutputsPanelHandle>(null);
+  const surfacesPanelRef = useRef<OverlaySurfacesPanelHandle>(null);
+  const [surfacesDirty, setSurfacesDirty] = useState(false);
   const [savedConfig, setSavedConfig] = useState(defaultServerConfig);
   const [configDraft, setConfigDraft] = useState(defaultServerConfig);
   const [desktopConfig, setDesktopConfig] = useState<DesktopConfigView | null>(null);
@@ -49,6 +54,12 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
   const [busy, setBusy] = useState(false);
   const [maintenanceBusy, setMaintenanceBusy] = useState<"open-data-folder" | "clear-old-logs" | null>(null);
   const [audioDirty, setAudioDirty] = useState(false);
+  const [serverOpen, setServerOpen] = useState(false);
+  const [audioOpen, setAudioOpen] = useState(window.location.hash === "#audio-outputs");
+  const [surfacesOpen, setSurfacesOpen] = useState(window.location.hash === "#overlay-surfaces");
+  const [dataOpen, setDataOpen] = useState(window.location.hash === "#backup-restore");
+  const [audioSummary, setAudioSummary] = useState<{ readonly count: number; readonly state: "loading" | "ready" | "attention" }>({ count: 0, state: "loading" });
+  const [surfaceSummary, setSurfaceSummary] = useState<{ readonly count: number; readonly state: "loading" | "ready" | "attention" }>({ count: 0, state: "loading" });
   const [notice, setNotice] = useState<ManagementToastNotice | null>(null);
   const [error, setError] = useState<ActionableManagementError | null>(null);
 
@@ -61,6 +72,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
         setCloseToTray(desktop.closeToTray);
         setSavedConfig(serverConfig);
         setConfigDraft(serverConfig);
+        if (backupSummary.state === "invalid" || backupSummary.blockers.length > 0) setDataOpen(true);
         setSummary(backupSummary);
         setInitialLoadFailed(false);
       })
@@ -74,13 +86,20 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
   }, [managementApi]);
 
   useEffect(() => { void loadSettings(); }, [loadSettings]);
+  useEffect(() => { if (audioSummary.state === "attention") setAudioOpen(true); }, [audioSummary.state]);
+  useEffect(() => { if (surfaceSummary.state === "attention") setSurfacesOpen(true); }, [surfaceSummary.state]);
+  const dataNeedsAttention = summary?.state === "invalid" || (summary?.blockers.length ?? 0) > 0 || (preflight?.blockers.length ?? 0) > 0;
+  useEffect(() => { if (dataNeedsAttention) setDataOpen(true); }, [dataNeedsAttention]);
 
   useEffect(() => {
     if (loading) return;
     const targetId = window.location.hash === "#backup-restore"
       ? "backup-restore"
-      : window.location.hash === "#audio-outputs" ? "audio-outputs" : null;
-    if (targetId !== null) document.getElementById(targetId)?.scrollIntoView({ block: "start" });
+      : window.location.hash === "#audio-outputs" ? "audio-outputs" : window.location.hash === "#overlay-surfaces" ? "overlay-surfaces" : null;
+    if (targetId === "backup-restore") setDataOpen(true);
+    if (targetId === "audio-outputs") setAudioOpen(true);
+    if (targetId === "overlay-surfaces") setSurfacesOpen(true);
+    if (targetId !== null) document.getElementById(targetId)?.scrollIntoView?.({ block: "start" });
   }, [loading]);
 
   const serverDirty = savedConfig.host !== configDraft.host || savedConfig.port !== configDraft.port;
@@ -104,7 +123,10 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
     if (audioDirty && !(await audioPanelRef.current?.save())) {
       return { saved: false as const, error: "Audio output changes could not be saved. Resolve the highlighted route and try again." };
     }
-  }, [audioDirty, desktopDirty, saveDesktop, saveServer, serverDirty]);
+    if (surfacesDirty && !(await surfacesPanelRef.current?.save())) {
+      return { saved: false as const, error: "Overlay surface settings could not be saved. Resolve the highlighted settings and try again." };
+    }
+  }, [audioDirty, desktopDirty, surfacesDirty, saveDesktop, saveServer, serverDirty]);
 
   const discard = useCallback(() => {
     setCloseToTray(desktopConfig?.closeToTray ?? true);
@@ -115,13 +137,14 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
     setRestoreResult(null);
     setConfirmation("");
     audioPanelRef.current?.discard();
+    surfacesPanelRef.current?.discard();
   }, [desktopConfig, savedConfig]);
 
   useDirtyNavigationSource({
     id: "settings",
-    dirty: serverDirty || desktopDirty || audioDirty || archive !== null,
-    summary: archive === null ? "Settings or named audio outputs have unsaved changes." : "A configuration backup is selected for restore.",
-    save: archive === null && (serverDirty || desktopDirty || audioDirty) ? saveSettings : null,
+    dirty: serverDirty || desktopDirty || audioDirty || surfacesDirty || archive !== null,
+    summary: archive === null ? "Settings, audio outputs, or overlay surfaces have unsaved changes." : "A configuration backup is selected for restore.",
+    save: archive === null && (serverDirty || desktopDirty || audioDirty || surfacesDirty) ? saveSettings : null,
     discard
   });
 
@@ -144,6 +167,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
       await saveServer();
       setNotice({ tone: "warning", message: "Server settings saved.", detail: "Restart Stream Jams if the port changed." });
     } catch (cause) {
+      setServerOpen(true);
       setError(actionable("Server settings were not saved", cause, "Check the port and try again."));
     } finally {
       setBusy(false);
@@ -176,6 +200,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
     setError(null);
     if (file === undefined) return;
     if (file.size > configurationBackupLimits.maxArchiveBytes) {
+      setDataOpen(true);
       setError(actionable(
         "Backup file is too large",
         `The selected file exceeds the ${formatBytes(configurationBackupLimits.maxArchiveBytes)} restore limit.`,
@@ -238,6 +263,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
       const result = await managementApi.openDataFolder();
       setNotice({ tone: "success", message: `Data folder opened: ${result.dataDirectory}` });
     } catch (cause) {
+      setDataOpen(true);
       setError(actionable(
         "Data folder was not opened",
         cause,
@@ -288,14 +314,17 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
         <ThemeSwitcher />
       </section>
 
-      <section aria-labelledby="server-heading" className="settings-page__section">
-        <div className="settings-page__section-heading"><div><h3 id="server-heading">Local server</h3><p>Management and browser-source traffic remains bound to this computer.</p></div></div>
-        <form className="settings-page__form" onSubmit={submitServer}>
-          <label><span>Host</span><input disabled readOnly value={configDraft.host} /></label>
-          <label><span>Port</span><input min={1} max={65535} onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })} type="number" value={configDraft.port} /></label>
-          <button disabled={busy || !serverDirty} type="submit">Save server settings</button>
-        </form>
-      </section>
+      <details className="settings-page__disclosure" onToggle={(event) => setServerOpen(event.currentTarget.open)} open={serverOpen}>
+        <summary><span className="settings-page__summary-content"><strong>Server settings</strong><small>Local only · port {configDraft.port}{serverDirty ? " · Unsaved" : ""}</small></span></summary>
+        <section aria-labelledby="server-heading" className="settings-page__section">
+          <div className="settings-page__section-heading"><div><h3 id="server-heading">Local server</h3><p>Management and browser-source traffic remains bound to this computer.</p></div></div>
+          <form className="settings-page__form" onSubmit={submitServer}>
+            <label><span>Host</span><input disabled readOnly value={configDraft.host} /></label>
+            <label><span>Port</span><input min={1} max={65535} onChange={(event) => setConfigDraft({ ...configDraft, port: Number(event.currentTarget.value) })} type="number" value={configDraft.port} /></label>
+            <button disabled={busy || !serverDirty} type="submit">Save server settings</button>
+          </form>
+        </section>
+      </details>
 
       {desktopConfig?.available !== true ? null : (
         <section aria-labelledby="desktop-heading" className="settings-page__section">
@@ -307,10 +336,19 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
         </section>
       )}
 
-      <AudioOutputsPanel audioApi={audioApi} onDirtyChange={setAudioDirty} ref={audioPanelRef} />
+      <details className="settings-page__disclosure" onToggle={(event) => setAudioOpen(event.currentTarget.open)} open={audioOpen}>
+        <summary><span className="settings-page__summary-content"><strong>Audio outputs · {summaryText(audioSummary, "configured")}{audioDirty ? " · Unsaved" : ""}</strong></span></summary>
+        <AudioOutputsPanel audioApi={audioApi} onDirtyChange={setAudioDirty} onSummaryChange={setAudioSummary} ref={audioPanelRef} />
+      </details>
+      <details className="settings-page__disclosure" onToggle={(event) => setSurfacesOpen(event.currentTarget.open)} open={surfacesOpen}>
+        <summary><span className="settings-page__summary-content"><strong>Overlay surfaces · {summaryText(surfaceSummary, "configured")}{surfacesDirty ? " · Unsaved" : ""}</strong></span></summary>
+        <OverlaySurfacesPanel api={surfaceApi} manageNavigation={false} onDirtyChange={setSurfacesDirty} onSummaryChange={setSurfaceSummary} ref={surfacesPanelRef} />
+      </details>
 
-      {summary === null ? null : (
-        <section aria-labelledby="storage-heading" className="settings-page__section">
+      <details className="settings-page__disclosure" id="backup-restore" onToggle={(event) => setDataOpen(event.currentTarget.open)} open={dataOpen}>
+        <summary><span className="settings-page__summary-content"><strong>Data and backup{dataNeedsAttention ? " · Needs attention" : ""}</strong><small>{summary === null ? "Loading storage details" : `${formatCount(summary.configurationRecordCount, { one: "configuration record", other: "configuration records" })} · ${formatCount(summary.assetCount, { one: "asset", other: "assets" })}`}</small></span></summary>
+        {summary === null ? null : (
+        <section aria-labelledby="storage-heading" className="settings-page__section settings-page__section--nested">
           <div className="settings-page__section-heading"><div><h3 id="storage-heading">Data and diagnostics</h3><p>Current storage locations and bounded log-retention policy.</p></div></div>
           <dl className="settings-page__facts">
             <div><dt>Data folder</dt><dd>{summary.dataDirectory}</dd></div>
@@ -330,7 +368,7 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
         </section>
       )}
 
-      <section aria-labelledby="backup-heading" className="settings-page__section" id="backup-restore">
+      <section aria-labelledby="backup-heading" className="settings-page__section settings-page__section--nested">
         <div className="settings-page__section-heading settings-page__section-heading--action">
           <div><h3 id="backup-heading">Backup and restore</h3><p>Move complete local configuration and assets without exporting credentials or route keys.</p></div>
           <button disabled={busy || summary?.state === "invalid"} onClick={() => void exportBackup()} type="button">Export backup</button>
@@ -351,16 +389,26 @@ export function SettingsPanel({ audioApi = defaultAudioApi, managementApi }: Set
           {preflight?.blockers.map((blocker) => <ManagementErrorBanner error={blocker} key={`${blocker.summary}-${blocker.nextStep}`} />)}
           {preflight?.warnings.map((warning) => <ManagementErrorBanner error={warning} key={`${warning.summary}-${warning.nextStep}`} />)}
 
-          <label className="settings-page__confirmation"><span>Type RESTORE to confirm</span><input autoComplete="off" disabled={preflight?.state !== "valid" || busy} onChange={(event) => setConfirmation(event.currentTarget.value)} value={confirmation} /></label>
-          <label className="settings-page__route-key-option"><input checked disabled readOnly type="checkbox" /> Regenerate overlay route keys and browser-source URLs</label>
-          <button className="button button--danger" disabled={busy || preflight?.state !== "valid" || confirmation !== "RESTORE"} onClick={() => void restoreConfiguration()} type="button">Restore configuration</button>
+          {preflight?.state !== "valid" ? null : <>
+            <label className="settings-page__confirmation"><span>Type RESTORE to confirm</span><input autoComplete="off" disabled={busy} onChange={(event) => setConfirmation(event.currentTarget.value)} value={confirmation} /></label>
+            <label className="settings-page__route-key-option"><input checked disabled readOnly type="checkbox" /> Regenerate overlay route keys and browser-source URLs</label>
+            <button className="button button--danger" disabled={busy || confirmation !== "RESTORE"} onClick={() => void restoreConfiguration()} type="button">Restore configuration</button>
+          </>}
         </div>
       </section>
+      </details>
 
       {restoreResult === null ? null : <RestoreCompletion result={restoreResult} />}
     </section>
   );
 }
+
+function summaryText(summary: { readonly count: number; readonly state: "loading" | "ready" | "attention" }, noun: string): string {
+  if (summary.state === "loading") return "Loading status";
+  const count = `${summary.count} ${noun}`;
+  return summary.state === "attention" ? `${count} · Needs attention` : count;
+}
+
 
 function RestoreImpact({ impact }: { readonly impact: NonNullable<ConfigurationRestorePreflight["impact"]> }) {
   return (

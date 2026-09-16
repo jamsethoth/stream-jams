@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { alertEditorDocumentSchema, type AlertEditorDocument } from "@stream-jams/core";
+import { alertEditorDocumentSchema, parseStoredAlertEditorDocument, type AlertEditorDocument } from "@stream-jams/core";
 import type { AlertEditorDocumentRepository } from "./alert-editor-service.js";
 import { runInTransaction } from "../db/database.js";
 import { AudioOutputError } from "../audio/audio-output-error.js";
@@ -22,7 +22,7 @@ export class SqliteAlertEditorDocumentRepository implements AlertEditorDocumentR
       .prepare("SELECT document_json FROM alert_editor_documents WHERE alert_id = ?")
       .get(alertId) as AlertEditorDocumentRow | undefined;
     if (row === undefined) return null;
-    return alertEditorDocumentSchema.parse(JSON.parse(String(row.document_json)) as unknown);
+    return parseStoredAlertEditorDocument(JSON.parse(String(row.document_json)) as unknown);
   }
 
   async findMany(alertIds: readonly string[]): Promise<ReadonlyMap<string, AlertEditorDocument>> {
@@ -38,7 +38,7 @@ export class SqliteAlertEditorDocumentRepository implements AlertEditorDocumentR
       .all(...ids);
     return new Map(rows.map((row) => [
       String(row.alert_id),
-      alertEditorDocumentSchema.parse(JSON.parse(String(row.document_json)) as unknown)
+      parseStoredAlertEditorDocument(JSON.parse(String(row.document_json)) as unknown)
     ]));
   }
 

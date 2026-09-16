@@ -1,0 +1,19 @@
+.overlay-surfaces { display: grid; gap: 16px; min-width: 0; scroll-margin-top: 16px; }
+.overlay-surfaces h3, .overlay-surfaces h4 { margin: 0; }
+.overlay-surfaces p { margin: 0; color: var(--color-text-muted); }
+.overlay-surfaces header { display: grid; gap: 6px; }
+.overlay-surfaces__surface { display: grid; gap: 12px; padding-block: 12px 24px; border-bottom: 1px solid var(--color-border); }
+.overlay-surfaces__heading { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+.overlay-surfaces__heading span { color: var(--color-text-muted); font-size: 0.875rem; }
+.overlay-surfaces fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.overlay-surfaces__legend { padding: 0 0 8px; font-size: 0.875rem; color: var(--color-text-muted); }
+.overlay-surfaces__desktop-fields { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(100px, 160px); gap: 12px; align-items: end; }
+.overlay-surfaces__desktop-fields label { display: grid; gap: 6px; }
+.overlay-surfaces label.overlay-surfaces__checkbox { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.overlay-surfaces__layers { display: grid; gap: 8px; margin: 0; padding-left: 24px; }
+.overlay-surfaces__layers li { padding-left: 4px; }
+.overlay-surfaces__layers li > label { display: inline-flex; }
+.overlay-surfaces__row-actions { display: inline-flex; gap: 6px; margin-left: 16px; }
+.overlay-surfaces__actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.overlay-surfaces__message { overflow-wrap: anywhere; }
+@media (max-width: 760px) { .overlay-surfaces__desktop-fields { grid-template-columns: 1fr; } .overlay-surfaces__actions > button { flex: 1 1 200px; } }

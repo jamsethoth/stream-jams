@@ -98,7 +98,7 @@ export class AudioHost implements DesktopAudioTransport {
     const bytes = testTone();
     const result = await this.play({ batch: {
       playbackId: randomUUID(), documentId: "route-test", durationMs: 1000, muted: this.#muted,
-      layers: [{ layerId: "tone", assetId: "tone", volume: 0.25 }], destinations: [{ deviceId, routeIds: ["route-test"] }]
+      layers: [{ sourceKind: "audio", layerId: "tone", assetId: "tone", volume: 0.25 }], destinations: [{ deviceId, routeIds: ["route-test"] }]
     }, assets: [{ assetId: "tone", mimeType: "audio/wav", bytes }], startDeadlineMs: Date.now() + 1000, deadlineMs: Date.now() + 1000 });
     if (result.failedRouteIds.length > 0) throw unavailable();
   }

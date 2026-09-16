@@ -191,8 +191,8 @@ describe("AlertSetsPage", () => {
       sendAlertEditorTest
     })} onEditAlert={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "Test New follower" }));
-    await user.click(await screen.findByRole("button", { name: "Send New follower test to Vertical" }));
+    await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
+    await user.click(await screen.findByRole("button", { name: "Send New follower saved test to Vertical" }));
 
     await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", {
       document: saved,
@@ -205,6 +205,24 @@ describe("AlertSetsPage", () => {
     expect(screen.getByText("Test queued on Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
+  it("keeps the text-only sample separate from saved delivery and secondary actions", async () => {
+    const api = alertSetsApi();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    const row = await screen.findByRole("row", { name: /New follower/u });
+    expect(within(row).getByRole("button", { name: "Test saved New follower" })).toBeVisible();
+    expect(within(row).getAllByRole("button", { name: "Sample message New follower" })).toHaveLength(1);
+    expect(within(row).getAllByRole("button", { name: "Add variation to New follower" })).toHaveLength(1);
+
+    await user.click(within(row).getByText("More", { selector: "summary" }));
+    await user.click(within(row).getByRole("button", { name: "Sample message New follower" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Sample message for New follower" });
+    expect(dialog).toHaveTextContent("sample text, not the rendered alert design");
+    expect(api.sendAlertEditorTest).not.toHaveBeenCalled();
+  });
+
   it("sends saved device audio without inventing a ready browser profile", async () => {
     const source = detail();
     source.inventory = source.inventory.map((row) => ({ ...row, targetProfileIds: [] }));
@@ -213,7 +231,7 @@ describe("AlertSetsPage", () => {
     saved.targetProfiles = saved.targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review" as const }));
     const api = alertSetsApi({ getAlertSet: vi.fn(async () => source), getAlertEditorDocument: vi.fn(async () => saved) });
     render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
-    await userEvent.click(await screen.findByRole("button", { name: "Test New follower" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Test saved New follower" }));
     await waitFor(() => expect(api.sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({ document: saved, targetProfileId: null, includeAudio: true, includeTts: true })));
   });
 
@@ -227,7 +245,7 @@ describe("AlertSetsPage", () => {
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={alertSetsApi({ sendAlertEditorTest })} onEditAlert={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "Test New follower" }));
+    await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
 
     expect(await screen.findByText("err_inline_test_blocked")).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute(
@@ -486,6 +504,41 @@ describe("AlertSetsPage", () => {
     expect(within(dialog).getByRole("button", { name: "Create alert" })).toBeEnabled();
   });
 
+  it("loads reward titles once for inventory condition summaries", async () => {
+    const source = detail();
+    source.inventory = source.inventory.map((candidate) => candidate.id === "alert-reward" ? {
+      ...candidate,
+      conditions: [{ field: "channelPointReward" as const, operator: "oneOf" as const, value: ["reward-hydrate"] }]
+    } : candidate);
+    const getTwitchCustomRewards = vi.fn(async () => ({ rewards: twitchRewards() }));
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source),
+      getTwitchCustomRewards
+    })} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("Channel point reward is one of Hydrate")).toBeVisible();
+    expect(getTwitchCustomRewards).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an unavailable reward ID visible when the catalog cannot load", async () => {
+    const source = detail();
+    source.inventory = source.inventory.map((candidate) => candidate.id === "alert-reward" ? {
+      ...candidate,
+      conditions: [{ field: "channelPointReward" as const, operator: "oneOf" as const, value: ["reward-retired"] }]
+    } : candidate);
+    const getTwitchCustomRewards = vi.fn(async () => { throw new Error("Twitch unavailable"); });
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source),
+      getTwitchCustomRewards
+    })} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("Channel point reward is one of Unavailable reward")).toBeVisible();
+    expect(screen.getByText("Reward ID: reward-retired")).toBeVisible();
+    await waitFor(() => expect(getTwitchCustomRewards).toHaveBeenCalledOnce());
+  });
+
   it("cancels Add alert without sending a create request", async () => {
     const createAlert = vi.fn();
     const user = userEvent.setup();
@@ -533,6 +586,7 @@ describe("AlertSetsPage", () => {
   });
 
   it("renders canonical event disclosures, unknown events, and labelled orphan variations", async () => {
+    const user = userEvent.setup();
     const source = detail();
     const follow = source.inventory[0]!;
     source.inventory = [
@@ -560,12 +614,53 @@ describe("AlertSetsPage", () => {
     expect(followToggle).toHaveTextContent("2 defaults");
     expect(followToggle).toHaveTextContent("2 variations");
     expect(followToggle).toHaveTextContent("Warning");
-    expect(screen.getByRole("button", { name: "Expand Resubscription alerts" })).toHaveAttribute("aria-expanded", "false");
-    expect(screen.getByRole("button", { name: "Collapse future_provider_event alerts" })).toBeInTheDocument();
+    const showUnused = screen.getByRole("checkbox", { name: "Show unused event types" });
+    expect(showUnused).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: "Expand Resubscription alerts" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Collapse Future provider event alerts" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Orphan variations" })).toBeInTheDocument();
     expect(screen.getByText("Orphan follow")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Enable Follow event" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Add alert for future_provider_event" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add alert for Future provider event" })).not.toBeInTheDocument();
+    await user.click(showUnused);
+    expect(screen.getByRole("button", { name: "Expand Resubscription alerts" })).toHaveAttribute("aria-expanded", "false");
+    await user.click(showUnused);
+    expect(screen.queryByRole("button", { name: "Expand Resubscription alerts" })).not.toBeInTheDocument();
+  });
+
+  it("keeps disabled and invalid configured events visible while hiding unused events", async () => {
+    const source = detail();
+    source.overview = {
+      ...source.overview,
+      validationIssues: [{
+        ...issue("follow-blocker", "blocker", "FOLLOW_BLOCKER", "Repair the configured follow alert."),
+        alertId: source.inventory[0]!.id,
+        eventType: "follow"
+      }]
+    };
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source)
+    })} onEditAlert={vi.fn()} />);
+
+    const follow = await screen.findByRole("button", { name: "Collapse Follow alerts" });
+    expect(follow).toHaveTextContent("0 enabled");
+    expect(follow).toHaveTextContent("Blocker");
+    expect(screen.queryByRole("button", { name: "Expand Cheer alerts" })).not.toBeInTheDocument();
+  });
+
+  it("shows a create action and unused-event access for an empty configured set", async () => {
+    const source = detail();
+    source.inventory = [];
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [source.overview]),
+      getAlertSet: vi.fn(async () => source)
+    })} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("No alerts configured yet.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add alert" })).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: "Show unused event types" })).not.toBeChecked();
+    expect(screen.queryByText("No alerts match these filters.")).not.toBeInTheDocument();
   });
 
   it("keeps an alert-specific blocker off sibling defaults in the same event", async () => {
@@ -617,7 +712,8 @@ describe("AlertSetsPage", () => {
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={alertSetsApi({ createAlert, getAlertSet })} onEditAlert={vi.fn()} />);
 
-    await user.click(await screen.findByRole("button", { name: "Add alert for Resubscription" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Show unused event types" }));
+    await user.click(screen.getByRole("button", { name: "Add alert for Resubscription" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
     expect(within(dialog).getByLabelText("Event type")).toBeDisabled();
     expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
@@ -1104,7 +1200,7 @@ function output(targetProfileId: "landscape" | "vertical", purpose: "live") {
 }
 
 function editorDocument(): AlertEditorDocument {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

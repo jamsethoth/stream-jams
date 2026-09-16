@@ -1,3 +1,4 @@
+import { surfaceConfigurationSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayAccessDenialReason,
   OverlayAccessService,
@@ -72,6 +73,7 @@ interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
 }
 
 type OverlayGatewayMessage =
+  | { readonly type: "overlay.surface-layers"; readonly layers: readonly SurfaceLayer[] }
   | {
       readonly type: "overlay.connected";
       readonly clientId: string;
@@ -108,6 +110,7 @@ export class OverlayGateway {
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
   readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
   #playbackMuted: boolean;
+  readonly #surfaceLayers = new Map<string, readonly SurfaceLayer[]>();
 
   constructor(dependencies: OverlayGatewayDependencies) {
     this.#overlayAccessService = dependencies.overlayAccessService;
@@ -183,6 +186,10 @@ export class OverlayGateway {
       type: "overlay.playback.audio-state",
       muted: this.#playbackMuted
     });
+    const layers = this.#surfaceLayers.get(registration.overlayId);
+    if (registration.scope === "unified" && layers !== undefined) {
+      sendGatewayMessage(socket, { type: "overlay.surface-layers", layers });
+    }
 
     return {
       authorized: true,
@@ -231,6 +238,18 @@ export class OverlayGateway {
     this.#playbackMuted = muted;
     for (const client of this.#clients.values()) {
       sendGatewayMessage(client.socket, { type: "overlay.playback.audio-state", muted });
+    }
+  }
+
+  setSurfaceLayers(candidate: unknown): void {
+    const surface = surfaceConfigurationSchema.parse(candidate);
+    if (surface.kind !== "unified-browser") throw new Error("Expected a unified browser surface");
+    this.#surfaceLayers.set(surface.overlayId, surface.layers);
+    for (const client of this.#clients.values()) {
+      if (client.scope === "unified" && client.overlayId === surface.overlayId) {
+        try { sendGatewayMessage(client.socket, { type: "overlay.surface-layers", layers: surface.layers }); }
+        catch { this.unregisterClient(client.id); }
+      }
     }
   }
 

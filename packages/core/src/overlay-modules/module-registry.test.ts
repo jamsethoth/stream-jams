@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { alertsOverlayModuleDefinition } from "./module-definition.js";
+import { screenEffectsOverlayModuleDefinition } from "../screen-effects/module-definition.js";
 import { StaticOverlayModuleRegistry, createDefaultOverlayModuleRegistry } from "./module-registry.js";
 import type { OverlayModuleDefinition } from "./types.js";
 
@@ -33,12 +34,20 @@ const customModule: OverlayModuleDefinition = {
 };
 
 describe("overlay module registry", () => {
-  it("registers Alerts as the first built-in overlay module", () => {
+  it("registers Alerts and disabled Screen Effects in stable built-in order", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
-    expect(registry.listModules()).toEqual([alertsOverlayModuleDefinition]);
+    expect(registry.listModules()).toEqual([
+      alertsOverlayModuleDefinition,
+      screenEffectsOverlayModuleDefinition
+    ]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
+    expect(registry.getModule("screen-effects")).toEqual(screenEffectsOverlayModuleDefinition);
     expect(alertsOverlayModuleDefinition.wizard.steps.map((step) => step.id)).toEqual(["alerts-canvas"]);
+    expect(screenEffectsOverlayModuleDefinition).toMatchObject({
+      defaultEnabled: false,
+      renderer: { supportedOutputs: ["module", "unified"] }
+    });
   });
 
   it("returns null for unknown module ids", () => {

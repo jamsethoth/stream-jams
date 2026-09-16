@@ -10,7 +10,7 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
     capability: { available: true, devices: [{ deviceId: "fake-private", label: "Private endpoint" }, { deviceId: "fake-stream", label: "Stream endpoint" }], reason: null, nextStep: null },
     muted: false, routes: []
   };
-  let saved = alertEditorDocumentSchema.parse({
+  let saved = alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "routing-alert", setId: "routing-set", providerKind: "twitch", eventType: "follow", kind: "default", parentAlertId: null,
     name: "Routing example", enabled: true, conditions: [], durationMs: 2_000,
     outputs: { browserSource: false, deviceRouteIds: [] },
@@ -84,7 +84,7 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
   await expect(output).toBeChecked();
   await page.getByRole("button", { name: "Preview", exact: true }).click();
   expect(tests).toEqual([]);
-  await page.getByRole("button", { name: "Send test", exact: true }).click();
+  await page.getByRole("button", { name: "Test draft", exact: true }).click();
   await expect(page.locator(".management-toast--success")).toContainText("Test queued on Private mix. Reference ref-routing.");
   expect(tests).toEqual([expect.objectContaining({ targetProfileId: null, includeAudio: true, document: expect.objectContaining({ outputs: { browserSource: false, deviceRouteIds: ["private"] } }) })]);
   await page.getByRole("button", { name: "Save", exact: true }).click();

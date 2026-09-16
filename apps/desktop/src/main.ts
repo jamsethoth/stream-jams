@@ -2,6 +2,10 @@ import { isAbsolute, resolve } from "node:path";
 import { app, dialog, utilityProcess } from "electron";
 import { AudioWindow, registerAudioPlayerScheme } from "./audio/audio-window.js";
 import { AudioHost } from "./audio/audio-host.js";
+import { OverlayHost } from "./overlay/overlay-host.js";
+import { enumerateDesktopDisplays } from "./overlay/overlay-window.js";
+import { PrivateOverlayWindow } from "./overlay/private-overlay-window.js";
+import { overlayPlayerScheme } from "./overlay/overlay-player-policy.js";
 import { closeAction } from "./close-policy.js";
 import { ManagementWindow } from "./management-window.js";
 import { ServiceSupervisor } from "./service-supervisor.js";
@@ -12,7 +16,7 @@ import { ShutdownLog } from "./shutdown-log.js";
 // that subprocess can remain in a terminating state after every JS quit event,
 // delaying the owned desktop process and locking its isolated profile.
 app.disableHardwareAcceleration();
-registerAudioPlayerScheme();
+registerAudioPlayerScheme([overlayPlayerScheme]);
 
 const isolatedUserData = process.env.STREAM_JAMS_DESKTOP_USER_DATA_PATH;
 if (isolatedUserData !== undefined) {
@@ -21,6 +25,9 @@ if (isolatedUserData !== undefined) {
 }
 let management: ManagementWindow | null = null;
 const audio = new AudioHost(callbacks => new AudioWindow(callbacks));
+const overlay = new OverlayHost((config, callbacks) => PrivateOverlayWindow.create(config, callbacks), () => ({
+  available: process.platform === "win32", displays: process.platform === "win32" ? enumerateDesktopDisplays() : []
+}));
 let tray: ReturnType<typeof createTray> | null = null;
 let exiting = false;
 let quitPending: Promise<void> | null = null;
@@ -31,7 +38,7 @@ let shutdownLog: ShutdownLog | undefined;
 const supervisor = new ServiceSupervisor(() => utilityProcess.fork(resolve(import.meta.dirname, "service-worker.js"), [], { serviceName: "Stream Jams local service", stdio: "ignore" }), () => {
   tray?.update(supervisor.snapshot);
   if (supervisor.state === "failed" && !exiting) void showFailure();
-}, audio);
+}, audio, overlay);
 
 async function start(): Promise<void> {
   try {
@@ -81,6 +88,9 @@ function requestQuit(): void {
     shutdownLog?.record("audio-close-requested");
     await audio.close();
     shutdownLog?.record("audio-closed");
+    shutdownLog?.record("overlay-close-requested");
+    await overlay.close();
+    shutdownLog?.record("overlay-closed");
     shutdownLog?.record("windows-destroy-requested");
     management?.window.destroy();
     tray?.tray.destroy();

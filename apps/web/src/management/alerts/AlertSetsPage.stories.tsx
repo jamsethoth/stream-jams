@@ -29,7 +29,12 @@ export const ActiveSet: Story = {
     await expect(alertSets).toContainElement(selectedSet);
     await expect(alertSets).not.toContainElement(browserSources);
     await expect(within(selectedSet).getByRole("button", { name: "Collapse Default" })).toHaveAttribute("aria-expanded", "true");
-    await within(selectedSet).findByRole("button", { name: "Test New follower" });
+    await within(selectedSet).findByRole("button", { name: "Test saved New follower" });
+    const showUnused = within(selectedSet).getByRole("checkbox", { name: "Show unused event types" });
+    await expect(showUnused).not.toBeChecked();
+    await expect(within(selectedSet).queryByRole("button", { name: /Resubscription alerts/u })).not.toBeInTheDocument();
+    await userEvent.click(showUnused);
+    await expect(within(selectedSet).getByRole("button", { name: /Resubscription alerts/u })).toBeVisible();
   }
 };
 
@@ -96,7 +101,7 @@ export const NarrowRtlExpandedCopy: Story = {
     const canvas = within(canvasElement);
     await expect(document.documentElement).toHaveAttribute("dir", "rtl");
     await expect((await canvas.findAllByRole("button", { name: /Edit A very long localized/u }))[0]).toBeVisible();
-    await expect(canvas.getAllByRole("button", { name: /Test A very long localized/u })[0]).toBeVisible();
+    await expect(canvas.getAllByRole("button", { name: /Test saved A very long localized/u })[0]).toBeVisible();
   }
 };
 
@@ -312,7 +317,9 @@ export const DefaultWithVariations: Story = {
     const canvas = within(canvasElement);
     const variation = await canvas.findByRole("row", { name: /Large raid/u });
     await expect(variation).toHaveClass("alert-sets-page__variation-row");
+    await userEvent.click(canvas.getByLabelText("More actions for New raid"));
     await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
+    await expect(canvas.getAllByRole("button", { name: "Add variation to New raid" })).toHaveLength(1);
   }
 };
 
@@ -323,8 +330,8 @@ export const GroupedInventoryStates: Story = {
     await expect(await canvas.findByRole("button", { name: /Collapse Follow/u })).toHaveTextContent("2 defaults");
     await expect(canvas.getByText("Relative weight 3; the selected sample's result depends on eligible alerts.")).toBeVisible();
     await expect(canvas.getByRole("heading", { name: "Orphan variations" })).toBeVisible();
-    await expect(canvas.getByRole("button", { name: /Collapse future_celebration/u })).toBeVisible();
-    await expect(canvas.queryByRole("button", { name: /Add alert for future_celebration/u })).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: /Collapse Future celebration/u })).toBeVisible();
+    await expect(canvas.queryByRole("button", { name: /Add alert for Future celebration/u })).not.toBeInTheDocument();
     await userEvent.type(canvas.getByLabelText("Search"), "large community");
     await expect(canvas.getByRole("button", { name: /Collapse Community gift/u })).toHaveAttribute("aria-expanded", "true");
   }

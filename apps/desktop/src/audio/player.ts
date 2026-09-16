@@ -65,7 +65,7 @@ async function playFixture(request: { source: string; deviceIds: readonly string
   const bytes = Uint8Array.from(atob(match[1]!), char => char.charCodeAt(0));
   const result = await player.play({ generation, batch: {
     playbackId: crypto.randomUUID(), documentId: "capability-fixture", durationMs: 30_000, muted: false,
-    layers: [{ layerId: "fixture", assetId: "fixture", volume: request.volume }],
+    layers: [{ sourceKind: "audio", layerId: "fixture", assetId: "fixture", volume: request.volume }],
     destinations: [...new Set(request.deviceIds)].map(deviceId => ({ deviceId, routeIds: [deviceId] }))
   }, assets: [{ assetId: "fixture", mimeType: "audio/wav", bytes }], deadlineMs: Date.now() + 30_000 });
   if (result.failedRouteIds.length > 0) throw new Error("An explicit output could not complete the fixture.");

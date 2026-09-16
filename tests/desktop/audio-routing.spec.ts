@@ -120,6 +120,8 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
     // Verify the rebuilt Settings UI against the real packaged service. This
     // route stays unbound and no UI Test action is invoked.
     await management.getByRole("link", { name: "Settings", exact: true }).click();
+    const audioSummary = management.locator("summary").filter({ hasText: "Audio outputs" });
+    if (!await audioSummary.evaluate((summary) => (summary.parentElement as HTMLDetailsElement).open)) await audioSummary.click();
     await expect(management.getByRole("heading", { name: "Audio outputs", exact: true })).toBeVisible();
     await management.getByLabel("New output name").fill("Silent UI route");
     await management.getByRole("button", { name: "Create output", exact: true }).click();
@@ -140,7 +142,7 @@ test("packaged audio player is isolated, hidden, persistent, and lists only expl
   }, () => finishDesktop(desktop, root, ownedPids, desktopProcess));
 });
 
-test("approved packaged capability check plays two explicit outputs independently, together, and after restart", async () => {
+test("approved packaged capability check plays two explicit outputs independently, together, and after restart", { tag: "@hardware" }, async () => {
   test.skip(process.env.STREAM_JAMS_AUDIO_TEST !== "1", "Physical audio output requires explicit approval.");
   const labels = process.env.STREAM_JAMS_AUDIO_TEST_OUTPUTS?.split("|").map((label) => label.trim()).filter(Boolean) ?? [];
   expect(labels, "Set STREAM_JAMS_AUDIO_TEST_OUTPUTS to two exact labels separated by |").toHaveLength(2);

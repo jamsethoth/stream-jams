@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { workerMessageSchema, type WorkerRequest } from "./desktop-ipc.js";
-import type { AudioTransportCommand, AudioTransportResult } from "@stream-jams/core";
+import type { AudioTransportCommand, AudioTransportResult, DesktopVisualCommand, DesktopVisualReply } from "@stream-jams/core";
+
+export interface SupervisedOverlayHost {
+  beginOwnership(): void;
+  refreshLease(): void;
+  serviceLost(): void;
+  handle(command: DesktopVisualCommand): Promise<DesktopVisualReply>;
+}
 
 export interface SupervisedAudioHost {
   beginOwnership(): void;
@@ -37,7 +44,7 @@ export class ServiceSupervisor {
   #stopError: Error | null = null;
   #commands = new Map<string, { resolve(): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }>();
 
-  constructor(private readonly spawn: () => ServiceWorker, private readonly changed: () => void = () => {}, private readonly audio?: SupervisedAudioHost) {}
+  constructor(private readonly spawn: () => ServiceWorker, private readonly changed: () => void = () => {}, private readonly audio?: SupervisedAudioHost, private readonly overlay?: SupervisedOverlayHost) {}
 
   start(): Promise<ServiceSnapshot> {
     if (this.state === "starting" || this.state === "running") return this.#startPromise!;
@@ -54,6 +61,7 @@ export class ServiceSupervisor {
       const worker = this.spawn();
       this.#worker = worker;
       this.audio?.beginOwnership();
+      this.overlay?.beginOwnership();
       worker.on("message", (message) => { if (this.#worker === worker) this.#receive(message, generation); });
       worker.on("exit", (code) => { if (this.#worker === worker) this.#exited(code); });
       this.#startTimer = setTimeout(() => this.#fail("The local service did not start within 20 seconds. Retry or quit."), 20_000);
@@ -81,6 +89,7 @@ export class ServiceSupervisor {
     if (this.#stopPromise !== null) return this.#stopPromise;
     if (this.#worker === null) return Promise.resolve();
     this.state = "stopping";
+    this.overlay?.serviceLost();
     clearTimeout(this.#startTimer);
     this.#startReject?.(new Error("Startup was cancelled by shutdown."));
     this.#startReject = null;
@@ -106,6 +115,20 @@ export class ServiceSupervisor {
     const parsed = workerMessageSchema.safeParse(candidate);
     if (!parsed.success) { this.#fail("The service sent an invalid desktop message. Retry or quit."); return; }
     const message = parsed.data;
+    if (message.type === "overlay-lease") { this.overlay?.refreshLease(); return; }
+    if (message.type === "overlay-request") {
+      const worker = this.#worker;
+      const permitted = this.state === "running" || this.state === "starting" ||
+        (this.state === "stopping" && ["stop", "close"].includes(message.command.type));
+      const result = permitted && this.overlay !== undefined ? this.overlay.handle(message.command) : Promise.reject(new Error("Overlay unavailable"));
+      void result.catch(() => null).then(reply => {
+        if (worker !== null && this.#worker === worker && generation === this.#generation) {
+          try { this.#send({ type: "overlay-response", generation, requestId: message.requestId, result: reply }); }
+          catch { this.#fail("The local overlay connection was lost. Retry or quit."); }
+        }
+      });
+      return;
+    }
     if (message.type === "audio-lease") { this.audio?.refreshLease(); return; }
     if (message.type === "audio-request") {
       const worker = this.#worker;
@@ -154,6 +177,7 @@ export class ServiceSupervisor {
   }
 
   #fail(message: string): void {
+    this.overlay?.serviceLost();
     this.audio?.serviceLost();
     clearTimeout(this.#startTimer);
     this.state = "failed";
@@ -166,6 +190,7 @@ export class ServiceSupervisor {
   }
 
   #exited(code: number): void {
+    this.overlay?.serviceLost();
     this.audio?.serviceLost();
     this.#worker = null;
     clearTimeout(this.#startTimer);

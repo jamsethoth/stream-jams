@@ -10,9 +10,67 @@ import type { AudioApi } from "../audio/audio-api.js";
 import type { ManagementApi } from "../management-api.js";
 import { DirtyNavigationProvider, useManagementNavigation } from "../navigation/dirty-navigation.js";
 import { SettingsPanel } from "./SettingsPanel.js";
+import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
+
+vi.mock("./overlay-surfaces-api.js", () => ({ defaultSurfaceSettingsApi: {
+  load: async () => ({ surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null } }),
+  save: vi.fn(), retry: vi.fn()
+} }));
 
 describe("SettingsPanel", () => {
-  afterEach(() => cleanup());
+  afterEach(() => { cleanup(); window.history.replaceState(null, "", "/manage/settings"); });
+
+  it("collapses advanced settings and preserves server edits across disclosure toggles", async () => {
+    const user = userEvent.setup();
+    render(<SettingsPanel audioApi={createAudioApi()} managementApi={createManagementApi()} />);
+
+    const serverSummary = await screen.findByText("Server settings");
+    const serverDetails = serverSummary.closest("details");
+    expect(serverDetails).not.toHaveAttribute("open");
+    expect((await screen.findByText(/Audio outputs · 1 configured/)).closest("details")).not.toHaveAttribute("open");
+    expect((await screen.findByText(/Overlay surfaces · 0 configured/)).closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("Data and backup").closest("details")).not.toHaveAttribute("open");
+
+    await user.click(serverSummary.closest("summary")!);
+    expect(serverDetails).toHaveAttribute("open");
+    const port = screen.getByLabelText("Port");
+    await user.clear(port);
+    await user.type(port, "40123");
+    await user.click(serverSummary);
+    await user.click(serverSummary);
+    expect(screen.getByLabelText("Port")).toHaveValue(40123);
+  });
+
+  it("opens backup restore from its hash and gates confirmation controls on valid preflight", async () => {
+    window.history.replaceState(null, "", "/manage/settings#backup-restore");
+    render(<SettingsPanel managementApi={createManagementApi()} />);
+
+    const backupDetails = (await screen.findByText("Data and backup")).closest("details");
+    expect(backupDetails).toHaveAttribute("open");
+    expect(screen.queryByLabelText("Type RESTORE to confirm")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /Regenerate overlay route keys/ })).not.toBeInTheDocument();
+
+    await userEvent.upload(screen.getByLabelText("Backup file"), backupFile());
+    expect(await screen.findByLabelText("Type RESTORE to confirm")).toBeVisible();
+    expect(screen.getByRole("checkbox", { name: /Regenerate overlay route keys/ })).toBeVisible();
+  });
+
+  it("saves both server and surface drafts through the shared navigation guard", async () => {
+    const user = userEvent.setup();
+    const managementApi = createManagementApi();
+    const value = { surfaces: [{ id: "unified-browser:default", kind: "unified-browser" as const, overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable" as const, message: null } };
+    const surfaceApi: SurfaceSettingsApi = { load: async () => value, save: vi.fn(async surface => ({ ...value, surfaces: [surface] })), retry: vi.fn() };
+    window.history.replaceState(null, "", "/manage/settings");
+    render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} managementApi={managementApi} surfaceApi={surfaceApi} /></DirtyNavigationProvider>);
+    await user.click(await screen.findByRole("checkbox", { name: "Show Alerts on Unified browser: default" }));
+    const port = screen.getByLabelText("Port");
+    await user.clear(port); await user.type(port, "40123");
+    await user.click(screen.getByRole("button", { name: "Go home" }));
+    await user.click(await screen.findByRole("button", { name: "Save and leave" }));
+    await waitFor(() => expect(window.location.pathname).toBe("/manage"));
+    expect(managementApi.updateServerConfig).toHaveBeenCalledWith({ host: "127.0.0.1", port: 40123 });
+    expect(surfaceApi.save).toHaveBeenCalledWith(expect.objectContaining({ layers: [{ moduleId: "alerts", visible: false }] }));
+  });
 
   it("saves the desktop opt-out explicitly and does not show it in CLI mode", async () => {
     const managementApi = createManagementApi({ getDesktopConfig: async () => ({ available: true, closeToTray: true }) });
@@ -47,6 +105,7 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel managementApi={managementApi} />);
 
     const panel = await screen.findByRole("region", { name: "Settings" });
+    await openDisclosure(user, "Data and backup");
     expect(await within(panel).findByText("C:/Users/James/.stream-jams/data")).toBeVisible();
     expect(within(panel).getByText(/Schema 9/)).toBeVisible();
     expect(within(panel).getByRole("group", { name: "Theme" })).toBeVisible();
@@ -67,7 +126,6 @@ describe("SettingsPanel", () => {
     const managementApi = createManagementApi({ getServerConfig });
 
     render(<SettingsPanel managementApi={managementApi} />);
-
     expect(await screen.findByText("Settings could not be loaded")).toBeVisible();
     expect(screen.getByRole("button", { name: "Retry loading settings" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "Save server settings" })).not.toBeInTheDocument();
@@ -84,6 +142,7 @@ describe("SettingsPanel", () => {
     const managementApi = createManagementApi();
 
     render(<SettingsPanel managementApi={managementApi} />);
+    await openDisclosure(user, "Data and backup");
 
     await user.click(await screen.findByRole("button", { name: "Open data folder" }));
     expect(managementApi.openDataFolder).toHaveBeenCalledOnce();
@@ -105,6 +164,7 @@ describe("SettingsPanel", () => {
     });
 
     render(<SettingsPanel managementApi={managementApi} />);
+    await openDisclosure(user, "Data and backup");
     await user.click(await screen.findByRole("button", { name: "Clear old logs now" }));
 
     expect(screen.getByRole("button", { name: "Clearing old logs..." })).toBeDisabled();
@@ -167,6 +227,7 @@ describe("SettingsPanel", () => {
         <SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} />
       </DirtyNavigationProvider>
     );
+    await openDisclosure(user, /^Audio outputs ·/);
 
     const name = await screen.findByLabelText("Output name");
     await user.clear(name);
@@ -186,6 +247,7 @@ describe("SettingsPanel", () => {
     const audioApi = createAudioApi();
     window.history.replaceState(null, "", "/manage/settings");
     render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Audio outputs ·/);
 
     await user.type(await screen.findByLabelText("New output name"), "Draft speakers");
     await user.click(screen.getByRole("button", { name: "Go home" }));
@@ -201,6 +263,7 @@ describe("SettingsPanel", () => {
     const audioApi = createAudioApi();
     window.history.replaceState(null, "", "/manage/settings");
     render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={audioApi} managementApi={createManagementApi()} /></DirtyNavigationProvider>);
+    await openDisclosure(user, /^Audio outputs ·/);
 
     await user.selectOptions(await screen.findByLabelText("New output device"), "endpoint-a");
     await user.click(screen.getByRole("button", { name: "Go home" }));
@@ -224,6 +287,7 @@ describe("SettingsPanel", () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
 
     render(<SettingsPanel managementApi={managementApi} />);
+    await openDisclosure(user, "Data and backup");
     await user.click(await screen.findByRole("button", { name: "Export backup" }));
 
     expect(await screen.findByRole("status")).toHaveClass("management-toast--success");
@@ -245,10 +309,37 @@ describe("SettingsPanel", () => {
     });
 
     render(<SettingsPanel managementApi={managementApi} />);
+    await openDisclosure(user, "Data and backup");
     await user.upload(await screen.findByLabelText("Backup file"), backupFile());
 
     expect(await screen.findByText("Backup asset checksum does not match")).toBeVisible();
-    expect(screen.getByRole("button", { name: "Restore configuration" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Restore configuration" })).not.toBeInTheDocument();
+  });
+
+  it("opens Data and backup and marks its summary when stored backup status needs attention", async () => {
+    const blocker = actionable("Backup storage is unavailable", "Check the data folder permissions.");
+    const managementApi = createManagementApi({
+      getConfigurationBackupSummary: vi.fn(async () => ({
+        state: "invalid" as const,
+        appVersion: "0.0.0",
+        schemaVersion: 9,
+        configurationRecordCount: 12,
+        assetCount: 3,
+        totalAssetBytes: 2048,
+        dataDirectory: "C:/isolated/data",
+        assetDirectory: "C:/isolated/assets",
+        logLevel: "INFO" as const,
+        logRetentionHours: 48,
+        secretExclusions: [],
+        blockers: [blocker]
+      }))
+    });
+
+    render(<SettingsPanel managementApi={managementApi} />);
+
+    const summary = await screen.findByText("Data and backup · Needs attention");
+    await waitFor(() => expect(summary.closest("details")).toHaveAttribute("open"));
+    expect(screen.getByText("Backup storage is unavailable")).toBeVisible();
   });
 
   it("rejects an oversized archive before reading or sending it", async () => {
@@ -258,6 +349,7 @@ describe("SettingsPanel", () => {
     Object.defineProperty(file, "size", { value: configurationBackupLimits.maxArchiveBytes + 1 });
 
     render(<SettingsPanel managementApi={managementApi} />);
+    await openDisclosure(user, "Data and backup");
     await user.upload(await screen.findByLabelText("Backup file"), file);
 
     expect(await screen.findByText("Backup file is too large")).toBeVisible();
@@ -269,6 +361,7 @@ describe("SettingsPanel", () => {
     const managementApi = createManagementApi();
 
     render(<SettingsPanel managementApi={managementApi} />);
+    await openDisclosure(user, "Data and backup");
     await user.upload(await screen.findByLabelText("Backup file"), backupFile());
 
     expect(await screen.findByText("1 alert set")).toBeVisible();
@@ -294,6 +387,12 @@ type SettingsApi = Pick<
   ManagementApi,
   "getDesktopConfig" | "updateDesktopConfig" | "getServerConfig" | "updateServerConfig" | "getConfigurationBackupSummary" | "exportConfigurationBackup" | "preflightConfigurationRestore" | "restoreConfiguration" | "openDataFolder" | "clearOldLogs"
 >;
+
+async function openDisclosure(user: ReturnType<typeof userEvent.setup>, name: string | RegExp): Promise<void> {
+  const label = await screen.findByText(name);
+  const details = label.closest("details");
+  if (details?.open !== true) await user.click(label.closest("summary")!);
+}
 
 function createManagementApi(overrides: Partial<SettingsApi> = {}): SettingsApi {
   return {
@@ -351,9 +450,9 @@ function createAudioApi(): AudioApi {
   };
 }
 
-function SettingsNavigationHarness({ audioApi, managementApi }: { readonly audioApi: AudioApi; readonly managementApi: SettingsApi }) {
+function SettingsNavigationHarness({ audioApi, managementApi, surfaceApi }: { readonly audioApi: AudioApi; readonly managementApi: SettingsApi; readonly surfaceApi?: SurfaceSettingsApi }) {
   const navigation = useManagementNavigation();
-  return <><button onClick={() => navigation.requestNavigation({ id: "home" })} type="button">Go home</button><SettingsPanel audioApi={audioApi} managementApi={managementApi} />{navigation.guard}</>;
+  return <><button onClick={() => navigation.requestNavigation({ id: "home" })} type="button">Go home</button><SettingsPanel audioApi={audioApi} surfaceApi={surfaceApi} managementApi={managementApi} />{navigation.guard}</>;
 }
 
 function backupArchive(): ConfigurationBackupArchive {

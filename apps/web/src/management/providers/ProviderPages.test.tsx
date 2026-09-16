@@ -166,6 +166,101 @@ describe("provider pages", () => {
     expect(within(screen.getByRole("row", { name: /Local Streamer\.bot/ })).getByText("Not running")).toBeInTheDocument();
   });
 
+  it("edits active Streamer.bot subscriptions only after live-impact confirmation", async () => {
+    const user = userEvent.setup();
+    const activeBot = { ...inactiveStreamerBot, active: true, intakeState: "active" as const, liveStatus: "healthy" as const };
+    const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>(
+      async (providerId, input) => ({
+        providerId,
+        available: true,
+        sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+        selected: input.externalSubscriptions,
+        unavailableSelections: [],
+        twitchBroadcasterId: input.twitchBroadcasterId
+      })
+    );
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeBot]),
+      getProvider: vi.fn(async () => detail(activeBot)),
+      getStreamerBotSubscriptions: vi.fn(async () => ({
+        providerId: activeBot.id,
+        available: true,
+        sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+        selected: [],
+        unavailableSelections: [],
+        twitchBroadcasterId: null
+      })),
+      getTwitchStatus: vi.fn(async () => ({
+        connected: true as const,
+        authorizationState: "ready" as const,
+        missingScopes: [],
+        account: {
+          accountId: "broadcaster-1",
+          login: "streamer",
+          displayName: "Streamer",
+          scopes: ["channel:read:redemptions"],
+          connectedAt: "2026-07-15T12:00:00.000Z",
+          updatedAt: "2026-07-15T12:00:00.000Z"
+        }
+      })),
+      updateStreamerBotSubscriptions
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "SceneChanged" }));
+    const save = screen.getByRole("button", { name: "Save subscriptions" });
+    expect(save).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: /I understand saving changes/ }));
+    await user.click(save);
+
+    await waitFor(() => expect(updateStreamerBotSubscriptions).toHaveBeenCalledWith(activeBot.id, {
+      twitchBroadcasterId: null,
+      externalSubscriptions: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }]
+    }));
+  });
+
+  it("lets operators explicitly remove saved Streamer.bot events that are no longer advertised", async () => {
+    const user = userEvent.setup();
+    const activeBot = { ...inactiveStreamerBot, active: true, intakeState: "active" as const, liveStatus: "healthy" as const };
+    const updateStreamerBotSubscriptions = vi.fn<ProviderPageApi["updateStreamerBotSubscriptions"]>(
+      async (providerId, input) => ({
+        providerId,
+        available: true,
+        sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+        selected: input.externalSubscriptions,
+        unavailableSelections: [],
+        twitchBroadcasterId: input.twitchBroadcasterId
+      })
+    );
+    const api = providerApi({
+      listRegisteredProviders: vi.fn(async () => [activeBot]),
+      getProvider: vi.fn(async () => detail(activeBot)),
+      getStreamerBotSubscriptions: vi.fn(async () => ({
+        providerId: activeBot.id,
+        available: true,
+        sources: [{ sourceKey: "OBS", eventTypes: ["SceneChanged"] }],
+        selected: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+        unavailableSelections: [{ sourceKey: "OBS", eventTypes: ["MissingEvent"] }],
+        twitchBroadcasterId: null
+      })),
+      updateStreamerBotSubscriptions
+    });
+
+    render(<EventSourcesPage managementApi={api} />);
+
+    const unavailable = await screen.findByRole("checkbox", { name: "MissingEvent (no longer advertised)" });
+    expect(unavailable).toBeChecked();
+    await user.click(unavailable);
+    await user.click(screen.getByRole("checkbox", { name: /I understand saving changes/ }));
+    await user.click(screen.getByRole("button", { name: "Save subscriptions" }));
+
+    await waitFor(() => expect(updateStreamerBotSubscriptions).toHaveBeenCalledWith(activeBot.id, {
+      twitchBroadcasterId: null,
+      externalSubscriptions: []
+    }));
+  });
+
   it("reconnects an existing Twitch provider without registering a duplicate", async () => {
     const user = userEvent.setup();
     const failedTwitch = {
@@ -797,10 +892,15 @@ describe("provider pages", () => {
     const testVoiceButton = screen.getByRole("button", { name: "Test voice" });
     expect(testVoiceButton).toBeDisabled();
     expect(screen.getByText("Save a default voice alias before testing Speaker.bot.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Volume (0–1)")).toHaveAttribute("aria-describedby", "tts-volume-guidance");
+    expect(screen.getByText("1 = 100% volume; 0 = silent")).toBeVisible();
+    expect(screen.getByLabelText("Minimum rate (×)")).toHaveAttribute("aria-describedby", "tts-rate-guidance");
+    expect(screen.getByLabelText("Maximum rate (×)")).toHaveAttribute("aria-describedby", "tts-rate-guidance");
+    expect(screen.getByText("1× is normal speed; 0.5× is half speed; 2× is double speed.")).toBeVisible();
     await user.type(screen.getByLabelText("Default voice alias"), "EventVoice");
     expect(testVoiceButton).toBeDisabled();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.6");
     await user.click(screen.getByRole("button", { name: "Save safety settings" }));
     expect(updateTtsSafety).toHaveBeenCalledWith(activeSpeakerBot.id, {
       ...safety,
@@ -827,8 +927,8 @@ describe("provider pages", () => {
 
     render(<TtsProvidersPage managementApi={api} />);
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.5");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.5");
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
 
     const dialog = screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" });
@@ -836,7 +936,7 @@ describe("provider pages", () => {
     expect(within(dialog).getByRole("button", { name: "Discard" })).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Volume")).toHaveValue(0.5);
+    expect(screen.getByLabelText("Volume (0–1)")).toHaveValue(0.5);
 
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Discard" }));
@@ -856,8 +956,8 @@ describe("provider pages", () => {
 
     render(<TtsProvidersPage managementApi={api} />);
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.6");
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 
@@ -876,8 +976,8 @@ describe("provider pages", () => {
 
     render(<TtsProvidersPage managementApi={api} />);
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.6");
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 
@@ -919,6 +1019,22 @@ function providerApi(overrides: Partial<ProviderPageApi> = {}): ProviderPageApi 
     validateProvider: vi.fn(async () => validResult),
     registerProvider: vi.fn(async () => ({ status: "validation-failed" as const, provider: null, validation: invalidResult })),
     getProvider: vi.fn(async () => detail(activeTwitch)),
+    getStreamerBotSubscriptions: vi.fn(async (providerId) => ({
+      providerId,
+      available: false,
+      sources: [],
+      selected: [],
+      unavailableSelections: [],
+      twitchBroadcasterId: null
+    })),
+    updateStreamerBotSubscriptions: vi.fn(async (providerId, input) => ({
+      providerId,
+      available: true,
+      sources: input.externalSubscriptions,
+      selected: input.externalSubscriptions,
+      unavailableSelections: [],
+      twitchBroadcasterId: input.twitchBroadcasterId
+    })),
     activateProvider: vi.fn(async () => ({
       provider: activeTwitch,
       replacedProviderId: null,

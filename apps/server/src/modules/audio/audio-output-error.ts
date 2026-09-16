@@ -1,4 +1,4 @@
-import type { AudioRouteReference } from "@stream-jams/core";
+import type { AudioRouteReference, ModuleMediaReference } from "@stream-jams/core";
 
 export class AudioOutputError extends Error {
   constructor(
@@ -7,6 +7,7 @@ export class AudioOutputError extends Error {
     message: string,
     readonly nextStep: string,
     readonly routeIds: readonly string[] = [],
-    readonly references: readonly AudioRouteReference[] = []
+    readonly references: readonly AudioRouteReference[] = [],
+    readonly owners: readonly ModuleMediaReference[] = []
   ) { super(message); }
 }

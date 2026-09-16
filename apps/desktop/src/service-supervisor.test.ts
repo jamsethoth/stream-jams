@@ -20,6 +20,31 @@ function fixture() {
   return { worker, supervisor };
 }
 
+it("routes overlay RPC separately, ignores stale leases, and clears visuals before shutdown", async () => {
+  const worker = new Worker();
+  const overlay = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(async () => ({ type: "ok" as const })) };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, overlay);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation as number;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  expect(overlay.beginOwnership).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "overlay-lease", generation: generation + 1, requestId: null });
+  expect(overlay.refreshLease).not.toHaveBeenCalled();
+  worker.emit("message", { type: "overlay-lease", generation, requestId: null });
+  expect(overlay.refreshLease).toHaveBeenCalledOnce();
+  const requestId = randomUUID();
+  worker.emit("message", { type: "overlay-request", generation, requestId, command: { type: "retry" } });
+  await vi.waitFor(() => expect(worker.messages.at(-1)).toEqual({ type: "overlay-response", generation, requestId, result: { type: "ok" } }));
+  const stop = supervisor.stop();
+  expect(overlay.serviceLost).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "overlay-request", generation, requestId, command: { type: "retry" } });
+  await vi.waitFor(() => expect(worker.messages.at(-1)).toMatchObject({ type: "overlay-response", result: null }));
+  expect(overlay.handle).toHaveBeenCalledOnce();
+  worker.emit("exit", 0);
+  await stop;
+});
+
 it("routes only owned validated audio RPC and tears audio down with service loss", async () => {
   const worker = new Worker();
   const audio = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(async () => ({ type: "devices" as const, devices: [] })) };

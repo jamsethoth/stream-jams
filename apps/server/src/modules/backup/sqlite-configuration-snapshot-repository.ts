@@ -1,10 +1,14 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import {
   alertCollectionSchema,
-  alertEditorDocumentSchema,
+  parseStoredAlertEditorDocument,
   audioOutputRouteSchema,
+  surfaceConfigurationSchema,
   alertRuleSchema,
   assetMetadataUpdateInputSchema,
+  effectBindingIdentity,
+  effectBindingSchema,
+  effectVariantSchema,
   normalizeModerationSettings,
   assetRecordSchema,
   overlayPurposeSchema,
@@ -14,6 +18,7 @@ import {
   providerIntakeStateSchema,
   providerKindSchema,
   registeredProviderDetailSchema,
+  screenEffectDocumentSchema,
   targetProfileIdSchema,
   type ConfigurationBackupArchive,
   type ConfigurationBackupOutput,
@@ -35,6 +40,7 @@ interface TableDefinition {
 
 const tableDefinitions = [
   table("overlay_module_config", ["module_id", "enabled", "config_json", "updated_at"], ["module_id"], ["config_json"]),
+  table("overlay_surfaces", ["id", "kind", "configuration_json", "updated_at"], ["id"], ["configuration_json"]),
   table("alert_collections", ["id", "name", "enabled"], ["id"]),
   table("alert_rules", ["id", "name", "event_type", "enabled", "cooldown_seconds", "priority"], ["id"]),
   table("asset_metadata", ["id", "original_file_name", "media_type", "mime_type", "size_bytes", "checksum"], ["id"]),
@@ -58,6 +64,11 @@ const tableDefinitions = [
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
   table("audio_output_routes", ["id", "name", "device_id", "device_label"], ["id"], [],
     "SELECT id, name, NULL AS device_id, NULL AS device_label FROM audio_output_routes"),
+  table("screen_effects", ["id", "schema_version", "name", "enabled", "description", "category", "priority", "cooldown_seconds", "updated_at"], ["id"]),
+  table("screen_effect_variants", ["id", "effect_id", "position", "kind", "enabled", "weight", "document_json", "visual_asset_id", "sound_asset_id"], ["effect_id", "position", "id"], ["document_json"]),
+  table("screen_effect_bindings", ["id", "effect_id", "position", "kind", "canonical_identity", "document_json"], ["effect_id", "position", "id"], ["document_json"]),
+  table("screen_effect_audio_routes", ["variant_id", "route_id", "position"], ["variant_id", "position", "route_id"]),
+  table("module_playback_settings", ["module_id", "paused", "cooldown_seconds", "updated_at"], ["module_id"]),
   table("alert_editor_documents", ["alert_id", "document_json", "updated_at"], ["alert_id"], ["document_json"]),
   table(
     "alert_moderation_settings",
@@ -92,7 +103,12 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     for (const definition of tableDefinitions) {
       const select = definition.select ?? `SELECT ${definition.columns.join(", ")} FROM ${definition.name}`;
       const rows = this.connection.prepare(`${select} ORDER BY ${definition.orderBy.join(", ")}`).all();
-      tables[definition.name] = rows.map(toPlainRecord);
+      tables[definition.name] = rows.map(row => {
+        const record = toPlainRecord(row);
+        if (definition.name === "overlay_surfaces") return portableSurfaceRow(record);
+        if (definition.name === "screen_effects") return { ...record, enabled: 0 };
+        return record;
+      });
     }
 
     const providerReconnectMetadata = this.connection
@@ -148,12 +164,18 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
   validate(configuration: BackupConfiguration): readonly string[] {
     const errors: string[] = [];
     const tableNames = Object.keys(configuration.tables);
+    const presentScreenEffectTables = [...screenEffectTableNames].filter((name) => configuration.tables[name] !== undefined);
+    if (presentScreenEffectTables.length > 0 && presentScreenEffectTables.length !== screenEffectTableNames.size) {
+      const missing = [...screenEffectTableNames].filter((name) => configuration.tables[name] === undefined);
+      errors.push(`Screen Effects backup tables are incomplete; missing: ${missing.join(", ")}.`);
+    }
     for (const name of tableNames) {
       if (!definitionsByName.has(name)) errors.push(`Unknown backup table "${name}".`);
     }
     for (const definition of tableDefinitions) {
       const rows = configuration.tables[definition.name];
       if (rows === undefined) {
+        if (definition.name === "overlay_surfaces" || screenEffectTableNames.has(definition.name)) continue;
         errors.push(`Required backup table "${definition.name}" is missing.`);
         continue;
       }
@@ -216,6 +238,13 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
           }
           continue;
         }
+        if (definition.name === "overlay_surfaces") {
+          const rows = input.tables.overlay_surfaces ?? [{ id: "desktop:primary", kind: "desktop",
+            configuration_json: JSON.stringify({ id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] }),
+            updated_at: new Date().toISOString() }];
+          for (const row of rows) insertCapturedRows(this.connection, definition.name, [portableSurfaceRow(row)]);
+          continue;
+        }
         if (definition.name === "alert_moderation_settings") {
           const placeholders = definition.columns.map(() => "?").join(", ");
           const statement = this.connection.prepare(
@@ -235,18 +264,47 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
           }
           continue;
         }
+        if (definition.name === "module_playback_settings") {
+          const rows = input.tables.module_playback_settings ?? ["alerts", "screen-effects"].map((moduleId) => ({
+            module_id: moduleId,
+            paused: 0,
+            cooldown_seconds: 0,
+            updated_at: new Date().toISOString()
+          }));
+          insertCapturedRows(this.connection, definition.name, rows);
+          continue;
+        }
         const placeholders = definition.columns.map(() => "?").join(", ");
         const statement = this.connection.prepare(`INSERT INTO ${definition.name} (${definition.columns.join(", ")}) VALUES (${placeholders})`);
         for (const row of input.tables[definition.name] ?? []) {
-          statement.run(...definition.columns.map((column) => row[column] as SQLInputValue));
+          statement.run(...definition.columns.map((column) => {
+            if (definition.name === "alert_editor_documents" && column === "document_json") {
+              return JSON.stringify(parseStoredAlertEditorDocument(parseJsonValue(row[column])));
+            }
+            if (definition.name === "screen_effects" && column === "enabled") return 0;
+            return row[column] as SQLInputValue;
+          }));
         }
       }
     });
   }
 }
 
+const screenEffectTableNames = new Set([
+  "screen_effects",
+  "screen_effect_variants",
+  "screen_effect_bindings",
+  "screen_effect_audio_routes",
+  "module_playback_settings"
+]);
+
 function isSqliteRestorePoint(value: unknown): value is SqliteConfigurationRestorePoint {
   return typeof value === "object" && value !== null && "marker" in value && value.marker === restorePointMarker && "tables" in value;
+}
+
+function portableSurfaceRow(row: BackupRow): BackupRow {
+  const config = surfaceConfigurationSchema.parse(JSON.parse(String(row.configuration_json)));
+  return { ...row, configuration_json: JSON.stringify(config.kind === "desktop" ? { ...config, enabled: false, displayId: null } : config) };
 }
 
 function insertCapturedRows(connection: DatabaseSync, tableName: string, rows: readonly BackupRow[]): void {
@@ -323,6 +381,12 @@ function visitJson(value: unknown, path: readonly string[]): string | null {
 
 function validateDomainRows(tables: BackupConfiguration["tables"]): readonly string[] {
   const errors: string[] = [];
+  for (const [index, row] of (tables.overlay_surfaces ?? []).entries()) {
+    const parsed = surfaceConfigurationSchema.safeParse(parseJsonValue(row.configuration_json));
+    if (!parsed.success || parsed.data.id !== row.id || parsed.data.kind !== row.kind) {
+      errors.push(`overlay_surfaces[${index}] contains invalid surface configuration or identity.`);
+    }
+  }
 
   const moderationRows = tables.alert_moderation_settings ?? [];
   if (moderationRows.length !== 1) {
@@ -498,19 +562,126 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     if (row.device_id !== null || row.device_label !== null) errors.push(`audio_output_routes[${index}] must be unbound in a portable backup.`);
     if (typeof row.name === "string" && row.name !== row.name.trim()) errors.push(`audio_output_routes[${index}].name must be trimmed.`);
   }
+  errors.push(...validateScreenEffects(tables));
   const audioRouteIds = new Set((tables.audio_output_routes ?? []).map(row => row.id));
   for (const [index, row] of (tables.alert_editor_documents ?? []).entries()) {
-    const result = alertEditorDocumentSchema.safeParse(parseJsonValue(row.document_json));
-    pushSchemaError(errors, `alert_editor_documents[${index}]`, result);
-    if (result.success && result.data.id !== row.alert_id) {
+    let document;
+    try {
+      document = parseStoredAlertEditorDocument(parseJsonValue(row.document_json));
+    } catch {
+      errors.push(`alert_editor_documents[${index}] failed domain validation.`);
+      continue;
+    }
+    if (document.id !== row.alert_id) {
       errors.push(`alert_editor_documents[${index}].alert_id does not match document_json.id.`);
     }
-    if (result.success && result.data.outputs.deviceRouteIds.some(id => !audioRouteIds.has(id))) {
+    if (document.outputs.deviceRouteIds.some(id => !audioRouteIds.has(id))) {
       errors.push(`alert_editor_documents[${index}] references a missing audio route.`);
     }
   }
 
   return errors;
+}
+
+function validateScreenEffects(tables: BackupConfiguration["tables"]): readonly string[] {
+  if (tables.screen_effects === undefined) return [];
+  const errors: string[] = [];
+  const parsedVariants = new Map<string, ReturnType<typeof effectVariantSchema.parse>>();
+  for (const [index, row] of (tables.screen_effect_variants ?? []).entries()) {
+    const parsed = effectVariantSchema.safeParse(parseJsonValue(row.document_json));
+    if (!parsed.success) {
+      pushSchemaError(errors, `screen_effect_variants[${index}].document_json`, parsed);
+      continue;
+    }
+    parsedVariants.set(String(row.id), parsed.data);
+    const visualAssetId = parsed.data.visual?.assetId ?? null;
+    const soundAssetId = parsed.data.sound?.assetId ?? null;
+    if (
+      parsed.data.id !== row.id ||
+      parsed.data.kind !== row.kind ||
+      (parsed.data.enabled ? 1 : 0) !== row.enabled ||
+      parsed.data.weight !== row.weight ||
+      visualAssetId !== row.visual_asset_id ||
+      soundAssetId !== row.sound_asset_id
+    ) {
+      errors.push(`screen_effect_variants[${index}] does not match its document JSON.`);
+    }
+    const routeIds = (tables.screen_effect_audio_routes ?? [])
+      .filter((route) => route.variant_id === row.id)
+      .sort((left, right) => Number(left.position) - Number(right.position))
+      .map((route) => String(route.route_id));
+    if (!sameStrings(routeIds, parsed.data.outputs.deviceRouteIds)) {
+      errors.push(`screen_effect_variants[${index}] audio routes do not match its document JSON.`);
+    }
+  }
+
+  const parsedBindings = new Map<string, ReturnType<typeof effectBindingSchema.parse>>();
+  for (const [index, row] of (tables.screen_effect_bindings ?? []).entries()) {
+    const parsed = effectBindingSchema.safeParse(parseJsonValue(row.document_json));
+    if (!parsed.success) {
+      pushSchemaError(errors, `screen_effect_bindings[${index}].document_json`, parsed);
+      continue;
+    }
+    parsedBindings.set(String(row.id), parsed.data);
+    if (
+      parsed.data.id !== row.id ||
+      parsed.data.kind !== row.kind ||
+      effectBindingIdentity(parsed.data) !== row.canonical_identity
+    ) {
+      errors.push(`screen_effect_bindings[${index}] does not match its document JSON.`);
+    }
+  }
+
+  for (const [index, row] of tables.screen_effects.entries()) {
+    const variants = (tables.screen_effect_variants ?? [])
+      .filter((variant) => variant.effect_id === row.id)
+      .sort((left, right) => Number(left.position) - Number(right.position))
+      .flatMap((variant) => {
+        const parsed = parsedVariants.get(String(variant.id));
+        return parsed === undefined ? [] : [parsed];
+      });
+    const bindings = (tables.screen_effect_bindings ?? [])
+      .filter((binding) => binding.effect_id === row.id)
+      .sort((left, right) => Number(left.position) - Number(right.position))
+      .flatMap((binding) => {
+        const parsed = parsedBindings.get(String(binding.id));
+        return parsed === undefined ? [] : [parsed];
+      });
+    pushSchemaError(errors, `screen_effects[${index}]`, screenEffectDocumentSchema.safeParse({
+      schemaVersion: row.schema_version,
+      id: row.id,
+      name: row.name,
+      enabled: sqlBoolean(row.enabled),
+      description: row.description,
+      category: row.category,
+      priority: row.priority,
+      cooldownSeconds: row.cooldown_seconds,
+      bindings,
+      variants
+    }));
+    if (row.enabled !== 0) errors.push(`screen_effects[${index}] must be disabled in a portable backup.`);
+  }
+
+  const settings = tables.module_playback_settings ?? [];
+  if (!sameStrings(settings.map((row) => String(row.module_id)).sort(), ["alerts", "screen-effects"])) {
+    errors.push("module_playback_settings must contain exactly one Alerts and one Screen Effects row.");
+  }
+  for (const [index, row] of settings.entries()) {
+    if (
+      row.module_id !== "alerts" && row.module_id !== "screen-effects" ||
+      row.paused !== 0 && row.paused !== 1 ||
+      !Number.isInteger(row.cooldown_seconds) ||
+      Number(row.cooldown_seconds) < 0 ||
+      Number(row.cooldown_seconds) > 86_400
+    ) {
+      errors.push(`module_playback_settings[${index}] contains invalid module settings.`);
+    }
+  }
+  return errors;
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function normalizeModerationSettingsRow(row: BackupRow): ModerationSettings {
@@ -532,6 +703,7 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
   const errors: string[] = [];
   const constraints = [
     ["overlay_module_config", ["module_id"]],
+    ["overlay_surfaces", ["id"]],
     ["alert_collections", ["id"]],
     ["alert_rules", ["id"]],
     ["asset_metadata", ["id"]],
@@ -544,6 +716,15 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
     ["alert_rule_management_metadata", ["rule_id"]],
     ["asset_library_metadata", ["asset_id"]],
     ["audio_output_routes", ["id"]],
+    ["screen_effects", ["id"]],
+    ["screen_effect_variants", ["id"]],
+    ["screen_effect_variants", ["effect_id", "position"]],
+    ["screen_effect_bindings", ["id"]],
+    ["screen_effect_bindings", ["effect_id", "position"]],
+    ["screen_effect_bindings", ["effect_id", "canonical_identity"]],
+    ["screen_effect_audio_routes", ["variant_id", "route_id"]],
+    ["screen_effect_audio_routes", ["variant_id", "position"]],
+    ["module_playback_settings", ["module_id"]],
     ["alert_editor_documents", ["alert_id"]]
   ] as const;
   for (const [tableName, columns] of constraints) {
@@ -628,6 +809,9 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   const variantIds = ids("alert_variants", "id");
   const alertEditorDocumentIds = new Set([...ruleIds, ...variantIds]);
   const assetIds = ids("asset_metadata", "id");
+  const audioRouteIds = ids("audio_output_routes", "id");
+  const effectIds = ids("screen_effects", "id");
+  const effectVariantIds = ids("screen_effect_variants", "id");
   checkReferences(errors, tables.alert_rule_collections, "rule_id", ruleIds, "alert_rules");
   checkReferences(errors, tables.alert_rule_collections, "collection_id", collectionIds, "alert_collections");
   checkReferences(errors, tables.alert_rule_conditions, "rule_id", ruleIds, "alert_rules");
@@ -636,11 +820,23 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   checkReferences(errors, tables.alert_rule_management_metadata, "rule_id", ruleIds, "alert_rules");
   checkReferences(errors, tables.asset_library_metadata, "asset_id", assetIds, "asset_metadata");
   checkReferences(errors, tables.alert_editor_documents, "alert_id", alertEditorDocumentIds, "alert_rules or alert_variants");
+  checkReferences(errors, tables.screen_effect_variants, "effect_id", effectIds, "screen_effects");
+  checkReferences(errors, tables.screen_effect_bindings, "effect_id", effectIds, "screen_effects");
+  checkReferences(errors, tables.screen_effect_audio_routes, "variant_id", effectVariantIds, "screen_effect_variants");
+  checkReferences(errors, tables.screen_effect_audio_routes, "route_id", audioRouteIds, "audio_output_routes");
   for (const [index, row] of (tables.alert_variants ?? []).entries()) {
     for (const column of ["visual_asset_id", "audio_asset_id"] as const) {
       const value = row[column];
       if (value !== null && value !== undefined && !assetIds.has(String(value))) {
         errors.push(`alert_variants[${index}].${column} references missing asset_metadata "${String(value)}".`);
+      }
+    }
+  }
+  for (const [index, row] of (tables.screen_effect_variants ?? []).entries()) {
+    for (const column of ["visual_asset_id", "sound_asset_id"] as const) {
+      const value = row[column];
+      if (value !== null && value !== undefined && !assetIds.has(String(value))) {
+        errors.push(`screen_effect_variants[${index}].${column} references missing asset_metadata "${String(value)}".`);
       }
     }
   }

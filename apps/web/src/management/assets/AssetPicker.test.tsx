@@ -20,7 +20,7 @@ describe("AssetPicker", () => {
     expect(screen.queryByRole("button", { name: /Raid chime/ })).not.toBeInTheDocument();
     await userEvent.click(followerAsset);
     await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
-    expect(onSelect).toHaveBeenCalledWith("asset-image");
+    expect(onSelect).toHaveBeenCalledWith("asset-image", "image");
   });
 
   it("keeps invalid uploads in context with allowed types, limits, and a next step", async () => {
@@ -53,7 +53,7 @@ describe("AssetPicker", () => {
       displayName: "New follower art",
       tags: ["seasonal", "follow"]
     }));
-    expect(onSelect).toHaveBeenCalledWith("asset-new");
+    expect(onSelect).toHaveBeenCalledWith("asset-new", "image");
   });
 
   it("disables stale selection synchronously when compatible media types change", async () => {
@@ -93,7 +93,7 @@ describe("AssetPicker", () => {
     const audioOption = await screen.findByRole("button", { name: /Raid chime/ });
     expect(audioOption).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
-    expect(onSelect).toHaveBeenCalledWith("asset-audio");
+    expect(onSelect).toHaveBeenCalledWith("asset-audio", "audio");
   });
 
   it("disables stale selection synchronously when the selected asset ID changes", async () => {
@@ -145,7 +145,7 @@ function fixture() {
   const managementApi: AssetLibraryManagementApi = {
     listAssetLibraryItems: vi.fn(async () => [imageItem, audioItem]),
     updateAssetMetadata: vi.fn(async (_assetId, input) => ({ ...imageItem, id: "asset-new", displayName: input.displayName, tags: input.tags })),
-    getAssetChangeImpact: vi.fn(async () => ({ assetId: "asset-image", usage: imageItem.usage, canDelete: false, requiresConfirmation: true, warnings: [] })),
+    getAssetChangeImpact: vi.fn(async () => ({ assetId: "asset-image", usage: imageItem.usage, owners: [], canDelete: false, requiresConfirmation: true, warnings: [] })),
     deleteAsset: vi.fn(async () => undefined)
   };
   const assetApi: AssetApi = {

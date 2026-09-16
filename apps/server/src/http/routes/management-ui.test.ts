@@ -37,7 +37,7 @@ describe("management UI contract routes", () => {
     );
 
     expect(responses.map((response) => response.statusCode)).toEqual(requests.map(() => 200));
-    expect(responses[0]?.json()).toEqual({ readiness: [], activeAlertSet: null, actionableProblems: [] });
+    expect(responses[0]?.json()).toEqual({ readiness: [], activeAlertSet: null, alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] }, actionableProblems: [] });
     expect(responses[1]?.json()).toEqual([expect.objectContaining({ id: "provider-twitch-main" })]);
     expect(responses[4]?.json()).toEqual([expect.objectContaining({ id: "set-default" })]);
     expect(responses[5]?.json()).toEqual(expect.objectContaining({ id: "alert-follow" }));
@@ -429,7 +429,14 @@ describe("management UI contract routes", () => {
     });
     expect(registration.statusCode).toBe(201);
     expect(registration.json()).toEqual(expect.objectContaining({ status: "registered" }));
-    expect(service.registeredSetups).toEqual([setup]);
+    expect(service.registeredSetups).toEqual([{
+      ...setup,
+      configuration: {
+        ...setup.configuration,
+        externalSubscriptions: [],
+        twitchBroadcasterId: null
+      }
+    }]);
   });
 
   it("deactivates a registered provider through an explicit command", async () => {
@@ -766,7 +773,7 @@ class StubManagementUiQueryService {
   failLogCleanup = false;
 
   async getHomeSetupSummary() {
-    return { readiness: [], activeAlertSet: null, actionableProblems: [] };
+    return { readiness: [], activeAlertSet: null, alertConfiguration: { state: "no-active-set" as const, enabledAlertCount: 0, items: [] }, actionableProblems: [] };
   }
 
   async listRegisteredProviders(capability: "event-source" | "tts") {
@@ -949,7 +956,7 @@ class StubManagementUiQueryService {
   }
 
   async getAlertEditorDocument() {
-    return {
+    return { schemaVersion: 1,
       id: "alert-follow",
       setId: "set-default",
       providerKind: "twitch" as const,

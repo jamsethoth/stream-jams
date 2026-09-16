@@ -106,6 +106,16 @@ describe("SqliteAlertEditorDocumentRepository", () => {
     expect(JSON.parse(persisted.document_json)).toMatchObject({
       layers: expect.arrayContaining([expect.objectContaining({ type: "shape", fill: "#00FF0088" })])
     });
+
+    const oldVideo: Record<string, unknown> = { ...document, layers: [{ ...document.layers[0], type: "video", assetId: "clip" }] };
+    delete oldVideo.schemaVersion;
+    database.connection.prepare("UPDATE alert_editor_documents SET document_json = ? WHERE alert_id = ?").run(JSON.stringify(oldVideo), document.id);
+    const adapted = await repository.find(document.id);
+    expect(adapted).toMatchObject({ schemaVersion: 1, layers: [{ type: "video", playEmbeddedAudio: false, audioVolume: 1 }] });
+    expect((await repository.findMany([document.id])).get(document.id)).toEqual(adapted);
+    const configured = { ...adapted!, layers: adapted!.layers.map(layer => layer.type === "video" ? { ...layer, playEmbeddedAudio: true, audioVolume: 0.2 } : layer) };
+    await repository.save(configured);
+    expect(await repository.find(document.id)).toEqual(configured);
   });
 
   it("stores and deletes a variation document by its variant identity", async () => {
@@ -202,6 +212,7 @@ function alertVariant(id: string, name: string) {
 
 function editorDocument(): AlertEditorDocument {
   return {
+    schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

@@ -27,8 +27,82 @@ import {
   type OverlayPlaybackInstructionSink,
   type PlaybackCoordinatorDependencies
 } from "./playback-coordinator.js";
+import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
+
+const alertPlaybackId = (occurrenceId: string) => effectOccurrenceKey("alerts", occurrenceId);
 
 describe("PlaybackCoordinator", () => {
+  it("shares one scheduled epoch between browser, desktop and routed audio", async () => {
+    const audio = audioFixture();
+    const browser = { deliverPlaybackInstruction: vi.fn<OverlayPlaybackInstructionSink["deliverPlaybackInstruction"]>(() => ({ deliveredClientIds: ["obs"] })) };
+    const desktop = { play: vi.fn<NonNullable<PlaybackCoordinatorDependencies["desktopVisualSink"]>["play"]>(async () => {}), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+    const coordinator = createCoordinator({ ...audio.dependencies, desktopVisualSink: desktop, overlayPlaybackSink: browser });
+    const event = createCheerEvent();
+    const alert = createResolvedAlert(event.id, "resolved", "instruction");
+    const before = Date.now();
+    coordinator.enqueueResolvedTest({ sourceEvent: event, audio: [deviceAudio()], alerts: [{ ...alert, desktopVisualEligible: true,
+      overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledOnce());
+    const start = browser.deliverPlaybackInstruction.mock.calls[0]![0].timing!.startsAtEpochMs;
+    expect(start).toBeGreaterThanOrEqual(before + 100);
+    expect(desktop.play.mock.calls[0]![2]).toBe(start);
+    expect(audio.sink.play.mock.calls[0]![0].timing).toEqual({ startsAtEpochMs: start, endsAtEpochMs: start + 3000 });
+    audio.finished.resolve({ failedRouteIds: [] });
+    await coordinator.close();
+  });
+  it("waits for a first-class desktop recipient without any OBS client", async () => {
+    let complete!: () => void;
+    const desktop = { play: vi.fn(() => new Promise<void>(resolve => { complete = resolve; })), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+    const coordinator = createCoordinator({ desktopVisualSink: desktop, overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) } });
+    const event = createCheerEvent({ id: "desktop-only" });
+    const alert = createResolvedAlert(event.id, "resolved", "instruction");
+    const snapshot = coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [{ ...alert, desktopVisualEligible: true, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
+    expect(snapshot.current?.id).toBe("queue-item-1");
+    expect(desktop.play).toHaveBeenCalledOnce();
+    expect(desktop.play).toHaveBeenCalledWith(alertPlaybackId("queue-item-1"), [expect.objectContaining({ targetProfileId: "landscape" })], expect.any(Number));
+    expect(coordinator.completeCurrent().current?.id).toBe("queue-item-1");
+    complete();
+    await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
+    await coordinator.close();
+  });
+
+  it("does not settle healthy browser recipients when desktop playback fails", async () => {
+    const desktop = { play: vi.fn(async () => { throw new Error("display removed"); }), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+    const coordinator = createCoordinator({ desktopVisualSink: desktop, overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }) } });
+    const event = createCheerEvent({ id: "desktop-failure" });
+    const alert = createResolvedAlert(event.id, "resolved", "instruction");
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [{ ...alert, desktopVisualEligible: true, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
+    await vi.waitFor(() => expect(desktop.play).toHaveBeenCalledOnce());
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    expect(coordinator.reportInstructionFinished("obs", "queue-item-1:instruction").current).toBeNull();
+    await coordinator.close();
+  });
+
+  it("stops desktop obligations before advancing a skipped occurrence", async () => {
+    let finishStop!: () => void;
+    const desktop = { play: vi.fn(() => new Promise<void>(() => {})), stop: vi.fn(() => new Promise<void>(resolve => { finishStop = resolve; })), close: vi.fn(async () => {}) };
+    const coordinator = createCoordinator({ desktopVisualSink: desktop });
+    const event = createCheerEvent({ id: "desktop-skip" });
+    const alert = createResolvedAlert(event.id, "resolved", "instruction");
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [{ ...alert, desktopVisualEligible: true, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
+    const skipped = coordinator.skipCurrent();
+    expect(desktop.stop).toHaveBeenCalledWith(alertPlaybackId("queue-item-1"));
+    expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
+    finishStop(); await skipped;
+    expect(coordinator.getSnapshot().current).toBeNull();
+    await coordinator.close();
+  });
+
+  it("does not infer desktop eligibility from a legacy Landscape target alone", async () => {
+    const desktop = { play: vi.fn(async () => {}), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+    const coordinator = createCoordinator({ desktopVisualSink: desktop });
+    const event = createCheerEvent({ id: "legacy-landscape" });
+    const alert = createResolvedAlert(event.id, "legacy", "instruction");
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [{ ...alert, overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" } }] });
+    expect(desktop.play).not.toHaveBeenCalled();
+    await coordinator.close();
+  });
+
   it("retains a browser completion reported synchronously during delivery", () => {
     const coordinator = createCoordinator({
       overlayPlaybackSink: {
@@ -156,7 +230,7 @@ describe("PlaybackCoordinator", () => {
       await vi.advanceTimersByTimeAsync(4_999);
       expect(audio.sink.stop).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
-      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
       expect(delivered).toEqual([]);
 
       stopped.resolve(undefined);
@@ -215,7 +289,7 @@ describe("PlaybackCoordinator", () => {
       await vi.advanceTimersByTimeAsync(7_999);
       expect(audio.sink.stop).not.toHaveBeenCalled();
       await vi.advanceTimersByTimeAsync(1);
-      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
       expect(stoppedBrowser).toEqual([[delivered[0]!]]);
       expect(delivered).toHaveLength(1);
 
@@ -262,7 +336,7 @@ describe("PlaybackCoordinator", () => {
 
       await vi.advanceTimersByTimeAsync(8_000);
 
-      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
       expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
       expect(delivered).toHaveLength(1);
     } finally {
@@ -291,7 +365,7 @@ describe("PlaybackCoordinator", () => {
     });
 
     await expect(coordinator.skipCurrent()).resolves.toMatchObject({ current: null });
-    expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+    expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
   });
 
   it("closes device playback even when browser shutdown throws", async () => {
@@ -330,7 +404,7 @@ describe("PlaybackCoordinator", () => {
     const secondSkip = coordinator.skipCurrent();
 
     expect(secondSkip).toBe(firstSkip);
-    expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+    expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
     stopped.resolve(undefined);
     await Promise.all([firstSkip, secondSkip]);
     expect(coordinator.getSnapshot().current?.id).toBe("queue-item-2");
@@ -390,7 +464,7 @@ describe("PlaybackCoordinator", () => {
     coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "rejected-play" }), alerts: [], audio: [deviceAudio()] });
     coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "next" }), alerts: [], audio: [deviceAudio()] });
 
-    await vi.waitFor(() => expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1"));
+    await vi.waitFor(() => expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1")));
     expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
     expect(audio.sink.play).toHaveBeenCalledTimes(1);
 
@@ -411,7 +485,7 @@ describe("PlaybackCoordinator", () => {
       coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent({ id: "next" }), alerts: [], audio: [deviceAudio()] });
 
       await vi.advanceTimersByTimeAsync(0);
-      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith("queue-item-1");
+      expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
       expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
       expect(audio.sink.play).toHaveBeenCalledTimes(1);
 
@@ -457,7 +531,7 @@ describe("PlaybackCoordinator", () => {
     coordinator.replayRecent("queue-item-1");
     await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
     expect(audio.sink.play.mock.calls[1]?.[0]).toMatchObject({
-      playbackId: "queue-item-2", muted: true, layers: [{ assetId: "tone" }],
+      playbackId: alertPlaybackId("queue-item-2"), muted: true, layers: [{ assetId: "tone" }],
       destinations: [{ deviceId: "after-start" }]
     });
     expect(audio.sink.play.mock.calls[0]?.[0].destinations[0]?.deviceId).toBe("at-start");
@@ -557,15 +631,15 @@ describe("PlaybackCoordinator", () => {
     await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(1));
     expect(findEditorDocument).toHaveBeenCalledExactlyOnceWith("chosen");
     expect(audio.sink.play).toHaveBeenCalledWith(expect.objectContaining({
-      playbackId: "queue-item-1", documentId: "chosen",
-      layers: [{ layerId: "one", assetId: "tone", volume: 0.5 }, { layerId: "two", assetId: "tone", volume: 0.25 }]
+      playbackId: alertPlaybackId("queue-item-1"), documentId: "chosen",
+      layers: [{ sourceKind: "audio", layerId: "one", assetId: "tone", volume: 0.5 }, { sourceKind: "audio", layerId: "two", assetId: "tone", volume: 0.25 }]
     }));
     expect(coordinator.getSnapshot().current?.audio).toHaveLength(1);
     audio.finished.resolve({ failedRouteIds: [] });
     await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
     coordinator.replayRecent("queue-item-1");
     await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
-    expect(audio.sink.play.mock.calls[1]?.[0]).toMatchObject({ playbackId: "queue-item-2", documentId: "chosen" });
+    expect(audio.sink.play.mock.calls[1]?.[0]).toMatchObject({ playbackId: alertPlaybackId("queue-item-2"), documentId: "chosen" });
   });
 
   it.each(["disabled", "no-routes", "hidden"] as const)("does not dispatch device audio for %s live content", async mode => {
@@ -586,6 +660,39 @@ describe("PlaybackCoordinator", () => {
     expect(coordinator.getSnapshot().current).toBeNull();
   });
 
+  it("does not dispatch a stored GIF as device audio from a Video/GIF layer", async () => {
+    const audio = audioFixture();
+    const rule = createRule();
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule),
+      outputs: { browserSource: false, deviceRouteIds: ["personal"] },
+      layers: [{
+        id: "gif",
+        name: "Animated image",
+        type: "video",
+        visible: true,
+        order: 0,
+        animation,
+        assetId: "asset-gif",
+        playEmbeddedAudio: true,
+        audioVolume: 0.5
+      }]
+    };
+    const coordinator = createCoordinator({
+      ...audio.dependencies,
+      alertService: new RecordingAlertService([rule]),
+      assetRepository: new InMemoryAssetRepository({ "asset-gif": "gif" }),
+      findEditorDocument: async () => document,
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: [] }) }
+    });
+
+    await coordinator.enqueueEvent(createCheerEvent());
+
+    expect(audio.dependencies.audioOutputService.preparePlayback).not.toHaveBeenCalled();
+    expect(audio.sink.play).not.toHaveBeenCalled();
+    await coordinator.close();
+  });
+
   it("waits for both device and browser completion and ignores old device completion after skip", async () => {
     const audio = audioFixture();
     const stop = deferred<void>();
@@ -600,7 +707,7 @@ describe("PlaybackCoordinator", () => {
     coordinator.reportInstructionFinished("obs", "queue-item-1:visual");
     expect(coordinator.getSnapshot().current?.id).toBe("queue-item-1");
     const skipping = coordinator.skipCurrent();
-    expect(audio.sink.stop).toHaveBeenCalledWith("queue-item-1");
+    expect(audio.sink.stop).toHaveBeenCalledWith(alertPlaybackId("queue-item-1"));
     expect(audio.sink.play).toHaveBeenCalledTimes(1);
     const nextFinished = deferred<DeviceAudioResult>();
     audio.sink.play.mockReturnValueOnce(nextFinished.promise);
@@ -1350,6 +1457,7 @@ function createCoordinator(
     readonly clock?: MutableClock;
     readonly random?: () => number;
     readonly audioPlaybackSink?: AudioPlaybackSink;
+    readonly desktopVisualSink?: PlaybackCoordinatorDependencies["desktopVisualSink"];
     readonly audioOutputService?: PlaybackCoordinatorDependencies["audioOutputService"];
   } = {}
 ): PlaybackCoordinator {
@@ -1384,6 +1492,7 @@ function createCoordinator(
     ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
     ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink }),
     ...(options.audioPlaybackSink === undefined ? {} : { audioPlaybackSink: options.audioPlaybackSink }),
+    ...(options.desktopVisualSink === undefined ? {} : { desktopVisualSink: options.desktopVisualSink }),
     ...(options.audioOutputService === undefined ? {} : { audioOutputService: options.audioOutputService }),
     ...(options.findEditorDocument === undefined ? {} : {
       findEditorDocuments: async (editorIds: readonly string[]) => new Map(
@@ -1561,6 +1670,7 @@ function createSequentialPlaybackQueue(itemCount: number): PlaybackQueue {
           alerts: [createResolvedAlert(event.id, `resolved-${index}`, `instruction-${index}`)],
           audio: [],
           priority: 0,
+          sequence: index,
           status: "playing",
           enqueuedAt: "2026-05-30T12:00:00.000Z",
           startedAt: "2026-05-30T12:00:00.000Z",
@@ -1584,6 +1694,11 @@ function createSequentialPlaybackQueue(itemCount: number): PlaybackQueue {
     completeCurrent: advance,
     skipCurrent: advance,
     replayRecent: getSnapshot,
+    remove: () => false,
+    clearPending: () => 0,
+    isModulePaused: () => false,
+    setModulePaused: getSnapshot,
+    setSafetyState: getSnapshot,
     pause: getSnapshot,
     resume: getSnapshot,
     mute: getSnapshot,
@@ -1593,7 +1708,7 @@ function createSequentialPlaybackQueue(itemCount: number): PlaybackQueue {
 }
 
 function createEditorDocument(rule: AlertRule): AlertEditorDocument {
-  return {
+  return { schemaVersion: 1,
     id: rule.id,
     setId: rule.collectionIds[0]!,
     providerKind: "twitch",
@@ -1668,7 +1783,7 @@ function deferred<T>() {
 function deviceAudio(): ResolvedAlertAudio {
   return { documentId: "document", durationMs: 3000,
     outputs: { browserSource: false, deviceRouteIds: ["personal"] },
-    layers: [{ layerId: "sound", assetId: "tone", volume: 0.5 }] };
+    layers: [{ sourceKind: "audio", layerId: "sound", assetId: "tone", volume: 0.5 }] };
 }
 
 function audioFixture() {

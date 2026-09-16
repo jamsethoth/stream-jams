@@ -7,6 +7,7 @@ import type {
 } from "../overlays/types.js";
 import type { OverlayModuleConfigService } from "./module-config-service.js";
 import type { OverlayModuleSnapshot } from "./types.js";
+import { reconcileSurfaceLayers, type SurfaceRepository } from "./surface-configuration.js";
 
 export interface OverlayModuleSnapshotRequest {
   readonly moduleId: string;
@@ -38,15 +39,18 @@ export class InvalidOverlayModuleSnapshotError extends Error {
 export interface OverlayCompositionServiceDependencies {
   readonly configService: Pick<OverlayModuleConfigService, "getModuleConfig">;
   readonly runtime: OverlayModuleRuntime;
+  readonly surfaceRepository?: Pick<SurfaceRepository, "list">;
 }
 
 export class DefaultOverlayCompositionService implements OverlayCompositionService {
   readonly #configService: Pick<OverlayModuleConfigService, "getModuleConfig">;
   readonly #runtime: OverlayModuleRuntime;
+  readonly #surfaceRepository: Pick<SurfaceRepository, "list"> | undefined;
 
   constructor(dependencies: OverlayCompositionServiceDependencies) {
     this.#configService = dependencies.configService;
     this.#runtime = dependencies.runtime;
+    this.#surfaceRepository = dependencies.surfaceRepository;
   }
 
   async resolveModuleOutput(request: ModuleOutputRequest): Promise<OverlayComposition> {
@@ -63,8 +67,13 @@ export class DefaultOverlayCompositionService implements OverlayCompositionServi
 
   async resolveUnifiedOutput(request: UnifiedOutputRequest): Promise<OverlayComposition> {
     const modules: OverlayModuleSnapshot[] = [];
+    const surface = (await this.#surfaceRepository?.list())?.find(candidate =>
+      candidate.kind === "unified-browser" && candidate.overlayId === request.overlayId);
+    const layers = surface === undefined
+      ? request.enabledModuleIds.map(moduleId => ({ moduleId, visible: true }))
+      : reconcileSurfaceLayers(surface.layers, request.enabledModuleIds).reverse();
 
-    for (const moduleId of request.enabledModuleIds) {
+    for (const [zIndex, { moduleId, visible }] of layers.entries()) {
       const snapshot = await this.#resolveEnabledSnapshot({
         moduleId,
         overlayId: request.overlayId,
@@ -73,7 +82,8 @@ export class DefaultOverlayCompositionService implements OverlayCompositionServi
       });
 
       if (snapshot !== null) {
-        modules.push(snapshot);
+        // Retain media identity: surface membership changes presentation, not playback.
+        modules.push(surface === undefined ? snapshot : { ...snapshot, surfaceLayer: { visible, zIndex } });
       }
     }
 

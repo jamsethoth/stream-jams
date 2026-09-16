@@ -37,6 +37,7 @@ test("settings opens local data and clears retained logs with visible results", 
   });
 
   await page.goto("/manage/settings");
+  await page.getByText("Data and backup", { exact: true }).click();
   await page.getByRole("button", { name: "Open data folder" }).click();
   await expect(page.locator(".management-toast--success")).toContainText("Data folder opened");
   await page.getByRole("button", { name: "Clear old logs now" }).click();

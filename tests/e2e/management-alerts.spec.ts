@@ -169,6 +169,7 @@ test("management alerts reviews the starter set and safely manages its landscape
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/manage");
+  await page.getByRole("button", { name: "Navigation" }).click();
   await page.getByRole("link", { name: "Alerts" }).click();
 
   const browserSources = page.getByRole("region", { name: "Browser sources" });
@@ -192,7 +193,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   const alertRow = page.getByRole("row", { name: /New follower/u });
   const editAction = alertRow.getByRole("button", { name: "Edit New follower" });
   await expect(editAction).toBeVisible();
-  await expect(alertRow.getByRole("button", { name: "Test New follower" })).toBeVisible();
+  await expect(alertRow.getByRole("button", { name: "Test saved New follower" })).toBeVisible();
   const moreAction = alertRow.locator("summary[aria-label='More actions for New follower']");
   const compactControlMetrics = async (locator: typeof editAction) => locator.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -205,6 +206,12 @@ test("management alerts reviews the starter set and safely manages its landscape
     };
   });
   expect(await compactControlMetrics(moreAction)).toEqual(await compactControlMetrics(editAction));
+  await moreAction.focus();
+  await page.keyboard.press("Enter");
+  await expect(alertRow.getByRole("button", { name: "Sample message New follower" })).toHaveCount(1);
+  await expect(alertRow.getByRole("button", { name: "Add variation to New follower" })).toHaveCount(1);
+  await moreAction.click();
+  await expect(alertRow.getByText(/Saved input.*Browser Landscape.*Audio and TTS included/u)).toBeVisible();
   const enableToggle = alertRow.getByRole("button", { name: "Enable New follower" });
   await expect(enableToggle).toBeVisible();
   const enableBox = await enableToggle.boundingBox();
@@ -232,7 +239,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(reviewWarning).toContainText("Starter review marked complete.");
   await expect(reviewWarning).toContainText("Alerts remain disabled until you enable them.");
   listening = true;
-  await page.getByRole("button", { name: "Test New follower" }).click();
+  await page.getByRole("button", { name: "Test saved New follower" }).click();
   const successToast = page.locator(".management-toast--success");
   await expect(successToast).toContainText("Test queued on Landscape. Reference ref-inline-e2e.");
   const toastBounds = await successToast.boundingBox();
@@ -389,6 +396,7 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
 
   await page.goto("/manage/modules/alerts");
   const selectedSet = page.getByRole("region", { name: "Default alert set" });
+  await selectedSet.getByRole("checkbox", { name: "Show unused event types" }).check();
   await selectedSet.getByRole("button", { name: "Add alert for Community gift received" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add alert" });
   await expect(createDialog.getByLabel("Event type")).toBeDisabled();
@@ -412,7 +420,7 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
   await ruleConditions.getByRole("combobox", { name: "Rule conditions condition 1 field" }).selectOption("giftCount");
   await ruleConditions.getByRole("combobox", { name: "Rule conditions Gift count operator" }).selectOption("min");
   await expect(ruleConditions.getByRole("spinbutton", { name: "Rule conditions Gift count value" })).toBeVisible();
-  await page.getByLabel("Alert inspector").getByRole("button", { name: "Send test" }).click();
+  await page.getByLabel("Alert inspector").getByRole("button", { name: "Test draft" }).click();
   await expect(page.getByText(/Test queued on Landscape.*ref-community-gift/u)).toBeVisible();
   expect(testRequests).toEqual([expect.objectContaining({
     targetProfileId: "landscape",
@@ -502,6 +510,7 @@ test("management alerts creates a Raid alert from the selected Bold Pop theme", 
 
   await page.goto("/manage/modules/alerts");
   const selectedSet = page.getByRole("region", { name: "Default alert set" });
+  await selectedSet.getByRole("checkbox", { name: "Show unused event types" }).check();
   await selectedSet.getByRole("button", { name: "Add alert for Raid" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add alert" });
   const boldPopChoice = createDialog.getByRole("radio", { name: "Bold Pop" });
@@ -803,10 +812,10 @@ test("focused alert editor preserves reward IDs and previews representative samp
 
   const headerActions = page.locator(".alert-editor-page__header-actions");
   await expect(headerActions.getByRole("button", { name: "Preview", exact: true })).toBeEnabled();
-  await expect(headerActions.getByRole("button", { name: "Send test", exact: true })).toBeEnabled();
+  await expect(headerActions.getByRole("button", { name: "Test draft", exact: true })).toBeEnabled();
   await headerActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
-  await headerActions.getByRole("button", { name: "Send test", exact: true }).click();
+  await headerActions.getByRole("button", { name: "Test draft", exact: true }).click();
   await expect(page.getByText(/Test queued on Landscape.*ref-reward-e2e/u)).toBeVisible();
   expect(previewRequests).toHaveLength(1);
   expect(testRequests).toHaveLength(1);
@@ -1197,6 +1206,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   });
 
   await page.goto("/manage/modules/alerts");
+  await page.getByLabel("More actions for New raid").click();
   await page.getByRole("button", { name: "Add variation to New raid" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add variation to New raid" });
   await createDialog.getByLabel("Variation name").fill("Large raid");
@@ -1219,7 +1229,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await expect(page.getByText("Relative chance must be a positive whole number.", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
-  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Test draft", exact: true })).toBeDisabled();
   await relativeChance.fill("1");
   const variationConditions = page.getByRole("group", { name: "Variation conditions" });
   await variationConditions.getByRole("button", { name: "Add condition" }).click();
@@ -1232,7 +1242,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await page.getByRole("textbox", { name: "Session payload (JSON)" }).fill("{");
   await expect(explanation).toContainText("Correct the sample payload to explain selection.");
   await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
-  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
+  await expect(page.locator(".alert-editor-page__header-actions").getByRole("button", { name: "Test draft", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save" })).toBeEnabled();
   await page.getByRole("button", { name: "Save" }).click();
   await page.getByRole("dialog", { name: "Save changes to active alert?" }).getByRole("button", { name: "Save changes" }).click();
@@ -1257,7 +1267,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await page.getByRole("tab", { name: "Event" }).click();
   await expect(page.getByRole("region", { name: "Priority groups" }).getByRole("group", { name: "Priority group 1" })).toContainText("Large raid");
   await expect(page.getByRole("region", { name: "Priority groups" }).getByRole("group", { name: "Priority group 1" })).toContainText("Weighted raid");
-  await page.getByLabel("Alert inspector").getByRole("button", { name: "Send test" }).click();
+  await page.getByLabel("Alert inspector").getByRole("button", { name: "Test draft" }).click();
   await expect(page.getByText(/Test queued on Landscape.*ref-variation-selected/u)).toBeVisible();
   expect(testRequests).toEqual([expect.objectContaining({
     targetProfileId: "landscape",
@@ -1272,7 +1282,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   const headerActions = page.locator(".alert-editor-page__header-actions");
   await expect(headerActions.getByRole("button", { name: "Preview", exact: true })).toBeDisabled();
-  await expect(headerActions.getByRole("button", { name: "Send test" })).toBeDisabled();
+  await expect(headerActions.getByRole("button", { name: "Test draft" })).toBeDisabled();
   await reloadedMinimum.fill("20");
   await reloadedMaximum.fill("60");
   const reloadedGroups = page.getByRole("region", { name: "Priority groups" });
@@ -1307,6 +1317,54 @@ test("alert variation can be created edited duplicated and selectively deleted",
     { command: "duplicate", id: "variant-large-raid", body: null },
     { command: "delete", id: "variant-large-raid-copy", body: { confirmLiveImpact: true } }
   ]);
+});
+
+test("focused alert editor sends empty-content readiness to the layer controls", async ({ page }) => {
+  await mockManagementShell(page);
+  const source = alertEditorDocument();
+  const document = { ...source, layers: [] };
+  const overview = {
+    id: "set-default",
+    name: "Default",
+    active: true,
+    starter: false,
+    starterReviewState: "complete",
+    enabledAlertCount: 1,
+    targetProfiles: [{ id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 }],
+    validationIssues: [],
+    outputs: []
+  };
+  const detail = {
+    overview,
+    inventory: [{
+      id: "alert-follow",
+      setId: "set-default",
+      providerKind: "twitch",
+      eventType: "follow",
+      name: "New follower",
+      kind: "default",
+      enabled: true,
+      reviewState: "ready",
+      targetProfileIds: ["landscape"],
+      previewText: ""
+    }],
+    browserSources: []
+  };
+
+  await page.route("**/management/alert-sets", (route) => route.fulfill({ contentType: "application/json", json: [overview] }));
+  await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({ contentType: "application/json", json: detail }));
+  await page.route("**/management/alerts/alert-follow/editor", (route) => route.fulfill({ contentType: "application/json", json: document }));
+  await page.route("**/management/alerts/alert-follow/editor/variation-context", (route) => route.fulfill({
+    contentType: "application/json",
+    json: defaultVariationContext(document)
+  }));
+
+  await page.goto("/manage/modules/alerts/editor/alert-follow?profile=landscape");
+  const readiness = page.getByRole("region", { name: "Live readiness" });
+  await expect(readiness).toContainText("Configuration needs review because no visible browser content or resolved device audio is available.");
+  await readiness.getByRole("button", { name: "Review content" }).click();
+  await expect(page.getByRole("tab", { name: "Layers" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("button", { name: "Text", exact: true })).toBeFocused();
 });
 
 test("focused alert editor saves layouts and separates preview from test delivery", async ({ page }) => {
@@ -1350,7 +1408,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
         kind: "default",
         enabled: true,
         reviewState: "ready",
-        targetProfileIds: ["landscape", "vertical"],
+        targetProfileIds: ["landscape"],
         previewText: "Thanks for following!"
       },
       {
@@ -1442,6 +1500,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   });
 
   await page.goto("/manage");
+  await page.getByRole("button", { name: "Navigation" }).click();
   await page.getByRole("link", { name: "Alerts" }).click();
   const tabletAlertRow = page.getByRole("row", { name: /New follower/u });
   await expect(tabletAlertRow.getByRole("button", { name: "Edit New follower" })).toBeVisible();
@@ -1469,12 +1528,15 @@ test("focused alert editor saves layouts and separates preview from test deliver
   const focusedContent = await page.locator(".management-route-content--focused").boundingBox();
   expect(focusedContent?.width).toBeGreaterThan(1280);
   const landscapeReviewWarning = page.locator(".alert-editor-page__profile-warning");
+  await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Landscape must be reviewed");
   await expect(landscapeReviewWarning).toContainText("Needs review");
   await landscapeReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
-  await expect(page.getByText("Unsaved")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Vertical must be reviewed");
+  await expect(page.getByText("Unsaved", { exact: true })).toBeVisible();
   expect(savedDocuments).toHaveLength(0);
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Vertical must be reviewed");
   expect(savedDocuments).toHaveLength(1);
   expect(savedDocuments[0]).toMatchObject({
     targetProfiles: [
@@ -1572,6 +1634,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
     actor: { displayName: "blocked-viewer https://viewer.example/path" }
   }));
   const editorHeaderActions = page.locator(".alert-editor-page__header-actions");
+  await expect(editorHeaderActions.getByText(/Draft input.*Browser Landscape.*Audio included.*TTS included/u)).toBeVisible();
   await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
   await expect(page.getByRole("region", { name: "Landscape alert canvas" }).getByText("Welcome, Safe viewer!", { exact: true })).toBeVisible();
@@ -1581,7 +1644,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
     text: "Welcome, blocked-viewer https://viewer.example/path!"
   });
   expect(testRequests).toHaveLength(0);
-  await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
+  await editorHeaderActions.getByRole("button", { name: "Test draft", exact: true }).click();
   await expect(page.getByText(/Test queued on Landscape.*ref-e2e-editor-landscape/u)).toBeVisible();
   expect(testRequests).toHaveLength(1);
   expect(testRequests[0]).toMatchObject({
@@ -1593,11 +1656,12 @@ test("focused alert editor saves layouts and separates preview from test deliver
   });
 
   await page.getByRole("tab", { name: "Layers" }).click();
-  await page.getByRole("button", { name: /Vertical/u }).click();
-  await expect(editorHeaderActions.getByRole("button", { name: "Send test", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: /^Vertical/u }).click();
+  await expect(page.getByRole("dialog", { name: "Switch profiles with unsaved changes?" })).toHaveCount(0);
+  await expect(editorHeaderActions.getByRole("button", { name: "Test draft", exact: true })).toBeDisabled();
   const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
   await expect(verticalCanvas).toBeVisible();
-  await expect(verticalCanvas.getByText("Welcome, Safe viewer!", { exact: true })).toBeVisible();
+  await expect(verticalCanvas.getByText("Welcome, blocked-viewer https://viewer.example/path!", { exact: true })).toBeVisible();
   await expect(verticalCanvas.locator(".alert-canvas__shape")).toBeVisible();
   await expect(page.getByLabel("Fill color")).toHaveValue("#336699");
   await shapePositionSummary.click();
@@ -1624,7 +1688,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(page.getByLabel("Padding")).toHaveValue("16");
   await editorHeaderActions.getByRole("button", { name: "Preview", exact: true }).click();
   await expect(page.getByText("Local preview is running.")).toBeVisible();
-  await editorHeaderActions.getByRole("button", { name: "Send test", exact: true }).click();
+  await editorHeaderActions.getByRole("button", { name: "Test draft", exact: true }).click();
   await expect(page.getByText(/Test queued on Vertical.*ref-e2e-editor-vertical/u)).toBeVisible();
   expect(testRequests).toHaveLength(2);
   expect(testRequests).toEqual([
@@ -1765,7 +1829,7 @@ function boldPopRaidDocument(): AlertEditorDocument {
     eventType: "raid",
     themeId: "bold-pop"
   });
-  return alertEditorDocumentSchema.parse({
+  return alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "alert-raid-bold-pop",
     setId: "set-default",
     providerKind: "twitch",
@@ -1806,7 +1870,7 @@ function reThemeRaidDocument(): AlertEditorDocument {
     { layerId: "layer-image", x: 120, y: 140, width: 480, height: 360, zIndex: 1 },
     { layerId: "layer-video", x: 1_240, y: 140, width: 560, height: 315, zIndex: 2 }
   ];
-  return alertEditorDocumentSchema.parse({
+  return alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "alert-raid-retheme",
     setId: "set-default",
     providerKind: "twitch",
@@ -1846,7 +1910,7 @@ function reThemeRaidDocument(): AlertEditorDocument {
         animation
       },
       { id: "layer-image", name: "Old raid image", type: "image", visible: true, order: 1, assetId: "asset-theme-image", animation },
-      { id: "layer-video", name: "Old raid video", type: "video", visible: true, order: 2, assetId: "asset-theme-video", animation },
+      { id: "layer-video", name: "Old raid video", type: "video", visible: true, order: 2, assetId: "asset-theme-video", animation, playEmbeddedAudio: false, audioVolume: 1 },
       { id: "layer-audio", name: "Raid soundtrack", type: "audio", visible: true, order: 3, assetId: "asset-theme-audio", volume: 0.65, animation },
       { id: "layer-tts", name: "Raid voice", type: "tts", visible: true, order: 4, enabled: true, providerId: "speakerbot", template: "Raid incoming from {userName}", animation }
     ],
@@ -1905,7 +1969,7 @@ function editorSaveReviewIssue(
 }
 
 function alertEditorDocument() {
-  return {
+  return { schemaVersion: 1,
     id: "alert-follow",
     setId: "set-default",
     providerKind: "twitch",

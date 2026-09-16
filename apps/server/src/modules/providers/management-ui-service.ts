@@ -1,5 +1,6 @@
 import {
   homeSetupSummarySchema,
+  assessAlertConfiguration,
   type AlertCreateInput,
   type AlertEditorDocument,
   type AlertEditorErrorReportInput,
@@ -41,6 +42,8 @@ import type { AlertSetManagementService } from "../alerts/alert-set-management-s
 import type { TwitchConnectionStatus } from "../twitch/twitch-account-repository.js";
 
 type HomeReadinessItem = HomeSetupSummary["readiness"][number];
+type HomeAlertConfiguration = HomeSetupSummary["alertConfiguration"];
+type HomeAlertConfigurationItem = HomeAlertConfiguration["items"][number];
 
 type ProviderService = Pick<
   ProviderManagementService,
@@ -138,10 +141,106 @@ export class ManagementUiService {
         )
       ],
       activeAlertSet,
+      alertConfiguration: await this.#getAlertConfiguration(activeAlertSet),
       actionableProblems: [...eventSources, ...ttsProviders]
         .map((provider) => provider.error)
         .filter((error) => error !== null)
     });
+  }
+
+  async #getAlertConfiguration(activeAlertSet: AlertSetOverview | null): Promise<HomeAlertConfiguration> {
+    if (activeAlertSet === null) {
+      return { state: "no-active-set", enabledAlertCount: 0, items: [] };
+    }
+    if (activeAlertSet.enabledAlertCount === 0) {
+      return { state: "no-enabled-alerts", enabledAlertCount: 0, items: [] };
+    }
+
+    let detail: AlertSetDetail;
+    try {
+      detail = await this.#options.alertSetService.getSet(activeAlertSet.id);
+    } catch {
+      return { state: "unavailable", enabledAlertCount: activeAlertSet.enabledAlertCount, items: [] };
+    }
+    const enabledAlerts = detail.inventory.filter((alert) => alert.enabled);
+    if (enabledAlerts.length === 0) {
+      return { state: "unavailable", enabledAlertCount: activeAlertSet.enabledAlertCount, items: [] };
+    }
+
+    const documents = await Promise.all(enabledAlerts.map(async (alert) => {
+      try {
+        return { alert, document: await this.#options.getAlertEditorDocument(alert.id) };
+      } catch {
+        return { alert, document: null };
+      }
+    }));
+    const needsAssetCatalog = documents.some(({ document }) => document !== null
+      && document.targetProfiles.every((profile) => !profile.enabled)
+      && document.outputs.deviceRouteIds.length > 0
+      && document.layers.some((layer) => layer.type === "video" && layer.visible && layer.playEmbeddedAudio));
+    const assets = needsAssetCatalog
+      ? await this.#options.listAssetLibraryItems().then((items) => items, () => null)
+      : [];
+    const mediaTypes: Readonly<Record<string, "image" | "gif" | "video">> | null = assets === null
+      ? null
+      : Object.fromEntries(assets.flatMap((asset) => asset.mediaType === "audio" ? [] : [[asset.id, asset.mediaType]]));
+    const items = documents.flatMap(({ alert, document }): HomeAlertConfigurationItem[] => {
+      let actionRoute = alertEditorRoute(alert.id, alert.setId, alert.eventType, alert.targetProfileIds[0]);
+      if (document === null) {
+        return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "unavailable", message: "Saved alert details are unavailable.", actionRoute }];
+      }
+      if (!document.enabled) {
+        return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "review-needed", message: "The enabled alert inventory does not match its saved document.", actionRoute }];
+      }
+      const enabledProfiles = document.targetProfiles.filter((profile) => profile.enabled);
+      actionRoute = alertEditorRoute(alert.id, alert.setId, alert.eventType, enabledProfiles[0]?.id);
+      const needsDocumentAssetCatalog = enabledProfiles.length === 0
+        && document.outputs.deviceRouteIds.length > 0
+        && document.layers.some((layer) => layer.type === "video" && layer.visible && layer.playEmbeddedAudio);
+      if (needsDocumentAssetCatalog && mediaTypes === null) {
+        return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "unavailable", message: "Device audio could not be checked because asset details are unavailable.", actionRoute }];
+      }
+      let assessment: ReturnType<typeof assessAlertConfiguration>;
+      try {
+        assessment = assessAlertConfiguration(document, mediaTypes ?? {});
+      } catch {
+        return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "unavailable", message: "Saved alert audio could not be checked.", actionRoute }];
+      }
+      const profileIssues = detail.overview.validationIssues.filter((issue) =>
+        issue.alertId === alert.id
+        && (issue.targetProfileId === null || enabledProfiles.some((profile) => profile.id === issue.targetProfileId))
+      );
+      if (assessment.issue === "profile-review" || (assessment.hasBrowserContent && profileIssues.length > 0)) {
+        return [{
+          alertId: alert.id,
+          name: alert.name,
+          eventType: alert.eventType,
+          state: "review-needed",
+          message: profileIssues[0]?.message ?? "Finish reviewing each enabled target profile.",
+          actionRoute
+        }];
+      }
+      if (assessment.issue === "empty-content") {
+        return [{
+          alertId: alert.id,
+          name: alert.name,
+          eventType: alert.eventType,
+          state: "review-needed",
+          message: "Review this alert because no visible browser content or resolved device audio is available.",
+          actionRoute
+        }];
+      }
+      if (assessment.issue === "missing-profile") return [{
+        alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "review-needed",
+        message: "Enable and review a target profile for Browser Source output.", actionRoute
+      }];
+      return [];
+    });
+    return {
+      state: items.length === 0 ? "configured" : items.some((item) => item.state === "review-needed") ? "attention" : "unavailable",
+      enabledAlertCount: enabledAlerts.length,
+      items
+    };
   }
 
   async listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]> {
@@ -402,4 +501,15 @@ function setupItem(
   actionRoute: string
 ): HomeReadinessItem {
   return { id, label, state, actionLabel, actionRoute };
+}
+
+function alertEditorRoute(
+  alertId: string,
+  setId: string,
+  eventType: string,
+  targetProfileId: AlertInventoryRow["targetProfileIds"][number] | undefined
+): string {
+  const search = new URLSearchParams({ set: setId, event: eventType });
+  if (targetProfileId !== undefined) search.set("profile", targetProfileId);
+  return `/manage/modules/alerts/editor/${encodeURIComponent(alertId)}?${search.toString()}`;
 }

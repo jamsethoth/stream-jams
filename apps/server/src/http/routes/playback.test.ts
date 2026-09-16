@@ -61,7 +61,6 @@ describe("playback routes", () => {
       "mute",
       "unmute",
       "do-not-disturb:true",
-      "skip",
       "replay:recent-1"
     ]);
   });
@@ -149,6 +148,7 @@ async function createAppWithPlayback() {
       version: "1.2.3"
     },
     playbackCoordinator,
+    legacyPlaybackOperationsService: playbackCoordinator,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
@@ -175,6 +175,24 @@ class RecordingPlaybackCoordinator {
 
   getSnapshot(): PlaybackQueueSnapshot {
     return this.snapshot;
+  }
+
+  async setSafety(patch: Partial<Pick<PlaybackQueueSnapshot, "paused" | "muted" | "doNotDisturb">>): Promise<void> {
+    if (patch.paused === true) await this.pause();
+    if (patch.paused === false) await this.resume();
+    if (patch.muted === true) await this.mute();
+    if (patch.muted === false) await this.unmute();
+    if (patch.doNotDisturb !== undefined) await this.setDoNotDisturb(patch.doNotDisturb);
+  }
+
+  async skip(_moduleId: "alerts", _occurrenceId: string): Promise<void> {
+    void _moduleId;
+    void _occurrenceId;
+    this.skipCurrent();
+  }
+
+  async replay(_moduleId: "alerts", itemId: string): Promise<void> {
+    this.replayRecent(itemId);
   }
 
   async pause(): Promise<PlaybackQueueSnapshot> {

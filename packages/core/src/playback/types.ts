@@ -3,6 +3,8 @@ import type { ResolvedAlertAudio } from "../audio/types.js";
 import type { OverlayInstruction } from "../overlays/types.js";
 
 export interface ResolvedAlert {
+  /** Set only by resolution of an enabled, reviewed Landscape document. */
+  readonly desktopVisualEligible?: true | undefined;
   readonly id: string;
   readonly sourceEventId: string;
   readonly ruleId: string;
@@ -16,6 +18,7 @@ export interface PlaybackQueueItem {
   readonly alerts: readonly ResolvedAlert[];
   readonly audio: readonly ResolvedAlertAudio[];
   readonly priority: number;
+  readonly sequence: number;
   readonly status: "queued" | "playing" | "completed" | "skipped";
   readonly enqueuedAt: string;
   readonly startedAt: string | null;

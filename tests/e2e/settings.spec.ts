@@ -1,5 +1,54 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
+import type { SurfaceConfiguration, SurfaceSettingsView } from "@stream-jams/core";
+
+test("overlay surfaces keep independent drafts and apply only explicit saves", async ({ page }, testInfo) => {
+  await mockManagementShell(page);
+  await mockSettingsSummary(page);
+  await page.route("**/config/server", route => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
+  let view: SurfaceSettingsView = { surfaces: [
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [{ moduleId: "alerts", visible: false }, { moduleId: "screen-effects", visible: false }] },
+    { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }, { moduleId: "screen-effects", visible: false }] }
+  ], desktop: { available: true, displays: [{ id: "portrait", label: "Portrait display", bounds: { x: -1080, y: 0, width: 1080, height: 1920 }, scaleFactor: 1 }], state: "disabled", message: null } };
+  const writes: SurfaceConfiguration[] = [];
+  await page.route("**/overlay-surfaces", route => route.fulfill({ json: view }));
+  await page.route("**/overlay-surfaces/*", async route => {
+    expect(route.request().method()).toBe("PUT");
+    expect(route.request().headers()["x-stream-jams-csrf"]).toBe("csrf_e2e");
+    const config = route.request().postDataJSON() as SurfaceConfiguration;
+    writes.push(config); view = { ...view, surfaces: view.surfaces.map(saved => saved.id === config.id ? config : saved),
+      desktop: config.kind === "desktop" ? { ...view.desktop, state: config.enabled ? "ready" : "disabled" } : view.desktop };
+    await route.fulfill({ json: view });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  await page.goto("/manage/settings#overlay-surfaces");
+  await expect(page.getByRole("heading", { name: "Overlay surfaces" })).toBeVisible();
+  await page.getByLabel("Desktop display").selectOption("portrait");
+  await page.getByLabel("Enable desktop overlay").check();
+  await page.getByRole("checkbox", { name: "Show alerts on Desktop overlay" }).check();
+  await page.getByRole("button", { name: "Move Screen Effects up on Desktop overlay" }).click();
+  await page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }).uncheck();
+  expect(writes).toEqual([]);
+  await page.getByRole("button", { name: "Save Desktop overlay" }).click();
+  await expect(page.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
+  expect(writes).toHaveLength(1);
+  expect(writes[0]).toMatchObject({ enabled: true, displayId: "portrait", layers: [{ moduleId: "screen-effects", visible: false }, { moduleId: "alerts", visible: true }] });
+  await page.getByRole("button", { name: "Save Unified browser: default" }).click();
+  await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeDisabled();
+  await page.reload();
+  await expect(page.getByLabel("Enable desktop overlay")).toBeChecked();
+  await expect(page.getByRole("button", { name: "Move Screen Effects up on Desktop overlay" })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
+  await page.getByRole("heading", { name: "Overlay surfaces" }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath("overlay-settings-desktop.png"), fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.getByLabel("Desktop display")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+  await page.screenshot({ path: testInfo.outputPath("overlay-settings-narrow.png"), fullPage: true });
+  expect(errors).toEqual([]);
+});
 
 test("settings persists server port changes and rejects invalid ports", async ({ page }) => {
   await mockManagementShell(page);
@@ -21,6 +70,7 @@ test("settings persists server port changes and rejects invalid ports", async ({
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByText("Server settings", { exact: true }).click();
 
   const portInput = page.getByLabel("Port");
   await expect(page.getByLabel("Host")).toHaveValue("127.0.0.1");
@@ -48,6 +98,7 @@ test("settings warns before discarding dirty changes during local navigation", a
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByText("Server settings", { exact: true }).click();
   await page.getByLabel("Port").fill("40123");
   await page.getByRole("link", { name: "Assets" }).click();
 
@@ -83,8 +134,14 @@ test("settings exports and restores only after validated typed confirmation", as
       }
     });
   });
+  await page.route("**/screen-effects", async (route) => route.fulfill({ json: [restoredScreenEffect()] }));
+  await page.route("**/management/overlay-outputs", async (route) => route.fulfill({ json: [] }));
+  await page.route("**/overlay-modules/screen-effects/config", async (route) => route.fulfill({ json: {
+    moduleId: "screen-effects", enabled: false, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
+  } }));
 
   await page.goto("/manage/settings");
+  await page.getByText("Data and backup", { exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export backup" }).click();
   const download = await downloadPromise;
@@ -106,6 +163,9 @@ test("settings exports and restores only after validated typed confirmation", as
   expect(restoreRequests[0]).toMatchObject({ archiveId: preflight.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true });
   await expect(page.getByText("Update browser-source URLs")).toBeVisible();
   await expect(page.getByText("Reconnect Twitch")).toBeVisible();
+  await page.getByRole("link", { name: "Screen Effects" }).click();
+  const restoredEffect = page.getByText("Restored Screen Effect").locator("xpath=ancestor::li");
+  await expect(restoredEffect).toContainText("Disabled");
 });
 
 async function mockSettingsSummary(page: Page): Promise<void> {
@@ -149,5 +209,36 @@ function backupPreflight() {
     runtime: { intakeActive: false, playbackActive: false, queuedPlaybackCount: 0 },
     blockers: [],
     warnings: [{ summary: "Browser-source URLs will change", cause: "Route keys are excluded.", nextStep: "Update OBS after restore.", severity: "warning", occurredAt: null, referenceId: null, correction: null }]
+  };
+}
+
+function restoredScreenEffect() {
+  return {
+    schemaVersion: 1,
+    id: "effect-restored",
+    name: "Restored Screen Effect",
+    enabled: false,
+    description: null,
+    category: "Restored",
+    priority: 0,
+    cooldownSeconds: 0,
+    bindings: [],
+    variants: [{
+      id: "variant-restored",
+      name: "Default",
+      kind: "default",
+      enabled: true,
+      weight: 1,
+      visual: {
+        mediaType: "image",
+        assetId: "asset-restored",
+        layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+      },
+      sound: null,
+      animation: null,
+      durationMs: 10_000,
+      outputs: { browserSource: false, deviceRouteIds: [] },
+      visualOutputs: { browserSource: true, desktop: false }
+    }]
   };
 }

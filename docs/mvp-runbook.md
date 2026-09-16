@@ -15,6 +15,20 @@ For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for
 
 The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. This is not an installer or a signed release. Windows may warn about an unsigned application.
 
+### Download a verified portable CI artifact
+
+Successful CI runs for pushes to `main` and explicitly dispatched refs publish the exact Windows x64 folder exercised by `pnpm test:desktop`. Pull-request jobs and failed or cancelled desktop jobs do not publish runnable artifacts. The artifact is an authenticated, short-lived convenience build rather than an installer or permanent release.
+
+1. In GitHub, open **Actions → CI** and choose a successful run for the intended ref and commit. Only an artifact whose ref is `main` represents current `main`; a manually dispatched run can target another ref.
+2. Open the `windows-desktop` job summary. Confirm the artifact name contains `stream-jams-windows-x64`, the intended ref, and the full commit SHA.
+3. Download the linked authenticated artifact before its 30-day retention expires. Compare the downloaded ZIP's SHA-256 from `Get-FileHash -Algorithm SHA256 <downloaded-zip>` with the digest in the job summary.
+4. Quit any running Stream Jams instance through the tray and wait for it to exit. Extract every file into a new application folder; do not launch `Stream Jams.exe` from inside the ZIP or copy the executable without its sibling files.
+5. Launch `Stream Jams.exe` from the extracted folder. After confirming the new build opens, replace or remove the previous application folder as desired.
+
+The artifact is unsigned, so Windows may display a warning. It contains portable application files only: configuration, databases, assets, and backups remain in the user's `.stream-jams` profile, while credentials remain in the operating-system keyring. Artifact replacement does not move or reset that persistent state. Downloads require GitHub authentication and are not a stable `latest` URL.
+
+Local implementation evidence and the remaining hosted Actions acceptance gap are recorded in [portable Windows desktop artifact verification](verification/portable-windows-desktop-artifact.md).
+
 The desktop main process owns one utility-process service, a sandboxed management window, and a tray icon. The service still owns Fastify, SQLite, provider connections, and configuration. The default loopback address, `.stream-jams` data profile, `STREAM_JAMS_CONFIG_PATH` override, and OS keyring adapter are unchanged. Quit any existing CLI service before using desktop with the same profile. An occupied port produces an actionable failure; desktop never kills that listener or chooses another port automatically.
 
 - By default, the window's X hides management to the tray. The service, overlays, and unsaved editor draft stay alive.
@@ -24,15 +38,17 @@ The desktop main process owns one utility-process service, a sandboxed managemen
 - If management crashes, native Quit warns that unsaved edits cannot be recovered. Startup has a 20-second deadline; graceful shutdown has 10 seconds before terminating only the owned worker.
 - A second launch with the same Electron profile focuses the existing instance. `STREAM_JAMS_DESKTOP_USER_DATA_PATH` accepts an absolute path for isolated testing; it does not change the application data directory or make concurrent use of one data profile safe.
 
-Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the folder outside the checkout and use temporary config/data/Electron profiles and uniquely named temporary credentials. They must not use live provider accounts or live overlay URLs. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
+Run `corepack pnpm test:desktop` on Windows after packaging. Tests copy the folder outside the checkout and use temporary config/data/Electron profiles and uniquely named temporary credentials. They must not use live provider accounts or live overlay URLs. The ordinary desktop suite excludes tests tagged `@hardware`.
 
-Installers, signing, publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
+Run the audible hardware suite only after receiving explicit approval for the two physical outputs. Set `STREAM_JAMS_AUDIO_TEST=1`, set `STREAM_JAMS_AUDIO_TEST_OUTPUTS` to two exact device labels separated by `|`, then run `corepack pnpm test:desktop:hardware`. The hardware suite plays brief tones independently, together, and again after restarting the packaged application. See [desktop verification](verification/windows-desktop-tray-runtime.md) for actual results and remaining interactive checks.
+
+Installers, signing, durable release publication, updates, startup-at-login, a Windows service, non-Windows desktop delivery, and a `safeStorage` migration remain deferred under BL-030. The dependent alert-audio-routing change adds the controls below; the tray host alone does not add routing.
 
 ## Alert audio outputs
 
 In the desktop app, open **Settings → Audio outputs**. Give each output a stable name, choose an explicit output device, then select **Create output** or **Save output**. Choosing a device does not play sound. **Test** is an explicit one-second sound and respects global mute. No microphone permission or additional OBS browser source is required. CLI-only operation preserves these routes but cannot play device audio.
 
-Open an alert, select its **Alert** inspector tab, and choose **Audio outputs**. These are alert-wide selections: every visible explicit audio layer uses the same destinations while retaining its own volume. The selections participate in Undo, Redo, Revert and Save. An active alert's output changes require confirmation and apply to future playback starts; they do not redirect a sound already playing.
+Open an alert, select its **Alert** inspector tab, and choose **Audio outputs**. These are alert-wide selections: every visible explicit audio layer and enabled video soundtrack uses the same destinations while retaining its own volume. The selections participate in Undo, Redo, Revert and Save. An active alert's output changes require confirmation and apply to future playback starts; they do not redirect a sound already playing.
 
 | Explicit audio selection | Result |
 | --- | --- |
@@ -41,11 +57,11 @@ Open an alert, select its **Alert** inspector tab, and choose **Audio outputs**.
 | Browser Source and named outputs | Both paths receive explicit audio |
 | No outputs | Explicit audio is intentionally silent |
 
-TTS is independent: browser speech and Speaker.bot retain their existing routing and safety rules. Disabling Browser Source **explicit audio** does not guarantee a silent browser source when TTS is configured. All alert videos, including older visual-video alerts, are always silent in Preview, Send test and live playback. Add a separate audio layer for a soundtrack; the app does not extract audio or alter the video asset/layout. The separate video-shoutout module is unchanged.
+TTS is independent: browser speech and Speaker.bot retain their existing routing and safety rules. Disabling Browser Source **explicit audio** does not guarantee a silent browser source when TTS is configured. Every visual video element remains internally muted. Select a video layer to control **Play embedded audio** and its independent volume; when enabled, the same local WebM or MP4 asset is played as a separate routed soundtrack. Legacy videos default off and remain silent until explicitly enabled and saved; newly added videos default on. A separate audio layer can play at the same time and does not change this toggle. Trackless videos remain silent, and the app does not extract or transcode media. The separate video-shoutout module is unchanged.
 
 **Preview** stays local to management and only plays local audio/TTS when explicitly selected. It never invokes the configured device routes. **Send test** uses the selected draft and sample; the inventory Test action uses the saved document and its first built-in sample. One available browser profile sends immediately from inventory; multiple available profiles require a choice. Device-only audio does not require an enabled, reviewed or connected visual profile. The Event inspector also offers an explicit no-browser test option and separate Send audio/Send TTS toggles. Unavailable browser profiles are never enabled or rendered to make a test succeed. Results identify available and skipped destinations plus a Diagnostics reference.
 
-Routes never fall back to the default/communications device, another route, or Browser Source. Missing and unbound selections remain saved. Reconnect the original device or explicitly rebind the route in Settings. A returning device with a different ID needs rebinding even if its label is unchanged. A referenced route cannot be deleted until its listed alerts stop using it. Status refreshes within five seconds while the page is visible; failed refreshes retain a clearly marked last-known snapshot. If bounded automatic player recovery is exhausted, use **Retry audio player**. Recovery only affects future playback; interrupted audio is not replayed automatically.
+Routes never fall back to the default/communications device, another route, or Browser Source. Missing and unbound selections remain saved. Reconnect the original device or explicitly rebind the route in Settings. A returning device with a different ID needs rebinding even if its label is unchanged. A referenced route cannot be deleted until its listed alerts stop using it. Status refreshes within five seconds while the page is visible; failed refreshes retain a clearly marked last-known snapshot. If bounded automatic player recovery is exhausted, use **Retry audio player**. Recovery only affects future playback; interrupted audio is not replayed automatically. Routed soundtrack transport is limited to 25 MiB per asset and 100 MiB per playback batch; an over-limit or changed asset fails its audio destination without cancelling a healthy visual recipient.
 
 Global mute covers browser and device explicit audio. Skip stops current device work before the next item starts; Pause and Do Not Disturb retain their queue-advancement semantics. Closing to tray keeps the player alive. Full Quit stops the owned player and service. Audio failure diagnostics name routes, include a reference, and link directly to **Settings → Audio outputs**, without exposing local hardware bindings on overlays.
 
@@ -54,6 +70,30 @@ OBS Desktop Audio and monitoring can independently capture a nominally private e
 Portable backups retain route IDs/names and alert assignments but clear local device IDs and labels. Restore names every route needing setup and requires explicit rebinding; older unsupported archive schemas and orphaned assignments are rejected. Internal failed-restore rollback preserves the destination's exact prior bindings. Stop intake and wait for playback, route tests and queued work to finish before restore.
 
 Schema migration `019-audio-output-routes.ts` adds `audio_output_routes` with stable `id`, unique case-insensitive `name`, and paired nullable `device_id`/`device_label`. Alert-wide selections live in validated editor-document JSON and are checked transactionally against route references. The backup table map explicitly projects local binding columns to NULL; operational rollback captures the unprojected rows. See [routing acceptance evidence](verification/alert-audio-routing-authoring-acceptance.md) for automated results and the remaining physical-device/OBS gate.
+
+## Shared overlay surfaces (Windows follow-on)
+
+The shared-surface implementation has completed scoped Windows, native desktop, OBS, audio-routing, input, display, background, and shutdown acceptance; see [shared-surface verification](verification/shared-desktop-overlay.md) and [integrated manual validation](verification/routed-video-audio-manual-validation.md). It is the reusable foundation, not the Screen Effects module.
+
+In the Windows app, open **Settings → Overlay surfaces**. Select an explicit desktop display, enable desktop output, enable the **alerts** layer, then save **Desktop overlay**. Desktop defaults disabled/unbound and newly discovered module rows default hidden. Only the active set's enabled, reviewed Landscape Alerts are eligible; no OBS browser source is required for desktop visuals. Selection/editing alone never plays content.
+
+Each surface has independent drafts, visibility and topmost-first ordering. Use Up/Down and explicitly save that surface; module-specific browser sources keep their existing behavior. Hiding visuals does not change independently selected audio. Desktop content uniformly fits its Landscape canvas without stretching. Exclusive fullscreen may cover the overlay; use borderless/windowed mode. No graphics injection or driver is used.
+
+Disconnecting the selected display clears its desktop content without moving it elsewhere or replaying on reconnection. Choose and save another display explicitly to rebind. **Retry desktop output** uses saved settings and restores future playback only. Closing management to the tray does not stop the surface; normal Quit clears it. CLI operation cannot provide a native desktop surface, but unified-browser layer settings remain editable. Portable backups preserve layers/opacity while resetting desktop enablement and display binding.
+
+## Screen Effects
+
+Open **Modules → Screen Effects** to create a definition. A new effect starts disabled and selecting media never plays it. Choose one local image, GIF or video and/or one local sound, set a duration from 1 through 120 seconds, then select visual and audio destinations explicitly. Video soundtrack and separate sound can both be enabled with independent volumes; they share the variant's Browser Source and named-device selections. An audio-only effect is valid when at least one explicit audio destination is usable.
+
+Add one or more trusted triggers. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** is a local silent visual check. **Live Test** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation.
+
+For OBS, copy the Screen Effects module Browser Source from its inventory setup panel or include the module in a unified surface. For the Windows overlay, open **Settings → Overlay surfaces**, show `screen-effects` on the explicitly bound desktop surface, place it in the desired topmost-first order, and save. Visual membership is independent from Browser Source or named-device audio; do not add both a module-specific and unified browser source with audio enabled unless duplicate audio is intentional.
+
+Use `/operator` during a stream. Alerts and Screen Effects may appear under **Now playing** simultaneously. Pending and recent rows identify their owning module, and skip, remove, replay, clear and module-pause actions affect only that owner. Global Pause, Mute and Do Not Disturb remain shared. Definitions and safety settings survive restart, but current, pending and recent occurrences do not replay.
+
+Missing displays, browser recipients, assets or audio routes fail closed without choosing a replacement output. Portable restore preserves definitions but disables them and clears local hardware bindings for review. Marketplace content, remote media, arbitrary code, cloud/LAN delivery, cross-platform desktop output and exclusive-full-screen injection remain outside this module.
+
+The ordinary automated suite uses isolated profiles and silent media. Physical acceptance is deliberately separate: build the packaged app, use neutral local media, configure an OBS Screen Effects source and an explicit desktop display, bind only the approved named audio routes, and observe independent OBS/desktop/audio behavior. Run the existing `test:desktop:hardware` audio capability suite only after approving its two exact device labels as described above. Record physical observations, an unavailable-monitor check and bounded tray Quit in [Screen Effects verification](verification/screen-effects.md); do not treat automated private-renderer playback as physical approval.
 
 ## Management Security
 

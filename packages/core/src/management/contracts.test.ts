@@ -343,7 +343,7 @@ describe("management alert contracts and rules", () => {
 
   it("validates a focused editor document with both target-profile layouts", () => {
     const editorDocument = schema("alertEditorDocumentSchema");
-    const document = {
+    const document = { schemaVersion: 1,
       id: "alert-follow",
       setId: "set-default",
       providerKind: "twitch",
@@ -754,6 +754,11 @@ describe("management asset diagnostics home and backup contracts", () => {
           }
         ],
         activeAlertSet: alertSet,
+        alertConfiguration: {
+          state: "configured",
+          enabledAlertCount: 1,
+          items: []
+        },
         actionableProblems: [actionableError]
       }).success
     ).toBe(true);
@@ -989,7 +994,7 @@ describe("alert variation authoring management contracts", () => {
   it("adds complete priority assignments to editor saves with an empty default", () => {
     const saveInput = schema("alertEditorSaveInputSchema");
     const priorityAssignment = schema("alertVariationPriorityAssignmentSchema");
-    const document = {
+    const document = { schemaVersion: 1,
       id: "alert-follow",
       setId: "set-default",
       providerKind: "twitch",

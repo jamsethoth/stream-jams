@@ -27,7 +27,7 @@ const noAnimation = {
 } as const;
 
 function documentFixture(overrides: Partial<AlertEditorDocument> = {}): AlertEditorDocument {
-  return alertEditorDocumentSchema.parse({
+  return alertEditorDocumentSchema.parse({ schemaVersion: 1,
     id: "alert-raid",
     setId: "set-live",
     providerKind: "twitch",
@@ -276,7 +276,7 @@ describe("applying curated alert starter themes", () => {
     },
     { id: "old-shape", name: "Old shape", type: "shape", visible: true, order: 2, fill: "#FFFFFFFF", animation: noAnimation },
     { id: "old-image", name: "Old image", type: "image", visible: true, order: 3, assetId: "image-1", animation: noAnimation },
-    { id: "old-video", name: "Old video", type: "video", visible: true, order: 4, assetId: "video-1", animation: noAnimation }
+    { playEmbeddedAudio: false, audioVolume: 1, id: "old-video", name: "Old video", type: "video", visible: true, order: 4, assetId: "video-1", animation: noAnimation }
   ];
   const nonvisualLayers: AlertLayer[] = [
     { id: "audio-1", name: "Audio", type: "audio", visible: true, order: 5, assetId: "audio-asset", volume: 0.4, animation: noAnimation },

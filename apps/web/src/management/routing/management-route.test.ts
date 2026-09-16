@@ -12,6 +12,7 @@ describe("management route model", () => {
     ["/manage/event-sources", "event-sources"],
     ["/manage/tts-providers", "tts-providers"],
     ["/manage/modules/alerts", "modules-alerts"],
+    ["/manage/modules/screen-effects", "modules-screen-effects"],
     ["/manage/modules/alerts/safety", "alert-safety"],
     ["/manage/assets", "assets"],
     ["/manage/diagnostics", "diagnostics"],
@@ -57,8 +58,19 @@ describe("management route model", () => {
     });
     expect(managementPrimaryRoutes.find((route) => route.id === "modules-alerts")?.childRoutes.map((route) => route.id)).toEqual([
       "modules-alerts",
+      "modules-screen-effects",
       "alert-safety"
     ]);
+  });
+
+  it("round-trips focused Screen Effect editor routes", () => {
+    const existing = { id: "screen-effect-editor", effectId: "effect/confetti" } as const;
+    const creating = { id: "screen-effect-editor", effectId: "effect new", create: true } as const;
+
+    expect(formatManagementRoute(existing)).toBe("/manage/modules/screen-effects/editor/effect%2Fconfetti");
+    expect(parseManagementRoute(formatManagementRoute(existing))).toEqual(existing);
+    expect(formatManagementRoute(creating)).toBe("/manage/modules/screen-effects/editor/effect%20new?new=1");
+    expect(parseManagementRoute(formatManagementRoute(creating))).toEqual(creating);
   });
 
   it("parses a focused alert editor route with decoded query context", () => {
@@ -132,5 +144,6 @@ describe("management route model", () => {
       breadcrumbs: ["Modules", "Alerts", "Alert editor"]
     });
     expect(managementPrimaryRoutes.map((route) => route.id)).not.toContain("alert-editor");
+    expect(managementPrimaryRoutes.map((route) => route.id)).not.toContain("screen-effect-editor");
   });
 });
