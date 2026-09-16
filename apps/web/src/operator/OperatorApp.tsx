@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import "../App.css";
 import { getDesktopBridge } from "../management/desktop/desktop-bridge.js";
 import { formatDateTime } from "../management/foundation/formatters.js";
+import { ModalSurface } from "../management/foundation/ModalSurface.js";
 import { StatusBadge, type StatusBadgeTone } from "../management/foundation/StatusBadge.js";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import {
@@ -46,6 +47,8 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
   const requestRevisionRef = useRef(0);
   const restoreFocusRef = useRef<HTMLButtonElement | null>(null);
   const nowPlayingHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const clearFallbackFocusRef = useRef<HTMLElement | null>(null);
+  const moduleHeadingRefs = useRef(new Map<string, HTMLHeadingElement>());
   const schedulePollRef = useRef<((delay: number) => void) | null>(null);
 
   function applySnapshot(next: MergedOperationsSnapshot): void {
@@ -215,48 +218,6 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
       {announcement === "" ? null : <p aria-live="polite" className="operator-announcement" role="status">{announcement}</p>}
       {commandError !== null ? <OperatorErrorBanner error={commandError} title="Playback command failed" /> : refreshError === null ? null : <OperatorErrorBanner error={refreshError} title="Playback state may be stale" />}
 
-      <section aria-label="Module queue controls" className="operator-section">
-        <h2>Module queues</h2>
-        <div className="operator-list">
-          {snapshot.owners.map((owner) => {
-            const count = snapshot.queued.filter((item) => item.moduleId === owner.moduleId).length;
-            return (
-              <article className="operator-item" key={owner.moduleId}>
-                <div className="operator-item__summary">
-                  <div><strong>{moduleLabel(owner.moduleId)}</strong><span>{count} pending</span></div>
-                  <div className="operator-controls">
-                    <button className="button button--secondary button--compact" disabled={disabled} onClick={(event) => void runCommand(
-                      `module:${owner.moduleId}:pause`,
-                      () => api.setModulePaused(owner.moduleId, !owner.paused),
-                      `${moduleLabel(owner.moduleId)} ${owner.paused ? "resumed" : "paused"}.`,
-                      event.currentTarget
-                    )} type="button">{owner.paused ? "Resume module" : "Pause module"}</button>
-                    <button className="button button--danger-quiet button--compact" disabled={disabled || count === 0} onClick={() => setClearRequest({ moduleId: owner.moduleId, count })} type="button">Clear pending</button>
-                  </div>
-                </div>
-                <StatusBadge label={owner.paused ? "Module paused" : "Module active"} tone={owner.paused ? "warning" : "positive"} />
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      {clearRequest === null ? null : (
-        <section aria-labelledby="operator-clear-title" aria-modal="true" className="operator-item" role="dialog">
-          <h2 id="operator-clear-title">Clear {clearRequest.count} pending {moduleLabel(clearRequest.moduleId)} item{clearRequest.count === 1 ? "" : "s"}?</h2>
-          <p>Current playback and the other module queue will not be changed.</p>
-          <div className="operator-controls">
-            <button className="button button--secondary" disabled={disabled} onClick={() => setClearRequest(null)} type="button">Cancel</button>
-            <button className="button button--danger" disabled={disabled} onClick={(event) => void runCommand(
-              `module:${clearRequest.moduleId}:clear`,
-              () => api.clear(clearRequest.moduleId, clearRequest.count, snapshot.revision),
-              `${moduleLabel(clearRequest.moduleId)} pending queue cleared.`,
-              event.currentTarget
-            )} type="button">Clear pending</button>
-          </div>
-        </section>
-      )}
-
       <section className="operator-section" aria-labelledby="operator-now-playing">
         <h2 id="operator-now-playing" ref={nowPlayingHeadingRef} tabIndex={-1}>Now playing ({snapshot.current.length})</h2>
         {snapshot.current.length === 0 ? <p className="management-empty">No playback is active.</p> : (
@@ -272,6 +233,54 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
           </ol>
         )}
       </section>
+
+      <section aria-label="Module queue controls" className="operator-section operator-module-queues">
+        <h2>Module queues</h2>
+        <div className="operator-list operator-module-list">
+          {snapshot.owners.map((owner) => {
+            const count = snapshot.queued.filter((item) => item.moduleId === owner.moduleId).length;
+            return (
+              <article className="operator-item operator-module-item" key={owner.moduleId}>
+                <div className="operator-item__summary">
+                  <div><h3 className="operator-module-heading" ref={(element) => {
+                    if (element === null) moduleHeadingRefs.current.delete(owner.moduleId);
+                    else moduleHeadingRefs.current.set(owner.moduleId, element);
+                  }} tabIndex={-1}>{moduleLabel(owner.moduleId)}</h3><span>{count} pending</span></div>
+                  <div className="operator-controls">
+                    <button className="button button--secondary button--compact" disabled={disabled} onClick={(event) => void runCommand(
+                      `module:${owner.moduleId}:pause`,
+                      () => api.setModulePaused(owner.moduleId, !owner.paused),
+                      `${moduleLabel(owner.moduleId)} ${owner.paused ? "resumed" : "paused"}.`,
+                      event.currentTarget
+                    )} type="button">{owner.paused ? "Resume module" : "Pause module"}</button>
+                    <button className="button button--danger-quiet button--compact" disabled={disabled || count === 0} onClick={() => {
+                      clearFallbackFocusRef.current = moduleHeadingRefs.current.get(owner.moduleId) ?? nowPlayingHeadingRef.current;
+                      setClearRequest({ moduleId: owner.moduleId, count });
+                    }} type="button">Clear pending</button>
+                  </div>
+                </div>
+                <StatusBadge label={owner.paused ? "Module paused" : "Module active"} tone={owner.paused ? "warning" : "positive"} />
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      <ModalSurface labelledBy="operator-clear-title" onCancel={() => setClearRequest(null)} open={clearRequest !== null} restoreFocusFallbackRef={clearFallbackFocusRef}>
+        {clearRequest === null ? null : <>
+          <h2 id="operator-clear-title">Clear {clearRequest.count} pending {moduleLabel(clearRequest.moduleId)} item{clearRequest.count === 1 ? "" : "s"}?</h2>
+          <p>Current playback and the other module queue will not be changed.</p>
+          <div className="management-modal__actions">
+            <button className="button button--secondary" disabled={disabled} onClick={() => setClearRequest(null)} type="button">Cancel</button>
+            <button className="button button--danger" disabled={disabled} onClick={(event) => void runCommand(
+              `module:${clearRequest.moduleId}:clear`,
+              () => api.clear(clearRequest.moduleId, clearRequest.count, snapshot.revision),
+              `${moduleLabel(clearRequest.moduleId)} pending queue cleared.`,
+              event.currentTarget
+            )} type="button">Clear pending</button>
+          </div>
+        </>}
+      </ModalSurface>
 
       <OperationList heading={`Pending (${snapshot.queued.length})`} items={snapshot.queued} renderAction={(item) => (
         <button aria-label={`Remove ${item.name} from ${moduleLabel(item.moduleId)}`} className="button button--secondary button--compact" disabled={disabled} onClick={(event) => void runCommand(

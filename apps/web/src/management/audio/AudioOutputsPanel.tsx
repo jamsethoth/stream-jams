@@ -19,6 +19,7 @@ import { DestructiveConfirmationDialog } from "../foundation/DestructiveConfirma
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
 import { StatusBadge, type StatusBadgeTone } from "../foundation/StatusBadge.js";
+import { formatModuleLabel } from "../foundation/presentation-labels.js";
 import { ManagementHttpError } from "../management-http-client.js";
 import type { HttpErrorOwner } from "../http-errors.js";
 import type { AudioApi } from "./audio-api.js";
@@ -50,10 +51,11 @@ export interface AudioOutputsPanelHandle {
 export interface AudioOutputsPanelProps {
   readonly audioApi: AudioApi;
   readonly onDirtyChange?: ((dirty: boolean) => void) | undefined;
+  readonly onSummaryChange?: ((summary: { readonly count: number; readonly state: "loading" | "ready" | "attention" }) => void) | undefined;
 }
 
 export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutputsPanelProps>(function AudioOutputsPanel(
-  { audioApi, onDirtyChange },
+  { audioApi, onDirtyChange, onSummaryChange },
   ref
 ) {
   const { status, loading, error: refreshError, refresh } = useAudioStatus(audioApi);
@@ -81,6 +83,12 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   const newOutputDirty = newName !== "" || newDeviceId !== null;
   const dirty = drafts.some(isDirty) || newOutputDirty;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
+  useEffect(() => {
+    onSummaryChange?.({
+      count: status?.routes.length ?? 0,
+      state: loading && status === null ? "loading" : refreshError !== null || actionError !== null || conflict !== null || status?.capability.available === false || status?.routes.some(route => route.state !== "ready") === true ? "attention" : "ready"
+    });
+  }, [actionError, conflict, loading, onSummaryChange, refreshError, status]);
 
   const saveOne = useCallback(async (draft: RouteDraft, confirmLiveImpact = false): Promise<boolean> => {
     if (!isDirty(draft)) return true;
@@ -381,19 +389,13 @@ function ConflictNotice({ busy, conflict, onConfirm }: { readonly busy: boolean;
       <p>{conflict.summary}</p>
       {owners.length === 0 ? null : <ul>{owners.map((owner) => (
         <li key={`${owner.moduleId}:${owner.ownerId}:${owner.variantId ?? ""}`}>
-          {moduleLabel(owner.moduleId)}: {owner.ownerName}
+          {formatModuleLabel(owner.moduleId)}: {owner.ownerName}
         </li>
       ))}</ul>}
       <p><span className="management-error-banner__label">Next step:</span> {conflict.nextStep}</p>
       {onConfirm === null ? null : <button disabled={busy} onClick={onConfirm} type="button">Confirm binding change</button>}
     </section>
   );
-}
-
-function moduleLabel(moduleId: string): string {
-  if (moduleId === "alerts") return "Alerts";
-  if (moduleId === "screen-effects") return "Screen Effects";
-  return moduleId;
 }
 
 function updateDraft(

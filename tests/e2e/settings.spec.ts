@@ -27,7 +27,7 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
   await page.getByLabel("Desktop display").selectOption("portrait");
   await page.getByLabel("Enable desktop overlay").check();
   await page.getByRole("checkbox", { name: "Show alerts on Desktop overlay" }).check();
-  await page.getByRole("button", { name: "Move screen-effects up on Desktop overlay" }).click();
+  await page.getByRole("button", { name: "Move Screen Effects up on Desktop overlay" }).click();
   await page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" }).uncheck();
   expect(writes).toEqual([]);
   await page.getByRole("button", { name: "Save Desktop overlay" }).click();
@@ -39,7 +39,7 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
   await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeDisabled();
   await page.reload();
   await expect(page.getByLabel("Enable desktop overlay")).toBeChecked();
-  await expect(page.getByRole("button", { name: "Move screen-effects up on Desktop overlay" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Move Screen Effects up on Desktop overlay" })).toBeDisabled();
   await expect(page.getByRole("checkbox", { name: "Show alerts on Unified browser: default" })).not.toBeChecked();
   await page.getByRole("heading", { name: "Overlay surfaces" }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: testInfo.outputPath("overlay-settings-desktop.png"), fullPage: true });
@@ -70,6 +70,7 @@ test("settings persists server port changes and rejects invalid ports", async ({
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByText("Server settings", { exact: true }).click();
 
   const portInput = page.getByLabel("Port");
   await expect(page.getByLabel("Host")).toHaveValue("127.0.0.1");
@@ -97,6 +98,7 @@ test("settings warns before discarding dirty changes during local navigation", a
 
   await page.goto("/manage");
   await page.getByRole("link", { name: "Settings" }).click();
+  await page.getByText("Server settings", { exact: true }).click();
   await page.getByLabel("Port").fill("40123");
   await page.getByRole("link", { name: "Assets" }).click();
 
@@ -139,6 +141,7 @@ test("settings exports and restores only after validated typed confirmation", as
   } }));
 
   await page.goto("/manage/settings");
+  await page.getByText("Data and backup", { exact: true }).click();
   const downloadPromise = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export backup" }).click();
   const download = await downloadPromise;

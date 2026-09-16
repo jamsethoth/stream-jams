@@ -25,7 +25,9 @@ export const SimultaneousCurrentInterleavedQueues: Story = {
   args: { api: createApi(activeSnapshot()) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole("heading", { name: "Now playing (2)" })).toBeVisible();
+    const nowPlaying = await canvas.findByRole("heading", { name: "Now playing (2)" });
+    await expect(nowPlaying).toBeVisible();
+    await expect(nowPlaying.compareDocumentPosition(canvas.getByRole("heading", { name: "Module queues" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await expect(canvas.getByText("Flash sweep")).toBeVisible();
     await expect(canvas.getByText("Cheer burst").closest("article")).toHaveTextContent("#2");
   }
@@ -93,6 +95,12 @@ export const KeyboardControls: Story = {
     await canvas.findByText("Large raid");
     await userEvent.tab();
     await expect(canvas.getByRole("link", { name: "Back to management" })).toHaveFocus();
+    const clear = canvas.getAllByRole("button", { name: "Clear pending" })[0]!;
+    clear.focus();
+    await userEvent.keyboard("{Enter}");
+    await expect(within(document.body).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    await expect(clear).toHaveFocus();
   }
 };
 

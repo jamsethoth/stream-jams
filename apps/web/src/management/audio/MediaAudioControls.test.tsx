@@ -5,6 +5,12 @@ import { MediaAudioControls } from "./MediaAudioControls.js";
 
 afterEach(cleanup);
 
+it("accepts a host-specific checkbox layout class", () => {
+  render(<MediaAudioControls checkboxClassName="screen-effects-check" value={{ playEmbeddedAudio: true, audioVolume: 1 }} hasSeparateAudio={false} onChange={vi.fn()} />);
+
+  expect(screen.getByRole("checkbox", { name: "Play embedded audio" }).closest("label")).toHaveClass("screen-effects-check");
+});
+
 it("does not change the switch when a separate sound appears", () => {
   const onChange = vi.fn();
   const value = { playEmbeddedAudio: true, audioVolume: 0.5 };

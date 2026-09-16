@@ -161,6 +161,7 @@ test("schema-18 restore reloads the saved moderation policy through Settings", a
   });
 
   await page.goto("/manage/settings");
+  await page.getByText("Data and backup", { exact: true }).click();
   await page.getByLabel("Backup file").setInputFiles({
     name: "schema-18.streamjams-backup",
     mimeType: "application/json",

@@ -34,8 +34,10 @@ export const FilteredToUnusedAudio: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await canvas.findByRole("button", { name: "Follower burst" });
+    await userEvent.click(canvas.getByText("More filters", { selector: "summary" }));
     await userEvent.selectOptions(canvas.getByLabelText("Usage"), "unused");
     await userEvent.selectOptions(canvas.getByLabelText("Type"), "audio");
+    await expect(canvas.getByLabelText("1 active secondary filters")).toBeVisible();
     await expect(canvas.getByRole("button", { name: "Short chime" })).toBeVisible();
   }
 };

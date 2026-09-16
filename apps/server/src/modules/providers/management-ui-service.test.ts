@@ -1,5 +1,6 @@
 import type {
   AlertEditorDocument,
+  AlertSetDetail,
   AlertVariationAuthoringContext,
   AlertSetOverview,
   AssetLibraryItem,
@@ -25,6 +26,7 @@ describe("ManagementUiService", () => {
         expect.objectContaining({ id: "browser-output", state: "action-required" })
       ],
       activeAlertSet: null,
+      alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] },
       actionableProblems: []
     });
   });
@@ -140,6 +142,97 @@ describe("ManagementUiService", () => {
     });
   });
 
+  it("reports enabled alert configuration attention separately from completed setup", async () => {
+    const overview = alertSet("complete", 1);
+    const document = alertDocument({ targetProfiles: alertDocument().targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "needs-review" })) });
+    const service = createService([], overview, undefined, {
+      getSet: vi.fn(async () => alertSetDetail(overview, [{ ...alertRow(), enabled: true, targetProfileIds: ["landscape", "vertical"] }]))
+    }, undefined, undefined, undefined, { getAlertEditorDocument: async () => document });
+
+    const summary = await service.getHomeSetupSummary();
+
+    expect(summary.readiness).toEqual(expect.arrayContaining([expect.objectContaining({ id: "starter-alert-set", state: "complete" })]));
+    expect(summary.alertConfiguration).toMatchObject({
+      state: "attention",
+      enabledAlertCount: 1,
+      items: [expect.objectContaining({ alertId: "alert-follow", name: "New follower", state: "review-needed" })]
+    });
+  });
+
+  it("ignores an unused unreviewed profile and excludes disabled variants", async () => {
+    const overview = alertSet("complete", 1);
+    const getAlertEditorDocument = vi.fn(async () => alertDocument());
+    const service = createService([], overview, undefined, {
+      getSet: vi.fn(async () => alertSetDetail(overview, [
+        alertRow(),
+        { ...alertRow(), id: "variant-disabled", kind: "variation", parentAlertId: "alert-follow", enabled: false }
+      ]))
+    }, undefined, undefined, undefined, { getAlertEditorDocument });
+
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      alertConfiguration: { state: "configured", enabledAlertCount: 1, items: [] }
+    });
+    expect(getAlertEditorDocument).toHaveBeenCalledOnce();
+    expect(getAlertEditorDocument).toHaveBeenCalledWith("alert-follow");
+  });
+
+  it("accepts resolved device-only audio and fails closed for missing documents", async () => {
+    const overview = alertSet("complete", 2);
+    const audioOnly = alertDocument({
+      id: "variant-audio",
+      kind: "variation",
+      parentAlertId: "alert-follow",
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{ id: "audio", name: "Chime", type: "audio", visible: true, order: 0, animation, assetId: "chime", volume: 0.5 }],
+      targetProfiles: alertDocument().targetProfiles.map((profile) => ({ ...profile, enabled: false, reviewState: "needs-review", layerLayouts: [] }))
+    });
+    const service = createService([], overview, undefined, {
+      getSet: vi.fn(async () => alertSetDetail(overview, [alertRow("variant-audio"), alertRow("variant-missing")]))
+    }, undefined, undefined, undefined, {
+      getAlertEditorDocument: async (id) => id === "variant-audio" ? audioOnly : Promise.reject(new Error("missing"))
+    });
+
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      alertConfiguration: {
+        state: "unavailable",
+        enabledAlertCount: 2,
+        items: [expect.objectContaining({ alertId: "variant-missing", state: "unavailable" })]
+      }
+    });
+  });
+
+  it("accepts device-only audio independently of retained visual profile metadata", async () => {
+    const overview = alertSet("complete", 1);
+    const audioOnly = alertDocument({
+      outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
+      layers: [{ id: "audio", name: "Chime", type: "audio", visible: true, order: 0, animation, assetId: "chime", volume: 0.5 }],
+      targetProfiles: alertDocument().targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "needs-review", layerLayouts: [] }))
+    });
+    const service = createService([], overview, undefined, {
+      getSet: vi.fn(async () => alertSetDetail(overview, [alertRow()]))
+    }, undefined, undefined, undefined, { getAlertEditorDocument: async () => audioOnly });
+
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      alertConfiguration: { state: "configured", enabledAlertCount: 1, items: [] }
+    });
+  });
+
+  it("keeps browser and device audio attention when its enabled browser profile needs review", async () => {
+    const overview = alertSet("complete", 1);
+    const audio = alertDocument({
+      outputs: { browserSource: true, deviceRouteIds: ["headphones"] },
+      layers: [{ id: "audio", name: "Chime", type: "audio", visible: true, order: 0, animation, assetId: "chime", volume: 0.5 }],
+      targetProfiles: alertDocument().targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "needs-review", layerLayouts: [] }))
+    });
+    const service = createService([], overview, undefined, {
+      getSet: vi.fn(async () => alertSetDetail(overview, [alertRow()]))
+    }, undefined, undefined, undefined, { getAlertEditorDocument: async () => audio });
+
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      alertConfiguration: { state: "attention", items: [expect.objectContaining({ alertId: "alert-follow", state: "review-needed" })] }
+    });
+  });
+
   it("forwards managed-alert authoring commands without changing their inputs", async () => {
     const createVariation = vi.fn(async () => ({ id: "variant-1" }));
     const duplicateAlert = vi.fn(async () => ({ id: "alert-copy" }));
@@ -211,7 +304,8 @@ function createService(
   getAlertVariationAuthoringContext: ManagementUiServiceOptions["getAlertVariationAuthoringContext"] = async () => {
     throw new Error("not configured");
   },
-  saveAlertEditorDocument: ManagementUiServiceOptions["saveAlertEditorDocument"] = async (_alertId, document) => document
+  saveAlertEditorDocument: ManagementUiServiceOptions["saveAlertEditorDocument"] = async (_alertId, document) => document,
+  optionOverrides: Partial<ManagementUiServiceOptions> = {}
 ) {
   const resolvedGetTwitchAuthorization = getTwitchAuthorization ?? (async () => ({
     connected: false,
@@ -249,7 +343,7 @@ function createService(
     },
     alertSetService: {
       listSets: async () => (activeSet === null ? [] : [activeSet]),
-      getSet: vi.fn(),
+      getSet: vi.fn(async () => activeSet === null ? undefined as never : alertSetDetail(activeSet, [])),
       createSet: vi.fn(),
       createAlert: vi.fn(),
       createAlertVariation: vi.fn(),
@@ -321,9 +415,64 @@ function createService(
       blockers: []
     }),
     getEventSourceRuntimeView: runtimeView,
-    getTwitchAuthorization: resolvedGetTwitchAuthorization
+    getTwitchAuthorization: resolvedGetTwitchAuthorization,
+    ...optionOverrides
   };
   return new ManagementUiService(options);
+}
+
+function alertSetDetail(overview: AlertSetOverview, inventory: AlertSetDetail["inventory"]): AlertSetDetail {
+  return { overview, inventory, browserSources: [] };
+}
+
+function alertRow(id = "alert-follow"): AlertSetDetail["inventory"][number] {
+  return {
+    id,
+    parentAlertId: id === "alert-follow" ? null : "alert-follow",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "follow",
+    name: id === "alert-follow" ? "New follower" : id,
+    kind: id === "alert-follow" ? "default" : "variation",
+    enabled: true,
+    conditions: [],
+    weight: 1,
+    priority: null,
+    reviewState: "ready",
+    targetProfileIds: ["landscape"],
+    previewText: "Welcome"
+  };
+}
+
+const animation = { mode: "preset" as const, entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" };
+
+function alertDocument(overrides: Partial<AlertEditorDocument> = {}): AlertEditorDocument {
+  return {
+    schemaVersion: 1,
+    id: "alert-follow",
+    setId: "set-default",
+    providerKind: "twitch",
+    eventType: "follow",
+    kind: "default",
+    parentAlertId: null,
+    name: "New follower",
+    enabled: true,
+    conditions: [],
+    variantConditions: [],
+    weight: 1,
+    priority: null,
+    cooldownSeconds: 0,
+    rulePriority: 0,
+    durationMs: 4_000,
+    outputs: { browserSource: true, deviceRouteIds: [] },
+    layers: [{ id: "shape", name: "Backdrop", type: "shape", visible: true, order: 0, animation, fill: "#FFFFFFFF" }],
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "shape", x: 0, y: 0, width: 100, height: 100, zIndex: 0 }] },
+      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [] }
+    ],
+    samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: {} }],
+    ...overrides
+  };
 }
 
 function alertSet(starterReviewState: "pending" | "complete", enabledAlertCount: number): AlertSetOverview {

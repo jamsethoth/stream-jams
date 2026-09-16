@@ -61,7 +61,7 @@ The system SHALL allow authorized management users to create, edit, enable, disa
 
 ### Requirement: Alert Test Workflow Uses Real Matching Path
 
-The system SHALL provide separate editor Preview and Send test workflows: Preview renders the selected saved-or-draft alert locally from sample data, while Send test sends normalized test playback through the same downstream browser and device delivery paths used after real event matching. Availability SHALL be checked per destination rather than requiring a browser connection for device-only audio.
+The system SHALL provide separate editor Preview and Test draft workflows: Preview renders the selected draft alert locally from sample data, while Test draft sends normalized test playback through the same downstream browser and device delivery paths used after real event matching. Alert inventory SHALL provide a corresponding Test saved workflow for the saved alert document. Availability SHALL be checked per destination rather than requiring a browser connection for device-only audio.
 
 #### Scenario: Preview works without provider or overlay connection
 
@@ -86,7 +86,7 @@ The system SHALL provide separate editor Preview and Send test workflows: Previe
 
 #### Scenario: Saved alert is tested from alert-set inventory
 
-- **WHEN** a management user chooses Test from an alert row
+- **WHEN** a management user chooses Test saved from an alert row
 - **THEN** the UI uses the saved alert document and its first built-in sample payload
 - **AND** one available target profile sends immediately while multiple available profiles require an explicit target choice
 - **AND** when no browser profile is available but included device audio is deliverable, device-only testing is available without selecting a fictitious connected profile
@@ -96,13 +96,13 @@ The system SHALL provide separate editor Preview and Send test workflows: Previe
 #### Scenario: Test send is blocked without connected output
 
 - **WHEN** no browser-source client can receive the selected profile and no included audio layer has an available selected device destination
-- **THEN** Send test does not enqueue playback
+- **THEN** Test draft or Test saved does not enqueue playback
 - **AND** the UI explains how to connect or choose an available output
 
 #### Scenario: Device-only test does not require visual readiness
 
 - **WHEN** included explicit audio has an available selected device destination but the selected visual profile is disconnected, disabled, or needs review
-- **THEN** Send test can enqueue device audio without rendering or enabling that visual profile
+- **THEN** Test draft or Test saved can enqueue device audio without rendering or enabling that visual profile
 - **AND** the result identifies the device delivery and any skipped browser destination
 
 #### Scenario: Some selected destinations are unavailable
@@ -114,7 +114,7 @@ The system SHALL provide separate editor Preview and Send test workflows: Previe
 #### Scenario: Audio inclusion is disabled
 
 - **WHEN** an operator disables Include audio for the editor session
-- **THEN** Send test emits no explicit audio through either Browser Source or device routes
+- **THEN** Test draft emits no explicit audio through either Browser Source or device routes
 - **AND** visual and independently controlled TTS inclusion retain their existing semantics
 
 ### Requirement: Variation Priority Is Authored As Ordered Groups
@@ -195,7 +195,7 @@ The alert editor SHALL derive condition fields, approved operators, value contro
 
 ### Requirement: Sample Evaluation Explains Variation Selection
 
-The editor SHALL evaluate rule and variation conditions against the selected built-in or session sample without enqueueing playback and SHALL explain eligibility, highest-priority group, relative chance, and fallback. Preview and Send test SHALL continue targeting the selected alert document rather than running sibling selection.
+The editor SHALL evaluate rule and variation conditions against the selected built-in or session sample without enqueueing playback and SHALL explain eligibility, highest-priority group, relative chance, and fallback. Preview and Test draft SHALL continue targeting the selected alert document rather than running sibling selection.
 
 #### Scenario: Sample payload changes
 
@@ -213,7 +213,7 @@ The editor SHALL evaluate rule and variation conditions against the selected bui
 
 - **WHEN** the sample explanation updates while a default or variation is selected
 - **THEN** no playback is enqueued by the explanation
-- **AND** Preview renders and Send test sends the selected alert document rather than a sibling chosen by the explanation
+- **AND** Preview renders and Test draft sends the selected alert document rather than a sibling chosen by the explanation
 
 ### Requirement: Shared Rule Impact Remains Explicit
 
@@ -337,7 +337,7 @@ The management UI SHALL warn without blocking when a channel-point redemption ru
 
 ### Requirement: Shared Reward Samples Use Real Matching Semantics
 
-The focused editor SHALL let the user use a selected custom reward as the current session sample, defaulting to the first selected reward when the current sample no longer matches. Preview, condition explanation, and Send test SHALL continue to use the normalized sample and existing matching paths.
+The focused editor SHALL let the user use a selected custom reward as the current session sample, defaulting to the first selected reward when the current sample no longer matches. Preview, condition explanation, and Test draft SHALL continue to use the normalized sample and existing matching paths.
 
 #### Scenario: Selected reward becomes the session sample
 
@@ -350,7 +350,7 @@ The focused editor SHALL let the user use a selected custom reward as the curren
 
 - **WHEN** the current normalized sample has a `rewardId` outside the rule's saved `oneOf` value
 - **THEN** condition explanation reports the rule as not matching
-- **AND** Preview and Send test continue targeting the selected alert without rewriting the rule condition or claiming live rule eligibility
+- **AND** Preview and Test draft continue targeting the selected alert without rewriting the rule condition or claiming live rule eligibility
 
 #### Scenario: Catch-all uses an arbitrary valid custom reward sample
 
@@ -404,7 +404,7 @@ The system SHALL allow authorized management users to create, rename, duplicate,
 - **WHEN** a management user opens the Alerts module
 - **THEN** alert sets appear as full-width expandable rows with activation, rename, duplicate, and delete actions inline
 - **AND** module-level Browser sources are outside the Alert sets region
-- **AND** expanding the selected set reveals its alerts with Edit, Preview, Test, and Enable/Disable actions inline
+- **AND** expanding the selected set reveals its alerts with Edit, Test saved, and Enable/Disable actions inline
 - **AND** no separate selected-set overview panel is required
 
 #### Scenario: Validation rolls up without duplicating details
@@ -558,7 +558,7 @@ The system SHALL allow a text layer to configure a bounded background color, pad
 - **AND** its text template and geometry are preserved
 
 ### Requirement: Styled Alerts Render Consistently Across Workflows
-The system SHALL derive editor canvas, local preview, Send test, and live browser-source presentation from the same validated style contract.
+The system SHALL derive editor canvas, local preview, Test draft, Test saved, and live browser-source presentation from the same validated style contract.
 
 #### Scenario: Styled alert is previewed and sent
 - **WHEN** a saved or draft styled alert is rendered in local preview and the saved alert is sent through the test path
@@ -645,7 +645,7 @@ Authorized management users SHALL be able to rename, show or hide, position, res
 - **AND** the previous saved shape remains unchanged
 
 ### Requirement: Shape Layers Render Consistently
-Shape layers SHALL render from the same validated fill, profile geometry, order, visibility, and preset animation in editor canvas, local preview, Send test, and live browser-source output.
+Shape layers SHALL render from the same validated fill, profile geometry, order, visibility, and preset animation in editor canvas, local preview, Test draft, Test saved, and live browser-source output.
 
 #### Scenario: Shape is behind text
 - **WHEN** a visible shape has lower layer order than a text layer
@@ -653,7 +653,7 @@ Shape layers SHALL render from the same validated fill, profile geometry, order,
 
 #### Scenario: Shape is hidden
 - **WHEN** a shape layer is saved with visibility disabled
-- **THEN** local preview, Send test, and live output omit the shape
+- **THEN** local preview, Test draft, Test saved, and live output omit the shape
 - **AND** the editor layer list retains it for later editing
 
 ### Requirement: Saved Shape Layers Remain Portable
@@ -899,3 +899,88 @@ Grouped alert surfaces SHALL preserve explicit loading, request-error, empty-set
 - **WHEN** a valid alert set contains no stored alert rows
 - **THEN** canonical event groups remain available for creation
 - **AND** the surface does not present the set as an unrecoverable empty state
+
+### Requirement: Alert Sample Preview And Tests Describe Their Effects
+
+The management UI SHALL distinguish text-only saved sample inspection, local draft preview, draft delivery testing, and saved delivery testing using accurate accessible names and compact destination summaries.
+
+#### Scenario: Saved sample message is inspected
+
+- **WHEN** a user opens Sample message from an alert inventory row
+- **THEN** the dialog explains that it shows sample text rather than the rendered design
+- **AND** opening or closing it does not enqueue playback or play media
+
+#### Scenario: Draft is previewed locally
+
+- **WHEN** a user chooses Preview in the focused editor
+- **THEN** persistent help identifies it as local and governed by the current preview audio and TTS options
+- **AND** it does not dispatch media to configured live device routes
+
+#### Scenario: Draft or saved alert is tested
+
+- **WHEN** a user chooses Test draft in the editor or Test saved in inventory
+- **THEN** the action uses the named draft or saved input respectively
+- **AND** a compact summary names selected browser profiles, selected device destinations, and included audio or TTS where exposed by the existing contract
+- **AND** unavailable destinations and correction actions remain visible without exposing route keys or secret URLs
+
+### Requirement: Alert Profiles Share One Editor Draft
+
+Landscape and Vertical selection SHALL change editor view state while preserving one shared unsaved alert document, its priority and content edits, and its undo and redo history.
+
+#### Scenario: User edits both profiles before saving
+
+- **WHEN** a user edits Landscape, switches to Vertical, edits Vertical, and returns to Landscape
+- **THEN** no profile-switch save or discard prompt appears
+- **AND** both profile edits remain in the shared draft with Unsaved visible
+- **AND** switching does not enable or mark either profile reviewed
+
+#### Scenario: Shared draft is saved or reverted
+
+- **WHEN** the user explicitly saves or reverts after editing either profile
+- **THEN** Save persists both profiles and Revert restores both profiles from the saved document
+- **AND** switching profiles does not autosave
+
+#### Scenario: User leaves the editor with a dirty draft
+
+- **WHEN** a user navigates to another alert or management route with unsaved changes, including after a failed save
+- **THEN** the existing dirty-navigation safeguard remains active
+
+### Requirement: Alert Editor Summarizes Configuration Readiness
+
+The focused editor SHALL present one compact Live readiness summary derived from current draft and saved-set facts, and SHALL distinguish configuration readiness from output connectivity or delivery evidence.
+
+#### Scenario: Configuration has a correction
+
+- **WHEN** blockers, an intended profile requiring review or enablement, a disabled alert, or an inactive set prevent configuration readiness
+- **THEN** the summary names the highest-priority correction in that order
+- **AND** provides one keyboard-operable action that focuses or opens the existing control or activation flow
+- **AND** set activation continues through dirty navigation and existing impact confirmation
+
+#### Scenario: Optional profile is disabled
+
+- **WHEN** one valid reviewed enabled profile is intended and another profile is disabled or unreviewed
+- **THEN** the optional profile does not prevent configuration readiness
+- **AND** the system does not silently review or enable it
+
+#### Scenario: Draft is configuration-ready
+
+- **WHEN** the current draft satisfies known configuration prerequisites
+- **THEN** the summary states whether the ready configuration is unsaved
+- **AND** it does not claim that outputs are connected or real delivery succeeded
+- **AND** unknown or stale evidence never produces an authoritative live-delivery claim
+
+### Requirement: Alert Inventory Presents Primary And Secondary Actions Once
+
+Each alert row SHALL keep Edit, Test saved, and Enable or Disable inline and SHALL expose Sample message, eligible Add variation, Duplicate, Reset, and Delete exactly once through the existing More disclosure at all supported widths.
+
+#### Scenario: User operates row actions
+
+- **WHEN** a keyboard user navigates an alert row at desktop or narrow width
+- **THEN** each eligible secondary action appears once in the active accessibility tree
+- **AND** More actions are keyboard-operable with useful focus restoration after dialogs and mutations
+
+#### Scenario: Row content needs additional space
+
+- **WHEN** an alert has a long name, validation summary, or multiple test profiles
+- **THEN** row content and actions wrap without hiding primary actions
+- **AND** default and variation rows retain their correct eligibility and disabled states

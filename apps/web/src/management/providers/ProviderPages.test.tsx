@@ -892,10 +892,15 @@ describe("provider pages", () => {
     const testVoiceButton = screen.getByRole("button", { name: "Test voice" });
     expect(testVoiceButton).toBeDisabled();
     expect(screen.getByText("Save a default voice alias before testing Speaker.bot.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Volume (0–1)")).toHaveAttribute("aria-describedby", "tts-volume-guidance");
+    expect(screen.getByText("1 = 100% volume; 0 = silent")).toBeVisible();
+    expect(screen.getByLabelText("Minimum rate (×)")).toHaveAttribute("aria-describedby", "tts-rate-guidance");
+    expect(screen.getByLabelText("Maximum rate (×)")).toHaveAttribute("aria-describedby", "tts-rate-guidance");
+    expect(screen.getByText("1× is normal speed; 0.5× is half speed; 2× is double speed.")).toBeVisible();
     await user.type(screen.getByLabelText("Default voice alias"), "EventVoice");
     expect(testVoiceButton).toBeDisabled();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.6");
     await user.click(screen.getByRole("button", { name: "Save safety settings" }));
     expect(updateTtsSafety).toHaveBeenCalledWith(activeSpeakerBot.id, {
       ...safety,
@@ -922,8 +927,8 @@ describe("provider pages", () => {
 
     render(<TtsProvidersPage managementApi={api} />);
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.5");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.5");
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
 
     const dialog = screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" });
@@ -931,7 +936,7 @@ describe("provider pages", () => {
     expect(within(dialog).getByRole("button", { name: "Discard" })).toBeInTheDocument();
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Volume")).toHaveValue(0.5);
+    expect(screen.getByLabelText("Volume (0–1)")).toHaveValue(0.5);
 
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Discard" }));
@@ -951,8 +956,8 @@ describe("provider pages", () => {
 
     render(<TtsProvidersPage managementApi={api} />);
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.6");
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 
@@ -971,8 +976,8 @@ describe("provider pages", () => {
 
     render(<TtsProvidersPage managementApi={api} />);
     expect(await screen.findByRole("heading", { name: "Speaker.bot" })).toBeInTheDocument();
-    await user.clear(screen.getByLabelText("Volume"));
-    await user.type(screen.getByLabelText("Volume"), "0.6");
+    await user.clear(screen.getByLabelText("Volume (0–1)"));
+    await user.type(screen.getByLabelText("Volume (0–1)"), "0.6");
     await user.click(screen.getByRole("button", { name: "Select Backup Speaker.bot" }));
     await user.click(within(screen.getByRole("dialog", { name: "Switch providers with unsaved changes?" })).getByRole("button", { name: "Save and continue" }));
 

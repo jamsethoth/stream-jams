@@ -1,4 +1,4 @@
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type RefObject } from "react";
 
 const focusableSelector = [
   "button:not([disabled])",
@@ -14,9 +14,10 @@ export interface ModalSurfaceProps {
   readonly labelledBy: string;
   readonly onCancel: () => void;
   readonly open: boolean;
+  readonly restoreFocusFallbackRef?: RefObject<HTMLElement | null>;
 }
 
-export function ModalSurface({ children, labelledBy, onCancel, open }: ModalSurfaceProps) {
+export function ModalSurface({ children, labelledBy, onCancel, open, restoreFocusFallbackRef }: ModalSurfaceProps) {
   const surfaceRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -26,9 +27,12 @@ export function ModalSurface({ children, labelledBy, onCancel, open }: ModalSurf
     const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     surfaceRef.current?.querySelector<HTMLElement>("button, input, select, textarea, [href]")?.focus();
     return () => {
-      if (previouslyFocused?.isConnected) previouslyFocused.focus();
+      const restoreTarget = previouslyFocused?.isConnected && !previouslyFocused.matches(":disabled")
+        ? previouslyFocused
+        : restoreFocusFallbackRef?.current;
+      restoreTarget?.focus();
     };
-  }, [open]);
+  }, [open, restoreFocusFallbackRef]);
 
   useEffect(() => {
     if (!open) {

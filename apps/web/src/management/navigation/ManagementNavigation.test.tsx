@@ -23,4 +23,34 @@ describe("ManagementNavigation", () => {
     await user.click(screen.getByRole("link", { name: "Safety" }));
     expect(onNavigate).toHaveBeenCalledWith({ id: "alert-safety" });
   });
+
+  it("toggles the compact navigation and restores focus when Escape closes it", async () => {
+    const user = userEvent.setup();
+    render(<ManagementNavigation activeRoute={{ id: "alert-safety" }} onNavigate={vi.fn()} />);
+
+    const trigger = screen.getByRole("button", { name: "Navigation" });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("Safety", { selector: ".management-brand__current" })).toBeInTheDocument();
+
+    await user.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    expect(trigger).toHaveFocus();
+  });
+
+  it("closes only after navigation succeeds so a cancelled dirty transition stays open", async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    const { rerender } = render(<ManagementNavigation activeRoute={{ id: "home" }} onNavigate={onNavigate} />);
+
+    const trigger = screen.getByRole("button", { name: "Navigation" });
+    await user.click(trigger);
+    await user.click(screen.getByRole("link", { name: "Assets" }));
+    expect(onNavigate).toHaveBeenCalledWith({ id: "assets" });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+
+    rerender(<ManagementNavigation activeRoute={{ id: "assets" }} onNavigate={onNavigate} />);
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+  });
 });

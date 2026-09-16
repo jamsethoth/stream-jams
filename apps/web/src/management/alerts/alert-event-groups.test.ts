@@ -55,7 +55,7 @@ describe("buildAlertEventGroups", () => {
     expect(groups.at(-1)).toMatchObject({
       key: "event:future_provider_event",
       eventType: "future_provider_event",
-      label: "future_provider_event",
+      label: "Future provider event",
       catalogGroup: "Other",
       known: false,
       defaultCount: 1,
@@ -124,6 +124,7 @@ describe("buildAlertEventGroups", () => {
 
     expect(summarizeAlertInventoryRow(high, [high, peer, low], true)).toEqual({
       conditionSummaries: ["Cheer amount is at least 500"],
+      conditionDetails: [null],
       prioritySummary: "Priority group 1 of 2",
       weightSummary: "Relative weight 4; the selected sample's result depends on eligible alerts."
     });
@@ -134,6 +135,17 @@ describe("buildAlertEventGroups", () => {
       [],
       false
     ).conditionSummaries).toEqual(["Saved condition: future.value equals x"]);
+  });
+
+  it("uses reward titles and keeps unavailable reward IDs diagnosable", () => {
+    const rewardAlert = row("reward", "channel_point_redemption", "Hydration", {
+      conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-hydrate", "reward-missing"] }]
+    });
+
+    expect(summarizeAlertInventoryRow(rewardAlert, [], true, new Map([["reward-hydrate", "Hydrate"]]))).toMatchObject({
+      conditionSummaries: ["Channel point reward is one of Hydrate, Unavailable reward"],
+      conditionDetails: ["Reward ID: reward-missing"]
+    });
   });
 });
 
