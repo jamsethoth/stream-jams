@@ -1,4 +1,4 @@
-import { screenEffectDocumentSchema } from "@stream-jams/core";
+import { screenEffectDocumentSchema, screenEffectSetInputSchema, ScreenEffectSetError } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import {
   EffectBindingUnavailableError,
@@ -12,6 +12,7 @@ import {
 import { sendHttpError } from "../errors.js";
 
 export interface ScreenEffectRouteDependencies {
+  readonly effectSets?: Pick<EffectManagementService, "listSets" | "createSet" | "renameSet" | "activateSet" | "removeSet">;
   readonly effectManagementService: Pick<
     EffectManagementService,
     "list" | "get" | "create" | "update" | "remove" | "test"
@@ -26,6 +27,39 @@ export function registerScreenEffectRoutes(
 ): void {
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
 
+  const sets = dependencies.effectSets;
+  if (sets !== undefined) {
+    app.get("/screen-effect-sets", { preHandler }, async () => sets.listSets());
+    app.post("/screen-effect-sets", { preHandler }, async (request, reply) => {
+      try {
+        const body = readObject(request.body, ["id", "name", "sourceId"]);
+        const input = screenEffectSetInputSchema.parse({ id: body.id, name: body.name });
+        const sourceId = body.sourceId === undefined ? undefined : parseEffectId(body.sourceId);
+        return reply.status(201).send(await sets.createSet(input, sourceId));
+      } catch (error) { return sendScreenEffectError(reply, error); }
+    });
+    app.put("/screen-effect-sets/:effectId", { preHandler }, async (request, reply) => {
+      try {
+        const body = readObject(request.body, ["name"]);
+        const input = screenEffectSetInputSchema.parse({ id: readEffectId(request.params), name: body.name });
+        return await sets.renameSet(input.id, input.name);
+      } catch (error) { return sendScreenEffectError(reply, error); }
+    });
+    app.post("/screen-effect-sets/:effectId/activate", { preHandler }, async (request, reply) => {
+      try {
+        const body = readObject(request.body, ["confirmLiveImpact"]);
+        await sets.activateSet(readEffectId(request.params), body.confirmLiveImpact === true);
+        return reply.status(204).send();
+      } catch (error) { return sendScreenEffectError(reply, error); }
+    });
+    app.delete("/screen-effect-sets/:effectId", { preHandler }, async (request, reply) => {
+      try {
+        await sets.removeSet(readEffectId(request.params));
+        return reply.status(204).send();
+      } catch (error) { return sendScreenEffectError(reply, error); }
+    });
+  }
+
   app.get("/screen-effects", { preHandler }, async () => dependencies.effectManagementService.list());
 
   app.get("/screen-effects/:effectId", { preHandler }, async (request, reply) => {
@@ -39,7 +73,9 @@ export function registerScreenEffectRoutes(
   app.post("/screen-effects", { preHandler }, async (request, reply) => {
     try {
       const document = screenEffectDocumentSchema.parse(request.body);
-      return reply.status(201).send(await dependencies.effectManagementService.create(document));
+      const query = readObject(request.query, ["set"]);
+      const setId = query.set === undefined ? undefined : parseEffectId(query.set);
+      return reply.status(201).send(await dependencies.effectManagementService.create(document, setId));
     } catch (error) {
       return sendScreenEffectError(reply, error);
     }
@@ -123,6 +159,9 @@ function readObject(body: unknown, allowedKeys: readonly string[]): Record<strin
 }
 
 function sendScreenEffectError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+  if (error instanceof ScreenEffectSetError) {
+    return sendHttpError(reply, 409, { code: "SCREEN_EFFECT_SET_CONFLICT", message: error.message });
+  }
   if (error instanceof EffectDefinitionNotFoundError) {
     return sendHttpError(reply, 404, { code: "SCREEN_EFFECT_NOT_FOUND", message: error.message });
   }

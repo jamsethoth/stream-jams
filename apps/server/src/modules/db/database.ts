@@ -23,6 +23,7 @@ import { audioOutputRoutesMigration } from "./migrations/019-audio-output-routes
 import { overlaySurfacesMigration } from "./migrations/020-overlay-surfaces.js";
 import { alertVideoAudioMigration } from "./migrations/021-alert-video-audio.js";
 import { screenEffectsMigration } from "./migrations/022-screen-effects.js";
+import { screenEffectSetsMigration } from "./migrations/023-screen-effect-sets.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -57,7 +58,8 @@ const migrations = [
   audioOutputRoutesMigration,
   overlaySurfacesMigration,
   alertVideoAudioMigration,
-  screenEffectsMigration
+  screenEffectsMigration,
+  screenEffectSetsMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

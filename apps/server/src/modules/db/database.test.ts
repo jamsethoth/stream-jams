@@ -30,7 +30,8 @@ const expectedMigrations = [
   "019-audio-output-routes",
   "020-overlay-surfaces",
   "021-alert-video-audio",
-  "022-screen-effects"
+  "022-screen-effects",
+  "023-screen-effect-sets"
 ] as const;
 
 const expectedTables = [
@@ -57,6 +58,8 @@ const expectedTables = [
   "schema_migrations",
   "screen_effect_audio_routes",
   "screen_effect_bindings",
+  "screen_effect_set_memberships",
+  "screen_effect_sets",
   "screen_effect_variants",
   "screen_effects",
   "twitch_accounts"
@@ -435,6 +438,9 @@ describe("Stream Jams SQLite database", () => {
     `);
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
+      DROP TRIGGER screen_effect_assign_set;
+      DROP TABLE screen_effect_set_memberships;
+      DROP TABLE screen_effect_sets;
       DROP TABLE screen_effect_audio_routes;
       DROP TABLE screen_effect_bindings;
       DROP TABLE screen_effect_variants;
@@ -448,7 +454,8 @@ describe("Stream Jams SQLite database", () => {
         '019-audio-output-routes',
         '020-overlay-surfaces',
         '021-alert-video-audio',
-        '022-screen-effects'
+        '022-screen-effects',
+        '023-screen-effect-sets'
       );
     `);
 

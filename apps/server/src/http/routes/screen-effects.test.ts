@@ -26,6 +26,24 @@ function effect(): ScreenEffectDocument {
 }
 
 describe("Screen Effects routes", () => {
+  it("protects set CRUD and delegates explicit activation and scoped effect creation", async () => {
+    const { app, headers, service, sets } = await fixture();
+    expect((await app.inject({ method: "GET", url: "/screen-effect-sets" })).statusCode).toBe(401);
+    expect((await app.inject({ method: "POST", url: "/screen-effect-sets", payload: { id: "new", name: "New" } })).statusCode).toBe(401);
+    expect((await app.inject({ method: "GET", url: "/screen-effect-sets", headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: "POST", url: "/screen-effect-sets", headers, payload: { id: "new", name: "New", sourceId: "default" } })).statusCode).toBe(201);
+    expect(sets.createSet).toHaveBeenCalledWith({ id: "new", name: "New" }, "default");
+    expect((await app.inject({ method: "PUT", url: "/screen-effect-sets/new", headers, payload: { name: "Renamed" } })).statusCode).toBe(200);
+    sets.activateSet.mockRejectedValueOnce(new EffectLiveImpactConfirmationRequiredError());
+    expect((await app.inject({ method: "POST", url: "/screen-effect-sets/new/activate", headers, payload: {} })).statusCode).toBe(409);
+    expect((await app.inject({ method: "POST", url: "/screen-effect-sets/new/activate", headers, payload: { confirmLiveImpact: true } })).statusCode).toBe(204);
+    expect(sets.activateSet).toHaveBeenLastCalledWith("new", true);
+    expect((await app.inject({ method: "POST", url: "/screen-effects?set=new", headers, payload: effect() })).statusCode).toBe(201);
+    expect(service.create).toHaveBeenCalledWith(effect(), "new");
+    expect((await app.inject({ method: "DELETE", url: "/screen-effect-sets/new", headers })).statusCode).toBe(204);
+    expect((await app.inject({ method: "POST", url: "/screen-effect-sets", headers, payload: { id: "new", name: " " } })).statusCode).toBe(400);
+  });
+
   it("protects and delegates the complete document workflow", async () => {
     const { app, headers, service } = await fixture();
     const candidate = effect();
@@ -68,6 +86,13 @@ describe("Screen Effects routes", () => {
 });
 
 async function fixture() {
+  const sets = {
+    listSets: vi.fn(async () => []),
+    createSet: vi.fn(async (input: { id: string; name: string }) => ({ ...input, active: false, effectIds: [] })),
+    renameSet: vi.fn(async (id: string, name: string) => ({ id, name, active: false, effectIds: [] })),
+    activateSet: vi.fn< (id: string, confirmed: boolean) => Promise<void> >(async () => {}),
+    removeSet: vi.fn< (id: string) => Promise<void> >(async () => {})
+  };
   const candidate = effect();
   const service = {
     list: vi.fn(async () => [candidate]),
@@ -91,8 +116,9 @@ async function fixture() {
   const app = createServerApp({
     metadata: { appName: "stream-jams", version: "1.2.3" },
     effectManagementService: service,
+    effectSets: sets,
     managementAuthPreHandler: createManagementAuthPreHandler({ sessionService }),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter })
   });
-  return { app, headers: { authorization: `Bearer ${session.id}` }, service };
+  return { app, headers: { authorization: `Bearer ${session.id}` }, service, sets };
 }

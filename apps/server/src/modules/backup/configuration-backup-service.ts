@@ -289,6 +289,13 @@ export class ConfigurationBackupService {
         }
       }
     }
+    if (archive.manifest.schemaVersion >= 23) {
+      for (const tableName of ["screen_effect_sets", "screen_effect_set_memberships"]) {
+        if (archive.configuration.tables[tableName] === undefined) {
+          blockers.push(blocker("Backup Screen Effect sets are missing", `Schema 23 and later require ${tableName}.`, "Export a new backup from the source installation."));
+        }
+      }
+    }
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
     }
@@ -606,6 +613,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 20) return archiveSchemaVersion === 19;
   if (currentSchemaVersion === 21) return archiveSchemaVersion === 19 || archiveSchemaVersion === 20;
   if (currentSchemaVersion === 22) return [19, 20, 21].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 23) return [19, 20, 21, 22].includes(archiveSchemaVersion);
   return false;
 }
 

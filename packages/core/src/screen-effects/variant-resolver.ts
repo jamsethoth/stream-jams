@@ -9,7 +9,7 @@ interface WeightedVariant {
 export function chooseWeightedVariant(variants: readonly WeightedVariant[], random: number): string {
   validateRandom(random);
   if (variants.length === 0 || variants.length > 50) {
-    throw new RangeError("Choose between one and 50 weighted variants");
+    throw new RangeError("Choose between one and 50 variants");
   }
 
   const ids = new Set<string>();
