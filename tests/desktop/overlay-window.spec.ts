@@ -1,4 +1,4 @@
-import { access, cp, mkdir, mkdtemp, rename, writeFile } from "node:fs/promises";
+import { access, cp, mkdir, mkdtemp, readFile, rename, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createRequire } from "node:module";
@@ -29,16 +29,31 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
   await writeFile(join(appRoot, "package.json"), JSON.stringify({ name: "stream-jams-overlay-probe", version: "1.0.0", type: "module", main: "main.mjs" }));
   await writeFile(join(appRoot, "main.mjs"), `
     import { app, BrowserWindow, screen } from 'electron';
+    import { appendFileSync } from 'node:fs';
     import { OverlayWindow } from './overlay/overlay-window.js';
     app.disableHardwareAcceleration();
     app.setPath('userData', process.env.STREAM_JAMS_PROBE_PROFILE);
     app.on('window-all-closed', () => {});
+    const recordLaunch = event => appendFileSync(process.env.STREAM_JAMS_PROBE_LAUNCH_LOG, event + '\\n');
+    recordLaunch('main-entry');
+    const startupEvents = [];
+    let releasePlaywrightAttachment;
+    const playwrightAttached = new Promise(resolve => { releasePlaywrightAttachment = resolve; });
+    globalThis.__playwright_run = () => {
+      startupEvents.push('playwright-attached');
+      recordLaunch('playwright-attached');
+      releasePlaywrightAttachment();
+    };
     void app.whenReady().then(async () => {
+    recordLaunch('electron-ready');
+    await playwrightAttached;
     const management = new BrowserWindow({show:false, title:'Owned overlay probe management'});
     await management.loadURL('data:text/html,<body style="background:magenta">Owned probe</body>');
     const selectedId = String(screen.getAllDisplays()[0].id);
     const overlay = OverlayWindow.create({enabled:true,selectedId});
-    Object.assign(globalThis,{probe:{management,overlay,selectedId}});
+    startupEvents.push('windows-created');
+    recordLaunch('windows-created');
+    Object.assign(globalThis,{probe:{management,overlay,selectedId,startupEvents}});
     app.on('before-quit',()=>{overlay.destroy();management.destroy();});
     });
   `);
@@ -46,12 +61,20 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
   const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
   delete env.ELECTRON_RUN_AS_NODE;
   env.STREAM_JAMS_PROBE_PROFILE = root;
+  const launchLogPath = testInfo.outputPath("overlay-launch.log");
+  env.STREAM_JAMS_PROBE_LAUNCH_LOG = launchLogPath;
+  const attachLaunchLog = async () => {
+    const body = await readFile(launchLogPath, "utf8").catch(error => `Launch log unavailable: ${String(error)}`);
+    await testInfo.attach("overlay-launch", { body, contentType: "text/plain" });
+    return body;
+  };
   const executablePath = join(packaged, "Overlay Probe.exe");
   await rename(join(packaged, "electron.exe"), executablePath);
   let desktop: Awaited<ReturnType<typeof _electron.launch>>;
   try {
     desktop = await _electron.launch({ executablePath, env, chromiumSandbox: true, timeout: 60_000 });
   } catch (error) {
+    await attachLaunchLog();
     try { await cleanupFailedOverlayLaunch(executablePath); }
     catch (cleanupError) { throw new AggregateError([error, cleanupError], "Overlay probe launch and cleanup failed.", { cause: cleanupError }); }
     throw error;
@@ -60,6 +83,14 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
   const pids: number[] = [];
   await withCleanup(async () => {
     await expect.poll(() => desktop.evaluate(() => Boolean((globalThis as ProbeGlobal).probe))).toBe(true);
+    expect(await desktop.evaluate(() => (globalThis as ProbeGlobal).probe!.startupEvents)).toEqual([
+      "playwright-attached",
+      "windows-created"
+    ]);
+    const launchEvents = (await attachLaunchLog()).trim().split(/\r?\n/).filter(Boolean);
+    expect(launchEvents).toContain("main-entry");
+    expect(launchEvents.indexOf("playwright-attached")).toBeGreaterThan(-1);
+    expect(launchEvents.indexOf("windows-created")).toBeGreaterThan(launchEvents.indexOf("playwright-attached"));
     pids.push(...await desktop.evaluate(({ app }) => app.getAppMetrics().map((entry: { pid: number }) => entry.pid)));
     const state = await desktop.evaluate(({ app, screen }) => {
       const { overlay, selectedId } = (globalThis as ProbeGlobal).probe!;
@@ -122,4 +153,4 @@ interface ProbeWindow {
   isVisible(): boolean; isFocusable(): boolean; isAlwaysOnTop(): boolean; hide(): void;
   getNativeWindowHandle(): Buffer;
 }
-type ProbeGlobal = typeof globalThis & { probe?: { selectedId: string; management: ProbeWindow; overlay: { window: ProbeWindow; load(url: string): Promise<void> } } };
+type ProbeGlobal = typeof globalThis & { probe?: { selectedId: string; startupEvents: string[]; management: ProbeWindow; overlay: { window: ProbeWindow; load(url: string): Promise<void> } } };
