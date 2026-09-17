@@ -141,7 +141,7 @@ function RouteContent({
     case "modules-alerts":
       return <AlertSetsPage initialSetId={route.setId} managementApi={managementApi} onEditAlert={(alert) => onNavigate({ id: "alert-editor", alertId: alert.id, setId: alert.setId, eventType: alert.eventType, targetProfileId: alert.targetProfileIds[0] ?? "landscape" })} />;
     case "modules-screen-effects":
-      return <ScreenEffectsPage api={screenEffectsApi} onEdit={(effectId, create) => onNavigate({ id: "screen-effect-editor", effectId, ...(create ? { create: true as const } : {}) })} />;
+      return <ScreenEffectsPage api={screenEffectsApi} initialSetId={route.setId} onEdit={(effectId, create, setId, variantId) => onNavigate({ id: "screen-effect-editor", effectId, ...(setId === undefined ? {} : { setId }), ...(variantId === undefined ? {} : { variantId }), ...(create ? { create: true as const } : {}) })} />;
     case "alert-safety":
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":
@@ -167,8 +167,11 @@ function RouteContent({
           audioApi={audioApi}
           create={route.create === true}
           effectId={route.effectId}
+          setId={route.setId}
+          initialVariantId={route.variantId}
+          onOpenEffect={(effectId, setId, variantId) => onNavigate({ id: "screen-effect-editor", effectId, setId, variantId })}
           managementApi={managementApi}
-          onBack={() => onNavigate({ id: "modules-screen-effects" })}
+          onBack={() => onNavigate({ id: "modules-screen-effects", ...(route.setId === undefined ? {} : { setId: route.setId }) })}
         />
       );
     case "assets":

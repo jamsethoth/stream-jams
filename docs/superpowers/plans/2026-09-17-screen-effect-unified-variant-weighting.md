@@ -41,7 +41,7 @@
 - Produces: `screenEffectDocumentSchema` requiring at least one enabled variant.
 - Consumes: no new dependencies.
 
-- [ ] **Step 1: Write failing schema and resolver tests**
+- [x] **Step 1: Write failing schema and resolver tests**
 
 Update the new-document expectation so the variant is exactly:
 
@@ -62,7 +62,7 @@ Update the new-document expectation so the variant is exactly:
 
 Replace the “exactly one enabled default” test with cases proving one or many enabled variants parse, zero enabled variants fail, and an incoming `kind` field fails strict parsing. Update resolver fixtures to weights `1`, `2`, and `3`, then assert random values select across all three boundaries and disabled rows never win.
 
-- [ ] **Step 2: Run focused core tests and verify the contract tests fail**
+- [x] **Step 2: Run focused core tests and verify the contract tests fail**
 
 Run:
 
@@ -72,7 +72,7 @@ corepack.cmd pnpm exec vitest run packages/core/src/screen-effects/schemas.test.
 
 Expected: failures reference the removed `kind` shape and old default fallback behavior.
 
-- [ ] **Step 3: Implement the unified core model**
+- [x] **Step 3: Implement the unified core model**
 
 Remove `kind` from `EffectVariant` and `effectVariantSchema`. In `screenEffectDocumentSchema.superRefine`, use:
 
@@ -95,7 +95,7 @@ const selectedId = chooseWeightedVariant(enabled, random);
 
 Update only Screen Effect fixtures that compile against this contract; leave Alert `kind` fields unchanged.
 
-- [ ] **Step 4: Run focused core tests and typecheck core**
+- [x] **Step 4: Run focused core tests and typecheck core**
 
 Run the focused Vitest command from Step 2, then:
 
@@ -105,7 +105,7 @@ corepack.cmd pnpm --filter @stream-jams/core typecheck
 
 Expected: all focused tests pass and core typecheck exits zero.
 
-- [ ] **Step 5: Commit the core unit**
+- [x] **Step 5: Commit the core unit**
 
 Stage only the Task 1 files and commit with:
 
@@ -127,7 +127,7 @@ feat: unify screen effect variant weighting
 - Produces: repository reads legacy JSON containing `kind: "default" | "weighted"` into the unified domain model.
 - Produces: repository writes `kind = "weighted"` in the legacy SQL column and adds `kind: "weighted"` only to stored JSON.
 
-- [ ] **Step 1: Write failing legacy-read and neutral-write repository tests**
+- [x] **Step 1: Write failing legacy-read and neutral-write repository tests**
 
 Seed one raw legacy row whose `document_json` contains `kind: "default"`, read it through `SqliteEffectRepository`, and expect the returned variant to have no `kind`. Save a unified document and inspect SQL directly:
 
@@ -140,7 +140,7 @@ expect(JSON.parse(String(row.document_json))).toMatchObject({ kind: "weighted" }
 
 Also assert `repository.find()` returns the unified object after the save.
 
-- [ ] **Step 2: Run the repository tests and verify they fail**
+- [x] **Step 2: Run the repository tests and verify they fail**
 
 Run:
 
@@ -150,7 +150,7 @@ corepack.cmd pnpm exec vitest run apps/server/src/modules/screen-effects/sqlite-
 
 Expected: the repository rejects legacy JSON under the new strict schema or still reads/writes `kind` as domain data.
 
-- [ ] **Step 3: Implement the storage adapter**
+- [x] **Step 3: Implement the storage adapter**
 
 Add file-local helpers with these shapes:
 
@@ -163,11 +163,11 @@ function serializeStoredVariant(variant: EffectVariant): StoredEffectVariant;
 
 `parseStoredVariant` must verify the raw value is a non-null object with a valid legacy kind, remove only `kind`, and pass the rest to `effectVariantSchema.parse`. `serializeStoredVariant` returns `{ ...variant, kind: "weighted" }`. Use the serialized object for the SQL `kind`, JSON, asset IDs, route IDs, and enabled/weight columns.
 
-- [ ] **Step 4: Update backup and server fixtures without weakening coverage**
+- [x] **Step 4: Update backup and server fixtures without weakening coverage**
 
 Remove `kind` only from Screen Effect domain documents. Keep raw configuration snapshot rows in their legacy physical form with `kind: "weighted"`, proving capture and restore still satisfy the migration 022 constraints.
 
-- [ ] **Step 5: Run affected server tests and typecheck**
+- [x] **Step 5: Run affected server tests and typecheck**
 
 Run:
 
@@ -178,7 +178,7 @@ corepack.cmd pnpm --filter @stream-jams/server typecheck
 
 Expected: tests pass; legacy rows round-trip without content loss.
 
-- [ ] **Step 6: Commit the repository compatibility unit**
+- [x] **Step 6: Commit the repository compatibility unit**
 
 Stage only Task 2 files and commit with:
 
@@ -202,7 +202,7 @@ fix: preserve legacy screen effect storage
 - Produces: `expectedVariantChance(variant, variants): number`, returning a percentage from `0` through `100`.
 - Produces: local simulation rows `{ id, name, weight, expectedPercent, count, observedPercent }` for all variants.
 
-- [ ] **Step 1: Write failing editor tests**
+- [x] **Step 1: Write failing editor tests**
 
 Add tests that assert:
 
@@ -215,7 +215,7 @@ expect(screen.getByText("75% expected")).toBeVisible();
 
 For deterministic simulation, add optional prop `random?: () => number` with production default `Math.random`; supply a cycling sequence in the test. Click `Simulate 1,000 selections`, assert the semantic table reports expected and observed counts, assert disabled variants report zero, and assert API save/test mocks were not called. Add a test that disabling the final enabled variant exposes `Enable at least one variant` and disables Save.
 
-- [ ] **Step 2: Run editor tests and verify they fail**
+- [x] **Step 2: Run editor tests and verify they fail**
 
 Run:
 
@@ -225,11 +225,11 @@ corepack.cmd pnpm exec vitest run apps/web/src/management/screen-effects/ScreenE
 
 Expected: missing simulation action/table and old Kind control assertions fail.
 
-- [ ] **Step 3: Implement probability display and last-enabled validation**
+- [x] **Step 3: Implement probability display and last-enabled validation**
 
 Compute enabled total weight with a safe integer reduction. Show each enabled row as `Weight N · P% expected · Enabled`; show disabled rows as `Weight N · Disabled · 0% expected`. Remove the Kind control and old fallback help. Enable weight and enabled inputs for every variant. Let schema validation reject zero enabled variants, display its existing validation summary, and leave Save disabled while invalid.
 
-- [ ] **Step 4: Implement the local 1,000-selection simulation**
+- [x] **Step 4: Implement the local 1,000-selection simulation**
 
 Keep `simulationRows` in editor state. On button activation:
 
@@ -244,11 +244,11 @@ for (let index = 0; index < 1_000; index += 1) {
 
 Render a captioned semantic table with Variant, Weight, Expected, Selections, and Observed columns. Wrap the refreshed result in `role="status" aria-live="polite"`. Catch selector errors and show an inline actionable error without changing the draft.
 
-- [ ] **Step 5: Update Storybook coverage and styles**
+- [x] **Step 5: Update Storybook coverage and styles**
 
 Add or update the weighted-variants story so it visibly shows multiple enabled weights, one disabled variant, calculated chances, and simulation. Keep the table within the editor viewport using the existing scroll regions and design tokens. Do not add a dialog.
 
-- [ ] **Step 6: Run focused web checks**
+- [x] **Step 6: Run focused web checks**
 
 Run:
 
@@ -260,7 +260,7 @@ corepack.cmd pnpm --filter @stream-jams/web build
 
 Expected: focused tests, web typecheck, and production build pass.
 
-- [ ] **Step 7: Commit the editor unit**
+- [x] **Step 7: Commit the editor unit**
 
 Stage only Task 3 files and commit with:
 
@@ -281,15 +281,15 @@ feat: simulate screen effect weights
 - Consumes: completed core, storage, and editor behavior from Tasks 1–3.
 - Produces: browser regression coverage and an OpenSpec record matching shipped behavior.
 
-- [ ] **Step 1: Update the browser workflow test**
+- [x] **Step 1: Update the browser workflow test**
 
 Create or edit a Screen Effect with two enabled variants at weights `1` and `3`. Verify the tree shows `25% expected` and `75% expected`, run simulation, assert the result totals 1,000, save and reload, then verify both weights persist. Register request tracking and assert simulation sends no save, live-test, or trigger request.
 
-- [ ] **Step 2: Update OpenSpec requirements and task evidence**
+- [x] **Step 2: Update OpenSpec requirements and task evidence**
 
 Replace default-versus-weighted language with the single enabled weighted pool. Add requirements for probability labels, local 1,000-selection simulation, no external side effects, and legacy persistence compatibility. Mark tasks complete only after their verification evidence exists.
 
-- [ ] **Step 3: Scan for stale Screen Effect kind usage**
+- [x] **Step 3: Scan for stale Screen Effect kind usage**
 
 Run:
 
@@ -299,7 +299,7 @@ rg -n 'kind: "(default|weighted)"|variant\.kind|enabled default|weighted variant
 
 Expected: only deliberate legacy-storage compatibility references remain.
 
-- [ ] **Step 4: Run required validation**
+- [x] **Step 4: Run required validation**
 
 Run:
 
@@ -315,11 +315,11 @@ openspec.cmd validate align-screen-effects-presentation --strict
 
 Expected: all commands pass. Classify and report any unrelated failure without calling the suite green.
 
-- [ ] **Step 5: Restart and verify the local app**
+- [x] **Step 5: Restart and verify the local app**
 
 Stop only the current Stream Jams instance serving the isolated profile, rebuild/restart it on the currently assigned port, wait for health, reload the existing editor URL, and verify: all variants expose weight and enabled controls; chances update after editing; simulation fills the middle/editor workflow without opening another player; preview and `Test saved…` still target the selected variant.
 
-- [ ] **Step 6: Commit final fixtures, specs, and verification evidence**
+- [x] **Step 6: Commit final fixtures, specs, and verification evidence**
 
 Stage only Task 4 files and commit with:
 

@@ -19,6 +19,7 @@ import {
   providerKindSchema,
   registeredProviderDetailSchema,
   screenEffectDocumentSchema,
+  screenEffectSetSchema,
   targetProfileIdSchema,
   type ConfigurationBackupArchive,
   type ConfigurationBackupOutput,
@@ -64,7 +65,9 @@ const tableDefinitions = [
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
   table("audio_output_routes", ["id", "name", "device_id", "device_label"], ["id"], [],
     "SELECT id, name, NULL AS device_id, NULL AS device_label FROM audio_output_routes"),
+  table("screen_effect_sets", ["id", "name", "active"], ["id"]),
   table("screen_effects", ["id", "schema_version", "name", "enabled", "description", "category", "priority", "cooldown_seconds", "updated_at"], ["id"]),
+  table("screen_effect_set_memberships", ["effect_id", "set_id"], ["effect_id"]),
   table("screen_effect_variants", ["id", "effect_id", "position", "kind", "enabled", "weight", "document_json", "visual_asset_id", "sound_asset_id"], ["effect_id", "position", "id"], ["document_json"]),
   table("screen_effect_bindings", ["id", "effect_id", "position", "kind", "canonical_identity", "document_json"], ["effect_id", "position", "id"], ["document_json"]),
   table("screen_effect_audio_routes", ["variant_id", "route_id", "position"], ["variant_id", "position", "route_id"]),
@@ -164,6 +167,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
   validate(configuration: BackupConfiguration): readonly string[] {
     const errors: string[] = [];
     const tableNames = Object.keys(configuration.tables);
+    errors.push(...validateEffectSets(configuration.tables));
     const presentScreenEffectTables = [...screenEffectTableNames].filter((name) => configuration.tables[name] !== undefined);
     if (presentScreenEffectTables.length > 0 && presentScreenEffectTables.length !== screenEffectTableNames.size) {
       const missing = [...screenEffectTableNames].filter((name) => configuration.tables[name] === undefined);
@@ -175,7 +179,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     for (const definition of tableDefinitions) {
       const rows = configuration.tables[definition.name];
       if (rows === undefined) {
-        if (definition.name === "overlay_surfaces" || screenEffectTableNames.has(definition.name)) continue;
+        if (definition.name === "overlay_surfaces" || screenEffectTableNames.has(definition.name) || definition.name === "screen_effect_sets" || definition.name === "screen_effect_set_memberships") continue;
         errors.push(`Required backup table "${definition.name}" is missing.`);
         continue;
       }
@@ -230,6 +234,10 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
       for (const definition of tableDefinitions) {
+        if (definition.name === "screen_effect_sets" && input.tables.screen_effect_sets === undefined) {
+          insertCapturedRows(this.connection, definition.name, [{ id: "screen-effects-default", name: "Default", active: 1 }]);
+          continue;
+        }
         if (definition.name === "asset_metadata") {
           for (const asset of input.assets) {
             this.connection.prepare(
@@ -275,7 +283,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
           continue;
         }
         const placeholders = definition.columns.map(() => "?").join(", ");
-        const statement = this.connection.prepare(`INSERT INTO ${definition.name} (${definition.columns.join(", ")}) VALUES (${placeholders})`);
+        const statement = this.connection.prepare(`INSERT ${definition.name === "screen_effect_set_memberships" ? "OR REPLACE " : ""}INTO ${definition.name} (${definition.columns.join(", ")}) VALUES (${placeholders})`);
         for (const row of input.tables[definition.name] ?? []) {
           statement.run(...definition.columns.map((column) => {
             if (definition.name === "alert_editor_documents" && column === "document_json") {
@@ -298,6 +306,32 @@ const screenEffectTableNames = new Set([
   "module_playback_settings"
 ]);
 
+function validateEffectSets(tables: BackupConfiguration["tables"]): string[] {
+  const sets = tables.screen_effect_sets;
+  const members = tables.screen_effect_set_memberships;
+  if (sets === undefined && members === undefined) return [];
+  if (sets === undefined || members === undefined) return ["Screen Effect set and membership tables must both be present."];
+  const errors: string[] = [];
+  if (sets.filter((set) => set.active === 1).length !== 1) errors.push("Screen Effect sets must have exactly one active set.");
+  const ids = new Set<unknown>();
+  const names = new Set<string>();
+  for (const set of sets) {
+    if (!screenEffectSetSchema.safeParse({ ...set, active: sqlBoolean(set.active), effectIds: [] }).success) errors.push("Screen Effect set is invalid.");
+    const name = String(set.name).toLowerCase();
+    if (ids.has(set.id) || names.has(name)) errors.push("Screen Effect set IDs and names must be unique.");
+    ids.add(set.id);
+    names.add(name);
+  }
+  const effectIds = new Set((tables.screen_effects ?? []).map((effect) => effect.id));
+  const seen = new Set<unknown>();
+  for (const member of members) {
+    if (!ids.has(member.set_id) || !effectIds.has(member.effect_id) || seen.has(member.effect_id)) errors.push("Screen Effect set membership is invalid or duplicated.");
+    seen.add(member.effect_id);
+  }
+  if ([...effectIds].some((id) => !seen.has(id))) errors.push("Every Screen Effect must belong to exactly one set.");
+  return errors;
+}
+
 function isSqliteRestorePoint(value: unknown): value is SqliteConfigurationRestorePoint {
   return typeof value === "object" && value !== null && "marker" in value && value.marker === restorePointMarker && "tables" in value;
 }
@@ -314,7 +348,7 @@ function insertCapturedRows(connection: DatabaseSync, tableName: string, rows: r
       throw new TypeError(`Restore point for ${tableName} contains invalid columns`);
     }
     const placeholders = columns.map(() => "?").join(", ");
-    connection.prepare(`INSERT INTO ${tableName} (${columns.join(", ")}) VALUES (${placeholders})`)
+    connection.prepare(`INSERT ${tableName === "screen_effect_set_memberships" ? "OR REPLACE " : ""}INTO ${tableName} (${columns.join(", ")}) VALUES (${placeholders})`)
       .run(...columns.map((column) => row[column] as SQLInputValue));
   }
 }
@@ -588,7 +622,12 @@ function validateScreenEffects(tables: BackupConfiguration["tables"]): readonly 
   const errors: string[] = [];
   const parsedVariants = new Map<string, ReturnType<typeof effectVariantSchema.parse>>();
   for (const [index, row] of (tables.screen_effect_variants ?? []).entries()) {
-    const parsed = effectVariantSchema.safeParse(parseJsonValue(row.document_json));
+    const stored = splitStoredEffectVariant(parseJsonValue(row.document_json));
+    if (stored.kind !== "default" && stored.kind !== "weighted") {
+      errors.push(`screen_effect_variants[${index}].document_json.kind must be default or weighted.`);
+      continue;
+    }
+    const parsed = effectVariantSchema.safeParse(stored.variant);
     if (!parsed.success) {
       pushSchemaError(errors, `screen_effect_variants[${index}].document_json`, parsed);
       continue;
@@ -598,7 +637,7 @@ function validateScreenEffects(tables: BackupConfiguration["tables"]): readonly 
     const soundAssetId = parsed.data.sound?.assetId ?? null;
     if (
       parsed.data.id !== row.id ||
-      parsed.data.kind !== row.kind ||
+      stored.kind !== row.kind ||
       (parsed.data.enabled ? 1 : 0) !== row.enabled ||
       parsed.data.weight !== row.weight ||
       visualAssetId !== row.visual_asset_id ||
@@ -678,6 +717,14 @@ function validateScreenEffects(tables: BackupConfiguration["tables"]): readonly 
     }
   }
   return errors;
+}
+
+function splitStoredEffectVariant(value: unknown): { readonly kind: unknown; readonly variant: unknown } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { kind: undefined, variant: value };
+  }
+  const { kind, ...variant } = value as Record<string, unknown>;
+  return { kind, variant };
 }
 
 function sameStrings(left: readonly string[], right: readonly string[]): boolean {

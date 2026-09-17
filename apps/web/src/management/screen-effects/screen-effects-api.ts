@@ -1,5 +1,9 @@
 import {
   screenEffectDocumentSchema,
+  screenEffectSetSchema,
+  screenEffectSetInputSchema,
+  type ScreenEffectSet,
+  type ScreenEffectSetInput,
   type ScreenEffectDocument
 } from "@stream-jams/core";
 import {
@@ -36,6 +40,11 @@ export interface ScreenEffectBrowserSource {
 }
 
 export interface ScreenEffectsApi {
+  listSets(): Promise<readonly ScreenEffectSet[]>;
+  createSet(input: ScreenEffectSetInput, sourceId?: string): Promise<ScreenEffectSet>;
+  renameSet(id: string, name: string): Promise<ScreenEffectSet>;
+  activateSet(id: string): Promise<void>;
+  removeSet(id: string): Promise<void>;
   list(): Promise<readonly ScreenEffectDocument[]>;
   listBrowserSources(): Promise<readonly ScreenEffectBrowserSource[]>;
   getModuleEnabled(): Promise<boolean>;
@@ -43,7 +52,7 @@ export interface ScreenEffectsApi {
   createBrowserSource(source: ScreenEffectBrowserSource): Promise<ScreenEffectBrowserSource>;
   regenerateBrowserSource(source: ScreenEffectBrowserSource): Promise<ScreenEffectBrowserSource>;
   get(effectId: string): Promise<ScreenEffectDocument>;
-  create(document: ScreenEffectDocument): Promise<ScreenEffectDocument>;
+  create(document: ScreenEffectDocument, setId?: string): Promise<ScreenEffectDocument>;
   update(
     effectId: string,
     document: ScreenEffectDocument,
@@ -57,6 +66,23 @@ export function createHttpScreenEffectsApi(options: HttpManagementClientOptions 
   const client = createManagementHttpClient(options);
   const path = (effectId: string) => `/screen-effects/${encodeURIComponent(effectId)}`;
   return {
+    async listSets() {
+      return screenEffectSetSchema.array().parse(await client.getJson("/screen-effect-sets", "Unable to load Screen Effect sets."));
+    },
+    async createSet(input, sourceId) {
+      return screenEffectSetSchema.parse(await client.postJson("/screen-effect-sets", {
+        ...screenEffectSetInputSchema.parse(input), ...(sourceId === undefined ? {} : { sourceId })
+      }, "Unable to create Screen Effect set."));
+    },
+    async renameSet(id, name) {
+      return screenEffectSetSchema.parse(await client.putJson(`/screen-effect-sets/${encodeURIComponent(id)}`, { name }, "Unable to rename Screen Effect set."));
+    },
+    async activateSet(id) {
+      await client.postRequest(`/screen-effect-sets/${encodeURIComponent(id)}/activate`, "Unable to activate Screen Effect set.", { confirmLiveImpact: true });
+    },
+    async removeSet(id) {
+      await client.deleteRequest(`/screen-effect-sets/${encodeURIComponent(id)}`, "Unable to delete Screen Effect set.");
+    },
     async list() {
       const response = await client.getJson<unknown>("/screen-effects", "Unable to load Screen Effects.");
       if (!Array.isArray(response)) throw new TypeError("Expected a Screen Effects response array");
@@ -102,10 +128,10 @@ export function createHttpScreenEffectsApi(options: HttpManagementClientOptions 
         await client.getJson(path(effectId), "Unable to load the Screen Effect.")
       );
     },
-    async create(document) {
+    async create(document, setId) {
       const candidate = screenEffectDocumentSchema.parse(document);
       return screenEffectDocumentSchema.parse(
-        await client.postJson("/screen-effects", candidate, "Unable to create the Screen Effect.")
+        await client.postJson(setId === undefined ? "/screen-effects" : `/screen-effects?set=${encodeURIComponent(setId)}`, candidate, "Unable to create the Screen Effect.")
       );
     },
     async update(effectId, document, confirmLiveImpact) {

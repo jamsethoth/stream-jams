@@ -64,6 +64,7 @@ import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
+import { SqliteEffectSetRepository } from "../modules/screen-effects/sqlite-effect-set-repository.js";
 import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
 import { EffectManagementService } from "../modules/screen-effects/effect-management-service.js";
 import { EffectPlaybackCoordinator } from "../modules/screen-effects/effect-playback-coordinator.js";
@@ -257,6 +258,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   });
   const assetRepository = new SqliteAssetRepository(database.connection);
   const effectRepository = new SqliteEffectRepository(database.connection, now);
+  const effectSetRepository = new SqliteEffectSetRepository(database.connection, effectRepository);
   const effectModuleSettingsRepository = new SqliteEffectModuleSettingsRepository(database.connection, now);
   const alertModuleSettingsRepository = new SqliteEffectModuleSettingsRepository(database.connection, now, "alerts");
   const initialEffectModuleSettings = await effectModuleSettingsRepository.get();
@@ -621,7 +623,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     now: () => now().getTime()
   });
   const effectAdmissionService = new EffectAdmissionService({
-    repository: effectRepository,
+    repository: { list: () => effectRepository.listActive(), find: (id) => effectRepository.find(id) },
+    isEffectLive: (id) => effectRepository.isInActiveSet(id),
     queue: effectQueue,
     dedupe: playbackDedupeService,
     cooldowns: playbackCooldownService,
@@ -1202,6 +1205,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runMutation: work => maintenanceGate.runIntake(work)
   });
   const effectManagementService = new EffectManagementService({
+    sets: effectSetRepository,
+    isInActiveSet: (id) => effectRepository.isInActiveSet(id),
     repository: effectRepository,
     async testEffectVariant(effectId, variantId) {
       const outcome = await effectAdmissionService.testEffectVariant(effectId, variantId);
@@ -1292,6 +1297,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     legacyPlaybackOperationsService: playbackOperationsService,
     playbackOperationsService,
     effectManagementService,
+    effectSets: effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,
       originPolicy: managementOriginPolicy,

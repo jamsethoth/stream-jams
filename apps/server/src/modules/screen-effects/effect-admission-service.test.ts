@@ -62,6 +62,7 @@ function service(options: {
   readonly validateReferences?: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly validateOutputAvailability?: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly isModuleEnabled?: () => Promise<boolean>;
+  readonly isEffectLive?: (id: string) => boolean;
 }) {
   let nextId = 0;
   return new EffectAdmissionService({
@@ -80,11 +81,27 @@ function service(options: {
     now: options.now ?? (() => 1_000),
     validateReferences: options.validateReferences ?? (async () => true),
     validateOutputAvailability: options.validateOutputAvailability ?? (async () => true),
-    isModuleEnabled: options.isModuleEnabled ?? (async () => true)
+    isModuleEnabled: options.isModuleEnabled ?? (async () => true),
+    isEffectLive: options.isEffectLive ?? (() => true)
   });
 }
 
 describe("EffectAdmissionService", () => {
+  it("excludes a previous set when activation changes during asynchronous admission", async () => {
+    let active = "one";
+    const queue = new DefaultEffectQueue();
+    const admission = service({ documents: () => [effect(active)], queue,
+      isEffectLive: (id) => id === active,
+      validateReferences: async () => { active = "two"; return true; }
+    });
+    await admission.handleTriggers([trigger("before-switch")]);
+    expect(queue.snapshot().queued).toHaveLength(0);
+    await admission.handleTriggers([trigger("after-switch")]);
+    expect(queue.snapshot().queued.map((item) => item.content.effectId)).toEqual(["two"]);
+    active = "one";
+    expect(queue.snapshot().queued[0]!.content.effectId).toBe("two");
+  });
+
   it("reserves a module-scoped event before async work so concurrent redelivery admits once", async () => {
     const queue = new DefaultEffectQueue();
     const admission = service({ documents: () => [effect("one")], queue });

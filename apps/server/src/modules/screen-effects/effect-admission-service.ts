@@ -49,6 +49,7 @@ export interface EffectAdmissionServiceOptions {
   readonly validateReferences?: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly validateOutputAvailability?: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly isModuleEnabled?: () => Promise<boolean>;
+  readonly isEffectLive?: (effectId: string) => boolean;
   readonly onOutcome?: (result: EffectAdmissionResult) => void | Promise<void>;
 }
 
@@ -83,6 +84,7 @@ export class EffectVariantNotFoundError extends Error {
 }
 
 export class EffectAdmissionService {
+  readonly #isEffectLive: (effectId: string) => boolean;
   readonly #repository: Pick<ScreenEffectRepository, "list" | "find">;
   readonly #queue: EffectQueue;
   readonly #dedupe: PlaybackDedupeKeyService;
@@ -99,6 +101,7 @@ export class EffectAdmissionService {
   #nextSequence = 0;
 
   constructor(options: EffectAdmissionServiceOptions) {
+    this.#isEffectLive = options.isEffectLive ?? (() => true);
     this.#repository = options.repository;
     this.#queue = options.queue;
     this.#dedupe = options.dedupe;
@@ -266,6 +269,8 @@ export class EffectAdmissionService {
         continue;
       }
 
+      // Activation may have changed while reference/output checks awaited.
+      if (!this.#isEffectLive(document.id)) continue;
       const occurrenceId = this.#generateOccurrenceId();
       const occurrence = this.#createOccurrence(occurrenceId, content, match.trigger);
       if (this.#queue.enqueue(occurrence) === "full") {

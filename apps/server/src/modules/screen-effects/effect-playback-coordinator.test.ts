@@ -30,7 +30,6 @@ function occurrence(id: string, mode: "combined" | "audio" | "visual" = "combine
       variant: {
         id: `variant-${id}`,
         name: "Default",
-        kind: "default",
         enabled: true,
         weight: 1,
         visual: mode === "audio" ? null : {

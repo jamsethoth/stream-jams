@@ -1,5 +1,8 @@
+import { ScreenEffectPreview } from "./ScreenEffectPreview.js";
+import { ManagementHttpError } from "../management-http-client.js";
 import {
   applyScreenEffectEdit,
+  chooseWeightedVariant,
   copyScreenEffectVariant,
   createScreenEffectAuthoringState,
   createScreenEffectDocument,
@@ -16,13 +19,13 @@ import {
   type EffectVariant,
   type ScreenEffectAuthoringState,
   type ScreenEffectDocument,
+  type ScreenEffectSet,
   type StreamerBotSubscriptionCatalog,
   type TwitchCustomReward
 } from "@stream-jams/core";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AssetApi } from "../assets/asset-api.js";
 import { AssetPicker } from "../assets/AssetPicker.js";
-import { AssetPreview } from "../assets/AssetPreview.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import { MediaAudioControls } from "../audio/MediaAudioControls.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
@@ -31,6 +34,7 @@ import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
 import { updateEffectVariant } from "./effect-editor-state.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 import "./screen-effects.css";
+import { ScreenEffectTree } from "./ScreenEffectTree.js";
 
 export interface ScreenEffectEditorProps {
   readonly api: ScreenEffectsApi;
@@ -40,10 +44,15 @@ export interface ScreenEffectEditorProps {
   readonly effectId: string;
   readonly create: boolean;
   readonly onBack: () => void;
+  readonly setId?: string | undefined;
+  readonly initialVariantId?: string | undefined;
+  readonly onOpenEffect?: ((effectId: string, setId: string, variantId: string) => void) | undefined;
   readonly generateId?: (prefix: string) => string;
 }
 
 type PickerTarget = "visual" | "sound" | null;
+const inspectorTabs = ["Variant", "Effect", "Triggers"] as const;
+type InspectorTab = typeof inspectorTabs[number];
 
 interface EditorContext {
   readonly assets: readonly AssetLibraryItem[];
@@ -57,6 +66,15 @@ interface EditorContext {
 interface EditorContextFailure {
   readonly source: string;
   readonly detail: string;
+}
+
+interface WeightSimulationRow {
+  readonly id: string;
+  readonly name: string;
+  readonly weight: number;
+  readonly expectedPercent: number;
+  readonly count: number;
+  readonly observedPercent: number;
 }
 
 const emptyContext: EditorContext = {
@@ -82,10 +100,16 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerTarget>(null);
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const preview = useRef<{ play(): void }>(null);
   const [testOpen, setTestOpen] = useState(false);
   const [saveConfirmationOpen, setSaveConfirmationOpen] = useState(false);
   const [persisted, setPersisted] = useState(!props.create);
+  const [sets, setSets] = useState<readonly ScreenEffectSet[]>([]);
+  const [inventory, setInventory] = useState<readonly ScreenEffectDocument[]>([]);
+  const [inspectorTab, setInspectorTab] = useState<InspectorTab>("Variant");
+  const [simulationRows, setSimulationRows] = useState<readonly WeightSimulationRow[] | null>(null);
+  const [simulationError, setSimulationError] = useState<string | null>(null);
+  const tabRefs = useRef<Partial<Record<InspectorTab, HTMLButtonElement | null>>>({});
 
   useEffect(() => {
     let active = true;
@@ -99,12 +123,16 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       : props.api.get(props.effectId);
     void Promise.all([
       documentRequest,
-      loadEditorContext(props.managementApi, props.audioApi)
-    ]).then(([document, loadedContext]) => {
+      loadEditorContext(props.managementApi, props.audioApi),
+      props.api.listSets(),
+      props.api.list()
+    ]).then(([document, loadedContext, loadedSets, loadedInventory]) => {
       if (!active) return;
       setState(createScreenEffectAuthoringState(document));
       setPersisted(!props.create);
-      setSelectedVariantId(document.variants[0]?.id ?? null);
+      setSelectedVariantId(props.initialVariantId ?? document.variants[0]?.id ?? null);
+      setSets(loadedSets);
+      setInventory(loadedInventory);
       setContext(loadedContext);
       setError(null);
     }).catch((loadError: unknown) => {
@@ -113,7 +141,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       if (active) setLoading(false);
     });
     return () => { active = false; };
-  }, [generateId, props.api, props.audioApi, props.create, props.effectId, props.managementApi]);
+  }, [generateId, props.api, props.audioApi, props.create, props.effectId, props.managementApi, props.initialVariantId]);
 
   const document = state?.document ?? null;
   const selectedVariant = document?.variants.find((variant) => variant.id === selectedVariantId)
@@ -121,10 +149,15 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     ?? null;
   const validation = document === null ? null : screenEffectDocumentSchema.safeParse(document);
   const dirty = state !== null && isScreenEffectAuthoringDirty(state);
+  const currentSet = sets.find((set) => set.effectIds.includes(props.effectId))
+    ?? sets.find((set) => set.id === props.setId)
+    ?? (props.create ? sets.find((set) => set.active) : undefined);
 
   const edit = useCallback((update: (document: ScreenEffectDocument) => ScreenEffectDocument) => {
     setState((current) => current === null ? null : applyScreenEffectEdit(current, update));
     setNotice(null);
+    setSimulationRows(null);
+    setSimulationError(null);
   }, []);
 
   const retryEditorContext = useCallback(async () => {
@@ -143,7 +176,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       setError(firstValidationMessage(parsed.error));
       return false;
     }
-    if (!confirmLiveImpact && (state.savedDocument.enabled || parsed.data.enabled)) {
+    if (!confirmLiveImpact && currentSet?.active !== false && (state.savedDocument.enabled || parsed.data.enabled)) {
       setSaveConfirmationOpen(true);
       return false;
     }
@@ -151,7 +184,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     try {
       const saved = persisted
         ? await props.api.update(props.effectId, parsed.data, confirmLiveImpact)
-        : await props.api.create(parsed.data);
+        : await props.api.create(parsed.data, currentSet?.id);
       setState((current) => current === null
         ? null
         : reconcileScreenEffectSaved(current, parsed.data, saved));
@@ -161,12 +194,15 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       setSaveConfirmationOpen(false);
       return true;
     } catch (saveError) {
+      if (saveError instanceof ManagementHttpError && saveError.code === "SCREEN_EFFECT_LIVE_IMPACT_CONFIRMATION_REQUIRED") {
+        setSaveConfirmationOpen(true);
+      }
       setError(message(saveError, "The Screen Effect was not saved. The draft is still here."));
       return false;
     } finally {
       setBusy(false);
     }
-  }, [persisted, props.api, props.effectId, state]);
+  }, [currentSet, persisted, props.api, props.effectId, state]);
 
   const discard = useCallback(() => {
     setState((current) => current === null ? null : revertScreenEffectEdits(current));
@@ -174,6 +210,33 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   }, []);
 
   const saveForNavigation = useCallback(() => save(false), [save]);
+
+  const simulateWeights = useCallback(() => {
+    try {
+      const enabled = document?.variants.filter((variant) => variant.enabled) ?? [];
+      const counts = new Map(document?.variants.map((variant) => [variant.id, 0]) ?? []);
+      for (let index = 0; index < 1_000; index += 1) {
+        const id = chooseWeightedVariant(enabled, Math.random());
+        counts.set(id, (counts.get(id) ?? 0) + 1);
+      }
+      const totalWeight = enabled.reduce((total, variant) => total + variant.weight, 0);
+      setSimulationRows((document?.variants ?? []).map((variant) => {
+        const count = counts.get(variant.id) ?? 0;
+        return {
+          id: variant.id,
+          name: variant.name,
+          weight: variant.weight,
+          expectedPercent: variant.enabled ? variant.weight / totalWeight * 100 : 0,
+          count,
+          observedPercent: count / 10
+        };
+      }));
+      setSimulationError(null);
+    } catch (simulationFailure) {
+      setSimulationRows(null);
+      setSimulationError(message(simulationFailure, "The local weight simulation could not run. Check that at least one variant is enabled with a valid weight."));
+    }
+  }, [document]);
 
   useDirtyNavigationSource({
     id: `screen-effect-editor:${props.effectId}`,
@@ -188,20 +251,24 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     return <div className="management-card"><h2>The Screen Effect editor could not be opened</h2><p role="alert">{error ?? "The saved definition is unavailable."}</p><button onClick={props.onBack} type="button">Back to Screen Effects</button></div>;
   }
 
+
   return <div className="screen-effect-editor">
     <EditorHeader
+      name={document.name}
+      dirty={dirty || !persisted}
       busy={busy}
       canRedo={state.future.length > 0}
       canSave={validation?.success === true && dirty}
       canUndo={state.past.length > 0}
       onBack={props.onBack}
-      onPreview={() => setPreviewOpen(true)}
+      onPreview={() => preview.current?.play()}
       onRedo={() => setState((current) => current === null ? null : redoScreenEffectEdit(current))}
       onSave={() => void save(false)}
       onTest={() => setTestOpen(true)}
       onUndo={() => setState((current) => current === null ? null : undoScreenEffectEdit(current))}
       testDisabled={!persisted || dirty || !document.enabled}
     />
+    <p className="screen-effect-editor__set-status">{currentSet?.active ? `Editing active set: ${currentSet.name}` : `Inactive set: ${currentSet?.name ?? "Unavailable"}. Changes will not affect live triggers until activated.`}</p>
     {notice === null ? null : <p role="status">{notice}</p>}
     {error === null ? null : <p role="alert">{error}</p>}
     {context.failures.length === 0 ? null : (
@@ -221,18 +288,60 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     )}
     {validation?.success === false ? <p className="screen-effect-editor__validation" role="status">Draft needs attention: {firstValidationMessage(validation.error)}</p> : null}
     <div className="screen-effect-editor__workspace">
-      <DocumentPanel document={document} edit={edit} isNew={!persisted} />
-      <VariantPanel
+      <aside aria-label="Screen Effect hierarchy" className="screen-effect-editor__variants">
+        <h2>Screen Effect sets</h2>
+        {sets.map((set) => <details key={set.id} open={set.id === currentSet?.id ? true : undefined}>
+          <summary><strong>{set.name}</strong><small>{set.active ? "Live set" : "Inactive set"}</small></summary>
+          <ScreenEffectTree documents={[
+            ...inventory.filter((effect) => set.effectIds.includes(effect.id) && effect.id !== document.id),
+            ...(set.id === currentSet?.id ? [document] : [])
+          ]} selectedEffectId={document.id} selectedVariantId={selectedVariant.id} onSelect={(effectId, variantId) => {
+            if (effectId === document.id) { setSelectedVariantId(variantId); setInspectorTab("Variant"); }
+            else props.onOpenEffect?.(effectId, set.id, variantId);
+          }} />
+        </details>)}
+        <button className="button button--secondary" disabled={validation?.success !== true || document.variants.length >= 50} onClick={() => {
+          const id = generateId("variant");
+          edit((current) => copyScreenEffectVariant(current, selectedVariant.id, { id, name: `${selectedVariant.name} copy` }));
+          setSelectedVariantId(id);
+          setInspectorTab("Variant");
+        }} type="button">Copy variant</button>
+        <button className="button button--secondary" onClick={simulateWeights} type="button">Simulate 1,000 selections</button>
+        {simulationError === null ? null : <p className="screen-effect-editor__simulation-error" role="alert">{simulationError}</p>}
+        {simulationRows === null ? null : <div aria-live="polite" className="screen-effect-editor__simulation" role="status" tabIndex={0}>
+          <table aria-label="Weight simulation">
+            <caption>Weight simulation</caption>
+            <thead><tr><th scope="col">Variant</th><th scope="col">Weight</th><th scope="col">Expected</th><th scope="col">Selections</th><th scope="col">Observed</th></tr></thead>
+            <tbody>{simulationRows.map((row) => <tr key={row.id}><th scope="row">{row.name}</th><td>{row.weight}</td><td>{formatPercent(row.expectedPercent)}</td><td>{row.count}</td><td>{formatPercent(row.observedPercent)}</td></tr>)}</tbody>
+          </table>
+        </div>}
+      </aside>
+      <section aria-label="Effect canvas" className="screen-effect-editor__stage">
+        <div className="screen-effect-editor__stage-heading"><strong>{selectedVariant.name}</strong><span>1920 × 1080 · Local preview</span></div>
+        <ScreenEffectPreview assetApi={props.assetApi} ref={preview} key={selectedVariant.id} variant={selectedVariant} />
+      </section>
+      <aside aria-label="Effect inspector" className="screen-effect-editor__inspector">
+        <div aria-label="Inspector sections" className="screen-effect-editor__tabs" role="tablist">
+          {inspectorTabs.map((tab, index) => <button aria-controls={`effect-panel-${tab}`} aria-selected={inspectorTab === tab} id={`effect-tab-${tab}`} key={tab} onClick={() => setInspectorTab(tab)} onKeyDown={(event) => {
+            const next = event.key === "Home" ? 0 : event.key === "End" ? inspectorTabs.length - 1 : event.key === "ArrowRight" ? (index + 1) % inspectorTabs.length : event.key === "ArrowLeft" ? (index + inspectorTabs.length - 1) % inspectorTabs.length : null;
+            if (next === null) return;
+            event.preventDefault();
+            const target = inspectorTabs[next]!;
+            setInspectorTab(target);
+            tabRefs.current[target]?.focus();
+          }} ref={(element) => { tabRefs.current[tab] = element; }} role="tab" tabIndex={inspectorTab === tab ? 0 : -1} type="button">{tab}</button>)}
+        </div>
+        <div aria-labelledby={`effect-tab-${inspectorTab}`} className="screen-effect-editor__panel" id={`effect-panel-${inspectorTab}`} role="tabpanel" tabIndex={0}>
+        {inspectorTab === "Effect" ? <DocumentPanel document={document} edit={edit} isNew={!persisted} /> : inspectorTab === "Triggers" ? <TriggerPanel context={context} document={document} edit={edit} generateId={generateId} /> : <VariantPanel
         context={context}
-        document={document}
         edit={edit}
-        generateId={generateId}
         onOpenPicker={setPicker}
-        onSelectVariant={setSelectedVariantId}
         selected={selectedVariant}
-      />
+        variants={document.variants}
+      />}
+        </div>
+      </aside>
     </div>
-    <TriggerPanel context={context} document={document} edit={edit} generateId={generateId} />
     <AssetPicker
       assetApi={props.assetApi}
       compatibleMediaTypes={picker === "sound" ? soundMediaTypes : visualMediaTypes}
@@ -260,13 +369,6 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       open={picker !== null}
       selectedAssetId={(picker === "visual" ? selectedVariant.visual?.assetId : selectedVariant.sound?.assetId) ?? null}
     />
-    <PreviewDialog
-      assetApi={props.assetApi}
-      assets={context.assets}
-      onClose={() => setPreviewOpen(false)}
-      open={previewOpen}
-      variant={selectedVariant}
-    />
     <LiveTestDialog
       api={props.api}
       document={document}
@@ -284,6 +386,8 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
 }
 
 function EditorHeader(props: {
+  readonly name: string;
+  readonly dirty: boolean;
   readonly busy: boolean;
   readonly canRedo: boolean;
   readonly canSave: boolean;
@@ -297,14 +401,13 @@ function EditorHeader(props: {
   readonly testDisabled: boolean;
 }) {
   return <header className="screen-effect-editor__header">
-    <div><p className="management-eyebrow">Screen Effects</p><h1>Effect editor</h1><p>One visual, one optional sound, trusted triggers, and explicit destinations.</p></div>
+    <div><button className="screen-effect-editor__back" onClick={props.onBack} type="button">Back to Screen Effects</button><h1>{props.name}</h1><p>{props.dirty ? "Unsaved changes" : "All changes saved"}</p></div>
     <div className="screen-effect-editor__actions">
-      <button className="button button--secondary" onClick={props.onBack} type="button">Back</button>
-      <button disabled={!props.canUndo} onClick={props.onUndo} type="button">Undo</button>
-      <button disabled={!props.canRedo} onClick={props.onRedo} type="button">Redo</button>
-      <button className="button button--secondary" onClick={props.onPreview} type="button">Preview silently</button>
-      <button disabled={props.testDisabled} onClick={props.onTest} type="button">Test saved…</button>
-      <button disabled={props.busy || !props.canSave} onClick={props.onSave} type="button">Save</button>
+      <button className="button button--secondary" disabled={!props.canUndo} onClick={props.onUndo} type="button">Undo</button>
+      <button className="button button--secondary" disabled={!props.canRedo} onClick={props.onRedo} type="button">Redo</button>
+      <button className="button button--secondary" onClick={props.onPreview} type="button">Preview</button>
+      <button className="button button--secondary" disabled={props.testDisabled} onClick={props.onTest} type="button">Test saved…</button>
+      <button className="button button--primary" disabled={props.busy || !props.canSave} onClick={props.onSave} type="button">Save</button>
     </div>
   </header>;
 }
@@ -330,38 +433,42 @@ function DocumentPanel({ document, edit, isNew }: {
 
 function VariantPanel(props: {
   readonly context: EditorContext;
-  readonly document: ScreenEffectDocument;
   readonly edit: (update: (document: ScreenEffectDocument) => ScreenEffectDocument) => void;
-  readonly generateId: (prefix: string) => string;
   readonly onOpenPicker: (target: PickerTarget) => void;
-  readonly onSelectVariant: (id: string) => void;
   readonly selected: EffectVariant;
+  readonly variants: readonly EffectVariant[];
 }) {
-  const { context, document, edit, generateId, selected } = props;
+  const { context, edit, selected } = props;
   const visualAsset = selected.visual === null ? null : context.assets.find((item) => item.id === selected.visual?.assetId) ?? null;
   const soundAsset = selected.sound === null ? null : context.assets.find((item) => item.id === selected.sound?.assetId) ?? null;
   const update = (change: (variant: EffectVariant) => EffectVariant) => edit((current) =>
     updateEffectVariant(current, selected.id, change)
   );
+  const expectedPercent = expectedVariantPercent(selected, props.variants);
   return <section aria-labelledby="effect-variant-title" className="management-card screen-effect-variant">
-    <header className="screen-effects-section-header"><div><h2 id="effect-variant-title">Variants</h2><p>Enabled weighted variants are chosen by weight; otherwise the enabled default is used.</p></div><button className="button button--secondary" disabled={screenEffectDocumentSchema.safeParse(document).success === false || document.variants.length >= 50} onClick={() => {
-      const id = generateId("variant");
-      edit((current) => copyScreenEffectVariant(current, selected.id, { id, name: `${selected.name} copy` }));
-      props.onSelectVariant(id);
-    }} type="button">Copy variant</button></header>
-    <div aria-label="Effect variants" className="screen-effect-variant-tabs" role="tablist">{document.variants.map((variant) => <button aria-selected={variant.id === selected.id} key={variant.id} onClick={() => props.onSelectVariant(variant.id)} role="tab" type="button">{variant.name}</button>)}</div>
+    <h2 id="effect-variant-title">Variant settings</h2><p>Every enabled variant is chosen according to its weight. This variant has a {formatPercent(expectedPercent)} expected chance.</p>
     <div className="screen-effects-fields-inline">
       <label>Variant name<input aria-label="Variant name" maxLength={120} onChange={(event) => { const name = event.currentTarget.value; update((variant) => ({ ...variant, name })); }} value={selected.name} /></label>
-      <label>Kind<select aria-label="Variant kind" disabled={selected.kind === "default"} onChange={(event) => { const kind = event.currentTarget.value as "weighted"; update((variant) => ({ ...variant, kind })); }} value={selected.kind}><option value="default">Default</option><option value="weighted">Weighted</option></select></label>
-      <label>Weight<input aria-label="Variant weight" disabled={selected.kind === "default"} max={10000} min={1} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, weight: value })))} type="number" value={selected.weight} /></label>
+      <label>Weight<input aria-label="Variant weight" max={10000} min={1} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, weight: value })))} type="number" value={selected.weight} /></label>
       <label>Duration (seconds)<input aria-label="Variant duration" max={120} min={1} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, durationMs: value * 1000 })))} type="number" value={selected.durationMs / 1000} /></label>
     </div>
-    <label className="screen-effects-check"><input checked={selected.enabled} disabled={selected.kind === "default"} onChange={(event) => { const enabled = event.currentTarget.checked; update((variant) => ({ ...variant, enabled })); }} type="checkbox" />Variant enabled</label>
+    <label className="screen-effects-check"><input checked={selected.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; update((variant) => ({ ...variant, enabled })); }} type="checkbox" />Variant enabled</label>
     <MediaPanel asset={visualAsset} onChoose={() => props.onOpenPicker("visual")} onRemove={() => update((variant) => ({ ...variant, visual: null }))} selected={selected} update={update} />
     <SoundPanel asset={soundAsset} onChoose={() => props.onOpenPicker("sound")} onRemove={() => update((variant) => ({ ...variant, sound: null }))} selected={selected} update={update} />
     <DestinationPanel routeNames={context.routeNames} selected={selected} update={update} />
     <AnimationPanel selected={selected} update={update} />
   </section>;
+}
+
+function expectedVariantPercent(variant: EffectVariant, variants: readonly EffectVariant[]): number {
+  if (!variant.enabled) return 0;
+  const totalWeight = variants.reduce((total, candidate) => candidate.enabled ? total + candidate.weight : total, 0);
+  return totalWeight > 0 ? variant.weight / totalWeight * 100 : 0;
+}
+
+function formatPercent(percent: number): string {
+  const rounded = Math.round(percent * 10) / 10;
+  return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%`;
 }
 
 function MediaPanel({ asset, onChoose, onRemove, selected, update }: {
@@ -518,28 +625,6 @@ function AddTriggerControls({ add, context, generateId }: {
       setStreamerSelection("");
     }} type="button">Add Streamer.bot trigger</button>
   </div>;
-}
-
-function PreviewDialog({ assetApi, assets, onClose, open, variant }: {
-  readonly assetApi: AssetApi;
-  readonly assets: readonly AssetLibraryItem[];
-  readonly onClose: () => void;
-  readonly open: boolean;
-  readonly variant: EffectVariant;
-}) {
-  const visual = variant.visual === null ? null : assets.find((item) => item.id === variant.visual?.assetId) ?? null;
-  return <ModalSurface labelledBy="screen-effect-preview-title" onCancel={onClose} open={open}>
-    <div className="screen-effect-preview">
-      <p className="management-eyebrow">Local silent preview</p>
-      <h2 id="screen-effect-preview-title">{variant.name}</h2>
-      <p>This bounded preview never sends provider events, device sound, or Browser Source audio.</p>
-      <div aria-label="1920 by 1080 preview canvas" className="screen-effect-preview__canvas">
-        {visual === null ? <p>{variant.visual === null ? "This variant has no visual." : "The selected visual asset is unavailable."}</p> : <AssetPreview assetApi={assetApi} item={visual} />}
-      </div>
-      {variant.sound === null && !(variant.visual?.mediaType === "video" && variant.visual.playEmbeddedAudio) ? <p>Silent selection.</p> : <p>Audio is intentionally suppressed in Preview.</p>}
-      <div className="management-modal__actions"><button onClick={onClose} type="button">Close preview</button></div>
-    </div>
-  </ModalSurface>;
 }
 
 function LiveTestDialog({ api, document, onClose, onError, onNotice, open, routeNames, variant }: {

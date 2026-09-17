@@ -1,3 +1,5 @@
+import { ManagementHttpError } from "../management-http-client.js";
+import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import {
   createScreenEffectDocument,
   screenEffectDocumentSchema,
@@ -5,9 +7,9 @@ import {
   type RegisteredProviderView,
   type ScreenEffectDocument
 } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../assets/asset-api.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import type { ManagementApi } from "../management-api.js";
@@ -15,16 +17,55 @@ import { DirtyNavigationProvider } from "../navigation/dirty-navigation.js";
 import { ScreenEffectEditor } from "./ScreenEffectEditor.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 
-afterEach(cleanup);
+beforeEach(() => {
+  vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+});
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("ScreenEffectEditor", () => {
+  it("preserves a draft and requests confirmation if its inactive set became live", async () => {
+    const saved = enabledEffect();
+    const api = effectApi(saved);
+    api.listSets = async () => [{ id: "inactive", name: "Gaming", active: false, effectIds: [saved.id] }];
+    api.update = vi.fn(async (_id, candidate, confirmed) => {
+      if (!confirmed) throw new ManagementHttpError("This set is now live", "SCREEN_EFFECT_LIVE_IMPACT_CONFIRMATION_REQUIRED", null);
+      return candidate;
+    });
+    renderEditor({ api, create: false, document: saved });
+    await userEvent.click(await screen.findByRole("tab", { name: "Effect" }));
+    await userEvent.clear(screen.getByLabelText("Effect name"));
+    await userEvent.type(screen.getByLabelText("Effect name"), "Kept draft");
+    await userEvent.click(screen.getByRole("button", { name: /^Save$/u }));
+    await userEvent.click(await screen.findByRole("button", { name: "Save live changes" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Screen Effect saved");
+    expect(api.update).toHaveBeenLastCalledWith(saved.id, expect.objectContaining({ name: "Kept draft" }), true);
+  });
+
+  it("switches inspector sections by keyboard without losing draft changes", async () => {
+    const user = userEvent.setup();
+    renderEditor({ api: effectApi(), create: true });
+    const effectTab = await screen.findByRole("tab", { name: "Effect" });
+    await user.click(effectTab);
+    await user.clear(screen.getByLabelText("Effect name"));
+    await user.type(screen.getByLabelText("Effect name"), "Retained draft");
+    await user.click(effectTab);
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "Triggers" })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Trusted triggers" })).toBeVisible();
+    await user.keyboard("{ArrowLeft}");
+    expect(screen.getByLabelText("Effect name")).toHaveValue("Retained draft");
+  });
+
   it("keeps a new disabled draft local until explicit valid Save", async () => {
     const user = userEvent.setup();
     const api = effectApi();
     renderEditor({ api, create: true });
 
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
     expect(await screen.findByDisplayValue("New Screen Effect")).toBeInTheDocument();
     expect(api.create).not.toHaveBeenCalled();
+    await user.click(await screen.findByRole("tab", { name: "Variant" }));
     await user.click(screen.getByRole("button", { name: "Choose visual asset" }));
     await user.click(await screen.findByRole("button", { name: /Image one/ }));
     await user.click(screen.getByRole("button", { name: "Use selected asset" }));
@@ -38,8 +79,9 @@ describe("ScreenEffectEditor", () => {
         visual: expect.objectContaining({ assetId: "image-one" }),
         visualOutputs: { browserSource: true, desktop: false }
       })]
-    }));
+    }), "screen-effects-default");
 
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
     const name = screen.getByLabelText("Effect name");
     await user.clear(name);
     await user.type(name, "Saved then edited");
@@ -52,16 +94,17 @@ describe("ScreenEffectEditor", () => {
     );
   });
 
-  it("previews silently and confirms exact saved test destinations", async () => {
+  it("previews locally without live delivery and confirms saved test destinations", async () => {
     const user = userEvent.setup();
     const saved = enabledEffect();
     const api = effectApi(saved);
     renderEditor({ api, create: false, document: saved });
 
-    await user.click(await screen.findByRole("button", { name: "Preview silently" }));
-    expect(screen.getByRole("dialog", { name: "Default" })).toHaveTextContent("Audio is intentionally suppressed");
+    await user.click(await screen.findByRole("button", { name: "Preview" }));
+    expect(screen.getByRole("region", { name: "Effect canvas" })).toHaveTextContent("Local draft preview with sound");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(api.test).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Close preview" }));
+    await user.click(screen.getByRole("button", { name: "Stop preview" }));
 
     await user.click(screen.getByRole("button", { name: "Test saved…" }));
     const dialog = screen.getByRole("dialog", { name: "Test saved Screen Effect?" });
@@ -81,6 +124,7 @@ describe("ScreenEffectEditor", () => {
     vi.mocked(api.update).mockRejectedValue(new Error("Storage failed (ref-effect-save)"));
     renderEditor({ api, create: false, document: saved });
 
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
     const name = await screen.findByLabelText("Effect name");
     await user.clear(name);
     await user.type(name, "Unsaved effect name");
@@ -107,10 +151,12 @@ describe("ScreenEffectEditor", () => {
       managementApi: managementApi({ getTwitchStatus })
     });
 
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
     expect(await screen.findByLabelText("Effect name")).toBeVisible();
     expect(screen.getByRole("alert")).toHaveTextContent("Twitch connection");
     expect(screen.getByRole("alert")).toHaveTextContent("ref-effect-context");
 
+    await user.click(await screen.findByRole("tab", { name: "Variant" }));
     await user.click(screen.getByRole("button", { name: "Choose visual asset" }));
     expect(await screen.findByRole("button", { name: /Image one/u })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Cancel" }));
@@ -130,6 +176,7 @@ describe("ScreenEffectEditor", () => {
     }));
     renderEditor({ api, create: false, document: saved });
 
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
     const name = await screen.findByLabelText("Effect name");
     await user.clear(name);
     await user.type(name, "Submitted name");
@@ -182,8 +229,51 @@ describe("ScreenEffectEditor", () => {
 
     renderEditor({ api: effectApi(saved), create: false, document: saved, managementApi: providerManagementApi });
 
+    await userEvent.click(await screen.findByRole("tab", { name: "Triggers" }));
     expect(await screen.findByText("Unavailable — review event source setup")).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "OBS / MissingEvent" })).not.toBeInTheDocument();
+  });
+
+  it("shows one weighted model and simulates its local selection distribution", async () => {
+    const user = userEvent.setup();
+    const base = enabledEffect();
+    const saved = screenEffectDocumentSchema.parse({
+      ...base,
+      variants: [
+        { ...base.variants[0]!, weight: 1 },
+        { ...base.variants[0]!, id: "variant-alternate", name: "Alternate", weight: 3 }
+      ]
+    });
+    const api = effectApi(saved);
+    let selection = 0;
+    vi.spyOn(Math, "random").mockImplementation(() => selection++ % 4 === 0 ? 0 : 0.5);
+    renderEditor({ api, create: false, document: saved });
+
+    expect(await screen.findByLabelText("Variant weight")).toBeEnabled();
+    expect(screen.queryByLabelText("Variant kind")).not.toBeInTheDocument();
+    expect(screen.getByText("Weight 1 · 25% expected · Enabled")).toBeVisible();
+    expect(screen.getByText("Weight 3 · 75% expected · Enabled")).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Simulate 1,000 selections" }));
+
+    const table = screen.getByRole("table", { name: "Weight simulation" });
+    expect(within(table).getByRole("row", { name: "Default 1 25% 250 25%" })).toBeVisible();
+    expect(within(table).getByRole("row", { name: "Alternate 3 75% 750 75%" })).toBeVisible();
+    expect(api.create).not.toHaveBeenCalled();
+    expect(api.update).not.toHaveBeenCalled();
+    expect(api.test).not.toHaveBeenCalled();
+  });
+
+  it("leaves a draft invalid when its final enabled variant is disabled", async () => {
+    const user = userEvent.setup();
+    renderEditor({ api: effectApi(enabledEffect()), create: false, document: enabledEffect() });
+
+    const enabled = await screen.findByRole("checkbox", { name: "Variant enabled" });
+    expect(enabled).toBeEnabled();
+    await user.click(enabled);
+
+    expect(screen.getByText(/Enable at least one variant/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
   });
 });
 
@@ -207,6 +297,7 @@ function renderEditor(options: {
 
 function effectApi(document = enabledEffect(false)): ScreenEffectsApi {
   return {
+    ...createStoryEffectSets([document.id]),
     list: vi.fn(async () => [document]),
     listBrowserSources: vi.fn(async () => []),
     getModuleEnabled: vi.fn(async () => true),
