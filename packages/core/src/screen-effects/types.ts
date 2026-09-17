@@ -44,7 +44,6 @@ export interface EffectVisualOutputs {
 export interface EffectVariant {
   readonly id: string;
   readonly name: string;
-  readonly kind: "default" | "weighted";
   readonly enabled: boolean;
   readonly weight: number;
   readonly visual: EffectVisual | null;

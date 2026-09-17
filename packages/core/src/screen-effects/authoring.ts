@@ -128,7 +128,6 @@ export function copyScreenEffectVariant(
       ...structuredClone(source),
       id: identity.id,
       name: identity.name,
-      kind: "weighted",
       enabled: false
     }]
   });
