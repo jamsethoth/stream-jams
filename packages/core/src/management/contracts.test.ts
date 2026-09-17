@@ -509,14 +509,18 @@ describe("management alert contracts and rules", () => {
       referenceId: "test-alert-follow-2",
       test: true,
       deliveredDestinations: [
-        { kind: "device-route", id: "route-headphones", name: "Headphones" }
+        { kind: "device-route", id: "route-headphones", name: "Headphones" },
+        { kind: "desktop-overlay", id: "desktop:primary", name: "Desktop Overlay" }
       ],
       unavailableDestinations: [
         { kind: "device-route", id: "route-stream", name: "Stream mix" }
       ]
     })).toMatchObject({
       targetProfileId: null,
-      deliveredDestinations: [{ kind: "device-route", id: "route-headphones", name: "Headphones" }],
+      deliveredDestinations: [
+        { kind: "device-route", id: "route-headphones", name: "Headphones" },
+        { kind: "desktop-overlay", id: "desktop:primary", name: "Desktop Overlay" }
+      ],
       unavailableDestinations: [{ kind: "device-route", id: "route-stream", name: "Stream mix" }]
     });
     expect(testResult.safeParse({

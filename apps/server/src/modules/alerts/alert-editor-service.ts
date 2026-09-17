@@ -65,6 +65,7 @@ export interface AlertEditorServiceOptions {
   readonly rules: Pick<AlertRepository, "findRuleById" | "listRules" | "listCollections" | "saveRule">;
   readonly metadata: Pick<AlertSetMetadataRepository, "findRule" | "saveRule">;
   readonly hasConnectedOutput: (targetProfileId: TargetProfileId) => Promise<boolean>;
+  readonly hasReadyDesktopOutput?: () => Promise<boolean>;
   readonly getAudioOutputStatus?: () => Promise<AudioOutputStatus>;
   readonly listAudioOutputRoutes?: () => readonly AudioOutputRoute[];
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
@@ -295,11 +296,15 @@ export class AlertEditorService {
 
     const profile = request.targetProfileId === null ? null : profileById(request.document, request.targetProfileId);
     const browserDestination = request.targetProfileId === null ? null : testBrowserDestination(request.targetProfileId);
-    const browserReady = profile !== null
+    const profileReady = profile !== null
       && profile.enabled
       && profile.reviewState === "ready"
-      && validateProfile(request.document, profile).length === 0
-      && await this.#options.hasConnectedOutput(profile.id);
+      && validateProfile(request.document, profile).length === 0;
+    const browserReady = profileReady && await this.#options.hasConnectedOutput(profile.id);
+    const desktopReady = profileReady
+      && profile.id === "landscape"
+      && this.#options.hasReadyDesktopOutput !== undefined
+      && await this.#options.hasReadyDesktopOutput();
 
     const referenceId = this.#options.generateReferenceId();
     const sourceEvent = createNormalizedAlertSampleEvent({
@@ -310,7 +315,7 @@ export class AlertEditorService {
       occurredAt: this.#now().toISOString()
     });
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(request.document);
-    const alerts = browserReady && profile !== null
+    const alerts = (browserReady || desktopReady) && profile !== null
       ? this.#createTestAlerts(request, profile, sourceEvent, visualAssetMediaTypes)
       : [];
     const canonicalAudio = request.includeAudio
@@ -328,7 +333,7 @@ export class AlertEditorService {
         }];
     if (alerts.length === 0 && audio.length === 0) {
       throw new AlertEditorDeliveryBlockedError(
-        "No included test content can reach an available destination. Connect and review a Browser Source or choose an available device route, then try again."
+        "No included test content can reach an available destination. Connect and review a Browser Source, enable the Desktop Overlay, or choose an available device route, then try again."
       );
     }
 
@@ -339,7 +344,8 @@ export class AlertEditorService {
       referenceId,
       test: true,
       deliveredDestinations: [
-        ...(browserDestination !== null && alerts.length > 0 ? [browserDestination] : []),
+        ...(browserDestination !== null && browserReady && alerts.length > 0 ? [browserDestination] : []),
+        ...(desktopReady && alerts.length > 0 ? [testDesktopDestination()] : []),
         ...deviceDestinations.delivered
       ],
       unavailableDestinations: [
@@ -433,6 +439,7 @@ export class AlertEditorService {
         audioSource.sourceKind
       );
       return [instruction, audioInstruction].flatMap((candidate) => candidate === null ? [] : [{
+          ...(profile.id === "landscape" && candidate.audio === null ? { desktopVisualEligible: true as const } : {}),
           id: this.#options.generateId(),
           sourceEventId: sourceEvent.id,
           ruleId: request.document.parentAlertId ?? request.document.id,
@@ -933,6 +940,10 @@ function testBrowserDestination(profileId: TargetProfileId): AlertEditorTestDest
     id: profileId,
     name: `${profileId === "landscape" ? "Landscape" : "Vertical"} Browser Source`
   };
+}
+
+function testDesktopDestination(): AlertEditorTestDestination {
+  return { kind: "desktop-overlay", id: "desktop:primary", name: "Desktop Overlay" };
 }
 
 function addChangedAudioDestinationNames(
