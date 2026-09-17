@@ -109,7 +109,6 @@ const effectAnimationSchema = overlayPresetAnimationInstructionSchema.extend({
 export const effectVariantSchema = z.object({
   id: storageSafeIdSchema,
   name: boundedNameSchema,
-  kind: z.enum(["default", "weighted"]),
   enabled: z.boolean(),
   weight: z.number().int().min(1).max(10_000),
   visual: effectVisualSchema.nullable(),
@@ -144,14 +143,11 @@ export const screenEffectDocumentSchema = z.object({
   addDuplicateIssues(document.bindings.map(effectBindingIdentity), ["bindings"], "binding identity", context);
   addDuplicateIssues(document.variants.map((variant) => variant.id), ["variants"], "variant ID", context);
 
-  const enabledDefaults = document.variants.filter(
-    (variant) => variant.kind === "default" && variant.enabled
-  );
-  if (enabledDefaults.length !== 1) {
+  if (!document.variants.some((variant) => variant.enabled)) {
     context.addIssue({
       code: "custom",
       path: ["variants"],
-      message: "Choose exactly one enabled default variant"
+      message: "Enable at least one variant"
     });
   }
 }) satisfies z.ZodType<ScreenEffectDocument>;
@@ -177,7 +173,6 @@ export function createScreenEffectDocument(input: CreateScreenEffectDocumentInpu
     variants: [{
       id: parsed.defaultVariantId,
       name: "Default",
-      kind: "default",
       enabled: true,
       weight: 1,
       visual: null,

@@ -52,7 +52,6 @@ describe("screenEffectDocumentSchema", () => {
       variants: [{
         id: "variant-default",
         name: "Default",
-        kind: "default",
         enabled: true,
         weight: 1,
         visual: null,
@@ -165,7 +164,7 @@ describe("screenEffectDocumentSchema", () => {
     }).success).toBe(false);
   });
 
-  it("requires exactly one enabled default variant", () => {
+  it("requires at least one enabled variant and accepts multiple enabled variants", () => {
     const document = audioOnlyDocument();
     expect(screenEffectDocumentSchema.safeParse({
       ...document,
@@ -174,6 +173,14 @@ describe("screenEffectDocumentSchema", () => {
     expect(screenEffectDocumentSchema.safeParse({
       ...document,
       variants: [document.variants[0], { ...document.variants[0]!, id: "variant-second" }]
+    }).success).toBe(true);
+  });
+
+  it("rejects the removed variant kind field", () => {
+    const document = audioOnlyDocument();
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document,
+      variants: [{ ...document.variants[0]!, kind: "default" }]
     }).success).toBe(false);
   });
 });

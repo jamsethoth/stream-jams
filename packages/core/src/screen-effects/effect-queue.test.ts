@@ -21,7 +21,6 @@ function occurrence(
       variant: {
         id: `variant-${id}`,
         name: "Default",
-        kind: "default",
         enabled: true,
         weight: 1,
         visual: null,
