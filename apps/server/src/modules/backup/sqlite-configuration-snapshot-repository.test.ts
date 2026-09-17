@@ -761,8 +761,8 @@ function editorDocument() {
     variantConditions: [],
     weight: 1,
     priority: null,
-    cooldownSeconds: 0,
     rulePriority: 0,
+    cooldownSeconds: 0,
     durationMs: 5_000,
     outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [{

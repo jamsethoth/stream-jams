@@ -26,7 +26,6 @@ function effect(
   id: string,
   options: {
     readonly priority?: number;
-    readonly cooldownSeconds?: number;
     readonly hasOutput?: boolean;
   } = {}
 ): ScreenEffectDocument {
@@ -35,7 +34,6 @@ function effect(
     ...draft,
     enabled: true,
     priority: options.priority ?? 0,
-    cooldownSeconds: options.cooldownSeconds ?? 0,
     bindings: [{
       id: `binding-${id}`,
       kind: "twitch-reward",
@@ -135,7 +133,7 @@ describe("EffectAdmissionService", () => {
     expect(queue.snapshot().queued.map((item) => item.content.effectId)).toEqual(["a-high", "z-high", "z-low"]);
   });
 
-  it("enforces exactly 100 pending items and does not consume cooldown on overflow", async () => {
+  it("enforces exactly 100 pending items and admits later work after capacity returns", async () => {
     const queue = new DefaultEffectQueue();
     const fillAdmission = service({ documents: () => [effect("fill")], queue });
     for (let index = 0; index < 100; index += 1) {
@@ -144,7 +142,7 @@ describe("EffectAdmissionService", () => {
     expect(queue.snapshot().queued).toHaveLength(100);
 
     const blockedAdmission = service({
-      documents: () => [effect("blocked", { cooldownSeconds: 60 })],
+      documents: () => [effect("blocked")],
       queue
     });
     await expect(blockedAdmission.handleTriggers([trigger("overflow")])).resolves.toMatchObject({
@@ -159,53 +157,14 @@ describe("EffectAdmissionService", () => {
     });
   });
 
-  it("commits effect cooldown only after admission", async () => {
-    const documents = [effect("cooled", { cooldownSeconds: 60 }), effect("always")];
-    const admission = service({ documents: () => documents });
-
-    await admission.handleTriggers([trigger("first")]);
-    await expect(admission.handleTriggers([trigger("second")])).resolves.toMatchObject({
-      outcomes: [
-        { effectId: "always", status: "queued" },
-        { effectId: "cooled", status: "cooldown" }
-      ]
-    });
-  });
-
-  it("serializes cooldown admission across distinct concurrent events", async () => {
+  it("admits the same effect for distinct events without a per-effect cooldown", async () => {
     const queue = new DefaultEffectQueue();
-    let releaseFirstValidation: (() => void) | undefined;
-    const firstValidationBlocked = new Promise<void>((resolve) => {
-      releaseFirstValidation = resolve;
-    });
-    let validationCalls = 0;
-    let firstValidationStarted: (() => void) | undefined;
-    const firstValidationEntered = new Promise<void>((resolve) => {
-      firstValidationStarted = resolve;
-    });
-    const admission = service({
-      documents: () => [effect("cooled", { cooldownSeconds: 60 })],
-      queue,
-      validateReferences: async () => {
-        validationCalls += 1;
-        if (validationCalls === 1) {
-          firstValidationStarted?.();
-          await firstValidationBlocked;
-        }
-        return true;
-      }
-    });
+    const admission = service({ documents: () => [effect("repeated")], queue });
 
-    const first = admission.handleTriggers([trigger("event-first")]);
-    await firstValidationEntered;
-    const second = admission.handleTriggers([trigger("event-second")]);
-    await Promise.resolve();
-    releaseFirstValidation?.();
+    await admission.handleTriggers([trigger("event-first")]);
+    await admission.handleTriggers([trigger("event-second")]);
 
-    const results = await Promise.all([first, second]);
-    expect(results.map((result) => result.outcomes[0]?.status).sort()).toEqual(["cooldown", "queued"]);
-    expect(validationCalls).toBe(1);
-    expect(queue.snapshot().queued).toHaveLength(1);
+    expect(queue.snapshot().queued.map((item) => item.content.effectId)).toEqual(["repeated", "repeated"]);
   });
 
   it("checks module cooldown once so one event can intentionally admit multiple effects", async () => {
@@ -228,14 +187,14 @@ describe("EffectAdmissionService", () => {
     });
   });
 
-  it("rejects a selected variant with no destination without consuming its cooldown", async () => {
-    let document = effect("output", { cooldownSeconds: 60, hasOutput: false });
+  it("rejects a selected variant with no destination and accepts it after an output is added", async () => {
+    let document = effect("output", { hasOutput: false });
     const admission = service({ documents: () => [document] });
 
     await expect(admission.handleTriggers([trigger("no-output")])).resolves.toMatchObject({
       outcomes: [{ effectId: "output", status: "no-output" }]
     });
-    document = effect("output", { cooldownSeconds: 60 });
+    document = effect("output");
     await expect(admission.handleTriggers([trigger("with-output")])).resolves.toMatchObject({
       outcomes: [{ effectId: "output", status: "queued" }]
     });

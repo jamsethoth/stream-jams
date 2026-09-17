@@ -15,6 +15,10 @@ Match the Alerts presentation and keep all existing Screen Effects fields reacha
 - Preview the selected draft in the fixed 1920x1080 canvas with local audio and Play, Stop and Mute controls. Keep Test saved as the explicit confirmed live action.
 - Treat every enabled Screen Effect variant as a member of one weighted selection pool. Keep `Default` as an editable starter name only, show calculated chances, and simulate 1,000 local selections through the same core selector without persistence or live delivery.
 - Keep the migration 022 `kind` column and stored JSON field as a repository-only compatibility detail. Current domain and management contracts omit `kind`, while saved rows use the neutral legacy value `weighted`.
+- Provide separate New variant and Copy variant actions. New variants begin disabled and blank so operators intentionally choose their media and outputs.
+- Remove per-effect cooldown from the current contract and admission path because event configuration owns rate limiting. Retain the existing SQLite column as a zeroed compatibility detail.
+- Label priority as queue priority and explain that it orders multiple effects matched by one event without preempting current playback.
+- Group related buttons with wrapping gaps and separate wrapped set content actions vertically from set-management actions.
 
 ## Risks / Trade-offs
 

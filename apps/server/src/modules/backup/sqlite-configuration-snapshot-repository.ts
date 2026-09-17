@@ -694,7 +694,6 @@ function validateScreenEffects(tables: BackupConfiguration["tables"]): readonly 
       description: row.description,
       category: row.category,
       priority: row.priority,
-      cooldownSeconds: row.cooldown_seconds,
       bindings,
       variants
     }));

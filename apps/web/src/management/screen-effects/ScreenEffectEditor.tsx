@@ -300,13 +300,28 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
             else props.onOpenEffect?.(effectId, set.id, variantId);
           }} />
         </details>)}
-        <button className="button button--secondary" disabled={validation?.success !== true || document.variants.length >= 50} onClick={() => {
-          const id = generateId("variant");
-          edit((current) => copyScreenEffectVariant(current, selectedVariant.id, { id, name: `${selectedVariant.name} copy` }));
-          setSelectedVariantId(id);
-          setInspectorTab("Variant");
-        }} type="button">Copy variant</button>
-        <button className="button button--secondary" onClick={simulateWeights} type="button">Simulate 1,000 selections</button>
+        <div className="screen-effect-editor__variant-actions">
+          <button className="button button--primary" disabled={document.variants.length >= 50} onClick={() => {
+            const id = generateId("variant");
+            edit((current) => ({
+              ...current,
+              variants: [...current.variants, {
+                ...createScreenEffectDocument({ id: current.id, name: current.name, defaultVariantId: id }).variants[0]!,
+                name: `Variant ${current.variants.length + 1}`,
+                enabled: false
+              }]
+            }));
+            setSelectedVariantId(id);
+            setInspectorTab("Variant");
+          }} type="button">New variant</button>
+          <button className="button button--secondary" disabled={validation?.success !== true || document.variants.length >= 50} onClick={() => {
+            const id = generateId("variant");
+            edit((current) => copyScreenEffectVariant(current, selectedVariant.id, { id, name: `${selectedVariant.name} copy` }));
+            setSelectedVariantId(id);
+            setInspectorTab("Variant");
+          }} type="button">Copy variant</button>
+          <button className="button button--secondary" onClick={simulateWeights} type="button">Simulate 1,000 selections</button>
+        </div>
         {simulationError === null ? null : <p className="screen-effect-editor__simulation-error" role="alert">{simulationError}</p>}
         {simulationRows === null ? null : <div aria-live="polite" className="screen-effect-editor__simulation" role="status" tabIndex={0}>
           <table aria-label="Weight simulation">
@@ -423,9 +438,9 @@ function DocumentPanel({ document, edit, isNew }: {
     <label>Description<textarea aria-label="Effect description" maxLength={2000} onChange={(event) => { const value = emptyToNull(event.currentTarget.value); edit((current) => ({ ...current, description: value })); }} value={document.description ?? ""} /></label>
     <label>Category<input aria-label="Effect category" maxLength={80} onChange={(event) => { const value = emptyToNull(event.currentTarget.value); edit((current) => ({ ...current, category: value })); }} value={document.category ?? ""} /></label>
     <div className="screen-effects-fields-inline">
-      <label>Priority<input aria-label="Effect priority" onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => edit((current) => ({ ...current, priority: value })))} step={1} type="number" value={document.priority} /></label>
-      <label>Cooldown (seconds)<input aria-label="Effect cooldown" max={86400} min={0} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => edit((current) => ({ ...current, cooldownSeconds: value })))} step={1} type="number" value={document.cooldownSeconds} /></label>
+      <label>Queue priority<input aria-label="Queue priority" onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => edit((current) => ({ ...current, priority: value })))} step={1} type="number" value={document.priority} /></label>
     </div>
+    <p className="screen-effects-field-help">Higher numbers are queued first when one event matches multiple effects. Priority does not interrupt an effect that is already playing.</p>
     <label className="screen-effects-check"><input checked={document.enabled} disabled={isNew} onChange={(event) => { const enabled = event.currentTarget.checked; edit((current) => ({ ...current, enabled })); }} type="checkbox" />Enabled</label>
     {isNew ? <p>New effects are saved disabled. Save valid media first, then enable from the inventory.</p> : null}
   </section>;

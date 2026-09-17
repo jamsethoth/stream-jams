@@ -224,7 +224,15 @@ test("blocks a no-output live test and retains an enabled draft after save failu
   await expect(testDialog.getByRole("button", { name: "Confirm live test" })).toBeDisabled();
   await testDialog.getByRole("button", { name: "Cancel" }).click();
 
+  await page.getByRole("button", { name: "New variant" }).click();
+  await expect(page.getByLabel("Variant name", { exact: true })).toHaveValue("Variant 2");
+  await expect(page.getByRole("checkbox", { name: "Variant enabled" })).not.toBeChecked();
+  await page.getByRole("button", { name: "Undo" }).click();
+
   await page.getByRole("tab", { name: "Effect", exact: true }).click();
+  await expect(page.getByLabel("Queue priority")).toBeVisible();
+  await expect(page.getByText(/Higher numbers are queued first when one event matches multiple effects/)).toBeVisible();
+  await expect(page.getByLabel("Effect cooldown")).toHaveCount(0);
   const name = page.getByLabel("Effect name");
   await name.fill("Unsaved no-output effect");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -370,7 +378,6 @@ function noOutputEffect() {
     description: null,
     category: null,
     priority: 0,
-    cooldownSeconds: 0,
     bindings: [],
     variants: [{
       id: "variant-no-output",

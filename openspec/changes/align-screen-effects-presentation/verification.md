@@ -49,3 +49,14 @@ Screen Effect variants no longer expose Default and Weighted kinds. Every enable
 - Focused Screen Effect editor Storybook: 10 scenarios passed with accessibility checks after making the horizontally scrollable simulation region keyboard focusable.
 - Screen Effects Playwright: 4 Chromium workflows passed, including 25%/75% chance labels, a 1,000-selection total, retained weight after reload, and no Screen Effect mutation request from simulation.
 - `openspec.cmd validate align-screen-effects-presentation --strict`: passed.
+
+## Variant controls, spacing and event-owned cooldown follow-up (2026-09-17)
+
+The hierarchy now provides separate New variant and Copy variant actions in a spaced action group. Set content actions have vertical separation from wrapped set-management controls. New variants start blank and disabled. Effect details no longer expose per-effect cooldown; current contracts and admission omit it while SQLite retains a zeroed legacy column. Queue priority remains and now explains its multiple-match ordering and nonpreemptive behavior.
+
+- Focused core/server/editor regression: 4 files, 50 tests passed.
+- Backup snapshot compatibility: 23 tests passed.
+- Full Vitest regression: 234 files, 2,060 tests passed. Deliberate negative-path logs were emitted by passing tests.
+- Full Storybook interaction/accessibility run: 22 suites, 233 scenarios passed.
+- Screen Effects Playwright: 4 Chromium workflows passed.
+- Workspace typecheck/build, changed-file lint and strict OpenSpec validation passed.

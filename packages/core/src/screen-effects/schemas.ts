@@ -135,7 +135,6 @@ export const screenEffectDocumentSchema = z.object({
   description: z.string().trim().min(1).max(2_000).nullable(),
   category: z.string().trim().min(1).max(80).nullable(),
   priority: safeIntegerSchema,
-  cooldownSeconds: z.number().int().min(0).max(86_400),
   bindings: z.array(effectBindingSchema).max(100),
   variants: z.array(effectVariantSchema).min(1).max(50)
 }).strict().superRefine((document, context) => {
@@ -168,7 +167,6 @@ export function createScreenEffectDocument(input: CreateScreenEffectDocumentInpu
     description: null,
     category: null,
     priority: 0,
-    cooldownSeconds: 0,
     bindings: [],
     variants: [{
       id: parsed.defaultVariantId,
