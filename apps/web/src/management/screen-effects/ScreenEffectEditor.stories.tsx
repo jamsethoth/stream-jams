@@ -122,6 +122,20 @@ export const VariantWeights: Story = {
   }
 };
 
+export const VariantCreationAndEffectDetails: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "New variant" }));
+    await expect(canvas.getByLabelText("Variant name")).toHaveValue("Variant 2");
+    await expect(canvas.getByRole("checkbox", { name: "Variant enabled" })).not.toBeChecked();
+
+    await userEvent.click(canvas.getByRole("tab", { name: "Effect" }));
+    await expect(canvas.getByLabelText("Queue priority")).toBeVisible();
+    await expect(canvas.getByText(/Higher numbers are queued first when one event matches multiple effects/)).toBeVisible();
+    await expect(canvas.queryByLabelText("Effect cooldown")).not.toBeInTheDocument();
+  }
+};
+
 export const MissingTrigger: Story = {
   args: { api: createApi(effect({ missingTrigger: true })) },
   play: async ({ canvasElement }) => {

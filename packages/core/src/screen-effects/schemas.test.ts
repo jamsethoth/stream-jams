@@ -47,7 +47,6 @@ describe("screenEffectDocumentSchema", () => {
       description: null,
       category: null,
       priority: 0,
-      cooldownSeconds: 0,
       bindings: [],
       variants: [{
         id: "variant-default",
@@ -125,8 +124,6 @@ describe("screenEffectDocumentSchema", () => {
     ["oversized weight", (document: ReturnType<typeof audioOnlyDocument>) => ({
       ...document, variants: [{ ...document.variants[0]!, weight: 10_001 }]
     })],
-    ["negative cooldown", (document: ReturnType<typeof audioOnlyDocument>) => ({ ...document, cooldownSeconds: -1 })],
-    ["oversized cooldown", (document: ReturnType<typeof audioOnlyDocument>) => ({ ...document, cooldownSeconds: 86_401 })],
     ["unsafe priority", (document: ReturnType<typeof audioOnlyDocument>) => ({ ...document, priority: Number.MAX_SAFE_INTEGER + 1 })],
     ["invalid layout", (document: ReturnType<typeof audioOnlyDocument>) => ({
       ...document,
@@ -176,12 +173,13 @@ describe("screenEffectDocumentSchema", () => {
     }).success).toBe(true);
   });
 
-  it("rejects the removed variant kind field", () => {
+  it("rejects removed variant kind and per-effect cooldown fields", () => {
     const document = audioOnlyDocument();
     expect(screenEffectDocumentSchema.safeParse({
       ...document,
       variants: [{ ...document.variants[0]!, kind: "default" }]
     }).success).toBe(false);
+    expect(screenEffectDocumentSchema.safeParse({ ...document, cooldownSeconds: 60 }).success).toBe(false);
   });
 });
 

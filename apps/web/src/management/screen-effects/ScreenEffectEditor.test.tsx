@@ -264,6 +264,22 @@ describe("ScreenEffectEditor", () => {
     expect(api.test).not.toHaveBeenCalled();
   });
 
+  it("creates a blank variant and explains queue priority without exposing effect cooldown", async () => {
+    const user = userEvent.setup();
+    renderEditor({ api: effectApi(enabledEffect()), create: false, document: enabledEffect() });
+
+    await user.click(await screen.findByRole("button", { name: "New variant" }));
+
+    expect(screen.getByLabelText("Variant name")).toHaveValue("Variant 2");
+    expect(screen.getByRole("checkbox", { name: "Variant enabled" })).not.toBeChecked();
+    expect(screen.getByText("Weight 1 · 0% expected · Disabled")).toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Effect" }));
+    expect(screen.getByLabelText("Queue priority")).toBeVisible();
+    expect(screen.getByText(/Higher numbers are queued first when one event matches multiple effects/)).toBeVisible();
+    expect(screen.queryByLabelText("Effect cooldown")).not.toBeInTheDocument();
+  });
+
   it("leaves a draft invalid when its final enabled variant is disabled", async () => {
     const user = userEvent.setup();
     renderEditor({ api: effectApi(enabledEffect()), create: false, document: enabledEffect() });

@@ -224,7 +224,6 @@ function restoredScreenEffect() {
     description: null,
     category: "Restored",
     priority: 0,
-    cooldownSeconds: 0,
     bindings: [],
     variants: [{
       id: "variant-restored",

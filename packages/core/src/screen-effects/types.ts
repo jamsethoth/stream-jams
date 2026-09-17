@@ -62,7 +62,6 @@ export interface ScreenEffectDocument {
   readonly description: string | null;
   readonly category: string | null;
   readonly priority: number;
-  readonly cooldownSeconds: number;
   readonly bindings: readonly EffectBinding[];
   readonly variants: readonly EffectVariant[];
 }

@@ -59,7 +59,6 @@ interface MatchedEffect {
 }
 
 const EFFECT_DEDUPE_NAMESPACE = "screen-effects";
-const EFFECT_COOLDOWN_NAMESPACE = "screen-effects-effect";
 const MODULE_COOLDOWN_NAMESPACE = "screen-effects-module";
 
 export class EffectDefinitionNotFoundError extends Error {
@@ -239,10 +238,7 @@ export class EffectAdmissionService {
     let admittedAny = false;
     for (const match of matches) {
       const { document } = match;
-      if (
-        !moduleReady
-        || !this.#cooldowns.canPlayKey(EFFECT_COOLDOWN_NAMESPACE, document.id, document.cooldownSeconds)
-      ) {
+      if (!moduleReady) {
         outcomes.push({ effectId: document.id, status: "cooldown" });
         continue;
       }
@@ -279,7 +275,6 @@ export class EffectAdmissionService {
       }
 
       admittedAny = true;
-      this.#cooldowns.recordPlaybackKey(EFFECT_COOLDOWN_NAMESPACE, document.id, document.cooldownSeconds);
       outcomes.push({ effectId: document.id, status: "queued", occurrenceId });
     }
 

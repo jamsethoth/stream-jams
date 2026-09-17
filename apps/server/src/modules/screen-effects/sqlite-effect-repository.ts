@@ -96,7 +96,7 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
         document.description,
         document.category,
         document.priority,
-        document.cooldownSeconds,
+        0,
         this.#now().toISOString()
       );
 
@@ -172,7 +172,6 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
       description: row.description === null ? null : String(row.description),
       category: row.category === null ? null : String(row.category),
       priority: Number(row.priority),
-      cooldownSeconds: Number(row.cooldown_seconds),
       bindings,
       variants
     });

@@ -41,7 +41,7 @@ describe("SqliteEffectRepository", () => {
       document.description,
       document.category,
       document.priority,
-      document.cooldownSeconds,
+      60,
       "2026-09-17T00:00:00.000Z"
     );
     const defaultVariant = document.variants[0]!;

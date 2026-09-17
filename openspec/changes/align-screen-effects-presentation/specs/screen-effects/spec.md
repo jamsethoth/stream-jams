@@ -15,6 +15,15 @@ The system SHALL present Screen Effects using the Alerts module's compact invent
 - **WHEN** the editor viewport cannot fit three columns
 - **THEN** the workspace stacks with scrolling access to all panels and the header remains reachable
 
+#### Scenario: Creating a distinct variant
+- **WHEN** an operator chooses New variant
+- **THEN** the editor adds and selects a disabled blank variant with independent media and weighting controls
+- **AND** Copy variant remains a separate action for cloning the selected variant
+
+#### Scenario: Related actions wrap
+- **WHEN** Screen Effect or set actions wrap at the available width
+- **THEN** horizontal and vertical spacing keeps adjacent controls visually distinct
+
 #### Scenario: Module configuration
 - **WHEN** an operator opens Screen Effects configuration
 - **THEN** a collapsed Browser sources section with a configuration summary precedes the compact effects inventory and exposes existing URL actions when expanded
@@ -58,3 +67,59 @@ The system SHALL treat every enabled Screen Effect variant as a member of one we
 - **WHEN** the repository reads stored Screen Effect variants whose legacy kind is `default` or `weighted`
 - **THEN** it returns the unified current variant model without losing identity, media, routing, enabled state or weight
 - **AND** newly saved rows retain the migration 022 storage shape with neutral legacy kind `weighted`
+
+### Requirement: Event-Owned Cooldown And Explained Queue Priority
+The system SHALL leave per-effect cooldown policy to the triggering event and SHALL explain that Screen Effect priority orders queued matches without interrupting current playback.
+
+#### Scenario: Repeated matching events
+- **WHEN** distinct accepted events match the same enabled Screen Effect
+- **THEN** Screen Effect admission does not suppress either event with a per-effect cooldown
+
+#### Scenario: Multiple effects match one event
+- **WHEN** one event matches multiple enabled Screen Effects
+- **THEN** higher queue-priority values are admitted first, equal values use stable effect identity order, and current playback is not interrupted
+
+#### Scenario: Existing stored cooldown values
+- **WHEN** the repository reads or saves an effect row with the legacy `cooldown_seconds` column
+- **THEN** the current Screen Effect contract omits per-effect cooldown and saved rows normalize the legacy column to zero
+
+## MODIFIED Requirements
+
+### Requirement: Operators Author Local Screen Effects
+Authorized management users SHALL create, inspect, edit, duplicate, enable, disable and delete Screen Effects with stable identity, name, optional description/category, event bindings, integer queue priority and unified weighted variants. New effects SHALL start disabled. Definitions SHALL persist through typed repositories and validated backup/restore.
+
+#### Scenario: New effect is created
+- **WHEN** an operator saves a valid effect
+- **THEN** it receives stable effect/variant identities and remains disabled until explicitly enabled
+- **AND** no media plays merely because the effect was created or edited
+
+#### Scenario: Draft is invalid
+- **WHEN** a save contains an unknown asset/route, invalid weight, unbounded media duration or invalid trigger
+- **THEN** the entire save is rejected with field-level actionable feedback and prior data remains unchanged
+
+#### Scenario: Referenced asset is deleted
+- **WHEN** an operator attempts to delete an asset referenced by an effect variant
+- **THEN** deletion is blocked with an effect-qualified impact list and no dangling reference is created
+
+#### Scenario: Effects are restored from backup
+- **WHEN** a valid backup containing effects is restored
+- **THEN** effect/variant/media references round-trip without secrets or runtime occurrences
+- **AND** restored effects remain disabled until unresolved output bindings are reviewed
+
+### Requirement: Effect Admission Is Deduplicated And Bounded
+Screen Effects SHALL enforce module-scoped duplicate protection, an optional module cooldown and at most 100 pending occurrences. Capacity overflow SHALL reject the new admission without evicting current/pending work. The module cooldown SHALL be recorded only after at least one matching effect is admitted. Eligible bindings SHALL be evaluated deterministically before admission.
+
+#### Scenario: Event triggers an alert and effect
+- **WHEN** one normalized event matches both modules and is then redelivered
+- **THEN** it can produce one valid occurrence in each module
+- **AND** redelivery produces no second occurrence in either module
+
+#### Scenario: Queue is full
+- **WHEN** 100 effects are already pending and another otherwise eligible event arrives
+- **THEN** the new effect is rejected with a queue-full result
+- **AND** no current or pending effect is replaced and no module cooldown is recorded for the rejection
+
+#### Scenario: Multiple effects intentionally bind the same event
+- **WHEN** distinct enabled effects match one event
+- **THEN** each eligible binding admits at most once in priority-descending and stable-effect-ID order
+- **AND** duplicate copies of the same binding within one effect are rejected during configuration
