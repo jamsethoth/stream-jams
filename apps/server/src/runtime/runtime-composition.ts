@@ -914,6 +914,26 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           client.targetProfileId === targetProfileId
       );
     },
+    async hasReadyDesktopOutput() {
+      if (options.desktopOverlayTransport === undefined) return false;
+      const surface = (await surfaceRepository.list()).find((candidate) => candidate.kind === "desktop");
+      const displayId = surface?.kind === "desktop" ? surface.displayId : null;
+      let ready = surface?.kind === "desktop"
+        && surface.enabled
+        && displayId !== null
+        && surface.layers.some((layer) => layer.moduleId === "alerts" && layer.visible);
+      if (ready && options.desktopOverlayTransport.getStatus !== undefined) {
+        try {
+          const status = await options.desktopOverlayTransport.getStatus();
+          ready = status.available
+            && status.state === "ready"
+            && status.displays.some((display) => display.id === displayId);
+        } catch {
+          ready = false;
+        }
+      }
+      return ready;
+    },
     getAudioOutputStatus: () => audioOutputService.getStatus(),
     listAudioOutputRoutes: () => audioOutputService.listRoutes(),
     async enqueueTest(playback) {
