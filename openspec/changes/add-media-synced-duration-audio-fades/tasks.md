@@ -15,8 +15,8 @@
 
 ## 4. Playback transports
 
-- [ ] 4.1 Apply normalized envelopes in browser overlay media and preview hooks; run focused web media and overlay tests.
-- [ ] 4.2 Apply normalized envelopes in desktop device audio with timer cleanup and late-join handling; run desktop player and routing tests.
+- [x] 4.1 Apply normalized envelopes in browser overlay media and preview hooks; run focused web media and overlay tests.
+- [x] 4.2 Apply normalized envelopes in desktop device audio with timer cleanup and late-join handling; run desktop player and routing tests.
 
 ## 5. Management authoring
 

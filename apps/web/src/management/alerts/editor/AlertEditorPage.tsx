@@ -21,6 +21,7 @@ import {
   normalizeAlertPriorityGroups,
   readChannelPointRewardSelection,
   resolveAlertAudio,
+  resolveAudioEnvelope,
   rgbaColorSchema,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -842,12 +843,24 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           if (blob === null || !isCurrent()) return;
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
+          const updateEnvelope = () => {
+            audio.volume = resolveAudioEnvelope({
+              volume: layer.volume,
+              elapsedMs: currentPreviewPosition(),
+              fadeInMs: layer.fadeInMs ?? 0,
+              fadeOutMs: layer.fadeOutMs ?? 0,
+              playbackDurationMs: layer.playbackDurationMs ?? currentDocument.durationMs,
+              muted: false
+            });
+          };
+          const envelopeTimer = window.setInterval(updateEnvelope, 25);
           const release = () => {
             if (!previewAudioCleanupRef.current.delete(release)) return;
             audio.onended = null;
             audio.onloadedmetadata = null;
             audio.onerror = null;
             previewAudioSyncRef.current.delete(sync);
+            window.clearInterval(envelopeTimer);
             audio.pause();
             audio.src = "";
             URL.revokeObjectURL(url);
@@ -856,7 +869,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           audio.onended = () => {
             if (!isCurrent()) release();
           };
-          audio.volume = layer.volume;
+          updateEnvelope();
           let firstStart = true;
           const sync = () => {
             if (!isCurrent()) { release(); return; }
