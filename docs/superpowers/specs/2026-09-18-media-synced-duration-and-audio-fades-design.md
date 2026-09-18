@@ -4,7 +4,7 @@
 
 Alerts and Screen Effect variants currently store a fixed playback duration. Operators must copy the duration of an attached video or audio file into a separate number field, and replacing that asset can leave playback shorter or longer than the media. Audio layers and video soundtracks have volume controls but no fade envelope.
 
-Uploaded assets already carry bounded duration metadata. The management editors, browser overlays, desktop audio player, and playback coordinators already share normalized media instructions and absolute playback timing. The change should use those existing boundaries rather than inspect files during a trigger.
+The public asset-library contract has a nullable duration field, but the current asset record, SQLite table, and import pipeline do not populate it; the management service currently returns `durationMs: null` for every asset. The feature therefore includes authoritative duration extraction and persistence during asset ingestion. The management editors, browser overlays, desktop audio player, and playback coordinators already share normalized media instructions and absolute playback timing, so live triggers can consume stored metadata without inspecting media files.
 
 This design depends on the focused Screen Effects editor and unified variant model in PR #117. It is a separate stacked slice so that the existing Screen Effects presentation change remains independently reviewable.
 
@@ -67,6 +67,12 @@ Rejected. It would not stay synchronized after global asset replacement and coul
 
 ## Contracts and compatibility
 
+`AssetRecord` and the `asset_metadata` SQLite table add nullable `durationMs` / `duration_ms`. A new migration leaves existing rows null. Asset-library responses expose the stored duration instead of always returning null.
+
+The server package adds the exact MIT-licensed dependency `music-metadata@11.15.0` and implements the core import pipeline's new `MediaMetadataProbe` boundary. After validation and any transcoding, the pipeline asks that probe to inspect the normalized bytes. The server implementation calls `parseBuffer` with the MIME type, byte size, `{ duration: true, skipCovers: true }`, and returns a positive finite duration rounded to milliseconds. The [music-metadata documentation](https://github.com/Borewit/music-metadata) lists the accepted MP3, WAV, Ogg, MP4, and WebM containers and exposes buffer parsing with explicit duration calculation. Images and GIFs store null. Metadata failure does not discard an otherwise accepted asset; it stores null and surfaces the documented automatic-duration fallback warning. This keeps the third-party parser out of browser bundles and preserves the core package's framework-independent boundary.
+
+Replacement extracts metadata from the replacement bytes before committing the same asset ID, so the next playback observes the new duration. For pre-migration assets, switching an object to automatic duration or requesting its selected-asset details invokes a bounded metadata repair through the management path and persists the result. Live trigger handling never reads media files or runs metadata extraction; if repair has not succeeded, it uses the documented fallback.
+
 Persisted Alert documents and Effect variants add `durationMode: "media" | "custom"`. Their existing `durationMs` remains the custom value and the fallback value used when automatic resolution has no timed media. Compatibility parsers supply `custom` for stored documents that predate the field.
 
 Audio-bearing configuration adds nonnegative integer fade durations:
@@ -93,7 +99,7 @@ A framework-independent resolver accepts:
 
 It returns the bounded effective duration, the longest contributing asset identities, and any fallback or truncation warning. Tied longest assets are retained so the editor can explain the result accurately.
 
-The server remains authoritative for live and test delivery. Runtime composition provides a small asset-duration catalog backed by stored asset metadata. It is populated lazily, cached in memory, and updated or invalidated when the asset library uploads, replaces, repairs, or deletes an asset. A cold cache performs a direct repository lookup. Neither filesystem reads nor media probing occur on the trigger path.
+The server remains authoritative for live and test delivery. Runtime composition provides a small asset-duration catalog backed by the persisted `AssetRecord.durationMs`. It is populated lazily, cached in memory, and updated or invalidated when the asset library uploads, replaces, repairs, or deletes an asset. A cold cache performs a direct repository lookup. Neither filesystem reads nor media parsing occur on the trigger path.
 
 The duration is resolved before admission creates the immutable queue item. All browser, desktop visual, and device-audio instructions for that occurrence use the same effective duration and timing window. The editor uses the same pure resolver over its loaded asset inventory for immediate draft feedback; the server recalculates on save, test, and live playback rather than trusting a client-derived value.
 
@@ -133,6 +139,9 @@ The applicable MVP UX boundaries are the Assets duration metadata, Alert editor 
 ## Verification
 
 - Core tests cover longest-media selection, ties, hidden and unsupported media, fallbacks, bounds, Custom mode, fade defaults, clamping, late elapsed time, and mute multiplication.
+- Import-pipeline tests cover duration extraction for the repository's MP3, WAV, Ogg, MP4, and WebM fixtures, null metadata for images and GIFs, parser failure fallback, replacement, and exact millisecond normalization.
+- Database and repository tests cover the nullable duration migration, old-row compatibility, persistence, lookup, and asset-library projection.
+- Management metadata-repair tests cover a pre-migration asset, bounded failure, persistence, and proof that live trigger handling never invokes the parser.
 - Compatibility tests prove legacy Alert documents, Screen Effect rows, and backups become Custom with fades disabled.
 - Asset catalog tests cover cache hits, cold repository reads, replacement invalidation, deletion, and failed metadata reads without filesystem probing.
 - Alert and Screen Effect service tests prove server-authoritative resolution for save, test, and live queue construction and stable duration for in-flight playback.
