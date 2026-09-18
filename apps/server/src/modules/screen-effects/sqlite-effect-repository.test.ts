@@ -280,7 +280,8 @@ describe("SqliteEffectRepository", () => {
       mimeType: "image/gif",
       sizeBytes: 4,
       checksum: "sha256:test-gif",
-      storagePath: "assets/asset-gif.gif"
+      storagePath: "assets/asset-gif.gif",
+      durationMs: null
     });
     const draft = createScreenEffectDocument({
       id: "effect-gif",
@@ -314,7 +315,8 @@ async function seedReferences(connection: ConstructorParameters<typeof SqliteEff
     mimeType: "audio/wav",
     sizeBytes: 4,
     checksum: "sha256:test-tone",
-    storagePath: "assets/asset-tone.wav"
+    storagePath: "assets/asset-tone.wav",
+    durationMs: null
   });
   new SqliteAudioOutputRouteRepository(connection).save(route);
 }

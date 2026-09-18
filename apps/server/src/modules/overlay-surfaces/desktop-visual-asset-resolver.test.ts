@@ -17,7 +17,7 @@ const input = (): Omit<DesktopVisualBatch, "assets"> => ({
     visual: { assetId: "asset", mediaType: "image", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } }]
 });
 function harness(record: Partial<AssetRecord> = {}) {
-  const records = new Map<string, AssetRecord>([["asset", { id: "asset", originalFileName: "one.png", mediaType: "image", mimeType: "image/png", sizeBytes: 3, checksum, storagePath: "image/asset", ...record }]]);
+  const records = new Map<string, AssetRecord>([["asset", { id: "asset", originalFileName: "one.png", mediaType: "image", mimeType: "image/png", sizeBytes: 3, checksum, storagePath: "image/asset", durationMs: null, ...record }]]);
   const findManyByIds = vi.fn(async () => records as ReadonlyMap<string, AssetRecord>);
   const readBounded = vi.fn<(path: string, max: number) => Promise<Uint8Array>>(async () => bytes);
   const resolver = new DesktopVisualAssetResolver({ assetRepository: { findManyByIds }, assetStore: { readBounded } });

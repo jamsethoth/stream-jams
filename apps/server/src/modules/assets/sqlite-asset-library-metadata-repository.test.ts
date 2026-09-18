@@ -46,5 +46,6 @@ const assetRecord: AssetRecord = {
   mimeType: "image/png",
   sizeBytes: 1024,
   checksum: "sha256:asset",
-  storagePath: "image/asset-image-1.png"
+  storagePath: "image/asset-image-1.png",
+  durationMs: null
 };

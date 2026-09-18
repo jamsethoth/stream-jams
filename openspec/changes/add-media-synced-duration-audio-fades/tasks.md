@@ -1,7 +1,7 @@
 ## 1. Asset duration ingestion
 
-- [ ] 1.1 Add `MediaMetadataProbe`, timed-media pipeline tests, and exact `music-metadata@11.15.0` server adapter; run the focused pipeline and adapter Vitest files.
-- [ ] 1.2 Add migration 024, repository round trips, backup compatibility, asset-library projection, and runtime wiring; run focused database, repository, route, backup, and service tests.
+- [x] 1.1 Add `MediaMetadataProbe`, timed-media pipeline tests, and exact `music-metadata@11.15.0` server adapter; run the focused pipeline and adapter Vitest files.
+- [x] 1.2 Add migration 024, repository round trips, backup compatibility, asset-library projection, and runtime wiring; run focused database, repository, route, backup, and service tests.
 
 ## 2. Shared timing and envelope contracts
 

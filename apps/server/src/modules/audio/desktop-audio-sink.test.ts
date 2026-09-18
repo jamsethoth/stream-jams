@@ -279,7 +279,8 @@ function asset(
     mimeType,
     sizeBytes,
     checksum: hash(id === "shared" ? new Uint8Array([4, 5]) : new Uint8Array([1, 2, 3])),
-    storagePath: `audio/${id}`
+    storagePath: `audio/${id}`,
+    durationMs: null
   };
 }
 

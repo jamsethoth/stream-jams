@@ -227,7 +227,7 @@ export class AssetLibraryService {
       sizeBytes: record.sizeBytes,
       width: null,
       height: null,
-      durationMs: null,
+      durationMs: record.durationMs,
       health,
       tags: metadata.tags,
       createdAt: metadata.createdAt,

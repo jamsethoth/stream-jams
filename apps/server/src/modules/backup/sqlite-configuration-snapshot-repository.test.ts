@@ -663,7 +663,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
     repository.replace({
       tables,
-      assets: [{ id: "asset-restored", originalFileName: "restored.png", mediaType: "image", mimeType: "image/png", sizeBytes: 8, checksum: `sha256:${"a".repeat(64)}`, storagePath: "image/asset-restored-restore.png" }]
+      assets: [{ id: "asset-restored", originalFileName: "restored.png", mediaType: "image", mimeType: "image/png", sizeBytes: 8, checksum: `sha256:${"a".repeat(64)}`, storagePath: "image/asset-restored-restore.png", durationMs: null }]
     });
 
     expect(database.connection.prepare("SELECT id FROM alert_collections").all()).toEqual([{ id: "set-restored" }]);
@@ -737,7 +737,7 @@ function seed(database: StreamJamsDatabase): void {
   db.prepare("INSERT INTO alert_rules VALUES (?, ?, ?, ?, ?, ?)").run("alert-follow", "Follow", "follow", 1, 0, 0);
   db.prepare("INSERT INTO alert_rule_collections VALUES (?, ?)").run("alert-follow", "set-default");
   db.prepare("INSERT INTO alert_rule_conditions VALUES (?, ?, ?, ?, ?)").run("alert-follow", 0, "actor.id", "equals", '"actor-1"');
-  db.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?)").run("asset-follow", "follow.png", "image", "image/png", 8, `sha256:${"a".repeat(64)}`, "image/asset-follow.png");
+  db.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("asset-follow", "follow.png", "image", "image/png", 8, `sha256:${"a".repeat(64)}`, "image/asset-follow.png", null);
   db.prepare("INSERT INTO alert_variants (id, rule_id, name, enabled, weight, visual_asset_id, audio_asset_id, text_template, tts_config_json, duration_ms, layout_json, conditions_json, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run("variant-follow", "alert-follow", "Default", 1, 1, "asset-follow", null, "Thanks", null, 5000, '{"x":0,"y":0,"width":100,"height":100,"zIndex":0}', "[]", 0);
   db.prepare("INSERT INTO alert_set_metadata VALUES (?, ?, ?, ?, ?, ?, ?)").run("set-default", 0, "complete", 1, "ready", 0, "needs-review");
   db.prepare("INSERT INTO alert_rule_management_metadata VALUES (?, ?, ?, ?)").run("alert-follow", "twitch", "ready", '["landscape"]');
@@ -853,6 +853,7 @@ function seededAsset() {
     mimeType: "image/png",
     sizeBytes: 8,
     checksum: `sha256:${"a".repeat(64)}`,
-    storagePath: "image/asset-follow.png"
+    storagePath: "image/asset-follow.png",
+    durationMs: null
   };
 }

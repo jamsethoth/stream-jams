@@ -63,6 +63,7 @@ import { LocalAssetStore } from "../modules/assets/local-asset-store.js";
 import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository.js";
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
+import { MusicMetadataProbe } from "../modules/assets/media-metadata-probe.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
 import { SqliteEffectSetRepository } from "../modules/screen-effects/sqlite-effect-set-repository.js";
 import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
@@ -271,6 +272,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     repository: assetRepository,
     store: assetStore,
     transcoder: new NoopMediaTranscodingStage(),
+    probe: new MusicMetadataProbe(),
     generateId: generateAssetId,
     calculateChecksum
   });
