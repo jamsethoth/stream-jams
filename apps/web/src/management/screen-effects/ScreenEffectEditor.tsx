@@ -28,6 +28,8 @@ import type { AssetApi } from "../assets/asset-api.js";
 import { AssetPicker } from "../assets/AssetPicker.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import { MediaAudioControls } from "../audio/MediaAudioControls.js";
+import { AudioFadeControls } from "../audio/AudioFadeControls.js";
+import { MediaDurationControls } from "../audio/MediaDurationControls.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
@@ -351,6 +353,10 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
         context={context}
         edit={edit}
         onOpenPicker={setPicker}
+        onRepairDuration={async (assetId) => {
+          const repaired = await props.managementApi.repairAssetDuration?.(assetId);
+          if (repaired !== undefined) setContext((current) => ({ ...current, assets: current.assets.map((asset) => asset.id === assetId ? repaired : asset) }));
+        }}
         selected={selectedVariant}
         variants={document.variants}
       />}
@@ -450,6 +456,7 @@ function VariantPanel(props: {
   readonly context: EditorContext;
   readonly edit: (update: (document: ScreenEffectDocument) => ScreenEffectDocument) => void;
   readonly onOpenPicker: (target: PickerTarget) => void;
+  readonly onRepairDuration: (assetId: string) => Promise<void>;
   readonly selected: EffectVariant;
   readonly variants: readonly EffectVariant[];
 }) {
@@ -465,8 +472,14 @@ function VariantPanel(props: {
     <div className="screen-effects-fields-inline">
       <label>Variant name<input aria-label="Variant name" maxLength={120} onChange={(event) => { const name = event.currentTarget.value; update((variant) => ({ ...variant, name })); }} value={selected.name} /></label>
       <label>Weight<input aria-label="Variant weight" max={10000} min={1} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, weight: value })))} type="number" value={selected.weight} /></label>
-      <label>Duration (seconds)<input aria-label="Variant duration" max={120} min={1} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, durationMs: value * 1000 })))} type="number" value={selected.durationMs / 1000} /></label>
     </div>
+    <MediaDurationControls assetIds={[
+      ...(selected.visual?.mediaType === "video" ? [selected.visual.assetId] : []),
+      ...(selected.sound === null ? [] : [selected.sound.assetId])
+    ]} assets={context.assets} durationMs={selected.durationMs} fallbackDurationMs={10_000}
+      mode={selected.durationMode ?? "custom"}
+      onChange={({ mode, durationMs }) => update((variant) => ({ ...variant, durationMode: mode, durationMs }))}
+      onRepair={props.onRepairDuration} />
     <label className="screen-effects-check"><input checked={selected.enabled} onChange={(event) => { const enabled = event.currentTarget.checked; update((variant) => ({ ...variant, enabled })); }} type="checkbox" />Variant enabled</label>
     <MediaPanel asset={visualAsset} onChoose={() => props.onOpenPicker("visual")} onRemove={() => update((variant) => ({ ...variant, visual: null }))} selected={selected} update={update} />
     <SoundPanel asset={soundAsset} onChoose={() => props.onOpenPicker("sound")} onRemove={() => update((variant) => ({ ...variant, sound: null }))} selected={selected} update={update} />
@@ -516,6 +529,11 @@ function MediaPanel({ asset, onChoose, onRemove, selected, update }: {
         }))}
         value={{ playEmbeddedAudio: visual.playEmbeddedAudio, audioVolume: visual.audioVolume }}
       /> : null}
+      {visual.mediaType === "video" && visual.playEmbeddedAudio ? <AudioFadeControls
+        fadeInMs={visual.audioFadeInMs}
+        fadeOutMs={visual.audioFadeOutMs}
+        onChange={(fades) => update((variant) => ({ ...variant, visual: variant.visual?.mediaType === "video" ? { ...variant.visual, audioFadeInMs: fades.fadeInMs, audioFadeOutMs: fades.fadeOutMs } : variant.visual }))}
+      /> : null}
     </>}
   </fieldset>;
 }
@@ -544,7 +562,10 @@ function SoundPanel({ asset, onChoose, onRemove, selected, update }: {
       <button className="button button--secondary" onClick={onChoose} type="button">Choose sound asset</button>
       {selected.sound === null ? null : <button className="button button--secondary" onClick={onRemove} type="button">Remove sound</button>}
     </div>
-    {selected.sound === null ? null : <label>Sound volume<input aria-label="Sound volume" max={1} min={0} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, sound: variant.sound === null ? null : { ...variant.sound, volume: value } })))} step={0.01} type="number" value={selected.sound.volume} /></label>}
+    {selected.sound === null ? null : <>
+      <label>Sound volume<input aria-label="Sound volume" max={1} min={0} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, sound: variant.sound === null ? null : { ...variant.sound, volume: value } })))} step={0.01} type="number" value={selected.sound.volume} /></label>
+      <AudioFadeControls fadeInMs={selected.sound.fadeInMs} fadeOutMs={selected.sound.fadeOutMs} onChange={(fades) => update((variant) => ({ ...variant, sound: variant.sound === null ? null : { ...variant.sound, ...fades } }))} />
+    </>}
   </fieldset>;
 }
 
