@@ -6,7 +6,7 @@ import {
   type AssetRecord,
   type ScreenEffectDocument
 } from "@stream-jams/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AssetLibraryInUseError, AssetLibraryService, type AssetLibraryMetadata } from "./asset-library-service.js";
 
 describe("AssetLibraryService", () => {
@@ -129,6 +129,35 @@ describe("AssetLibraryService", () => {
     await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toBeInstanceOf(AssetLibraryInUseError);
     expect(fixture.store.rolledBack).toEqual([asset.storagePath]);
   });
+
+  it("repairs missing timed-media duration with bounded bytes and refreshes the catalog", async () => {
+    const timedAsset: AssetRecord = {
+      ...asset,
+      id: "asset-video",
+      originalFileName: "clip.mp4",
+      mediaType: "video",
+      mimeType: "video/mp4",
+      storagePath: "video/asset-video.mp4"
+    };
+    const repository = new MemoryAssetRepository([timedAsset]);
+    const store = new MemoryStore();
+    const catalog = { getMany: vi.fn(), store: vi.fn(), invalidate: vi.fn() };
+    const probe = { inspect: vi.fn(async () => ({ durationMs: 7_500 })) };
+    const service = new AssetLibraryService({
+      assetRepository: repository,
+      metadataRepository: new MemoryMetadataRepository(),
+      assetStore: store,
+      alertRepository: { async listCollections() { return []; }, async listRules() { return []; } },
+      ruleMetadataRepository: { async findRule() { return null; } },
+      durationCatalog: catalog,
+      metadataProbe: probe
+    });
+
+    await expect(service.repairDuration(timedAsset.id)).resolves.toMatchObject({ durationMs: 7_500 });
+    expect(store.reads).toEqual([[timedAsset.storagePath, timedAsset.sizeBytes]]);
+    expect(probe.inspect).toHaveBeenCalledWith(expect.objectContaining({ sizeBytes: 4 }));
+    expect(catalog.store).toHaveBeenCalledWith(expect.objectContaining({ id: timedAsset.id, durationMs: 7_500 }));
+  });
 });
 
 function createFixture(options: {
@@ -196,8 +225,10 @@ class MemoryStore {
   readonly staged: string[] = [];
   readonly committed: string[] = [];
   readonly rolledBack: string[] = [];
+  readonly reads: [string, number][] = [];
   async inspect() { return "available" as const; }
   async delete(storagePath: string) { this.deleted.push(storagePath); }
+  async readBounded(storagePath: string, maxBytes: number) { this.reads.push([storagePath, maxBytes]); return new Uint8Array([1, 2, 3, 4]); }
   async stageDelete(storagePath: string) {
     this.staged.push(storagePath);
     return {

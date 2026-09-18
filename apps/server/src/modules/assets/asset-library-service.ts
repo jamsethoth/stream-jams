@@ -16,6 +16,8 @@ import {
   type TargetProfileId
 } from "@stream-jams/core";
 import type { AlertSetMetadataRepository } from "../alerts/alert-set-management-service.js";
+import type { MediaMetadataProbe } from "@stream-jams/core";
+import type { AssetDurationCatalog } from "./asset-duration-catalog.js";
 
 export interface AssetLibraryMetadata {
   readonly assetId: string;
@@ -38,6 +40,7 @@ export interface AssetLibraryStore {
     readonly commit: () => Promise<void>;
     readonly rollback: () => Promise<void>;
   }>;
+  readBounded?(storagePath: string, maxBytes: number): Promise<Uint8Array>;
 }
 
 export interface AssetLibraryServiceOptions {
@@ -49,6 +52,8 @@ export interface AssetLibraryServiceOptions {
   readonly effectRepository?: Pick<ScreenEffectRepository, "list"> | undefined;
   readonly deletePersistedAsset?: ((assetId: string) => void) | undefined;
   readonly clock?: () => Date;
+  readonly durationCatalog?: AssetDurationCatalog | undefined;
+  readonly metadataProbe?: MediaMetadataProbe | undefined;
 }
 
 export class AssetLibraryNotFoundError extends Error {
@@ -105,13 +110,15 @@ export class AssetLibraryService {
 
   async registerAsset(record: AssetRecord, input?: Partial<AssetMetadataUpdateInput>): Promise<AssetLibraryMetadata> {
     const timestamp = this.#clock().toISOString();
-    return this.#options.metadataRepository.save({
+    const metadata = await this.#options.metadataRepository.save({
       assetId: record.id,
       displayName: input?.displayName?.trim() || record.originalFileName,
       tags: normalizeAssetTags(input?.tags ?? []),
       createdAt: timestamp,
       updatedAt: timestamp
     });
+    this.#options.durationCatalog?.store(record);
+    return metadata;
   }
 
   async getChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact> {
@@ -158,6 +165,7 @@ export class AssetLibraryService {
         this.#options.deletePersistedAsset(assetId);
       }
       await stagedDeletion.commit();
+      this.#options.durationCatalog?.invalidate(assetId);
     } catch (error) {
       const recovery = await Promise.allSettled([
         this.#options.assetRepository.save(record),
@@ -191,7 +199,34 @@ export class AssetLibraryService {
     }
     const metadata = await this.#metadata(replacement);
     await this.#options.metadataRepository.save({ ...metadata, updatedAt: this.#clock().toISOString() });
+    this.#options.durationCatalog?.store(replacement);
     return this.getItem(replacement.id);
+  }
+
+  async repairDuration(assetId: string): Promise<AssetLibraryItem> {
+    const record = await this.#findRecord(assetId);
+    if ((record.mediaType !== "audio" && record.mediaType !== "video") || record.durationMs !== null) {
+      return this.getItem(assetId);
+    }
+    if (this.#options.assetStore.readBounded === undefined || this.#options.metadataProbe === undefined) {
+      return this.getItem(assetId);
+    }
+    try {
+      const bytes = await this.#options.assetStore.readBounded(record.storagePath, record.sizeBytes);
+      const result = await this.#options.metadataProbe.inspect({
+        mediaType: record.mediaType,
+        mimeType: record.mimeType,
+        sizeBytes: bytes.byteLength,
+        bytes
+      });
+      if (result.durationMs !== null) {
+        const updated = await this.#options.assetRepository.save({ ...record, durationMs: result.durationMs });
+        this.#options.durationCatalog?.store(updated);
+      }
+    } catch {
+      // A valid legacy asset remains usable; automatic timing displays its documented fallback.
+    }
+    return this.getItem(assetId);
   }
 
   async #findRecord(assetId: string): Promise<AssetRecord> {

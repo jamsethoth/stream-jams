@@ -305,6 +305,7 @@ export interface ManagementApi {
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
   getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
   deleteAsset(assetId: string): Promise<void>;
+  repairAssetDuration?(assetId: string): Promise<AssetLibraryItem>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
   exportConfigurationBackup(): Promise<ConfigurationBackupArchive>;
@@ -708,6 +709,15 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
 
     async deleteAsset(assetId) {
       await client.deleteRequest(`/management/assets/${encodeURIComponent(assetId)}`, "Unable to delete asset.");
+    },
+
+    repairAssetDuration(assetId) {
+      return postContract(
+        `/management/assets/${encodeURIComponent(assetId)}/repair-duration`,
+        {},
+        assetLibraryItemSchema,
+        "Unable to repair asset duration."
+      );
     },
 
     getDiagnosticsWorkspace() {

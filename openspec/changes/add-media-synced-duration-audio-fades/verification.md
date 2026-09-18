@@ -6,6 +6,7 @@
 - Core and server package typechecks passed.
 - Duration modes, resolver, collectors, Alert compatibility, and Screen Effect authoring: 6 files, 128 tests passed; core/server typechecks passed.
 - Audio envelope, overlap clamping, authoring compatibility, and normalized schemas: 6 files, 50 tests passed; core typecheck passed.
+- Cached duration lookup, bounded repair, management route/client regression: 4 files, 64 tests passed; server/web typechecks passed.
 
 ## Full gates
 
