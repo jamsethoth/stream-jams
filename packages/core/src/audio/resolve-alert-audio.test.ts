@@ -20,9 +20,9 @@ function document() {
 it("resolves independent ordered sounds and enabled video soundtracks without expanding profiles", () => {
   const input = document();
   expect(resolveAlertAudio(input)).toEqual({ documentId: "alert", durationMs: 5000, outputs: input.outputs, layers: [
-    { layerId: "sound", assetId: "tone", volume: 0.8, sourceKind: "audio" },
-    { layerId: "video", assetId: "clip", volume: 0.4, sourceKind: "video-soundtrack" },
-    { layerId: "another-video", assetId: "clip", volume: 0, sourceKind: "video-soundtrack" }
+    { layerId: "sound", assetId: "tone", volume: 0.8, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 5000 },
+    { layerId: "video", assetId: "clip", volume: 0.4, sourceKind: "video-soundtrack", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 5000 },
+    { layerId: "another-video", assetId: "clip", volume: 0, sourceKind: "video-soundtrack", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 5000 }
   ] });
 });
 
@@ -57,6 +57,6 @@ it("omits a video soundtrack when the stored asset is a GIF", () => {
 
   expect(resolveAlertAudio(input, { clip: "gif" })).toBeNull();
   expect(resolveAlertAudio(input, { clip: "video" })?.layers).toEqual([
-    { layerId: "video", assetId: "clip", volume: 0.4, sourceKind: "video-soundtrack" }
+    { layerId: "video", assetId: "clip", volume: 0.4, sourceKind: "video-soundtrack", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 5000 }
   ]);
 });

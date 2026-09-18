@@ -249,7 +249,10 @@ export class DefaultAlertResolver implements AlertResolver {
         audio: {
           assetId: layer.assetId,
           volume: layer.volume,
-          sourceKind: audioSourceKind
+          sourceKind: audioSourceKind,
+          fadeInMs: layer.fadeInMs ?? 0,
+          fadeOutMs: layer.fadeOutMs ?? 0,
+          playbackDurationMs: durationMs
         }
       };
     }
@@ -332,7 +335,10 @@ export class DefaultAlertResolver implements AlertResolver {
           : {
               assetId: variant.audioAssetId,
               volume: 1,
-              sourceKind: "audio"
+              sourceKind: "audio",
+              fadeInMs: 0,
+              fadeOutMs: 0,
+              playbackDurationMs: variant.durationMs
             },
       text: {
         text: this.#renderedTextTemplateRenderer.render({

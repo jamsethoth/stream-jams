@@ -29,11 +29,15 @@ export type EffectVisual =
       readonly layout: OverlayElementLayout;
       readonly playEmbeddedAudio: boolean;
       readonly audioVolume: number;
+      readonly audioFadeInMs?: number | undefined;
+      readonly audioFadeOutMs?: number | undefined;
     };
 
 export interface EffectSound {
   readonly assetId: string;
   readonly volume: number;
+  readonly fadeInMs?: number | undefined;
+  readonly fadeOutMs?: number | undefined;
 }
 
 export interface EffectVisualOutputs {

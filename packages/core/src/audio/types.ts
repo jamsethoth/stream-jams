@@ -52,6 +52,9 @@ export interface ResolvedAudioLayer {
   readonly layerId: string;
   readonly assetId: string;
   readonly volume: number;
+  readonly fadeInMs: number;
+  readonly fadeOutMs: number;
+  readonly playbackDurationMs: number;
 }
 
 export interface ResolvedAlertAudio {

@@ -41,7 +41,10 @@ export const resolvedAudioLayerSchema = z.object({
   sourceKind: z.enum(["audio", "video-soundtrack"]).default("audio"),
   layerId: audioRouteIdSchema,
   assetId: audioRouteIdSchema,
-  volume: z.number().min(0).max(1)
+  volume: z.number().min(0).max(1),
+  fadeInMs: z.number().int().min(0).max(120_000).default(0),
+  fadeOutMs: z.number().int().min(0).max(120_000).default(0),
+  playbackDurationMs: z.number().int().min(1).max(120_000).default(1)
 }).strict();
 const audioLayersSchema = z.array(resolvedAudioLayerSchema).refine(layers => new Set(layers.map(layer => layer.layerId)).size === layers.length, "Layer IDs must be unique");
 export const resolvedAlertAudioSchema = z.object({
