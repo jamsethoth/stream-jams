@@ -667,6 +667,7 @@ export const alertEditorDocumentSchema = z.object({
   cooldownSeconds: nonNegativeIntegerSchema.default(0),
   rulePriority: z.number().int().default(0),
   durationMs: positiveIntegerSchema.max(120_000),
+  durationMode: z.enum(["media", "custom"]).optional(),
   outputs: alertAudioOutputsSchema,
   layers: z.array(alertLayerSchema),
   targetProfiles: alertTargetProfileDocumentsSchema,
@@ -1123,6 +1124,7 @@ function alertEditorLiveOutputState(document: AlertEditorDocument, profileId: Ta
     cooldownSeconds: document.cooldownSeconds,
     rulePriority: document.rulePriority,
     durationMs: document.durationMs,
+    durationMode: document.durationMode ?? "custom",
     layers: document.layers.map(alertLayerLiveOutputState),
     layerLayouts: profile.layerLayouts
   };

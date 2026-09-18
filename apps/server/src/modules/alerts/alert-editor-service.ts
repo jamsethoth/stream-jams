@@ -581,6 +581,7 @@ function createDocumentFromRule(
     cooldownSeconds: rule.cooldownSeconds,
     rulePriority: rule.priority,
     durationMs: variant.durationMs,
+    durationMode: "media",
     layers,
     targetProfiles: [
       createTargetProfile("landscape", enabledProfiles.has("landscape"), landscapeReviewState, layers, variant.layout),

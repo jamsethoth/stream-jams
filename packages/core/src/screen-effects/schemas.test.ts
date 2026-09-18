@@ -56,6 +56,7 @@ describe("screenEffectDocumentSchema", () => {
         visual: null,
         sound: null,
         animation: null,
+        durationMode: "media",
         durationMs: 10_000,
         outputs: { browserSource: false, deviceRouteIds: [] },
         visualOutputs: { browserSource: false, desktop: false }
