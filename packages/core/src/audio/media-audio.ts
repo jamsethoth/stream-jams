@@ -35,8 +35,8 @@ export function resolveMediaAudioSources(candidates: readonly MediaAudioCandidat
       assetId,
       volume,
       sourceKind,
-      fadeInMs: fadeInMs ?? 0,
-      fadeOutMs: fadeOutMs ?? 0,
-      playbackDurationMs: playbackDurationMs ?? 1
+      ...(fadeInMs === undefined ? {} : { fadeInMs }),
+      ...(fadeOutMs === undefined ? {} : { fadeOutMs }),
+      ...(playbackDurationMs === undefined ? {} : { playbackDurationMs })
     }));
 }

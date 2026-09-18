@@ -22,6 +22,8 @@ import {
   readChannelPointRewardSelection,
   resolveAlertAudio,
   resolveAudioEnvelope,
+  collectAlertDurationAssetIds,
+  resolveMediaDuration,
   rgbaColorSchema,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -529,6 +531,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   });
 
   const document = editor?.document ?? null;
+  const previewDocument = document === null ? null : effectiveAlertDocument(document, assets);
   useEffect(() => {
     if (document === null) return;
     setSelectedLayerId((current) => current !== null && document.layers.some((layer) => layer.id === current)
@@ -748,7 +751,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   function changePreviewPlayback(playing: boolean, elapsedMs = currentPreviewPosition()) {
-    const durationMs = document?.durationMs ?? 0;
+    const durationMs = previewDocument?.durationMs ?? 0;
     const position = Math.max(0, Math.min(durationMs, elapsedMs));
     previewClockRef.current = { playing: playing && position < durationMs, elapsedMs: position, startedAt: performance.now(), durationMs };
     setPreviewPlaying(previewClockRef.current.playing);
@@ -819,7 +822,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       changePreviewPlayback(true, 0);
       setPreviewRunId((current) => current + 1);
       setNotice({ tone: "success", message: "Local preview is running." });
-      void playPreviewMedia(document, previewTtsByLayerId);
+      void playPreviewMedia(effectiveAlertDocument(document, assets), previewTtsByLayerId);
     } catch (cause) {
       if (previewRequestIdRef.current !== requestId) return;
       resetLocalPreview();
@@ -1162,8 +1165,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         <div className="alert-editor-page__header-actions">
           <button className="button button--secondary" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</button>
           <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null} onClick={previewLocally} type="button">Preview</button>
-          {preview ? <button className="button button--secondary" onClick={() => previewElapsedMs >= document.durationMs ? previewLocally() : changePreviewPlayback(!previewPlaying)} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= document.durationMs ? "Replay preview" : "Resume preview"}</button> : null}
-          {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => changePreviewPlayback(false, Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
+          {preview ? <button className="button button--secondary" onClick={() => previewElapsedMs >= previewDocument!.durationMs ? previewLocally() : changePreviewPlayback(!previewPlaying)} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= previewDocument!.durationMs ? "Replay preview" : "Resume preview"}</button> : null}
+          {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={previewDocument!.durationMs} min="0" onChange={(event) => changePreviewPlayback(false, Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Test draft</button>
           <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
           <p className="alert-editor-page__preview-help">Preview renders this draft locally. Audio and TTS follow the preview options. · Draft input · Browser {sendDeviceOnly ? "none" : profileLabel(profileId)} · Devices {testDeviceNames.join(", ") || "none"} · Audio {sendIncludeAudio ? "included" : "excluded"} · TTS {sendIncludeTts ? "included" : "excluded"}</p>
@@ -1305,7 +1308,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           <AlertCanvas
             assetApi={props.assetApi}
             background={canvasBackground}
-            document={document}
+            document={preview ? previewDocument! : document}
             fitRequestId={fitRequestId}
             onGeometryChange={(layerId, geometry) => updateDocument((current) => updateLayerGeometry(current, profileId, layerId, geometry))}
             onSelectLayer={(layerId) => { setSelectedLayerId(layerId); setTab("layers"); }}
@@ -2169,6 +2172,24 @@ function AlertInspector({ assets, document, onApplyTheme, onChange, onCopyDesign
       <dl className="alert-editor-inspector__facts"><div><dt>Provider type</dt><dd>{document.providerKind}</dd></div><div><dt>Event</dt><dd>{formatEventType(document.eventType)}</dd></div><div><dt>Conditions</dt><dd>{document.conditions.length}</dd></div></dl>
     </div>
   );
+}
+
+function effectiveAlertDocument(document: AlertEditorDocument, assets: readonly AssetLibraryItem[]): AlertEditorDocument {
+  if ((document.durationMode ?? "custom") !== "media") return document;
+  const byId = new Map(assets.map((asset) => [asset.id, asset]));
+  const resolution = resolveMediaDuration({
+    mode: "media",
+    customDurationMs: document.durationMs,
+    fallbackDurationMs: 5_000,
+    maximumDurationMs: 120_000,
+    candidates: collectAlertDurationAssetIds(document).flatMap((assetId) => {
+      const asset = byId.get(assetId);
+      return asset === undefined ? [] : [{
+        assetId, label: asset.displayName, mediaType: asset.mediaType, durationMs: asset.durationMs, eligible: true
+      }];
+    })
+  });
+  return { ...document, durationMs: resolution.durationMs };
 }
 
 function alertDocumentVisualStyleError(document: AlertEditorDocument): string | null {
