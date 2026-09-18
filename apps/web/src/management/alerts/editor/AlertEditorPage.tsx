@@ -34,6 +34,7 @@ import {
   type AlertVariationPriorityAssignment,
   type AlertVariationSampleEvaluation,
   type AssetMediaType,
+  type AssetLibraryItem,
   type RegisteredProviderView,
   type TargetProfileId
 } from "@stream-jams/core";
@@ -42,6 +43,8 @@ import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { defaultAudioApi, type AudioApi } from "../../audio/audio-api.js";
 import { MediaAudioControls } from "../../audio/MediaAudioControls.js";
+import { AudioFadeControls } from "../../audio/AudioFadeControls.js";
+import { MediaDurationControls } from "../../audio/MediaDurationControls.js";
 import { useAudioStatus } from "../../audio/use-audio-status.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
@@ -99,7 +102,7 @@ export type AlertEditorPageApi = Pick<
   | "saveAlertEditorDocument"
   | "sendAlertEditorTest"
   | "previewModeration"
-> & Partial<Pick<ManagementApi, "reportAlertEditorError">>;
+> & Partial<Pick<ManagementApi, "reportAlertEditorError" | "repairAssetDuration">>;
 
 export interface AlertEditorPageProps {
   readonly audioApi?: AudioApi;
@@ -189,6 +192,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [variationContext, setVariationContext] = useState<AlertVariationAuthoringContext | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
   const [visualAssetMediaTypes, setVisualAssetMediaTypes] = useState<Readonly<Record<string, "image" | "gif" | "video">> | null>(null);
+  const [assets, setAssets] = useState<readonly AssetLibraryItem[]>([]);
   const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
   const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
   const [ttsProvidersLoaded, setTtsProvidersLoaded] = useState(false);
@@ -278,6 +282,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setVariationContext(null);
     setSetDetail(null);
     setVisualAssetMediaTypes(null);
+    setAssets([]);
     setLoadedSetId(undefined);
     setError(null);
     setNotice(null);
@@ -333,6 +338,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         "Open TTS providers to review the active connection, then reload the editor."
       ));
       setTtsProvidersLoaded(true);
+    });
+    void props.managementApi.listAssetLibraryItems().then((items) => {
+      if (active) setAssets(items);
+    }).catch(() => {
+      if (active) setAssets([]);
     });
     return () => {
       active = false;
@@ -1354,7 +1364,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 ttsProvidersLoaded={ttsProvidersLoaded}
               />
             ) : tab === "alert" ? (
-              <><AlertInspector document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onCopyDesign={() => {
+              <><AlertInspector assets={assets} document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onRepairDuration={async (assetId) => {
+                const repaired = await props.managementApi.repairAssetDuration?.(assetId);
+                if (repaired !== undefined) setAssets((current) => current.map((asset) => asset.id === assetId ? repaired : asset));
+              }} onCopyDesign={() => {
                 setCopyDesignSourceId(filteredAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
@@ -1782,12 +1795,18 @@ function LayerInspector({
             <div className="alert-editor-inspector__asset"><span>Asset</span><code>{selectedLayer.assetId}</code><button className="button button--secondary button--compact" onClick={() => onChooseAsset(selectedLayer)} type="button">Choose asset</button></div>
           ) : null}
           {selectedLayer.type === "audio" ? (
-            <label><span>Volume {Math.round(selectedLayer.volume * 100)}%</span><input max="1" min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer)); }} step="0.05" type="range" value={selectedLayer.volume} /></label>
+            <><label><span>Volume {Math.round(selectedLayer.volume * 100)}%</span><input max="1" min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer)); }} step="0.05" type="range" value={selectedLayer.volume} /></label>
+            <AudioFadeControls fadeInMs={selectedLayer.fadeInMs} fadeOutMs={selectedLayer.fadeOutMs} onChange={(fades) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, ...fades } : layer))} /></>
           ) : null}
           {selectedLayer.type === "video" ? <MediaAudioControls
             value={{ playEmbeddedAudio: selectedLayer.playEmbeddedAudio, audioVolume: selectedLayer.audioVolume }}
             hasSeparateAudio={document.layers.some(layer => layer.type === "audio" && layer.visible)}
             onChange={(settings) => onChange(current => updateLayer(current, selectedLayer.id, layer => layer.type === "video" ? { ...layer, ...settings } : layer))}
+          /> : null}
+          {selectedLayer.type === "video" && selectedLayer.playEmbeddedAudio ? <AudioFadeControls
+            fadeInMs={selectedLayer.audioFadeInMs}
+            fadeOutMs={selectedLayer.audioFadeOutMs}
+            onChange={(fades) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "video" ? { ...layer, audioFadeInMs: fades.fadeInMs, audioFadeOutMs: fades.fadeOutMs } : layer))}
           /> : null}
           {layout === undefined ? null : (
             <details className="alert-editor-inspector__disclosure">
@@ -2114,12 +2133,14 @@ function boundedStyleError(
     : null;
 }
 
-function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
+function AlertInspector({ assets, document, onApplyTheme, onChange, onCopyDesign, onCopyProfileLayout, onRepairDuration, profileId }: {
+  readonly assets: readonly AssetLibraryItem[];
   readonly document: AlertEditorDocument;
   readonly onApplyTheme: () => void;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
   readonly onCopyDesign: () => void;
   readonly onCopyProfileLayout: () => void;
+  readonly onRepairDuration: (assetId: string) => Promise<void>;
   readonly profileId: TargetProfileId;
 }) {
   const profile = document.targetProfiles.find((candidate) => candidate.id === profileId)!;
@@ -2127,7 +2148,15 @@ function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopy
     <div className="alert-editor-inspector alert-editor-inspector__controls">
       <h3>Alert settings</h3>
       <label><span>Alert name</span><input onChange={(event) => { const name = event.currentTarget.value; onChange((current) => ({ ...current, name })); }} value={document.name} /></label>
-      <label><span>Duration (milliseconds)</span><input min="100" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => ({ ...current, durationMs })); }} type="number" value={document.durationMs} /></label>
+      <MediaDurationControls
+        assetIds={document.layers.flatMap((layer) => layer.visible && (layer.type === "audio" || layer.type === "video") ? [layer.assetId] : [])}
+        assets={assets}
+        durationMs={document.durationMs}
+        fallbackDurationMs={5_000}
+        mode={document.durationMode ?? "custom"}
+        onChange={({ mode, durationMs }) => onChange((current) => ({ ...current, durationMode: mode, durationMs }))}
+        onRepair={onRepairDuration}
+      />
       <label className="alert-editor-inspector__check"><input checked={document.enabled} id="alert-enabled-control" onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
       <button className="button button--secondary" onClick={onApplyTheme} type="button">Apply starter theme</button>
       <button className="button button--secondary" onClick={onCopyDesign} type="button">Copy design from...</button>
