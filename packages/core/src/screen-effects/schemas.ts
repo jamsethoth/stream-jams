@@ -115,6 +115,7 @@ export const effectVariantSchema = z.object({
   sound: effectSoundSchema.nullable(),
   animation: effectAnimationSchema.nullable(),
   durationMs: z.number().int().min(1_000).max(120_000),
+  durationMode: z.enum(["media", "custom"]).optional(),
   outputs: alertAudioOutputsSchema,
   visualOutputs: effectVisualOutputsSchema
 }).strict().superRefine((variant, context) => {
@@ -177,6 +178,7 @@ export function createScreenEffectDocument(input: CreateScreenEffectDocumentInpu
       sound: null,
       animation: null,
       durationMs: 10_000,
+      durationMode: "media",
       outputs: { browserSource: false, deviceRouteIds: [] },
       visualOutputs: { browserSource: false, desktop: false }
     }]

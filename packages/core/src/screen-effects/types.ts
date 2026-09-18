@@ -50,6 +50,7 @@ export interface EffectVariant {
   readonly sound: EffectSound | null;
   readonly animation: OverlayPresetAnimationInstruction | null;
   readonly durationMs: number;
+  readonly durationMode?: "media" | "custom" | undefined;
   readonly outputs: AlertAudioOutputs;
   readonly visualOutputs: EffectVisualOutputs;
 }
