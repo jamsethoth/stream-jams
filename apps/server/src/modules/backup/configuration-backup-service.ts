@@ -428,6 +428,9 @@ export class ConfigurationBackupService {
     }
 
     const connectedTwitchAccountId = await this.#options.twitchCredentials?.findConnectedAccountId() ?? null;
+    const restoredAssetMetadata = new Map(
+      (request.archive.configuration.tables.asset_metadata ?? []).map((row) => [String(row.id), row])
+    );
     const restorePoint = this.#options.snapshotRepository.captureRestorePoint();
     const currentAssets = await this.#options.assetRepository.list();
     let safetyBackupPath: string;
@@ -470,7 +473,10 @@ export class ConfigurationBackupService {
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
           checksum: asset.checksum,
-          storagePath: stored.storagePath
+          storagePath: stored.storagePath,
+          durationMs: typeof restoredAssetMetadata.get(asset.id)?.duration_ms === "number"
+            ? Number(restoredAssetMetadata.get(asset.id)?.duration_ms)
+            : null
         });
       }
 
@@ -614,6 +620,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 21) return archiveSchemaVersion === 19 || archiveSchemaVersion === 20;
   if (currentSchemaVersion === 22) return [19, 20, 21].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 23) return [19, 20, 21, 22].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 24) return [19, 20, 21, 22, 23].includes(archiveSchemaVersion);
   return false;
 }
 

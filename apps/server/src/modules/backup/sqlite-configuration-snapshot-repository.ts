@@ -44,7 +44,7 @@ const tableDefinitions = [
   table("overlay_surfaces", ["id", "kind", "configuration_json", "updated_at"], ["id"], ["configuration_json"]),
   table("alert_collections", ["id", "name", "enabled"], ["id"]),
   table("alert_rules", ["id", "name", "event_type", "enabled", "cooldown_seconds", "priority"], ["id"]),
-  table("asset_metadata", ["id", "original_file_name", "media_type", "mime_type", "size_bytes", "checksum"], ["id"]),
+  table("asset_metadata", ["id", "original_file_name", "media_type", "mime_type", "size_bytes", "checksum", "duration_ms"], ["id"]),
   table(
     "provider_registrations",
     ["id", "name", "kind", "capability", "non_secret_config_json", "active", "connection_state", "intake_state", "validated_at", "error_json", "available_voices_json", "tts_safety_json", "created_at", "updated_at"],
@@ -186,7 +186,10 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       for (const [index, row] of rows.entries()) {
         const actualColumns = Object.keys(row).sort();
         const expectedColumns = [...definition.columns].sort();
-        const missing = expectedColumns.filter((column) => !actualColumns.includes(column));
+        const missing = expectedColumns.filter((column) =>
+          !actualColumns.includes(column)
+          && !(definition.name === "asset_metadata" && column === "duration_ms")
+        );
         const extra = actualColumns.filter((column) => !expectedColumns.includes(column));
         if (missing.length > 0) errors.push(`${definition.name}[${index}] is missing columns: ${missing.join(", ")}.`);
         if (extra.length > 0) errors.push(`${definition.name}[${index}] contains unsupported columns: ${extra.join(", ")}.`);
@@ -241,8 +244,8 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
         if (definition.name === "asset_metadata") {
           for (const asset of input.assets) {
             this.connection.prepare(
-              "INSERT INTO asset_metadata (id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path) VALUES (?, ?, ?, ?, ?, ?, ?)"
-            ).run(asset.id, asset.originalFileName, asset.mediaType, asset.mimeType, asset.sizeBytes, asset.checksum, asset.storagePath);
+              "INSERT INTO asset_metadata (id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            ).run(asset.id, asset.originalFileName, asset.mediaType, asset.mimeType, asset.sizeBytes, asset.checksum, asset.storagePath, asset.durationMs);
           }
           continue;
         }
@@ -517,7 +520,8 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
       mimeType: row.mime_type,
       sizeBytes: row.size_bytes,
       checksum: row.checksum,
-      storagePath: `backup/${String(row.id)}`
+      storagePath: `backup/${String(row.id)}`,
+      durationMs: row.duration_ms ?? null
     }));
   }
 

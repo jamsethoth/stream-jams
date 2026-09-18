@@ -39,7 +39,8 @@ const asset: AssetRecord = {
   mimeType: "image/png",
   sizeBytes: pngBytes.length,
   checksum: checksum(pngBytes),
-  storagePath: "image/asset-follow.png"
+  storagePath: "image/asset-follow.png",
+  durationMs: null
 };
 
 describe("ConfigurationBackupService", () => {

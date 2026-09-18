@@ -64,7 +64,8 @@ describe("asset routes", () => {
       mimeType: "image/png",
       sizeBytes: pngBytes.byteLength,
       checksum: "sha256:test",
-      storagePath: "image/asset_1.png"
+      storagePath: "image/asset_1.png",
+      durationMs: null
     });
 
     const fileResponse = await app.inject({
@@ -379,6 +380,7 @@ async function createAppWithAssets(options: {
     repository,
     store,
     transcoder: new NoopMediaTranscodingStage(),
+    probe: { inspect: async () => ({ durationMs: null }) },
     generateId: () => "asset_1",
     calculateChecksum: () => "sha256:test"
   });
@@ -476,7 +478,8 @@ function createAssetRecord(id: string, storagePath: string): AssetRecord {
     mimeType: "image/png",
     sizeBytes: 3,
     checksum: "sha256:test",
-    storagePath
+    storagePath,
+    durationMs: null
   };
 }
 

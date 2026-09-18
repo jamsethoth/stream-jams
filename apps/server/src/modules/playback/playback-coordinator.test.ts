@@ -1613,7 +1613,8 @@ class InMemoryAssetRepository implements Pick<AssetRepository, "findManyByIds"> 
           mimeType: "application/octet-stream",
           sizeBytes: 1,
           checksum: "sha256:test",
-          storagePath: "/assets/" + assetId
+          storagePath: "/assets/" + assetId,
+          durationMs: null
         }] as const];
     }));
   }

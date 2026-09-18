@@ -31,7 +31,8 @@ const expectedMigrations = [
   "020-overlay-surfaces",
   "021-alert-video-audio",
   "022-screen-effects",
-  "023-screen-effect-sets"
+  "023-screen-effect-sets",
+  "024-asset-duration-metadata"
 ] as const;
 
 const expectedTables = [
@@ -446,6 +447,7 @@ describe("Stream Jams SQLite database", () => {
       DROP TABLE screen_effect_variants;
       DROP TABLE screen_effects;
       DROP TABLE module_playback_settings;
+      ALTER TABLE asset_metadata DROP COLUMN duration_ms;
       DROP TABLE alert_moderation_settings;
       DROP TABLE audio_output_routes;
       DROP TABLE overlay_surfaces;
@@ -455,7 +457,8 @@ describe("Stream Jams SQLite database", () => {
         '020-overlay-surfaces',
         '021-alert-video-audio',
         '022-screen-effects',
-        '023-screen-effect-sets'
+        '023-screen-effect-sets',
+        '024-asset-duration-metadata'
       );
     `);
 
