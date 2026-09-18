@@ -102,10 +102,11 @@ describe("SqliteEffectRepository", () => {
 
   it("upgrades populated pre-set data without changing document identities or flags", async () => {
     using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
     database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
       DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
-      DELETE FROM schema_migrations WHERE id = '023-screen-effect-sets';`);
-    await seedReferences(database.connection);
+      ALTER TABLE asset_metadata DROP COLUMN duration_ms;
+      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata');`);
     const effects = new SqliteEffectRepository(database.connection);
     const original = { ...effectDocument(), enabled: true };
     await effects.save(original);

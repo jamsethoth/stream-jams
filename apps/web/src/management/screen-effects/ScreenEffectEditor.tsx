@@ -3,6 +3,7 @@ import { ManagementHttpError } from "../management-http-client.js";
 import {
   applyScreenEffectEdit,
   chooseWeightedVariant,
+  collectEffectDurationAssetIds,
   copyScreenEffectVariant,
   createScreenEffectAuthoringState,
   createScreenEffectDocument,
@@ -10,6 +11,7 @@ import {
   isStreamerBotSubscriptionAvailable,
   isScreenEffectAuthoringDirty,
   reconcileScreenEffectSaved,
+  resolveMediaDuration,
   redoScreenEffectEdit,
   revertScreenEffectEdits,
   screenEffectDocumentSchema,
@@ -149,6 +151,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const selectedVariant = document?.variants.find((variant) => variant.id === selectedVariantId)
     ?? document?.variants[0]
     ?? null;
+  const previewVariant = selectedVariant === null ? null : effectiveEffectVariant(selectedVariant, context.assets);
   const validation = document === null ? null : screenEffectDocumentSchema.safeParse(document);
   const dirty = state !== null && isScreenEffectAuthoringDirty(state);
   const currentSet = sets.find((set) => set.effectIds.includes(props.effectId))
@@ -335,7 +338,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       </aside>
       <section aria-label="Effect canvas" className="screen-effect-editor__stage">
         <div className="screen-effect-editor__stage-heading"><strong>{selectedVariant.name}</strong><span>1920 × 1080 · Local preview</span></div>
-        <ScreenEffectPreview assetApi={props.assetApi} ref={preview} key={selectedVariant.id} variant={selectedVariant} />
+        <ScreenEffectPreview assetApi={props.assetApi} ref={preview} key={selectedVariant.id} variant={previewVariant!} />
       </section>
       <aside aria-label="Effect inspector" className="screen-effect-editor__inspector">
         <div aria-label="Inspector sections" className="screen-effect-editor__tabs" role="tablist">
@@ -497,6 +500,24 @@ function expectedVariantPercent(variant: EffectVariant, variants: readonly Effec
 function formatPercent(percent: number): string {
   const rounded = Math.round(percent * 10) / 10;
   return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}%`;
+}
+
+function effectiveEffectVariant(variant: EffectVariant, assets: readonly AssetLibraryItem[]): EffectVariant {
+  if ((variant.durationMode ?? "custom") !== "media") return variant;
+  const byId = new Map(assets.map((asset) => [asset.id, asset]));
+  const resolution = resolveMediaDuration({
+    mode: "media",
+    customDurationMs: variant.durationMs,
+    fallbackDurationMs: 10_000,
+    maximumDurationMs: 120_000,
+    candidates: collectEffectDurationAssetIds(variant).flatMap((assetId) => {
+      const asset = byId.get(assetId);
+      return asset === undefined ? [] : [{
+        assetId, label: asset.displayName, mediaType: asset.mediaType, durationMs: asset.durationMs, eligible: true
+      }];
+    })
+  });
+  return { ...variant, durationMs: resolution.durationMs };
 }
 
 function MediaPanel({ asset, onChoose, onRemove, selected, update }: {
