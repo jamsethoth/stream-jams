@@ -30,7 +30,7 @@ Eligible media is:
 
 Images, GIFs, hidden Alert layers, and TTS do not contribute. TTS duration is provider-dependent and is not reliably known before playback.
 
-If automatic mode has no eligible asset with healthy positive duration metadata, an Alert uses its existing 5-second default and a Screen Effect variant uses its existing 10-second default. The editor presents this as a warning and names the fallback; it does not silently switch to Custom.
+If automatic mode has no eligible asset with positive stored duration metadata, an Alert uses its existing 5-second default and a Screen Effect variant uses its existing 10-second default. The editor presents this as a warning and names the fallback; it does not silently switch to Custom. Existing asset-health validation remains authoritative and separate from duration resolution.
 
 The existing 120-second playback limit remains authoritative. Media longer than that resolves to 120 seconds and produces a visible truncation warning. Custom duration keeps its current minimum and maximum validation.
 
@@ -73,7 +73,7 @@ The server package adds the exact MIT-licensed dependency `music-metadata@11.15.
 
 Replacement extracts metadata from the replacement bytes before committing the same asset ID, so the next playback observes the new duration. For pre-migration assets, switching an object to automatic duration or requesting its selected-asset details invokes a bounded metadata repair through the management path and persists the result. Live trigger handling never reads media files or runs metadata extraction; if repair has not succeeded, it uses the documented fallback.
 
-Persisted Alert documents and Effect variants add `durationMode: "media" | "custom"`. Their existing `durationMs` remains the custom value and the fallback value used when automatic resolution has no timed media. Compatibility parsers supply `custom` for stored documents that predate the field.
+Persisted Alert documents and Effect variants add optional `durationMode: "media" | "custom"`. Their existing `durationMs` remains the custom value and the fallback value used when automatic resolution has no timed media. Absence means `custom`, so stored documents that predate the field retain their behavior without a bulk rewrite. New creation paths and any editor change to the mode write the field explicitly.
 
 Audio-bearing configuration adds nonnegative integer fade durations:
 
@@ -82,7 +82,7 @@ Audio-bearing configuration adds nonnegative integer fade durations:
 - Effect sounds: `fadeInMs` and `fadeOutMs`;
 - Effect video visuals: `audioFadeInMs` and `audioFadeOutMs`.
 
-Compatibility parsers supply zero for absent fields. Current strict request schemas reject unknown, negative, fractional, or over-limit values.
+The fade fields are optional at the authoring/storage compatibility boundary; absence means zero. New editor changes write explicit zero or positive values. Current strict request schemas reject unknown, negative, fractional, or over-limit values when present. Normalized playback instructions always carry explicit values.
 
 Normalized audio instructions carry the requested fade durations and the effective source playback duration. Browser overlay instructions and device-audio batches receive the same normalized envelope rather than reinterpreting authoring documents independently.
 
@@ -95,7 +95,7 @@ A framework-independent resolver accepts:
 - duration mode;
 - custom or fallback duration;
 - the applicable maximum duration;
-- referenced asset identities, health, media type, and stored duration.
+- referenced asset identities, media type, and stored duration.
 
 It returns the bounded effective duration, the longest contributing asset identities, and any fallback or truncation warning. Tied longest assets are retained so the editor can explain the result accurately.
 
@@ -139,7 +139,7 @@ The applicable MVP UX boundaries are the Assets duration metadata, Alert editor 
 ## Verification
 
 - Core tests cover longest-media selection, ties, hidden and unsupported media, fallbacks, bounds, Custom mode, fade defaults, clamping, late elapsed time, and mute multiplication.
-- Import-pipeline tests cover duration extraction for the repository's MP3, WAV, Ogg, MP4, and WebM fixtures, null metadata for images and GIFs, parser failure fallback, replacement, and exact millisecond normalization.
+- Import-pipeline tests use a fake probe to cover every accepted media-type branch, null metadata for images and GIFs, parser failure fallback, replacement, and exact millisecond normalization. The server parser adapter is exercised against the repository's real MP4 and WebM fixtures; MP3, WAV, and Ogg container support remains owned by the pinned parser dependency.
 - Database and repository tests cover the nullable duration migration, old-row compatibility, persistence, lookup, and asset-library projection.
 - Management metadata-repair tests cover a pre-migration asset, bounded failure, persistence, and proof that live trigger handling never invokes the parser.
 - Compatibility tests prove legacy Alert documents, Screen Effect rows, and backups become Custom with fades disabled.
