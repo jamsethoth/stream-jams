@@ -6,7 +6,7 @@
 ## 2. Shared timing and envelope contracts
 
 - [x] 2.1 Add compatibility-safe duration modes, candidate collection, and deterministic duration resolution; run core playback, management, and Screen Effect tests.
-- [ ] 2.2 Add compatibility-safe fade authoring fields, normalized envelope fields, proportional clamping, and absolute-time gain calculation; run core audio and schema tests.
+- [x] 2.2 Add compatibility-safe fade authoring fields, normalized envelope fields, proportional clamping, and absolute-time gain calculation; run core audio and schema tests.
 
 ## 3. Server resolution and repair
 

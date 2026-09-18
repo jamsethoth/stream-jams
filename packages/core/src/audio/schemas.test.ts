@@ -55,14 +55,14 @@ describe("alert-wide audio outputs", () => {
 
 describe("named audio route contracts", () => {
   it("normalizes missing legacy audio source kinds and rejects unsupported kinds", () => {
-    expect(core.resolvedAudioLayerSchema.parse({ layerId: "sound", assetId: "asset", volume: 1 })).toEqual({ sourceKind: "audio", layerId: "sound", assetId: "asset", volume: 1 });
+    expect(core.resolvedAudioLayerSchema.parse({ layerId: "sound", assetId: "asset", volume: 1 })).toEqual({ sourceKind: "audio", layerId: "sound", assetId: "asset", volume: 1, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 1 });
     expect(core.resolvedAudioLayerSchema.safeParse({ sourceKind: "remote", layerId: "sound", assetId: "asset", volume: 1 }).success).toBe(false);
   });
   it("validates runtime playback contracts without allowing implicit devices or invalid volume", () => {
     const schema = audioSchema("deviceAudioBatchSchema");
     const batch = {
       playbackId: "occurrence-a", documentId: "alert-a", durationMs: 1000, muted: false,
-      layers: [{ sourceKind: "audio", layerId: "sound", assetId: "asset-a", volume: 0.5 }],
+      layers: [{ sourceKind: "audio", layerId: "sound", assetId: "asset-a", volume: 0.5, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 1 }],
       destinations: [{ deviceId: "device-a", routeIds: ["route-a"] }]
     };
     expect(schema.parse(batch)).toEqual(batch);

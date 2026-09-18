@@ -33,6 +33,8 @@ export {
 export type * from "./auth/management-session-service.js";
 
 export type * from "./audio/types.js";
+export type * from "./audio/audio-envelope.js";
+export { resolveAudioEnvelope } from "./audio/audio-envelope.js";
 export type { AudioDeviceCapability, AudioRouteStatus, AudioOutputStatus } from "./audio/schemas.js";
 export type { AudioOutputRouteRepository } from "./audio/audio-output-route-repository.js";
 export { resolveAudioDestinations } from "./audio/resolve-audio-destinations.js";

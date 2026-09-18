@@ -114,6 +114,9 @@ export interface OverlayAudioInstruction {
   readonly volume: number;
   /** Absent on legacy instructions and equivalent to ordinary audio. */
   readonly sourceKind?: "audio" | "video-soundtrack" | undefined;
+  readonly fadeInMs?: number | undefined;
+  readonly fadeOutMs?: number | undefined;
+  readonly playbackDurationMs?: number | undefined;
 }
 
 export interface OverlayTextInstruction {

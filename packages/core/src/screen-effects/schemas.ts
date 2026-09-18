@@ -83,7 +83,9 @@ const videoEffectVisualSchema = z.object({
   assetId: storageSafeIdSchema,
   layout: effectLayoutSchema,
   playEmbeddedAudio: z.boolean(),
-  audioVolume: volumeSchema
+  audioVolume: volumeSchema,
+  audioFadeInMs: z.number().int().min(0).max(120_000).optional(),
+  audioFadeOutMs: z.number().int().min(0).max(120_000).optional()
 }).strict();
 
 export const effectVisualSchema = z.discriminatedUnion("mediaType", [
@@ -93,7 +95,9 @@ export const effectVisualSchema = z.discriminatedUnion("mediaType", [
 
 export const effectSoundSchema = z.object({
   assetId: storageSafeIdSchema,
-  volume: volumeSchema
+  volume: volumeSchema,
+  fadeInMs: z.number().int().min(0).max(120_000).optional(),
+  fadeOutMs: z.number().int().min(0).max(120_000).optional()
 }).strict();
 
 export const effectVisualOutputsSchema = z.object({
