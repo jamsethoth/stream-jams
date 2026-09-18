@@ -25,6 +25,6 @@
 
 ## 6. Documentation and complete verification
 
-- [ ] 6.1 Update product/operator docs and write the verification evidence ledger.
-- [ ] 6.2 Run changed-area lint, workspace typecheck, full serial Vitest, build, Storybook build/accessibility, and affected browser/desktop Playwright journeys.
-- [ ] 6.3 Strict-validate OpenSpec, run diff checks, rebuild one local instance, and verify both live management workflows.
+- [x] 6.1 Update product/operator docs and write the verification evidence ledger.
+- [x] 6.2 Run changed-area lint, workspace typecheck, full serial Vitest, build, Storybook build/accessibility, and affected browser/desktop Playwright journeys.
+- [x] 6.3 Strict-validate OpenSpec, run diff checks, rebuild one local instance, and verify both live management workflows.
