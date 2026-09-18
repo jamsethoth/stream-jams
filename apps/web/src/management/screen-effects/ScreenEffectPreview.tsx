@@ -2,6 +2,7 @@ import type { EffectVariant } from "@stream-jams/core";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import { overlayPresetAnimationStyle } from "../../overlay/components/OverlaySurface.js";
 import type { AssetApi } from "../assets/asset-api.js";
+import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
 
 /** Local draft playback. No admission API or configured output routes are used. */
 export function ScreenEffectPreview({ assetApi, variant, ref }: {
@@ -19,6 +20,20 @@ export function ScreenEffectPreview({ assetApi, variant, ref }: {
   const audio = useRef<HTMLAudioElement>(null);
   const generation = useRef(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useMediaVolumeEnvelope(video, variant.visual?.mediaType === "video" ? {
+    volume: variant.visual.audioVolume,
+    fadeInMs: variant.visual.audioFadeInMs ?? 0,
+    fadeOutMs: variant.visual.audioFadeOutMs ?? 0,
+    playbackDurationMs: variant.durationMs,
+    muted: muted || !variant.visual.playEmbeddedAudio
+  } : null, playing);
+  useMediaVolumeEnvelope(audio, variant.sound === null ? null : {
+    volume: variant.sound.volume,
+    fadeInMs: variant.sound.fadeInMs ?? 0,
+    fadeOutMs: variant.sound.fadeOutMs ?? 0,
+    playbackDurationMs: variant.durationMs,
+    muted
+  }, playing);
 
   const stop = useCallback(() => {
     generation.current += 1;
@@ -78,11 +93,9 @@ export function ScreenEffectPreview({ assetApi, variant, ref }: {
     try {
       const starts: Promise<void>[] = [];
       if (video.current !== null) {
-        video.current.volume = variant.visual?.mediaType === "video" ? variant.visual.audioVolume : 1;
         starts.push(video.current.play());
       }
       if (audio.current !== null) {
-        audio.current.volume = variant.sound?.volume ?? 1;
         starts.push(audio.current.play());
       }
       await Promise.all(starts);
