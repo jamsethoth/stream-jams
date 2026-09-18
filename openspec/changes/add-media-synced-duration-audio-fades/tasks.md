@@ -11,7 +11,7 @@
 ## 3. Server resolution and repair
 
 - [x] 3.1 Add cached stored-duration lookup with mutation invalidation and bounded legacy repair endpoint; run asset catalog, repair route, and API tests.
-- [ ] 3.2 Resolve and snapshot authoritative durations for Alert and Screen Effect test/live playback; run coordinator, queue, service, and backup tests.
+- [x] 3.2 Resolve and snapshot authoritative durations for Alert and Screen Effect test/live playback; run coordinator, queue, service, and backup tests.
 
 ## 4. Playback transports
 

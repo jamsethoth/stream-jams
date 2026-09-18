@@ -588,6 +588,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     ],
     assetRepository,
+    assetDurationCatalog,
     findEditorDocuments: (alertIds) => alertEditorDocumentRepository.findMany(alertIds),
     overlayPlaybackSink: overlayGateway,
     audioOutputService,
@@ -636,6 +637,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getModuleCooldownSeconds: async () => (await effectModuleSettingsRepository.get()).cooldownSeconds,
     generateOccurrenceId: generateEffectOccurrenceId,
     now: () => now().getTime(),
+    assetDurationCatalog,
     validateReferences: validateEffectReferences,
     validateOutputAvailability: validateEffectOutputAvailability,
     isModuleEnabled: isEffectModuleEnabled,

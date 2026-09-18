@@ -79,7 +79,8 @@ it("reports module-qualified effect owners and serializes effect saves against r
     mimeType: "audio/wav",
     sizeBytes: 4,
     checksum: "sha256:test-tone",
-    storagePath: "assets/asset-tone.wav"
+    storagePath: "assets/asset-tone.wav",
+    durationMs: null
   });
   routes.save(route);
   const effect = audioEffect("effect-route-owner", "variant-route-owner");
