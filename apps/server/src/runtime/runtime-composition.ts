@@ -64,6 +64,7 @@ import { SqliteAssetRepository } from "../modules/assets/sqlite-asset-repository
 import { AssetLibraryService } from "../modules/assets/asset-library-service.js";
 import { SqliteAssetLibraryMetadataRepository } from "../modules/assets/sqlite-asset-library-metadata-repository.js";
 import { MusicMetadataProbe } from "../modules/assets/media-metadata-probe.js";
+import { CachedAssetDurationCatalog } from "../modules/assets/asset-duration-catalog.js";
 import { SqliteEffectRepository } from "../modules/screen-effects/sqlite-effect-repository.js";
 import { SqliteEffectSetRepository } from "../modules/screen-effects/sqlite-effect-set-repository.js";
 import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
@@ -258,6 +259,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateId: generateAlertConfigurationId
   });
   const assetRepository = new SqliteAssetRepository(database.connection);
+  const assetDurationCatalog = new CachedAssetDurationCatalog(assetRepository);
+  const mediaMetadataProbe = new MusicMetadataProbe();
   const effectRepository = new SqliteEffectRepository(database.connection, now);
   const effectSetRepository = new SqliteEffectSetRepository(database.connection, effectRepository);
   const effectModuleSettingsRepository = new SqliteEffectModuleSettingsRepository(database.connection, now);
@@ -272,7 +275,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     repository: assetRepository,
     store: assetStore,
     transcoder: new NoopMediaTranscodingStage(),
-    probe: new MusicMetadataProbe(),
+    probe: mediaMetadataProbe,
     generateId: generateAssetId,
     calculateChecksum
   });
@@ -1020,7 +1023,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
       () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))
     ),
-    clock: now
+    clock: now,
+    durationCatalog: assetDurationCatalog,
+    metadataProbe: mediaMetadataProbe
   });
   const configurationBackupService = new ConfigurationBackupService({
     appVersion: createAppVersion().version,
@@ -1154,6 +1159,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getAssetChangeImpact: (assetId, candidateMediaType) =>
       assetLibraryService.getChangeImpact(assetId, candidateMediaType),
     deleteAsset: (assetId) => assetLibraryService.deleteAsset(assetId),
+    repairAssetDuration: (assetId) => assetLibraryService.repairDuration(assetId),
     getDiagnosticsWorkspace: () =>
       diagnosticsService.getWorkspace({ limit: 200, runtimeLogLimit: 200, sinceHours: 2 }),
     getConfigurationBackupSummary: () => configurationBackupService.summary(),
