@@ -632,7 +632,10 @@ describe("PlaybackCoordinator", () => {
     expect(findEditorDocument).toHaveBeenCalledExactlyOnceWith("chosen");
     expect(audio.sink.play).toHaveBeenCalledWith(expect.objectContaining({
       playbackId: alertPlaybackId("queue-item-1"), documentId: "chosen",
-      layers: [{ sourceKind: "audio", layerId: "one", assetId: "tone", volume: 0.5 }, { sourceKind: "audio", layerId: "two", assetId: "tone", volume: 0.25 }]
+      layers: [
+        { sourceKind: "audio", layerId: "one", assetId: "tone", volume: 0.5, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 3000 },
+        { sourceKind: "audio", layerId: "two", assetId: "tone", volume: 0.25, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 3000 }
+      ]
     }));
     expect(coordinator.getSnapshot().current?.audio).toHaveLength(1);
     audio.finished.resolve({ failedRouteIds: [] });
@@ -640,6 +643,44 @@ describe("PlaybackCoordinator", () => {
     coordinator.replayRecent("queue-item-1");
     await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));
     expect(audio.sink.play.mock.calls[1]?.[0]).toMatchObject({ playbackId: alertPlaybackId("queue-item-2"), documentId: "chosen" });
+  });
+
+  it("resolves media-linked alert duration and source cutoff from stored metadata", async () => {
+    const audio = audioFixture();
+    const rule = createRule();
+    const document: AlertEditorDocument = {
+      ...createEditorDocument(rule),
+      durationMode: "media",
+      durationMs: 5_000,
+      outputs: { browserSource: false, deviceRouteIds: ["personal"] },
+      layers: [
+        { id: "short", name: "Short", type: "audio", visible: true, order: 0, animation, assetId: "short", volume: 1 },
+        { id: "long", name: "Long", type: "audio", visible: true, order: 1, animation, assetId: "long", volume: 1 }
+      ]
+    };
+    const record = (id: string, durationMs: number) => ({
+      id, originalFileName: `${id}.wav`, mediaType: "audio" as const, mimeType: "audio/wav",
+      sizeBytes: 1, checksum: id, storagePath: `${id}.wav`, durationMs
+    });
+    const coordinator = createCoordinator({
+      ...audio.dependencies,
+      alertService: new RecordingAlertService([rule]),
+      findEditorDocument: async () => document,
+      assetDurationCatalog: { getMany: async () => new Map([["short", record("short", 2_000)], ["long", record("long", 8_000)]]) }
+    });
+
+    await coordinator.enqueueEvent(createCheerEvent());
+    await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledOnce());
+
+    expect(audio.sink.play.mock.calls[0]?.[0]).toMatchObject({
+      durationMs: 8_000,
+      layers: [
+        { layerId: "short", playbackDurationMs: 2_000 },
+        { layerId: "long", playbackDurationMs: 8_000 }
+      ]
+    });
+    audio.finished.resolve({ failedRouteIds: [] });
+    await coordinator.close();
   });
 
   it.each(["disabled", "no-routes", "hidden"] as const)("does not dispatch device audio for %s live content", async mode => {
@@ -1446,6 +1487,7 @@ function createCoordinator(
     readonly cooldownService?: DefaultPlaybackCooldownService;
     readonly dedupeService?: DefaultPlaybackDedupeService;
     readonly assetRepository?: Pick<AssetRepository, "findManyByIds">;
+    readonly assetDurationCatalog?: PlaybackCoordinatorDependencies["assetDurationCatalog"];
     readonly additionalTargets?: readonly AlertResolverTarget[];
     readonly queue?: PlaybackQueue;
     readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
@@ -1490,6 +1532,7 @@ function createCoordinator(
     },
     ...(options.additionalTargets === undefined ? {} : { additionalTargets: options.additionalTargets }),
     ...(options.assetRepository === undefined ? {} : { assetRepository: options.assetRepository }),
+    ...(options.assetDurationCatalog === undefined ? {} : { assetDurationCatalog: options.assetDurationCatalog }),
     ...(options.overlayPlaybackSink === undefined ? {} : { overlayPlaybackSink: options.overlayPlaybackSink }),
     ...(options.audioPlaybackSink === undefined ? {} : { audioPlaybackSink: options.audioPlaybackSink }),
     ...(options.desktopVisualSink === undefined ? {} : { desktopVisualSink: options.desktopVisualSink }),

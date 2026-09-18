@@ -419,7 +419,10 @@ function createBrowserInstructions(
         audio: {
           assetId: variant.visual.assetId,
           volume: variant.visual.audioVolume,
-          sourceKind: "video-soundtrack"
+          sourceKind: "video-soundtrack",
+          fadeInMs: variant.visual.audioFadeInMs ?? 0,
+          fadeOutMs: variant.visual.audioFadeOutMs ?? 0,
+          playbackDurationMs: Math.min(occurrence.content.assetDurations?.[variant.visual.assetId] ?? variant.durationMs, variant.durationMs)
         }
       }));
     }
@@ -434,7 +437,10 @@ function createBrowserInstructions(
         audio: {
           assetId: variant.sound.assetId,
           volume: variant.sound.volume,
-          sourceKind: "audio"
+          sourceKind: "audio",
+          fadeInMs: variant.sound.fadeInMs ?? 0,
+          fadeOutMs: variant.sound.fadeOutMs ?? 0,
+          playbackDurationMs: Math.min(occurrence.content.assetDurations?.[variant.sound.assetId] ?? variant.durationMs, variant.durationMs)
         }
       }));
     }
@@ -506,7 +512,10 @@ function createResolvedAudio(occurrence: EffectOccurrence): readonly ResolvedAle
       sourceKind: "video-soundtrack",
       layerId: `${variant.id}:video`,
       assetId: variant.visual.assetId,
-      volume: variant.visual.audioVolume
+      volume: variant.visual.audioVolume,
+      fadeInMs: variant.visual.audioFadeInMs ?? 0,
+      fadeOutMs: variant.visual.audioFadeOutMs ?? 0,
+      playbackDurationMs: Math.min(occurrence.content.assetDurations?.[variant.visual.assetId] ?? variant.durationMs, variant.durationMs)
     });
   }
   if (variant.sound !== null) {
@@ -514,7 +523,10 @@ function createResolvedAudio(occurrence: EffectOccurrence): readonly ResolvedAle
       sourceKind: "audio",
       layerId: `${variant.id}:sound`,
       assetId: variant.sound.assetId,
-      volume: variant.sound.volume
+      volume: variant.sound.volume,
+      fadeInMs: variant.sound.fadeInMs ?? 0,
+      fadeOutMs: variant.sound.fadeOutMs ?? 0,
+      playbackDurationMs: Math.min(occurrence.content.assetDurations?.[variant.sound.assetId] ?? variant.durationMs, variant.durationMs)
     });
   }
   return layers.length === 0 ? [] : [{

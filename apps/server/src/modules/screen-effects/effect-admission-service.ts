@@ -2,6 +2,9 @@ import {
   effectTriggerSchema,
   matchesEffectBinding,
   resolveEffectContent,
+  collectEffectDurationAssetIds,
+  resolveMediaDuration,
+  type AssetRecord,
   type EffectContentSnapshot,
   type EffectOccurrence,
   type EffectQueue,
@@ -51,6 +54,7 @@ export interface EffectAdmissionServiceOptions {
   readonly isModuleEnabled?: () => Promise<boolean>;
   readonly isEffectLive?: (effectId: string) => boolean;
   readonly onOutcome?: (result: EffectAdmissionResult) => void | Promise<void>;
+  readonly assetDurationCatalog?: { getMany(assetIds: readonly string[]): Promise<ReadonlyMap<string, AssetRecord>> };
 }
 
 interface MatchedEffect {
@@ -96,6 +100,7 @@ export class EffectAdmissionService {
   readonly #validateOutputAvailability: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly #isModuleEnabled: () => Promise<boolean>;
   readonly #onOutcome: NonNullable<EffectAdmissionServiceOptions["onOutcome"]>;
+  readonly #assetDurationCatalog: EffectAdmissionServiceOptions["assetDurationCatalog"] | null;
   #admissionTail = Promise.resolve();
   #nextSequence = 0;
 
@@ -113,6 +118,7 @@ export class EffectAdmissionService {
     this.#validateOutputAvailability = options.validateOutputAvailability ?? (async () => true);
     this.#isModuleEnabled = options.isModuleEnabled ?? (async () => true);
     this.#onOutcome = options.onOutcome ?? (() => {});
+    this.#assetDurationCatalog = options.assetDurationCatalog ?? null;
   }
 
   async handleTriggers(candidateTriggers: readonly EffectTrigger[]): Promise<EffectAdmissionResult> {
@@ -158,7 +164,7 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId, status: "full" };
     }
-    const content = resolveEffectContent(document, this.#random());
+    const content = await this.#resolveContentDuration(resolveEffectContent(document, this.#random()));
     return this.#enqueueExplicit(content, null);
   }
 
@@ -175,12 +181,12 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId, status: "full" };
     }
-    return this.#enqueueExplicit({
+    return this.#enqueueExplicit(await this.#resolveContentDuration({
       effectId: document.id,
       effectName: document.name,
       variant: structuredClone(variant),
       priority: document.priority
-    }, null);
+    }), null);
   }
 
   async replayRecent(occurrenceId: string): Promise<EffectAdmissionOutcome> {
@@ -247,7 +253,7 @@ export class EffectAdmissionService {
         continue;
       }
 
-      const content = resolveEffectContent(document, this.#random());
+      const content = await this.#resolveContentDuration(resolveEffectContent(document, this.#random()));
       if (!hasSelectedOutput(content.variant)) {
         outcomes.push({ effectId: document.id, status: "no-output" });
         continue;
@@ -282,6 +288,33 @@ export class EffectAdmissionService {
       this.#cooldowns.recordPlaybackKey(MODULE_COOLDOWN_NAMESPACE, "screen-effects", moduleCooldownSeconds);
     }
     return this.#report({ status: "processed", eventId, outcomes });
+  }
+
+  async #resolveContentDuration(content: EffectContentSnapshot): Promise<EffectContentSnapshot> {
+    if (this.#assetDurationCatalog == null) return content;
+    const ids = collectEffectDurationAssetIds(content.variant);
+    const records = await this.#assetDurationCatalog.getMany(ids);
+    const resolution = resolveMediaDuration({
+      mode: content.variant.durationMode ?? "custom",
+      customDurationMs: content.variant.durationMs,
+      fallbackDurationMs: 10_000,
+      maximumDurationMs: 120_000,
+      candidates: ids.flatMap((assetId) => {
+        const record = records.get(assetId);
+        return record === undefined ? [] : [{
+          assetId,
+          label: record.originalFileName,
+          mediaType: record.mediaType,
+          durationMs: record.durationMs,
+          eligible: true
+        }];
+      })
+    });
+    return {
+      ...content,
+      variant: { ...content.variant, durationMs: resolution.durationMs },
+      assetDurations: Object.fromEntries(ids.map((assetId) => [assetId, records.get(assetId)?.durationMs ?? null]))
+    };
   }
 
   #createOccurrence(

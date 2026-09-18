@@ -61,6 +61,7 @@ function service(options: {
   readonly validateOutputAvailability?: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly isModuleEnabled?: () => Promise<boolean>;
   readonly isEffectLive?: (id: string) => boolean;
+  readonly assetDurationCatalog?: ConstructorParameters<typeof EffectAdmissionService>[0]["assetDurationCatalog"];
 }) {
   let nextId = 0;
   return new EffectAdmissionService({
@@ -80,7 +81,8 @@ function service(options: {
     validateReferences: options.validateReferences ?? (async () => true),
     validateOutputAvailability: options.validateOutputAvailability ?? (async () => true),
     isModuleEnabled: options.isModuleEnabled ?? (async () => true),
-    isEffectLive: options.isEffectLive ?? (() => true)
+    isEffectLive: options.isEffectLive ?? (() => true),
+    ...(options.assetDurationCatalog === undefined ? {} : { assetDurationCatalog: options.assetDurationCatalog })
   });
 }
 
@@ -339,5 +341,32 @@ describe("EffectAdmissionService", () => {
       status: "queued"
     });
     expect(queue.snapshot().queued[0]).toMatchObject({ trigger: null, content: { effectId: "test" } });
+  });
+
+  it("snapshots the longest stored media duration and per-source lengths before admission", async () => {
+    const queue = new DefaultEffectQueue();
+    const document = effect("timed");
+    const variant = document.variants[0]!;
+    const timed: ScreenEffectDocument = {
+      ...document,
+      variants: [{
+        ...variant,
+        durationMode: "media",
+        durationMs: 10_000,
+        visual: { mediaType: "video", assetId: "clip", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 1 }, playEmbeddedAudio: true, audioVolume: 1 }
+      }]
+    };
+    const records = new Map([
+      ["clip", { id: "clip", originalFileName: "clip.webm", mediaType: "video" as const, mimeType: "video/webm", sizeBytes: 1, checksum: "clip", storagePath: "clip.webm", durationMs: 8_000 }],
+      ["tone", { id: "tone", originalFileName: "tone.wav", mediaType: "audio" as const, mimeType: "audio/wav", sizeBytes: 1, checksum: "tone", storagePath: "tone.wav", durationMs: 12_000 }]
+    ]);
+    const admission = service({ documents: () => [timed], queue, assetDurationCatalog: { getMany: async () => records } });
+
+    await admission.testEffect("timed");
+
+    expect(queue.snapshot().queued[0]?.content).toMatchObject({
+      variant: { durationMs: 12_000 },
+      assetDurations: { clip: 8_000, tone: 12_000 }
+    });
   });
 });

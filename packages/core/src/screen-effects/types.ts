@@ -76,6 +76,7 @@ export interface EffectContentSnapshot {
   readonly effectName: string;
   readonly variant: EffectVariant;
   readonly priority: number;
+  readonly assetDurations?: Readonly<Record<string, number | null>> | undefined;
 }
 
 export interface CreateScreenEffectDocumentInput {

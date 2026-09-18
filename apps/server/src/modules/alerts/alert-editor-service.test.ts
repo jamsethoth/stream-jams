@@ -1156,7 +1156,7 @@ describe("AlertEditorService", () => {
         documentId: rule.id,
         durationMs: 5_000,
         outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
-        layers: [{ sourceKind: "audio", layerId: "layer-audio", assetId: "asset-chime", volume: 0.65 }]
+        layers: [{ sourceKind: "audio", layerId: "layer-audio", assetId: "asset-chime", volume: 0.65, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 5_000 }]
       }]
     }));
   });
