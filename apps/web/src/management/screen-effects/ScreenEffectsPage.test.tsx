@@ -1,6 +1,6 @@
 import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import { createScreenEffectDocument, screenEffectDocumentSchema, type ScreenEffectDocument } from "@stream-jams/core";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScreenEffectsPage } from "./ScreenEffectsPage.js";
@@ -38,15 +38,22 @@ describe("ScreenEffectsPage", () => {
   });
 
   it("shows inventory and compact Screen Effects browser-source status", async () => {
+    const user = userEvent.setup();
     render(<ScreenEffectsPage api={api()} generateId={(prefix) => `${prefix}-new`} onEdit={vi.fn()} />);
 
     expect(await screen.findByText("Confetti")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Browser sources" })).toHaveAttribute("aria-expanded", "false");
-    await userEvent.click(screen.getByRole("button", { name: "Browser sources" }));
+    await user.click(screen.getByRole("button", { name: "Browser sources" }));
     expect(screen.getByText("Screen Effects Live")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Reveal Screen Effects Live Browser Source URL" }));
+    await user.click(screen.getByRole("button", { name: "Reveal Screen Effects Live Browser Source URL" }));
     expect(screen.getByLabelText("Screen Effects Live Browser Source URL")).toHaveTextContent("/overlay/modules/screen-effects/live/");
     expect(screen.getByRole("link", { name: "Review trigger setup" })).toHaveAttribute("href", "/manage/event-sources");
+
+    const more = screen.getByRole("button", { name: "More actions for Confetti" });
+    await user.click(more);
+    const menu = screen.getByRole("menu", { name: "More actions for Confetti" });
+    expect(menu.parentElement).toBe(document.body);
+    await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Copy Confetti" })).toHaveFocus());
   });
 
   it("shows each browser-source purpose once", async () => {

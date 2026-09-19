@@ -1,0 +1,47 @@
+.management-action-menu {
+  background: var(--color-surface-raised);
+  border: 1px solid var(--color-border-strong);
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgb(0 0 0 / 24%);
+  display: grid;
+  max-height: calc(100vh - 16px);
+  min-width: 172px;
+  overflow-y: auto;
+  padding: 4px;
+  position: fixed;
+  width: max-content;
+  z-index: 900;
+}
+
+.management-action-menu__item {
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  color: var(--color-text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  min-height: 36px;
+  padding: 7px 10px;
+  text-align: left;
+  width: 100%;
+}
+
+.management-action-menu__item:hover,
+.management-action-menu__item:focus-visible {
+  background: var(--color-surface-subtle);
+}
+
+.management-action-menu__item:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.management-action-menu__item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.management-action-menu__item--danger {
+  color: var(--color-negative);
+}

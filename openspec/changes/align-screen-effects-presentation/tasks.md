@@ -7,6 +7,7 @@
 - [x] 1.5 Add distinct blank-variant creation, improve wrapped action spacing, remove per-effect cooldown, and explain queue priority.
 - [x] 1.6 Remove preset animation authoring and persistence from Screen Effects.
 - [x] 1.7 Normalize checkbox, radio and action spacing and hide inactive dependent inputs.
+- [x] 1.8 Present Alert and Screen Effect More actions in a shared anchored overlay without row reflow or scroll-container clipping.
 
 ## 2. Verification
 

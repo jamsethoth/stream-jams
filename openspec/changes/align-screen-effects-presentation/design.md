@@ -10,7 +10,7 @@ Match the Alerts presentation and keep all existing Screen Effects fields reacha
 
 - Use a compact header and three-column workspace: variants, scaled local preview canvas, inspector tabs for Variant, Effect and Triggers. Keep draft state above the tabs and implement arrow/Home/End keyboard navigation.
 - Use independent panel scrolling on desktop; use a scrolling stacked workspace on narrow screens while retaining the header.
-- Place collapsed browser sources above inventory, with configuration counts visible while collapsed. Use compact inventory rows and a More disclosure for copy/delete.
+- Place collapsed browser sources above inventory, with configuration counts visible while collapsed. Use compact inventory rows and a shared anchored More menu for copy/delete. Render the menu above scrolling content so it neither resizes the row nor clips inside it.
 - Follow UX spec Alerts Module, Sets Page, Browser Sources, Alert Editor, and Cross-Cutting UX Rules. This is presentation of the approved post-MVP module.
 - Preview the selected draft in the fixed 1920x1080 canvas with local audio and Play, Stop and Mute controls. Keep Test saved as the explicit confirmed live action.
 - Treat every enabled Screen Effect variant as a member of one weighted selection pool. Keep `Default` as an editable starter name only, show calculated chances, and simulate 1,000 local selections through the same core selector without persistence or live delivery.
