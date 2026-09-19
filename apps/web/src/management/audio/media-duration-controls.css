@@ -1,0 +1,37 @@
+.media-duration-controls__modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.media-duration-controls__mode {
+  align-items: center;
+  display: inline-flex !important;
+  gap: 7px !important;
+  margin: 0;
+}
+
+.media-duration-controls__mode input[type="radio"] {
+  flex: 0 0 auto;
+  margin: 0;
+  width: auto;
+}
+
+.media-duration-controls__custom {
+  display: grid;
+  gap: 5px;
+  margin-top: 12px;
+}
+
+.media-duration-controls__feedback {
+  color: var(--color-text-muted);
+  margin: 12px 0 0;
+}
+
+.media-duration-controls__missing {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
