@@ -106,7 +106,7 @@ describe("SqliteEffectRepository", () => {
     database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
       DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
       ALTER TABLE asset_metadata DROP COLUMN duration_ms;
-      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata');`);
+      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata', '025-remove-screen-effect-animations');`);
     const effects = new SqliteEffectRepository(database.connection);
     const original = { ...effectDocument(), enabled: true };
     await effects.save(original);

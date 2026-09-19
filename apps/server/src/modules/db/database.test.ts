@@ -32,7 +32,8 @@ const expectedMigrations = [
   "021-alert-video-audio",
   "022-screen-effects",
   "023-screen-effect-sets",
-  "024-asset-duration-metadata"
+  "024-asset-duration-metadata",
+  "025-remove-screen-effect-animations"
 ] as const;
 
 const expectedTables = [
@@ -67,6 +68,30 @@ const expectedTables = [
 ];
 
 describe("Stream Jams SQLite database", () => {
+  it("removes stored Screen Effect animations when upgrading schema 24", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const db = database.connection;
+    db.prepare("DELETE FROM schema_migrations WHERE id = ?").run("025-remove-screen-effect-animations");
+    db.prepare(`
+      INSERT INTO screen_effects (id, schema_version, name, enabled, description, category, priority, cooldown_seconds, updated_at)
+      VALUES (?, 1, ?, 0, NULL, NULL, 0, 0, ?)
+    `).run("effect-animation", "Animated effect", "2026-09-19T00:00:00.000Z");
+    db.prepare(`
+      INSERT INTO screen_effect_variants (
+        id, effect_id, position, kind, enabled, weight, document_json, visual_asset_id, sound_asset_id
+      ) VALUES (?, ?, 0, 'default', 1, 1, ?, NULL, NULL)
+    `).run("variant-animation", "effect-animation", JSON.stringify({
+      id: "variant-animation",
+      kind: "default",
+      animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
+    }));
+
+    database.runMigrations();
+
+    const stored = db.prepare("SELECT document_json FROM screen_effect_variants WHERE id = ?").get("variant-animation");
+    expect(JSON.parse(String(stored?.document_json))).not.toHaveProperty("animation");
+  });
+
   it("backfills text style defaults without overwriting explicit values or timestamps", () => {
     const connection = new DatabaseSync(":memory:");
     try {
@@ -458,7 +483,8 @@ describe("Stream Jams SQLite database", () => {
         '021-alert-video-audio',
         '022-screen-effects',
         '023-screen-effect-sets',
-        '024-asset-duration-metadata'
+        '024-asset-duration-metadata',
+        '025-remove-screen-effect-animations'
       );
     `);
 

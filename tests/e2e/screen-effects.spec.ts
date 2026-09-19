@@ -124,8 +124,6 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
   await page.getByRole("button", { name: "Choose visual asset" }).click();
   await page.getByRole("button", { name: "Use selected asset" }).click();
   await expect(page.getByRole("region", { name: "Effect canvas" }).getByRole("img")).toBeVisible();
-  await page.getByRole("checkbox", { name: "Use a preset animation" }).check();
-  await page.getByLabel("Animation delay", { exact: true }).fill("200");
   await page.screenshot({ path: "test-results/screen-effects-editor-laptop.png" });
   await page.setViewportSize({ width: 800, height: 600 });
   await page.getByLabel("Variant name", { exact: true }).fill("Default");
@@ -390,7 +388,6 @@ function noOutputEffect() {
         layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
       },
       sound: null,
-      animation: null,
       durationMs: 10_000,
       outputs: { browserSource: false, deviceRouteIds: [] },
       visualOutputs: { browserSource: false, desktop: false }

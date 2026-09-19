@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { alertAudioOutputsSchema } from "../audio/schemas.js";
-import { overlayPresetAnimationInstructionSchema } from "../overlays/schemas.js";
 import { isoDateTimeSchema, overlayElementLayoutSchema } from "../shared/schemas.js";
 import type {
   CreateScreenEffectDocumentInput,
@@ -105,11 +104,6 @@ export const effectVisualOutputsSchema = z.object({
   desktop: z.boolean()
 }).strict();
 
-const effectAnimationSchema = overlayPresetAnimationInstructionSchema.extend({
-  durationMs: z.number().int().min(0).max(120_000),
-  delayMs: z.number().int().min(0).max(120_000)
-}).strict();
-
 export const effectVariantSchema = z.object({
   id: storageSafeIdSchema,
   name: boundedNameSchema,
@@ -117,7 +111,6 @@ export const effectVariantSchema = z.object({
   weight: z.number().int().min(1).max(10_000),
   visual: effectVisualSchema.nullable(),
   sound: effectSoundSchema.nullable(),
-  animation: effectAnimationSchema.nullable(),
   durationMs: z.number().int().min(1_000).max(120_000),
   durationMode: z.enum(["media", "custom"]).optional(),
   outputs: alertAudioOutputsSchema,
@@ -180,7 +173,6 @@ export function createScreenEffectDocument(input: CreateScreenEffectDocumentInpu
       weight: 1,
       visual: null,
       sound: null,
-      animation: null,
       durationMs: 10_000,
       durationMode: "media",
       outputs: { browserSource: false, deviceRouteIds: [] },

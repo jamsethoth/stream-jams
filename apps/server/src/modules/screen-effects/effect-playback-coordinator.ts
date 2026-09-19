@@ -493,7 +493,7 @@ function createInstruction(input: {
     audio: input.audio,
     text: null,
     shape: null,
-    animation: input.visual === null ? null : input.occurrence.content.variant.animation,
+    animation: null,
     tts: null,
     durationMs,
     timing: {

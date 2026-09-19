@@ -24,6 +24,12 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("ScreenEffectEditor", () => {
+  it("does not offer animation controls for Screen Effects", async () => {
+    renderEditor({ api: effectApi(enabledEffect(false)), create: false, document: enabledEffect(false) });
+    expect(await screen.findByRole("heading", { name: "Variant settings" })).toBeVisible();
+    expect(screen.queryByRole("checkbox", { name: "Use a preset animation" })).not.toBeInTheDocument();
+  });
+
   it("preserves a draft and requests confirmation if its inactive set became live", async () => {
     const saved = enabledEffect();
     const api = effectApi(saved);

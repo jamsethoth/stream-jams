@@ -17,14 +17,14 @@ Loading, empty, context failure, unavailable trigger, disabled draft, failed sav
 - Changed-file ESLint: passed.
 - Storybook production build: passed (existing large-chunk warning remains).
 - OpenSpec strict validation: passed.
-- Live browser checks at 1366x768, 1024x600, 800x600 and 390x700 confirmed Save remains visible and there is no horizontal page overflow. Laptop regression checks also assert no vertical page overflow and exercise the lowest animation controls.
+- Live browser checks at 1366x768, 1024x600, 800x600 and 390x700 confirmed Save remains visible and there is no horizontal page overflow. Laptop regression checks also assert no vertical page overflow.
 - Inspected editor and module screenshots. Production editor capture: `test-results/screen-effects-editor-laptop.png` (local ignored artifact).
 
 Validation was scoped to the changed presentation and workflows; full repository, backend and hardware-output suites were not run. Browser tests mock the existing typed service boundaries and do not prove physical audio or OBS output delivery.
 
 ## Local draft preview follow-up (2026-09-17)
 
-User approved local sound with a preview mute option. Preview now uses draft layout, shared overlay preset animation styles, bounded duration, enabled video soundtrack and separate-sound volume. Play/Stop and Mute apply only to local media; no admission API or output routes are used. Close releases object URLs and stops playback. Load/playback failures provide recovery guidance.
+User approved local sound with a preview mute option. Preview now uses draft layout, bounded duration, enabled video soundtrack and separate-sound volume. Play/Stop and Mute apply only to local media; no admission API or output routes are used. Close releases object URLs and stops playback. Load/playback failures provide recovery guidance. Screen Effects no longer expose or persist preset animation settings.
 
 - Focused editor/preview Vitest: 2 files, 11 tests passed, covering both audio sources, mute, duration, layout, failure, and cleanup.
 - Screen Effects Chromium: 3 existing workflows passed; additional real-media audio preview workflow passed separately using a silent WAV, checking volume, mute, automatic stop, close and no live-test requests.

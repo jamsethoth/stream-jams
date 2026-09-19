@@ -40,7 +40,6 @@ function occurrence(id: string, mode: "combined" | "audio" | "visual" = "combine
           audioVolume: 0.4
         },
         sound: mode === "visual" ? null : { assetId: "tone", volume: 0.5 },
-        animation: null,
         durationMs: 10_000,
         outputs: {
           browserSource: mode !== "visual",
