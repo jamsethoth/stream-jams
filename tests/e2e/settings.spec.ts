@@ -236,7 +236,6 @@ function restoredScreenEffect() {
         layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
       },
       sound: null,
-      animation: null,
       durationMs: 10_000,
       outputs: { browserSource: false, deviceRouteIds: [] },
       visualOutputs: { browserSource: true, desktop: false }
