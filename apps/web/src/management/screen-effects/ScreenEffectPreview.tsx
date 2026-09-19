@@ -1,6 +1,5 @@
 import type { EffectVariant } from "@stream-jams/core";
 import { useCallback, useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
-import { overlayPresetAnimationStyle } from "../../overlay/components/OverlaySurface.js";
 import type { AssetApi } from "../assets/asset-api.js";
 import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
 
@@ -15,7 +14,6 @@ export function ScreenEffectPreview({ assetApi, variant, ref }: {
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(false);
   const [run, setRun] = useState(0);
-  const visualElement = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
   const audio = useRef<HTMLAudioElement>(null);
   const generation = useRef(0);
@@ -83,11 +81,6 @@ export function ScreenEffectPreview({ assetApi, variant, ref }: {
     const current = generation.current;
     setError(null);
     setRun((value) => value + 1);
-    if (visualElement.current !== null) {
-      visualElement.current.style.animationName = "none";
-      void visualElement.current.offsetWidth;
-      visualElement.current.style.animationName = String(overlayPresetAnimationStyle(variant.animation, variant.durationMs).animationName ?? "none");
-    }
     setPlaying(true);
     timer.current = setTimeout(stop, variant.durationMs);
     try {
@@ -110,15 +103,14 @@ export function ScreenEffectPreview({ assetApi, variant, ref }: {
   const style = visual === null ? undefined : {
     position: "absolute" as const,
     left: `${visual.layout.x / 1920 * 100}%`, top: `${visual.layout.y / 1080 * 100}%`,
-    width: `${visual.layout.width / 1920 * 100}%`, height: `${visual.layout.height / 1080 * 100}%`,
-    ...(playing ? overlayPresetAnimationStyle(variant.animation, variant.durationMs) : {})
+    width: `${visual.layout.width / 1920 * 100}%`, height: `${visual.layout.height / 1080 * 100}%`
   };
   return <>
     <p className="screen-effect-editor__stage-help">Local draft preview with sound. No live outputs or triggers are sent.</p>
     {error === null ? null : <p role="alert">{error}</p>}
     <div aria-label="1920 by 1080 preview canvas" className="screen-effect-preview__canvas">
       {urls === null ? <p>Loading preview media…</p> : visual === null ? <p>Audio-only effect</p> :
-        <div ref={visualElement} style={style}>
+        <div style={style}>
           {visual.mediaType === "video"
             ? <video aria-label="Preview video" muted={muted || !visual.playEmbeddedAudio} onError={() => { stop(); setError("Preview video could not load. Check the asset and reselect it."); }} ref={video} src={urls.visual ?? undefined} />
             : visual.mediaType === "gif" && !playing ? null : <img key={run} alt={`${variant.name} preview`} src={urls.visual ?? undefined} onError={() => { stop(); setError("Preview image could not load. Check the asset and reselect it."); }} />}

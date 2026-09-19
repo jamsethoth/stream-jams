@@ -1,6 +1,5 @@
 import type { AlertAudioOutputs } from "../audio/types.js";
 import type { OverlayElementLayout } from "../shared/schemas.js";
-import type { OverlayPresetAnimationInstruction } from "../overlays/types.js";
 
 export type EffectBinding =
   | {
@@ -52,7 +51,6 @@ export interface EffectVariant {
   readonly weight: number;
   readonly visual: EffectVisual | null;
   readonly sound: EffectSound | null;
-  readonly animation: OverlayPresetAnimationInstruction | null;
   readonly durationMs: number;
   readonly durationMode?: "media" | "custom" | undefined;
   readonly outputs: AlertAudioOutputs;

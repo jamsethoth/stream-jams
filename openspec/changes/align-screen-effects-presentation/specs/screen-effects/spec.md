@@ -29,7 +29,7 @@ The system SHALL present Screen Effects using the Alerts module's compact invent
 - **THEN** a collapsed Browser sources section with a configuration summary precedes the compact effects inventory and exposes existing URL actions when expanded
 
 ### Requirement: Local Draft Effect Preview
-The editor SHALL preview the selected unsaved variant in its central canvas, without a separate dialog, locally with its layout, preset animation, duration and configured audio volumes. Preview SHALL provide Play, Stop and Mute controls without admitting a live occurrence or using configured output routes.
+The editor SHALL preview the selected unsaved variant in its central canvas, without a separate dialog, locally with its layout, duration and configured audio volumes. Preview SHALL provide Play, Stop and Mute controls without admitting a live occurrence or using configured output routes.
 
 #### Scenario: Preview with sound and mute
 - **WHEN** an operator presses the toolbar Preview or the canvas Play preview control

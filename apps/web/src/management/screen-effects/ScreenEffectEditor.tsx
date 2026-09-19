@@ -487,7 +487,6 @@ function VariantPanel(props: {
     <MediaPanel asset={visualAsset} onChoose={() => props.onOpenPicker("visual")} onRemove={() => update((variant) => ({ ...variant, visual: null }))} selected={selected} update={update} />
     <SoundPanel asset={soundAsset} onChoose={() => props.onOpenPicker("sound")} onRemove={() => update((variant) => ({ ...variant, sound: null }))} selected={selected} update={update} />
     <DestinationPanel routeNames={context.routeNames} selected={selected} update={update} />
-    <AnimationPanel selected={selected} update={update} />
   </section>;
 }
 
@@ -606,22 +605,6 @@ function DestinationPanel({ routeNames, selected, update }: {
     })); }} type="checkbox" />{name}</label>)}
     {selected.outputs.deviceRouteIds.filter((id) => !routeNames.has(id)).map((id) => <p key={id}>Unavailable audio route: {id}</p>)}
     {routeNames.size === 0 ? <p>No named device routes are available. Configure them in Settings.</p> : null}
-  </fieldset>;
-}
-
-function AnimationPanel({ selected, update }: {
-  readonly selected: EffectVariant;
-  readonly update: (change: (variant: EffectVariant) => EffectVariant) => void;
-}) {
-  return <fieldset>
-    <legend>Animation</legend>
-    <label className="screen-effects-check"><input checked={selected.animation !== null} onChange={(event) => { const checked = event.currentTarget.checked; update((variant) => ({ ...variant, animation: checked ? defaultAnimation() : null })); }} type="checkbox" />Use a preset animation</label>
-    {selected.animation === null ? null : <div className="screen-effects-fields-inline">
-      <label>Entrance<select aria-label="Animation entrance" onChange={(event) => { const entrance = event.currentTarget.value; update((variant) => ({ ...variant, animation: variant.animation === null ? null : { ...variant.animation, entrance } })); }} value={selected.animation.entrance}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-up">Slide up</option></select></label>
-      <label>Exit<select aria-label="Animation exit" onChange={(event) => { const exit = event.currentTarget.value; update((variant) => ({ ...variant, animation: variant.animation === null ? null : { ...variant.animation, exit } })); }} value={selected.animation.exit}><option value="none">None</option><option value="fade">Fade</option><option value="scale">Scale</option><option value="slide-down">Slide down</option></select></label>
-      <label>Animation duration (ms)<input aria-label="Animation duration" max={120000} min={0} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, animation: variant.animation === null ? null : { ...variant.animation, durationMs: value } })))} type="number" value={selected.animation.durationMs} /></label>
-      <label>Animation delay (ms)<input aria-label="Animation delay" max={120000} min={0} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, animation: variant.animation === null ? null : { ...variant.animation, delayMs: value } })))} type="number" value={selected.animation.delayMs} /></label>
-    </div>}
   </fieldset>;
 }
 
@@ -816,10 +799,6 @@ function effectDestinationNames(variant: EffectVariant, routeNames: ReadonlyMap<
 
 function defaultLayout() {
   return { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 };
-}
-
-function defaultAnimation() {
-  return { mode: "preset" as const, entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" };
 }
 
 function defaultId(prefix: string): string {

@@ -15,7 +15,6 @@ function setup() {
     visual: { mediaType: "video", assetId: "video", playEmbeddedAudio: true, audioVolume: 0.4,
       layout: { x: 480, y: 270, width: 960, height: 540, zIndex: 0 } },
     sound: { assetId: "sound", volume: 0.7 }, durationMs: 1000,
-    animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 200, delayMs: 0, easing: "ease-in-out" }
   }] }).variants[0]!;
   const api = { getAssetFile: vi.fn(async () => new Blob()) };
   return { play, pause, revoke, variant, api };
@@ -34,7 +33,7 @@ it("plays both draft audio sources locally, mutes both, respects layout and dura
   expect(play).toHaveBeenCalledTimes(2);
   expect(video.volume).toBe(0.4);
   expect(audio.volume).toBe(0.7);
-  expect(video.parentElement?.style.animationName).toBe("overlay-enter-fade, overlay-exit-fade");
+  expect(video.parentElement?.style.animationName).toBe("");
   fireEvent.click(screen.getByRole("checkbox", { name: "Mute preview" }));
   expect(video.muted).toBe(true);
   expect(audio.muted).toBe(true);

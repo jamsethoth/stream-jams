@@ -305,7 +305,11 @@ export class ConfigurationBackupService {
     if (countConfigurationRecords(archive.configuration.tables) !== archive.manifest.configurationRecordCount) {
       blockers.push(blocker("Backup configuration count does not match", "The manifest does not describe the configuration records in the archive.", "Export the backup again."));
     }
-    blockers.push(...this.#options.snapshotRepository.validate(archive.configuration).map((cause) =>
+    const upgradedConfiguration = upgradeLegacyConfiguration(
+      archive.configuration,
+      archive.manifest.schemaVersion
+    );
+    blockers.push(...this.#options.snapshotRepository.validate(upgradedConfiguration).map((cause) =>
       blocker("Backup configuration record is invalid", cause, "Export a new backup from a supported Stream Jams version.")
     ));
 
@@ -480,7 +484,11 @@ export class ConfigurationBackupService {
         });
       }
 
-      this.#options.snapshotRepository.replace({ tables: request.archive.configuration.tables, assets: stagedAssets });
+      const upgradedConfiguration = upgradeLegacyConfiguration(
+        request.archive.configuration,
+        request.archive.manifest.schemaVersion
+      );
+      this.#options.snapshotRepository.replace({ tables: upgradedConfiguration.tables, assets: stagedAssets });
       await this.#options.configStore.updateConfig({
         desktop: restoredConfig.desktop,
         server: restoredConfig.server,
@@ -621,7 +629,38 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 22) return [19, 20, 21].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 23) return [19, 20, 21, 22].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 24) return [19, 20, 21, 22, 23].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 25) return [19, 20, 21, 22, 23, 24].includes(archiveSchemaVersion);
   return false;
+}
+
+function upgradeLegacyConfiguration(
+  configuration: BackupConfiguration,
+  schemaVersion: number
+): BackupConfiguration {
+  if (schemaVersion >= 25 || configuration.tables.screen_effect_variants === undefined) return configuration;
+  return {
+    ...configuration,
+    tables: {
+      ...configuration.tables,
+      screen_effect_variants: configuration.tables.screen_effect_variants.map((row) => ({
+        ...row,
+        document_json: removeLegacyScreenEffectAnimation(row.document_json)
+      }))
+    }
+  };
+}
+
+function removeLegacyScreenEffectAnimation(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return value;
+    const variant = { ...parsed } as Record<string, unknown>;
+    delete variant.animation;
+    return JSON.stringify(variant);
+  } catch {
+    return value;
+  }
 }
 
 function settledFailures(results: readonly PromiseSettledResult<unknown>[]): readonly unknown[] {

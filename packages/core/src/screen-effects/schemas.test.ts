@@ -6,15 +6,6 @@ import {
 } from "./schemas.js";
 
 const layout = { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 };
-const animation = {
-  mode: "preset" as const,
-  entrance: "fade",
-  exit: "fade",
-  durationMs: 250,
-  delayMs: 0,
-  easing: "linear"
-};
-
 function audioOnlyDocument() {
   const draft = createScreenEffectDocument({
     id: "effect-neutral",
@@ -55,7 +46,6 @@ describe("screenEffectDocumentSchema", () => {
         weight: 1,
         visual: null,
         sound: null,
-        animation: null,
         durationMode: "media",
         durationMs: 10_000,
         outputs: { browserSource: false, deviceRouteIds: [] },
@@ -98,7 +88,6 @@ describe("screenEffectDocumentSchema", () => {
           audioVolume: 0.2
         },
         sound: { assetId: "asset-sound", volume: 0.8 },
-        animation,
         outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
         visualOutputs: { browserSource: true, desktop: false }
       }]
@@ -132,10 +121,6 @@ describe("screenEffectDocumentSchema", () => {
         ...document.variants[0]!,
         visual: { mediaType: "image", assetId: "asset-image", layout: { ...layout, width: 0 } }
       }]
-    })],
-    ["invalid animation", (document: ReturnType<typeof audioOnlyDocument>) => ({
-      ...document,
-      variants: [{ ...document.variants[0]!, animation: { ...animation, delayMs: -1 } }]
     })]
   ])("rejects %s", (_label, candidate) => {
     expect(screenEffectDocumentSchema.safeParse(candidate(audioOnlyDocument())).success).toBe(false);
@@ -181,6 +166,24 @@ describe("screenEffectDocumentSchema", () => {
       variants: [{ ...document.variants[0]!, kind: "default" }]
     }).success).toBe(false);
     expect(screenEffectDocumentSchema.safeParse({ ...document, cooldownSeconds: 60 }).success).toBe(false);
+  });
+
+  it("rejects removed Screen Effect animation fields", () => {
+    const document = audioOnlyDocument();
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document,
+      variants: [{
+        ...document.variants[0]!,
+        animation: {
+          mode: "preset",
+          entrance: "fade",
+          exit: "fade",
+          durationMs: 250,
+          delayMs: 0,
+          easing: "linear"
+        }
+      }]
+    }).success).toBe(false);
   });
 });
 

@@ -5,6 +5,7 @@
 - [x] 1.3 Replace default and weighted variant kinds with one enabled weighted pool and preserve legacy SQLite rows at the repository boundary.
 - [x] 1.4 Show expected chances and provide an in-editor 1,000-selection simulation with no live side effects.
 - [x] 1.5 Add distinct blank-variant creation, improve wrapped action spacing, remove per-effect cooldown, and explain queue priority.
+- [x] 1.6 Remove preset animation authoring and persistence from Screen Effects.
 
 ## 2. Verification
 
