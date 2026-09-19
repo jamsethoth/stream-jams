@@ -179,8 +179,8 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
 
   await page.getByRole("button", { name: "Back to Screen Effects" }).click();
   await page.getByText("New Screen Effect", { exact: true }).click();
-  await page.getByText("More", { exact: true }).click();
-  await page.getByRole("button", { name: "Copy", exact: true }).click();
+  await page.getByRole("button", { name: "More actions for New Screen Effect" }).click();
+  await page.getByRole("menuitem", { name: "Copy New Screen Effect" }).click();
   await expect.poll(() => createRequests.length).toBe(2);
   expect(createRequests[1]).toMatchObject({ enabled: false, name: "New Screen Effect copy" });
   expect(createRequests[1]!.id).not.toBe(createRequests[0]!.id);

@@ -315,11 +315,12 @@ export const DefaultWithVariations: Story = {
   args: { managementApi: api([activeSet], detailWithVariation()) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const page = within(canvasElement.ownerDocument.body);
     const variation = await canvas.findByRole("row", { name: /Large raid/u });
     await expect(variation).toHaveClass("alert-sets-page__variation-row");
-    await userEvent.click(canvas.getByLabelText("More actions for New raid"));
-    await expect(canvas.getByRole("button", { name: "Add variation to New raid" })).toBeVisible();
-    await expect(canvas.getAllByRole("button", { name: "Add variation to New raid" })).toHaveLength(1);
+    await userEvent.click(canvas.getByRole("button", { name: "More actions for New raid" }));
+    await expect(page.getByRole("menuitem", { name: "Add variation to New raid" })).toBeVisible();
+    await expect(page.getAllByRole("menuitem", { name: "Add variation to New raid" })).toHaveLength(1);
   }
 };
 
@@ -352,8 +353,9 @@ export const DuplicateVariationNeedsReview: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByText("More", { selector: "summary[aria-label='More actions for Large raid']" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Duplicate Large raid" }));
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await canvas.findByRole("button", { name: "More actions for Large raid" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Duplicate Large raid" }));
     await expect(await canvas.findByText("Large raid copy duplicated disabled and marked Needs review.")).toBeVisible();
   }
 };
@@ -362,8 +364,9 @@ export const DestructiveVariationConfirmation: Story = {
   args: { managementApi: api([activeSet], detailWithVariation()) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByText("More", { selector: "summary[aria-label='More actions for Large raid']" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Delete Large raid" }));
+    const page = within(canvasElement.ownerDocument.body);
+    await userEvent.click(await canvas.findByRole("button", { name: "More actions for Large raid" }));
+    await userEvent.click(page.getByRole("menuitem", { name: "Delete Large raid" }));
     const dialog = within(await canvas.findByRole("dialog", { name: "Delete Large raid?" }));
     await expect(dialog.getByText("This permanently deletes only this variation. Shared assets remain available.")).toBeVisible();
   }

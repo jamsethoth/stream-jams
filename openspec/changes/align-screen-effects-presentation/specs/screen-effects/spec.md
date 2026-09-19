@@ -33,6 +33,11 @@ The system SHALL present Screen Effects using the Alerts module's compact invent
 - **WHEN** an operator opens Screen Effects configuration
 - **THEN** a collapsed Browser sources section with a configuration summary precedes the compact effects inventory and exposes existing URL actions when expanded
 
+#### Scenario: Secondary effect actions
+- **WHEN** an operator opens an effect row's More menu by pointer or keyboard
+- **THEN** Copy and Delete appear in an anchored overlay without changing row dimensions or adding inventory scrolling
+- **AND** the menu remains within the viewport, supports arrow, Home, End and Escape keys, and returns focus to its trigger when dismissed with Escape
+
 ### Requirement: Local Draft Effect Preview
 The editor SHALL preview the selected unsaved variant in its central canvas, without a separate dialog, locally with its layout, duration and configured audio volumes. Preview SHALL provide Play, Stop and Mute controls without admitting a live occurrence or using configured output routes.
 

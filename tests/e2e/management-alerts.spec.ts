@@ -194,7 +194,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   const editAction = alertRow.getByRole("button", { name: "Edit New follower" });
   await expect(editAction).toBeVisible();
   await expect(alertRow.getByRole("button", { name: "Test saved New follower" })).toBeVisible();
-  const moreAction = alertRow.locator("summary[aria-label='More actions for New follower']");
+  const moreAction = alertRow.getByRole("button", { name: "More actions for New follower" });
   const compactControlMetrics = async (locator: typeof editAction) => locator.evaluate((element) => {
     const style = getComputedStyle(element);
     return {
@@ -206,11 +206,16 @@ test("management alerts reviews the starter set and safely manages its landscape
     };
   });
   expect(await compactControlMetrics(moreAction)).toEqual(await compactControlMetrics(editAction));
+  const rowHeightBeforeMenu = (await alertRow.boundingBox())?.height;
   await moreAction.focus();
   await page.keyboard.press("Enter");
-  await expect(alertRow.getByRole("button", { name: "Sample message New follower" })).toHaveCount(1);
-  await expect(alertRow.getByRole("button", { name: "Add variation to New follower" })).toHaveCount(1);
-  await moreAction.click();
+  const actionMenu = page.getByRole("menu", { name: "More actions for New follower" });
+  await expect(actionMenu.getByRole("menuitem", { name: "Sample message New follower" })).toBeFocused();
+  await expect(actionMenu.getByRole("menuitem", { name: "Add variation to New follower" })).toHaveCount(1);
+  expect((await alertRow.boundingBox())?.height).toBe(rowHeightBeforeMenu);
+  await page.keyboard.press("Escape");
+  await expect(actionMenu).toHaveCount(0);
+  await expect(moreAction).toBeFocused();
   await expect(alertRow.getByText(/Saved input.*Browser Landscape.*Audio and TTS included/u)).toBeVisible();
   const enableToggle = alertRow.getByRole("button", { name: "Enable New follower" });
   await expect(enableToggle).toBeVisible();
@@ -1207,7 +1212,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
 
   await page.goto("/manage/modules/alerts");
   await page.getByLabel("More actions for New raid").click();
-  await page.getByRole("button", { name: "Add variation to New raid" }).click();
+  await page.getByRole("menuitem", { name: "Add variation to New raid" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add variation to New raid" });
   await createDialog.getByLabel("Variation name").fill("Large raid");
   await createDialog.getByRole("button", { name: "Create variation" }).click();
@@ -1297,13 +1302,12 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await page.getByRole("button", { name: "Revert" }).click();
   await page.getByRole("button", { name: "Back to alerts" }).click();
 
-  await page.locator("summary[aria-label='More actions for Large raid']").click();
-  await page.getByRole("button", { name: "Duplicate Large raid" }).click();
+  await page.getByRole("button", { name: "More actions for Large raid" }).click();
+  await page.getByRole("menuitem", { name: "Duplicate Large raid" }).click();
   await expect(page.getByText("Large raid copy duplicated disabled and marked Needs review.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit Large raid copy" })).toBeFocused();
-  await page.locator("summary[aria-label='More actions for Large raid']").click();
-  await page.locator("summary[aria-label='More actions for Large raid copy']").click();
-  await page.getByRole("button", { name: "Delete Large raid copy" }).click();
+  await page.getByRole("button", { name: "More actions for Large raid copy" }).click();
+  await page.getByRole("menuitem", { name: "Delete Large raid copy" }).click();
   await page.getByRole("dialog", { name: "Delete Large raid copy?" }).getByRole("button", { name: "Delete alert" }).click();
   await expect(page.getByText("Large raid copy deleted.")).toBeVisible();
   await expect(page.getByRole("row", { name: /Large raid copy/u })).toHaveCount(0);

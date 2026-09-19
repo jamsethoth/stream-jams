@@ -427,17 +427,6 @@
   overflow-wrap: anywhere;
 }
 
-.screen-effects-more summary {
-  cursor: pointer;
-  padding: 10px;
-}
-
-.screen-effects-more > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .screen-effect-editor label,
 .screen-effect-trigger-adders label {
   display: grid;

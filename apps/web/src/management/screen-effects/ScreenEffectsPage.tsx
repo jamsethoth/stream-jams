@@ -4,6 +4,7 @@ import {
   type ScreenEffectDocument
 } from "@stream-jams/core";
 import { useCallback, useEffect, useState } from "react";
+import { ActionMenu } from "../foundation/ActionMenu.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
@@ -198,7 +199,13 @@ export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defa
             <ScreenEffectTree documents={visibleDocuments.filter((document) => set.effectIds.includes(document.id))} onSelect={(effectId, variantId) => onEdit(effectId, false, set.id, variantId)} actions={(document) => <div className="screen-effects-list__actions">
               <button className="button button--secondary" onClick={() => onEdit(document.id, false, set.id)} type="button">Edit</button>
               <button className="button button--secondary" disabled={busy} onClick={() => setConfirmation({ kind: "effect-enable", document })} type="button">{document.enabled ? "Disable" : "Enable"}</button>
-              <details className="screen-effects-more"><summary>More</summary><div><button className="button button--secondary" disabled={busy} onClick={() => void copy(document)} type="button">Copy</button><button className="button button--danger" disabled={busy} onClick={() => setConfirmation({ kind: "delete", document })} type="button">Delete</button></div></details>
+              <ActionMenu
+                items={[
+                  { accessibleLabel: `Copy ${document.name}`, disabled: busy, label: "Copy", onSelect: () => void copy(document) },
+                  { accessibleLabel: `Delete ${document.name}`, disabled: busy, label: "Delete", onSelect: () => setConfirmation({ kind: "delete", document }), tone: "danger" }
+                ]}
+                label={`More actions for ${document.name}`}
+              />
               <a href="/manage/event-sources">Review trigger setup</a>
             </div>} />
             {set.effectIds.length === 0 ? <p>No effects in this set. Create a disabled draft to get started.</p> : null}

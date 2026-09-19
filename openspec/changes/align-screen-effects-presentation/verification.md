@@ -4,7 +4,7 @@
 
 Reviewed the MVP UX spec sections Cross-Cutting UX Rules, Alerts Module, Sets Page, Browser Sources and Alert Editor. This change aligns presentation of the existing approved post-MVP Screen Effects module. Queueing and output delivery remain unchanged; the current Screen Effect variant contract is unified while the repository preserves the legacy SQLite storage shape.
 
-The focused editor now fits its shell, with variant navigation, an inline local media preview and independently scrolling inspector. Variant, Effect and Triggers tabs support arrow keys, Home and End with roving focus. Save remains in the header. The module page puts a collapsed source summary above compact searchable effect rows; Copy and Delete use More.
+The focused editor now fits its shell, with variant navigation, an inline local media preview and independently scrolling inspector. Variant, Effect and Triggers tabs support arrow keys, Home and End with roving focus. Save remains in the header. The module page puts a collapsed source summary above compact searchable effect rows; Copy and Delete use a shared anchored More menu that overlays scrolling content without resizing rows.
 
 Loading, empty, context failure, unavailable trigger, disabled draft, failed save and live-test confirmation states retain coverage. Draft edits survive inspector switching. URL values remain masked and existing live confirmations remain in place.
 
@@ -62,3 +62,14 @@ The hierarchy now provides separate New variant and Copy variant actions in a sp
 - Full Storybook interaction/accessibility run: 22 suites, 233 scenarios passed.
 - Screen Effects Playwright: 4 Chromium workflows passed.
 - Workspace typecheck/build, changed-file lint and strict OpenSpec validation passed.
+
+## Anchored secondary-action menus follow-up (2026-09-19)
+
+Alerts and Screen Effects now share a document-level anchored More menu. Opening secondary actions does not change the inventory row height or introduce scrolling inside the inventory container. The menu remains viewport-bound, focuses its first enabled action, supports arrow, Home, End and Escape keys, and restores focus to its trigger when dismissed with Escape.
+
+- Final focused Alerts and Screen Effects Vitest: 2 files, 48 tests passed.
+- Full Vitest regression before the final browser focus-timing correction: 241 files, 2,090 tests passed; the final focused regression then passed.
+- Full Storybook interaction/accessibility run: 23 suites, 235 scenarios passed. Storybook production build passed with the existing large-chunk warning.
+- Relevant Playwright: 14 unaffected workflows passed in the combined Alerts and Screen Effects run; the affected Alerts workflow passed after the focus-timing correction.
+- Web typecheck/build, changed-file lint and strict OpenSpec validation passed.
+- Rebuilt the evaluation runtime on port 39187. Live inspection confirmed both menus render under `BODY`, keep their rows unchanged, remain inside the viewport and focus the first action.
