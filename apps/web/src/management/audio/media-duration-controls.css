@@ -13,8 +13,10 @@
 
 .media-duration-controls__mode input[type="radio"] {
   flex: 0 0 auto;
+  height: 16px;
   margin: 0;
-  width: auto;
+  min-height: 16px;
+  width: 16px;
 }
 
 .media-duration-controls__custom {

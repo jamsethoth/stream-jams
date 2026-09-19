@@ -24,6 +24,11 @@ The system SHALL present Screen Effects using the Alerts module's compact invent
 - **WHEN** Screen Effect or set actions wrap at the available width
 - **THEN** horizontal and vertical spacing keeps adjacent controls visually distinct
 
+#### Scenario: Compact choices and dependent fields
+- **WHEN** the editor presents checkbox or radio choices
+- **THEN** each control SHALL remain inline with its label with consistent spacing
+- **AND** a dependent numeric field SHALL remain hidden until its controlling choice is selected
+
 #### Scenario: Module configuration
 - **WHEN** an operator opens Screen Effects configuration
 - **THEN** a collapsed Browser sources section with a configuration summary precedes the compact effects inventory and exposes existing URL actions when expanded

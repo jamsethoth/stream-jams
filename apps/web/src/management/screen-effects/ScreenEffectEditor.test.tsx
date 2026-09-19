@@ -30,6 +30,13 @@ describe("ScreenEffectEditor", () => {
     expect(screen.queryByRole("checkbox", { name: "Use a preset animation" })).not.toBeInTheDocument();
   });
 
+  it("groups related asset commands into consistently spaced rows", async () => {
+    renderEditor({ api: effectApi(enabledEffect(false)), create: false, document: enabledEffect(false) });
+    expect(await screen.findByRole("button", { name: "Choose visual asset" })).toHaveClass("button");
+    expect(screen.getByRole("button", { name: "Choose visual asset" }).parentElement).toHaveClass("screen-effects-button-row");
+    expect(screen.getByRole("button", { name: "Choose sound asset" }).parentElement).toHaveClass("screen-effects-button-row");
+  });
+
   it("preserves a draft and requests confirmation if its inactive set became live", async () => {
     const saved = enabledEffect();
     const api = effectApi(saved);

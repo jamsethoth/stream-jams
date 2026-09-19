@@ -183,7 +183,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
 
     expect(await screen.findByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
-    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+    expect(screen.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
   });
 
   it("disables embedded audio when a video layer is changed to a GIF", async () => {
@@ -201,7 +201,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
 
     expect(screen.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
-    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+    expect(screen.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
   });
 
   it("edits saved silent video soundtrack through undo redo and confirmed save", async () => {
@@ -209,7 +209,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByText("Loop", { selector: ".alert-editor-inspector__layer-list span" }));
     const toggle = () => screen.getByRole("checkbox", { name: "Play embedded audio" });
     expect(toggle()).not.toBeChecked();
-    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+    expect(screen.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
     await user.click(toggle());
     expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
     fireEvent.change(screen.getByRole("spinbutton", { name: "Embedded audio volume" }), { target: { value: "0.35" } });

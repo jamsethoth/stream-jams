@@ -35,10 +35,9 @@ it("changes the soundtrack toggle without changing its saved volume", async () =
   expect(onChange).toHaveBeenCalledExactlyOnceWith({ playEmbeddedAudio: false, audioVolume: 0.4 });
 });
 
-it("keeps volume visible but disabled while embedded audio is off", () => {
+it("hides volume unless embedded audio is enabled", () => {
   render(<MediaAudioControls value={{ playEmbeddedAudio: false, audioVolume: 0.7 }} hasSeparateAudio onChange={vi.fn()} />);
-  expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
-  expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(0.7);
+  expect(screen.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
   expect(screen.queryByText(/Both the video soundtrack and separate audio/)).not.toBeInTheDocument();
 });
 
