@@ -87,12 +87,15 @@ it("starts one worker, accepts only its generation, and applies persisted mute s
   expect(worker.kills).toBe(0);
 });
 
-it("bounds startup and terminates only the unresponsive owned worker", async () => {
+it("allows slow Windows startup before terminating only the unresponsive owned worker", async () => {
   vi.useFakeTimers();
   const { worker, supervisor } = fixture();
   const started = supervisor.start();
-  const failure = expect(started).rejects.toThrow(/20 seconds/);
+  const failure = expect(started).rejects.toThrow(/45 seconds/);
   await vi.advanceTimersByTimeAsync(20_000);
+  expect(supervisor.state).toBe("starting");
+  expect(worker.kills).toBe(0);
+  await vi.advanceTimersByTimeAsync(25_000);
   await failure;
   expect(worker.kills).toBe(1);
   expect(supervisor.state).toBe("failed");
