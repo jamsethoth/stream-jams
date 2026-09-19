@@ -3,10 +3,7 @@ import { rm } from "node:fs/promises";
 import { expect, type ElectronApplication } from "@playwright/test";
 
 export async function windowByUrl<T extends { url(): string }>(desktop: { windows(): T[] }, url: string): Promise<T> {
-  await expect.poll(() => desktop.windows().some((page) => page.url() === url), {
-    message: `Expected desktop window ${url}`,
-    timeout: 50_000
-  }).toBe(true);
+  await expect.poll(() => desktop.windows().some((page) => page.url() === url), { timeout: 25_000 }).toBe(true);
   const page = desktop.windows().find((candidate) => candidate.url() === url);
   if (page === undefined) throw new Error(`Window disappeared: ${url}`);
   return page;
