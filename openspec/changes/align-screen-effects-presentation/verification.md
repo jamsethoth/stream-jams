@@ -26,6 +26,8 @@ Validation was scoped to the changed presentation and workflows; full repository
 
 User approved local sound with a preview mute option. Preview now uses draft layout, bounded duration, enabled video soundtrack and separate-sound volume. Play/Stop and Mute apply only to local media; no admission API or output routes are used. Close releases object URLs and stops playback. Load/playback failures provide recovery guidance. Screen Effects no longer expose or persist preset animation settings.
 
+Checkbox and radio controls use compact inline labels across the Screen Effect editor and shared Alert media controls. Related asset and confirmation buttons use consistent wrapping gaps. Custom duration, fade duration and embedded-audio volume fields render only while their controlling option is selected.
+
 - Focused editor/preview Vitest: 2 files, 11 tests passed, covering both audio sources, mute, duration, layout, failure, and cleanup.
 - Screen Effects Chromium: 3 existing workflows passed; additional real-media audio preview workflow passed separately using a silent WAV, checking volume, mute, automatic stop, close and no live-test requests.
 - Editor Storybook: 10 scenarios including preview passed with axe checks.

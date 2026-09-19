@@ -253,7 +253,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
 
   if (loading) return <p role="status">Loading Screen Effect editor…</p>;
   if (document === null || state === null || selectedVariant === null) {
-    return <div className="management-card"><h2>The Screen Effect editor could not be opened</h2><p role="alert">{error ?? "The saved definition is unavailable."}</p><button onClick={props.onBack} type="button">Back to Screen Effects</button></div>;
+    return <div className="management-card"><h2>The Screen Effect editor could not be opened</h2><p role="alert">{error ?? "The saved definition is unavailable."}</p><button className="button button--secondary" onClick={props.onBack} type="button">Back to Screen Effects</button></div>;
   }
 
 
@@ -404,7 +404,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       variant={selectedVariant}
     />
     <ModalSurface labelledBy="screen-effect-save-impact-title" onCancel={() => setSaveConfirmationOpen(false)} open={saveConfirmationOpen}>
-      <div><h2 id="screen-effect-save-impact-title">Save live Screen Effect changes?</h2><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => setSaveConfirmationOpen(false)} type="button">Cancel</button><button disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
+      <div><h2 id="screen-effect-save-impact-title">Save live Screen Effect changes?</h2><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => setSaveConfirmationOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
     </ModalSurface>
   </div>;
 }
@@ -530,7 +530,7 @@ function MediaPanel({ asset, onChoose, onRemove, selected, update }: {
   return <fieldset className="screen-effect-media">
     <legend>Visual</legend>
     <p>{visual === null ? "No visual selected." : asset === null ? `Unavailable ${visual.mediaType} asset (${visual.assetId})` : `${asset.displayName} · ${visual.mediaType}`}</p>
-    <div>
+    <div className="screen-effects-button-row">
       <button className="button button--secondary" onClick={onChoose} type="button">Choose visual asset</button>
       {visual === null ? null : <button className="button button--secondary" onClick={onRemove} type="button">Remove visual</button>}
     </div>
@@ -578,7 +578,7 @@ function SoundPanel({ asset, onChoose, onRemove, selected, update }: {
   return <fieldset>
     <legend>Separate sound</legend>
     <p>{selected.sound === null ? "No separate sound selected." : asset === null ? `Unavailable audio asset (${selected.sound.assetId})` : asset.displayName}</p>
-    <div>
+    <div className="screen-effects-button-row">
       <button className="button button--secondary" onClick={onChoose} type="button">Choose sound asset</button>
       {selected.sound === null ? null : <button className="button button--secondary" onClick={onRemove} type="button">Remove sound</button>}
     </div>
@@ -652,13 +652,13 @@ function AddTriggerControls({ add, context, generateId }: {
   );
   return <div className="screen-effect-trigger-adders">
     <label>Twitch reward<select aria-label="Twitch reward" onChange={(event) => setRewardId(event.currentTarget.value)} value={rewardId}><option value="">Choose a configured reward</option>{context.rewards.map((reward) => <option key={reward.id} value={reward.id}>{reward.title}</option>)}</select></label>
-    <button disabled={rewardId === "" || context.twitch?.connected !== true} onClick={() => {
+    <button className="button button--secondary" disabled={rewardId === "" || context.twitch?.connected !== true} onClick={() => {
       if (context.twitch?.connected !== true || rewardId === "") return;
       add({ id: generateId("binding"), kind: "twitch-reward", broadcasterId: context.twitch.account.accountId, rewardId });
       setRewardId("");
     }} type="button">Add reward trigger</button>
     <label>Streamer.bot event<select aria-label="Streamer.bot event" onChange={(event) => setStreamerSelection(event.currentTarget.value)} value={streamerSelection}><option value="">Choose a configured subscription</option>{streamerOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-    <button disabled={streamerSelection === "" || context.streamerBot === null} onClick={() => {
+    <button className="button button--secondary" disabled={streamerSelection === "" || context.streamerBot === null} onClick={() => {
       const option = streamerOptions.find((candidate) => candidate.value === streamerSelection);
       if (option === undefined || context.streamerBot === null) return;
       add({ id: generateId("binding"), kind: "streamerbot-event", providerId: context.streamerBot.providerId, sourceKey: option.sourceKey, eventType: option.eventType });
@@ -703,7 +703,7 @@ function LiveTestDialog({ api, document, onClose, onError, onNotice, open, route
       <p>Saved input · The saved {variant.name} variant is used exactly; weighted selection is not rerun.</p>
       <p>Selected destinations (current connection and device readiness are checked when you confirm):</p>
       {destinations.length === 0 ? <p role="alert">No destination is selected.</p> : <ul>{destinations.map((destination) => <li key={destination}>{destination}</li>)}</ul>}
-      <div className="management-modal__actions"><button className="button button--secondary" onClick={onClose} type="button">Cancel</button><button disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</button></div>
+      <div className="management-modal__actions"><button className="button button--secondary" onClick={onClose} type="button">Cancel</button><button className="button button--primary" disabled={busy || destinations.length === 0} onClick={() => void send()} type="button">Confirm live test</button></div>
     </div>
   </ModalSurface>;
 }

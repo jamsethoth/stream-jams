@@ -7,7 +7,10 @@ it("enables each fade independently with a 500 millisecond default", async () =>
   const user = userEvent.setup();
   const onChange = vi.fn();
   render(<AudioFadeControls onChange={onChange} />);
-  await user.click(screen.getByRole("checkbox", { name: "Fade in" }));
+  const toggle = screen.getByRole("checkbox", { name: "Fade in" });
+  expect(toggle.closest("label")).toHaveClass("media-control-toggle");
+  expect(screen.queryByRole("spinbutton", { name: "Fade in duration (milliseconds)" })).not.toBeInTheDocument();
+  await user.click(toggle);
   expect(onChange).toHaveBeenLastCalledWith({ fadeInMs: 500, fadeOutMs: 0 });
 });
 
