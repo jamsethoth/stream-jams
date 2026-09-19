@@ -203,7 +203,7 @@
   min-width: 0;
 }
 
-.screen-effect-editor__panel input:not([type="checkbox"]),
+.screen-effect-editor__panel input:not([type="checkbox"]):not([type="radio"]),
 .screen-effect-editor__panel select,
 .screen-effect-editor__panel textarea {
   box-sizing: border-box;
