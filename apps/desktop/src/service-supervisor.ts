@@ -64,7 +64,7 @@ export class ServiceSupervisor {
       this.overlay?.beginOwnership();
       worker.on("message", (message) => { if (this.#worker === worker) this.#receive(message, generation); });
       worker.on("exit", (code) => { if (this.#worker === worker) this.#exited(code); });
-      this.#startTimer = setTimeout(() => this.#fail("The local service did not start within 45 seconds. Retry or quit."), 45_000);
+      this.#startTimer = setTimeout(() => this.#fail("The local service did not start within 20 seconds. Retry or quit."), 20_000);
       this.#send({ type: "start", generation, requestId: this.#startId });
     } catch { this.#fail("The local service process could not be started. Retry or quit."); }
     this.changed();
