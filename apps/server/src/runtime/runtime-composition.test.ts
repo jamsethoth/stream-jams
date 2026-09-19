@@ -374,8 +374,8 @@ it("applies persisted mute before wiring the desktop transport for device playba
 
     await mkdir(join(testRoot, "assets", "audio"), { recursive: true });
     await writeFile(join(testRoot, "assets", "audio", "tone.mp3"), Buffer.from([1, 2, 3]));
-    composition.database.connection.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run("tone", "tone.mp3", "audio", "audio/mpeg", 3, `sha256:${createHash("sha256").update(Buffer.from([1, 2, 3])).digest("hex")}`, "audio/tone.mp3");
+    composition.database.connection.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run("tone", "tone.mp3", "audio", "audio/mpeg", 3, `sha256:${createHash("sha256").update(Buffer.from([1, 2, 3])).digest("hex")}`, "audio/tone.mp3", null);
     const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
     const headers = managementAuthHeaders(session);
     const created = await composition.app.inject({

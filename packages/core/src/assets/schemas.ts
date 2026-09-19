@@ -10,7 +10,8 @@ export const assetRecordSchema = z.object({
   mimeType: nonEmptyStringSchema,
   sizeBytes: positiveIntegerSchema,
   checksum: nonEmptyStringSchema,
-  storagePath: nonEmptyStringSchema
+  storagePath: nonEmptyStringSchema,
+  durationMs: positiveIntegerSchema.nullable()
 });
 
 export const assetValidationResultSchema = z.object({

@@ -8,6 +8,7 @@ export interface AssetRecord {
   readonly sizeBytes: number;
   readonly checksum: string;
   readonly storagePath: string;
+  readonly durationMs: number | null;
 }
 
 export interface AssetValidationResult {

@@ -33,6 +33,8 @@ export {
 export type * from "./auth/management-session-service.js";
 
 export type * from "./audio/types.js";
+export type * from "./audio/audio-envelope.js";
+export { resolveAudioEnvelope } from "./audio/audio-envelope.js";
 export type { AudioDeviceCapability, AudioRouteStatus, AudioOutputStatus } from "./audio/schemas.js";
 export type { AudioOutputRouteRepository } from "./audio/audio-output-route-repository.js";
 export { resolveAudioDestinations } from "./audio/resolve-audio-destinations.js";
@@ -128,6 +130,8 @@ export {
 } from "./alerts/schemas.js";
 
 export type * from "./assets/types.js";
+export type * from "./playback/media-duration.js";
+export { collectAlertDurationAssetIds, collectEffectDurationAssetIds, resolveMediaDuration } from "./playback/media-duration.js";
 export type * from "./assets/repository.js";
 export type * from "./assets/asset-validator.js";
 export type * from "./assets/media-import-pipeline.js";
@@ -315,3 +319,4 @@ export * from "./screen-effects/module-definition.js";
 export * from "./screen-effects/authoring.js";
 export * from "./screen-effects/effect-queue.js";
 export * from "./screen-effects/layout.js";
+export * from "./screen-effects/sets.js";

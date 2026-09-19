@@ -443,12 +443,16 @@ export const alertLayerSchema = z.discriminatedUnion("type", [
     type: z.literal("video"),
     assetId: nonEmptyStringSchema,
     playEmbeddedAudio: z.boolean(),
-    audioVolume: z.number().finite().min(0).max(1)
+    audioVolume: z.number().finite().min(0).max(1),
+    audioFadeInMs: z.number().int().min(0).max(120_000).optional(),
+    audioFadeOutMs: z.number().int().min(0).max(120_000).optional()
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("audio"),
     assetId: nonEmptyStringSchema,
-    volume: z.number().finite().min(0).max(1)
+    volume: z.number().finite().min(0).max(1),
+    fadeInMs: z.number().int().min(0).max(120_000).optional(),
+    fadeOutMs: z.number().int().min(0).max(120_000).optional()
   }),
   alertLayerBaseSchema.extend({
     type: z.literal("tts"),
@@ -667,6 +671,7 @@ export const alertEditorDocumentSchema = z.object({
   cooldownSeconds: nonNegativeIntegerSchema.default(0),
   rulePriority: z.number().int().default(0),
   durationMs: positiveIntegerSchema.max(120_000),
+  durationMode: z.enum(["media", "custom"]).optional(),
   outputs: alertAudioOutputsSchema,
   layers: z.array(alertLayerSchema),
   targetProfiles: alertTargetProfileDocumentsSchema,
@@ -1123,6 +1128,7 @@ function alertEditorLiveOutputState(document: AlertEditorDocument, profileId: Ta
     cooldownSeconds: document.cooldownSeconds,
     rulePriority: document.rulePriority,
     durationMs: document.durationMs,
+    durationMode: document.durationMode ?? "custom",
     layers: document.layers.map(alertLayerLiveOutputState),
     layerLayouts: profile.layerLayouts
   };

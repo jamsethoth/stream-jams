@@ -39,7 +39,8 @@ const asset: AssetRecord = {
   mimeType: "image/png",
   sizeBytes: pngBytes.length,
   checksum: checksum(pngBytes),
-  storagePath: "image/asset-follow.png"
+  storagePath: "image/asset-follow.png",
+  durationMs: null
 };
 
 describe("ConfigurationBackupService", () => {
@@ -128,17 +129,20 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
       archive.manifest.schemaVersion = schemaVersion;
       for (const tableName of [
+        ...(schemaVersion < 23 ? ["screen_effect_sets", "screen_effect_set_memberships"] : []),
+        ...(schemaVersion < 22 ? [
         "screen_effects",
         "screen_effect_variants",
         "screen_effect_bindings",
         "screen_effect_audio_routes",
         "module_playback_settings"
+        ] : [])
       ]) {
         archive.manifest.configurationRecordCount -= archive.configuration.tables[tableName]?.length ?? 0;
         delete archive.configuration.tables[tableName];

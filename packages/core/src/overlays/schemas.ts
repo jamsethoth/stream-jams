@@ -40,7 +40,10 @@ export const overlayVisualInstructionSchema = z.object({
 export const overlayAudioInstructionSchema = z.object({
   assetId: nonEmptyStringSchema,
   volume: z.number().min(0).max(1),
-  sourceKind: z.enum(["audio", "video-soundtrack"]).optional()
+  sourceKind: z.enum(["audio", "video-soundtrack"]).optional(),
+  fadeInMs: nonNegativeIntegerSchema.max(120_000).optional(),
+  fadeOutMs: nonNegativeIntegerSchema.max(120_000).optional(),
+  playbackDurationMs: positiveIntegerSchema.max(120_000).optional()
 });
 
 export const overlayTextInstructionSchema = z.object({

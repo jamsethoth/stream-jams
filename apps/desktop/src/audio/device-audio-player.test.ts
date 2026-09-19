@@ -247,6 +247,31 @@ describe("DeviceAudioPlayer", () => {
     expect(audio.revokedSources).toHaveLength(1);
   });
 
+  it("applies per-source fades from the shared absolute playback epoch", async () => {
+    const audio = createHarness();
+    audio.player.initialize(1, false);
+    const faded = batch({
+      durationMs: 4_000,
+      timing: { startsAtEpochMs: 1_000, endsAtEpochMs: 5_000 },
+      layers: [{ sourceKind: "audio", layerId: "intro", assetId: "shared-sound", volume: 0.8,
+        fadeInMs: 1_000, fadeOutMs: 1_000, playbackDurationMs: 4_000 }],
+      destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
+    });
+
+    const result = audio.player.play({ generation: 1, batch: faded, assets, deadlineMs: 5_000 });
+    await flushStarts();
+    expect(audio.elements[0]?.volume).toBe(0);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(audio.elements[0]?.volume).toBeCloseTo(0.4);
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(audio.elements[0]?.volume).toBeCloseTo(0.4);
+    audio.elements[0]?.emit("ended");
+    await result;
+    const settledVolume = audio.elements[0]?.volume;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(audio.elements[0]?.volume).toBe(settledVolume);
+  });
+
   it("fails only the affected routes when one media start fails", async () => {
     const audio = createHarness({ controls: [{ sinkError: new Error("device rejected") }] });
     audio.player.initialize(1, false);

@@ -15,6 +15,7 @@ export interface ManagementRoute {
   readonly id: ManagementRouteId;
   readonly alertId?: string;
   readonly effectId?: string;
+  readonly variantId?: string;
   readonly create?: true;
   readonly setId?: string;
   readonly eventType?: string;
@@ -179,6 +180,8 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
     return {
       id: "screen-effect-editor",
       effectId,
+      ...(search.get("set") ? { setId: search.get("set")! } : {}),
+      ...(search.get("variant") ? { variantId: search.get("variant")! } : {}),
       ...(search.get("new") === "1" ? { create: true as const } : {}),
       ...(diagnosticReferenceId === undefined ? {} : { diagnosticReferenceId }),
       ...(fragment === undefined ? {} : { fragment })
@@ -196,7 +199,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
       ...(providerId === undefined ? {} : { providerId }),
       ...(setup === undefined ? {} : { setup })
     } : {}),
-    ...(id === "modules-alerts" ? {
+    ...(id === "modules-alerts" || id === "modules-screen-effects" ? {
       ...(setId === undefined ? {} : { setId })
     } : {}),
     ...(id === "diagnostics" && referenceId !== undefined ? { referenceId } : {}),
@@ -207,6 +210,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
 
 export function formatManagementRoute(routeValue: ManagementRoute): string {
   const search = new URLSearchParams();
+  if (routeValue.variantId !== undefined) search.set("variant", routeValue.variantId);
   if (routeValue.setId !== undefined) search.set("set", routeValue.setId);
   if (routeValue.eventType !== undefined) search.set("event", routeValue.eventType);
   if (routeValue.targetProfileId !== undefined) search.set("profile", routeValue.targetProfileId);

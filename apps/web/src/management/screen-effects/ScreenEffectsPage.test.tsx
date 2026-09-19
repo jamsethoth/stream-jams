@@ -1,3 +1,4 @@
+import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import { createScreenEffectDocument, screenEffectDocumentSchema, type ScreenEffectDocument } from "@stream-jams/core";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -8,10 +9,40 @@ import type { ScreenEffectsApi } from "./screen-effects-api.js";
 afterEach(cleanup);
 
 describe("ScreenEffectsPage", () => {
+  it("creates an inactive set and requires confirmation before making it live", async () => {
+    const user = userEvent.setup();
+    const service = api();
+    render(<ScreenEffectsPage api={service} generateId={() => "new-set"} onEdit={vi.fn()} />);
+    await screen.findByText("Confetti");
+    await user.click(screen.getByRole("button", { name: "Create set" }));
+    await user.type(screen.getByLabelText("Set name"), "Gaming");
+    await user.click(screen.getByRole("button", { name: "Save set" }));
+    const gaming = await screen.findByRole("region", { name: "Gaming Screen Effect set" });
+    expect(within(gaming).getByText("Inactive set")).toBeVisible();
+    expect((await service.listSets()).find((set) => set.active)?.name).toBe("Default");
+    await user.click(within(gaming).getByRole("button", { name: "Activate set" }));
+    expect((await service.listSets()).find((set) => set.active)?.name).toBe("Default");
+    await user.click(screen.getByRole("button", { name: "Confirm change" }));
+    expect(await within(gaming).findByText("Live set")).toBeVisible();
+    expect((await service.listSets()).filter((set) => set.active).map((set) => set.name)).toEqual(["Gaming"]);
+    expect(within(gaming).getByRole("button", { name: "Delete set" })).toBeDisabled();
+  });
+
+  it("opens the chosen variant from its collapsed effect", async () => {
+    const user = userEvent.setup();
+    const onEdit = vi.fn();
+    render(<ScreenEffectsPage api={api()} onEdit={onEdit} />);
+    await user.click(await screen.findByText("Confetti"));
+    await user.click(screen.getByRole("button", { name: "Default variant" }));
+    expect(onEdit).toHaveBeenCalledWith("effect-one", false, "screen-effects-default", "variant-one");
+  });
+
   it("shows inventory and compact Screen Effects browser-source status", async () => {
     render(<ScreenEffectsPage api={api()} generateId={(prefix) => `${prefix}-new`} onEdit={vi.fn()} />);
 
     expect(await screen.findByText("Confetti")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Browser sources" })).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(screen.getByRole("button", { name: "Browser sources" }));
     expect(screen.getByText("Screen Effects Live")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Reveal Screen Effects Live Browser Source URL" }));
     expect(screen.getByLabelText("Screen Effects Live Browser Source URL")).toHaveTextContent("/overlay/modules/screen-effects/live/");
@@ -25,6 +56,7 @@ describe("ScreenEffectsPage", () => {
     />);
 
     const browserSources = await screen.findByRole("region", { name: "Browser sources" });
+    await userEvent.click(screen.getByRole("button", { name: "Browser sources" }));
     const liveSource = within(browserSources).getByText("Screen Effects Live").closest("li");
     const testSource = within(browserSources).getByText("Screen Effects Test").closest("li");
 
@@ -42,7 +74,8 @@ describe("ScreenEffectsPage", () => {
     await screen.findByText("Confetti");
 
     await user.click(screen.getByRole("button", { name: "New effect" }));
-    expect(onEdit).toHaveBeenCalledWith("effect-new", true);
+    expect(onEdit).toHaveBeenCalledWith("effect-new", true, "screen-effects-default");
+    await user.click(screen.getByText("Confetti"));
     await user.click(screen.getByRole("button", { name: "Enable" }));
     expect(service.update).not.toHaveBeenCalled();
     const dialog = screen.getByRole("dialog", { name: "Enable Screen Effect?" });
@@ -62,6 +95,7 @@ describe("ScreenEffectsPage", () => {
     await user.click(screen.getByRole("button", { name: "Confirm change" }));
     expect(service.setModuleEnabled).toHaveBeenCalledWith(true);
 
+    await user.click(screen.getByRole("button", { name: "Browser sources" }));
     await user.click(screen.getByRole("button", { name: "Create URL" }));
     expect(service.createBrowserSource).toHaveBeenCalledWith(expect.objectContaining({
       moduleId: "screen-effects",
@@ -75,6 +109,7 @@ describe("ScreenEffectsPage", () => {
     render(<ScreenEffectsPage api={service} onEdit={vi.fn()} />);
     await screen.findByText("Confetti");
 
+    await user.click(screen.getByRole("button", { name: "Browser sources" }));
     await user.click(screen.getByRole("button", { name: "Regenerate URL" }));
     const dialog = screen.getByRole("dialog", { name: "Regenerate Screen Effects Live URL?" });
     const confirm = within(dialog).getByRole("button", { name: "Regenerate URL" });
@@ -125,6 +160,7 @@ function api(options: {
     url: options.url === undefined ? "http://127.0.0.1:39187/overlay/modules/screen-effects/test/ovl_secret" : options.url
   };
   return {
+    ...createStoryEffectSets([document.id]),
     list: vi.fn(async () => [document]),
     listBrowserSources: vi.fn(async () => options.includeTestSource === true ? [source, testSource] : [source]),
     getModuleEnabled: vi.fn(async () => options.moduleEnabled ?? true),

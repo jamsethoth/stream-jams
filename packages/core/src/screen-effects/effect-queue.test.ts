@@ -21,12 +21,10 @@ function occurrence(
       variant: {
         id: `variant-${id}`,
         name: "Default",
-        kind: "default",
         enabled: true,
         weight: 1,
         visual: null,
         sound: { assetId: "tone", volume: 0.1 },
-        animation: null,
         durationMs: 10_000,
         outputs: { browserSource: false, deviceRouteIds: ["headphones"] },
         visualOutputs: { browserSource: false, desktop: false }

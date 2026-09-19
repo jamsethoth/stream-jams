@@ -9,7 +9,7 @@ describe("updateEffectVariant", () => {
       name: "Effect one",
       defaultVariantId: "variant-one"
     });
-    const second = { ...original.variants[0]!, id: "variant-two", name: "Second", kind: "weighted" as const };
+    const second = { ...original.variants[0]!, id: "variant-two", name: "Second" };
     const document: ScreenEffectDocument = { ...original, variants: [...original.variants, second] };
 
     const updated = updateEffectVariant(document, "variant-two", (variant) => ({

@@ -1,3 +1,4 @@
+import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import {
   createScreenEffectDocument,
   screenEffectDocumentSchema,
@@ -42,7 +43,7 @@ const managementApi = createStoryManagementApi({
 const meta = {
   title: "Management/Screen Effects/Focused editor",
   component: ScreenEffectEditor,
-  decorators: [(Story) => <DirtyNavigationProvider><Story /></DirtyNavigationProvider>],
+  decorators: [(Story) => <DirtyNavigationProvider><div className="management-main management-main--focused"><Story /></div></DirtyNavigationProvider>],
   args: {
     api: createApi(neutral),
     assetApi: createStoryAssetApi(),
@@ -63,9 +64,25 @@ export const NewDisabledDraft: Story = {
   args: { create: true, effectId: "effect-new-story" },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Effect" }));
     await expect(await canvas.findByLabelText("Effect name")).toHaveValue("New Screen Effect");
     await expect(canvas.getByRole("checkbox", { name: /^Enabled$/u })).toBeDisabled();
     await expect(canvas.getByRole("button", { name: "Save" })).toBeDisabled();
+  }
+};
+
+export const LocalDraftPreview: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: /^Preview$/u }));
+    const dialog = within(canvas.getByRole("region", { name: "Effect canvas" }));
+    await expect(within(canvasElement.ownerDocument.body).queryByRole("dialog")).not.toBeInTheDocument();
+    await expect(await dialog.findByRole("button", { name: "Play preview" })).toBeEnabled();
+    await userEvent.click(dialog.getByRole("checkbox", { name: "Mute preview" }));
+    await userEvent.click(dialog.getByRole("button", { name: "Play preview" }));
+    await expect(dialog.getByText(/Preview (playing|stopped)/)).toHaveTextContent("Preview playing");
+    await userEvent.click(dialog.getByRole("button", { name: "Stop preview" }));
+    await expect(dialog.getByText(/Preview (playing|stopped)/)).toHaveTextContent("Preview stopped");
   }
 };
 
@@ -91,19 +108,38 @@ export const VideoWithSeparateSound: Story = {
   }
 };
 
-export const WeightedVariants: Story = {
-  args: { api: createApi(effect({ weighted: true })) },
+export const VariantWeights: Story = {
+  args: { api: createApi(effect({ multipleVariants: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(await canvas.findByRole("tab", { name: "Alternate" })).toBeVisible();
-    await userEvent.click(canvas.getByRole("tab", { name: "Alternate" }));
+    await expect(await canvas.findByRole("button", { name: /^Alternate/u })).toBeVisible();
+    await expect(canvas.getByText("Weight 1 · 25% expected · Enabled")).toBeVisible();
+    await expect(canvas.getByText("Weight 3 · 75% expected · Enabled")).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: "Simulate 1,000 selections" }));
+    await expect(canvas.getByRole("table", { name: "Weight simulation" })).toBeVisible();
+    await userEvent.click(canvas.getByRole("button", { name: /^Alternate/u }));
     await expect(canvas.getByLabelText("Variant weight")).toHaveValue(3);
+  }
+};
+
+export const VariantCreationAndEffectDetails: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "New variant" }));
+    await expect(canvas.getByLabelText("Variant name")).toHaveValue("Variant 2");
+    await expect(canvas.getByRole("checkbox", { name: "Variant enabled" })).not.toBeChecked();
+
+    await userEvent.click(canvas.getByRole("tab", { name: "Effect" }));
+    await expect(canvas.getByLabelText("Queue priority")).toBeVisible();
+    await expect(canvas.getByText(/Higher numbers are queued first when one event matches multiple effects/)).toBeVisible();
+    await expect(canvas.queryByLabelText("Effect cooldown")).not.toBeInTheDocument();
   }
 };
 
 export const MissingTrigger: Story = {
   args: { api: createApi(effect({ missingTrigger: true })) },
   play: async ({ canvasElement }) => {
+    await userEvent.click(await within(canvasElement).findByRole("tab", { name: "Triggers" }));
     await expect(await within(canvasElement).findByText(/Unavailable.*review event source setup/u)).toBeVisible();
   }
 };
@@ -126,6 +162,7 @@ export const FailedSaveRetainsDraft: Story = {
   },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Effect" }));
     const name = await canvas.findByLabelText("Effect name");
     await userEvent.clear(name);
     await userEvent.type(name, "Unsaved neutral effect");
@@ -149,6 +186,7 @@ export const PartialContextFailure: Story = {
     await expect(alert).toHaveTextContent("Some editor context could not be loaded.");
     await expect(alert).toHaveTextContent("Twitch connection");
     await expect(canvas.getByRole("button", { name: "Retry editor context" })).toBeVisible();
+    await userEvent.click(await canvas.findByRole("tab", { name: "Effect" }));
     await expect(canvas.getByLabelText("Effect name")).toHaveValue("Neutral effect");
   }
 };
@@ -171,6 +209,7 @@ function createApi(
   overrides: Partial<ScreenEffectsApi> = {}
 ): ScreenEffectsApi {
   return {
+    ...createStoryEffectSets([document.id]),
     list: async () => [document],
     listBrowserSources: async () => [],
     getModuleEnabled: async () => true,
@@ -194,10 +233,10 @@ function effect(options: {
   readonly audioOnly?: boolean;
   readonly enabled?: boolean;
   readonly missingTrigger?: boolean;
+  readonly multipleVariants?: boolean;
   readonly noOutputs?: boolean;
   readonly separateSound?: boolean;
   readonly video?: boolean;
-  readonly weighted?: boolean;
 } = {}): ScreenEffectDocument {
   const draft = createScreenEffectDocument({
     id: "effect-neutral",
@@ -245,11 +284,10 @@ function effect(options: {
     }] : [],
     variants: [
       baseVariant,
-      ...(options.weighted ? [{
+      ...(options.multipleVariants ? [{
         ...baseVariant,
         id: "variant-alternate",
         name: "Alternate",
-        kind: "weighted" as const,
         weight: 3
       }] : [])
     ]

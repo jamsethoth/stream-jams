@@ -15,6 +15,7 @@ import {
 import { SqliteAssetRepository } from "../assets/sqlite-asset-repository.js";
 import { SqliteAudioOutputRouteRepository } from "../audio/sqlite-audio-output-route-repository.js";
 import { SqliteEffectRepository } from "./sqlite-effect-repository.js";
+import { SqliteEffectSetRepository } from "./sqlite-effect-set-repository.js";
 
 const route = {
   id: "route-headphones",
@@ -24,6 +25,152 @@ const route = {
 };
 
 describe("SqliteEffectRepository", () => {
+  it("reads legacy default and weighted storage rows into the unified variant model", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
+    const document = effectDocument();
+    database.connection.prepare(`
+      INSERT INTO screen_effects (
+        id, schema_version, name, enabled, description, category, priority, cooldown_seconds, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      document.id,
+      document.schemaVersion,
+      document.name,
+      0,
+      document.description,
+      document.category,
+      document.priority,
+      60,
+      "2026-09-17T00:00:00.000Z"
+    );
+    const defaultVariant = document.variants[0]!;
+    const weightedVariant = { ...defaultVariant, id: "variant-weighted", name: "Weighted", enabled: false, weight: 3 };
+    const unifiedVariants = [defaultVariant, weightedVariant] as const;
+    const storedVariants = [
+      { ...defaultVariant, kind: "default" },
+      { ...weightedVariant, kind: "weighted" }
+    ] as const;
+    const insertVariant = database.connection.prepare(`
+      INSERT INTO screen_effect_variants (
+        id, effect_id, position, kind, enabled, weight, document_json, visual_asset_id, sound_asset_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertRoute = database.connection.prepare(`
+      INSERT INTO screen_effect_audio_routes (variant_id, route_id, position) VALUES (?, ?, ?)
+    `);
+    for (const [position, storedVariant] of storedVariants.entries()) {
+      insertVariant.run(
+        storedVariant.id,
+        document.id,
+        position,
+        storedVariant.kind,
+        storedVariant.enabled ? 1 : 0,
+        storedVariant.weight,
+        JSON.stringify(storedVariant),
+        null,
+        storedVariant.sound?.assetId ?? null
+      );
+      insertRoute.run(storedVariant.id, route.id, 0);
+    }
+
+    await expect(new SqliteEffectRepository(database.connection).find(document.id)).resolves.toEqual({
+      ...document,
+      bindings: [],
+      variants: unifiedVariants
+    });
+  });
+
+  it("writes the neutral weighted marker only in legacy storage", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
+    const repository = new SqliteEffectRepository(database.connection);
+    const document = effectDocument();
+
+    await repository.save(document);
+
+    const row = database.connection.prepare(
+      "SELECT kind, document_json FROM screen_effect_variants WHERE id = ?"
+    ).get(document.variants[0]!.id);
+    expect(row?.kind).toBe("weighted");
+    expect(JSON.parse(String(row?.document_json))).toEqual({
+      ...document.variants[0],
+      kind: "weighted"
+    });
+    await expect(repository.find(document.id)).resolves.toEqual(document);
+  });
+
+  it("upgrades populated pre-set data without changing document identities or flags", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
+    database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
+      DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
+      ALTER TABLE asset_metadata DROP COLUMN duration_ms;
+      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata', '025-remove-screen-effect-animations');`);
+    const effects = new SqliteEffectRepository(database.connection);
+    const original = { ...effectDocument(), enabled: true };
+    await effects.save(original);
+    database.runMigrations();
+    expect(await effects.find(original.id)).toEqual(original);
+    expect(await effects.listActive()).toEqual([original]);
+    expect(await new SqliteEffectSetRepository(database.connection, effects).list()).toEqual([
+      { id: "screen-effects-default", name: "Default", active: true, effectIds: [original.id] }
+    ]);
+  });
+
+  it("duplicates into an inactive set, activates atomically and protects active deletion and unique names", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
+    const effects = new SqliteEffectRepository(database.connection);
+    const sets = new SqliteEffectSetRepository(database.connection, effects);
+    const original = { ...effectDocument(), enabled: true };
+    await effects.save(original);
+    const copy = await sets.create({ id: "other", name: "Other" }, "screen-effects-default");
+    expect(copy.active).toBe(false);
+    expect(copy.effectIds).toHaveLength(1);
+    const copied = (await effects.find(copy.effectIds[0]!))!;
+    expect(copied.id).not.toBe(original.id);
+    expect(copied.variants[0]!.id).not.toBe(original.variants[0]!.id);
+    expect(copied.bindings[0]!.id).not.toBe(original.bindings[0]!.id);
+    expect(copied.enabled).toBe(true);
+    expect(copied.variants[0]!.sound).toEqual(original.variants[0]!.sound);
+    expect(await effects.listActive()).toEqual([original]);
+    await expect(sets.create({ id: "duplicate", name: "other" })).rejects.toThrow(/already exists/u);
+    await expect(sets.remove("screen-effects-default")).rejects.toThrow(/active/u);
+    await expect(sets.activate("missing")).rejects.toThrow(/no longer exists/u);
+    expect(effects.isInActiveSet(original.id)).toBe(true);
+    await sets.activate(copy.id);
+    expect(effects.isInActiveSet(original.id)).toBe(false);
+    expect(await effects.listActive()).toEqual([copied]);
+    expect((await sets.list()).filter((set) => set.active)).toHaveLength(1);
+    await expect(sets.rename(copy.id, "DEFAULT")).rejects.toThrow(/already exists/u);
+    await sets.remove("screen-effects-default");
+    expect(await effects.find(original.id)).toBeNull();
+    expect(await effects.find(copied.id)).toEqual(copied);
+  });
+
+  it("rolls back a copied set and its children if any child write fails", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
+    const effects = new SqliteEffectRepository(database.connection);
+    const sets = new SqliteEffectSetRepository(database.connection, effects);
+    await effects.save(effectDocument());
+    database.connection.exec(`CREATE TRIGGER reject_copy BEFORE INSERT ON screen_effects
+      BEGIN SELECT RAISE(ABORT, 'copy failed'); END;`);
+    await expect(sets.create({ id: "copy", name: "Copy" }, "screen-effects-default")).rejects.toThrow("copy failed");
+    expect(await sets.list()).toHaveLength(1);
+    expect(await effects.list()).toEqual([effectDocument()]);
+  });
+
+  it("assigns existing document saves to the single active Default set", async () => {
+    using database = createInMemoryStreamJamsDatabase();
+    await seedReferences(database.connection);
+    const repository = new SqliteEffectRepository(database.connection);
+    await repository.save(effectDocument());
+    expect(database.connection.prepare("SELECT name FROM screen_effect_sets WHERE active = 1").get()?.name).toBe("Default");
+    expect(database.connection.prepare("SELECT count(*) AS count FROM screen_effect_set_memberships").get()?.count).toBe(1);
+  });
+
   it("round-trips an exact definition across restart and protects its route reference", async () => {
     const root = mkdtempSync(join(tmpdir(), "stream-jams-effects-"));
     const databasePath = join(root, "test.sqlite");
@@ -134,7 +281,8 @@ describe("SqliteEffectRepository", () => {
       mimeType: "image/gif",
       sizeBytes: 4,
       checksum: "sha256:test-gif",
-      storagePath: "assets/asset-gif.gif"
+      storagePath: "assets/asset-gif.gif",
+      durationMs: null
     });
     const draft = createScreenEffectDocument({
       id: "effect-gif",
@@ -168,7 +316,8 @@ async function seedReferences(connection: ConstructorParameters<typeof SqliteEff
     mimeType: "audio/wav",
     sizeBytes: 4,
     checksum: "sha256:test-tone",
-    storagePath: "assets/asset-tone.wav"
+    storagePath: "assets/asset-tone.wav",
+    durationMs: null
   });
   new SqliteAudioOutputRouteRepository(connection).save(route);
 }

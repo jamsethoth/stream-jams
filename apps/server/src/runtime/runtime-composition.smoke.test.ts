@@ -68,7 +68,8 @@ describe("runtime app composition smoke", () => {
       mimeType: "image/gif",
       sizeBytes: 4,
       checksum: "sha256:screen-effect-test",
-      storagePath: "gif/effect-test.gif"
+      storagePath: "gif/effect-test.gif",
+      durationMs: null
     });
     const draft = createScreenEffectDocument({
       id: "effect-runtime-test",
@@ -130,7 +131,8 @@ describe("runtime app composition smoke", () => {
       mimeType: "image/png",
       sizeBytes: 4,
       checksum: "sha256:screen-effect",
-      storagePath: "image/effect.png"
+      storagePath: "image/effect.png",
+      durationMs: null
     };
     await new SqliteAssetRepository(composition.database.connection).save(asset);
     const draft = createScreenEffectDocument({

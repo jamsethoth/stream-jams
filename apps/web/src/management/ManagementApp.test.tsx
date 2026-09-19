@@ -1,3 +1,4 @@
+import { createStoryEffectSets } from "../stories/screen-effect-set-fixtures.js";
 import type { AssetRecord } from "./assets/asset-api.js";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -64,6 +65,7 @@ describe("ManagementApp", () => {
 
     await user.click(await screen.findByRole("button", { name: "New effect" }));
     expect(window.location.pathname).toMatch(/^\/manage\/modules\/screen-effects\/editor\/effect-/u);
+    await user.click(await screen.findByRole("tab", { name: "Effect" }));
     expect(await screen.findByLabelText("Effect name")).toHaveValue("New Screen Effect");
     expect(screen.queryByRole("navigation", { name: "Primary" })).not.toBeInTheDocument();
   });
@@ -827,6 +829,7 @@ function createAssetApi(): AssetApi {
 
 function createScreenEffectsApi(): ScreenEffectsApi {
   return {
+    ...createStoryEffectSets(),
     list: vi.fn(async () => []),
     listBrowserSources: vi.fn(async () => []),
     getModuleEnabled: vi.fn(async () => true),

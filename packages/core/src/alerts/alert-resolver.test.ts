@@ -18,9 +18,9 @@ describe("DefaultAlertResolver", () => {
     const result = createResolver().resolveMatches({ matches: [createMatch(rule, createCheerEvent())], target: { ...target, ...(targetProfileId === undefined ? {} : { targetProfileId }) }, editorDocuments: new Map([[document.id, document]]) });
     const audio = result.filter(alert => alert.overlayInstruction.audio !== null);
     expect(audio.map(alert => alert.overlayInstruction.audio)).toEqual([
-      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio" },
-      { assetId: "clip", volume: 0.3, sourceKind: "video-soundtrack" },
-      { assetId: "clip", volume: 0.7, sourceKind: "video-soundtrack" }
+      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+      { assetId: "clip", volume: 0.3, sourceKind: "video-soundtrack", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+      { assetId: "clip", volume: 0.7, sourceKind: "video-soundtrack", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 }
     ]);
     expect(new Set(audio.map(alert => alert.overlayInstruction.id)).size).toBe(3);
     expect(audio.every(alert => alert.overlayInstruction.visual === null)).toBe(true);
@@ -97,8 +97,8 @@ describe("DefaultAlertResolver", () => {
     expect(core.resolveAlertAudio(document)).toEqual({
       documentId: document.id, durationMs: document.durationMs, outputs: document.outputs,
       layers: [
-        { sourceKind: "audio", layerId: "first", assetId: "asset-audio", volume: 0.5 },
-        { sourceKind: "audio", layerId: "second", assetId: "asset-audio", volume: 0.5 }
+        { sourceKind: "audio", layerId: "first", assetId: "asset-audio", volume: 0.5, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+        { sourceKind: "audio", layerId: "second", assetId: "asset-audio", volume: 0.5, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 }
       ]
     });
     expect(core.resolveAlertAudio({ ...document, layers: [] })).toBeNull();
@@ -134,8 +134,8 @@ describe("DefaultAlertResolver", () => {
       editorDocuments: new Map([[document.id, document]])
     });
     expect(alerts.flatMap(alert => alert.overlayInstruction.audio ?? [])).toEqual([
-      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio" },
-      { assetId: "asset-audio", volume: 0.25, sourceKind: "audio" }
+      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+      { assetId: "asset-audio", volume: 0.25, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 }
     ]);
     expect(alerts.filter(alert => alert.overlayInstruction.text !== null)).toHaveLength(1);
   });
@@ -517,7 +517,7 @@ describe("DefaultAlertResolver", () => {
       mediaType: "gif",
       layout: { layerId: "layer-image", x: 40, y: 30, width: 320, height: 240, zIndex: 2 }
     });
-    expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5, sourceKind: "audio" });
+    expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 });
     expect(resolved[3]?.overlayInstruction.tts).toEqual({
       mode: "remote-trigger",
       text: "Read Profile Viewer",

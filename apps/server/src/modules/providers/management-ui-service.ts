@@ -98,6 +98,7 @@ export interface ManagementUiServiceOptions {
   readonly updateAssetMetadata: (assetId: string, input: AssetMetadataUpdateInput) => Promise<AssetLibraryItem>;
   readonly getAssetChangeImpact: (assetId: string, candidateMediaType?: AssetMediaType) => Promise<AssetChangeImpact>;
   readonly deleteAsset: (assetId: string) => Promise<void>;
+  readonly repairAssetDuration?: ((assetId: string) => Promise<AssetLibraryItem>) | undefined;
   readonly getDiagnosticsWorkspace: () => Promise<DiagnosticsWorkspaceView>;
   readonly getConfigurationBackupSummary: () => Promise<ConfigurationBackupSummary>;
   readonly openDataFolder?: () => Promise<OpenDataFolderResult>;
@@ -387,6 +388,13 @@ export class ManagementUiService {
 
   deleteAsset(assetId: string): Promise<void> {
     return this.#options.deleteAsset(assetId);
+  }
+
+  repairAssetDuration(assetId: string): Promise<AssetLibraryItem> {
+    if (this.#options.repairAssetDuration === undefined) {
+      throw new Error("Asset duration repair is unavailable");
+    }
+    return this.#options.repairAssetDuration(assetId);
   }
 
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView> {

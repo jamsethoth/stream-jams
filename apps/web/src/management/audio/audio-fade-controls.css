@@ -1,0 +1,18 @@
+fieldset.audio-fade-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.audio-fade-controls__help {
+  margin: 0;
+}
+
+.audio-fade-controls__field {
+  display: grid;
+  gap: 8px;
+}
+
+.audio-fade-controls__duration {
+  display: grid;
+  gap: 5px;
+}

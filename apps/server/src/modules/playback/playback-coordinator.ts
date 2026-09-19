@@ -7,6 +7,7 @@ import type {
   AlertService,
   AlertVariant,
   AssetRepository,
+  AssetRecord,
   NormalizedStreamEvent,
   PlaybackCooldownService,
   PlaybackDedupeService,
@@ -19,7 +20,7 @@ import type {
   Logger,
   TtsService
 } from "@stream-jams/core";
-import { resolveAlertAudio } from "@stream-jams/core";
+import { collectAlertDurationAssetIds, resolveAlertAudio, resolveMediaDuration } from "@stream-jams/core";
 import type { AudioPlaybackSink, PlaybackQueueItem } from "@stream-jams/core";
 import type { AudioOutputService } from "../audio/audio-output-service.js";
 import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinator.js";
@@ -75,6 +76,7 @@ export interface PlaybackCoordinatorDependencies {
   readonly additionalTargets?: readonly AlertResolverTarget[];
   readonly visualAssetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly assetRepository?: Pick<AssetRepository, "findManyByIds">;
+  readonly assetDurationCatalog?: { getMany(assetIds: readonly string[]): Promise<ReadonlyMap<string, AssetRecord>> };
   readonly overlayPlaybackSink?: OverlayPlaybackInstructionSink;
   readonly audioPlaybackSink?: AudioPlaybackSink;
   readonly desktopVisualSink?: DesktopVisualPlaybackSink;
@@ -113,6 +115,7 @@ export class PlaybackCoordinator {
   readonly #targets: readonly AlertResolverTarget[];
   readonly #visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly #assetRepository: Pick<AssetRepository, "findManyByIds"> | null;
+  readonly #assetDurationCatalog: PlaybackCoordinatorDependencies["assetDurationCatalog"] | null;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
   readonly #audioPlaybackSink: AudioPlaybackSink | null;
   readonly #desktopVisualSink: DesktopVisualPlaybackSink | null;
@@ -146,6 +149,7 @@ export class PlaybackCoordinator {
     this.#targets = dedupeTargets([dependencies.defaultTarget, ...(dependencies.additionalTargets ?? [])]);
     this.#visualAssetMediaTypes = dependencies.visualAssetMediaTypes ?? {};
     this.#assetRepository = dependencies.assetRepository ?? null;
+    this.#assetDurationCatalog = dependencies.assetDurationCatalog ?? null;
     this.#overlayPlaybackSink = dependencies.overlayPlaybackSink ?? null;
     this.#audioPlaybackSink = dependencies.audioPlaybackSink ?? null;
     this.#desktopVisualSink = dependencies.desktopVisualSink ?? null;
@@ -214,16 +218,17 @@ export class PlaybackCoordinator {
 
     const selectedVariants = this.#resolver.selectVariants(readyMatches);
     const editorDocuments = await this.#loadEditorDocuments(readyMatches, selectedVariants);
+    const { documents: resolvedEditorDocuments, assetDurations } = await this.#resolveEditorDurations(editorDocuments);
     const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(
       selectedVariants.values(),
-      editorDocuments.values()
+      resolvedEditorDocuments.values()
     );
     const audio = readyMatches.flatMap(match => {
       const selected = selectedVariants.get(match.rule.id)!;
       const documentId = selected.id === match.rule.variants[0]?.id ? match.rule.id : selected.id;
-      const document = editorDocuments.get(documentId);
+      const document = resolvedEditorDocuments.get(documentId);
       if (document === undefined || !document.enabled) return [];
-      const resolved = resolveAlertAudio(document, visualAssetMediaTypes);
+      const resolved = resolveAlertAudio(document, visualAssetMediaTypes, assetDurations);
       return resolved === null || resolved.outputs.deviceRouteIds.length === 0 ? [] : [resolved];
     });
     if (this.#closed) throw new Error("Playback has stopped.");
@@ -232,8 +237,9 @@ export class PlaybackCoordinator {
         matches: readyMatches,
         target,
         visualAssetMediaTypes,
-        editorDocuments,
-        selectedVariants
+        editorDocuments: resolvedEditorDocuments,
+        selectedVariants,
+        assetDurations
       })
     );
     const snapshot = this.#deliverCurrent(this.#queue.enqueue({
@@ -253,6 +259,39 @@ export class PlaybackCoordinator {
       matchedRuleIds: readyMatches.map((match) => match.rule.id),
       enqueuedAlertIds: resolvedAlerts.map((alert: ResolvedAlert) => alert.id)
     };
+  }
+
+  async #resolveEditorDurations(
+    documents: ReadonlyMap<string, AlertEditorDocument>
+  ): Promise<{
+    readonly documents: ReadonlyMap<string, AlertEditorDocument>;
+    readonly assetDurations: Readonly<Record<string, number | null>>;
+  }> {
+    if (this.#assetDurationCatalog == null) return { documents, assetDurations: {} };
+    const ids = [...new Set([...documents.values()].flatMap(collectAlertDurationAssetIds))];
+    const records = await this.#assetDurationCatalog.getMany(ids);
+    const assetDurations = Object.fromEntries(ids.map((assetId) => [assetId, records.get(assetId)?.durationMs ?? null]));
+    const resolvedDocuments = new Map([...documents].map(([id, document]) => {
+      const candidates = collectAlertDurationAssetIds(document).flatMap((assetId) => {
+        const record = records.get(assetId);
+        return record === undefined ? [] : [{
+          assetId,
+          label: record.originalFileName,
+          mediaType: record.mediaType,
+          durationMs: record.durationMs,
+          eligible: true
+        }];
+      });
+      const resolution = resolveMediaDuration({
+        mode: document.durationMode ?? "custom",
+        customDurationMs: document.durationMs,
+        fallbackDurationMs: 5_000,
+        maximumDurationMs: 120_000,
+        candidates
+      });
+      return [id, { ...document, durationMs: resolution.durationMs }] as const;
+    }));
+    return { documents: resolvedDocuments, assetDurations };
   }
 
   async #dispatchRemoteTts(alerts: readonly ResolvedAlert[]): Promise<void> {

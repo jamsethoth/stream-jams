@@ -4,6 +4,7 @@ import {
   maxAudioTransportAssetBytes,
   maxAudioTransportBatchBytes,
   prepareTimedMedia,
+  resolveAudioEnvelope,
   type AudioOutputDevice,
   type DeviceAudioBatch,
   type DeviceAudioResult,
@@ -64,6 +65,7 @@ interface ElementAttempt {
   started: boolean;
   terminal: boolean;
   startTimer: ReturnType<typeof setTimeout> | null;
+  envelopeTimer: ReturnType<typeof setInterval> | null;
   finish(outcome: AttemptOutcome): void;
 }
 
@@ -96,6 +98,10 @@ function cleanupElement(attempt: ElementAttempt, ended: EventListener, error: Ev
   if (attempt.startTimer !== null) {
     clearTimeout(attempt.startTimer);
     attempt.startTimer = null;
+  }
+  if (attempt.envelopeTimer !== null) {
+    clearInterval(attempt.envelopeTimer);
+    attempt.envelopeTimer = null;
   }
   try { attempt.element.removeEventListener("ended", ended); } catch { /* cleanup is best-effort */ }
   try { attempt.element.removeEventListener("error", error); } catch { /* cleanup is best-effort */ }
@@ -185,7 +191,19 @@ export class DeviceAudioPlayer {
           const element = this.#dependencies.createElement(source);
           const attempt = this.#createAttempt(occurrence, element, destination.deviceId, destination.routeIds);
           occurrence.attempts.push(attempt);
-          element.volume = layer.volume;
+          const startsAtEpochMs = request.batch.timing?.startsAtEpochMs ?? this.#now();
+          const updateEnvelope = () => {
+            element.volume = resolveAudioEnvelope({
+              volume: layer.volume,
+              elapsedMs: this.#now() - startsAtEpochMs,
+              fadeInMs: layer.fadeInMs ?? 0,
+              fadeOutMs: layer.fadeOutMs ?? 0,
+              playbackDurationMs: layer.playbackDurationMs ?? request.batch.durationMs,
+              muted: false
+            });
+          };
+          updateEnvelope();
+          attempt.envelopeTimer = setInterval(updateEnvelope, 25);
           element.muted = this.#currentMuted;
           this.#startAttempt(occurrence, attempt, request.deadlineMs, request.startDeadlineMs, request.batch.timing);
         } catch {
@@ -267,6 +285,7 @@ export class DeviceAudioPlayer {
       started: false,
       terminal: false,
       startTimer: null,
+      envelopeTimer: null,
       finish: () => undefined
     };
     const ended: EventListener = () => attempt.finish("complete");

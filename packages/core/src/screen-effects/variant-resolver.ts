@@ -9,7 +9,7 @@ interface WeightedVariant {
 export function chooseWeightedVariant(variants: readonly WeightedVariant[], random: number): string {
   validateRandom(random);
   if (variants.length === 0 || variants.length > 50) {
-    throw new RangeError("Choose between one and 50 weighted variants");
+    throw new RangeError("Choose between one and 50 variants");
   }
 
   const ids = new Set<string>();
@@ -43,12 +43,8 @@ export function resolveEffectContent(
 ): EffectContentSnapshot {
   validateRandom(random);
   const parsed = screenEffectDocumentSchema.parse(document);
-  const weighted = parsed.variants.filter(
-    (variant) => variant.kind === "weighted" && variant.enabled
-  );
-  const selectedId = weighted.length > 0
-    ? chooseWeightedVariant(weighted, random)
-    : parsed.variants.find((variant) => variant.kind === "default" && variant.enabled)!.id;
+  const enabled = parsed.variants.filter((variant) => variant.enabled);
+  const selectedId = chooseWeightedVariant(enabled, random);
   const selected = parsed.variants.find((variant) => variant.id === selectedId);
   if (selected === undefined) {
     throw new Error("Selected effect variant is unavailable");

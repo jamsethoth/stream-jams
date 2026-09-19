@@ -20,6 +20,17 @@ export interface MediaTranscodingStage {
   transcode(input: MediaTranscodeInput): Promise<MediaTranscodeOutput>;
 }
 
+export interface MediaMetadataProbeInput {
+  readonly mediaType: AssetMediaType;
+  readonly mimeType: string;
+  readonly sizeBytes: number;
+  readonly bytes: Uint8Array;
+}
+
+export interface MediaMetadataProbe {
+  inspect(input: MediaMetadataProbeInput): Promise<{ readonly durationMs: number | null }>;
+}
+
 export interface AssetStorageWrite {
   readonly assetId: string;
   readonly originalFileName: string;
@@ -42,6 +53,7 @@ export interface DefaultMediaImportPipelineOptions {
   readonly repository: AssetRepository;
   readonly store: MediaAssetStore;
   readonly transcoder: MediaTranscodingStage;
+  readonly probe: MediaMetadataProbe;
   readonly generateId: () => string;
   readonly calculateChecksum: (bytes: Uint8Array) => string;
 }
@@ -67,6 +79,7 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
   readonly #repository: AssetRepository;
   readonly #store: MediaAssetStore;
   readonly #transcoder: MediaTranscodingStage;
+  readonly #probe: MediaMetadataProbe;
   readonly #generateId: () => string;
   readonly #calculateChecksum: (bytes: Uint8Array) => string;
 
@@ -75,6 +88,7 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
     this.#repository = options.repository;
     this.#store = options.store;
     this.#transcoder = options.transcoder;
+    this.#probe = options.probe;
     this.#generateId = options.generateId;
     this.#calculateChecksum = options.calculateChecksum;
   }
@@ -97,6 +111,19 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
     });
     const assetId = input.assetId ?? this.#generateId();
     const checksum = this.#calculateChecksum(transcoded.bytes);
+    let durationMs: number | null = null;
+    if (transcoded.mediaType === "audio" || transcoded.mediaType === "video") {
+      try {
+        durationMs = (await this.#probe.inspect({
+          mediaType: transcoded.mediaType,
+          mimeType: transcoded.mimeType,
+          sizeBytes: transcoded.bytes.byteLength,
+          bytes: transcoded.bytes
+        })).durationMs;
+      } catch {
+        durationMs = null;
+      }
+    }
     const { storagePath } = await this.#store.write({
       assetId,
       originalFileName: transcoded.originalFileName,
@@ -113,7 +140,8 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
       mimeType: transcoded.mimeType,
       sizeBytes: transcoded.bytes.byteLength,
       checksum,
-      storagePath
+      storagePath,
+      durationMs
     });
   }
 }

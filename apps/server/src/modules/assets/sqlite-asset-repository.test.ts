@@ -14,13 +14,15 @@ describe("SqliteAssetRepository", () => {
       mimeType: "image/png",
       sizeBytes: 1024,
       checksum: "sha256:abc",
-      storagePath: "assets/asset-image-1.png"
+      storagePath: "assets/asset-image-1.png",
+      durationMs: null
     };
     const updatedAsset: AssetRecord = {
       ...asset,
       originalFileName: "alert-updated.png",
       sizeBytes: 2048,
-      checksum: "sha256:def"
+      checksum: "sha256:def",
+      durationMs: 2048
     };
 
     await expect(repository.findById("asset-image-1")).resolves.toBeNull();

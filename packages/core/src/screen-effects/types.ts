@@ -1,6 +1,5 @@
 import type { AlertAudioOutputs } from "../audio/types.js";
 import type { OverlayElementLayout } from "../shared/schemas.js";
-import type { OverlayPresetAnimationInstruction } from "../overlays/types.js";
 
 export type EffectBinding =
   | {
@@ -29,11 +28,15 @@ export type EffectVisual =
       readonly layout: OverlayElementLayout;
       readonly playEmbeddedAudio: boolean;
       readonly audioVolume: number;
+      readonly audioFadeInMs?: number | undefined;
+      readonly audioFadeOutMs?: number | undefined;
     };
 
 export interface EffectSound {
   readonly assetId: string;
   readonly volume: number;
+  readonly fadeInMs?: number | undefined;
+  readonly fadeOutMs?: number | undefined;
 }
 
 export interface EffectVisualOutputs {
@@ -44,13 +47,12 @@ export interface EffectVisualOutputs {
 export interface EffectVariant {
   readonly id: string;
   readonly name: string;
-  readonly kind: "default" | "weighted";
   readonly enabled: boolean;
   readonly weight: number;
   readonly visual: EffectVisual | null;
   readonly sound: EffectSound | null;
-  readonly animation: OverlayPresetAnimationInstruction | null;
   readonly durationMs: number;
+  readonly durationMode?: "media" | "custom" | undefined;
   readonly outputs: AlertAudioOutputs;
   readonly visualOutputs: EffectVisualOutputs;
 }
@@ -63,7 +65,6 @@ export interface ScreenEffectDocument {
   readonly description: string | null;
   readonly category: string | null;
   readonly priority: number;
-  readonly cooldownSeconds: number;
   readonly bindings: readonly EffectBinding[];
   readonly variants: readonly EffectVariant[];
 }
@@ -73,6 +74,7 @@ export interface EffectContentSnapshot {
   readonly effectName: string;
   readonly variant: EffectVariant;
   readonly priority: number;
+  readonly assetDurations?: Readonly<Record<string, number | null>> | undefined;
 }
 
 export interface CreateScreenEffectDocumentInput {

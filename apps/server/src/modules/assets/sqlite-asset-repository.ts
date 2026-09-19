@@ -9,6 +9,7 @@ interface AssetRecordRow {
   readonly size_bytes: unknown;
   readonly checksum: unknown;
   readonly storage_path: unknown;
+  readonly duration_ms: unknown;
 }
 
 export class SqliteAssetRepository implements AssetRepository {
@@ -22,15 +23,16 @@ export class SqliteAssetRepository implements AssetRepository {
     const parsed = assetRecordSchema.parse(record);
     this.#connection
       .prepare(
-        `INSERT INTO asset_metadata (id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO asset_metadata (id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path, duration_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            original_file_name = excluded.original_file_name,
            media_type = excluded.media_type,
            mime_type = excluded.mime_type,
            size_bytes = excluded.size_bytes,
            checksum = excluded.checksum,
-           storage_path = excluded.storage_path`
+           storage_path = excluded.storage_path,
+           duration_ms = excluded.duration_ms`
       )
       .run(
         parsed.id,
@@ -39,7 +41,8 @@ export class SqliteAssetRepository implements AssetRepository {
         parsed.mimeType,
         parsed.sizeBytes,
         parsed.checksum,
-        parsed.storagePath
+        parsed.storagePath,
+        parsed.durationMs
       );
     return parsed;
   }
@@ -47,7 +50,7 @@ export class SqliteAssetRepository implements AssetRepository {
   async findById(assetId: string): Promise<AssetRecord | null> {
     const row = this.#connection
       .prepare(
-        `SELECT id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path
+        `SELECT id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path, duration_ms
          FROM asset_metadata
          WHERE id = ?`
       )
@@ -62,7 +65,7 @@ export class SqliteAssetRepository implements AssetRepository {
     const placeholders = ids.map(() => "?").join(", ");
     const rows = this.#connection
       .prepare(
-        `SELECT id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path
+        `SELECT id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path, duration_ms
          FROM asset_metadata
          WHERE id IN (${placeholders})`
       )
@@ -76,7 +79,7 @@ export class SqliteAssetRepository implements AssetRepository {
   async list(): Promise<readonly AssetRecord[]> {
     return this.#connection
       .prepare(
-        `SELECT id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path
+        `SELECT id, original_file_name, media_type, mime_type, size_bytes, checksum, storage_path, duration_ms
          FROM asset_metadata
          ORDER BY id`
       )
@@ -101,6 +104,7 @@ function mapAssetRecordRow(row: AssetRecordRow): AssetRecord {
     mimeType: String(row.mime_type),
     sizeBytes: Number(row.size_bytes),
     checksum: String(row.checksum),
-    storagePath: String(row.storage_path)
+    storagePath: String(row.storage_path),
+    durationMs: row.duration_ms === null ? null : Number(row.duration_ms)
   });
 }

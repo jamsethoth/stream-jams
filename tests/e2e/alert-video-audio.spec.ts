@@ -50,7 +50,7 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
   await page.getByRole("button", { name: "Clip Video/GIF", exact: true }).click();
   const soundtrack = page.getByRole("checkbox", { name: "Play embedded audio" });
   await expect(soundtrack).not.toBeChecked();
-  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveCount(0);
   await soundtrack.check();
   await page.getByRole("spinbutton", { name: "Embedded audio volume" }).fill("0.4");
   await expect(page.getByText(/Both the video soundtrack and separate audio/)).toBeVisible();
@@ -76,7 +76,7 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
   await page.getByRole("button", { name: "Choose asset" }).click();
   await page.getByRole("button", { name: "Use selected asset" }).click();
   await expect(soundtrack).not.toBeChecked();
-  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveCount(0);
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect.poll(() => saves.length).toBe(2);
   expect(saved.layers[0]).toMatchObject({ assetId: "asset-gif", playEmbeddedAudio: false });

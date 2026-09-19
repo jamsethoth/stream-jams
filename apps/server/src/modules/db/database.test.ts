@@ -30,7 +30,10 @@ const expectedMigrations = [
   "019-audio-output-routes",
   "020-overlay-surfaces",
   "021-alert-video-audio",
-  "022-screen-effects"
+  "022-screen-effects",
+  "023-screen-effect-sets",
+  "024-asset-duration-metadata",
+  "025-remove-screen-effect-animations"
 ] as const;
 
 const expectedTables = [
@@ -57,12 +60,38 @@ const expectedTables = [
   "schema_migrations",
   "screen_effect_audio_routes",
   "screen_effect_bindings",
+  "screen_effect_set_memberships",
+  "screen_effect_sets",
   "screen_effect_variants",
   "screen_effects",
   "twitch_accounts"
 ];
 
 describe("Stream Jams SQLite database", () => {
+  it("removes stored Screen Effect animations when upgrading schema 24", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const db = database.connection;
+    db.prepare("DELETE FROM schema_migrations WHERE id = ?").run("025-remove-screen-effect-animations");
+    db.prepare(`
+      INSERT INTO screen_effects (id, schema_version, name, enabled, description, category, priority, cooldown_seconds, updated_at)
+      VALUES (?, 1, ?, 0, NULL, NULL, 0, 0, ?)
+    `).run("effect-animation", "Animated effect", "2026-09-19T00:00:00.000Z");
+    db.prepare(`
+      INSERT INTO screen_effect_variants (
+        id, effect_id, position, kind, enabled, weight, document_json, visual_asset_id, sound_asset_id
+      ) VALUES (?, ?, 0, 'default', 1, 1, ?, NULL, NULL)
+    `).run("variant-animation", "effect-animation", JSON.stringify({
+      id: "variant-animation",
+      kind: "default",
+      animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
+    }));
+
+    database.runMigrations();
+
+    const stored = db.prepare("SELECT document_json FROM screen_effect_variants WHERE id = ?").get("variant-animation");
+    expect(JSON.parse(String(stored?.document_json))).not.toHaveProperty("animation");
+  });
+
   it("backfills text style defaults without overwriting explicit values or timestamps", () => {
     const connection = new DatabaseSync(":memory:");
     try {
@@ -435,11 +464,15 @@ describe("Stream Jams SQLite database", () => {
     `);
     database.connection.exec(alertTextStyleDefaultsMigration.sql);
     database.connection.exec(`
+      DROP TRIGGER screen_effect_assign_set;
+      DROP TABLE screen_effect_set_memberships;
+      DROP TABLE screen_effect_sets;
       DROP TABLE screen_effect_audio_routes;
       DROP TABLE screen_effect_bindings;
       DROP TABLE screen_effect_variants;
       DROP TABLE screen_effects;
       DROP TABLE module_playback_settings;
+      ALTER TABLE asset_metadata DROP COLUMN duration_ms;
       DROP TABLE alert_moderation_settings;
       DROP TABLE audio_output_routes;
       DROP TABLE overlay_surfaces;
@@ -448,7 +481,10 @@ describe("Stream Jams SQLite database", () => {
         '019-audio-output-routes',
         '020-overlay-surfaces',
         '021-alert-video-audio',
-        '022-screen-effects'
+        '022-screen-effects',
+        '023-screen-effect-sets',
+        '024-asset-duration-metadata',
+        '025-remove-screen-effect-animations'
       );
     `);
 
