@@ -19,7 +19,12 @@ export interface AssetPickerProps {
 }
 
 export function AssetPicker(props: AssetPickerProps) {
-  const selectionScope = JSON.stringify([props.open, props.compatibleMediaTypes, props.selectedAssetId ?? null]);
+  const compatibleMediaTypesKey = props.compatibleMediaTypes.join("\u0000");
+  const compatibleMediaTypes = useMemo<readonly AssetMediaType[]>(
+    () => compatibleMediaTypesKey === "" ? [] : compatibleMediaTypesKey.split("\u0000") as AssetMediaType[],
+    [compatibleMediaTypesKey]
+  );
+  const selectionScope = JSON.stringify([props.open, compatibleMediaTypesKey, props.selectedAssetId ?? null]);
   const [tab, setTab] = useState<"existing" | "upload">("existing");
   const [items, setItems] = useState<readonly AssetLibraryItem[]>([]);
   const [selection, setSelection] = useState<{ readonly scope: string | null; readonly id: string | null }>({ scope: null, id: null });
@@ -40,7 +45,7 @@ export function AssetPicker(props: AssetPickerProps) {
     void props.managementApi.listAssetLibraryItems().then((loaded) => {
       if (!active) return;
       setItems(loaded);
-      const compatible = loaded.filter((item) => props.compatibleMediaTypes.includes(item.mediaType));
+      const compatible = loaded.filter((item) => compatibleMediaTypes.includes(item.mediaType));
       const requestedId = props.selectedAssetId ?? null;
       setSelection({ scope: selectionScope, id: compatible.some((item) => item.id === requestedId) ? requestedId : (compatible[0]?.id ?? null) });
       setError(null);
@@ -48,9 +53,9 @@ export function AssetPicker(props: AssetPickerProps) {
       if (active) setError(actionableError(loadError, "Assets could not be loaded", "Retry or close the picker and open the Assets page."));
     }).finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [props.compatibleMediaTypes, props.managementApi, props.open, props.selectedAssetId, selectionScope]);
+  }, [compatibleMediaTypes, props.managementApi, props.open, props.selectedAssetId, selectionScope]);
 
-  const compatibleItems = useMemo(() => items.filter((item) => props.compatibleMediaTypes.includes(item.mediaType)), [items, props.compatibleMediaTypes]);
+  const compatibleItems = useMemo(() => items.filter((item) => compatibleMediaTypes.includes(item.mediaType)), [compatibleMediaTypes, items]);
   const allTags = useMemo(() => [...new Set(compatibleItems.flatMap((item) => item.tags))].sort(), [compatibleItems]);
   const visible = useMemo(() => compatibleItems.filter((item) => {
     const query = search.trim().toLowerCase();
@@ -67,8 +72,8 @@ export function AssetPicker(props: AssetPickerProps) {
     setLoading(true);
     try {
       const validation = await validateAssetFile(file);
-      if (!validation.accepted || validation.mediaType === null || !props.compatibleMediaTypes.includes(validation.mediaType)) {
-        setError({ ...uploadError(validation.reason ?? "This file type is not compatible with the selected layer."), cause: `${allowedTypes(props.compatibleMediaTypes)} ${validation.reason ?? "This file is not compatible."}` });
+      if (!validation.accepted || validation.mediaType === null || !compatibleMediaTypes.includes(validation.mediaType)) {
+        setError({ ...uploadError(validation.reason ?? "This file type is not compatible with the selected layer."), cause: `${allowedTypes(compatibleMediaTypes)} ${validation.reason ?? "This file is not compatible."}` });
         return;
       }
       const imported = await props.assetApi.importAsset(file);
@@ -79,14 +84,14 @@ export function AssetPicker(props: AssetPickerProps) {
       setError(null);
       props.onSelect(imported.id, imported.mediaType);
     } catch (uploadFailure) {
-      setError(actionableError(uploadFailure, "Asset upload did not complete", `Keep this picker open, verify ${allowedTypes(props.compatibleMediaTypes)}, then retry.`));
+      setError(actionableError(uploadFailure, "Asset upload did not complete", `Keep this picker open, verify ${allowedTypes(compatibleMediaTypes)}, then retry.`));
     } finally {
       setLoading(false);
     }
   }
 
   const selectedItem = items.find((item) => item.id === selectedId);
-  return <ModalSurface labelledBy="asset-picker-title" onCancel={props.onCancel} open={props.open}><div className="asset-picker"><header><p className="management-eyebrow">Alert asset</p><h2 id="asset-picker-title">Choose asset</h2><p>Select a compatible global asset or register a new one without leaving the editor.</p></header><div aria-label="Asset source" className="asset-picker__tabs" role="tablist"><button aria-selected={tab === "existing"} onClick={() => setTab("existing")} role="tab" type="button">Existing</button><button aria-selected={tab === "upload"} onClick={() => setTab("upload")} role="tab" type="button">Upload new</button></div>{error === null ? null : <ManagementErrorBanner error={error} />}{tab === "existing" ? <section aria-label="Existing assets" className="asset-picker__existing"><label><span>Search compatible assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>{allTags.length === 0 ? null : <fieldset><legend>Tags (match all)</legend>{allTags.map((tag) => <label key={tag}><input checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} type="checkbox" />{tag}</label>)}</fieldset>}<div aria-label="Compatible assets" className="asset-picker__options">{loading ? <p>Loading...</p> : visible.map((item) => { const usage = formatCount(item.usage.totalUsageCount, { one: "use", other: "uses" }); return <button aria-label={`${item.displayName}, ${item.mediaType}, ${usage}`} aria-pressed={selectedId === item.id} key={item.id} onClick={() => setSelection({ scope: selectionScope, id: item.id })} type="button"><AssetPreview assetApi={props.assetApi} compact item={item} /><span><strong>{item.displayName}</strong><small>{item.tags.join(" / ") || "No tags"} / {usage}</small></span></button>; })}</div><div className="management-modal__actions"><button className="button button--secondary" onClick={props.onCancel} type="button">Cancel</button><button disabled={selectedItem === undefined} onClick={() => { if (selectedItem !== undefined) props.onSelect(selectedItem.id, selectedItem.mediaType); }} type="button">Use selected asset</button></div></section> : <form className="asset-picker__upload" onSubmit={upload}><label><span>Asset file</span><input accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/webm" onChange={(event) => setFile(event.currentTarget.files?.[0] ?? null)} type="file" /></label><p className="asset-picker__limits">{allowedTypes(props.compatibleMediaTypes)}</p><label><span>Display name</span><input onChange={(event) => setDisplayName(event.currentTarget.value)} placeholder={file?.name ?? "Asset name"} value={displayName} /></label><label><span>Tags</span><input list="asset-picker-tags" onChange={(event) => setTags(event.currentTarget.value)} placeholder="seasonal, follower" value={tags} /></label><datalist id="asset-picker-tags">{allTags.map((tag) => <option key={tag} value={tag} />)}</datalist><div className="management-modal__actions"><button className="button button--secondary" onClick={props.onCancel} type="button">Cancel</button><button disabled={loading || file === null} type="submit">Upload and use</button></div></form>}</div></ModalSurface>;
+  return <ModalSurface labelledBy="asset-picker-title" onCancel={props.onCancel} open={props.open}><div className="asset-picker"><header><p className="management-eyebrow">Alert asset</p><h2 id="asset-picker-title">Choose asset</h2><p>Select a compatible global asset or register a new one without leaving the editor.</p></header><div aria-label="Asset source" className="asset-picker__tabs" role="tablist"><button aria-selected={tab === "existing"} onClick={() => setTab("existing")} role="tab" type="button">Existing</button><button aria-selected={tab === "upload"} onClick={() => setTab("upload")} role="tab" type="button">Upload new</button></div>{error === null ? null : <ManagementErrorBanner error={error} />}{tab === "existing" ? <section aria-label="Existing assets" className="asset-picker__existing"><label><span>Search compatible assets</span><input onChange={(event) => setSearch(event.currentTarget.value)} type="search" value={search} /></label>{allTags.length === 0 ? null : <fieldset><legend>Tags (match all)</legend>{allTags.map((tag) => <label key={tag}><input checked={tagFilters.includes(tag)} onChange={() => setTagFilters((current) => current.includes(tag) ? current.filter((value) => value !== tag) : [...current, tag])} type="checkbox" />{tag}</label>)}</fieldset>}<div aria-label="Compatible assets" className="asset-picker__options">{loading ? <p>Loading...</p> : visible.map((item) => { const usage = formatCount(item.usage.totalUsageCount, { one: "use", other: "uses" }); return <button aria-label={`${item.displayName}, ${item.mediaType}, ${usage}`} aria-pressed={selectedId === item.id} key={item.id} onClick={() => setSelection({ scope: selectionScope, id: item.id })} type="button"><AssetPreview assetApi={props.assetApi} compact item={item} /><span><strong>{item.displayName}</strong><small>{item.tags.join(" / ") || "No tags"} / {usage}</small></span></button>; })}</div><div className="management-modal__actions"><button className="button button--secondary" onClick={props.onCancel} type="button">Cancel</button><button disabled={selectedItem === undefined} onClick={() => { if (selectedItem !== undefined) props.onSelect(selectedItem.id, selectedItem.mediaType); }} type="button">Use selected asset</button></div></section> : <form className="asset-picker__upload" onSubmit={upload}><label><span>Asset file</span><input accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/webm" onChange={(event) => setFile(event.currentTarget.files?.[0] ?? null)} type="file" /></label><p className="asset-picker__limits">{allowedTypes(compatibleMediaTypes)}</p><label><span>Display name</span><input onChange={(event) => setDisplayName(event.currentTarget.value)} placeholder={file?.name ?? "Asset name"} value={displayName} /></label><label><span>Tags</span><input list="asset-picker-tags" onChange={(event) => setTags(event.currentTarget.value)} placeholder="seasonal, follower" value={tags} /></label><datalist id="asset-picker-tags">{allTags.map((tag) => <option key={tag} value={tag} />)}</datalist><div className="management-modal__actions"><button className="button button--secondary" onClick={props.onCancel} type="button">Cancel</button><button disabled={loading || file === null} type="submit">Upload and use</button></div></form>}</div></ModalSurface>;
 }
 
 function allowedTypes(types: readonly AssetMediaType[]): string {

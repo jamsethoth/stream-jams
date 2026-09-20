@@ -56,6 +56,21 @@ describe("AssetPicker", () => {
     expect(onSelect).toHaveBeenCalledWith("asset-new", "image");
   });
 
+  it("does not reload when its parent rerenders with equivalent compatible media types", async () => {
+    const values = fixture();
+    const props = { ...values, onCancel: vi.fn(), onSelect: vi.fn(), open: true };
+    const { rerender } = render(<AssetPicker {...props} compatibleMediaTypes={["image", "gif"]} />);
+
+    await screen.findByRole("button", { name: /Follower burst/ });
+    expect(values.managementApi.listAssetLibraryItems).toHaveBeenCalledOnce();
+
+    for (let index = 0; index < 5; index += 1) {
+      rerender(<AssetPicker {...props} compatibleMediaTypes={["image", "gif"]} />);
+    }
+
+    expect(values.managementApi.listAssetLibraryItems).toHaveBeenCalledOnce();
+  });
+
   it("disables stale selection synchronously when compatible media types change", async () => {
     const values = fixture();
     const onSelect = vi.fn();
