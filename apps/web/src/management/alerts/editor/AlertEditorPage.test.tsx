@@ -67,7 +67,7 @@ afterEach(() => {
 });
 
 describe("AlertEditorPage", () => {
-  it("saves the video or GIF loop choice on the visual layer", async () => {
+  it("saves the video loop choice on the visual layer", async () => {
     const source = editorDocument();
     const visualDocument: AlertEditorDocument = {
       ...source,
@@ -77,7 +77,7 @@ describe("AlertEditorPage", () => {
         layerLayouts: profile.id === "landscape" ? [{ layerId: "visual", x: 0, y: 0, width: 320, height: 180, zIndex: 0 }] : [] }))
     };
     const { user, saveAlertEditorDocument } = renderWorkspaceEditor(visualDocument, [assetLibraryItem("video")]);
-    await user.click(await screen.findByRole("checkbox", { name: "Loop video or GIF" }));
+    await user.click(await screen.findByRole("checkbox", { name: "Loop video" }));
     await user.click(screen.getByRole("button", { name: "Save" }));
     await user.click(await screen.findByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalled());
@@ -2082,6 +2082,8 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByRole("button", { name: /Animated image, gif/u }));
     await user.click(screen.getByRole("button", { name: "Use selected asset" }));
 
+    expect(screen.getByText("GIF repetition follows the animation stored in the file.")).toBeVisible();
+    expect(screen.queryByRole("checkbox", { name: "Loop video" })).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("region", { name: "Live readiness" })).toHaveTextContent("Enable and review a target profile"));
   });
 
