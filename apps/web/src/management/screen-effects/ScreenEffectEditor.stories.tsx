@@ -74,7 +74,9 @@ export const NewDisabledDraft: Story = {
 export const LocalDraftPreview: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: /^Preview$/u }));
+    const preview = await canvas.findByRole("button", { name: /^Preview$/u });
+    await expect(preview).toBeEnabled();
+    await userEvent.click(preview);
     const dialog = within(canvas.getByRole("region", { name: "Effect canvas" }));
     await expect(within(canvasElement.ownerDocument.body).queryByRole("dialog")).not.toBeInTheDocument();
     await expect(await dialog.findByRole("button", { name: "Play preview" })).toBeEnabled();
@@ -148,7 +150,9 @@ export const NoOutputs: Story = {
   args: { api: createApi(effect({ enabled: true, noOutputs: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Test saved…" }));
+    const testSaved = await canvas.findByRole("button", { name: "Test saved…" });
+    await expect(testSaved).toBeEnabled();
+    await userEvent.click(testSaved);
     await expect(within(document.body).getByRole("alert")).toHaveTextContent("No destination is selected");
     await expect(within(document.body).getByRole("button", { name: "Confirm live test" })).toBeDisabled();
   }
@@ -195,7 +199,9 @@ export const LiveTestConfirmation: Story = {
   args: { api: createApi(effect({ enabled: true, separateSound: true })) },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("button", { name: "Test saved…" }));
+    const testSaved = await canvas.findByRole("button", { name: "Test saved…" });
+    await expect(testSaved).toBeEnabled();
+    await userEvent.click(testSaved);
     const dialog = within(document.body).getByRole("dialog", { name: "Test saved Screen Effect?" });
     await expect(dialog).toHaveTextContent("Saved input");
     await expect(dialog).toHaveTextContent("OBS Browser Source visual");
