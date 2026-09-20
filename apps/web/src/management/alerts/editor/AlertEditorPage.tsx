@@ -45,6 +45,8 @@ import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { defaultAudioApi, type AudioApi } from "../../audio/audio-api.js";
 import { MediaAudioControls } from "../../audio/MediaAudioControls.js";
+import { MediaVolumeControl } from "../../audio/MediaVolumeControl.js";
+import { createMediaGainController } from "../../../media/media-gain-controller.js";
 import { AudioFadeControls } from "../../audio/AudioFadeControls.js";
 import { MediaDurationControls } from "../../audio/MediaDurationControls.js";
 import { useAudioStatus } from "../../audio/use-audio-status.js";
@@ -856,15 +858,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           if (blob === null || !isCurrent()) return;
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
+          const gain = createMediaGainController(audio);
           const updateEnvelope = () => {
-            audio.volume = resolveAudioEnvelope({
+            gain.setGain(resolveAudioEnvelope({
               volume: layer.volume,
               elapsedMs: currentPreviewPosition(),
               fadeInMs: layer.fadeInMs ?? 0,
               fadeOutMs: layer.fadeOutMs ?? 0,
               playbackDurationMs: layer.playbackDurationMs ?? currentDocument.durationMs,
               muted: false
-            });
+            }));
           };
           const envelopeTimer = window.setInterval(updateEnvelope, 25);
           const release = () => {
@@ -874,6 +877,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             audio.onerror = null;
             previewAudioSyncRef.current.delete(sync);
             window.clearInterval(envelopeTimer);
+            gain.dispose();
             audio.pause();
             audio.src = "";
             URL.revokeObjectURL(url);
@@ -1798,7 +1802,7 @@ function LayerInspector({
             <div className="alert-editor-inspector__asset"><span>Asset</span><code>{selectedLayer.assetId}</code><button className="button button--secondary button--compact" onClick={() => onChooseAsset(selectedLayer)} type="button">Choose asset</button></div>
           ) : null}
           {selectedLayer.type === "audio" ? (
-            <><label><span>Volume {Math.round(selectedLayer.volume * 100)}%</span><input max="1" min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer)); }} step="0.05" type="range" value={selectedLayer.volume} /></label>
+            <><MediaVolumeControl label="Volume" value={selectedLayer.volume} onChange={(value) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer))} />
             <AudioFadeControls fadeInMs={selectedLayer.fadeInMs} fadeOutMs={selectedLayer.fadeOutMs} onChange={(fades) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, ...fades } : layer))} /></>
           ) : null}
           {selectedLayer.type === "video" ? <MediaAudioControls

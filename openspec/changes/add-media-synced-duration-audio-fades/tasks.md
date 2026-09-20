@@ -22,6 +22,7 @@
 
 - [x] 5.1 Add Alert duration-mode, explanation, warning, repair, and per-source fade controls with preview parity; run focused editor, Storybook, and Alert Playwright tests.
 - [x] 5.2 Add matching per-variant Screen Effect controls and inline preview parity; run focused editor, Storybook, browser, and desktop Screen Effect tests.
+- [x] 5.3 Present every local-media volume as 0%-200% and apply gains above 100% in preview, browser, and named-device playback.
 
 ## 6. Documentation and complete verification
 

@@ -101,6 +101,20 @@ describe("screenEffectDocumentSchema", () => {
     });
   });
 
+  it("accepts media volumes through 200 percent and rejects higher gain", () => {
+    const document = audioOnlyDocument();
+    const variant = document.variants[0]!;
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document,
+      variants: [{ ...variant, sound: { assetId: "asset-sound", volume: 2 }, visual: {
+        mediaType: "video", assetId: "asset-video", layout, playEmbeddedAudio: true, audioVolume: 2
+      }, visualOutputs: { browserSource: true, desktop: false } }]
+    }).success).toBe(true);
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document, variants: [{ ...variant, sound: { assetId: "asset-sound", volume: 2.01 } }]
+    }).success).toBe(false);
+  });
+
   it.each([
     ["duration below one second", (document: ReturnType<typeof audioOnlyDocument>) => ({
       ...document, variants: [{ ...document.variants[0]!, durationMs: 999 }]

@@ -29,3 +29,11 @@ The system SHALL expose independent Fade in and Fade out controls for Alert audi
 #### Scenario: Legacy Alert is opened
 - **WHEN** a stored Alert lacks duration-mode or fade fields
 - **THEN** the editor SHALL present Custom duration and disabled fades while preserving its existing duration and volume
+
+### Requirement: Alert Editor Uses Percentage Media Volume
+The system SHALL present Alert audio-layer and enabled video-soundtrack volume as a percentage from 0% through 200% while persisting normalized gain from 0 through 2.
+
+#### Scenario: Operator amplifies local media
+- **WHEN** an operator sets an Alert media source to 200%
+- **THEN** preview and saved playback SHALL use normalized gain 2
+- **AND** the editor SHALL restore the value as 200%

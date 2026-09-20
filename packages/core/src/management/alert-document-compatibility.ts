@@ -1,9 +1,10 @@
 import { z } from "zod";
+import { mediaVolumeSchema } from "../audio/schemas.js";
 import { alertEditorDocumentSchema, alertLayerSchema, type AlertEditorDocument } from "./contracts.js";
 
 const videoAudioSettingsSchema = z.object({
   playEmbeddedAudio: z.boolean(),
-  audioVolume: z.number().finite().min(0).max(1)
+  audioVolume: mediaVolumeSchema
 });
 
 export type VideoAudioSettings = z.infer<typeof videoAudioSettingsSchema>;
@@ -23,7 +24,7 @@ const legacyDocumentSchema = alertEditorDocumentSchema.omit({ schemaVersion: tru
     alertLayerSchema,
     alertLayerSchema.options[2].extend({
       playEmbeddedAudio: z.boolean().optional(),
-      audioVolume: z.number().finite().min(0).max(1).optional()
+      audioVolume: mediaVolumeSchema.optional()
     })
   ]))
 });

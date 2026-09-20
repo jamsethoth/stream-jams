@@ -42,6 +42,7 @@ export interface DeviceAudioPlayerDependencies {
   readonly createSource: (asset: AudioPlayerAsset) => string;
   readonly revokeSource: (source: string) => void;
   readonly listOutputDevices: () => Promise<readonly AudioOutputDevice[]>;
+  readonly createAmplifier?: ((element: PlayerMediaElement, deviceId: string) => Promise<{ setGain(gain: number): void; dispose(): void }>) | undefined;
   readonly now?: () => number;
 }
 
@@ -66,6 +67,8 @@ interface ElementAttempt {
   terminal: boolean;
   startTimer: ReturnType<typeof setTimeout> | null;
   envelopeTimer: ReturnType<typeof setInterval> | null;
+  amplifier: { setGain(gain: number): void; dispose(): void } | null;
+  gain: number;
   finish(outcome: AttemptOutcome): void;
 }
 
@@ -106,6 +109,7 @@ function cleanupElement(attempt: ElementAttempt, ended: EventListener, error: Ev
   try { attempt.element.removeEventListener("ended", ended); } catch { /* cleanup is best-effort */ }
   try { attempt.element.removeEventListener("error", error); } catch { /* cleanup is best-effort */ }
   try { attempt.element.pause(); } catch { /* cleanup is best-effort */ }
+  try { attempt.amplifier?.dispose(); } catch { /* cleanup is best-effort */ }
   try { attempt.element.removeAttribute("src"); } catch { /* cleanup is best-effort */ }
   try { attempt.element.load(); } catch { /* cleanup is best-effort */ }
   try { attempt.element.remove(); } catch { /* cleanup is best-effort */ }
@@ -193,7 +197,7 @@ export class DeviceAudioPlayer {
           occurrence.attempts.push(attempt);
           const startsAtEpochMs = request.batch.timing?.startsAtEpochMs ?? this.#now();
           const updateEnvelope = () => {
-            element.volume = resolveAudioEnvelope({
+            attempt.gain = resolveAudioEnvelope({
               volume: layer.volume,
               elapsedMs: this.#now() - startsAtEpochMs,
               fadeInMs: layer.fadeInMs ?? 0,
@@ -201,11 +205,13 @@ export class DeviceAudioPlayer {
               playbackDurationMs: layer.playbackDurationMs ?? request.batch.durationMs,
               muted: false
             });
+            if (attempt.amplifier === null) element.volume = Math.min(1, attempt.gain);
+            else attempt.amplifier.setGain(attempt.gain);
           };
           updateEnvelope();
           attempt.envelopeTimer = setInterval(updateEnvelope, 25);
           element.muted = this.#currentMuted;
-          this.#startAttempt(occurrence, attempt, request.deadlineMs, request.startDeadlineMs, request.batch.timing);
+          this.#startAttempt(occurrence, attempt, request.deadlineMs, request.startDeadlineMs, request.batch.timing, layer.volume > 1);
         } catch {
           for (const routeId of destination.routeIds) occurrence.failedRouteIds.add(routeId);
         }
@@ -286,6 +292,8 @@ export class DeviceAudioPlayer {
       terminal: false,
       startTimer: null,
       envelopeTimer: null,
+      amplifier: null,
+      gain: 1,
       finish: () => undefined
     };
     const ended: EventListener = () => attempt.finish("complete");
@@ -301,7 +309,7 @@ export class DeviceAudioPlayer {
     return attempt;
   }
 
-  #startAttempt(occurrence: ActiveOccurrence, attempt: ElementAttempt, deadlineMs: number, upstreamStartDeadlineMs?: number, timing?: PlaybackTiming): void {
+  #startAttempt(occurrence: ActiveOccurrence, attempt: ElementAttempt, deadlineMs: number, upstreamStartDeadlineMs?: number, timing?: PlaybackTiming, amplified = false): void {
     const startDeadlineMs = Math.min(deadlineMs, this.#now() + START_TIMEOUT_MS, upstreamStartDeadlineMs ?? Infinity);
     const startDelay = Math.max(0, startDeadlineMs - this.#now());
     attempt.startTimer = setTimeout(() => attempt.finish("failed"), startDelay);
@@ -311,7 +319,15 @@ export class DeviceAudioPlayer {
     attempt.startGuard = guardCompletion;
     void (async () => {
       try {
-        await attempt.element.setSinkId(attempt.deviceId);
+        if (amplified) {
+          if (this.#dependencies.createAmplifier === undefined) throw new Error("Amplified device audio is unavailable");
+          const amplifier = await this.#dependencies.createAmplifier(attempt.element, attempt.deviceId);
+          if (!this.#isCurrent(occurrence, attempt)) { amplifier.dispose(); return; }
+          attempt.amplifier = amplifier;
+          amplifier.setGain(attempt.gain);
+        } else {
+          await attempt.element.setSinkId(attempt.deviceId);
+        }
         if (!this.#isCurrent(occurrence, attempt)) return;
         if (this.#now() >= startDeadlineMs) { attempt.finish("failed"); return; }
         if (timing !== undefined) {

@@ -27,3 +27,11 @@ The system SHALL expose independent Fade in and Fade out controls for a variant'
 #### Scenario: Existing variant is opened
 - **WHEN** a stored variant lacks duration-mode or fade fields
 - **THEN** the editor SHALL present Custom duration and disabled fades
+
+### Requirement: Screen Effect Editor Uses Percentage Media Volume
+The system SHALL present separate-sound and enabled video-soundtrack volume as a percentage from 0% through 200% while persisting normalized gain from 0 through 2.
+
+#### Scenario: Operator amplifies a variant source
+- **WHEN** an operator sets either Screen Effect media source to 200%
+- **THEN** inline preview and saved playback SHALL use normalized gain 2
+- **AND** the editor SHALL restore the value as 200%

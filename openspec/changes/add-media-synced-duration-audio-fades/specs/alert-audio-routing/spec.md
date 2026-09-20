@@ -20,3 +20,11 @@ The system SHALL carry independent fade-in and fade-out durations through previe
 #### Scenario: Playback is cancelled
 - **WHEN** playback stops, skips, is replaced, or shuts down
 - **THEN** envelope timers SHALL be cancelled through the existing media cleanup path
+
+### Requirement: Apply Amplified Local-Media Gain
+The system SHALL apply normalized local-media gain from 0 through 2 consistently in preview, browser-source, and explicit-device playback.
+
+#### Scenario: Configured gain exceeds native media volume
+- **WHEN** a local media source has configured gain above 1
+- **THEN** playback SHALL route it through an audio gain node
+- **AND** its fade envelope SHALL remain bounded by the configured gain

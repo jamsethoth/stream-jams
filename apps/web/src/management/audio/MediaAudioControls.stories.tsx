@@ -17,6 +17,12 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const NewVideo: Story = {};
+export const AmplifiedVideo: Story = {
+  args: { value: { playEmbeddedAudio: true, audioVolume: 2 } },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(200);
+  }
+};
 export const Saving: Story = { args: { disabled: true } };
 export const ExistingSilentVideo: Story = {
   args: { value: { playEmbeddedAudio: false, audioVolume: 1 } },

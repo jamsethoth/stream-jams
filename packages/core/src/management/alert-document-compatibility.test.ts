@@ -25,7 +25,7 @@ it("preserves explicit legacy and current settings", () => {
   expect(parseStoredAlertEditorDocument({ ...configured, schemaVersion: 1 }).layers[0]).toMatchObject({ playEmbeddedAudio: true, audioVolume: 0.25 });
 });
 
-it.each([{ playEmbeddedAudio: "yes" }, { audioVolume: -1 }, { audioVolume: 1.1 }, { audioVolume: Infinity }, { audioVolume: NaN }, { audioVolume: null }])("rejects invalid settings %j", settings => {
+it.each([{ playEmbeddedAudio: "yes" }, { audioVolume: -1 }, { audioVolume: 2.1 }, { audioVolume: Infinity }, { audioVolume: NaN }, { audioVolume: null }])("rejects invalid settings %j", settings => {
   expect(() => readLegacyVideoAudioSettings(settings)).toThrow();
   expect(() => parseStoredAlertEditorDocument({ ...legacy, layers: [{ ...video, ...settings }] })).toThrow();
 });

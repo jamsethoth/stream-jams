@@ -7,7 +7,7 @@ import {
   type RegisteredProviderView,
   type ScreenEffectDocument
 } from "@stream-jams/core";
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../assets/asset-api.js";
@@ -35,6 +35,26 @@ describe("ScreenEffectEditor", () => {
     expect(await screen.findByRole("button", { name: "Choose visual asset" })).toHaveClass("button");
     expect(screen.getByRole("button", { name: "Choose visual asset" }).parentElement).toHaveClass("screen-effects-button-row");
     expect(screen.getByRole("button", { name: "Choose sound asset" }).parentElement).toHaveClass("screen-effects-button-row");
+  });
+
+  it("edits every media volume as a percentage through 200 percent", async () => {
+    const user = userEvent.setup();
+    const saved = enabledEffect(false);
+    const api = effectApi(saved);
+    renderEditor({ api, create: false, document: saved });
+
+    expect(await screen.findByRole("spinbutton", { name: "Sound volume" })).toHaveValue(60);
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(50);
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Sound volume" }), { target: { value: "200" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Embedded audio volume" }), { target: { value: "200" } });
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.update).toHaveBeenCalledWith(saved.id, expect.objectContaining({
+      variants: [expect.objectContaining({
+        sound: expect.objectContaining({ volume: 2 }),
+        visual: expect.objectContaining({ audioVolume: 2 })
+      })]
+    }), false));
   });
 
   it("preserves a draft and requests confirmation if its inactive set became live", async () => {

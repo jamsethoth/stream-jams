@@ -52,13 +52,13 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
   await expect(soundtrack).not.toBeChecked();
   await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveCount(0);
   await soundtrack.check();
-  await page.getByRole("spinbutton", { name: "Embedded audio volume" }).fill("0.4");
+  await page.getByRole("spinbutton", { name: "Embedded audio volume" }).fill("40");
   await expect(page.getByText(/Both the video soundtrack and separate audio/)).toBeVisible();
   expect(saves).toEqual([]);
   await page.getByRole("button", { name: "Undo", exact: true }).click();
-  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue("1");
+  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue("100");
   await page.getByRole("button", { name: "Redo", exact: true }).click();
-  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue("0.4");
+  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue("40");
   await page.getByRole("button", { name: "Hide Separate sound", exact: true }).click();
   await expect(soundtrack).toBeChecked();
   await expect(page.getByText(/Both the video soundtrack and separate audio/)).toHaveCount(0);
@@ -72,7 +72,7 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
   await page.reload();
   await page.getByRole("button", { name: "Clip Video/GIF", exact: true }).click();
   await expect(soundtrack).toBeChecked();
-  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue("0.4");
+  await expect(page.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue("40");
   await page.getByRole("button", { name: "Choose asset" }).click();
   await page.getByRole("button", { name: "Use selected asset" }).click();
   await expect(soundtrack).not.toBeChecked();
