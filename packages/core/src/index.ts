@@ -131,7 +131,12 @@ export {
 
 export type * from "./assets/types.js";
 export type * from "./playback/media-duration.js";
-export { collectAlertDurationAssetIds, collectEffectDurationAssetIds, resolveMediaDuration } from "./playback/media-duration.js";
+export {
+  collectAlertDurationAssetIds,
+  collectEffectDurationAssetIds,
+  resolveAlertLayerDurationMs,
+  resolveMediaDuration
+} from "./playback/media-duration.js";
 export type * from "./assets/repository.js";
 export type * from "./assets/asset-validator.js";
 export type * from "./assets/media-import-pipeline.js";

@@ -242,6 +242,56 @@ describe("AlertEditorPage", () => {
     expect(screen.getByRole("button", { name: "Test draft" })).toBeDisabled();
   });
 
+  it("sends a media-matched draft with enough time for the visual exit after audio ends", async () => {
+    const source = editorDocument();
+    const document: AlertEditorDocument = {
+      ...source,
+      durationMode: "media",
+      layers: [
+        ...source.layers,
+        {
+          id: "layer-audio",
+          name: "Bell",
+          type: "audio",
+          visible: true,
+          order: source.layers.length,
+          assetId: "asset-bell",
+          volume: 1,
+          animation: { mode: "preset", entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" }
+        }
+      ]
+    };
+    const audioAsset: AssetLibraryItem = {
+      ...assetLibraryItem("video"),
+      id: "asset-bell",
+      displayName: "Bell",
+      originalFileName: "bell.mp3",
+      mediaType: "audio",
+      mimeType: "audio/mpeg",
+      durationMs: 3_971,
+      usage: { assetId: "asset-bell", totalUsageCount: 1, usages: [] }
+    };
+    const { user, sendAlertEditorTest } = renderWorkspaceEditor(document, [audioAsset]);
+
+    await user.click(await screen.findByRole("button", { name: "Test draft" }));
+
+    expect(sendAlertEditorTest).toHaveBeenCalledWith(document.id, expect.objectContaining({
+      document: expect.objectContaining({ durationMs: 4_271, durationMode: "media" })
+    }));
+
+    vi.useFakeTimers();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_000); });
+    expect(screen.getByRole("slider", { name: "Preview position" })).toHaveValue("4000");
+    expect(screen.getByRole("button", { name: "Pause preview" })).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+    expect(screen.getByRole("slider", { name: "Preview position" })).toHaveValue("4271");
+    expect(screen.getByRole("button", { name: "Replay preview" })).toBeInTheDocument();
+  });
+
   it("previews enabled soundtracks locally by explicit opt-in even with no selected outputs", async () => {
     const play = vi.fn(async () => undefined);
     const pause = vi.fn();

@@ -930,9 +930,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       playbackCoordinator.enqueueResolvedTest(playback);
     },
     moderationService,
-    async findAssetMediaType(assetId) {
-      return (await assetRepository.findById(assetId))?.mediaType ?? null;
-    },
+    findAssets: (assetIds) => assetRepository.findManyByIds(assetIds),
     generateId: () => `editor_${randomBytes(12).toString("base64url")}`,
     generateReferenceId: () => `ref_${randomBytes(12).toString("base64url")}`,
     saveAtomically(input) {

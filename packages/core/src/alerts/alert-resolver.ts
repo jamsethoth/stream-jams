@@ -1,5 +1,6 @@
 import type { AlertMatch } from "./alert-matcher.js";
 import { resolveAlertAudio } from "../audio/resolve-alert-audio.js";
+import { resolveAlertLayerDurationMs } from "../playback/media-duration.js";
 import { DefaultAlertConditionEvaluator, type AlertConditionEvaluator } from "./condition-evaluator.js";
 import type { NormalizedStreamEvent } from "../events/types.js";
 import type { ResolvedAlert } from "../playback/types.js";
@@ -183,7 +184,7 @@ export class DefaultAlertResolver implements AlertResolver {
           match,
           layer,
           layouts.get(layer.id),
-          document.durationMs,
+          resolveAlertLayerDurationMs(document, layer),
           targetProfileId,
           target,
           visualAssetMediaTypes

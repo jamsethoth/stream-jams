@@ -1,4 +1,4 @@
-import type { AlertEditorDocument } from "../management/contracts.js";
+import type { AlertEditorDocument, AlertLayer } from "../management/contracts.js";
 import type { EffectVariant } from "../screen-effects/types.js";
 
 export type PlaybackDurationMode = "media" | "custom";
@@ -54,6 +54,18 @@ export function collectAlertDurationAssetIds(document: Pick<AlertEditorDocument,
   return unique(document.layers.flatMap((layer) =>
     layer.visible && (layer.type === "audio" || layer.type === "video") ? [layer.assetId] : []
   ));
+}
+
+export function resolveAlertLayerDurationMs(
+  document: Pick<AlertEditorDocument, "durationMode" | "durationMs">,
+  layer: Pick<AlertLayer, "animation" | "type" | "visible">
+): number {
+  const hasVisualExit = layer.visible
+    && layer.type !== "audio"
+    && layer.type !== "tts"
+    && layer.animation.exit !== "none";
+  if ((document.durationMode ?? "custom") !== "media" || !hasVisualExit) return document.durationMs;
+  return Math.min(120_000, document.durationMs + layer.animation.durationMs);
 }
 
 export function collectEffectDurationAssetIds(variant: Pick<EffectVariant, "visual" | "sound">): readonly string[] {
