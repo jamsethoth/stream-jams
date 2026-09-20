@@ -6,8 +6,12 @@
 .twitch-reward-picker__header {
   align-items: start;
   display: flex;
-  gap: 12px;
+  gap: 8px;
   justify-content: space-between;
+}
+
+.twitch-reward-picker__header > .button {
+  align-self: start;
 }
 
 .twitch-reward-picker__header h3,
@@ -38,7 +42,17 @@
   align-items: start;
   cursor: pointer;
   display: flex;
-  gap: 10px;
+  gap: 8px;
+}
+
+.twitch-reward-picker__coverage input[type="radio"],
+.twitch-reward-picker__reward input[type="checkbox"] {
+  flex: 0 0 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  min-height: 16px;
+  padding: 0;
+  width: 16px;
 }
 
 .twitch-reward-picker__coverage > label > span,
@@ -80,7 +94,7 @@
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
 }
 
 .twitch-reward-picker__rewards {
@@ -127,7 +141,11 @@
 @media (max-width: 640px) {
   .twitch-reward-picker__header,
   .twitch-reward-picker__reward {
-    align-items: stretch;
+    align-items: start;
     flex-direction: column;
+  }
+
+  .twitch-reward-picker__reward > label {
+    width: 100%;
   }
 }
