@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { alertAudioOutputsSchema } from "../audio/schemas.js";
+import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
 import { isoDateTimeSchema, overlayElementLayoutSchema } from "../shared/schemas.js";
 import type {
   CreateScreenEffectDocumentInput,
@@ -22,7 +22,6 @@ const boundedIdentityTextSchema = z.string().trim().min(1).max(120).refine(
   "Event identities cannot contain control characters"
 );
 const safeIntegerSchema = z.number().int().refine(Number.isSafeInteger, "Priority must be a safe integer");
-const volumeSchema = z.number().finite().min(0).max(1);
 const triggerSummarySchema = z.string().trim().min(1).max(256).refine(
   (value) => Array.from(value).every((character) => {
     const code = character.charCodeAt(0);
@@ -82,7 +81,7 @@ const videoEffectVisualSchema = z.object({
   assetId: storageSafeIdSchema,
   layout: effectLayoutSchema,
   playEmbeddedAudio: z.boolean(),
-  audioVolume: volumeSchema,
+  audioVolume: mediaVolumeSchema,
   audioFadeInMs: z.number().int().min(0).max(120_000).optional(),
   audioFadeOutMs: z.number().int().min(0).max(120_000).optional()
 }).strict();
@@ -94,7 +93,7 @@ export const effectVisualSchema = z.discriminatedUnion("mediaType", [
 
 export const effectSoundSchema = z.object({
   assetId: storageSafeIdSchema,
-  volume: volumeSchema,
+  volume: mediaVolumeSchema,
   fadeInMs: z.number().int().min(0).max(120_000).optional(),
   fadeOutMs: z.number().int().min(0).max(120_000).optional()
 }).strict();

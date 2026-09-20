@@ -48,8 +48,7 @@ export class AudioWindow {
     const resources = new Map<string, { readonly path: string; readonly contentType: string }>([
       [AUDIO_PLAYER_URL, { path: resolve(import.meta.dirname, "player.html"), contentType: "text/html; charset=utf-8" }],
       [`${AUDIO_PLAYER_ORIGIN}player.js`, { path: resolve(import.meta.dirname, "player.js"), contentType: "text/javascript; charset=utf-8" }],
-      [`${AUDIO_PLAYER_ORIGIN}audio-player-policy.js`, { path: resolve(import.meta.dirname, "audio-player-policy.js"), contentType: "text/javascript; charset=utf-8" }],
-      [`${AUDIO_PLAYER_ORIGIN}start-bound-audio.js`, { path: resolve(import.meta.dirname, "start-bound-audio.js"), contentType: "text/javascript; charset=utf-8" }]
+      [`${AUDIO_PLAYER_ORIGIN}audio-player-policy.js`, { path: resolve(import.meta.dirname, "audio-player-policy.js"), contentType: "text/javascript; charset=utf-8" }]
     ]);
     this.#audioSession.protocol.handle(AUDIO_SCHEME, async (request) => {
       const resource = resources.get(request.url);

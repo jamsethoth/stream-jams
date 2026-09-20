@@ -98,6 +98,7 @@ function createHarness(options: {
   readonly createSource?: DeviceAudioPlayerDependencies["createSource"];
   readonly listOutputDevices?: DeviceAudioPlayerDependencies["listOutputDevices"];
   readonly now?: () => number;
+  readonly createAmplifier?: DeviceAudioPlayerDependencies["createAmplifier"];
 } = {}): Harness {
   const elements: TestMediaElement[] = [];
   const sourcedAssetIds: string[] = [];
@@ -118,6 +119,7 @@ function createHarness(options: {
     },
     revokeSource(source) { revokedSources.push(source); },
     listOutputDevices,
+    ...(options.createAmplifier === undefined ? {} : { createAmplifier: options.createAmplifier }),
     ...(options.now === undefined ? {} : { now: options.now })
   });
   return { player, elements, sourcedAssetIds, revokedSources, listOutputDevices };
@@ -270,6 +272,28 @@ describe("DeviceAudioPlayer", () => {
     const settledVolume = audio.elements[0]?.volume;
     await vi.advanceTimersByTimeAsync(100);
     expect(audio.elements[0]?.volume).toBe(settledVolume);
+  });
+
+  it("routes gain above 100 percent through an explicit-output amplifier", async () => {
+    const gains: number[] = [];
+    const dispose = vi.fn();
+    const createAmplifier = vi.fn(async () => ({
+      setGain(value: number) { gains.push(value); }, dispose
+    }));
+    const audio = createHarness({ createAmplifier });
+    audio.player.initialize(1, false);
+    const boosted = batch({
+      layers: [{ sourceKind: "audio", layerId: "boost", assetId: "shared-sound", volume: 2 }],
+      destinations: [{ deviceId: "headphones", routeIds: ["personal"] }]
+    });
+    const result = audio.player.play({ generation: 1, batch: boosted, assets, deadlineMs: 11_000 });
+    await flushStarts();
+    expect(createAmplifier).toHaveBeenCalledWith(audio.elements[0], "headphones");
+    expect(gains).toContain(2);
+    expect(audio.elements[0]!.sinkIds).toEqual([]);
+    audio.elements[0]!.emit("ended");
+    await result;
+    expect(dispose).toHaveBeenCalledOnce();
   });
 
   it("fails only the affected routes when one media start fails", async () => {

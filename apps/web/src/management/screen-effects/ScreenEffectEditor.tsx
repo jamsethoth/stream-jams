@@ -30,6 +30,7 @@ import type { AssetApi } from "../assets/asset-api.js";
 import { AssetPicker } from "../assets/AssetPicker.js";
 import type { AudioApi } from "../audio/audio-api.js";
 import { MediaAudioControls } from "../audio/MediaAudioControls.js";
+import { MediaVolumeControl } from "../audio/MediaVolumeControl.js";
 import { AudioFadeControls } from "../audio/AudioFadeControls.js";
 import { MediaDurationControls } from "../audio/MediaDurationControls.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
@@ -583,7 +584,7 @@ function SoundPanel({ asset, onChoose, onRemove, selected, update }: {
       {selected.sound === null ? null : <button className="button button--secondary" onClick={onRemove} type="button">Remove sound</button>}
     </div>
     {selected.sound === null ? null : <>
-      <label>Sound volume<input aria-label="Sound volume" max={1} min={0} onChange={(event) => updateNumber(event.currentTarget.valueAsNumber, (value) => update((variant) => ({ ...variant, sound: variant.sound === null ? null : { ...variant.sound, volume: value } })))} step={0.01} type="number" value={selected.sound.volume} /></label>
+      <MediaVolumeControl label="Sound volume" value={selected.sound.volume} onChange={(value) => update((variant) => ({ ...variant, sound: variant.sound === null ? null : { ...variant.sound, volume: value } }))} />
       <AudioFadeControls fadeInMs={selected.sound.fadeInMs} fadeOutMs={selected.sound.fadeOutMs} onChange={(fades) => update((variant) => ({ ...variant, sound: variant.sound === null ? null : { ...variant.sound, ...fades } }))} />
     </>}
   </fieldset>;

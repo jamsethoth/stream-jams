@@ -164,7 +164,7 @@ describe("AlertEditorPage", () => {
     await user.click(await screen.findByRole("button", { name: "Video/GIF" }));
     await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
     expect(await screen.findByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
-    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(1);
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(100);
     await user.click(screen.getByRole("button", { name: "Audio" }));
     await user.click(await screen.findByRole("button", { name: "Use selected asset" }));
     await user.click(screen.getByText("Video or GIF", { selector: ".alert-editor-inspector__layer-list span" }));
@@ -212,9 +212,9 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
     await user.click(toggle());
     expect(screen.getByText(/Both the video soundtrack and separate audio will play/)).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("spinbutton", { name: "Embedded audio volume" }), { target: { value: "0.35" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Embedded audio volume" }), { target: { value: "200" } });
     await user.click(screen.getByRole("button", { name: "Undo" }));
-    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(1);
+    expect(screen.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(100);
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(toggle()).not.toBeChecked();
     await user.click(screen.getByRole("button", { name: "Redo" }));
@@ -224,7 +224,7 @@ describe("AlertEditorPage", () => {
     await user.click(within(screen.getByRole("dialog", { name: "Save changes to active alert?" })).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledOnce());
     const saved = saveAlertEditorDocument.mock.calls[0]![1];
-    expect(saved.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 0.35 });
+    expect(saved.layers.find(layer => layer.type === "video")).toMatchObject({ playEmbeddedAudio: true, audioVolume: 2 });
     expect(saved.layers.find(layer => layer.type === "audio")).toMatchObject({ volume: 0.4 });
     expect(saved.outputs).toEqual({ browserSource: true, deviceRouteIds: [] });
   });
@@ -303,7 +303,7 @@ describe("AlertEditorPage", () => {
   it("confirms changed audio content on active device-only alerts without changing outputs", async () => {
     const { user, saveAlertEditorDocument } = renderWorkspaceEditor(routedEditorDocument());
     await user.click(await screen.findByText("Sound", { selector: ".alert-editor-inspector__layer-list span" }));
-    fireEvent.change(screen.getByRole("slider", { name: "Volume 50%" }), { target: { value: "0.7" } });
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Volume" }), { target: { value: "70" } });
     await user.click(screen.getByRole("button", { name: "Save" }));
     const dialog = screen.getByRole("dialog", { name: "Save changes to active alert?" });
     expect(dialog).toHaveTextContent("Private headphones");

@@ -26,7 +26,7 @@ it("rejects repeated logical layer identities, including a disabled duplicate", 
 });
 
 it.each([
-  { volume: -0.01 }, { volume: 1.01 }, { volume: Number.NaN }, { volume: Number.POSITIVE_INFINITY },
+  { volume: -0.01 }, { volume: 2.01 }, { volume: Number.NaN }, { volume: Number.POSITIVE_INFINITY },
   { layerId: "" }, { layerId: " video " }, { assetId: "" }, { enabled: "yes" }, { sourceKind: "tts" }, { url: "https://example.com/sound" }
 ])("rejects invalid source fields without converting them to a playable default: %j", patch => {
   const candidate = { ...source, ...patch } as Parameters<typeof resolveMediaAudioSources>[0][number];

@@ -2,6 +2,8 @@ import { z } from "zod";
 import { playbackTimingSchema } from "../overlays/playback-timing.js";
 import type { AlertAudioOutputs, AudioOutputDevice, AudioOutputRoute, DeviceAudioBatch, DeviceAudioResult, ResolvedAlertAudio } from "./types.js";
 
+export const mediaVolumeSchema = z.number().finite().min(0).max(2);
+
 export const audioRouteIdSchema = z.string().min(1).refine(value => value.trim() === value, "IDs must not contain surrounding whitespace");
 export const explicitAudioDeviceIdSchema = audioRouteIdSchema.refine(
   id => id !== "default" && id !== "communications",
@@ -41,7 +43,7 @@ export const resolvedAudioLayerSchema = z.object({
   sourceKind: z.enum(["audio", "video-soundtrack"]).default("audio"),
   layerId: audioRouteIdSchema,
   assetId: audioRouteIdSchema,
-  volume: z.number().min(0).max(1),
+  volume: mediaVolumeSchema,
   fadeInMs: z.number().int().min(0).max(120_000).optional(),
   fadeOutMs: z.number().int().min(0).max(120_000).optional(),
   playbackDurationMs: z.number().int().min(1).max(120_000).optional()

@@ -8,6 +8,7 @@ import {
   compatibleRgbaColorSchema
 } from "../alerts/text-style.js";
 import { ttsPlaybackInstructionSchema } from "../tts/schemas.js";
+import { mediaVolumeSchema } from "../audio/schemas.js";
 import {
   nonEmptyStringSchema,
   nonNegativeIntegerSchema,
@@ -39,7 +40,7 @@ export const overlayVisualInstructionSchema = z.object({
 
 export const overlayAudioInstructionSchema = z.object({
   assetId: nonEmptyStringSchema,
-  volume: z.number().min(0).max(1),
+  volume: mediaVolumeSchema,
   sourceKind: z.enum(["audio", "video-soundtrack"]).optional(),
   fadeInMs: nonNegativeIntegerSchema.max(120_000).optional(),
   fadeOutMs: nonNegativeIntegerSchema.max(120_000).optional(),

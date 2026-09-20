@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { audioRouteIdSchema } from "./schemas.js";
+import { audioRouteIdSchema, mediaVolumeSchema } from "./schemas.js";
 import type { ResolvedAudioLayer } from "./types.js";
 
 export type MediaAudioKind = "audio" | "video-soundtrack";
@@ -18,7 +18,7 @@ export type ResolvedMediaAudioSource = ResolvedAudioLayer & { readonly sourceKin
 const sourcesSchema = z.array(z.object({
   layerId: audioRouteIdSchema,
   assetId: audioRouteIdSchema,
-  volume: z.number().finite().min(0).max(1),
+  volume: mediaVolumeSchema,
   enabled: z.boolean(),
   sourceKind: z.enum(["audio", "video-soundtrack"]),
   fadeInMs: z.number().int().min(0).max(120_000).optional(),

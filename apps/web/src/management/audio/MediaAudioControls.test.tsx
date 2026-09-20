@@ -41,19 +41,19 @@ it("hides volume unless embedded audio is enabled", () => {
   expect(screen.queryByText(/Both the video soundtrack and separate audio/)).not.toBeInTheDocument();
 });
 
-it("accepts zero and full volume without changing the soundtrack toggle", () => {
+it("accepts zero and 200 percent volume without changing the soundtrack toggle", () => {
   const onChange = vi.fn();
   render(<MediaAudioControls value={{ playEmbeddedAudio: true, audioVolume: 0.4 }} hasSeparateAudio={false} onChange={onChange} />);
   const input = screen.getByRole("spinbutton", { name: "Embedded audio volume" });
   fireEvent.change(input, { target: { value: "0" } });
-  fireEvent.change(input, { target: { value: "1" } });
-  expect(onChange.mock.calls).toEqual([[{ playEmbeddedAudio: true, audioVolume: 0 }], [{ playEmbeddedAudio: true, audioVolume: 1 }]]);
+  fireEvent.change(input, { target: { value: "200" } });
+  expect(onChange.mock.calls).toEqual([[{ playEmbeddedAudio: true, audioVolume: 0 }], [{ playEmbeddedAudio: true, audioVolume: 2 }]]);
 });
 
 it("never commits empty or out-of-range volume values", () => {
   const onChange = vi.fn();
   render(<MediaAudioControls value={{ playEmbeddedAudio: true, audioVolume: 0.4 }} hasSeparateAudio={false} onChange={onChange} />);
   const input = screen.getByRole("spinbutton", { name: "Embedded audio volume" });
-  for (const value of ["", "-0.1", "1.1"]) fireEvent.change(input, { target: { value } });
+  for (const value of ["", "-1", "201"]) fireEvent.change(input, { target: { value } });
   expect(onChange).not.toHaveBeenCalled();
 });

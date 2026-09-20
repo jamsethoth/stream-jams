@@ -66,9 +66,10 @@ describe("named audio route contracts", () => {
       destinations: [{ deviceId: "device-a", routeIds: ["route-a"] }]
     };
     expect(schema.parse(batch)).toEqual(batch);
+    expect(schema.parse({ ...batch, layers: [{ ...batch.layers[0], volume: 2 }] })).toMatchObject({ layers: [{ volume: 2 }] });
     for (const invalid of [
       { durationMs: 0 }, { muted: "false" },
-      { layers: [{ sourceKind: "audio", layerId: "sound", assetId: "asset-a", volume: 2 }] },
+      { layers: [{ sourceKind: "audio", layerId: "sound", assetId: "asset-a", volume: 2.01 }] },
       { destinations: [{ deviceId: "default", routeIds: ["route-a"] }] },
       { destinations: [{ deviceId: "device-a", routeIds: [] }] }
     ]) expect(schema.safeParse({ ...batch, ...invalid }).success).toBe(false);
