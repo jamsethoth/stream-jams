@@ -247,7 +247,8 @@ export class DefaultAlertResolver implements AlertResolver {
         visual: {
           assetId: layer.assetId,
           mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type,
-          layout
+          layout,
+          ...(layer.type === "video" ? { loop: layer.loop ?? false } : {})
         }
       };
     }

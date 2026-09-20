@@ -35,7 +35,8 @@ export const unifiedOutputRequestSchema = z.object({
 export const overlayVisualInstructionSchema = z.object({
   assetId: nonEmptyStringSchema,
   mediaType: z.enum(["image", "gif", "video"]),
-  layout: overlayElementLayoutSchema
+  layout: overlayElementLayoutSchema,
+  loop: z.boolean().optional()
 });
 
 export const overlayAudioInstructionSchema = z.object({

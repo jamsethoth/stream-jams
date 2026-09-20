@@ -75,6 +75,7 @@ export const SavedVideoSoundtrackOff: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
     await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
+    await expect(canvas.getByRole("checkbox", { name: "Loop video or GIF" })).not.toBeChecked();
     await expect(canvas.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
   }
 };

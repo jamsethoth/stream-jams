@@ -93,6 +93,19 @@ import {
 } from "./editor-state.js";
 import "./alert-editor-page.css";
 
+const alertPreviewPreferencesKey = "stream-jams.alert-preview-media";
+
+function readAlertPreviewPreferences(): { readonly audio: boolean; readonly tts: boolean } {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(alertPreviewPreferencesKey) ?? "null") as unknown;
+    if (typeof value === "object" && value !== null) {
+      const preferences = value as Record<string, unknown>;
+      return { audio: preferences.audio === true, tts: preferences.tts === true };
+    }
+  } catch { /* Use muted defaults when storage is unavailable or invalid. */ }
+  return { audio: false, tts: false };
+}
+
 export type AlertEditorPageApi = Pick<
   ManagementApi,
   | "getAlertEditorDocument"
@@ -223,8 +236,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [sendDeviceOnly, setSendDeviceOnly] = useState(false);
   const audioStatus = useAudioStatus(props.audioApi ?? defaultAudioApi);
   const [sendIncludeTts, setSendIncludeTts] = useState(true);
-  const [previewIncludeAudio, setPreviewIncludeAudio] = useState(false);
-  const [previewIncludeTts, setPreviewIncludeTts] = useState(false);
+  const [previewPreferences, setPreviewPreferences] = useState(readAlertPreviewPreferences);
+  const previewIncludeAudio = previewPreferences.audio;
+  const previewIncludeTts = previewPreferences.tts;
   const [preview, setPreview] = useState(false);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewElapsedMs, setPreviewElapsedMs] = useState(0);
@@ -253,6 +267,12 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     event: null
   });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
+  const canvasAssetMediaTypes = useMemo(() => Object.fromEntries(assets.flatMap((asset) =>
+    asset.mediaType === "audio" ? [] : [[asset.id, asset.mediaType]]
+  )), [assets]);
+  useEffect(() => {
+    try { window.localStorage.setItem(alertPreviewPreferencesKey, JSON.stringify(previewPreferences)); } catch { /* Keep the preference session-only. */ }
+  }, [previewPreferences]);
   const resetEventInspectorDraft = useCallback(() => {
     setConditionDraftError(null);
     setEventInspectorRevision((current) => current + 1);
@@ -1312,6 +1332,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           ) : null}
           <AlertCanvas
             assetApi={props.assetApi}
+            assetMediaTypes={canvasAssetMediaTypes}
             background={canvasBackground}
             document={preview ? previewDocument! : document}
             fitRequestId={fitRequestId}
@@ -1392,8 +1413,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 previewIncludeTts={previewIncludeTts}
                 sendIncludeAudio={sendIncludeAudio}
                 sendIncludeTts={sendIncludeTts}
-                onPreviewIncludeAudio={setPreviewIncludeAudio}
-                onPreviewIncludeTts={setPreviewIncludeTts}
+                onPreviewIncludeAudio={(audio) => setPreviewPreferences((current) => ({ ...current, audio }))}
+                onPreviewIncludeTts={(tts) => setPreviewPreferences((current) => ({ ...current, tts }))}
                 onSendIncludeAudio={setSendIncludeAudio}
                 onSendIncludeTts={setSendIncludeTts}
                 onChange={updateDocument}
@@ -1725,7 +1746,17 @@ function LayerInspector({
           {document.layers.map((layer) => (
             <div className={selectedLayer?.id === layer.id ? "is-selected" : undefined} key={layer.id}>
               <button onClick={() => onSelect(layer.id)} type="button"><span>{layer.name}</span><small>{layerTypeLabel(layer.type)}</small></button>
-              {layer.type === "tts" ? null : <button aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</button>}
+              {layer.type === "tts" ? (
+                <button
+                  aria-label={`${layer.enabled ? "Disable" : "Enable"} ${layer.name}${!layer.enabled && activeTtsProvider === null ? " (active TTS provider required)" : ""}`}
+                  disabled={!layer.enabled && activeTtsProvider === null}
+                  onClick={() => onChange((current) => updateLayer(current, layer.id, (candidate) => candidate.type === "tts"
+                    ? { ...candidate, enabled: !candidate.enabled, ...(!candidate.enabled && activeTtsProvider !== null ? { providerId: activeTtsProvider.kind } : {}) }
+                    : candidate))}
+                  title={!layer.enabled && activeTtsProvider === null ? "Set up an active TTS provider to enable this layer." : undefined}
+                  type="button"
+                >{layer.enabled ? "On" : "Off"}</button>
+              ) : <button aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</button>}
             </div>
           ))}
         </div>
@@ -1811,6 +1842,11 @@ function LayerInspector({
             hasSeparateAudio={document.layers.some(layer => layer.type === "audio" && layer.visible)}
             onChange={(settings) => onChange(current => updateLayer(current, selectedLayer.id, layer => layer.type === "video" ? { ...layer, ...settings } : layer))}
           /> : null}
+          {selectedLayer.type === "video" ? <label className="alert-editor-inspector__check"><input
+            checked={selectedLayer.loop ?? false}
+            onChange={(event) => { const loop = event.currentTarget.checked; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "video" ? { ...layer, loop } : layer)); }}
+            type="checkbox"
+          /><span>Loop video or GIF</span></label> : null}
           {selectedLayer.type === "video" && selectedLayer.playEmbeddedAudio ? <AudioFadeControls
             fadeInMs={selectedLayer.audioFadeInMs}
             fadeOutMs={selectedLayer.audioFadeOutMs}

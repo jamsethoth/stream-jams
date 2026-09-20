@@ -13,6 +13,7 @@ export interface CanvasBackground {
 
 interface AlertCanvasProps {
   readonly assetApi: AssetApi;
+  readonly assetMediaTypes?: Readonly<Record<string, "image" | "gif" | "video">>;
   readonly background?: CanvasBackground;
   readonly document: AlertEditorDocument;
   readonly fitRequestId?: number;
@@ -189,6 +190,7 @@ export function AlertCanvas(props: AlertCanvasProps) {
                 >
                   <CanvasLayer
                     assetApi={props.assetApi}
+                    assetMediaType={"assetId" in layer ? props.assetMediaTypes?.[layer.assetId] : undefined}
                     layer={layer}
                     {...(props.preview && layer.type === "text"
                       ? { previewText: props.previewTextByLayerId?.[layer.id] ?? "" }
@@ -222,12 +224,14 @@ export function AlertCanvas(props: AlertCanvasProps) {
 
 function CanvasLayer({
   assetApi,
+  assetMediaType,
   layer,
   previewText,
   scale,
   templateContext
 }: {
   readonly assetApi: AssetApi;
+  readonly assetMediaType?: "image" | "gif" | "video" | undefined;
   readonly layer: AlertLayer;
   readonly previewText?: string;
   readonly scale: number;
@@ -242,7 +246,8 @@ function CanvasLayer({
     );
   }
   if (layer.type === "image" || layer.type === "video") {
-    return <CanvasAsset assetApi={assetApi} assetId={layer.assetId} kind={layer.type} />;
+    const kind = assetMediaType === "gif" ? "gif" : assetMediaType ?? layer.type;
+    return <CanvasAsset assetApi={assetApi} assetId={layer.assetId} kind={kind} loop={layer.type === "video" && (layer.loop ?? false)} />;
   }
   if (layer.type === "shape") {
     return <span className="alert-canvas__shape" style={{ background: layer.fill }} />;
@@ -250,7 +255,7 @@ function CanvasLayer({
   return <span>{layer.name}</span>;
 }
 
-function CanvasAsset({ assetApi, assetId, kind }: { readonly assetApi: AssetApi; readonly assetId: string; readonly kind: "image" | "video" }) {
+function CanvasAsset({ assetApi, assetId, kind, loop }: { readonly assetApi: AssetApi; readonly assetId: string; readonly kind: "image" | "gif" | "video"; readonly loop: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
@@ -267,10 +272,10 @@ function CanvasAsset({ assetApi, assetId, kind }: { readonly assetApi: AssetApi;
       if (objectUrl !== null) URL.revokeObjectURL(objectUrl);
     };
   }, [assetApi, assetId]);
-  if (url === null) return <span className="alert-canvas__asset-placeholder">{kind === "video" ? "Video" : "Image"}</span>;
+  if (url === null) return <span className="alert-canvas__asset-placeholder">{kind === "video" ? "Video" : kind === "gif" ? "GIF" : "Image"}</span>;
   return kind === "video"
-    ? <video aria-label="Video asset preview" autoPlay loop muted src={url} />
-    : <img alt="" src={url} />;
+    ? <video aria-label="Video asset preview" autoPlay loop={loop} muted src={url} />
+    : <img alt={kind === "gif" ? "Animated image asset preview" : ""} src={url} />;
 }
 
 function layerStyle(

@@ -1154,7 +1154,7 @@ function createLayerInstruction(
   if ((layer.type === "image" || layer.type === "video") && layout !== undefined) {
     return {
       ...base,
-      visual: { assetId: layer.assetId, mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type, layout }
+      visual: { assetId: layer.assetId, mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type, layout, ...(layer.type === "video" ? { loop: layer.loop ?? false } : {}) }
     };
   }
   if (layer.type === "audio") {

@@ -21,6 +21,13 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it("honors the saved visual loop setting", () => {
+    const value = { ...instruction(), visual: { assetId: "video", mediaType: "video" as const, loop: true,
+      layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } } };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/video.webm"} />);
+    expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("loop", true);
+  });
+
   it("uses a hidden video media element for a routed video soundtrack", () => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const value = {

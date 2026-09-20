@@ -107,6 +107,7 @@ export interface OverlayVisualInstruction {
   readonly assetId: string;
   readonly mediaType: "image" | "gif" | "video";
   readonly layout: OverlayElementLayout;
+  readonly loop?: boolean | undefined;
 }
 
 export interface OverlayAudioInstruction {
