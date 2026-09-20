@@ -48,6 +48,7 @@ describe("AlertCanvas", () => {
       animationDuration: "300ms, 300ms",
       animationFillMode: "both, forwards",
       animationName: "overlay-enter-slide-up, overlay-exit-slide-down",
+      animationPlayState: "paused",
       animationTimingFunction: "ease-in-out, ease-in-out"
     });
 

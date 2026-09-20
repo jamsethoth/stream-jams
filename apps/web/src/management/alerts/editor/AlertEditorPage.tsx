@@ -23,6 +23,7 @@ import {
   resolveAlertAudio,
   resolveAudioEnvelope,
   collectAlertDurationAssetIds,
+  resolveAlertLayerDurationMs,
   resolveMediaDuration,
   rgbaColorSchema,
   validateAlertSamplePayload,
@@ -389,7 +390,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   useEffect(() => {
     if (!previewPlaying || editor === null) return;
-    const durationMs = editor.document.durationMs;
+    const durationMs = previewClockRef.current.durationMs;
     const startedAt = performance.now() - previewElapsedMs;
     const tick = (timestamp: number) => {
       const nextElapsedMs = Math.min(durationMs, Math.max(0, Math.round(timestamp - startedAt)));
@@ -956,7 +957,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setNotice(null);
     try {
       const result = await props.managementApi.sendAlertEditorTest(props.alertId, {
-        document: applyActiveTtsProvider(document, activeTtsProvider),
+        document: applyActiveTtsProvider(effectiveAlertDocument(document, assets), activeTtsProvider),
         targetProfileId: !sendDeviceOnly && profile.enabled && profile.reviewState === "ready" ? profileId : null,
         samplePayload,
         includeAudio: sendIncludeAudio,
@@ -2193,7 +2194,14 @@ function effectiveAlertDocument(document: AlertEditorDocument, assets: readonly 
       }];
     })
   });
-  return { ...document, durationMs: resolution.durationMs };
+  const mediaMatched = { ...document, durationMs: resolution.durationMs };
+  return {
+    ...mediaMatched,
+    durationMs: Math.max(
+      mediaMatched.durationMs,
+      ...mediaMatched.layers.map((layer) => resolveAlertLayerDurationMs(mediaMatched, layer))
+    )
+  };
 }
 
 function alertDocumentVisualStyleError(document: AlertEditorDocument): string | null {

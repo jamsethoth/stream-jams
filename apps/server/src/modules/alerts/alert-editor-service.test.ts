@@ -8,6 +8,7 @@ import {
   AlertEditorDocument,
   AlertRule,
   AlertEditorTestRequest,
+  type AssetRecord,
   type AudioOutputStatus
 } from "@stream-jams/core";
 import {
@@ -1355,7 +1356,7 @@ describe("AlertEditorService", () => {
         variantId: "variant-moderated",
         overlayInstruction: expect.objectContaining({
           targetProfileId: "landscape",
-          durationMs: candidate.durationMs,
+          durationMs: candidate.durationMs + textLayer.animation.durationMs,
           animation: textLayer.animation,
           text: expect.objectContaining({
             text: "[moderated] [link removed]",
@@ -1420,7 +1421,9 @@ describe("AlertEditorService", () => {
   });
 
   it("uses the stored media type when testing a Video/GIF layer", async () => {
-    const harness = createHarness(false, async (assetId) => assetId === "asset-gif" ? "gif" : null);
+    const harness = createHarness(false, async (assetIds) => new Map(
+      assetIds.includes("asset-gif") ? [["asset-gif", assetRecord("asset-gif", "gif", null)]] : []
+    ));
     const document = await harness.service.getDocument(rule.id);
     const videoLayer = {
       id: "layer-gif",
@@ -1471,7 +1474,9 @@ describe("AlertEditorService", () => {
   });
 
   it("includes an enabled video soundtrack in Browser Source test playback", async () => {
-    const harness = createHarness(false, async (assetId) => assetId === "asset-video" ? "video" : null);
+    const harness = createHarness(false, async (assetIds) => new Map(
+      assetIds.includes("asset-video") ? [["asset-video", assetRecord("asset-video", "video", 5_000)]] : []
+    ));
     const document = await harness.service.getDocument(rule.id);
     const videoLayer = {
       id: "layer-video",
@@ -1515,7 +1520,7 @@ describe("AlertEditorService", () => {
         }),
         expect.objectContaining({
           overlayInstruction: expect.objectContaining({
-            audio: { assetId: "asset-video", volume: 0.4, sourceKind: "video-soundtrack" }
+            audio: expect.objectContaining({ assetId: "asset-video", volume: 0.4, sourceKind: "video-soundtrack" })
           })
         })
       ])
@@ -1549,11 +1554,59 @@ describe("AlertEditorService", () => {
         expect.objectContaining({
           variantId: rule.id,
           overlayInstruction: expect.objectContaining({
-            audio: { assetId: "asset-audio", volume: 0.65, sourceKind: "audio" }
+            audio: expect.objectContaining({ assetId: "asset-audio", volume: 0.65, sourceKind: "audio" })
           })
         })
       ])
     }));
+  });
+
+  it("resolves matched media and preserves the visual exit tail for draft tests", async () => {
+    const assets = new Map([
+      ["asset-audio", assetRecord("asset-audio", "audio", 3_971)],
+      ["asset-image", assetRecord("asset-image", "image", null)]
+    ]);
+    const harness = createHarness(
+      false,
+      async (assetIds) => new Map(assetIds.flatMap((id) => assets.has(id) ? [[id, assets.get(id)!] as const] : [])),
+      new DefaultModerationService(),
+      audioStatusFixture()
+    );
+    const source = await harness.service.getDocument(rule.id);
+    const image = {
+      id: "layer-image", name: "Image", type: "image" as const, visible: true, order: source.layers.length,
+      assetId: "asset-image", animation: { mode: "preset" as const, entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
+    };
+    const audio = {
+      id: "layer-audio", name: "Audio", type: "audio" as const, visible: true, order: source.layers.length + 1,
+      assetId: "asset-audio", volume: 1, animation: { mode: "preset" as const, entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" }
+    };
+    const document: AlertEditorDocument = {
+      ...source,
+      durationMode: "media",
+      outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
+      layers: [...source.layers, image, audio],
+      targetProfiles: source.targetProfiles.map((profile) => profile.id === "landscape" ? {
+        ...profile,
+        layerLayouts: [...profile.layerLayouts, { layerId: image.id, x: 10, y: 10, width: 200, height: 200, zIndex: 2 }]
+      } : profile)
+    };
+
+    await harness.service.sendTest(rule.id, {
+      document,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James" },
+      includeAudio: true,
+      includeTts: false
+    });
+
+    const playback = harness.enqueueTest.mock.calls[0]![0];
+    expect(playback.alerts.find((alert) => alert.overlayInstruction.visual?.assetId === "asset-image")?.overlayInstruction.durationMs).toBe(4_271);
+    expect(playback.alerts.find((alert) => alert.overlayInstruction.audio?.assetId === "asset-audio")?.overlayInstruction).toMatchObject({
+      durationMs: 3_971,
+      audio: { playbackDurationMs: 3_971 }
+    });
+    expect(playback.audio[0]).toMatchObject({ durationMs: 3_971, layers: [{ playbackDurationMs: 3_971 }] });
   });
 
   it("omits configured audio and TTS layers when both test inclusion flags are disabled", async () => {
@@ -1654,7 +1707,7 @@ describe("AlertEditorService", () => {
 
 function createHarness(
   activeSet = false,
-  findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>,
+  findAssets?: (assetIds: readonly string[]) => Promise<ReadonlyMap<string, AssetRecord>>,
   moderationService = new DefaultModerationService(),
   audioOutputStatus?: AudioOutputStatus
 ) {
@@ -1695,7 +1748,7 @@ function createHarness(
     }),
     enqueueTest,
     moderationService,
-    ...(findAssetMediaType === undefined ? {} : { findAssetMediaType }),
+    ...(findAssets === undefined ? {} : { findAssets }),
     generateId: () => `generated-${++nextId}`,
     generateReferenceId: () => "ref-test-1",
     async saveAtomically(input) {
@@ -1706,6 +1759,23 @@ function createHarness(
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
   return { service, documents, rules, metadata, hasConnectedOutput, hasReadyDesktopOutput, enqueueTest };
+}
+
+function assetRecord(
+  id: string,
+  mediaType: AssetRecord["mediaType"],
+  durationMs: number | null
+): AssetRecord {
+  return {
+    id,
+    originalFileName: `${id}.${mediaType === "audio" ? "mp3" : mediaType}`,
+    mediaType,
+    mimeType: mediaType === "audio" ? "audio/mpeg" : `${mediaType}/test`,
+    sizeBytes: 1,
+    checksum: id,
+    storagePath: id,
+    durationMs
+  };
 }
 
 function audioStatusFixture(): AudioOutputStatus {

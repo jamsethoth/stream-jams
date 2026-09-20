@@ -280,13 +280,15 @@ function layerStyle(
   instructionDurationMs: number,
   elapsedMs: number
 ): CSSProperties {
+  const animationStyle = overlayPresetAnimationStyle(animation, instructionDurationMs, elapsedMs);
   return {
     height: `${layout.height / dimensions.height * 100}%`,
     left: `${layout.x / dimensions.width * 100}%`,
     top: `${layout.y / dimensions.height * 100}%`,
     width: `${layout.width / dimensions.width * 100}%`,
     zIndex: layout.zIndex,
-    ...overlayPresetAnimationStyle(animation, instructionDurationMs, elapsedMs)
+    ...animationStyle,
+    ...(animation === null ? {} : { animationPlayState: "paused" })
   };
 }
 

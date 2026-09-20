@@ -531,6 +531,19 @@ describe("DefaultAlertResolver", () => {
     expect(resolved.map((alert) => alert.overlayInstruction.animation)).toEqual(Array(5).fill(animation));
   });
 
+  it("keeps matched media visual layers through their exit animation", () => {
+    const rule = createRule();
+    const document = { ...createEditorDocument(rule), durationMode: "media" as const };
+    const resolved = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent())],
+      target: { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" },
+      editorDocuments: new Map([[rule.id, document]])
+    });
+
+    expect(resolved.find((alert) => alert.overlayInstruction.visual !== null)?.overlayInstruction.durationMs).toBe(4_300);
+    expect(resolved.find((alert) => alert.overlayInstruction.audio !== null)?.overlayInstruction.durationMs).toBe(4_000);
+  });
+
   it("does not resolve editor layers for a disabled target profile", () => {
     const rule = createRule();
     const input = {
