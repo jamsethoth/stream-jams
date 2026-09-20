@@ -1380,6 +1380,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             {tab === "layers" ? (
               <LayerInspector
                 activeTtsProvider={activeTtsProvider}
+                assets={assets}
                 document={document}
                 onAddAsset={(type) => setPicker({ layerId: null, type })}
                 onAddShape={addShape}
@@ -1704,6 +1705,7 @@ export function affectedProfileLabelsForEditor(
 
 function LayerInspector({
   activeTtsProvider,
+  assets,
   document,
   onAddAsset,
   onAddShape,
@@ -1717,6 +1719,7 @@ function LayerInspector({
   ttsProvidersLoaded
 }: {
   readonly activeTtsProvider: RegisteredProviderView | null;
+  readonly assets: readonly AssetLibraryItem[];
   readonly document: AlertEditorDocument;
   readonly onAddAsset: (type: "image" | "video" | "audio") => void;
   readonly onAddShape: () => void;
@@ -1730,6 +1733,9 @@ function LayerInspector({
   readonly ttsProvidersLoaded: boolean;
 }) {
   const layout = selectedLayer === null ? undefined : document.targetProfiles.find((profile) => profile.id === profileId)?.layerLayouts.find((candidate) => candidate.layerId === selectedLayer.id);
+  const selectedAssetMediaType = selectedLayer !== null && "assetId" in selectedLayer
+    ? assets.find((asset) => asset.id === selectedLayer.assetId)?.mediaType
+    : undefined;
   return (
     <div className="alert-editor-inspector">
       <section>
@@ -1842,11 +1848,12 @@ function LayerInspector({
             hasSeparateAudio={document.layers.some(layer => layer.type === "audio" && layer.visible)}
             onChange={(settings) => onChange(current => updateLayer(current, selectedLayer.id, layer => layer.type === "video" ? { ...layer, ...settings } : layer))}
           /> : null}
-          {selectedLayer.type === "video" ? <label className="alert-editor-inspector__check"><input
+          {selectedLayer.type === "video" && selectedAssetMediaType !== "gif" ? <label className="alert-editor-inspector__check"><input
             checked={selectedLayer.loop ?? false}
             onChange={(event) => { const loop = event.currentTarget.checked; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "video" ? { ...layer, loop } : layer)); }}
             type="checkbox"
-          /><span>Loop video or GIF</span></label> : null}
+          /><span>Loop video</span></label> : null}
+          {selectedLayer.type === "video" && selectedAssetMediaType === "gif" ? <p>GIF repetition follows the animation stored in the file.</p> : null}
           {selectedLayer.type === "video" && selectedLayer.playEmbeddedAudio ? <AudioFadeControls
             fadeInMs={selectedLayer.audioFadeInMs}
             fadeOutMs={selectedLayer.audioFadeOutMs}
