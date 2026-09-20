@@ -52,7 +52,7 @@ describe("DefaultAlertResolver", () => {
   it("renders a GIF visual without projecting its stale embedded-audio setting", () => {
     const rule = createRule();
     const original = createEditorDocument(rule);
-    const video = { id: "video", name: "Video or GIF", type: "video" as const, assetId: "clip", order: 7, animation, visible: true, playEmbeddedAudio: true, audioVolume: 0.4 };
+    const video = { id: "video", name: "Video or GIF", type: "video" as const, assetId: "clip", order: 7, animation, visible: true, loop: true, playEmbeddedAudio: true, audioVolume: 0.4 };
     const document: AlertEditorDocument = {
       ...original,
       layers: [...original.layers, video],
@@ -69,7 +69,7 @@ describe("DefaultAlertResolver", () => {
       visualAssetMediaTypes: { clip: "gif" }
     });
 
-    expect(result.some(alert => alert.overlayInstruction.visual?.mediaType === "gif")).toBe(true);
+    expect(result.some(alert => alert.overlayInstruction.visual?.mediaType === "gif" && alert.overlayInstruction.visual.loop)).toBe(true);
     expect(result.some(alert => alert.overlayInstruction.audio?.assetId === "clip")).toBe(false);
   });
 

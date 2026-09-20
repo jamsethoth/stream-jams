@@ -442,6 +442,7 @@ export const alertLayerSchema = z.discriminatedUnion("type", [
   alertLayerBaseSchema.extend({
     type: z.literal("video"),
     assetId: nonEmptyStringSchema,
+    loop: z.boolean().optional(),
     playEmbeddedAudio: z.boolean(),
     audioVolume: mediaVolumeSchema,
     audioFadeInMs: z.number().int().min(0).max(120_000).optional(),

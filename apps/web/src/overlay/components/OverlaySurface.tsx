@@ -354,6 +354,7 @@ function OverlayInstructionLayer({
       {instruction.visual === null ? null : instruction.visual.mediaType === "video" ? (
         <video
           autoPlay={startsAt === undefined}
+          loop={instruction.visual.loop ?? false}
           ref={videoElementRef}
           data-testid={`overlay-video-${instruction.id}`}
           muted={instruction.moduleId === "alerts" || muted}

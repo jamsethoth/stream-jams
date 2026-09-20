@@ -60,12 +60,43 @@ const testAudioApi = createStoryAudioApi();
 
 afterEach(() => {
   cleanup();
+  window.localStorage.removeItem("stream-jams.alert-preview-media");
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
 
 describe("AlertEditorPage", () => {
+  it("saves the video or GIF loop choice on the visual layer", async () => {
+    const source = editorDocument();
+    const visualDocument: AlertEditorDocument = {
+      ...source,
+      layers: [{ id: "visual", name: "Clip", type: "video", visible: true, order: 0, assetId: "asset-video",
+        playEmbeddedAudio: false, audioVolume: 1, animation: source.layers[0]!.animation }],
+      targetProfiles: source.targetProfiles.map((profile) => ({ ...profile,
+        layerLayouts: profile.id === "landscape" ? [{ layerId: "visual", x: 0, y: 0, width: 320, height: 180, zIndex: 0 }] : [] }))
+    };
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor(visualDocument, [assetLibraryItem("video")]);
+    await user.click(await screen.findByRole("checkbox", { name: "Loop video or GIF" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalled());
+    expect(saveAlertEditorDocument.mock.calls.at(-1)?.[1].layers[0]).toMatchObject({ type: "video", loop: true });
+  });
+
+  it("keeps local preview audio and TTS preferences across editor mounts", async () => {
+    const first = renderWorkspaceEditor();
+    await first.user.click(await screen.findByRole("tab", { name: "Event" }));
+    await first.user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await first.user.click(screen.getByRole("checkbox", { name: "Preview TTS" }));
+    cleanup();
+
+    renderWorkspaceEditor();
+    await userEvent.setup().click(await screen.findByRole("tab", { name: "Event" }));
+    expect(screen.getByRole("checkbox", { name: "Preview audio" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Preview TTS" })).toBeChecked();
+  });
+
   it("seeks newly ready preview media while paused without starting it", async () => {
     const play = vi.fn(async () => undefined);
     const audios: { readyState: number; currentTime: number; onloadedmetadata: (() => void) | null }[] = [];
@@ -2965,18 +2996,22 @@ describe("AlertEditorPage", () => {
       </DirtyNavigationProvider>
     );
 
-    const liveTtsSummary = await screen.findByText("Live TTS", { selector: "summary" });
+    const directToggle = await screen.findByRole("button", { name: "Disable Speech" });
+    await user.click(directToggle);
+    expect(screen.getByRole("button", { name: "Enable Speech" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Enable Speech" }));
+    const liveTtsSummary = screen.getByText("Live TTS", { selector: "summary" });
     expect(liveTtsSummary.closest("details")).not.toHaveAttribute("open");
     const enabled = screen.getByRole("checkbox", { name: "Enable TTS for this alert" });
     expect(enabled).not.toBeVisible();
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(liveTtsSummary);
     expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     expect(enabled).toBeVisible();
     expect(screen.getByText("Studio Speaker.bot")).toBeVisible();
     expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     expect(enabled).toBeChecked();
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     await user.click(enabled);
     expect(enabled).not.toBeChecked();
     await user.click(enabled);
@@ -3027,7 +3062,7 @@ describe("AlertEditorPage", () => {
     );
 
     await user.click(await screen.findByRole("button", { name: "TTS" }));
-    expect(screen.queryByRole("button", { name: "Hide Text to speech" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enable Text to speech (active TTS provider required)" })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: "Enable TTS for this alert" })).toBeDisabled();
     expect(screen.getByRole("checkbox", { name: "Enable TTS for this alert" })).not.toBeChecked();
     expect(screen.getByRole("link", { name: "Set up a TTS provider" })).toHaveAttribute("href", "/manage/tts-providers");
