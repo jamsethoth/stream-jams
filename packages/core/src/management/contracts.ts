@@ -725,7 +725,7 @@ export const alertEditorTestRequestSchema = z.object({
 });
 
 export const alertEditorTestDestinationSchema = z.object({
-  kind: z.enum(["browser-source", "device-route"]),
+  kind: z.enum(["browser-source", "desktop-overlay", "device-route"]),
   id: nonEmptyStringSchema,
   name: nonEmptyStringSchema
 });

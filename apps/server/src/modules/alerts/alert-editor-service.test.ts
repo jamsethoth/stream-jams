@@ -1082,6 +1082,35 @@ describe("AlertEditorService", () => {
     expect(harness.enqueueTest).toHaveBeenCalledTimes(1);
   });
 
+  it("queues a Landscape visual test for a ready desktop overlay without a connected browser source", async () => {
+    const harness = createHarness();
+    harness.hasConnectedOutput.mockResolvedValue(false);
+    harness.hasReadyDesktopOutput.mockResolvedValue(true);
+    const document = await harness.service.getDocument(rule.id);
+
+    await expect(harness.service.sendTest(rule.id, {
+      document,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James", actor: { displayName: "James" } },
+      includeAudio: false,
+      includeTts: false
+    })).resolves.toEqual({
+      status: "queued",
+      targetProfileId: "landscape",
+      referenceId: "ref-test-1",
+      test: true,
+      deliveredDestinations: [
+        { kind: "desktop-overlay", id: "desktop:primary", name: "Desktop Overlay" }
+      ],
+      unavailableDestinations: [
+        { kind: "browser-source", id: "landscape", name: "Landscape Browser Source" }
+      ]
+    });
+    const playback = harness.enqueueTest.mock.calls[0]?.[0] as AlertEditorTestPlayback;
+    expect(playback.alerts).not.toHaveLength(0);
+    expect(playback.alerts.every((alert) => alert.desktopVisualEligible === true)).toBe(true);
+  });
+
   it("queues canonical audio for a null-profile device-only test and reports named partial destinations", async () => {
     const harness = createHarness(false, undefined, new DefaultModerationService(), audioStatusFixture());
     const document = await harness.service.getDocument(rule.id);
@@ -1649,6 +1678,7 @@ function createHarness(
     saveRule: vi.fn(async (value: AlertRuleManagementMetadata) => value)
   };
   const hasConnectedOutput = vi.fn(async () => true);
+  const hasReadyDesktopOutput = vi.fn(async () => false);
   const enqueueTest = vi.fn(async (playback: AlertEditorTestPlayback) => {
     void playback;
   });
@@ -1658,6 +1688,7 @@ function createHarness(
     rules,
     metadata,
     hasConnectedOutput,
+    hasReadyDesktopOutput,
     ...(audioOutputStatus === undefined ? {} : { getAudioOutputStatus: async () => audioOutputStatus }),
     ...(audioOutputStatus === undefined ? {} : {
       listAudioOutputRoutes: () => audioOutputStatus.routes.map(routeStatus => routeStatus.route)
@@ -1674,7 +1705,7 @@ function createHarness(
     },
     now: () => new Date("2026-07-15T12:00:00.000Z")
   });
-  return { service, documents, rules, metadata, hasConnectedOutput, enqueueTest };
+  return { service, documents, rules, metadata, hasConnectedOutput, hasReadyDesktopOutput, enqueueTest };
 }
 
 function audioStatusFixture(): AudioOutputStatus {
