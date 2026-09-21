@@ -4,9 +4,10 @@ import type { AssetApi } from "../assets/asset-api.js";
 import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
 
 /** Local draft playback. No admission API or configured output routes are used. */
-export function ScreenEffectPreview({ assetApi, variant, ref }: {
+export function ScreenEffectPreview({ assetApi, assetDurations, variant, ref }: {
   readonly ref?: Ref<{ play(): void }>;
   readonly assetApi: Pick<AssetApi, "getAssetFile">;
+  readonly assetDurations: ReadonlyMap<string, number | null>;
   readonly variant: EffectVariant;
 }) {
   const [urls, setUrls] = useState<{ visual: string | null; sound: string | null } | null>(null);
@@ -22,14 +23,14 @@ export function ScreenEffectPreview({ assetApi, variant, ref }: {
     volume: variant.visual.audioVolume,
     fadeInMs: variant.visual.audioFadeInMs ?? 0,
     fadeOutMs: variant.visual.audioFadeOutMs ?? 0,
-    playbackDurationMs: variant.durationMs,
+    playbackDurationMs: Math.min(assetDurations.get(variant.visual.assetId) ?? variant.durationMs, variant.durationMs),
     muted: muted || !variant.visual.playEmbeddedAudio
   } : null, playing);
   useMediaVolumeEnvelope(audio, variant.sound === null ? null : {
     volume: variant.sound.volume,
     fadeInMs: variant.sound.fadeInMs ?? 0,
     fadeOutMs: variant.sound.fadeOutMs ?? 0,
-    playbackDurationMs: variant.durationMs,
+    playbackDurationMs: Math.min(assetDurations.get(variant.sound.assetId) ?? variant.durationMs, variant.durationMs),
     muted
   }, playing);
 

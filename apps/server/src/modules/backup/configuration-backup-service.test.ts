@@ -502,7 +502,7 @@ describe("ConfigurationBackupService", () => {
     });
   });
 
-  it("reloads runtime moderation only after the database replacement and config update succeed", async () => {
+  it("reloads runtime state and replaces cached asset durations after persistence succeeds", async () => {
     const steps: string[] = [];
     const { service } = createService({
       replace: () => steps.push("replace"),
@@ -510,7 +510,8 @@ describe("ConfigurationBackupService", () => {
         steps.push("config");
         return appConfig;
       },
-      reloadRuntimeConfiguration: () => { steps.push("reload"); }
+      reloadRuntimeConfiguration: () => { steps.push("reload"); },
+      replaceAssetDurations: () => { steps.push("durations"); }
     });
     const archive = await service.exportArchive();
     const preflight = await service.preflight(archive);
@@ -522,7 +523,7 @@ describe("ConfigurationBackupService", () => {
       regenerateRouteKeys: true
     })).resolves.toMatchObject({ state: "completed" });
 
-    expect(steps).toEqual(["replace", "config", "reload"]);
+    expect(steps).toEqual(["replace", "config", "reload", "durations"]);
   });
 
   it("restores the previous app config when runtime reload fails after the restored config is written", async () => {
@@ -809,6 +810,7 @@ function createService(overrides: {
   readonly findConnectedTwitchAccountId?: () => Promise<string | null>;
   readonly deleteTokenSecrets?: (accountId: string) => Promise<void>;
   readonly reloadRuntimeConfiguration?: () => void;
+  readonly replaceAssetDurations?: (records: readonly AssetRecord[]) => void;
   readonly validate?: ConfigurationSnapshotRepository["validate"];
 } = {}) {
   const replace = overrides.replace ?? replacementMock();
@@ -852,6 +854,7 @@ function createService(overrides: {
       write: overrides.writeSafetyBackup ?? (async () => "C:/safe/pre-restore.streamjams-backup")
     },
     regenerateOutput: overrides.regenerateOutput ?? (async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` })),
+    ...(overrides.replaceAssetDurations === undefined ? {} : { assetDurationCatalog: { replace: overrides.replaceAssetDurations } }),
     twitchCredentials: {
       findConnectedAccountId: overrides.findConnectedTwitchAccountId ?? (async () => null),
       deleteTokenSecrets: overrides.deleteTokenSecrets ?? (async () => undefined)

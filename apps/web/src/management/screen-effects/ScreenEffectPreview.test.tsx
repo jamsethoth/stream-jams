@@ -22,7 +22,7 @@ function setup() {
 
 it("plays both draft audio sources locally, mutes both, respects layout and duration, and releases media", async () => {
   const { play, pause, revoke, variant, api } = setup();
-  const view = render(<ScreenEffectPreview assetApi={api} variant={variant} />);
+  const view = render(<ScreenEffectPreview assetApi={api} assetDurations={new Map()} variant={variant} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Play preview" })).toBeEnabled());
   expect(play).not.toHaveBeenCalled();
   const video = screen.getByLabelText("Preview video") as HTMLVideoElement;
@@ -44,11 +44,29 @@ it("plays both draft audio sources locally, mutes both, respects layout and dura
   expect(revoke).toHaveBeenCalledTimes(2);
 });
 
+it("fades each draft audio source against its own media duration", async () => {
+  const { variant, api } = setup();
+  const sound = variant.sound!;
+  render(<ScreenEffectPreview
+    assetApi={api}
+    assetDurations={new Map([["video", 5_000], ["sound", 1_000]])}
+    variant={{ ...variant, durationMs: 5_000, sound: { ...sound, fadeOutMs: 500 } }}
+  />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Play preview" })).toBeEnabled());
+  const audio = screen.getByLabelText("Preview sound") as HTMLAudioElement;
+  vi.useFakeTimers();
+
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Play preview" })));
+  act(() => vi.advanceTimersByTime(750));
+
+  expect(audio.volume).toBeCloseTo(0.35, 2);
+});
+
 it("keeps a suppressed video soundtrack muted and shows actionable playback failures", async () => {
   const { play, variant, api } = setup();
   const visual = variant.visual!;
   if (visual.mediaType !== "video") throw new Error("Expected video fixture");
-  render(<ScreenEffectPreview assetApi={api} variant={{ ...variant, visual: { ...visual, playEmbeddedAudio: false } }} />);
+  render(<ScreenEffectPreview assetApi={api} assetDurations={new Map()} variant={{ ...variant, visual: { ...visual, playEmbeddedAudio: false } }} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Play preview" })).toBeEnabled());
   play.mockRejectedValue(new Error("blocked"));
   fireEvent.click(screen.getByRole("button", { name: "Play preview" }));
@@ -61,7 +79,7 @@ it("ignores a late asset response after closing", async () => {
   const { variant, revoke } = setup();
   let resolve!: (blob: Blob) => void;
   const pending = new Promise<Blob>((done) => { resolve = done; });
-  const view = render(<ScreenEffectPreview assetApi={{ getAssetFile: () => pending }} variant={variant} />);
+  const view = render(<ScreenEffectPreview assetApi={{ getAssetFile: () => pending }} assetDurations={new Map()} variant={variant} />);
   view.unmount();
   await act(async () => resolve(new Blob()));
   expect(revoke).not.toHaveBeenCalled();

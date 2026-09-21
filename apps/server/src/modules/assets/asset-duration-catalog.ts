@@ -31,4 +31,9 @@ export class CachedAssetDurationCatalog implements AssetDurationCatalog {
   invalidate(assetId: string): void {
     this.#cache.delete(assetId);
   }
+
+  replace(records: readonly AssetRecord[]): void {
+    this.#cache.clear();
+    for (const record of records) this.#cache.set(record.id, record);
+  }
 }

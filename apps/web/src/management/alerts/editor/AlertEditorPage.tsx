@@ -270,6 +270,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const canvasAssetMediaTypes = useMemo(() => Object.fromEntries(assets.flatMap((asset) =>
     asset.mediaType === "audio" ? [] : [[asset.id, asset.mediaType]]
   )), [assets]);
+  const assetDurations = useMemo(
+    () => Object.fromEntries(assets.map((asset) => [asset.id, asset.durationMs])),
+    [assets]
+  );
   useEffect(() => {
     try { window.localStorage.setItem(alertPreviewPreferencesKey, JSON.stringify(previewPreferences)); } catch { /* Keep the preference session-only. */ }
   }, [previewPreferences]);
@@ -873,7 +877,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     });
     try {
       if (previewIncludeAudio) {
-        const audioLayers = resolveAlertAudio(currentDocument)?.layers ?? [];
+        const audioLayers = resolveAlertAudio(currentDocument, canvasAssetMediaTypes, assetDurations)?.layers ?? [];
         await Promise.all(audioLayers.map(async (layer) => {
           const blob = await prepare(props.assetApi.getAssetFile(layer.assetId));
           if (blob === null || !isCurrent()) return;
