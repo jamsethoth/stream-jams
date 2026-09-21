@@ -1153,6 +1153,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   function applyReadinessAction() {
+    if (liveReadiness.action === "enable-alert") {
+      updateDocument((current) => ({ ...current, enabled: true }));
+      return;
+    }
+    if (liveReadiness.action === "review-profile" && liveReadiness.profileId !== null) {
+      updateDocument((current) => updateProfile(current, liveReadiness.profileId!, { reviewState: "ready" }));
+      return;
+    }
     if (liveReadiness.action === "review-content") {
       setTab("layers");
       focusReadinessControl("alert-editor-add-text");
@@ -1170,9 +1178,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     }
     if (liveReadiness.profileId !== null) setProfileId(liveReadiness.profileId);
     setTab("alert");
-    if (liveReadiness.action === "review-profile" && liveReadiness.profileId !== null) focusReadinessControl(`profile-review-${liveReadiness.profileId}`);
     if (liveReadiness.action === "enable-profile" && liveReadiness.profileId !== null) focusReadinessControl(`profile-enabled-${liveReadiness.profileId}`);
-    if (liveReadiness.action === "enable-alert") focusReadinessControl("alert-enabled-control");
   }
   return (
     <div className="alert-editor-page">
@@ -2295,7 +2301,7 @@ function deriveLiveReadiness(
   } catch {
     return { action: null, actionLabel: null, message: `${prefix}Alert content could not be checked. Configuration readiness is not confirmed.`, profileId: null, ready: false };
   }
-  if (assessment.issue === "profile-review" && assessment.profileId !== null) return { action: "review-profile", actionLabel: `Review ${profileLabel(assessment.profileId)}`, message: `${prefix}${profileLabel(assessment.profileId)} must be reviewed before it can be used.`, profileId: assessment.profileId, ready: false };
+  if (assessment.issue === "profile-review" && assessment.profileId !== null) return { action: "review-profile", actionLabel: `Mark ${profileLabel(assessment.profileId)} reviewed`, message: `${prefix}${profileLabel(assessment.profileId)} must be reviewed before it can be used.`, profileId: assessment.profileId, ready: false };
   if (assessment.issue === "missing-profile") return { action: null, actionLabel: null, message: `${prefix}Enable and review a target profile for Browser Source output.`, profileId: null, ready: false };
   if (assessment.issue === "empty-content") return { action: "review-content", actionLabel: "Review content", message: `${prefix}Configuration needs review because no visible browser content or resolved device audio is available.`, profileId: null, ready: false };
   return { action: null, actionLabel: null, message: `${prefix}Configuration ready. Confirm connected outputs with Test draft; this is not delivery evidence.`, profileId: null, ready: true };

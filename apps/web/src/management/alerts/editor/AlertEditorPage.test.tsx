@@ -2020,7 +2020,7 @@ describe("AlertEditorPage", () => {
 
     const readiness = await screen.findByRole("region", { name: "Live readiness" });
     expect(readiness).toHaveTextContent("Vertical must be reviewed");
-    expect(within(readiness).getByRole("button", { name: "Review Vertical" })).toBeVisible();
+    expect(within(readiness).getByRole("button", { name: "Mark Vertical reviewed" })).toBeVisible();
   });
 
   it("requires review for enabled alerts without browser content or device audio", async () => {
@@ -2123,14 +2123,65 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByText("The alert was not saved")).not.toBeInTheDocument();
   });
 
-  it("offers the highest-priority readiness correction through the existing control", async () => {
+  it("enables an alert in the draft without leaving the current tab or saving early", async () => {
     const source = editorDocument();
-    const { user } = renderWorkspaceEditor({ ...source, enabled: false });
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor({ ...source, enabled: false });
 
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
     const readiness = await screen.findByRole("region", { name: "Live readiness" });
     await user.click(within(readiness).getByRole("button", { name: "Enable alert" }));
-    expect(screen.getByRole("tab", { name: "Alert" })).toHaveAttribute("aria-selected", "true");
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Alert enabled" })).toHaveFocus());
+    expect(screen.getByRole("tab", { name: "Event" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Alert enabled")).toBeVisible();
+    expect(screen.getByText("Unsaved")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Undo" }));
+    expect(screen.getByText("Alert disabled")).toBeVisible();
+    expect(screen.getByText("Saved")).toBeVisible();
+    await user.click(within(readiness).getByRole("button", { name: "Enable alert" }));
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      "alert-follow",
+      expect.objectContaining({ enabled: true }),
+      true
+    ));
+  });
+
+  it("marks the readiness profile reviewed in the draft without leaving the current tab or saving early", async () => {
+    const source = editorDocument();
+    const { user, saveAlertEditorDocument } = renderWorkspaceEditor({
+      ...source,
+      targetProfiles: source.targetProfiles.map((profile) => profile.id === "landscape"
+        ? { ...profile, enabled: true, reviewState: "needs-review" }
+        : profile)
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    const readiness = await screen.findByRole("region", { name: "Live readiness" });
+    await user.click(within(readiness).getByRole("button", { name: "Mark Landscape reviewed" }));
+    expect(screen.getByRole("tab", { name: "Event" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("Unsaved")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(saveAlertEditorDocument).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Revert" }));
+    expect(within(readiness).getByRole("button", { name: "Mark Landscape reviewed" })).toBeVisible();
+    expect(screen.getByText("Saved")).toBeVisible();
+    await user.click(within(readiness).getByRole("button", { name: "Mark Landscape reviewed" }));
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveAlertEditorDocument).toHaveBeenCalledWith(
+      "alert-follow",
+      expect.objectContaining({
+        targetProfiles: expect.arrayContaining([
+          expect.objectContaining({ id: "landscape", enabled: true, reviewState: "ready" })
+        ])
+      }),
+      false
+    ));
   });
 
   it("keeps profile selection when navigating to an alert and blocks tests on disabled profiles", async () => {

@@ -354,6 +354,44 @@ export const EmptyContentNeedsReview: Story = {
   }
 };
 
+const directReadinessDocument: AlertEditorDocument = {
+  ...document,
+  enabled: false,
+  targetProfiles: document.targetProfiles.map((profile) => profile.id === "landscape"
+    ? { ...profile, enabled: true, reviewState: "needs-review" }
+    : profile)
+};
+const directReadinessSave = fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+
+export const DirectDraftReadinessActions: Story = {
+  tags: ["alert-readiness-regression"],
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => directReadinessDocument,
+      getAlertVariationAuthoringContext: async () => variationContext(directReadinessDocument),
+      getAlertSet: async () => alertSetDetail(),
+      saveAlertEditorDocument: directReadinessSave
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const eventTab = await canvas.findByRole("tab", { name: "Event" });
+    await userEvent.click(eventTab);
+    const readiness = within(canvas.getByRole("region", { name: "Live readiness" }));
+
+    await userEvent.click(readiness.getByRole("button", { name: "Enable alert" }));
+    await expect(eventTab).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.getByText("Alert enabled")).toBeVisible();
+    await expect(canvas.getByText("Unsaved")).toBeVisible();
+    await expect(directReadinessSave).not.toHaveBeenCalled();
+
+    await userEvent.click(readiness.getByRole("button", { name: "Mark Landscape reviewed" }));
+    await expect(eventTab).toHaveAttribute("aria-selected", "true");
+    await expect(readiness.getByText(/Unsaved draft.*Configuration ready/u)).toBeVisible();
+    await expect(directReadinessSave).not.toHaveBeenCalled();
+  }
+};
+
 const deviceOnlyDocument: AlertEditorDocument = {
   ...document,
   outputs: { browserSource: false, deviceRouteIds: ["story-private-output"] },
