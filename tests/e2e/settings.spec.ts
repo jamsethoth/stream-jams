@@ -134,6 +134,9 @@ test("settings exports and restores only after validated typed confirmation", as
       }
     });
   });
+  await page.route("**/screen-effect-sets", async (route) => route.fulfill({
+    json: [{ id: "screen-effects-default", name: "Default", active: true, effectIds: ["effect-restored"] }]
+  }));
   await page.route("**/screen-effects", async (route) => route.fulfill({ json: [restoredScreenEffect()] }));
   await page.route("**/management/overlay-outputs", async (route) => route.fulfill({ json: [] }));
   await page.route("**/overlay-modules/screen-effects/config", async (route) => route.fulfill({ json: {
@@ -164,7 +167,7 @@ test("settings exports and restores only after validated typed confirmation", as
   await expect(page.getByText("Update browser-source URLs")).toBeVisible();
   await expect(page.getByText("Reconnect Twitch")).toBeVisible();
   await page.getByRole("link", { name: "Screen Effects" }).click();
-  const restoredEffect = page.getByText("Restored Screen Effect").locator("xpath=ancestor::li");
+  const restoredEffect = page.getByRole("group").filter({ hasText: "Restored Screen Effect" });
   await expect(restoredEffect).toContainText("Disabled");
 });
 
@@ -221,12 +224,10 @@ function restoredScreenEffect() {
     description: null,
     category: "Restored",
     priority: 0,
-    cooldownSeconds: 0,
     bindings: [],
     variants: [{
       id: "variant-restored",
       name: "Default",
-      kind: "default",
       enabled: true,
       weight: 1,
       visual: {
@@ -235,7 +236,6 @@ function restoredScreenEffect() {
         layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
       },
       sound: null,
-      animation: null,
       durationMs: 10_000,
       outputs: { browserSource: false, deviceRouteIds: [] },
       visualOutputs: { browserSource: true, desktop: false }

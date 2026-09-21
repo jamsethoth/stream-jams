@@ -28,6 +28,24 @@ const player = new DeviceAudioPlayer({
     document.body.append(element);
     return element as PlayerMediaElement;
   },
+  async createAmplifier(element, deviceId) {
+    const context = new AudioContext();
+    const routed = context as AudioContext & { setSinkId?: (sinkId: string) => Promise<void> };
+    if (routed.setSinkId === undefined) { await context.close(); throw new Error("Amplified explicit audio output is unavailable."); }
+    await routed.setSinkId(deviceId);
+    const source = context.createMediaElementSource(element as HTMLMediaElement);
+    const gain = context.createGain();
+    source.connect(gain); gain.connect(context.destination);
+    await context.resume();
+    return {
+      setGain(value: number) { gain.gain.value = Math.max(0, Math.min(2, value)); },
+      dispose() {
+        try { source.disconnect(); } catch { /* Continue releasing the graph. */ }
+        try { gain.disconnect(); } catch { /* Continue releasing the graph. */ }
+        void context.close().catch(() => {});
+      }
+    };
+  },
   createSource: asset => URL.createObjectURL(new Blob([new Uint8Array(asset.bytes)], { type: asset.mimeType })),
   revokeSource: source => URL.revokeObjectURL(source),
   listOutputDevices

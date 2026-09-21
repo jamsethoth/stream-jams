@@ -21,6 +21,10 @@ import {
   normalizeAlertPriorityGroups,
   readChannelPointRewardSelection,
   resolveAlertAudio,
+  resolveAudioEnvelope,
+  collectAlertDurationAssetIds,
+  resolveAlertLayerDurationMs,
+  resolveMediaDuration,
   rgbaColorSchema,
   validateAlertSamplePayload,
   type ActionableManagementError,
@@ -33,6 +37,7 @@ import {
   type AlertVariationPriorityAssignment,
   type AlertVariationSampleEvaluation,
   type AssetMediaType,
+  type AssetLibraryItem,
   type RegisteredProviderView,
   type TargetProfileId
 } from "@stream-jams/core";
@@ -41,6 +46,10 @@ import type { AssetApi } from "../../assets/asset-api.js";
 import { AssetPicker } from "../../assets/AssetPicker.js";
 import { defaultAudioApi, type AudioApi } from "../../audio/audio-api.js";
 import { MediaAudioControls } from "../../audio/MediaAudioControls.js";
+import { MediaVolumeControl } from "../../audio/MediaVolumeControl.js";
+import { createMediaGainController } from "../../../media/media-gain-controller.js";
+import { AudioFadeControls } from "../../audio/AudioFadeControls.js";
+import { MediaDurationControls } from "../../audio/MediaDurationControls.js";
 import { useAudioStatus } from "../../audio/use-audio-status.js";
 import { Breadcrumbs } from "../../foundation/Breadcrumbs.js";
 import { ManagementErrorBanner } from "../../foundation/ManagementErrorBanner.js";
@@ -84,6 +93,19 @@ import {
 } from "./editor-state.js";
 import "./alert-editor-page.css";
 
+const alertPreviewPreferencesKey = "stream-jams.alert-preview-media";
+
+function readAlertPreviewPreferences(): { readonly audio: boolean; readonly tts: boolean } {
+  try {
+    const value = JSON.parse(window.localStorage.getItem(alertPreviewPreferencesKey) ?? "null") as unknown;
+    if (typeof value === "object" && value !== null) {
+      const preferences = value as Record<string, unknown>;
+      return { audio: preferences.audio === true, tts: preferences.tts === true };
+    }
+  } catch { /* Use muted defaults when storage is unavailable or invalid. */ }
+  return { audio: false, tts: false };
+}
+
 export type AlertEditorPageApi = Pick<
   ManagementApi,
   | "getAlertEditorDocument"
@@ -98,7 +120,7 @@ export type AlertEditorPageApi = Pick<
   | "saveAlertEditorDocument"
   | "sendAlertEditorTest"
   | "previewModeration"
-> & Partial<Pick<ManagementApi, "reportAlertEditorError">>;
+> & Partial<Pick<ManagementApi, "reportAlertEditorError" | "repairAssetDuration">>;
 
 export interface AlertEditorPageProps {
   readonly audioApi?: AudioApi;
@@ -188,6 +210,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [variationContext, setVariationContext] = useState<AlertVariationAuthoringContext | null>(null);
   const [setDetail, setSetDetail] = useState<AlertSetDetail | null>(null);
   const [visualAssetMediaTypes, setVisualAssetMediaTypes] = useState<Readonly<Record<string, "image" | "gif" | "video">> | null>(null);
+  const [assets, setAssets] = useState<readonly AssetLibraryItem[]>([]);
   const [loadedSetId, setLoadedSetId] = useState<string | undefined>(undefined);
   const [ttsProviders, setTtsProviders] = useState<readonly RegisteredProviderView[]>([]);
   const [ttsProvidersLoaded, setTtsProvidersLoaded] = useState(false);
@@ -213,8 +236,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   const [sendDeviceOnly, setSendDeviceOnly] = useState(false);
   const audioStatus = useAudioStatus(props.audioApi ?? defaultAudioApi);
   const [sendIncludeTts, setSendIncludeTts] = useState(true);
-  const [previewIncludeAudio, setPreviewIncludeAudio] = useState(false);
-  const [previewIncludeTts, setPreviewIncludeTts] = useState(false);
+  const [previewPreferences, setPreviewPreferences] = useState(readAlertPreviewPreferences);
+  const previewIncludeAudio = previewPreferences.audio;
+  const previewIncludeTts = previewPreferences.tts;
   const [preview, setPreview] = useState(false);
   const [previewPlaying, setPreviewPlaying] = useState(false);
   const [previewElapsedMs, setPreviewElapsedMs] = useState(0);
@@ -243,6 +267,16 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     event: null
   });
   const activeTtsProvider = ttsProviders.find((provider) => provider.active) ?? null;
+  const canvasAssetMediaTypes = useMemo(() => Object.fromEntries(assets.flatMap((asset) =>
+    asset.mediaType === "audio" ? [] : [[asset.id, asset.mediaType]]
+  )), [assets]);
+  const assetDurations = useMemo(
+    () => Object.fromEntries(assets.map((asset) => [asset.id, asset.durationMs])),
+    [assets]
+  );
+  useEffect(() => {
+    try { window.localStorage.setItem(alertPreviewPreferencesKey, JSON.stringify(previewPreferences)); } catch { /* Keep the preference session-only. */ }
+  }, [previewPreferences]);
   const resetEventInspectorDraft = useCallback(() => {
     setConditionDraftError(null);
     setEventInspectorRevision((current) => current + 1);
@@ -277,6 +311,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setVariationContext(null);
     setSetDetail(null);
     setVisualAssetMediaTypes(null);
+    setAssets([]);
     setLoadedSetId(undefined);
     setError(null);
     setNotice(null);
@@ -333,6 +368,11 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       ));
       setTtsProvidersLoaded(true);
     });
+    void props.managementApi.listAssetLibraryItems().then((items) => {
+      if (active) setAssets(items);
+    }).catch(() => {
+      if (active) setAssets([]);
+    });
     return () => {
       active = false;
       previewRequestIdRef.current += 1;
@@ -374,7 +414,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
 
   useEffect(() => {
     if (!previewPlaying || editor === null) return;
-    const durationMs = editor.document.durationMs;
+    const durationMs = previewClockRef.current.durationMs;
     const startedAt = performance.now() - previewElapsedMs;
     const tick = (timestamp: number) => {
       const nextElapsedMs = Math.min(durationMs, Math.max(0, Math.round(timestamp - startedAt)));
@@ -518,6 +558,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   });
 
   const document = editor?.document ?? null;
+  const previewDocument = document === null ? null : effectiveAlertDocument(document, assets);
   useEffect(() => {
     if (document === null) return;
     setSelectedLayerId((current) => current !== null && document.layers.some((layer) => layer.id === current)
@@ -737,7 +778,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   function changePreviewPlayback(playing: boolean, elapsedMs = currentPreviewPosition()) {
-    const durationMs = document?.durationMs ?? 0;
+    const durationMs = previewDocument?.durationMs ?? 0;
     const position = Math.max(0, Math.min(durationMs, elapsedMs));
     previewClockRef.current = { playing: playing && position < durationMs, elapsedMs: position, startedAt: performance.now(), durationMs };
     setPreviewPlaying(previewClockRef.current.playing);
@@ -808,7 +849,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
       changePreviewPlayback(true, 0);
       setPreviewRunId((current) => current + 1);
       setNotice({ tone: "success", message: "Local preview is running." });
-      void playPreviewMedia(document, previewTtsByLayerId);
+      void playPreviewMedia(effectiveAlertDocument(document, assets), previewTtsByLayerId);
     } catch (cause) {
       if (previewRequestIdRef.current !== requestId) return;
       resetLocalPreview();
@@ -836,18 +877,32 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     });
     try {
       if (previewIncludeAudio) {
-        const audioLayers = resolveAlertAudio(currentDocument)?.layers ?? [];
+        const audioLayers = resolveAlertAudio(currentDocument, canvasAssetMediaTypes, assetDurations)?.layers ?? [];
         await Promise.all(audioLayers.map(async (layer) => {
           const blob = await prepare(props.assetApi.getAssetFile(layer.assetId));
           if (blob === null || !isCurrent()) return;
           const url = URL.createObjectURL(blob);
           const audio = new Audio(url);
+          const gain = createMediaGainController(audio);
+          const updateEnvelope = () => {
+            gain.setGain(resolveAudioEnvelope({
+              volume: layer.volume,
+              elapsedMs: currentPreviewPosition(),
+              fadeInMs: layer.fadeInMs ?? 0,
+              fadeOutMs: layer.fadeOutMs ?? 0,
+              playbackDurationMs: layer.playbackDurationMs ?? currentDocument.durationMs,
+              muted: false
+            }));
+          };
+          const envelopeTimer = window.setInterval(updateEnvelope, 25);
           const release = () => {
             if (!previewAudioCleanupRef.current.delete(release)) return;
             audio.onended = null;
             audio.onloadedmetadata = null;
             audio.onerror = null;
             previewAudioSyncRef.current.delete(sync);
+            window.clearInterval(envelopeTimer);
+            gain.dispose();
             audio.pause();
             audio.src = "";
             URL.revokeObjectURL(url);
@@ -856,7 +911,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           audio.onended = () => {
             if (!isCurrent()) release();
           };
-          audio.volume = layer.volume;
+          updateEnvelope();
           let firstStart = true;
           const sync = () => {
             if (!isCurrent()) { release(); return; }
@@ -926,7 +981,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     setNotice(null);
     try {
       const result = await props.managementApi.sendAlertEditorTest(props.alertId, {
-        document: applyActiveTtsProvider(document, activeTtsProvider),
+        document: applyActiveTtsProvider(effectiveAlertDocument(document, assets), activeTtsProvider),
         targetProfileId: !sendDeviceOnly && profile.enabled && profile.reviewState === "ready" ? profileId : null,
         samplePayload,
         includeAudio: sendIncludeAudio,
@@ -1102,6 +1157,14 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
   }
 
   function applyReadinessAction() {
+    if (liveReadiness.action === "enable-alert") {
+      updateDocument((current) => ({ ...current, enabled: true }));
+      return;
+    }
+    if (liveReadiness.action === "review-profile" && liveReadiness.profileId !== null) {
+      updateDocument((current) => updateProfile(current, liveReadiness.profileId!, { reviewState: "ready" }));
+      return;
+    }
     if (liveReadiness.action === "review-content") {
       setTab("layers");
       focusReadinessControl("alert-editor-add-text");
@@ -1119,9 +1182,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     }
     if (liveReadiness.profileId !== null) setProfileId(liveReadiness.profileId);
     setTab("alert");
-    if (liveReadiness.action === "review-profile" && liveReadiness.profileId !== null) focusReadinessControl(`profile-review-${liveReadiness.profileId}`);
     if (liveReadiness.action === "enable-profile" && liveReadiness.profileId !== null) focusReadinessControl(`profile-enabled-${liveReadiness.profileId}`);
-    if (liveReadiness.action === "enable-alert") focusReadinessControl("alert-enabled-control");
   }
   return (
     <div className="alert-editor-page">
@@ -1139,8 +1200,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
         <div className="alert-editor-page__header-actions">
           <button className="button button--secondary" disabled={!isEditorDirty(editor) || busy} onClick={discard} type="button">Revert</button>
           <button className="button button--secondary" disabled={samplePayload === null || sampleError !== null || documentConditionError !== null || documentStyleError !== null} onClick={previewLocally} type="button">Preview</button>
-          {preview ? <button className="button button--secondary" onClick={() => previewElapsedMs >= document.durationMs ? previewLocally() : changePreviewPlayback(!previewPlaying)} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= document.durationMs ? "Replay preview" : "Resume preview"}</button> : null}
-          {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={document.durationMs} min="0" onChange={(event) => changePreviewPlayback(false, Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
+          {preview ? <button className="button button--secondary" onClick={() => previewElapsedMs >= previewDocument!.durationMs ? previewLocally() : changePreviewPlayback(!previewPlaying)} type="button">{previewPlaying ? "Pause preview" : previewElapsedMs >= previewDocument!.durationMs ? "Replay preview" : "Resume preview"}</button> : null}
+          {preview ? <label className="alert-editor-page__preview-position"><span>{previewPlaying ? "Preview playing" : "Preview paused"}</span><input aria-label="Preview position" max={previewDocument!.durationMs} min="0" onChange={(event) => changePreviewPlayback(false, Number(event.currentTarget.value))} step="100" type="range" value={previewElapsedMs} /></label> : null}
           <button className="button button--secondary" disabled={!canSend} onClick={() => void sendTest()} type="button">Test draft</button>
           <button className="button button--primary" disabled={!isEditorDirty(editor) || documentConditionError !== null || documentStyleError !== null || ttsLiveBlocked || busy} onClick={() => void requestSave()} type="button">Save</button>
           <p className="alert-editor-page__preview-help">Preview renders this draft locally. Audio and TTS follow the preview options. · Draft input · Browser {sendDeviceOnly ? "none" : profileLabel(profileId)} · Devices {testDeviceNames.join(", ") || "none"} · Audio {sendIncludeAudio ? "included" : "excluded"} · TTS {sendIncludeTts ? "included" : "excluded"}</p>
@@ -1281,8 +1342,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
           ) : null}
           <AlertCanvas
             assetApi={props.assetApi}
+            assetMediaTypes={canvasAssetMediaTypes}
             background={canvasBackground}
-            document={document}
+            document={preview ? previewDocument! : document}
             fitRequestId={fitRequestId}
             onGeometryChange={(layerId, geometry) => updateDocument((current) => updateLayerGeometry(current, profileId, layerId, geometry))}
             onSelectLayer={(layerId) => { setSelectedLayerId(layerId); setTab("layers"); }}
@@ -1328,6 +1390,7 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
             {tab === "layers" ? (
               <LayerInspector
                 activeTtsProvider={activeTtsProvider}
+                assets={assets}
                 document={document}
                 onAddAsset={(type) => setPicker({ layerId: null, type })}
                 onAddShape={addShape}
@@ -1341,7 +1404,10 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 ttsProvidersLoaded={ttsProvidersLoaded}
               />
             ) : tab === "alert" ? (
-              <><AlertInspector document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onCopyDesign={() => {
+              <><AlertInspector assets={assets} document={document} onApplyTheme={openStarterThemeDialog} onChange={updateDocument} onRepairDuration={async (assetId) => {
+                const repaired = await props.managementApi.repairAssetDuration?.(assetId);
+                if (repaired !== undefined) setAssets((current) => current.map((asset) => asset.id === assetId ? repaired : asset));
+              }} onCopyDesign={() => {
                 setCopyDesignSourceId(filteredAlerts.find((alert) => alert.id !== document.id)?.id ?? "");
                 setCopyDesignOpen(true);
               }} onCopyProfileLayout={requestProfileCopy} profileId={profileId} />
@@ -1358,8 +1424,8 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
                 previewIncludeTts={previewIncludeTts}
                 sendIncludeAudio={sendIncludeAudio}
                 sendIncludeTts={sendIncludeTts}
-                onPreviewIncludeAudio={setPreviewIncludeAudio}
-                onPreviewIncludeTts={setPreviewIncludeTts}
+                onPreviewIncludeAudio={(audio) => setPreviewPreferences((current) => ({ ...current, audio }))}
+                onPreviewIncludeTts={(tts) => setPreviewPreferences((current) => ({ ...current, tts }))}
                 onSendIncludeAudio={setSendIncludeAudio}
                 onSendIncludeTts={setSendIncludeTts}
                 onChange={updateDocument}
@@ -1649,6 +1715,7 @@ export function affectedProfileLabelsForEditor(
 
 function LayerInspector({
   activeTtsProvider,
+  assets,
   document,
   onAddAsset,
   onAddShape,
@@ -1662,6 +1729,7 @@ function LayerInspector({
   ttsProvidersLoaded
 }: {
   readonly activeTtsProvider: RegisteredProviderView | null;
+  readonly assets: readonly AssetLibraryItem[];
   readonly document: AlertEditorDocument;
   readonly onAddAsset: (type: "image" | "video" | "audio") => void;
   readonly onAddShape: () => void;
@@ -1675,6 +1743,9 @@ function LayerInspector({
   readonly ttsProvidersLoaded: boolean;
 }) {
   const layout = selectedLayer === null ? undefined : document.targetProfiles.find((profile) => profile.id === profileId)?.layerLayouts.find((candidate) => candidate.layerId === selectedLayer.id);
+  const selectedAssetMediaType = selectedLayer !== null && "assetId" in selectedLayer
+    ? assets.find((asset) => asset.id === selectedLayer.assetId)?.mediaType
+    : undefined;
   return (
     <div className="alert-editor-inspector">
       <section>
@@ -1691,7 +1762,17 @@ function LayerInspector({
           {document.layers.map((layer) => (
             <div className={selectedLayer?.id === layer.id ? "is-selected" : undefined} key={layer.id}>
               <button onClick={() => onSelect(layer.id)} type="button"><span>{layer.name}</span><small>{layerTypeLabel(layer.type)}</small></button>
-              {layer.type === "tts" ? null : <button aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</button>}
+              {layer.type === "tts" ? (
+                <button
+                  aria-label={`${layer.enabled ? "Disable" : "Enable"} ${layer.name}${!layer.enabled && activeTtsProvider === null ? " (active TTS provider required)" : ""}`}
+                  disabled={!layer.enabled && activeTtsProvider === null}
+                  onClick={() => onChange((current) => updateLayer(current, layer.id, (candidate) => candidate.type === "tts"
+                    ? { ...candidate, enabled: !candidate.enabled, ...(!candidate.enabled && activeTtsProvider !== null ? { providerId: activeTtsProvider.kind } : {}) }
+                    : candidate))}
+                  title={!layer.enabled && activeTtsProvider === null ? "Set up an active TTS provider to enable this layer." : undefined}
+                  type="button"
+                >{layer.enabled ? "On" : "Off"}</button>
+              ) : <button aria-label={`${layer.visible ? "Hide" : "Show"} ${layer.name}`} onClick={() => onChange((current) => toggleLayerVisible(current, layer.id))} type="button">{layer.visible ? "On" : "Off"}</button>}
             </div>
           ))}
         </div>
@@ -1769,12 +1850,24 @@ function LayerInspector({
             <div className="alert-editor-inspector__asset"><span>Asset</span><code>{selectedLayer.assetId}</code><button className="button button--secondary button--compact" onClick={() => onChooseAsset(selectedLayer)} type="button">Choose asset</button></div>
           ) : null}
           {selectedLayer.type === "audio" ? (
-            <label><span>Volume {Math.round(selectedLayer.volume * 100)}%</span><input max="1" min="0" onChange={(event) => { const value = Number(event.currentTarget.value); onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer)); }} step="0.05" type="range" value={selectedLayer.volume} /></label>
+            <><MediaVolumeControl label="Volume" value={selectedLayer.volume} onChange={(value) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, volume: value } : layer))} />
+            <AudioFadeControls fadeInMs={selectedLayer.fadeInMs} fadeOutMs={selectedLayer.fadeOutMs} onChange={(fades) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "audio" ? { ...layer, ...fades } : layer))} /></>
           ) : null}
           {selectedLayer.type === "video" ? <MediaAudioControls
             value={{ playEmbeddedAudio: selectedLayer.playEmbeddedAudio, audioVolume: selectedLayer.audioVolume }}
             hasSeparateAudio={document.layers.some(layer => layer.type === "audio" && layer.visible)}
             onChange={(settings) => onChange(current => updateLayer(current, selectedLayer.id, layer => layer.type === "video" ? { ...layer, ...settings } : layer))}
+          /> : null}
+          {selectedLayer.type === "video" && selectedAssetMediaType !== "gif" ? <label className="alert-editor-inspector__check"><input
+            checked={selectedLayer.loop ?? false}
+            onChange={(event) => { const loop = event.currentTarget.checked; onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "video" ? { ...layer, loop } : layer)); }}
+            type="checkbox"
+          /><span>Loop video</span></label> : null}
+          {selectedLayer.type === "video" && selectedAssetMediaType === "gif" ? <p>GIF repetition follows the animation stored in the file.</p> : null}
+          {selectedLayer.type === "video" && selectedLayer.playEmbeddedAudio ? <AudioFadeControls
+            fadeInMs={selectedLayer.audioFadeInMs}
+            fadeOutMs={selectedLayer.audioFadeOutMs}
+            onChange={(fades) => onChange((current) => updateLayer(current, selectedLayer.id, (layer) => layer.type === "video" ? { ...layer, audioFadeInMs: fades.fadeInMs, audioFadeOutMs: fades.fadeOutMs } : layer))}
           /> : null}
           {layout === undefined ? null : (
             <details className="alert-editor-inspector__disclosure">
@@ -2101,12 +2194,14 @@ function boundedStyleError(
     : null;
 }
 
-function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopyProfileLayout, profileId }: {
+function AlertInspector({ assets, document, onApplyTheme, onChange, onCopyDesign, onCopyProfileLayout, onRepairDuration, profileId }: {
+  readonly assets: readonly AssetLibraryItem[];
   readonly document: AlertEditorDocument;
   readonly onApplyTheme: () => void;
   readonly onChange: (update: (document: AlertEditorDocument) => AlertEditorDocument) => void;
   readonly onCopyDesign: () => void;
   readonly onCopyProfileLayout: () => void;
+  readonly onRepairDuration: (assetId: string) => Promise<void>;
   readonly profileId: TargetProfileId;
 }) {
   const profile = document.targetProfiles.find((candidate) => candidate.id === profileId)!;
@@ -2114,7 +2209,15 @@ function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopy
     <div className="alert-editor-inspector alert-editor-inspector__controls">
       <h3>Alert settings</h3>
       <label><span>Alert name</span><input onChange={(event) => { const name = event.currentTarget.value; onChange((current) => ({ ...current, name })); }} value={document.name} /></label>
-      <label><span>Duration (milliseconds)</span><input min="100" onChange={(event) => { const durationMs = Number(event.currentTarget.value); onChange((current) => ({ ...current, durationMs })); }} type="number" value={document.durationMs} /></label>
+      <MediaDurationControls
+        assetIds={document.layers.flatMap((layer) => layer.visible && (layer.type === "audio" || layer.type === "video") ? [layer.assetId] : [])}
+        assets={assets}
+        durationMs={document.durationMs}
+        fallbackDurationMs={5_000}
+        mode={document.durationMode ?? "custom"}
+        onChange={({ mode, durationMs }) => onChange((current) => ({ ...current, durationMode: mode, durationMs }))}
+        onRepair={onRepairDuration}
+      />
       <label className="alert-editor-inspector__check"><input checked={document.enabled} id="alert-enabled-control" onChange={(event) => { const enabled = event.currentTarget.checked; onChange((current) => ({ ...current, enabled })); }} type="checkbox" /><span>Alert enabled</span></label>
       <button className="button button--secondary" onClick={onApplyTheme} type="button">Apply starter theme</button>
       <button className="button button--secondary" onClick={onCopyDesign} type="button">Copy design from...</button>
@@ -2127,6 +2230,31 @@ function AlertInspector({ document, onApplyTheme, onChange, onCopyDesign, onCopy
       <dl className="alert-editor-inspector__facts"><div><dt>Provider type</dt><dd>{document.providerKind}</dd></div><div><dt>Event</dt><dd>{formatEventType(document.eventType)}</dd></div><div><dt>Conditions</dt><dd>{document.conditions.length}</dd></div></dl>
     </div>
   );
+}
+
+function effectiveAlertDocument(document: AlertEditorDocument, assets: readonly AssetLibraryItem[]): AlertEditorDocument {
+  if ((document.durationMode ?? "custom") !== "media") return document;
+  const byId = new Map(assets.map((asset) => [asset.id, asset]));
+  const resolution = resolveMediaDuration({
+    mode: "media",
+    customDurationMs: document.durationMs,
+    fallbackDurationMs: 5_000,
+    maximumDurationMs: 120_000,
+    candidates: collectAlertDurationAssetIds(document).flatMap((assetId) => {
+      const asset = byId.get(assetId);
+      return asset === undefined ? [] : [{
+        assetId, label: asset.displayName, mediaType: asset.mediaType, durationMs: asset.durationMs, eligible: true
+      }];
+    })
+  });
+  const mediaMatched = { ...document, durationMs: resolution.durationMs };
+  return {
+    ...mediaMatched,
+    durationMs: Math.max(
+      mediaMatched.durationMs,
+      ...mediaMatched.layers.map((layer) => resolveAlertLayerDurationMs(mediaMatched, layer))
+    )
+  };
 }
 
 function alertDocumentVisualStyleError(document: AlertEditorDocument): string | null {
@@ -2177,7 +2305,7 @@ function deriveLiveReadiness(
   } catch {
     return { action: null, actionLabel: null, message: `${prefix}Alert content could not be checked. Configuration readiness is not confirmed.`, profileId: null, ready: false };
   }
-  if (assessment.issue === "profile-review" && assessment.profileId !== null) return { action: "review-profile", actionLabel: `Review ${profileLabel(assessment.profileId)}`, message: `${prefix}${profileLabel(assessment.profileId)} must be reviewed before it can be used.`, profileId: assessment.profileId, ready: false };
+  if (assessment.issue === "profile-review" && assessment.profileId !== null) return { action: "review-profile", actionLabel: `Mark ${profileLabel(assessment.profileId)} reviewed`, message: `${prefix}${profileLabel(assessment.profileId)} must be reviewed before it can be used.`, profileId: assessment.profileId, ready: false };
   if (assessment.issue === "missing-profile") return { action: null, actionLabel: null, message: `${prefix}Enable and review a target profile for Browser Source output.`, profileId: null, ready: false };
   if (assessment.issue === "empty-content") return { action: "review-content", actionLabel: "Review content", message: `${prefix}Configuration needs review because no visible browser content or resolved device audio is available.`, profileId: null, ready: false };
   return { action: null, actionLabel: null, message: `${prefix}Configuration ready. Confirm connected outputs with Test draft; this is not delivery evidence.`, profileId: null, ready: true };

@@ -40,7 +40,8 @@ test.describe.serial("full application visual UX acceptance", () => {
       mimeType: "video/mp4",
       sizeBytes: bytes.byteLength,
       checksum: "sha256:visual-ux-fixture",
-      storagePath
+      storagePath,
+      durationMs: null
     });
     await new SqliteAssetLibraryMetadataRepository(runtime.composition.database.connection).save({
       assetId: "asset-visual-ux-video",

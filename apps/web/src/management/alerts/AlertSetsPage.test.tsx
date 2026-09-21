@@ -212,11 +212,22 @@ describe("AlertSetsPage", () => {
 
     const row = await screen.findByRole("row", { name: /New follower/u });
     expect(within(row).getByRole("button", { name: "Test saved New follower" })).toBeVisible();
-    expect(within(row).getAllByRole("button", { name: "Sample message New follower" })).toHaveLength(1);
-    expect(within(row).getAllByRole("button", { name: "Add variation to New follower" })).toHaveLength(1);
+    expect(within(row).queryByRole("menuitem", { name: "Sample message New follower" })).not.toBeInTheDocument();
+    expect(within(row).queryByRole("menuitem", { name: "Add variation to New follower" })).not.toBeInTheDocument();
 
-    await user.click(within(row).getByText("More", { selector: "summary" }));
-    await user.click(within(row).getByRole("button", { name: "Sample message New follower" }));
+    const more = within(row).getByRole("button", { name: "More actions for New follower" });
+    await user.click(more);
+    const menu = screen.getByRole("menu", { name: "More actions for New follower" });
+    expect(row).not.toContainElement(menu);
+    await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Sample message New follower" })).toHaveFocus());
+    await user.keyboard("{ArrowDown}");
+    expect(within(menu).getByRole("menuitem", { name: "Add variation to New follower" })).toHaveFocus();
+    await user.keyboard("{End}{Escape}");
+    expect(screen.queryByRole("menu", { name: "More actions for New follower" })).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+    await user.click(more);
+    const reopenedMenu = screen.getByRole("menu", { name: "More actions for New follower" });
+    await user.click(within(reopenedMenu).getByRole("menuitem", { name: "Sample message New follower" }));
 
     const dialog = screen.getByRole("dialog", { name: "Sample message for New follower" });
     expect(dialog).toHaveTextContent("sample text, not the rendered alert design");
@@ -794,15 +805,16 @@ describe("AlertSetsPage", () => {
     expect(rows.map((row) => row.textContent).join("|")).toMatch(/New follower.*VIP follower.*New raid/u);
     expect(screen.getByRole("row", { name: /VIP follower/u })).toHaveClass("alert-sets-page__variation-row");
 
-    await user.click(screen.getAllByRole("button", { name: "Add variation to New follower" })[0]!);
+    await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
+    await user.click(screen.getByRole("menuitem", { name: "Add variation to New follower" }));
     const dialog = screen.getByRole("dialog", { name: "Add variation to New follower" });
     await user.clear(within(dialog).getByLabelText("Variation name"));
     await user.type(within(dialog).getByLabelText("Variation name"), "Large follower");
     await user.click(within(dialog).getByRole("button", { name: "Create variation" }));
     await waitFor(() => expect(createAlertVariation).toHaveBeenCalledWith("alert-follow", { name: "Large follower" }));
 
-    await user.click(screen.getByText("More", { selector: "summary[aria-label='More actions for VIP follower']" }));
-    await user.click(screen.getByRole("button", { name: "Duplicate VIP follower" }));
+    await user.click(screen.getByRole("button", { name: "More actions for VIP follower" }));
+    await user.click(screen.getByRole("menuitem", { name: "Duplicate VIP follower" }));
     await waitFor(() => expect(duplicateManagedAlert).toHaveBeenCalledWith("variant-vip"));
   });
 
@@ -812,15 +824,15 @@ describe("AlertSetsPage", () => {
     const user = userEvent.setup();
     render(<AlertSetsPage managementApi={alertSetsApi({ resetManagedAlert, deleteManagedAlert })} onEditAlert={vi.fn()} />);
 
-    await user.click(await screen.findByText("More", { selector: "summary[aria-label='More actions for New follower']" }));
-    await user.click(screen.getByRole("button", { name: "Reset New follower" }));
+    await user.click(await screen.findByRole("button", { name: "More actions for New follower" }));
+    await user.click(screen.getByRole("menuitem", { name: "Reset New follower" }));
     const resetDialog = screen.getByRole("dialog", { name: "Reset New follower?" });
     expect(resetDialog).toHaveTextContent("return to the event default");
     await user.click(within(resetDialog).getByRole("button", { name: "Reset alert" }));
     await waitFor(() => expect(resetManagedAlert).toHaveBeenCalledWith("alert-follow", true));
 
-    await user.click(screen.getByText("More", { selector: "summary[aria-label='More actions for New follower']" }));
-    await user.click(screen.getByRole("button", { name: "Delete New follower" }));
+    await user.click(screen.getByRole("button", { name: "More actions for New follower" }));
+    await user.click(screen.getByRole("menuitem", { name: "Delete New follower" }));
     const deleteDialog = screen.getByRole("dialog", { name: "Delete New follower?" });
     expect(deleteDialog).toHaveTextContent("all of its variations");
     await user.click(within(deleteDialog).getByRole("button", { name: "Delete alert" }));

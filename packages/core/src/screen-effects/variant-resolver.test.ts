@@ -17,7 +17,6 @@ function documentWithVariants() {
         ...draft.variants[0]!,
         id: "variant-a",
         name: "A",
-        kind: "weighted",
         weight: 2,
         sound: { assetId: "asset-a", volume: 0.2 },
         outputs: { browserSource: false, deviceRouteIds: ["route-a"] }
@@ -26,7 +25,6 @@ function documentWithVariants() {
         ...draft.variants[0]!,
         id: "variant-b",
         name: "B",
-        kind: "weighted",
         weight: 3,
         sound: { assetId: "asset-b", volume: 0.3 },
         outputs: { browserSource: false, deviceRouteIds: ["route-b"] }
@@ -57,9 +55,11 @@ describe("chooseWeightedVariant", () => {
 });
 
 describe("resolveEffectContent", () => {
-  it("selects among enabled weighted variants and snapshots the selected content once", () => {
+  it("selects every enabled variant from one weighted pool and snapshots the selected content once", () => {
     const document = documentWithVariants();
-    const snapshot = resolveEffectContent(document, 0.4);
+    expect(resolveEffectContent(document, 0).variant.id).toBe("variant-default");
+    expect(resolveEffectContent(document, 1 / 6).variant.id).toBe("variant-a");
+    const snapshot = resolveEffectContent(document, 0.5);
 
     expect(snapshot).toMatchObject({
       effectId: "effect-neutral",
@@ -84,15 +84,16 @@ describe("resolveEffectContent", () => {
     });
   });
 
-  it("ignores disabled weighted candidates and falls back to the enabled default", () => {
+  it("excludes disabled variants from weighted selection", () => {
     const document = documentWithVariants();
-    const withoutWeightedCandidates = screenEffectDocumentSchema.parse({
+    const withDisabledCandidates = screenEffectDocumentSchema.parse({
       ...document,
-      variants: document.variants.map((variant) =>
-        variant.kind === "weighted" ? { ...variant, enabled: false } : variant
-      )
+      variants: document.variants.map((variant) => variant.id === "variant-a"
+        ? { ...variant, enabled: false }
+        : variant)
     });
 
-    expect(resolveEffectContent(withoutWeightedCandidates, 0.9).variant.id).toBe("variant-default");
+    expect(resolveEffectContent(withDisabledCandidates, 0.2).variant.id).toBe("variant-default");
+    expect(resolveEffectContent(withDisabledCandidates, 0.3).variant.id).toBe("variant-b");
   });
 });

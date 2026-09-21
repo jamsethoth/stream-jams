@@ -64,10 +64,10 @@ describe("management route model", () => {
   });
 
   it("round-trips focused Screen Effect editor routes", () => {
-    const existing = { id: "screen-effect-editor", effectId: "effect/confetti" } as const;
+    const existing = { id: "screen-effect-editor", effectId: "effect/confetti", setId: "set gaming", variantId: "variant/confetti" } as const;
     const creating = { id: "screen-effect-editor", effectId: "effect new", create: true } as const;
 
-    expect(formatManagementRoute(existing)).toBe("/manage/modules/screen-effects/editor/effect%2Fconfetti");
+    expect(formatManagementRoute(existing)).toBe("/manage/modules/screen-effects/editor/effect%2Fconfetti?variant=variant%2Fconfetti&set=set+gaming");
     expect(parseManagementRoute(formatManagementRoute(existing))).toEqual(existing);
     expect(formatManagementRoute(creating)).toBe("/manage/modules/screen-effects/editor/effect%20new?new=1");
     expect(parseManagementRoute(formatManagementRoute(creating))).toEqual(creating);

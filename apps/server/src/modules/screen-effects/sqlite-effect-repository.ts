@@ -4,6 +4,7 @@ import {
   effectBindingSchema,
   effectVariantSchema,
   screenEffectDocumentSchema,
+  type EffectVariant,
   type ScreenEffectDocument,
   type ScreenEffectRepository
 } from "@stream-jams/core";
@@ -19,6 +20,10 @@ interface EffectRow {
   readonly priority: unknown;
   readonly cooldown_seconds: unknown;
 }
+
+type StoredEffectVariant = EffectVariant & {
+  readonly kind: "default" | "weighted";
+};
 
 export class SqliteEffectRepository implements ScreenEffectRepository {
   readonly #connection: DatabaseSync;
@@ -36,7 +41,26 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
     return rows.map((row) => this.#read(row));
   }
 
+  async listActive(): Promise<readonly ScreenEffectDocument[]> {
+    const rows = this.#connection.prepare(`
+      SELECT e.* FROM screen_effects e
+      JOIN screen_effect_set_memberships m ON m.effect_id = e.id
+      JOIN screen_effect_sets s ON s.id = m.set_id
+      WHERE s.active = 1 ORDER BY e.name COLLATE NOCASE, e.id
+    `).all() as unknown as EffectRow[];
+    return rows.map((row) => this.#read(row));
+  }
+
+  isInActiveSet(id: string): boolean {
+    return this.#connection.prepare(`SELECT 1 FROM screen_effect_set_memberships m
+      JOIN screen_effect_sets s ON s.id = m.set_id WHERE m.effect_id = ? AND s.active = 1`).get(id) !== undefined;
+  }
+
   async find(id: string): Promise<ScreenEffectDocument | null> {
+    return this.findSync(id);
+  }
+
+  findSync(id: string): ScreenEffectDocument | null {
     const row = this.#connection.prepare(
       "SELECT * FROM screen_effects WHERE id = ?"
     ).get(id) as EffectRow | undefined;
@@ -72,7 +96,7 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
         document.description,
         document.category,
         document.priority,
-        document.cooldownSeconds,
+        0,
         this.#now().toISOString()
       );
 
@@ -88,19 +112,20 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
         VALUES (?, ?, ?)
       `);
       for (const [position, variant] of document.variants.entries()) {
+        const storedVariant = serializeStoredVariant(variant);
         insertVariant.run(
-          variant.id,
+          storedVariant.id,
           document.id,
           position,
-          variant.kind,
-          variant.enabled ? 1 : 0,
-          variant.weight,
-          JSON.stringify(variant),
-          variant.visual?.assetId ?? null,
-          variant.sound?.assetId ?? null
+          storedVariant.kind,
+          storedVariant.enabled ? 1 : 0,
+          storedVariant.weight,
+          JSON.stringify(storedVariant),
+          storedVariant.visual?.assetId ?? null,
+          storedVariant.sound?.assetId ?? null
         );
-        for (const [routePosition, routeId] of variant.outputs.deviceRouteIds.entries()) {
-          insertRoute.run(variant.id, routeId, routePosition);
+        for (const [routePosition, routeId] of storedVariant.outputs.deviceRouteIds.entries()) {
+          insertRoute.run(storedVariant.id, routeId, routePosition);
         }
       }
 
@@ -132,7 +157,7 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
     const variants = this.#connection.prepare(
       "SELECT document_json FROM screen_effect_variants WHERE effect_id = ? ORDER BY position"
     ).all(String(row.id)).map((variantRow) =>
-      effectVariantSchema.parse(JSON.parse(String(variantRow.document_json)) as unknown)
+      parseStoredVariant(JSON.parse(String(variantRow.document_json)) as unknown)
     );
     const bindings = this.#connection.prepare(
       "SELECT document_json FROM screen_effect_bindings WHERE effect_id = ? ORDER BY position"
@@ -147,7 +172,6 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
       description: row.description === null ? null : String(row.description),
       category: row.category === null ? null : String(row.category),
       priority: Number(row.priority),
-      cooldownSeconds: Number(row.cooldown_seconds),
       bindings,
       variants
     });
@@ -180,4 +204,19 @@ export class SqliteEffectRepository implements ScreenEffectRepository {
       }
     }
   }
+}
+
+function parseStoredVariant(value: unknown): EffectVariant {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new TypeError("Stored Screen Effect variant must be an object");
+  }
+  const { kind, ...variant } = value as Record<string, unknown>;
+  if (kind !== "default" && kind !== "weighted") {
+    throw new TypeError("Stored Screen Effect variant kind is invalid");
+  }
+  return effectVariantSchema.parse(variant);
+}
+
+function serializeStoredVariant(variant: EffectVariant): StoredEffectVariant {
+  return { ...variant, kind: "weighted" };
 }

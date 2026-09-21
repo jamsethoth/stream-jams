@@ -73,7 +73,6 @@ describe("Screen Effect authoring", () => {
     expect(withCopy.variants[1]).toMatchObject({
       id: "variant-copy",
       name: "Copy",
-      kind: "weighted",
       enabled: false,
       sound: { assetId: "asset-tone", volume: 0.25 }
     });
@@ -116,7 +115,6 @@ describe("Screen Effect authoring", () => {
         ...source.variants[0]!,
         id: "variant-audio-only",
         name: "Audio only",
-        kind: "weighted",
         visual: null,
         sound: { assetId: "asset-other", volume: 0.3 },
         outputs: { browserSource: false, deviceRouteIds: ["route-speakers"] }

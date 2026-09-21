@@ -18,9 +18,9 @@ describe("DefaultAlertResolver", () => {
     const result = createResolver().resolveMatches({ matches: [createMatch(rule, createCheerEvent())], target: { ...target, ...(targetProfileId === undefined ? {} : { targetProfileId }) }, editorDocuments: new Map([[document.id, document]]) });
     const audio = result.filter(alert => alert.overlayInstruction.audio !== null);
     expect(audio.map(alert => alert.overlayInstruction.audio)).toEqual([
-      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio" },
-      { assetId: "clip", volume: 0.3, sourceKind: "video-soundtrack" },
-      { assetId: "clip", volume: 0.7, sourceKind: "video-soundtrack" }
+      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+      { assetId: "clip", volume: 0.3, sourceKind: "video-soundtrack", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+      { assetId: "clip", volume: 0.7, sourceKind: "video-soundtrack", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 }
     ]);
     expect(new Set(audio.map(alert => alert.overlayInstruction.id)).size).toBe(3);
     expect(audio.every(alert => alert.overlayInstruction.visual === null)).toBe(true);
@@ -52,7 +52,7 @@ describe("DefaultAlertResolver", () => {
   it("renders a GIF visual without projecting its stale embedded-audio setting", () => {
     const rule = createRule();
     const original = createEditorDocument(rule);
-    const video = { id: "video", name: "Video or GIF", type: "video" as const, assetId: "clip", order: 7, animation, visible: true, playEmbeddedAudio: true, audioVolume: 0.4 };
+    const video = { id: "video", name: "Video or GIF", type: "video" as const, assetId: "clip", order: 7, animation, visible: true, loop: true, playEmbeddedAudio: true, audioVolume: 0.4 };
     const document: AlertEditorDocument = {
       ...original,
       layers: [...original.layers, video],
@@ -69,7 +69,7 @@ describe("DefaultAlertResolver", () => {
       visualAssetMediaTypes: { clip: "gif" }
     });
 
-    expect(result.some(alert => alert.overlayInstruction.visual?.mediaType === "gif")).toBe(true);
+    expect(result.some(alert => alert.overlayInstruction.visual?.mediaType === "gif" && alert.overlayInstruction.visual.loop)).toBe(true);
     expect(result.some(alert => alert.overlayInstruction.audio?.assetId === "clip")).toBe(false);
   });
 
@@ -97,8 +97,8 @@ describe("DefaultAlertResolver", () => {
     expect(core.resolveAlertAudio(document)).toEqual({
       documentId: document.id, durationMs: document.durationMs, outputs: document.outputs,
       layers: [
-        { sourceKind: "audio", layerId: "first", assetId: "asset-audio", volume: 0.5 },
-        { sourceKind: "audio", layerId: "second", assetId: "asset-audio", volume: 0.5 }
+        { sourceKind: "audio", layerId: "first", assetId: "asset-audio", volume: 0.5, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+        { sourceKind: "audio", layerId: "second", assetId: "asset-audio", volume: 0.5, fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 }
       ]
     });
     expect(core.resolveAlertAudio({ ...document, layers: [] })).toBeNull();
@@ -134,8 +134,8 @@ describe("DefaultAlertResolver", () => {
       editorDocuments: new Map([[document.id, document]])
     });
     expect(alerts.flatMap(alert => alert.overlayInstruction.audio ?? [])).toEqual([
-      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio" },
-      { assetId: "asset-audio", volume: 0.25, sourceKind: "audio" }
+      { assetId: "asset-audio", volume: 0.5, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 },
+      { assetId: "asset-audio", volume: 0.25, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 }
     ]);
     expect(alerts.filter(alert => alert.overlayInstruction.text !== null)).toHaveLength(1);
   });
@@ -517,7 +517,7 @@ describe("DefaultAlertResolver", () => {
       mediaType: "gif",
       layout: { layerId: "layer-image", x: 40, y: 30, width: 320, height: 240, zIndex: 2 }
     });
-    expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5, sourceKind: "audio" });
+    expect(resolved[2]?.overlayInstruction.audio).toEqual({ assetId: "asset-audio", volume: 0.5, sourceKind: "audio", fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 4000 });
     expect(resolved[3]?.overlayInstruction.tts).toEqual({
       mode: "remote-trigger",
       text: "Read Profile Viewer",
@@ -529,6 +529,19 @@ describe("DefaultAlertResolver", () => {
       layout: { layerId: "layer-shape", x: 0, y: 0, width: 100, height: 100, zIndex: 5 }
     });
     expect(resolved.map((alert) => alert.overlayInstruction.animation)).toEqual(Array(5).fill(animation));
+  });
+
+  it("keeps matched media visual layers through their exit animation", () => {
+    const rule = createRule();
+    const document = { ...createEditorDocument(rule), durationMode: "media" as const };
+    const resolved = createResolver().resolveMatches({
+      matches: [createMatch(rule, createCheerEvent())],
+      target: { overlayId: "overlay-1", purpose: "live", scope: "module", targetProfileId: "landscape" },
+      editorDocuments: new Map([[rule.id, document]])
+    });
+
+    expect(resolved.find((alert) => alert.overlayInstruction.visual !== null)?.overlayInstruction.durationMs).toBe(4_300);
+    expect(resolved.find((alert) => alert.overlayInstruction.audio !== null)?.overlayInstruction.durationMs).toBe(4_000);
   });
 
   it("does not resolve editor layers for a disabled target profile", () => {

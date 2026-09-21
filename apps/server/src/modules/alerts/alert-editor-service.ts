@@ -8,7 +8,10 @@ import {
   getAlertEditorAffectedProfileIds,
   createAlertTemplateContext,
   createNormalizedAlertSampleEvent,
+  collectAlertDurationAssetIds,
   resolveAlertAudio,
+  resolveAlertLayerDurationMs,
+  resolveMediaDuration,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle,
   defaultAlertStarterThemeId,
@@ -25,6 +28,7 @@ import {
   type AlertTargetProfileDocument,
   type AlertVariationAuthoringContext,
   type AlertVariationPriorityAssignment,
+  type AssetRecord,
   type NormalizedStreamEvent,
   type OverlayElementLayout,
   type ResolvedAlert,
@@ -70,7 +74,7 @@ export interface AlertEditorServiceOptions {
   readonly listAudioOutputRoutes?: () => readonly AudioOutputRoute[];
   readonly enqueueTest: (playback: AlertEditorTestPlayback) => Promise<void>;
   readonly moderationService: ModerationService;
-  readonly findAssetMediaType?: (assetId: string) => Promise<"image" | "gif" | "video" | "audio" | null>;
+  readonly findAssets?: (assetIds: readonly string[]) => Promise<ReadonlyMap<string, AssetRecord>>;
   readonly generateId: () => string;
   readonly generateReferenceId: () => string;
   readonly now?: () => Date;
@@ -314,12 +318,16 @@ export class AlertEditorService {
       id: referenceId,
       occurredAt: this.#now().toISOString()
     });
-    const visualAssetMediaTypes = await this.#resolveVisualAssetMediaTypes(request.document);
+    const assets = await this.#resolveAssets(request.document);
+    const document = this.#resolveTestDuration(request.document, assets);
+    const resolvedRequest = { ...request, document };
+    const visualAssetMediaTypes = this.#resolveVisualAssetMediaTypes(document, assets);
+    const assetDurations = Object.fromEntries([...assets].map(([assetId, asset]) => [assetId, asset.durationMs]));
     const alerts = (browserReady || desktopReady) && profile !== null
-      ? this.#createTestAlerts(request, profile, sourceEvent, visualAssetMediaTypes)
+      ? this.#createTestAlerts(resolvedRequest, profile, sourceEvent, visualAssetMediaTypes, assetDurations)
       : [];
     const canonicalAudio = request.includeAudio
-      ? resolveAlertAudio(request.document, visualAssetMediaTypes)
+      ? resolveAlertAudio(document, visualAssetMediaTypes, assetDurations)
       : null;
     const deviceDestinations = await this.#resolveTestDeviceDestinations(canonicalAudio);
     const audio = canonicalAudio === null || deviceDestinations.delivered.length === 0
@@ -399,13 +407,14 @@ export class AlertEditorService {
     request: AlertEditorTestRequest,
     profile: AlertTargetProfileDocument,
     sourceEvent: NormalizedStreamEvent,
-    visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>
+    visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>,
+    assetDurations: Readonly<Record<string, number | null>>
   ): readonly ResolvedAlert[] {
     const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
     const context = createAlertTemplateContext(sourceEvent);
     const browserAudioLayers = new Map(
       request.includeAudio && request.document.outputs.browserSource
-        ? (resolveAlertAudio(request.document, visualAssetMediaTypes)?.layers ?? []).map((layer) => [layer.layerId, layer])
+        ? (resolveAlertAudio(request.document, visualAssetMediaTypes, assetDurations)?.layers ?? []).map((layer) => [layer.layerId, layer])
         : []
     );
     const layers = [...request.document.layers]
@@ -416,7 +425,7 @@ export class AlertEditorService {
     return layers.flatMap((layer) => {
       const layout = layouts.get(layer.id);
       const instruction = layer.type === "audio" ? null : createLayerInstruction(
-        layer, layout, request.document.durationMs, profile.id, context,
+        layer, layout, resolveAlertLayerDurationMs(request.document, layer), profile.id, context,
         this.#renderedTextTemplateRenderer, this.#ttsTemplateRenderer,
         this.#options.generateId(), visualAssetMediaTypes
       );
@@ -436,7 +445,10 @@ export class AlertEditorService {
         this.#ttsTemplateRenderer,
         this.#options.generateId(),
         {},
-        audioSource.sourceKind
+        audioSource.sourceKind,
+        audioSource.playbackDurationMs,
+        audioSource.fadeInMs,
+        audioSource.fadeOutMs
       );
       return [instruction, audioInstruction].flatMap((candidate) => candidate === null ? [] : [{
           ...(profile.id === "landscape" && candidate.audio === null ? { desktopVisualEligible: true as const } : {}),
@@ -449,20 +461,52 @@ export class AlertEditorService {
     });
   }
 
-  async #resolveVisualAssetMediaTypes(
-    document: AlertEditorDocument
-  ): Promise<Readonly<Record<string, "image" | "gif" | "video">>> {
-    if (this.#options.findAssetMediaType === undefined) return {};
+  async #resolveAssets(document: AlertEditorDocument): Promise<ReadonlyMap<string, AssetRecord>> {
+    if (this.#options.findAssets === undefined) return new Map();
+    const assetIds = [...new Set(document.layers.flatMap((layer) =>
+      layer.type === "image" || layer.type === "video" || layer.type === "audio" ? [layer.assetId] : []
+    ))];
+    return this.#options.findAssets(assetIds);
+  }
+
+  #resolveTestDuration(
+    document: AlertEditorDocument,
+    assets: ReadonlyMap<string, AssetRecord>
+  ): AlertEditorDocument {
+    if (this.#options.findAssets === undefined) return document;
+    const resolution = resolveMediaDuration({
+      mode: document.durationMode ?? "custom",
+      customDurationMs: document.durationMs,
+      fallbackDurationMs: 5_000,
+      maximumDurationMs: 120_000,
+      candidates: collectAlertDurationAssetIds(document).flatMap((assetId) => {
+        const asset = assets.get(assetId);
+        return asset === undefined ? [] : [{
+          assetId,
+          label: asset.originalFileName,
+          mediaType: asset.mediaType,
+          durationMs: asset.durationMs,
+          eligible: true
+        }];
+      })
+    });
+    return { ...document, durationMs: resolution.durationMs };
+  }
+
+  #resolveVisualAssetMediaTypes(
+    document: AlertEditorDocument,
+    assets: ReadonlyMap<string, AssetRecord>
+  ): Readonly<Record<string, "image" | "gif" | "video">> {
     const mediaTypes: Record<string, "image" | "gif" | "video"> = {};
     const assetIds = [...new Set(document.layers.flatMap((layer) =>
       layer.type === "image" || layer.type === "video" ? [layer.assetId] : []
     ))];
-    await Promise.all(assetIds.map(async (assetId) => {
-      const mediaType = await this.#options.findAssetMediaType!(assetId);
+    assetIds.forEach((assetId) => {
+      const mediaType = assets.get(assetId)?.mediaType;
       if (mediaType === "image" || mediaType === "gif" || mediaType === "video") {
         mediaTypes[assetId] = mediaType;
       }
-    }));
+    });
     return mediaTypes;
   }
 }
@@ -581,6 +625,7 @@ function createDocumentFromRule(
     cooldownSeconds: rule.cooldownSeconds,
     rulePriority: rule.priority,
     durationMs: variant.durationMs,
+    durationMode: "media",
     layers,
     targetProfiles: [
       createTargetProfile("landscape", enabledProfiles.has("landscape"), landscapeReviewState, layers, variant.layout),
@@ -1085,7 +1130,10 @@ function createLayerInstruction(
   ttsTemplateRenderer: TemplateRenderer,
   instructionId: string,
   visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>,
-  audioSourceKind: ResolvedAlertAudio["layers"][number]["sourceKind"] = "audio"
+  audioSourceKind: ResolvedAlertAudio["layers"][number]["sourceKind"] = "audio",
+  audioPlaybackDurationMs = durationMs,
+  audioFadeInMs = 0,
+  audioFadeOutMs = 0
 ): ResolvedAlert["overlayInstruction"] | null {
   const base = {
     id: instructionId,
@@ -1117,11 +1165,21 @@ function createLayerInstruction(
   if ((layer.type === "image" || layer.type === "video") && layout !== undefined) {
     return {
       ...base,
-      visual: { assetId: layer.assetId, mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type, layout }
+      visual: { assetId: layer.assetId, mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type, layout, ...(layer.type === "video" ? { loop: layer.loop ?? false } : {}) }
     };
   }
   if (layer.type === "audio") {
-    return { ...base, audio: { assetId: layer.assetId, volume: layer.volume, sourceKind: audioSourceKind } };
+    return {
+      ...base,
+      audio: {
+        assetId: layer.assetId,
+        volume: layer.volume,
+        sourceKind: audioSourceKind,
+        fadeInMs: audioFadeInMs,
+        fadeOutMs: audioFadeOutMs,
+        playbackDurationMs: audioPlaybackDurationMs
+      }
+    };
   }
   if (layer.type === "tts") {
     return {

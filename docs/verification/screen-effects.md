@@ -152,6 +152,12 @@ Six findings left open after the parallel review and its prerequisite merge were
 - Effect definition create/update/delete operations now serialize their complete asynchronous conflict-check and persistence work and participate in the runtime maintenance drain. The previous synchronous SQLite transaction wrapper no longer commits before asynchronous repository work settles.
 - Module-qualified Operator conflicts retain and validate the server's authoritative snapshot. The Operator applies that snapshot immediately before presenting the safe conflict message, so a stale command cannot leave a known-obsolete current or pending row on screen.
 - Alert queue snapshots now expose their immutable enqueue sequence. The merged owner projection uses that value rather than deriving a sequence from the priority-sorted array position.
+
+## 2026-09-17 authoring correction
+
+Per-effect cooldown was removed from the current Screen Effect contract and admission path because rate limiting belongs to the triggering event configuration. Module-level cooldown remains a separate operational safety control. The existing `screen_effects.cooldown_seconds` column remains for storage compatibility and is normalized to zero on current saves. Queue priority remains descending with stable effect-ID ordering for multiple effects matched by one event, and it does not preempt current playback.
+
+The focused editor now exposes separate New variant and Copy variant actions. New variants begin blank and disabled, related actions use wrapping gaps, and set content actions are separated vertically from set-management controls.
 - The Screen Effect editor retains every successfully loaded context source, names failed asset/audio/Twitch/Streamer.bot sources inline, and offers a keyboard-operable retry. Production Storybook includes the partial-context failure state.
 
 The focused affected set passed 128 tests across 13 files. Workspace lint, typecheck, the production build, and the production Storybook build passed. The full unit gate passed 232 Vitest files and 1,998 tests plus four native Node tests. The first Storybook interaction run passed 21 suites and 221 interactions but its last unrelated suite could not connect to Chromium over an ephemeral IPv6 loopback WebSocket; an unchanged full retry passed all 22 suites and 225 interactions, classifying the first result as a temporary browser-launch environment failure. All 37 Playwright browser workflows passed against the rebuilt local runtime.

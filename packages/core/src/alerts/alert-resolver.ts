@@ -1,5 +1,6 @@
 import type { AlertMatch } from "./alert-matcher.js";
 import { resolveAlertAudio } from "../audio/resolve-alert-audio.js";
+import { resolveAlertLayerDurationMs } from "../playback/media-duration.js";
 import { DefaultAlertConditionEvaluator, type AlertConditionEvaluator } from "./condition-evaluator.js";
 import type { NormalizedStreamEvent } from "../events/types.js";
 import type { ResolvedAlert } from "../playback/types.js";
@@ -28,21 +29,25 @@ import type { OverlayElementLayout, OverlayTargetProfileId } from "../overlays/t
 
 export type AlertResolverIdKind = "resolved-alert" | "overlay-instruction";
 
-type BrowserAudioLayer = Extract<AlertLayer, { type: "audio" }> & Pick<ResolvedAudioLayer, "sourceKind">;
+type BrowserAudioLayer = Extract<AlertLayer, { type: "audio" }> & Pick<ResolvedAudioLayer, "sourceKind" | "fadeInMs" | "fadeOutMs" | "playbackDurationMs">;
 
 function browserAudioLayers(
   document: AlertEditorDocument,
-  visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>
+  visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>,
+  assetDurations: Readonly<Record<string, number | null>> = {}
 ): ReadonlyMap<string, BrowserAudioLayer> {
   if (!document.outputs.browserSource) return new Map();
-  const sources = resolveAlertAudio(document, visualAssetMediaTypes)?.layers ?? [];
+  const sources = resolveAlertAudio(document, visualAssetMediaTypes, assetDurations)?.layers ?? [];
   const layers = new Map(document.layers.map(layer => [layer.id, layer]));
   return new Map(sources.map(source => [source.layerId, {
     ...layers.get(source.layerId)!,
     type: "audio" as const,
     assetId: source.assetId,
     volume: source.volume,
-    sourceKind: source.sourceKind
+    sourceKind: source.sourceKind,
+    fadeInMs: source.fadeInMs,
+    fadeOutMs: source.fadeOutMs,
+    playbackDurationMs: source.playbackDurationMs
   }]));
 }
 
@@ -60,6 +65,7 @@ export interface ResolveAlertMatchesInput {
   readonly visualAssetMediaTypes?: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>;
   readonly editorDocuments?: ReadonlyMap<string, AlertEditorDocument>;
   readonly selectedVariants?: ReadonlyMap<string, AlertVariant>;
+  readonly assetDurations?: Readonly<Record<string, number | null>>;
 }
 
 export interface AlertResolver {
@@ -131,15 +137,15 @@ export class DefaultAlertResolver implements AlertResolver {
       const document = input.editorDocuments?.get(editorId);
       if (document !== undefined && !document.enabled) return [];
       if (document !== undefined && targetProfileId !== null) {
-        return this.#resolveEditorDocument(match, variant, document, targetProfileId, input.target, input.visualAssetMediaTypes ?? {});
+        return this.#resolveEditorDocument(match, variant, document, targetProfileId, input.target, input.visualAssetMediaTypes ?? {}, input.assetDurations ?? {});
       }
       const legacy = this.#resolveMatch(match, input.target, input.visualAssetMediaTypes ?? {}, variant);
       if (document === undefined) return [legacy];
       // Keep legacy visuals/TTS intact, but never bypass the editor's audio policy.
-      const audioLayers = [...browserAudioLayers(document, input.visualAssetMediaTypes ?? {}).values()];
+      const audioLayers = [...browserAudioLayers(document, input.visualAssetMediaTypes ?? {}, input.assetDurations).values()];
       const audioAlerts = audioLayers.flatMap(layer => {
         const instruction = this.#createEditorLayerInstruction(
-          match, layer, undefined, document.durationMs, null, input.target, {}, layer.sourceKind
+          match, layer, undefined, document.durationMs, null, input.target, {}, layer.sourceKind, layer.playbackDurationMs
         );
         return instruction === null ? [] : [{
           id: this.#generateId("resolved-alert"), sourceEventId: match.event.id,
@@ -160,7 +166,8 @@ export class DefaultAlertResolver implements AlertResolver {
     document: AlertEditorDocument,
     targetProfileId: TargetProfileId,
     target: AlertResolverTarget,
-    visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>
+    visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>,
+    assetDurations: Readonly<Record<string, number | null>>
   ): readonly ResolvedAlert[] {
     const profile = document.targetProfiles.find((candidate) => candidate.id === targetProfileId);
     if (!document.enabled || profile?.enabled !== true || profile.reviewState !== "ready") {
@@ -168,7 +175,7 @@ export class DefaultAlertResolver implements AlertResolver {
     }
 
     const layouts = new Map(profile.layerLayouts.map((layout) => [layout.layerId, layout]));
-    const audioLayers = browserAudioLayers(document, visualAssetMediaTypes);
+    const audioLayers = browserAudioLayers(document, visualAssetMediaTypes, assetDurations);
     return [...document.layers]
       .filter((layer) => layer.visible)
       .sort((left, right) => left.order - right.order)
@@ -177,14 +184,14 @@ export class DefaultAlertResolver implements AlertResolver {
           match,
           layer,
           layouts.get(layer.id),
-          document.durationMs,
+          resolveAlertLayerDurationMs(document, layer),
           targetProfileId,
           target,
           visualAssetMediaTypes
         );
         const audioLayer = audioLayers.get(layer.id);
         const audioInstruction = audioLayer === undefined ? null : this.#createEditorLayerInstruction(
-          match, audioLayer, undefined, document.durationMs, targetProfileId, target, {}, audioLayer.sourceKind
+          match, audioLayer, undefined, document.durationMs, targetProfileId, target, {}, audioLayer.sourceKind, audioLayer.playbackDurationMs
         );
         return [instruction, audioInstruction].flatMap(candidate => candidate === null ? [] : [{
           ...(targetProfileId === "landscape" && candidate.audio === null ? { desktopVisualEligible: true as const } : {}),
@@ -205,7 +212,8 @@ export class DefaultAlertResolver implements AlertResolver {
     targetProfileId: TargetProfileId | null,
     target: AlertResolverTarget,
     visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>,
-    audioSourceKind: ResolvedAudioLayer["sourceKind"] = "audio"
+    audioSourceKind: ResolvedAudioLayer["sourceKind"] = "audio",
+    audioPlaybackDurationMs = durationMs
   ): OverlayInstruction | null {
     const base = {
       id: this.#generateId("overlay-instruction"),
@@ -239,7 +247,8 @@ export class DefaultAlertResolver implements AlertResolver {
         visual: {
           assetId: layer.assetId,
           mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type,
-          layout
+          layout,
+          ...(layer.type === "video" ? { loop: layer.loop ?? false } : {})
         }
       };
     }
@@ -249,7 +258,10 @@ export class DefaultAlertResolver implements AlertResolver {
         audio: {
           assetId: layer.assetId,
           volume: layer.volume,
-          sourceKind: audioSourceKind
+          sourceKind: audioSourceKind,
+          fadeInMs: layer.fadeInMs ?? 0,
+          fadeOutMs: layer.fadeOutMs ?? 0,
+          playbackDurationMs: audioPlaybackDurationMs
         }
       };
     }
@@ -332,7 +344,10 @@ export class DefaultAlertResolver implements AlertResolver {
           : {
               assetId: variant.audioAssetId,
               volume: 1,
-              sourceKind: "audio"
+              sourceKind: "audio",
+              fadeInMs: 0,
+              fadeOutMs: 0,
+              playbackDurationMs: variant.durationMs
             },
       text: {
         text: this.#renderedTextTemplateRenderer.render({

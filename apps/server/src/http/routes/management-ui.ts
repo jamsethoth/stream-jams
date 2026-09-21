@@ -142,6 +142,7 @@ export interface ManagementUiQueryService {
   updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
   getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
   deleteAsset(assetId: string): Promise<void>;
+  repairAssetDuration?(assetId: string): Promise<AssetLibraryItem>;
   getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
   getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
   openDataFolder(): Promise<OpenDataFolderResult>;
@@ -586,6 +587,22 @@ export function registerManagementUiRoutes(app: FastifyInstance, dependencies: M
       );
     } catch (error) {
       return sendAssetCommandError(reply, error);
+    }
+  });
+
+  app.post("/management/assets/:assetId/repair-duration", { preHandler }, async (request, reply) => {
+    if (service.repairAssetDuration === undefined) {
+      return sendHttpError(reply, 503, { code: "ASSET_DURATION_REPAIR_UNAVAILABLE", message: "Asset duration repair is unavailable" });
+    }
+    try {
+      return assetLibraryItemSchema.parse(
+        await service.repairAssetDuration(readParam(request.params, "assetId"))
+      );
+    } catch (error) {
+      if (error instanceof AssetLibraryNotFoundError) {
+        return sendHttpError(reply, 404, { code: "ASSET_NOT_FOUND", message: error.message });
+      }
+      throw error;
     }
   });
 

@@ -1,8 +1,10 @@
 import {
   duplicateScreenEffect,
+  type ScreenEffectSet,
   type ScreenEffectDocument
 } from "@stream-jams/core";
 import { useCallback, useEffect, useState } from "react";
+import { ActionMenu } from "../foundation/ActionMenu.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import { MaskedValue } from "../foundation/MaskedValue.js";
 import { StatusBadge } from "../foundation/StatusBadge.js";
@@ -11,21 +13,29 @@ import type {
   ScreenEffectsApi
 } from "./screen-effects-api.js";
 import "./screen-effects.css";
+import { ScreenEffectTree } from "./ScreenEffectTree.js";
 
 export interface ScreenEffectsPageProps {
   readonly api: ScreenEffectsApi;
-  readonly onEdit: (effectId: string, create: boolean) => void;
+  readonly onEdit: (effectId: string, create: boolean, setId?: string, variantId?: string) => void;
+  readonly initialSetId?: string | undefined;
   readonly generateId?: (prefix: string) => string;
 }
 
 type Confirmation =
+  | { readonly kind: "activate-set"; readonly set: ScreenEffectSet }
+  | { readonly kind: "delete-set"; readonly set: ScreenEffectSet }
   | { readonly kind: "effect-enable"; readonly document: ScreenEffectDocument }
   | { readonly kind: "delete"; readonly document: ScreenEffectDocument }
   | { readonly kind: "module"; readonly enabled: boolean }
   | { readonly kind: "regenerate"; readonly source: ScreenEffectBrowserSource }
   | null;
 
-export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: ScreenEffectsPageProps) {
+export function ScreenEffectsPage({ api, onEdit, initialSetId, generateId = defaultId }: ScreenEffectsPageProps) {
+  const [sets, setSets] = useState<readonly ScreenEffectSet[]>([]);
+  const [expandedSetId, setExpandedSetId] = useState<string | null>(initialSetId ?? null);
+  const [nameDialog, setNameDialog] = useState<{ kind: "create" | "rename" | "duplicate"; set?: ScreenEffectSet } | null>(null);
+  const [setName, setSetName] = useState("");
   const [documents, setDocuments] = useState<readonly ScreenEffectDocument[]>([]);
   const [browserSources, setBrowserSources] = useState<readonly ScreenEffectBrowserSource[]>([]);
   const [moduleEnabled, setModuleEnabled] = useState<boolean | null>(null);
@@ -35,18 +45,23 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation>(null);
   const [busy, setBusy] = useState(false);
+  const [sourcesExpanded, setSourcesExpanded] = useState(false);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [loadedDocuments, loadedSources, loadedModuleEnabled] = await Promise.all([
+      const [loadedDocuments, loadedSources, loadedModuleEnabled, loadedSets] = await Promise.all([
         api.list(),
         api.listBrowserSources(),
-        api.getModuleEnabled()
+        api.getModuleEnabled(),
+        api.listSets()
       ]);
       setDocuments(loadedDocuments);
       setBrowserSources(loadedSources);
       setModuleEnabled(loadedModuleEnabled);
+      setSets(loadedSets);
+      setExpandedSetId((current) => loadedSets.some((set) => set.id === current) ? current : loadedSets.find((set) => set.active)?.id ?? null);
       setError(null);
     } catch (loadError) {
       setError(message(loadError, "Screen Effects could not be loaded."));
@@ -66,7 +81,7 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
         variantIds: document.variants.map(() => generateId("variant")),
         bindingIds: document.bindings.map(() => generateId("binding"))
       });
-      await api.create(copy);
+      await api.create(copy, sets.find((set) => set.effectIds.includes(document.id))?.id);
       setNotice(`${copy.name} was created disabled.`);
       await load();
     } catch (copyError) {
@@ -81,7 +96,13 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
     setBusy(true);
     setError(null);
     try {
-      if (confirmation.kind === "module") {
+      if (confirmation.kind === "activate-set") {
+        await api.activateSet(confirmation.set.id);
+        setNotice(`${confirmation.set.name} is now the live Screen Effect set.`);
+      } else if (confirmation.kind === "delete-set") {
+        await api.removeSet(confirmation.set.id);
+        setNotice(`${confirmation.set.name} was deleted.`);
+      } else if (confirmation.kind === "module") {
         await api.setModuleEnabled(confirmation.enabled);
         setNotice(`Screen Effects module is now ${confirmation.enabled ? "enabled" : "disabled"}.`);
       } else if (confirmation.kind === "regenerate") {
@@ -108,6 +129,22 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
     }
   }
 
+  async function saveSetName() {
+    if (nameDialog === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const saved = nameDialog.kind === "rename" && nameDialog.set !== undefined
+        ? await api.renameSet(nameDialog.set.id, setName)
+        : await api.createSet({ id: generateId("effect-set"), name: setName }, nameDialog.kind === "duplicate" ? nameDialog.set?.id : undefined);
+      setExpandedSetId(saved.id);
+      setNameDialog(null);
+      await load();
+      setNotice(`${saved.name} was saved${saved.active ? "." : " as an inactive set."}`);
+    } catch (error) { setError(message(error, "Screen Effect set could not be saved.")); }
+    finally { setBusy(false); }
+  }
+
   async function createBrowserSource(source: ScreenEffectBrowserSource) {
     setBusy(true);
     setError(null);
@@ -122,52 +159,84 @@ export function ScreenEffectsPage({ api, onEdit, generateId = defaultId }: Scree
     }
   }
 
+  const visibleDocuments = documents.filter((document) => `${document.name} ${document.category ?? ""}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+
   return <div className="screen-effects-page">
+    <section aria-labelledby="screen-effects-browser-title" className="management-card screen-effects-browser-sources">
+      <header className="screen-effects-section-header"><h2 id="screen-effects-browser-title"><button aria-controls="screen-effects-sources-content" aria-expanded={sourcesExpanded} className="screen-effects-disclosure" onClick={() => setSourcesExpanded((value) => !value)} type="button"><span aria-hidden="true">{sourcesExpanded ? "−" : "+"}</span> Browser sources</button></h2><span>{browserSources.filter((source) => source.status === "available").length} of {browserSources.length} URLs available</span></header>
+      {sourcesExpanded ? <div id="screen-effects-sources-content">
+      <p>Screen Effects uses its own module source or an enabled unified source. Keep Browser Source audio separate from visual surface membership.</p>
+      {browserSources.length === 0 ? <p>No Screen Effects Browser Source output is registered.</p> : <ul>{browserSources.map((source) => <li key={source.id}><div><strong>{source.label}</strong><span>{source.status === "available" ? "URL available" : source.status.replace("-", " ")}</span></div>{source.url === null ? null : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />}<div className="screen-effects-list__actions">{source.status === "create-required" ? <button className="button button--primary" disabled={busy} onClick={() => void createBrowserSource(source)} type="button">Create URL</button> : <button className="button button--danger" disabled={busy} onClick={() => { setRegenerateConfirmation(""); setConfirmation({ kind: "regenerate", source }); }} type="button">Regenerate URL</button>}</div></li>)}</ul>}
+      </div> : null}
+    </section>
+
     <section aria-labelledby="screen-effects-inventory-title" className="management-card screen-effects-inventory">
       <header className="screen-effects-section-header">
-        <div><p className="management-eyebrow">Local module</p><h2 id="screen-effects-inventory-title">Screen Effects</h2><p>Coordinate one visual and one optional sound from trusted stream events.</p>{moduleEnabled === null ? null : <StatusBadge label={moduleEnabled ? "Module enabled" : "Module disabled"} tone={moduleEnabled ? "positive" : "neutral"} />}</div>
-        <div className="screen-effects-list__actions"><button className="button button--secondary" disabled={busy || moduleEnabled === null} onClick={() => setConfirmation({ kind: "module", enabled: !moduleEnabled })} type="button">{moduleEnabled ? "Disable Screen Effects module" : "Enable Screen Effects module"}</button><button onClick={() => onEdit(generateId("effect"), true)} type="button">New effect</button></div>
+        <div><h2 id="screen-effects-inventory-title">Screen Effects</h2><p>Coordinate one visual and one optional sound from trusted stream events.</p>{moduleEnabled === null ? null : <StatusBadge label={moduleEnabled ? "Module enabled" : "Module disabled"} tone={moduleEnabled ? "positive" : "neutral"} />}</div>
+        <div className="screen-effects-list__actions"><button className="button button--secondary" disabled={busy || moduleEnabled === null} onClick={() => setConfirmation({ kind: "module", enabled: !moduleEnabled })} type="button">{moduleEnabled ? "Disable Screen Effects module" : "Enable Screen Effects module"}</button><button className="button button--primary" onClick={() => { setSetName(""); setNameDialog({ kind: "create" }); }} type="button">Create set</button></div>
       </header>
       {notice === null ? null : <p role="status">{notice}</p>}
       {error === null ? null : <p role="alert">{error} Retry or open Diagnostics for the server reference.</p>}
       {loading ? <p role="status">Loading Screen Effects…</p> : null}
       {!loading && documents.length === 0 ? <p>No Screen Effects yet. Create a disabled draft, choose media, then save it.</p> : null}
-      <ul className="screen-effects-list">
-        {documents.map((document) => <li key={document.id}>
-          <div>
-            <strong>{document.name}</strong>
-            <span>{document.category ?? "Uncategorized"} · {document.variants.length} {document.variants.length === 1 ? "variant" : "variants"}</span>
-          </div>
-          <StatusBadge label={document.enabled ? "Enabled" : "Disabled"} tone={document.enabled ? "positive" : "neutral"} />
-          <div className="screen-effects-list__actions">
-            <button className="button button--secondary" onClick={() => onEdit(document.id, false)} type="button">Edit</button>
-            <button className="button button--secondary" disabled={busy} onClick={() => void copy(document)} type="button">Copy</button>
-            <button className="button button--secondary" onClick={() => setConfirmation({ kind: "effect-enable", document })} type="button">{document.enabled ? "Disable" : "Enable"}</button>
-            <button className="button button--danger" onClick={() => setConfirmation({ kind: "delete", document })} type="button">Delete</button>
-          </div>
-          <p><a href="/manage/event-sources">Review trigger setup</a> · {document.bindings.length === 0 ? "No trigger configured" : `${document.bindings.length} configured trigger${document.bindings.length === 1 ? "" : "s"}`}</p>
-        </li>)}
-      </ul>
+      <label className="screen-effects-search">Search effects<input onChange={(event) => setQuery(event.currentTarget.value)} type="search" value={query} /></label>
+      <div className="screen-effect-sets">
+        {sets.map((set) => <section aria-label={`${set.name} Screen Effect set`} className="screen-effect-set" key={set.id}>
+          <header className="screen-effects-section-header">
+            <button aria-expanded={expandedSetId === set.id || query.trim() !== ""} aria-controls={`effect-set-${set.id}`} className="screen-effects-disclosure" onClick={() => setExpandedSetId((current) => current === set.id ? null : set.id)} type="button">
+              <strong>{set.name}</strong> · {set.effectIds.length} {set.effectIds.length === 1 ? "effect" : "effects"}
+            </button>
+            <div className="screen-effects-list__actions">
+              <StatusBadge label={set.active ? "Live set" : "Inactive set"} tone={set.active ? "positive" : "neutral"} />
+              {!set.active ? <button className="button button--secondary" disabled={busy} onClick={() => setConfirmation({ kind: "activate-set", set })} type="button">Activate set</button> : null}
+              <button className="button button--secondary" disabled={busy} onClick={() => { setSetName(set.name); setNameDialog({ kind: "rename", set }); }} type="button">Rename set</button>
+              <button className="button button--secondary" disabled={busy} onClick={() => { setSetName(`${set.name} copy`); setNameDialog({ kind: "duplicate", set }); }} type="button">Duplicate set</button>
+              <button className="button button--danger-quiet" disabled={busy || set.active} onClick={() => setConfirmation({ kind: "delete-set", set })} type="button">Delete set</button>
+            </div>
+          </header>
+          {expandedSetId === set.id || query.trim() !== "" ? <div id={`effect-set-${set.id}`}>
+            <div className="screen-effects-section-header"><p>{set.active ? "Enabled effects in this set respond to live triggers." : "Inactive set: changes will not affect live triggers until activated."}</p><button className="button button--primary" onClick={() => onEdit(generateId("effect"), true, set.id)} type="button">New effect</button></div>
+            <ScreenEffectTree documents={visibleDocuments.filter((document) => set.effectIds.includes(document.id))} onSelect={(effectId, variantId) => onEdit(effectId, false, set.id, variantId)} actions={(document) => <div className="screen-effects-list__actions">
+              <button className="button button--secondary" onClick={() => onEdit(document.id, false, set.id)} type="button">Edit</button>
+              <button className="button button--secondary" disabled={busy} onClick={() => setConfirmation({ kind: "effect-enable", document })} type="button">{document.enabled ? "Disable" : "Enable"}</button>
+              <ActionMenu
+                items={[
+                  { accessibleLabel: `Copy ${document.name}`, disabled: busy, label: "Copy", onSelect: () => void copy(document) },
+                  { accessibleLabel: `Delete ${document.name}`, disabled: busy, label: "Delete", onSelect: () => setConfirmation({ kind: "delete", document }), tone: "danger" }
+                ]}
+                label={`More actions for ${document.name}`}
+              />
+              <a href="/manage/event-sources">Review trigger setup</a>
+            </div>} />
+            {set.effectIds.length === 0 ? <p>No effects in this set. Create a disabled draft to get started.</p> : null}
+          </div> : null}
+        </section>)}
+      </div>
+      {!loading && documents.length > 0 && visibleDocuments.length === 0 ? <p role="status">No effects match your search.</p> : null}
     </section>
 
-    <section aria-labelledby="screen-effects-browser-title" className="management-card screen-effects-browser-sources">
-      <h2 id="screen-effects-browser-title">Browser sources</h2>
-      <p>Screen Effects uses its own module source or an enabled unified source. Keep Browser Source audio separate from visual surface membership.</p>
-      {browserSources.length === 0 ? <p>No Screen Effects Browser Source output is registered.</p> : <ul>{browserSources.map((source) => <li key={source.id}><div><strong>{source.label}</strong><span>{source.status === "available" ? "URL available" : source.status.replace("-", " ")}</span></div>{source.url === null ? null : <MaskedValue label={`${source.label} Browser Source URL`} value={source.url} />}<div className="screen-effects-list__actions">{source.status === "create-required" ? <button disabled={busy} onClick={() => void createBrowserSource(source)} type="button">Create URL</button> : <button className="button button--danger" disabled={busy} onClick={() => { setRegenerateConfirmation(""); setConfirmation({ kind: "regenerate", source }); }} type="button">Regenerate URL</button>}</div></li>)}</ul>}
-    </section>
-
+    <ModalSurface labelledBy="screen-effect-set-name" onCancel={() => setNameDialog(null)} open={nameDialog !== null}>
+      <form onSubmit={(event) => { event.preventDefault(); void saveSetName(); }}>
+        <h2 id="screen-effect-set-name">{nameDialog?.kind === "rename" ? "Rename set" : nameDialog?.kind === "duplicate" ? "Duplicate set" : "Create set"}</h2>
+        <label>Set name<input autoFocus maxLength={120} onChange={(event) => setSetName(event.currentTarget.value)} value={setName} /></label>
+        {error === null ? null : <p role="alert">{error}</p>}
+        <div className="management-modal__actions"><button className="button button--secondary" onClick={() => setNameDialog(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy || setName.trim() === ""} type="submit">Save set</button></div>
+      </form>
+    </ModalSurface>
     <ModalSurface labelledBy="screen-effect-confirm-title" onCancel={() => setConfirmation(null)} open={confirmation !== null}>
       {confirmation === null ? null : <div>
         <h2 id="screen-effect-confirm-title">{confirmationTitle(confirmation)}</h2>
         <p>{confirmationMessage(confirmation)}</p>
         {confirmation.kind === "regenerate" ? <label><span>Type REGENERATE to continue</span><input autoComplete="off" onChange={(event) => setRegenerateConfirmation(event.currentTarget.value)} value={regenerateConfirmation} /></label> : null}
-        <div className="management-modal__actions"><button className="button button--secondary" onClick={() => { setConfirmation(null); setRegenerateConfirmation(""); }} type="button">Cancel</button><button className={confirmation.kind === "delete" || confirmation.kind === "regenerate" ? "button button--danger" : undefined} disabled={busy || (confirmation.kind === "regenerate" && regenerateConfirmation !== "REGENERATE")} onClick={() => void confirm()} type="button">{confirmation.kind === "regenerate" ? "Regenerate URL" : "Confirm change"}</button></div>
+        <div className="management-modal__actions"><button className="button button--secondary" onClick={() => { setConfirmation(null); setRegenerateConfirmation(""); }} type="button">Cancel</button><button className={confirmation.kind === "delete" || confirmation.kind === "regenerate" ? "button button--danger" : "button button--primary"} disabled={busy || (confirmation.kind === "regenerate" && regenerateConfirmation !== "REGENERATE")} onClick={() => void confirm()} type="button">{confirmation.kind === "regenerate" ? "Regenerate URL" : "Confirm change"}</button></div>
       </div>}
     </ModalSurface>
   </div>;
 }
 
 function confirmationTitle(confirmation: Exclude<Confirmation, null>): string {
+  if (confirmation.kind === "activate-set") return `Activate ${confirmation.set.name}?`;
+  if (confirmation.kind === "delete-set") return `Delete ${confirmation.set.name}?`;
   if (confirmation.kind === "delete") return "Delete Screen Effect?";
   if (confirmation.kind === "regenerate") return `Regenerate ${confirmation.source.label} URL?`;
   if (confirmation.kind === "module") return `${confirmation.enabled ? "Enable" : "Disable"} Screen Effects module?`;
@@ -175,6 +244,8 @@ function confirmationTitle(confirmation: Exclude<Confirmation, null>): string {
 }
 
 function confirmationMessage(confirmation: Exclude<Confirmation, null>): string {
+  if (confirmation.kind === "activate-set") return `Only enabled effects in ${confirmation.set.name} will respond to new live triggers. Already queued effects keep their saved snapshots.`;
+  if (confirmation.kind === "delete-set") return `Delete ${confirmation.set.name} and all its effects, variants and triggers?`;
   if (confirmation.kind === "delete") {
     return `Delete ${confirmation.document.name} and its saved variants and triggers.`;
   }

@@ -7,6 +7,7 @@ import type {
   OverlayPresetAnimationInstruction
 } from "@stream-jams/core";
 import { alertTextLayerStyle } from "./alert-text-style.js";
+import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
 
 export interface OverlayPlaybackEvent {
   readonly instructionId: string;
@@ -260,6 +261,14 @@ function OverlayInstructionLayer({
 
   const audioAssetId = instruction.audio?.assetId ?? null;
   const audioVolume = instruction.audio?.volume ?? 1;
+  useMediaVolumeEnvelope(audioElementRef, instruction.audio === null ? null : {
+    volume: audioVolume,
+    fadeInMs: instruction.audio.fadeInMs ?? 0,
+    fadeOutMs: instruction.audio.fadeOutMs ?? 0,
+    playbackDurationMs: instruction.audio.playbackDurationMs ?? instruction.durationMs,
+    ...(startsAt === undefined ? {} : { startsAtEpochMs: startsAt }),
+    muted
+  }, instruction.audio !== null);
   const startAudio = useCallback(() => {
     if (presentationInvalid) return;
     const element = audioElementRef.current;
@@ -277,7 +286,6 @@ function OverlayInstructionLayer({
       reportFailure("Audio playback could not start before its preparation deadline.");
     }, Math.max(0, Math.min(endsAt, startsAt + 5000) - Date.now()));
     preparation.signal.addEventListener("abort", () => window.clearTimeout(startTimer), { once: true });
-    element.volume = Math.min(1, Math.max(0, audioVolume));
     const play = () => active() ? element.play() : Promise.resolve();
     const starting = startsAt === undefined || endsAt === undefined ? play() : prepareTimedMedia(element,
       { startsAtEpochMs: startsAt, endsAtEpochMs: endsAt },
@@ -346,6 +354,7 @@ function OverlayInstructionLayer({
       {instruction.visual === null ? null : instruction.visual.mediaType === "video" ? (
         <video
           autoPlay={startsAt === undefined}
+          loop={instruction.visual.loop ?? false}
           ref={videoElementRef}
           data-testid={`overlay-video-${instruction.id}`}
           muted={instruction.moduleId === "alerts" || muted}

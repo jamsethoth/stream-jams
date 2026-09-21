@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { alertAudioOutputsSchema } from "../audio/schemas.js";
-import { overlayPresetAnimationInstructionSchema } from "../overlays/schemas.js";
+import { alertAudioOutputsSchema, mediaVolumeSchema } from "../audio/schemas.js";
 import { isoDateTimeSchema, overlayElementLayoutSchema } from "../shared/schemas.js";
 import type {
   CreateScreenEffectDocumentInput,
@@ -23,7 +22,6 @@ const boundedIdentityTextSchema = z.string().trim().min(1).max(120).refine(
   "Event identities cannot contain control characters"
 );
 const safeIntegerSchema = z.number().int().refine(Number.isSafeInteger, "Priority must be a safe integer");
-const volumeSchema = z.number().finite().min(0).max(1);
 const triggerSummarySchema = z.string().trim().min(1).max(256).refine(
   (value) => Array.from(value).every((character) => {
     const code = character.charCodeAt(0);
@@ -83,7 +81,9 @@ const videoEffectVisualSchema = z.object({
   assetId: storageSafeIdSchema,
   layout: effectLayoutSchema,
   playEmbeddedAudio: z.boolean(),
-  audioVolume: volumeSchema
+  audioVolume: mediaVolumeSchema,
+  audioFadeInMs: z.number().int().min(0).max(120_000).optional(),
+  audioFadeOutMs: z.number().int().min(0).max(120_000).optional()
 }).strict();
 
 export const effectVisualSchema = z.discriminatedUnion("mediaType", [
@@ -93,7 +93,9 @@ export const effectVisualSchema = z.discriminatedUnion("mediaType", [
 
 export const effectSoundSchema = z.object({
   assetId: storageSafeIdSchema,
-  volume: volumeSchema
+  volume: mediaVolumeSchema,
+  fadeInMs: z.number().int().min(0).max(120_000).optional(),
+  fadeOutMs: z.number().int().min(0).max(120_000).optional()
 }).strict();
 
 export const effectVisualOutputsSchema = z.object({
@@ -101,21 +103,15 @@ export const effectVisualOutputsSchema = z.object({
   desktop: z.boolean()
 }).strict();
 
-const effectAnimationSchema = overlayPresetAnimationInstructionSchema.extend({
-  durationMs: z.number().int().min(0).max(120_000),
-  delayMs: z.number().int().min(0).max(120_000)
-}).strict();
-
 export const effectVariantSchema = z.object({
   id: storageSafeIdSchema,
   name: boundedNameSchema,
-  kind: z.enum(["default", "weighted"]),
   enabled: z.boolean(),
   weight: z.number().int().min(1).max(10_000),
   visual: effectVisualSchema.nullable(),
   sound: effectSoundSchema.nullable(),
-  animation: effectAnimationSchema.nullable(),
   durationMs: z.number().int().min(1_000).max(120_000),
+  durationMode: z.enum(["media", "custom"]).optional(),
   outputs: alertAudioOutputsSchema,
   visualOutputs: effectVisualOutputsSchema
 }).strict().superRefine((variant, context) => {
@@ -136,7 +132,6 @@ export const screenEffectDocumentSchema = z.object({
   description: z.string().trim().min(1).max(2_000).nullable(),
   category: z.string().trim().min(1).max(80).nullable(),
   priority: safeIntegerSchema,
-  cooldownSeconds: z.number().int().min(0).max(86_400),
   bindings: z.array(effectBindingSchema).max(100),
   variants: z.array(effectVariantSchema).min(1).max(50)
 }).strict().superRefine((document, context) => {
@@ -144,14 +139,11 @@ export const screenEffectDocumentSchema = z.object({
   addDuplicateIssues(document.bindings.map(effectBindingIdentity), ["bindings"], "binding identity", context);
   addDuplicateIssues(document.variants.map((variant) => variant.id), ["variants"], "variant ID", context);
 
-  const enabledDefaults = document.variants.filter(
-    (variant) => variant.kind === "default" && variant.enabled
-  );
-  if (enabledDefaults.length !== 1) {
+  if (!document.variants.some((variant) => variant.enabled)) {
     context.addIssue({
       code: "custom",
       path: ["variants"],
-      message: "Choose exactly one enabled default variant"
+      message: "Enable at least one variant"
     });
   }
 }) satisfies z.ZodType<ScreenEffectDocument>;
@@ -172,18 +164,16 @@ export function createScreenEffectDocument(input: CreateScreenEffectDocumentInpu
     description: null,
     category: null,
     priority: 0,
-    cooldownSeconds: 0,
     bindings: [],
     variants: [{
       id: parsed.defaultVariantId,
       name: "Default",
-      kind: "default",
       enabled: true,
       weight: 1,
       visual: null,
       sound: null,
-      animation: null,
       durationMs: 10_000,
+      durationMode: "media",
       outputs: { browserSource: false, deviceRouteIds: [] },
       visualOutputs: { browserSource: false, desktop: false }
     }]

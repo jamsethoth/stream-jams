@@ -3,6 +3,7 @@ import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, fn, within } from "storybook/test";
 import { ManagementHttpError } from "../management-http-client.js";
 import { TwitchRewardPicker } from "./TwitchRewardPicker.js";
+import "./editor/alert-editor-page.css";
 
 const meta = {
   title: "Management/Alerts/Twitch reward picker",
@@ -46,6 +47,40 @@ export const PopulatedMultiSelection: Story = {
     await expect(canvas.getByRole("note", { name: "Potential overlapping alerts" })).toBeVisible();
     await expect(canvas.getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
     await expect(canvas.getByRole("checkbox", { name: /Stretch break/u })).toBeChecked();
+  }
+};
+
+export const NarrowEventInspector: Story = {
+  tags: ["reward-picker-regression"],
+  args: {
+    loadRewards: async () => ({ rewards: [
+      customReward("reward-hydrate", "Hydrate", { cost: 250 }),
+      customReward("reward-input", "Name Something, Make It Good", {
+        isUserInputRequired: true,
+        prompt: "Name the next thing I can name"
+      })
+    ] }),
+    selection: { mode: "selected", rewardIds: ["reward-hydrate"] }
+  },
+  render: (args) => (
+    <div className="alert-editor-inspector" style={{ width: "255px" }}>
+      <TwitchRewardPicker {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("2 custom rewards loaded.")).toBeVisible();
+
+    for (const input of [...canvas.getAllByRole("radio"), ...canvas.getAllByRole("checkbox")]) {
+      const bounds = input.getBoundingClientRect();
+      await expect(bounds.width).toBe(16);
+      await expect(bounds.height).toBe(16);
+    }
+
+    const picker = canvasElement.querySelector<HTMLElement>(".twitch-reward-picker");
+    const refresh = canvas.getByRole("button", { name: "Refresh rewards" });
+    await expect(picker).not.toBeNull();
+    await expect(refresh.getBoundingClientRect().width).toBeLessThan(picker!.getBoundingClientRect().width);
   }
 };
 

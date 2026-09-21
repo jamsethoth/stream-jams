@@ -1,5 +1,9 @@
 import {
   screenEffectDocumentSchema,
+  ScreenEffectSetError,
+  screenEffectSetInputSchema,
+  type ScreenEffectSetRepository,
+  type ScreenEffectSetInput,
   type EffectBinding,
   type ScreenEffectDocument,
   type ScreenEffectRepository
@@ -49,6 +53,8 @@ export class EffectTestVariantUnavailableError extends Error {
 }
 
 export interface EffectManagementServiceOptions {
+  readonly sets?: ScreenEffectSetRepository;
+  readonly isInActiveSet?: (effectId: string) => boolean;
   readonly repository: ScreenEffectRepository;
   readonly testEffectVariant: (effectId: string, variantId: string) => Promise<EffectAdmissionOutcome>;
   readonly isTwitchRewardAvailable?: (broadcasterId: string, rewardId: string) => Promise<boolean>;
@@ -61,6 +67,8 @@ export interface EffectManagementServiceOptions {
 }
 
 export class EffectManagementService {
+  readonly #sets: ScreenEffectSetRepository | undefined;
+  readonly #isInActiveSet: (effectId: string) => boolean;
   readonly #repository: ScreenEffectRepository;
   readonly #testEffectVariant: EffectManagementServiceOptions["testEffectVariant"];
   readonly #isTwitchRewardAvailable: NonNullable<EffectManagementServiceOptions["isTwitchRewardAvailable"]>;
@@ -69,6 +77,8 @@ export class EffectManagementService {
   #mutationTail = Promise.resolve();
 
   constructor(options: EffectManagementServiceOptions) {
+    this.#sets = options.sets;
+    this.#isInActiveSet = options.isInActiveSet ?? (() => true);
     this.#repository = options.repository;
     this.#testEffectVariant = options.testEffectVariant;
     this.#isTwitchRewardAvailable = options.isTwitchRewardAvailable ?? (async () => true);
@@ -86,7 +96,7 @@ export class EffectManagementService {
     return document;
   }
 
-  async create(candidate: ScreenEffectDocument): Promise<ScreenEffectDocument> {
+  async create(candidate: ScreenEffectDocument, setId?: string): Promise<ScreenEffectDocument> {
     const document = screenEffectDocumentSchema.parse(candidate);
     if (document.enabled) {
       throw new EffectLiveImpactConfirmationRequiredError();
@@ -96,7 +106,8 @@ export class EffectManagementService {
       if (await this.#repository.find(document.id) !== null) {
         throw new EffectDefinitionConflictError(document.id);
       }
-      await this.#repository.save(document);
+      if (setId === undefined) await this.#repository.save(document);
+      else await this.#requireSets().createEffect(document, setId);
       return document;
     });
   }
@@ -114,7 +125,7 @@ export class EffectManagementService {
     return this.#runSerializedMutation(async () => {
       const current = await this.get(effectId);
       if (JSON.stringify(current) === JSON.stringify(document)) return current;
-      if ((current.enabled || document.enabled) && !confirmLiveImpact) {
+      if (this.#isInActiveSet(effectId) && (current.enabled || document.enabled) && !confirmLiveImpact) {
         throw new EffectLiveImpactConfirmationRequiredError();
       }
       await this.#repository.save(document);
@@ -127,6 +138,32 @@ export class EffectManagementService {
       await this.get(effectId);
       await this.#repository.remove(effectId);
     });
+  }
+
+  async listSets() { return this.#requireSets().list(); }
+
+  async createSet(input: ScreenEffectSetInput, sourceId?: string) {
+    const parsed = screenEffectSetInputSchema.parse(input);
+    return this.#runSerializedMutation(() => this.#requireSets().create(parsed, sourceId));
+  }
+
+  async renameSet(id: string, name: string) {
+    const parsed = screenEffectSetInputSchema.parse({ id, name });
+    return this.#runSerializedMutation(() => this.#requireSets().rename(parsed.id, parsed.name));
+  }
+
+  async activateSet(id: string, confirmed: boolean) {
+    if (!confirmed) throw new EffectLiveImpactConfirmationRequiredError();
+    return this.#runSerializedMutation(() => this.#requireSets().activate(id));
+  }
+
+  async removeSet(id: string) {
+    return this.#runSerializedMutation(() => this.#requireSets().remove(id));
+  }
+
+  #requireSets(): ScreenEffectSetRepository {
+    if (this.#sets === undefined) throw new ScreenEffectSetError("Screen Effect sets are unavailable. Restart the app and retry.");
+    return this.#sets;
   }
 
   async test(

@@ -1,7 +1,16 @@
-.screen-effects-page,
-.screen-effect-editor {
+.screen-effects-page {
   display: grid;
-  gap: 24px;
+  gap: 20px;
+  min-width: 0;
+}
+
+.screen-effect-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
 }
 
 .screen-effects-section-header,
@@ -13,18 +22,46 @@
 }
 
 .screen-effect-editor__header {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  padding: 20px;
+  border-bottom: 1px solid var(--color-border);
+  flex: 0 0 auto;
+  padding-bottom: 12px;
+}
+
+.screen-effect-editor__header h1 {
+  font-size: 22px;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.screen-effect-editor__header p {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.screen-effect-editor__back {
+  background: transparent;
+  border: 0;
+  color: var(--color-info);
+  padding: 0;
+}
+
+.screen-effect-editor__actions {
+  justify-content: flex-end;
 }
 
 .screen-effect-editor__actions,
 .screen-effects-list__actions,
-.screen-effect-trigger-adders {
+.screen-effect-trigger-adders,
+.screen-effects-button-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.screen-effect-set > div > .screen-effects-section-header {
+  align-items: center;
+  margin-top: 16px;
 }
 
 .screen-effects-list,
@@ -59,8 +96,335 @@
 
 .screen-effect-editor__workspace {
   display: grid;
-  gap: 20px;
-  grid-template-columns: minmax(16rem, 0.75fr) minmax(24rem, 1.5fr);
+  flex: 1;
+  gap: 12px;
+  grid-template-columns: 220px minmax(0, 1fr) minmax(280px, 340px);
+  min-height: 0;
+  min-width: 0;
+}
+
+.screen-effect-editor__variants,
+.screen-effect-editor__inspector,
+.screen-effect-editor__stage {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.screen-effect-editor__variants {
+  overflow: auto;
+  padding: 12px;
+}
+
+.screen-effect-editor__variant-actions {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.screen-effect-editor__variant-actions .button {
+  width: 100%;
+}
+
+.screen-effect-editor__variants h2,
+.screen-effect-editor__panel h2 {
+  font-size: 16px;
+  margin-top: 0;
+}
+
+.screen-effect-editor__variants p,
+.screen-effect-editor__variants small,
+.screen-effect-editor__stage span,
+.screen-effect-editor__stage-help {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.screen-effect-editor__variants nav {
+  display: grid;
+  gap: 6px;
+  margin-block: 12px;
+}
+
+.screen-effect-editor__variants nav button {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+  padding: 10px;
+  text-align: left;
+}
+
+.screen-effect-editor__variants nav [aria-current="true"] {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.screen-effect-editor__inspector {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.screen-effect-editor__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.screen-effect-editor__tabs button {
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--color-text-muted);
+  flex: 1;
+  padding: 12px 8px;
+}
+
+.screen-effect-editor__tabs [aria-selected="true"] {
+  border-bottom-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.screen-effect-editor__panel {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
+.screen-effect-editor__panel .management-card {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.screen-effect-editor__panel input:not([type="checkbox"]):not([type="radio"]),
+.screen-effect-editor__panel select,
+.screen-effect-editor__panel textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+}
+
+.screen-effect-editor__panel fieldset {
+  min-width: 0;
+  padding: 12px;
+}
+
+.screen-effect-editor__stage {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.screen-effect-editor__stage-heading {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.screen-effect-editor__canvas-area {
+  align-items: center;
+  container-type: size;
+  display: flex;
+  flex: 1;
+  justify-content: center;
+  min-height: 160px;
+}
+
+.screen-effect-editor__canvas {
+  aspect-ratio: 16 / 9;
+  background: repeating-conic-gradient(var(--color-surface-subtle) 0% 25%, var(--color-surface) 0% 50%) 0 0 / 24px 24px;
+  border: 1px solid var(--color-border-strong);
+  overflow: hidden;
+  position: relative;
+  width: min(100cqw, calc(100cqh * 16 / 9));
+}
+
+.screen-effect-editor__canvas > p {
+  padding: 16px;
+  text-align: center;
+}
+
+.screen-effect-editor__visual {
+  position: absolute;
+}
+
+.screen-effect-editor__visual img,
+.screen-effect-editor__visual video {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  object-fit: contain;
+}
+
+.screen-effect-editor > [role="alert"],
+.screen-effect-editor > [role="status"] {
+  flex-shrink: 0;
+  margin: 0;
+  max-height: 18vh;
+  overflow: auto;
+}
+
+.screen-effects-page .management-card {
+  min-width: 0;
+}
+
+.screen-effect-sets,
+.screen-effect-tree {
+  display: grid;
+  gap: 10px;
+  margin-block: 12px;
+}
+
+.screen-effect-set,
+.screen-effect-tree__effect {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  min-width: 0;
+  padding: 12px;
+}
+
+.screen-effect-set {
+  background: var(--color-surface);
+}
+
+.screen-effect-tree summary,
+.screen-effect-editor__variants summary {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  padding-block: 6px;
+}
+
+.screen-effect-tree summary span,
+.screen-effect-editor__variants summary small {
+  color: var(--color-text-muted);
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.screen-effect-tree ul {
+  display: grid;
+  gap: 6px;
+  list-style: none;
+  padding: 0 0 0 8px;
+}
+
+.screen-effect-tree li button {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  color: var(--color-text);
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  text-align: left;
+  overflow-wrap: anywhere;
+  width: 100%;
+}
+
+.screen-effect-tree li [aria-current="true"] {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.screen-effect-editor__simulation {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.screen-effect-editor__simulation table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.screen-effect-editor__simulation caption {
+  font-weight: 700;
+  padding-block: 8px;
+  text-align: left;
+}
+
+.screen-effect-editor__simulation th,
+.screen-effect-editor__simulation td {
+  border-bottom: 1px solid var(--color-border);
+  padding: 6px 4px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.screen-effect-editor__simulation th:first-child {
+  text-align: left;
+}
+
+.screen-effect-editor__simulation-error {
+  color: var(--color-danger);
+}
+
+.screen-effect-editor__set-status {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
+.screen-effects-browser-sources {
+  background: var(--color-surface-subtle);
+  border-block: 1px solid var(--color-border);
+  padding: 12px 14px;
+}
+
+.screen-effects-inventory h2 {
+  margin: 0 0 4px;
+}
+
+.screen-effects-inventory header p {
+  color: var(--color-text-muted);
+  margin: 0 0 12px;
+}
+
+.screen-effects-disclosure {
+  background: transparent;
+  border: 0;
+  color: var(--color-text);
+  font-size: 16px;
+  padding: 0;
+}
+
+.screen-effects-browser-sources h2 {
+  margin: 0;
+}
+
+.screen-effects-search {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
+  max-width: 320px;
+}
+
+.screen-effects-list > li {
+  background: var(--color-surface);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  padding: 12px;
+}
+
+.screen-effects-list p {
+  margin: 0;
+  font-size: 12px;
+}
+
+.screen-effects-list strong,
+.screen-effects-list span {
+  overflow-wrap: anywhere;
 }
 
 .screen-effect-editor label,
@@ -72,7 +436,7 @@
 .screen-effects-fields-inline {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 7rem), 1fr));
   margin-block: 12px;
 }
 
@@ -80,6 +444,23 @@
   align-items: center;
   display: flex !important;
   gap: 8px !important;
+  margin: 0;
+  width: fit-content;
+}
+
+.screen-effects-check input[type="checkbox"] {
+  flex: 0 0 auto;
+  height: 16px;
+  margin: 0;
+  min-height: 16px;
+  padding: 0;
+  width: 16px;
+}
+
+.screen-effects-field-help {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: -4px 0 16px;
 }
 
 .screen-effect-variant fieldset {
@@ -87,17 +468,6 @@
   border-radius: 6px;
   margin-block: 16px;
   padding: 16px;
-}
-
-.screen-effect-variant-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-block: 16px;
-}
-
-.screen-effect-variant-tabs [aria-selected="true"] {
-  outline: 2px solid var(--color-focus);
 }
 
 .screen-effect-editor__validation {
@@ -118,6 +488,7 @@
 }
 
 .screen-effect-preview__canvas {
+  position: relative;
   align-items: center;
   aspect-ratio: 16 / 9;
   background: #11131a;
@@ -138,6 +509,29 @@
 @media (max-width: 900px) {
   .screen-effect-editor__workspace {
     grid-template-columns: 1fr;
+    grid-auto-rows: max-content;
+    overflow: auto;
+  }
+
+  .screen-effect-editor__stage {
+    height: 320px;
+  }
+
+  .screen-effect-editor__panel,
+  .screen-effect-editor__variants {
+    overflow: visible;
+  }
+
+  .screen-effect-editor__inspector {
+    overflow: visible;
+  }
+
+  .screen-effects-list > li {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .screen-effects-list__actions {
+    grid-column: 1 / -1;
   }
 
   .screen-effects-section-header,
@@ -145,3 +539,8 @@
     flex-direction: column;
   }
 }
+
+.screen-effect-preview__controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.screen-effect-editor__stage > .screen-effect-preview__canvas { width: 100%; flex: 0 1 auto; min-height: 0; }
+
+.screen-effect-preview__canvas > p { color: #f5f5f5; }

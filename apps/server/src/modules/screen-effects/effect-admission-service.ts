@@ -2,6 +2,9 @@ import {
   effectTriggerSchema,
   matchesEffectBinding,
   resolveEffectContent,
+  collectEffectDurationAssetIds,
+  resolveMediaDuration,
+  type AssetRecord,
   type EffectContentSnapshot,
   type EffectOccurrence,
   type EffectQueue,
@@ -49,7 +52,9 @@ export interface EffectAdmissionServiceOptions {
   readonly validateReferences?: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly validateOutputAvailability?: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly isModuleEnabled?: () => Promise<boolean>;
+  readonly isEffectLive?: (effectId: string) => boolean;
   readonly onOutcome?: (result: EffectAdmissionResult) => void | Promise<void>;
+  readonly assetDurationCatalog?: { getMany(assetIds: readonly string[]): Promise<ReadonlyMap<string, AssetRecord>> };
 }
 
 interface MatchedEffect {
@@ -58,7 +63,6 @@ interface MatchedEffect {
 }
 
 const EFFECT_DEDUPE_NAMESPACE = "screen-effects";
-const EFFECT_COOLDOWN_NAMESPACE = "screen-effects-effect";
 const MODULE_COOLDOWN_NAMESPACE = "screen-effects-module";
 
 export class EffectDefinitionNotFoundError extends Error {
@@ -83,6 +87,7 @@ export class EffectVariantNotFoundError extends Error {
 }
 
 export class EffectAdmissionService {
+  readonly #isEffectLive: (effectId: string) => boolean;
   readonly #repository: Pick<ScreenEffectRepository, "list" | "find">;
   readonly #queue: EffectQueue;
   readonly #dedupe: PlaybackDedupeKeyService;
@@ -95,10 +100,12 @@ export class EffectAdmissionService {
   readonly #validateOutputAvailability: (content: EffectContentSnapshot) => Promise<boolean>;
   readonly #isModuleEnabled: () => Promise<boolean>;
   readonly #onOutcome: NonNullable<EffectAdmissionServiceOptions["onOutcome"]>;
+  readonly #assetDurationCatalog: EffectAdmissionServiceOptions["assetDurationCatalog"] | null;
   #admissionTail = Promise.resolve();
   #nextSequence = 0;
 
   constructor(options: EffectAdmissionServiceOptions) {
+    this.#isEffectLive = options.isEffectLive ?? (() => true);
     this.#repository = options.repository;
     this.#queue = options.queue;
     this.#dedupe = options.dedupe;
@@ -111,6 +118,7 @@ export class EffectAdmissionService {
     this.#validateOutputAvailability = options.validateOutputAvailability ?? (async () => true);
     this.#isModuleEnabled = options.isModuleEnabled ?? (async () => true);
     this.#onOutcome = options.onOutcome ?? (() => {});
+    this.#assetDurationCatalog = options.assetDurationCatalog ?? null;
   }
 
   async handleTriggers(candidateTriggers: readonly EffectTrigger[]): Promise<EffectAdmissionResult> {
@@ -156,7 +164,7 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId, status: "full" };
     }
-    const content = resolveEffectContent(document, this.#random());
+    const content = await this.#resolveContentDuration(resolveEffectContent(document, this.#random()));
     return this.#enqueueExplicit(content, null);
   }
 
@@ -173,12 +181,12 @@ export class EffectAdmissionService {
     if (!this.#queue.hasPendingCapacity()) {
       return { effectId, status: "full" };
     }
-    return this.#enqueueExplicit({
+    return this.#enqueueExplicit(await this.#resolveContentDuration({
       effectId: document.id,
       effectName: document.name,
       variant: structuredClone(variant),
       priority: document.priority
-    }, null);
+    }), null);
   }
 
   async replayRecent(occurrenceId: string): Promise<EffectAdmissionOutcome> {
@@ -236,10 +244,7 @@ export class EffectAdmissionService {
     let admittedAny = false;
     for (const match of matches) {
       const { document } = match;
-      if (
-        !moduleReady
-        || !this.#cooldowns.canPlayKey(EFFECT_COOLDOWN_NAMESPACE, document.id, document.cooldownSeconds)
-      ) {
+      if (!moduleReady) {
         outcomes.push({ effectId: document.id, status: "cooldown" });
         continue;
       }
@@ -248,7 +253,7 @@ export class EffectAdmissionService {
         continue;
       }
 
-      const content = resolveEffectContent(document, this.#random());
+      const content = await this.#resolveContentDuration(resolveEffectContent(document, this.#random()));
       if (!hasSelectedOutput(content.variant)) {
         outcomes.push({ effectId: document.id, status: "no-output" });
         continue;
@@ -266,6 +271,8 @@ export class EffectAdmissionService {
         continue;
       }
 
+      // Activation may have changed while reference/output checks awaited.
+      if (!this.#isEffectLive(document.id)) continue;
       const occurrenceId = this.#generateOccurrenceId();
       const occurrence = this.#createOccurrence(occurrenceId, content, match.trigger);
       if (this.#queue.enqueue(occurrence) === "full") {
@@ -274,7 +281,6 @@ export class EffectAdmissionService {
       }
 
       admittedAny = true;
-      this.#cooldowns.recordPlaybackKey(EFFECT_COOLDOWN_NAMESPACE, document.id, document.cooldownSeconds);
       outcomes.push({ effectId: document.id, status: "queued", occurrenceId });
     }
 
@@ -282,6 +288,33 @@ export class EffectAdmissionService {
       this.#cooldowns.recordPlaybackKey(MODULE_COOLDOWN_NAMESPACE, "screen-effects", moduleCooldownSeconds);
     }
     return this.#report({ status: "processed", eventId, outcomes });
+  }
+
+  async #resolveContentDuration(content: EffectContentSnapshot): Promise<EffectContentSnapshot> {
+    if (this.#assetDurationCatalog == null) return content;
+    const ids = collectEffectDurationAssetIds(content.variant);
+    const records = await this.#assetDurationCatalog.getMany(ids);
+    const resolution = resolveMediaDuration({
+      mode: content.variant.durationMode ?? "custom",
+      customDurationMs: content.variant.durationMs,
+      fallbackDurationMs: 10_000,
+      maximumDurationMs: 120_000,
+      candidates: ids.flatMap((assetId) => {
+        const record = records.get(assetId);
+        return record === undefined ? [] : [{
+          assetId,
+          label: record.originalFileName,
+          mediaType: record.mediaType,
+          durationMs: record.durationMs,
+          eligible: true
+        }];
+      })
+    });
+    return {
+      ...content,
+      variant: { ...content.variant, durationMs: resolution.durationMs },
+      assetDurations: Object.fromEntries(ids.map((assetId) => [assetId, records.get(assetId)?.durationMs ?? null]))
+    };
   }
 
   #createOccurrence(

@@ -7,6 +7,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../db/database.js";
 import { SqliteEffectRepository } from "../screen-effects/sqlite-effect-repository.js";
+import { SqliteEffectSetRepository } from "../screen-effects/sqlite-effect-set-repository.js";
 import { SqliteConfigurationSnapshotRepository } from "./sqlite-configuration-snapshot-repository.js";
 
 describe("SqliteConfigurationSnapshotRepository", () => {
@@ -18,6 +19,36 @@ describe("SqliteConfigurationSnapshotRepository", () => {
   });
 
   afterEach(() => database.close());
+
+  it("preserves set membership through portable restore and restores pre-set backups into Default", async () => {
+    const effects = new SqliteEffectRepository(database.connection);
+    const sets = new SqliteEffectSetRepository(database.connection, effects);
+    await sets.create({ id: "other", name: "Other" });
+    const draft = createScreenEffectDocument({ id: "effect-set", name: "Set effect", defaultVariantId: "variant-set" });
+    const effect = { ...draft, variants: [{ ...draft.variants[0]!, visual: {
+      mediaType: "image" as const, assetId: "asset-follow", layout: { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 }
+    }, visualOutputs: { browserSource: true, desktop: false } }] };
+    await sets.createEffect(effect, "other");
+    await sets.activate("other");
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(await effects.listActive()).toEqual([effect]);
+    expect((await sets.list()).find((set) => set.id === "other")?.effectIds).toEqual([effect.id]);
+    const restorePoint = repository.captureRestorePoint();
+    await sets.activate("screen-effects-default");
+    repository.restoreRestorePoint(restorePoint);
+    expect((await sets.list()).find((set) => set.active)?.id).toBe("other");
+    const legacy = structuredClone(snapshot.tables);
+    delete legacy.screen_effect_sets;
+    delete legacy.screen_effect_set_memberships;
+    repository.replace({ tables: legacy, assets: [seededAsset()] });
+    expect(await sets.list()).toEqual([{ id: "screen-effects-default", name: "Default", active: true, effectIds: [effect.id] }]);
+    const invalid = structuredClone(snapshot);
+    invalid.tables.screen_effect_set_memberships = [];
+    expect(repository.validate({ appConfig: {}, ...invalid })).toContain("Every Screen Effect must belong to exactly one set.");
+  });
 
   it("restores legacy videos silently and persists current explicit soundtrack fields", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
@@ -55,7 +86,9 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "alert_rule_management_metadata",
       "asset_library_metadata",
       "audio_output_routes",
+      "screen_effect_sets",
       "screen_effects",
+      "screen_effect_set_memberships",
       "screen_effect_variants",
       "screen_effect_bindings",
       "screen_effect_audio_routes",
@@ -173,6 +206,8 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     await expect(effects.find(saved.id)).resolves.toEqual(saved);
 
     const legacyTables = structuredClone(snapshot.tables);
+    delete legacyTables.screen_effect_sets;
+    delete legacyTables.screen_effect_set_memberships;
     delete legacyTables.screen_effects;
     delete legacyTables.screen_effect_variants;
     delete legacyTables.screen_effect_bindings;
@@ -628,7 +663,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
     repository.replace({
       tables,
-      assets: [{ id: "asset-restored", originalFileName: "restored.png", mediaType: "image", mimeType: "image/png", sizeBytes: 8, checksum: `sha256:${"a".repeat(64)}`, storagePath: "image/asset-restored-restore.png" }]
+      assets: [{ id: "asset-restored", originalFileName: "restored.png", mediaType: "image", mimeType: "image/png", sizeBytes: 8, checksum: `sha256:${"a".repeat(64)}`, storagePath: "image/asset-restored-restore.png", durationMs: null }]
     });
 
     expect(database.connection.prepare("SELECT id FROM alert_collections").all()).toEqual([{ id: "set-restored" }]);
@@ -702,7 +737,7 @@ function seed(database: StreamJamsDatabase): void {
   db.prepare("INSERT INTO alert_rules VALUES (?, ?, ?, ?, ?, ?)").run("alert-follow", "Follow", "follow", 1, 0, 0);
   db.prepare("INSERT INTO alert_rule_collections VALUES (?, ?)").run("alert-follow", "set-default");
   db.prepare("INSERT INTO alert_rule_conditions VALUES (?, ?, ?, ?, ?)").run("alert-follow", 0, "actor.id", "equals", '"actor-1"');
-  db.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?)").run("asset-follow", "follow.png", "image", "image/png", 8, `sha256:${"a".repeat(64)}`, "image/asset-follow.png");
+  db.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("asset-follow", "follow.png", "image", "image/png", 8, `sha256:${"a".repeat(64)}`, "image/asset-follow.png", null);
   db.prepare("INSERT INTO alert_variants (id, rule_id, name, enabled, weight, visual_asset_id, audio_asset_id, text_template, tts_config_json, duration_ms, layout_json, conditions_json, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run("variant-follow", "alert-follow", "Default", 1, 1, "asset-follow", null, "Thanks", null, 5000, '{"x":0,"y":0,"width":100,"height":100,"zIndex":0}', "[]", 0);
   db.prepare("INSERT INTO alert_set_metadata VALUES (?, ?, ?, ?, ?, ?, ?)").run("set-default", 0, "complete", 1, "ready", 0, "needs-review");
   db.prepare("INSERT INTO alert_rule_management_metadata VALUES (?, ?, ?, ?)").run("alert-follow", "twitch", "ready", '["landscape"]');
@@ -726,8 +761,8 @@ function editorDocument() {
     variantConditions: [],
     weight: 1,
     priority: null,
-    cooldownSeconds: 0,
     rulePriority: 0,
+    cooldownSeconds: 0,
     durationMs: 5_000,
     outputs: { browserSource: true, deviceRouteIds: [] },
     layers: [{
@@ -818,6 +853,7 @@ function seededAsset() {
     mimeType: "image/png",
     sizeBytes: 8,
     checksum: `sha256:${"a".repeat(64)}`,
-    storagePath: "image/asset-follow.png"
+    storagePath: "image/asset-follow.png",
+    durationMs: null
   };
 }

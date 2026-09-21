@@ -56,6 +56,21 @@ function fixture(initial: readonly ScreenEffectDocument[] = []) {
 }
 
 describe("EffectManagementService", () => {
+  it("requires explicit set activation and permits editing enabled effects in inactive sets", async () => {
+    const candidate = document("inactive", true);
+    const { repository, testEffectVariant } = fixture([candidate]);
+    const activate = vi.fn(async () => {});
+    const service = new EffectManagementService({ repository, testEffectVariant,
+      isInActiveSet: () => false,
+      sets: { list: async () => [], create: vi.fn(), rename: vi.fn(), activate, remove: vi.fn(), createEffect: vi.fn() }
+    });
+    await expect(service.activateSet("other", false)).rejects.toBeInstanceOf(EffectLiveImpactConfirmationRequiredError);
+    expect(activate).not.toHaveBeenCalled();
+    await service.activateSet("other", true);
+    expect(activate).toHaveBeenCalledWith("other");
+    await expect(service.update(candidate.id, { ...candidate, name: "Prepared" }, false)).resolves.toMatchObject({ name: "Prepared" });
+  });
+
   it("runs definition writes through the configured mutation boundary", async () => {
     const { repository } = fixture();
     const mutations: string[] = [];

@@ -3,7 +3,7 @@ import {
   compatibilityAlertTextStyle,
   type AlertEditorDocument
 } from "@stream-jams/core";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AssetApi } from "../../assets/asset-api.js";
@@ -12,6 +12,31 @@ import { AlertCanvas } from "./AlertCanvas.js";
 afterEach(cleanup);
 
 describe("AlertCanvas", () => {
+  it("renders GIF assets as animated images and respects video loop settings", async () => {
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:preview"), revokeObjectURL: vi.fn() });
+    const mediaApi: AssetApi = { ...assetApi, getAssetFile: vi.fn(async () => new Blob(["media"])) };
+    const visualDocument: AlertEditorDocument = {
+      ...editorDocument,
+      layers: [{
+        id: "visual", name: "Visual", type: "video", visible: true, order: 0, assetId: "animated",
+        loop: false, playEmbeddedAudio: false, audioVolume: 1, animation: editorDocument.layers[0]!.animation
+      }],
+      targetProfiles: editorDocument.targetProfiles.map((profile) => ({
+        ...profile,
+        layerLayouts: profile.id === "landscape" ? [{ layerId: "visual", x: 0, y: 0, width: 320, height: 180, zIndex: 0 }] : []
+      }))
+    };
+    const props = { assetApi: mediaApi, document: visualDocument, onGeometryChange: vi.fn(), onSelectLayer: vi.fn(), preview: true,
+      profileId: "landscape" as const, samplePayload: {}, selectedLayerId: null };
+    const { rerender } = render(<AlertCanvas {...props} assetMediaTypes={{ animated: "gif" }} />);
+    expect(await screen.findByRole("img", { name: "Animated image asset preview" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Video asset preview")).not.toBeInTheDocument();
+
+    rerender(<AlertCanvas {...props} assetMediaTypes={{ animated: "video" }} document={{ ...visualDocument,
+      layers: visualDocument.layers.map((layer) => layer.type === "video" ? { ...layer, loop: true } : layer) }} />);
+    await waitFor(() => expect(screen.getByLabelText("Video asset preview")).toHaveProperty("loop", true));
+  });
+
   it("uses profile geometry and preset timing only while previewing", () => {
     const props = {
       assetApi,
@@ -48,6 +73,7 @@ describe("AlertCanvas", () => {
       animationDuration: "300ms, 300ms",
       animationFillMode: "both, forwards",
       animationName: "overlay-enter-slide-up, overlay-exit-slide-down",
+      animationPlayState: "paused",
       animationTimingFunction: "ease-in-out, ease-in-out"
     });
 

@@ -62,6 +62,7 @@ export interface ConfigurationBackupServiceOptions {
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
   readonly reloadRuntimeConfiguration?: () => void | Promise<void>;
+  readonly assetDurationCatalog?: { replace(records: readonly AssetRecord[]): void };
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
     deleteTokenSecrets(accountId: string): Promise<void>;
@@ -289,6 +290,13 @@ export class ConfigurationBackupService {
         }
       }
     }
+    if (archive.manifest.schemaVersion >= 23) {
+      for (const tableName of ["screen_effect_sets", "screen_effect_set_memberships"]) {
+        if (archive.configuration.tables[tableName] === undefined) {
+          blockers.push(blocker("Backup Screen Effect sets are missing", `Schema 23 and later require ${tableName}.`, "Export a new backup from the source installation."));
+        }
+      }
+    }
     if (!appConfigSchema.safeParse(archive.configuration.appConfig).success) {
       blockers.push(blocker("Backup preferences are invalid", "The application preferences do not match the supported schema.", "Export a new backup from the source installation."));
     }
@@ -298,7 +306,11 @@ export class ConfigurationBackupService {
     if (countConfigurationRecords(archive.configuration.tables) !== archive.manifest.configurationRecordCount) {
       blockers.push(blocker("Backup configuration count does not match", "The manifest does not describe the configuration records in the archive.", "Export the backup again."));
     }
-    blockers.push(...this.#options.snapshotRepository.validate(archive.configuration).map((cause) =>
+    const upgradedConfiguration = upgradeLegacyConfiguration(
+      archive.configuration,
+      archive.manifest.schemaVersion
+    );
+    blockers.push(...this.#options.snapshotRepository.validate(upgradedConfiguration).map((cause) =>
       blocker("Backup configuration record is invalid", cause, "Export a new backup from a supported Stream Jams version.")
     ));
 
@@ -421,6 +433,9 @@ export class ConfigurationBackupService {
     }
 
     const connectedTwitchAccountId = await this.#options.twitchCredentials?.findConnectedAccountId() ?? null;
+    const restoredAssetMetadata = new Map(
+      (request.archive.configuration.tables.asset_metadata ?? []).map((row) => [String(row.id), row])
+    );
     const restorePoint = this.#options.snapshotRepository.captureRestorePoint();
     const currentAssets = await this.#options.assetRepository.list();
     let safetyBackupPath: string;
@@ -463,11 +478,18 @@ export class ConfigurationBackupService {
           mimeType: asset.mimeType,
           sizeBytes: asset.sizeBytes,
           checksum: asset.checksum,
-          storagePath: stored.storagePath
+          storagePath: stored.storagePath,
+          durationMs: typeof restoredAssetMetadata.get(asset.id)?.duration_ms === "number"
+            ? Number(restoredAssetMetadata.get(asset.id)?.duration_ms)
+            : null
         });
       }
 
-      this.#options.snapshotRepository.replace({ tables: request.archive.configuration.tables, assets: stagedAssets });
+      const upgradedConfiguration = upgradeLegacyConfiguration(
+        request.archive.configuration,
+        request.archive.manifest.schemaVersion
+      );
+      this.#options.snapshotRepository.replace({ tables: upgradedConfiguration.tables, assets: stagedAssets });
       await this.#options.configStore.updateConfig({
         desktop: restoredConfig.desktop,
         server: restoredConfig.server,
@@ -476,6 +498,7 @@ export class ConfigurationBackupService {
       });
       appConfigUpdated = true;
       await this.#options.reloadRuntimeConfiguration?.();
+      this.#options.assetDurationCatalog?.replace(stagedAssets);
     } catch (cause) {
       const rollbackFailures: string[] = [];
       try {
@@ -606,7 +629,40 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 20) return archiveSchemaVersion === 19;
   if (currentSchemaVersion === 21) return archiveSchemaVersion === 19 || archiveSchemaVersion === 20;
   if (currentSchemaVersion === 22) return [19, 20, 21].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 23) return [19, 20, 21, 22].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 24) return [19, 20, 21, 22, 23].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 25) return [19, 20, 21, 22, 23, 24].includes(archiveSchemaVersion);
   return false;
+}
+
+function upgradeLegacyConfiguration(
+  configuration: BackupConfiguration,
+  schemaVersion: number
+): BackupConfiguration {
+  if (schemaVersion >= 25 || configuration.tables.screen_effect_variants === undefined) return configuration;
+  return {
+    ...configuration,
+    tables: {
+      ...configuration.tables,
+      screen_effect_variants: configuration.tables.screen_effect_variants.map((row) => ({
+        ...row,
+        document_json: removeLegacyScreenEffectAnimation(row.document_json)
+      }))
+    }
+  };
+}
+
+function removeLegacyScreenEffectAnimation(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return value;
+    const variant = { ...parsed } as Record<string, unknown>;
+    delete variant.animation;
+    return JSON.stringify(variant);
+  } catch {
+    return value;
+  }
 }
 
 function settledFailures(results: readonly PromiseSettledResult<unknown>[]): readonly unknown[] {

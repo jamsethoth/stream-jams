@@ -39,7 +39,8 @@ const asset: AssetRecord = {
   mimeType: "image/png",
   sizeBytes: pngBytes.length,
   checksum: checksum(pngBytes),
-  storagePath: "image/asset-follow.png"
+  storagePath: "image/asset-follow.png",
+  durationMs: null
 };
 
 describe("ConfigurationBackupService", () => {
@@ -128,17 +129,20 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
       archive.manifest.schemaVersion = schemaVersion;
       for (const tableName of [
+        ...(schemaVersion < 23 ? ["screen_effect_sets", "screen_effect_set_memberships"] : []),
+        ...(schemaVersion < 22 ? [
         "screen_effects",
         "screen_effect_variants",
         "screen_effect_bindings",
         "screen_effect_audio_routes",
         "module_playback_settings"
+        ] : [])
       ]) {
         archive.manifest.configurationRecordCount -= archive.configuration.tables[tableName]?.length ?? 0;
         delete archive.configuration.tables[tableName];
@@ -498,7 +502,7 @@ describe("ConfigurationBackupService", () => {
     });
   });
 
-  it("reloads runtime moderation only after the database replacement and config update succeed", async () => {
+  it("reloads runtime state and replaces cached asset durations after persistence succeeds", async () => {
     const steps: string[] = [];
     const { service } = createService({
       replace: () => steps.push("replace"),
@@ -506,7 +510,8 @@ describe("ConfigurationBackupService", () => {
         steps.push("config");
         return appConfig;
       },
-      reloadRuntimeConfiguration: () => { steps.push("reload"); }
+      reloadRuntimeConfiguration: () => { steps.push("reload"); },
+      replaceAssetDurations: () => { steps.push("durations"); }
     });
     const archive = await service.exportArchive();
     const preflight = await service.preflight(archive);
@@ -518,7 +523,7 @@ describe("ConfigurationBackupService", () => {
       regenerateRouteKeys: true
     })).resolves.toMatchObject({ state: "completed" });
 
-    expect(steps).toEqual(["replace", "config", "reload"]);
+    expect(steps).toEqual(["replace", "config", "reload", "durations"]);
   });
 
   it("restores the previous app config when runtime reload fails after the restored config is written", async () => {
@@ -805,6 +810,7 @@ function createService(overrides: {
   readonly findConnectedTwitchAccountId?: () => Promise<string | null>;
   readonly deleteTokenSecrets?: (accountId: string) => Promise<void>;
   readonly reloadRuntimeConfiguration?: () => void;
+  readonly replaceAssetDurations?: (records: readonly AssetRecord[]) => void;
   readonly validate?: ConfigurationSnapshotRepository["validate"];
 } = {}) {
   const replace = overrides.replace ?? replacementMock();
@@ -848,6 +854,7 @@ function createService(overrides: {
       write: overrides.writeSafetyBackup ?? (async () => "C:/safe/pre-restore.streamjams-backup")
     },
     regenerateOutput: overrides.regenerateOutput ?? (async (_output, origin) => ({ label: "Landscape live", url: `${origin}/new-key` })),
+    ...(overrides.replaceAssetDurations === undefined ? {} : { assetDurationCatalog: { replace: overrides.replaceAssetDurations } }),
     twitchCredentials: {
       findConnectedAccountId: overrides.findConnectedTwitchAccountId ?? (async () => null),
       deleteTokenSecrets: overrides.deleteTokenSecrets ?? (async () => undefined)

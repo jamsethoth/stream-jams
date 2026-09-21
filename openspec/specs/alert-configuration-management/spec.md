@@ -971,13 +971,13 @@ The focused editor SHALL present one compact Live readiness summary derived from
 
 ### Requirement: Alert Inventory Presents Primary And Secondary Actions Once
 
-Each alert row SHALL keep Edit, Test saved, and Enable or Disable inline and SHALL expose Sample message, eligible Add variation, Duplicate, Reset, and Delete exactly once through the existing More disclosure at all supported widths.
+Each alert row SHALL keep Edit, Test saved, and Enable or Disable inline and SHALL expose Sample message, eligible Add variation, Duplicate, Reset, and Delete exactly once through an anchored More menu at all supported widths. The menu SHALL overlay scrolling content without changing row dimensions or being clipped by the inventory container.
 
 #### Scenario: User operates row actions
 
 - **WHEN** a keyboard user navigates an alert row at desktop or narrow width
 - **THEN** each eligible secondary action appears once in the active accessibility tree
-- **AND** More actions are keyboard-operable with useful focus restoration after dialogs and mutations
+- **AND** More actions support arrow, Home, End and Escape keys and restore focus after dismissal, dialogs and mutations
 
 #### Scenario: Row content needs additional space
 

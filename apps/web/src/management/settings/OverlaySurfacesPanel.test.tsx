@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SurfaceSettingsView } from "@stream-jams/core";
@@ -65,7 +65,7 @@ it.each([
   render(<OverlaySurfacesPanel api={state.api} onSummaryChange={onSummaryChange} />);
 
   await screen.findByText("Desktop output needs attention.");
-  expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 2, state: expected });
+  await waitFor(() => expect(onSummaryChange).toHaveBeenLastCalledWith({ count: 2, state: expected }));
 });
 it("refreshes capabilities while preserving dirty drafts and retains stale state on refresh failure", async () => {
   vi.useFakeTimers(); const state = harness(); render(<OverlaySurfacesPanel api={state.api} />); await act(async () => {});

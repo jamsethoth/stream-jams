@@ -74,7 +74,7 @@ test("packaged production host renders an isolated silent Landscape event withou
     await panel.getByLabel("Enable desktop overlay").check();
     await panel.getByRole("checkbox", { name: "Show Alerts on Desktop overlay", exact: true }).check();
     await panel.getByRole("button", { name: "Save Desktop overlay", exact: true }).click();
-    await expect(panel.getByRole("button", { name: "Save Desktop overlay", exact: true })).toBeDisabled();
+    await expect(management.getByText("Desktop overlay settings saved.", { exact: true })).toBeVisible();
     await expect.poll(async () => (await api<SurfaceSettingsView>("/overlay-surfaces")).surfaces.find(surface => surface.kind === "desktop")).toMatchObject({ enabled: true, displayId: firstDisplay!.id });
 
     const home = await api<{ activeAlertSet: { active: boolean } }>("/management/home");
@@ -83,7 +83,7 @@ test("packaged production host renders an isolated silent Landscape event withou
     const document = await api<AlertEditorDocument>(`/management/alerts/${rule.id}/editor`);
     const layer = document.layers.find(candidate => candidate.type === "text")!;
     const edited: AlertEditorDocument = {
-      ...document, enabled: true, durationMs: 12000,
+      ...document, enabled: true, durationMode: "custom", durationMs: 12000,
       layers: [{ ...layer, template: "Neutral desktop {actor.displayName}" }],
       targetProfiles: document.targetProfiles.map(profile => profile.id === "landscape" ? {
         ...profile, enabled: true, reviewState: "ready", layerLayouts: [{ layerId: layer.id, x: 100, y: 100, width: 700, height: 100, zIndex: 1 }]

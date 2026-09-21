@@ -17,12 +17,18 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const NewVideo: Story = {};
+export const AmplifiedVideo: Story = {
+  args: { value: { playEmbeddedAudio: true, audioVolume: 2 } },
+  play: async ({ canvasElement }) => {
+    await expect(within(canvasElement).getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(200);
+  }
+};
 export const Saving: Story = { args: { disabled: true } };
 export const ExistingSilentVideo: Story = {
   args: { value: { playEmbeddedAudio: false, audioVolume: 1 } },
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
-    await expect(canvas.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+    await expect(canvas.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
     canvas.getByRole("checkbox", { name: "Play embedded audio" }).focus();
     await userEvent.keyboard(" ");
     await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).toBeChecked();
@@ -36,6 +42,6 @@ export const BothSources: Story = {
     await expect(canvas.getByText(/Both the video soundtrack and separate audio/)).toBeVisible();
     await userEvent.click(canvas.getByRole("checkbox", { name: "Play embedded audio" }));
     await expect(canvas.queryByText(/Both the video soundtrack and separate audio/)).not.toBeInTheDocument();
-    await expect(canvas.getByRole("spinbutton", { name: "Embedded audio volume" })).toHaveValue(0.5);
+    await expect(canvas.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
   }
 };

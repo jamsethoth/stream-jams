@@ -75,7 +75,8 @@ export const SavedVideoSoundtrackOff: Story = {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByText("Video soundtrack", { selector: ".alert-editor-inspector__layer-list span" }));
     await expect(canvas.getByRole("checkbox", { name: "Play embedded audio" })).not.toBeChecked();
-    await expect(canvas.getByRole("spinbutton", { name: "Embedded audio volume" })).toBeDisabled();
+    await expect(canvas.getByRole("checkbox", { name: "Loop video" })).not.toBeChecked();
+    await expect(canvas.queryByRole("spinbutton", { name: "Embedded audio volume" })).not.toBeInTheDocument();
   }
 };
 
@@ -350,6 +351,44 @@ export const EmptyContentNeedsReview: Story = {
     await expect(readiness.getByText(/no visible browser content or resolved device audio/)).toBeVisible();
     await userEvent.click(readiness.getByRole("button", { name: "Review content" }));
     await waitFor(() => expect(canvas.getByRole("button", { name: "Text" })).toHaveFocus());
+  }
+};
+
+const directReadinessDocument: AlertEditorDocument = {
+  ...document,
+  enabled: false,
+  targetProfiles: document.targetProfiles.map((profile) => profile.id === "landscape"
+    ? { ...profile, enabled: true, reviewState: "needs-review" }
+    : profile)
+};
+const directReadinessSave = fn(async (_alertId: string, saved: AlertEditorDocument) => saved);
+
+export const DirectDraftReadinessActions: Story = {
+  tags: ["alert-readiness-regression"],
+  args: {
+    managementApi: createStoryManagementApi({
+      getAlertEditorDocument: async () => directReadinessDocument,
+      getAlertVariationAuthoringContext: async () => variationContext(directReadinessDocument),
+      getAlertSet: async () => alertSetDetail(),
+      saveAlertEditorDocument: directReadinessSave
+    })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const eventTab = await canvas.findByRole("tab", { name: "Event" });
+    await userEvent.click(eventTab);
+    const readiness = within(canvas.getByRole("region", { name: "Live readiness" }));
+
+    await userEvent.click(readiness.getByRole("button", { name: "Enable alert" }));
+    await expect(eventTab).toHaveAttribute("aria-selected", "true");
+    await expect(canvas.getByText("Alert enabled")).toBeVisible();
+    await expect(canvas.getByText("Unsaved")).toBeVisible();
+    await expect(directReadinessSave).not.toHaveBeenCalled();
+
+    await userEvent.click(readiness.getByRole("button", { name: "Mark Landscape reviewed" }));
+    await expect(eventTab).toHaveAttribute("aria-selected", "true");
+    await expect(readiness.getByText(/Unsaved draft.*Configuration ready/u)).toBeVisible();
+    await expect(directReadinessSave).not.toHaveBeenCalled();
   }
 };
 

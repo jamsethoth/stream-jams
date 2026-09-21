@@ -1,3 +1,4 @@
+import { createStoryEffectSets } from "../../stories/screen-effect-set-fixtures.js";
 import {
   createScreenEffectDocument,
   screenEffectDocumentSchema,
@@ -27,6 +28,8 @@ export const Inventory: Story = {
   play: async ({ args, canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Neutral burst")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Browser sources" })).toHaveAttribute("aria-expanded", "false");
+    await userEvent.click(canvas.getByRole("button", { name: "Browser sources" }));
     const browserSources = canvas.getByRole("region", { name: "Browser sources" });
     const liveLabel = within(browserSources).getByText("Screen Effects Live");
     await expect(liveLabel).toBeVisible();
@@ -34,8 +37,27 @@ export const Inventory: Story = {
     await expect(within(browserSources).getByText("URL available")).toBeVisible();
     await expect(within(browserSources).getByText("Screen Effects Test")).toBeVisible();
     await expect(within(browserSources).getByText("create required")).toBeVisible();
+    await userEvent.type(canvas.getByRole("searchbox", { name: "Search effects" }), "missing effect");
+    await expect(canvas.getByRole("status")).toHaveTextContent("No effects match your search.");
+    await userEvent.clear(canvas.getByRole("searchbox", { name: "Search effects" }));
+    await userEvent.click(canvas.getByText("Neutral burst"));
     await userEvent.click(canvas.getByRole("button", { name: "Edit" }));
-    await expect(args.onEdit).toHaveBeenCalledWith(savedEffect.id, false);
+    await expect(args.onEdit).toHaveBeenCalledWith(savedEffect.id, false, "screen-effects-default");
+  }
+};
+
+export const ActiveAndInactiveSets: Story = {
+  args: { api: createApi([savedEffect], { listSets: async () => [
+    { id: "live", name: "Live show", active: true, effectIds: [savedEffect.id] },
+    { id: "gaming", name: "Gaming", active: false, effectIds: [] }
+  ] }) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const live = await canvas.findByRole("region", { name: "Live show Screen Effect set" });
+    await expect(within(live).getByRole("button", { name: "Delete set" })).toBeDisabled();
+    await userEvent.click(within(live).getByText("Neutral burst"));
+    await expect(within(live).getByRole("button", { name: "Default variant" })).toBeVisible();
+    await expect(within(canvas.getByRole("region", { name: "Gaming Screen Effect set" })).getByRole("button", { name: "Activate set" })).toBeVisible();
   }
 };
 
@@ -66,6 +88,7 @@ function createApi(
   overrides: Partial<ScreenEffectsApi> = {}
 ): ScreenEffectsApi {
   return {
+    ...createStoryEffectSets(documents.map((document) => document.id)),
     list: async () => documents,
     listBrowserSources: async () => [
       {

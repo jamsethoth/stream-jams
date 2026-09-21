@@ -6,15 +6,6 @@ import {
 } from "./schemas.js";
 
 const layout = { x: 0, y: 0, width: 1920, height: 1080, zIndex: 0 };
-const animation = {
-  mode: "preset" as const,
-  entrance: "fade",
-  exit: "fade",
-  durationMs: 250,
-  delayMs: 0,
-  easing: "linear"
-};
-
 function audioOnlyDocument() {
   const draft = createScreenEffectDocument({
     id: "effect-neutral",
@@ -47,17 +38,15 @@ describe("screenEffectDocumentSchema", () => {
       description: null,
       category: null,
       priority: 0,
-      cooldownSeconds: 0,
       bindings: [],
       variants: [{
         id: "variant-default",
         name: "Default",
-        kind: "default",
         enabled: true,
         weight: 1,
         visual: null,
         sound: null,
-        animation: null,
+        durationMode: "media",
         durationMs: 10_000,
         outputs: { browserSource: false, deviceRouteIds: [] },
         visualOutputs: { browserSource: false, desktop: false }
@@ -99,7 +88,6 @@ describe("screenEffectDocumentSchema", () => {
           audioVolume: 0.2
         },
         sound: { assetId: "asset-sound", volume: 0.8 },
-        animation,
         outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
         visualOutputs: { browserSource: true, desktop: false }
       }]
@@ -111,6 +99,20 @@ describe("screenEffectDocumentSchema", () => {
       outputs: { browserSource: true, deviceRouteIds: ["route-headphones"] },
       visualOutputs: { browserSource: true, desktop: false }
     });
+  });
+
+  it("accepts media volumes through 200 percent and rejects higher gain", () => {
+    const document = audioOnlyDocument();
+    const variant = document.variants[0]!;
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document,
+      variants: [{ ...variant, sound: { assetId: "asset-sound", volume: 2 }, visual: {
+        mediaType: "video", assetId: "asset-video", layout, playEmbeddedAudio: true, audioVolume: 2
+      }, visualOutputs: { browserSource: true, desktop: false } }]
+    }).success).toBe(true);
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document, variants: [{ ...variant, sound: { assetId: "asset-sound", volume: 2.01 } }]
+    }).success).toBe(false);
   });
 
   it.each([
@@ -126,8 +128,6 @@ describe("screenEffectDocumentSchema", () => {
     ["oversized weight", (document: ReturnType<typeof audioOnlyDocument>) => ({
       ...document, variants: [{ ...document.variants[0]!, weight: 10_001 }]
     })],
-    ["negative cooldown", (document: ReturnType<typeof audioOnlyDocument>) => ({ ...document, cooldownSeconds: -1 })],
-    ["oversized cooldown", (document: ReturnType<typeof audioOnlyDocument>) => ({ ...document, cooldownSeconds: 86_401 })],
     ["unsafe priority", (document: ReturnType<typeof audioOnlyDocument>) => ({ ...document, priority: Number.MAX_SAFE_INTEGER + 1 })],
     ["invalid layout", (document: ReturnType<typeof audioOnlyDocument>) => ({
       ...document,
@@ -135,10 +135,6 @@ describe("screenEffectDocumentSchema", () => {
         ...document.variants[0]!,
         visual: { mediaType: "image", assetId: "asset-image", layout: { ...layout, width: 0 } }
       }]
-    })],
-    ["invalid animation", (document: ReturnType<typeof audioOnlyDocument>) => ({
-      ...document,
-      variants: [{ ...document.variants[0]!, animation: { ...animation, delayMs: -1 } }]
     })]
   ])("rejects %s", (_label, candidate) => {
     expect(screenEffectDocumentSchema.safeParse(candidate(audioOnlyDocument())).success).toBe(false);
@@ -165,7 +161,7 @@ describe("screenEffectDocumentSchema", () => {
     }).success).toBe(false);
   });
 
-  it("requires exactly one enabled default variant", () => {
+  it("requires at least one enabled variant and accepts multiple enabled variants", () => {
     const document = audioOnlyDocument();
     expect(screenEffectDocumentSchema.safeParse({
       ...document,
@@ -174,6 +170,33 @@ describe("screenEffectDocumentSchema", () => {
     expect(screenEffectDocumentSchema.safeParse({
       ...document,
       variants: [document.variants[0], { ...document.variants[0]!, id: "variant-second" }]
+    }).success).toBe(true);
+  });
+
+  it("rejects removed variant kind and per-effect cooldown fields", () => {
+    const document = audioOnlyDocument();
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document,
+      variants: [{ ...document.variants[0]!, kind: "default" }]
+    }).success).toBe(false);
+    expect(screenEffectDocumentSchema.safeParse({ ...document, cooldownSeconds: 60 }).success).toBe(false);
+  });
+
+  it("rejects removed Screen Effect animation fields", () => {
+    const document = audioOnlyDocument();
+    expect(screenEffectDocumentSchema.safeParse({
+      ...document,
+      variants: [{
+        ...document.variants[0]!,
+        animation: {
+          mode: "preset",
+          entrance: "fade",
+          exit: "fade",
+          durationMs: 250,
+          delayMs: 0,
+          easing: "linear"
+        }
+      }]
     }).success).toBe(false);
   });
 });
