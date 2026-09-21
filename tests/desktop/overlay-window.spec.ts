@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { _electron, expect, test } from "@playwright/test";
-import { finishDesktop, withCleanup } from "./audio-harness.js";
+import { finishDesktop, windowByUrl, withCleanup } from "./audio-harness.js";
 import { cleanupFailedOverlayLaunch } from "./overlay-harness.js";
 
 test("packaged native overlay policy and neutral 1080p/1440p media probe", async () => {
@@ -115,8 +115,9 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
       const html = `<!doctype html><style>html,body{margin:0;background:transparent;overflow:hidden}video{width:100vw;height:100vh;object-fit:contain}</style><video muted autoplay src="${pathToFileURL(clip.path).href}"></video>`;
       const htmlPath = testInfo.outputPath(`probe-${clip.height}.html`);
       await writeFile(htmlPath, html);
-      await desktop.evaluate(async (_, url) => { await (globalThis as ProbeGlobal).probe!.overlay.load(url); }, pathToFileURL(htmlPath).href);
-      const overlayPage = desktop.windows().find(page => page.url() === pathToFileURL(htmlPath).href)!;
+      const probeUrl = pathToFileURL(htmlPath).href;
+      await desktop.evaluate(async (_, url) => { await (globalThis as ProbeGlobal).probe!.overlay.load(url); }, probeUrl);
+      const overlayPage = await windowByUrl(desktop, probeUrl);
       await expect(overlayPage.locator("video")).toHaveJSProperty("muted", true);
       await expect.poll(() => overlayPage.locator("video").evaluate((element: HTMLVideoElement) => element.currentTime)).toBeGreaterThan(0.1);
       const decoded = await overlayPage.locator("video").evaluate((video: HTMLVideoElement) => {
