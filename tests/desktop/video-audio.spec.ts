@@ -44,6 +44,7 @@ test(`packaged decoder silently plays and seeks ${format.name} soundtracks and t
   try {
     const management = await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
     await expect(management.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+    await ensureAudioPlayerReady(port);
     const player = await windowByUrl(desktop, "stream-jams-audio://player/");
     await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().startsWith("http://127.0.0.1:"))!.hide());
     expect(await desktop.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter(w => w.webContents.getURL().startsWith("http://127.0.0.1:")).every(w => !w.isVisible()))).toBe(true);
@@ -96,6 +97,22 @@ test(`packaged decoder silently plays and seeks ${format.name} soundtracks and t
 });
 }
 
+async function ensureAudioPlayerReady(port: number): Promise<void> {
+  const base = `http://127.0.0.1:${port}`;
+  const sessionResponse = await fetch(`${base}/auth/management/sessions`, { method: "POST" });
+  expect(sessionResponse.ok).toBe(true);
+  const session = await sessionResponse.json() as { id: string; csrfToken: string };
+  const headers = { authorization: `Bearer ${session.id}`, "x-stream-jams-csrf": session.csrfToken };
+  let response: Response | undefined;
+  // Startup warming is best-effort. A second request exercises AudioHost's one
+  // bounded automatic renderer recreation if the first renderer failed to load.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    response = await fetch(`${base}/audio/devices`, { headers, signal: AbortSignal.timeout(10_000) });
+    if (response.ok) return;
+  }
+  expect(response?.ok, `GET /audio/devices: HTTP ${response?.status ?? "no response"}`).toBe(true);
+}
+
 async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint8Array, extension: "webm" | "mp4") {
   const base = `http://127.0.0.1:${port}`;
   const sessionResponse = await fetch(`${base}/auth/management/sessions`, { method: "POST" });
@@ -120,19 +137,22 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
   const asset = await imported.json() as { id: string };
   const rule = (await api<{ id: string; eventType: string }[]>("/alerts/rules")).find(item => item.eventType === "follow")!;
   const document = await api<import("../../packages/core/dist/index.js").AlertEditorDocument>(`/management/alerts/${rule.id}/editor`);
-  const draft = { ...document, durationMs: 5000, outputs: { browserSource: false, deviceRouteIds: [route.id] },
+  const draft = { ...document, durationMode: "custom" as const, durationMs: 5000, outputs: { browserSource: false, deviceRouteIds: [route.id] },
     layers: [0, 1].map(index => ({ id: `probe-video-${index}`, type: "video", name: `Silent video ${index}`, assetId: asset.id,
       visible: true, order: index, playEmbeddedAudio: true, audioVolume: 0, animation: document.layers[0]!.animation })) };
   const response = await api<{ status: string }>(`/management/alerts/${rule.id}/editor/test`, "POST", {
     document: draft, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: document.samplePayloads[0]!.payload
   });
   expect(response.status).toBe("queued");
-  await expect(player.locator("audio")).toHaveCount(2);
-  await expect.poll(() => player.locator("audio").evaluateAll(elements => elements.every(element => (element as HTMLAudioElement).currentTime > 0.1))).toBe(true);
-  const samples = await player.locator("audio").evaluateAll(elements => elements.map(element => {
-    const audio = element as HTMLAudioElement;
-    return { currentTime: audio.currentTime, muted: audio.muted, volume: audio.volume, sinkId: audio.sinkId, error: audio.error?.code ?? null };
-  }));
+  type AudioSample = { currentTime: number; muted: boolean; volume: number; sinkId: string; error: number | null };
+  let samples: AudioSample[] = [];
+  await expect.poll(async () => {
+    samples = await player.locator("audio").evaluateAll(elements => elements.map(element => {
+      const audio = element as HTMLAudioElement;
+      return { currentTime: audio.currentTime, muted: audio.muted, volume: audio.volume, sinkId: audio.sinkId, error: audio.error?.code ?? null };
+    }));
+    return samples.length === 2 && samples.every(sample => sample.currentTime > 0.1);
+  }).toBe(true);
   expect(samples.every(sample => sample.muted && sample.volume === 0 && sample.sinkId === device.deviceId && sample.error === null)).toBe(true);
   expect(Math.abs(samples[0]!.currentTime - samples[1]!.currentTime)).toBeLessThan(0.15);
   await expect(player.locator("audio")).toHaveCount(0, { timeout: 7000 });
