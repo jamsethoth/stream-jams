@@ -186,6 +186,41 @@ describe("AlertEditorPage", () => {
     await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
     expect(audio.currentTime).toBeCloseTo(0.5, 1);
   });
+  it("fades local preview audio against the asset duration instead of the alert duration", async () => {
+    const play = vi.fn(async () => undefined);
+    const audios: { currentTime: number; volume: number }[] = [];
+    vi.stubGlobal("Audio", class {
+      readyState = 1;
+      currentTime = 0;
+      volume = 1;
+      play = play;
+      pause = vi.fn();
+      constructor() { audios.push(this); }
+    });
+    const source = routedEditorDocument();
+    const document: AlertEditorDocument = {
+      ...source,
+      durationMs: 5_000,
+      layers: source.layers.map((layer) => layer.type === "audio"
+        ? { ...layer, volume: 1, fadeOutMs: 500 }
+        : layer)
+    };
+    const audioAsset: AssetLibraryItem = {
+      id: "asset-sound", displayName: "Sound", originalFileName: "sound.ogg", mediaType: "audio", mimeType: "audio/ogg",
+      sizeBytes: 3, width: null, height: null, durationMs: 1_000, health: "available", tags: [],
+      createdAt: "2026-09-10T00:00:00Z", updatedAt: "2026-09-10T00:00:00Z",
+      usage: { assetId: "asset-sound", totalUsageCount: 1, usages: [] }
+    };
+    const { user } = renderWorkspaceEditor(document, [audioAsset]);
+    await user.click(await screen.findByRole("tab", { name: "Event" }));
+    await user.click(screen.getByRole("checkbox", { name: "Preview audio" }));
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(play).toHaveBeenCalledOnce());
+
+    fireEvent.change(screen.getByRole("slider", { name: "Preview position" }), { target: { value: "750" } });
+
+    await waitFor(() => expect(audios[0]?.volume).toBeCloseTo(0.5, 2));
+  });
   it("new video audio stays enabled when a separate audio layer is added", async () => {
     const items: AssetLibraryItem[] = ["video", "audio"].map((type) => ({
       id: type, displayName: type, originalFileName: type, mediaType: type as "video" | "audio", mimeType: type === "video" ? "video/webm" : "audio/ogg", sizeBytes: 3,

@@ -153,6 +153,10 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     ?? document?.variants[0]
     ?? null;
   const previewVariant = selectedVariant === null ? null : effectiveEffectVariant(selectedVariant, context.assets);
+  const assetDurations = useMemo(
+    () => new Map(context.assets.map((asset) => [asset.id, asset.durationMs] as const)),
+    [context.assets]
+  );
   const validation = document === null ? null : screenEffectDocumentSchema.safeParse(document);
   const dirty = state !== null && isScreenEffectAuthoringDirty(state);
   const currentSet = sets.find((set) => set.effectIds.includes(props.effectId))
@@ -339,7 +343,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       </aside>
       <section aria-label="Effect canvas" className="screen-effect-editor__stage">
         <div className="screen-effect-editor__stage-heading"><strong>{selectedVariant.name}</strong><span>1920 × 1080 · Local preview</span></div>
-        <ScreenEffectPreview assetApi={props.assetApi} ref={preview} key={selectedVariant.id} variant={previewVariant!} />
+        <ScreenEffectPreview assetApi={props.assetApi} assetDurations={assetDurations} ref={preview} key={selectedVariant.id} variant={previewVariant!} />
       </section>
       <aside aria-label="Effect inspector" className="screen-effect-editor__inspector">
         <div aria-label="Inspector sections" className="screen-effect-editor__tabs" role="tablist">

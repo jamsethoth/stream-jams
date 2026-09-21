@@ -62,6 +62,7 @@ export interface ConfigurationBackupServiceOptions {
   readonly safetyBackupStore: { write(archive: ConfigurationBackupArchive): Promise<string> };
   readonly regenerateOutput: (output: ConfigurationBackupOutput, origin: string) => Promise<{ readonly label: string; readonly url: string }>;
   readonly reloadRuntimeConfiguration?: () => void | Promise<void>;
+  readonly assetDurationCatalog?: { replace(records: readonly AssetRecord[]): void };
   readonly twitchCredentials?: {
     findConnectedAccountId(): Promise<string | null>;
     deleteTokenSecrets(accountId: string): Promise<void>;
@@ -497,6 +498,7 @@ export class ConfigurationBackupService {
       });
       appConfigUpdated = true;
       await this.#options.reloadRuntimeConfiguration?.();
+      this.#options.assetDurationCatalog?.replace(stagedAssets);
     } catch (cause) {
       const rollbackFailures: string[] = [];
       try {

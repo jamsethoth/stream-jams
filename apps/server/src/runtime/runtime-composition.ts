@@ -1108,6 +1108,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       effectQueue.setModulePaused(effectSettings.paused);
       await playbackOperationsService.restoreSafety(playback);
     },
+    assetDurationCatalog,
     twitchCredentials: {
       async findConnectedAccountId() {
         return (await twitchAccountRepository.findConnectedAccount())?.accountId ?? null;

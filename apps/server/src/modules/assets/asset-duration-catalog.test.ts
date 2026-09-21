@@ -23,4 +23,22 @@ describe("CachedAssetDurationCatalog", () => {
     expect((await catalog.getMany(["one"])).get("one")?.durationMs).toBe(3_000);
     expect(findManyByIds).toHaveBeenCalledTimes(2);
   });
+
+  it("replaces every cached duration after a configuration restore", async () => {
+    const records = new Map([
+      ["kept", record("kept", 1_000)],
+      ["removed", record("removed", 2_000)]
+    ]);
+    const findManyByIds = vi.fn(async (ids: readonly string[]) => new Map(ids.flatMap((id) => records.has(id) ? [[id, records.get(id)!] as const] : [])));
+    const catalog = new CachedAssetDurationCatalog({ findManyByIds });
+    await catalog.getMany(["kept", "removed"]);
+    records.set("kept", record("kept", 3_000));
+    records.delete("removed");
+
+    catalog.replace([record("kept", 3_000)]);
+
+    await expect(catalog.getMany(["kept"])).resolves.toEqual(new Map([["kept", record("kept", 3_000)]]));
+    await expect(catalog.getMany(["removed"])).resolves.toEqual(new Map());
+    expect(findManyByIds).toHaveBeenCalledTimes(2);
+  });
 });
