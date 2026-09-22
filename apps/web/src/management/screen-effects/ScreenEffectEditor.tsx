@@ -36,7 +36,7 @@ import { MediaDurationControls } from "../audio/MediaDurationControls.js";
 import { ModalSurface } from "../foundation/ModalSurface.js";
 import type { ManagementApi, TwitchConnectionStatusView } from "../management-api.js";
 import { useDirtyNavigationSource } from "../navigation/dirty-navigation.js";
-import { updateEffectVariant } from "./effect-editor-state.js";
+import { removeEffectVariant, updateEffectVariant } from "./effect-editor-state.js";
 import type { ScreenEffectsApi } from "./screen-effects-api.js";
 import "./screen-effects.css";
 import { ScreenEffectTree } from "./ScreenEffectTree.js";
@@ -108,6 +108,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const preview = useRef<{ play(): void }>(null);
   const [testOpen, setTestOpen] = useState(false);
   const [saveConfirmationOpen, setSaveConfirmationOpen] = useState(false);
+  const [variantRemoval, setVariantRemoval] = useState<EffectVariant | null>(null);
   const [persisted, setPersisted] = useState(!props.create);
   const [sets, setSets] = useState<readonly ScreenEffectSet[]>([]);
   const [inventory, setInventory] = useState<readonly ScreenEffectDocument[]>([]);
@@ -115,6 +116,7 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
   const [simulationRows, setSimulationRows] = useState<readonly WeightSimulationRow[] | null>(null);
   const [simulationError, setSimulationError] = useState<string | null>(null);
   const tabRefs = useRef<Partial<Record<InspectorTab, HTMLButtonElement | null>>>({});
+  const variantRemovalFocusFallbackRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -248,6 +250,17 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     }
   }, [document]);
 
+  const confirmVariantRemoval = useCallback(() => {
+    if (variantRemoval === null || document === null) return;
+    const removedIndex = document.variants.findIndex((variant) => variant.id === variantRemoval.id);
+    const remainingVariants = document.variants.filter((variant) => variant.id !== variantRemoval.id);
+    const nextVariant = remainingVariants[Math.min(Math.max(removedIndex, 0), remainingVariants.length - 1)];
+    if (nextVariant === undefined) return;
+    edit((current) => removeEffectVariant(current, variantRemoval.id));
+    setSelectedVariantId(nextVariant.id);
+    setVariantRemoval(null);
+  }, [document, edit, variantRemoval]);
+
   useDirtyNavigationSource({
     id: `screen-effect-editor:${props.effectId}`,
     dirty,
@@ -329,9 +342,11 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
             edit((current) => copyScreenEffectVariant(current, selectedVariant.id, { id, name: `${selectedVariant.name} copy` }));
             setSelectedVariantId(id);
             setInspectorTab("Variant");
-          }} type="button">Copy variant</button>
+          }} ref={variantRemovalFocusFallbackRef} type="button">Copy variant</button>
+          <button className="button button--danger-quiet" disabled={cannotRemoveEffectVariant(document, selectedVariant)} onClick={() => setVariantRemoval(selectedVariant)} type="button">Remove variant</button>
           <button className="button button--secondary" onClick={simulateWeights} type="button">Simulate 1,000 selections</button>
         </div>
+        {document.variants.length === 1 ? <p className="screen-effects-field-help">Every effect needs at least one variant.</p> : selectedVariant.enabled && document.variants.filter((variant) => variant.enabled).length === 1 ? <p className="screen-effects-field-help">Enable another variant before removing the only enabled variant.</p> : null}
         {simulationError === null ? null : <p className="screen-effect-editor__simulation-error" role="alert">{simulationError}</p>}
         {simulationRows === null ? null : <div aria-live="polite" className="screen-effect-editor__simulation" role="status" tabIndex={0}>
           <table aria-label="Weight simulation">
@@ -410,6 +425,16 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
     />
     <ModalSurface labelledBy="screen-effect-save-impact-title" onCancel={() => setSaveConfirmationOpen(false)} open={saveConfirmationOpen}>
       <div><h2 id="screen-effect-save-impact-title">Save live Screen Effect changes?</h2><p>Saving changes live admission. Current and queued occurrences keep their exact saved snapshot.</p><div className="management-modal__actions"><button className="button button--secondary" onClick={() => setSaveConfirmationOpen(false)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void save(true)} type="button">Save live changes</button></div></div>
+    </ModalSurface>
+    <ModalSurface labelledBy="screen-effect-remove-variant-title" onCancel={() => setVariantRemoval(null)} open={variantRemoval !== null} restoreFocusFallbackRef={variantRemovalFocusFallbackRef}>
+      <div>
+        <h2 id="screen-effect-remove-variant-title">Remove {variantRemoval?.name} variant?</h2>
+        <p>The variant will be removed from this draft. Save the Screen Effect to persist the change, or use Undo to restore it.</p>
+        <div className="management-modal__actions">
+          <button className="button button--secondary" onClick={() => setVariantRemoval(null)} type="button">Cancel</button>
+          <button className="button button--danger" onClick={confirmVariantRemoval} type="button">Remove variant</button>
+        </div>
+      </div>
     </ModalSurface>
   </div>;
 }
@@ -499,6 +524,11 @@ function expectedVariantPercent(variant: EffectVariant, variants: readonly Effec
   if (!variant.enabled) return 0;
   const totalWeight = variants.reduce((total, candidate) => candidate.enabled ? total + candidate.weight : total, 0);
   return totalWeight > 0 ? variant.weight / totalWeight * 100 : 0;
+}
+
+function cannotRemoveEffectVariant(document: ScreenEffectDocument, variant: EffectVariant): boolean {
+  return document.variants.length === 1
+    || (variant.enabled && document.variants.filter((candidate) => candidate.enabled).length === 1);
 }
 
 function formatPercent(percent: number): string {

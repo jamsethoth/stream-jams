@@ -141,12 +141,32 @@ test("creates, saves, enables, tests, and reloads one Screen Effect", async ({ p
     }]
   });
 
+  await page.getByRole("button", { name: "Copy variant" }).click();
+  await expect(page.getByRole("button", { name: "Default copy variant" })).toHaveAttribute("aria-current", "true");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Screen Effect saved");
+  expect(updateRequests[0]).toMatchObject({
+    confirmLiveImpact: false,
+    document: { variants: [{ name: "Default" }, { name: "Default copy" }] }
+  });
+  await page.getByRole("button", { name: "Remove variant" }).click();
+  const removalDialog = page.getByRole("dialog", { name: "Remove Default copy variant?" });
+  await expect(removalDialog).toContainText("removed from this draft");
+  await removalDialog.getByRole("button", { name: "Remove variant" }).click();
+  await expect(page.getByRole("button", { name: "Default copy variant" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Screen Effect saved");
+  expect(updateRequests[1]).toMatchObject({
+    confirmLiveImpact: false,
+    document: { variants: [{ name: "Default" }] }
+  });
+
   await page.getByRole("button", { name: "Back to Screen Effects" }).click();
   await page.getByText("New Screen Effect", { exact: true }).click();
   await page.getByRole("button", { name: "Enable" }).click();
   await page.getByRole("button", { name: "Confirm change" }).click();
   await expect(page.getByRole("button", { name: "Disable", exact: true })).toBeVisible();
-  expect(updateRequests[0]).toMatchObject({
+  expect(updateRequests[2]).toMatchObject({
     confirmLiveImpact: true,
     document: { enabled: true }
   });

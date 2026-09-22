@@ -121,6 +121,13 @@ export const VariantWeights: Story = {
     await expect(canvas.getByRole("table", { name: "Weight simulation" })).toBeVisible();
     await userEvent.click(canvas.getByRole("button", { name: /^Alternate/u }));
     await expect(canvas.getByLabelText("Variant weight")).toHaveValue(3);
+    await userEvent.click(canvas.getByRole("button", { name: "Remove variant" }));
+    const dialog = within(document.body).getByRole("dialog", { name: "Remove Alternate variant?" });
+    await expect(dialog).toHaveTextContent("Save the Screen Effect to persist the change");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Remove variant" }));
+    await expect(canvas.queryByRole("button", { name: /^Alternate/u })).not.toBeInTheDocument();
+    await userEvent.click(canvas.getByRole("button", { name: "Undo" }));
+    await expect(canvas.getByRole("button", { name: /^Alternate/u })).toBeVisible();
   }
 };
 
