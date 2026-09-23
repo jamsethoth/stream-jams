@@ -1,5 +1,7 @@
 # Repository Simplification Implementation Plan
 
+Execution note (September 23, 2026): The user chose native inline execution. The eleven slices were implemented as sequential commits on the audit branch rather than separate pull requests; the final measured outcomes and verification are recorded in the [audit resolution](../../audits/2026-09-23-repository-complexity-and-documentation-audit.md#resolution-status).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Resolve all twelve findings from the September 23 repository audit through behavior-preserving, independently reviewable simplification slices.
@@ -76,7 +78,7 @@ BL-056 closes after Tasks 1-2 merge. BL-054 closes after Tasks 3-6 merge. BL-055
 
 **Interfaces:** No new production interface. `RuntimeJsonlLogger` remains the sole runtime logger. `AlertCanvas.onGeometryChange` remains the production keyboard-movement boundary. `OverlaySurface` remains the production fixed-profile fitting boundary.
 
-- [ ] **Step 1: Reconfirm that every deletion candidate has no production consumer**
+- [x] **Step 1: Reconfirm that every deletion candidate has no production consumer**
 
 Run:
 
@@ -87,7 +89,7 @@ rg -n 'from "tslib"|importHelpers' apps/web tsconfig*.json apps/web/tsconfig*.js
 
 Expected: the old logger is referenced only by its own test, the Screen Effect layout module only by its own test/export, the arrow helper only by its state test, and `tslib` by no tracked web source/configuration.
 
-- [ ] **Step 2: Pin the production behavior that replaces the disconnected tests**
+- [x] **Step 2: Pin the production behavior that replaces the disconnected tests**
 
 Add this interaction to `AlertCanvas.test.tsx`, using the existing `editorDocument` fixture:
 
@@ -113,11 +115,11 @@ Run: `corepack.cmd pnpm exec vitest run apps/web/src/management/alerts/editor/Al
 
 Expected: PASS before deletion, establishing the production owners.
 
-- [ ] **Step 3: Delete the unused implementations and exports**
+- [x] **Step 3: Delete the unused implementations and exports**
 
 Remove the two logger files and Screen Effect layout files. Remove the `screen-effects/layout.js` barrel export. Remove `EditorArrowKey`, `moveLayerWithArrow` and their two state-only tests. Do not change `AlertCanvas` or `OverlaySurface` production calculations in this slice.
 
-- [ ] **Step 4: Remove `tslib` from the web package and regenerate the lockfile**
+- [x] **Step 4: Remove `tslib` from the web package and regenerate the lockfile**
 
 Run:
 
@@ -128,7 +130,7 @@ corepack.cmd pnpm install --frozen-lockfile
 
 Expected: the manifest and lockfile no longer declare `tslib` as a direct web dependency; a transitive entry may remain.
 
-- [ ] **Step 5: Verify and commit the deletion slice**
+- [x] **Step 5: Verify and commit the deletion slice**
 
 Run:
 
@@ -157,7 +159,7 @@ Commit: `refactor: remove unused implementations`
 
 **Interfaces:** `DefaultMediaImportPipelineOptions` keeps `validator`, `repository`, `store`, `probe`, `generateId` and `calculateChecksum`; it removes `transcoder`. Accepted original bytes flow directly to checksum, metadata probing and storage.
 
-- [ ] **Step 1: Strengthen the import-pipeline preservation test**
+- [x] **Step 1: Strengthen the import-pipeline preservation test**
 
 In `media-import-pipeline.test.ts`, make the accepted-media test use a distinct `Uint8Array` and assert that the exact same byte object reaches checksum/probe/store:
 
@@ -171,7 +173,7 @@ expect(store.writes[0]?.bytes).toBe(bytes);
 
 For timed media, assert `probe.inspect` receives the original MIME type, byte length and byte object. Retain the probe-failure fallback and replacement storage-version tests.
 
-- [ ] **Step 2: Collapse the pipeline to validated original input**
+- [x] **Step 2: Collapse the pipeline to validated original input**
 
 Delete `MediaTranscodeInput`, `MediaTranscodeOutput`, `MediaTranscodingStage`, `NoopMediaTranscodingStage`, the option/field and the awaited call. Build one local accepted value after validation:
 
@@ -186,7 +188,7 @@ const checksum = this.#calculateChecksum(accepted.bytes);
 
 Use `accepted` for probe, storage and the saved `AssetRecord`. Remove the old no-op-stage test and barrel exports. Remove `transcoder` construction from runtime and test fixtures.
 
-- [ ] **Step 3: Verify and commit**
+- [x] **Step 3: Verify and commit**
 
 Run:
 
@@ -217,7 +219,7 @@ Commit: `refactor: remove no-op media transcoder`
 
 **Interfaces:** `readOwnPath(value: unknown, path: string): unknown` is package-private and is not exported from `packages/core/src/index.ts`. `readModuleOverlayParams` and `readUnifiedOverlayParams` return the current validated strings and `OverlayPurpose | null` shapes; they remain server-internal.
 
-- [ ] **Step 1: Add failing tests for the private core reader**
+- [x] **Step 1: Add failing tests for the private core reader**
 
 ```ts
 it("reads own nested values and rejects inherited or empty segments", () => {
@@ -234,11 +236,11 @@ Run: `corepack.cmd pnpm exec vitest run packages/core/src/internal/read-own-path
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 2: Implement and adopt `readOwnPath`**
+- [x] **Step 2: Implement and adopt `readOwnPath`**
 
 Move the existing reducer unchanged into the new internal file, export only from that file, and import it relatively from the condition evaluator and template renderer. Delete both local copies. Run the new test plus `condition-evaluator.test.ts` and `template-renderer.test.ts`.
 
-- [ ] **Step 3: Add failing server parser tests**
+- [x] **Step 3: Add failing server parser tests**
 
 ```ts
 it("normalizes module and unified route parameters without coercing values", () => {
@@ -255,11 +257,11 @@ Run: `corepack.cmd pnpm exec vitest run apps/server/src/http/routes/overlay-rout
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 4: Move the server parsers without changing route behavior**
+- [x] **Step 4: Move the server parsers without changing route behavior**
 
 Create the shared parser file with `parseOverlayPurpose`, `readModuleOverlayParams` and `readUnifiedOverlayParams`; import it from both route files and remove the four duplicate local readers. Retain query-profile validation in its current owner.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run:
 
@@ -301,7 +303,7 @@ export function managementTestHeaders(
 
 The helper constructs `createManagementSecurityPreHandler` with an allowlist containing `testManagementOrigin`. Headers always include Origin and bearer authorization; unsafe methods also include the CSRF token.
 
-- [ ] **Step 1: Add a failing fixture contract test**
+- [x] **Step 1: Add a failing fixture contract test**
 
 Register one GET and one POST on a small Fastify instance. Assert a valid GET succeeds, a valid POST succeeds, POST without CSRF returns `403 MANAGEMENT_CSRF_REQUIRED`, and either method with `http://evil.invalid` returns `403 MANAGEMENT_ORIGIN_FORBIDDEN`.
 
@@ -309,11 +311,11 @@ Run: `corepack.cmd pnpm exec vitest run apps/server/src/http/test-support/manage
 
 Expected: FAIL because the fixture does not exist.
 
-- [ ] **Step 2: Implement the fixture and isolate bearer parsing**
+- [x] **Step 2: Implement the fixture and isolate bearer parsing**
 
 Move `extractBearerToken` unchanged to `management-bearer-token.ts`; import it from production security. Implement the test helper against production security. Keep timing-safe CSRF comparison and logging behavior in `management-security.ts`.
 
-- [ ] **Step 3: Migrate route fixtures in small compilable groups**
+- [x] **Step 3: Migrate route fixtures in small compilable groups**
 
 Replace bearer-only pre-handler construction and hand-written authorization headers. For example:
 
@@ -326,11 +328,11 @@ const postHeaders = managementTestHeaders(session, "POST");
 
 Use the matching method for every injected unsafe request. Migrate assets/configuration, overlay/playback, provider/TTS, then management UI/Screen Effects. Run each changed test file immediately.
 
-- [ ] **Step 4: Close the asset replacement CORS gap while the production boundary is under test**
+- [x] **Step 4: Close the asset replacement CORS gap while the production boundary is under test**
 
 Add `x-stream-jams-confirm-impact` to `allowedRequestHeaders` in `management-security.ts` and extend its OPTIONS test to expect that header, because the production asset replacement client already sends it.
 
-- [ ] **Step 5: Remove the obsolete pre-handler and verify**
+- [x] **Step 5: Remove the obsolete pre-handler and verify**
 
 After `rg -n "createManagementAuthPreHandler" apps/server/src` returns no callers, delete `management-auth.ts`; retain token parser tests in the renamed file.
 
@@ -378,7 +380,7 @@ export interface HttpAssetApiOptions extends HttpManagementClientOptions {
 
 `request` owns session acquisition, authorization, CSRF for unsafe methods, exactly one retry after a 401, header merging and `ManagementHttpError`. Caller headers cannot override authorization or CSRF.
 
-- [ ] **Step 1: Add failing raw-request transport tests**
+- [x] **Step 1: Add failing raw-request transport tests**
 
 Test an octet-stream POST with custom file headers, assert the management client appends bearer/CSRF without losing them, then return 401 and assert one new session plus one retry. Add a failing-response assertion that checks `ManagementHttpError.code`, `referenceId`, `nextStep` and HTTP status.
 
@@ -386,17 +388,17 @@ Run: `corepack.cmd pnpm exec vitest run apps/web/src/management/management-http-
 
 Expected: FAIL because `request` does not exist.
 
-- [ ] **Step 2: Promote `requestWithSession` to the public raw operation**
+- [x] **Step 2: Promote `requestWithSession` to the public raw operation**
 
 Build a `Headers` instance from caller headers, overwrite authorization, add CSRF only for unsafe methods, and reuse `createManagementHttpError`. Rewrite JSON helpers on top of `request` so one implementation owns session/error behavior.
 
-- [ ] **Step 3: Replace the asset API's session implementation**
+- [x] **Step 3: Replace the asset API's session implementation**
 
 Import and re-export `AssetRecord` from `@stream-jams/core`; remove the local DTO, `ManagementSessionResponse`, cache and retry code. Construct `options.client ?? createManagementHttpClient(options)` and call `client.request` for list/import/file/replace.
 
 Add asset tests that assert `durationMs` survives a list/import response and a structured server failure remains a `ManagementHttpError`. Preserve binary bodies, URL encoding and impact-confirmation headers.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -454,7 +456,7 @@ export function buildAlertLayerInstruction(
 
 Callers render/moderate text and decide the TTS payload. The projector owns common null fields, animation, layouts, visual media/loop, audio volume/envelope and shape fill.
 
-- [ ] **Step 1: Add the failing table-driven projector test**
+- [x] **Step 1: Add the failing table-driven projector test**
 
 Cover text, image, GIF-backed video, looping video, audio with non-zero fades, enabled TTS payload, shape and a visual without layout. Assert each full `OverlayInstruction`, including all null fields and the optional `operatorTest` base property.
 
@@ -462,23 +464,23 @@ Run: `corepack.cmd pnpm exec vitest run packages/core/src/alerts/alert-layer-ins
 
 Expected: FAIL because the module does not exist.
 
-- [ ] **Step 2: Implement the pure projector**
+- [x] **Step 2: Implement the pure projector**
 
 Use one exhaustive layer-type branch. Return `null` for layout-dependent layers without layout and for TTS when `input.tts` is absent. Do not render templates, select variants, resolve destinations or generate IDs inside this function.
 
-- [ ] **Step 3: Replace the live resolver's private builder**
+- [x] **Step 3: Replace the live resolver's private builder**
 
 Create the current live base at the call site, render text/TTS with the current renderers and provider mode/payload, pass resolved audio envelope values, and call the shared function. Delete `#createEditorLayerInstruction`. Preserve `desktopVisualEligible` decoration outside the projector.
 
-- [ ] **Step 4: Replace the selected-document test builder**
+- [x] **Step 4: Replace the selected-document test builder**
 
 Create the `operatorTest: true` base and browser-speech TTS payload at the call site. Delete `createLayerInstruction` from the server service. Retain selected document/variant selection, moderation and dispatch in `AlertEditorService`.
 
-- [ ] **Step 5: Add parity and difference tests**
+- [x] **Step 5: Add parity and difference tests**
 
 Construct equivalent text, visual, audio and shape layers through live resolver and editor test paths; compare their common content after removing IDs, target metadata and `operatorTest`. Separately assert remote live TTS remains `remote-trigger` with provider payload while selected-document test TTS remains `browser-speech` with no provider payload.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -535,7 +537,7 @@ export class EffectPlaybackEligibilityService {
 
 The output service depends on narrow readers for gateway client states, output management, surfaces, desktop status and audio status. The Effect service owns Screen Effect media/route integrity and translates its variant policy into output-service queries.
 
-- [ ] **Step 1: Add the output readiness matrix**
+- [x] **Step 1: Add the output readiness matrix**
 
 Test module-connected visual, unified-visible visual, unified-hidden visual, unified audio regardless of visual layer visibility, unavailable/missing desktop display, desktop status exception, one ready named route among unavailable routes, and browser-source inventory connection-state ordering. Pin the event-source startup states too: `starting` and `reconnecting` remain transitional setup states, while `error` is blocked.
 
@@ -543,23 +545,23 @@ Run: `corepack.cmd pnpm exec vitest run apps/server/src/modules/overlays/output-
 
 Expected: FAIL because the service does not exist.
 
-- [ ] **Step 2: Implement the output query service**
+- [x] **Step 2: Implement the output query service**
 
 Move the existing client-state predicates, unified-surface visibility check, desktop display/status check, audio route status query and Alert browser-source projection into the class. Keep exceptions fail-closed. Do not import Screen Effect document types here.
 
-- [ ] **Step 3: Add and implement Screen Effect eligibility tests**
+- [x] **Step 3: Add and implement Screen Effect eligibility tests**
 
 Test missing/mismatched visual media, non-audio sound, deleted audio route, valid references, visual-only, browser-audio-only, desktop-only, device-only and no-ready-output cases. Implement `EffectPlaybackEligibilityService` with the asset repository, route repository and `OutputReadinessService`.
 
-- [ ] **Step 4: Rewire runtime collaborators**
+- [x] **Step 4: Rewire runtime collaborators**
 
 Instantiate both services once. Pass `referencesExist` and `hasAvailableOutput` to Effect admission/playback. Pass browser/desktop queries to `AlertEditorService`, browser-source listing to `AlertSetManagementService`, and configured-output query to the Home service. Delete the local closures and move `isEffectBrowserOutputReady` tests to the new service test.
 
-- [ ] **Step 5: Keep Home readiness current during event-source startup**
+- [x] **Step 5: Keep Home readiness current during event-source startup**
 
 Add a failing Home test that starts with an event source in `starting`, advances the existing five-second live-status interval, and observes `complete` after the API reports `healthy`. Reuse the Event sources page polling interval, preserve the last visible summary when a refresh fails, and stop polling once the event source is either healthy or blocked. Update the server readiness action for `starting` and `reconnecting` to describe the transition (`Starting event source` / `Reconnect in progress`) instead of the unrelated `Enable intake` action.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run:
 
@@ -593,11 +595,11 @@ Commit: `refactor: extract output readiness policy`
 
 **Interfaces:** `ManagementOverviewService` retains only `getHomeSetupSummary`, `listRegisteredProviders` and `getRegisteredProvider`, because these methods compose or decorate multiple sources. Provider commands use `ProviderManagementService`; Alert set commands use `AlertSetManagementService`; editor commands use `AlertEditorService`; asset commands use `AssetLibraryService`; diagnostics/backup/maintenance use their existing services or narrow callbacks.
 
-- [ ] **Step 1: Split the route tests by existing URL family**
+- [x] **Step 1: Split the route tests by existing URL family**
 
 Move tests without changing assertions: Home; providers/TTS; Alert sets/editor; asset metadata; diagnostics/backup/local maintenance. Each test creates a Fastify instance, applies the Task 4 production-security fixture and calls only its domain registrar. Run all five files and expect PASS before production movement.
 
-- [ ] **Step 2: Extract route registrars and shared error mapping**
+- [x] **Step 2: Extract route registrars and shared error mapping**
 
 Move handlers and their schemas/readers intact. Each registrar accepts one narrow interface, for example:
 
@@ -618,15 +620,15 @@ export interface ManagementAlertRouteDependencies {
 
 List every consumed method explicitly in the final types; do not use whole-class types or `any`. Preserve paths and response parsing exactly.
 
-- [ ] **Step 3: Shrink and rename the concrete service**
+- [x] **Step 3: Shrink and rename the concrete service**
 
 Delete the 34 forwarding methods/options. Keep Home aggregation and provider live/Twitch decoration. Rename the class and tests to describe that ownership. Pass existing domain services directly to route registrars from runtime composition.
 
-- [ ] **Step 4: Verify route equivalence**
+- [x] **Step 4: Verify route equivalence**
 
 Run the split route tests, `management-overview-service.test.ts`, runtime composition smoke tests and web management API tests. Compare `rg -n 'app\.(get|post|put|patch|delete)\('` results before/after so every old management URL appears once.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 Run:
 
@@ -679,19 +681,19 @@ export type ProductionServerAppDependencies = BaseServerAppOptions &
 export function createServerApp(dependencies: ProductionServerAppDependencies): FastifyInstance;
 ```
 
-- [ ] **Step 1: Convert health/error and isolated route tests to the base factory**
+- [x] **Step 1: Convert health/error and isolated route tests to the base factory**
 
 `createBaseServerApp` installs Fastify, the error handler and health only. Tests of an individual registrar call it and register that route explicitly. Web-shell tests register web-shell and overlay routes explicitly against the base app.
 
-- [ ] **Step 2: Make the production factory fully typed**
+- [x] **Step 2: Make the production factory fully typed**
 
 Replace `ServerAppDependencies extends Partial<...>` and all `has*Dependencies` predicates with `ProductionServerAppDependencies`. Register every production route unconditionally. Keep optional members that are genuinely optional inside a route dependency interface; do not make an entire production route optional.
 
-- [ ] **Step 3: Prove runtime construction is complete at compile time**
+- [x] **Step 3: Prove runtime construction is complete at compile time**
 
 Call the new factory from `createRuntimeAppComposition`. Add a type-only regression using `satisfies ProductionServerAppDependencies` for the assembled object. Remove tests that expected a partial bag to throw at runtime; replace them with direct registrar tests for missing security only where the registrar itself supports such construction.
 
-- [ ] **Step 4: Verify and commit**
+- [x] **Step 4: Verify and commit**
 
 Run:
 
@@ -749,7 +751,7 @@ export interface AlertPreviewController {
 
 The controller owns clocks, animation frame/timers, media preparation deadline, `Audio` elements, object URLs, gain synchronization and speech synthesis. The hook owns one controller instance and subscribes through `useSyncExternalStore`. `AlertEditorPage` retains draft/sample validation, moderation requests, notices and error presentation.
 
-- [ ] **Step 1: Add failing controller lifecycle tests**
+- [x] **Step 1: Add failing controller lifecycle tests**
 
 Inject clock/timer/animation-frame, `createAudio`, object-URL, speech and `AssetApi.getAssetFile` adapters. Test: start/play; pause; seek; natural completion; preparation timeout; second start cancels first; stop before a delayed blob resolves prevents `play`; every created URL is revoked; dispose cancels speech/timers/media and makes later async completion inert.
 
@@ -757,23 +759,23 @@ Run: `corepack.cmd pnpm exec vitest run apps/web/src/management/alerts/editor/al
 
 Expected: FAIL because the controller does not exist.
 
-- [ ] **Step 2: Implement the imperative controller**
+- [x] **Step 2: Implement the imperative controller**
 
 Use a monotonically increasing generation number for stale work. Store cleanup callbacks in one owned set. `stop` increments the generation before running cleanup. `dispose` calls `stop`, clears listeners and permanently rejects new start work. Reuse `createMediaGainController`, `resolveAudioEnvelope` and resolved document duration; do not duplicate fade math.
 
-- [ ] **Step 3: Implement and test the React hook**
+- [x] **Step 3: Implement and test the React hook**
 
 Construct the controller once per `assetApi` identity, subscribe with `useSyncExternalStore`, dispose on unmount, and return state plus controller commands. The hook test must prove unmount calls `dispose` once and rerender with the same API does not recreate the controller.
 
-- [ ] **Step 4: Rewire `AlertEditorPage`**
+- [x] **Step 4: Rewire `AlertEditorPage`**
 
 Replace preview state/refs and the clock/media functions with the hook. Keep `previewLocally` responsible for sample validation and parallel moderation; once moderation is current, set preview text and call `preview.start`. Draft edits, profile/sample switches, undo/redo/revert and unmount call `preview.stop` through the existing `resetLocalPreview` boundary.
 
-- [ ] **Step 5: Preserve visible behavior**
+- [x] **Step 5: Preserve visible behavior**
 
 Retain component tests for Preview versus Test draft, muted defaults, stored preferences, pause/resume/seek, media fades, moderation failures and cleanup. Add one component regression where moderation from an old Preview resolves after a draft edit and does not reopen playback.
 
-- [ ] **Step 6: Verify live UI and commit**
+- [x] **Step 6: Verify live UI and commit**
 
 Run:
 
@@ -820,11 +822,11 @@ export function resolveWebRouteShell(pathname: string): WebRouteShell;
 
 `main.tsx` imports only React/bootstrap code statically and dynamically imports exactly one of `App`, `OperatorApp` or `OverlayApp` after resolving the pathname. The server can continue rendering one manifest entry because Vite records route applications as dynamic chunks.
 
-- [ ] **Step 1: Add failing route-selection tests**
+- [x] **Step 1: Add failing route-selection tests**
 
 Test `/manage`, nested management paths, `/operator`, module overlay paths and unified overlay paths. Unknown paths resolve to management, preserving the current shell fallback.
 
-- [ ] **Step 2: Introduce route-scoped dynamic imports**
+- [x] **Step 2: Introduce route-scoped dynamic imports**
 
 Implement:
 
@@ -838,7 +840,7 @@ const loaders = {
 
 Set language/direction/body class before loading. Render the chosen component inside `StrictMode`; on load failure, log once while leaving overlay output transparent. Do not render diagnostic text into an overlay shell.
 
-- [ ] **Step 3: Add a manifest-based bundle boundary checker**
+- [x] **Step 3: Add a manifest-based bundle boundary checker**
 
 The script reads `apps/web/dist/.vite/manifest.json`, walks static imports and dynamic entry graphs, then gzips unique JavaScript files for each route. It fails unless:
 
@@ -851,15 +853,15 @@ The script reads `apps/web/dist/.vite/manifest.json`, walks static imports and d
 
 Test the script with a synthetic manifest containing a shared vendor chunk, valid dynamic graphs, a management leak into overlay and an over-budget chunk. Add it after `vite build` in the web build script.
 
-- [ ] **Step 4: Update shell/build tests**
+- [x] **Step 4: Update shell/build tests**
 
 Extend web-shell fixtures to include `dynamicImports` and verify the generated shell loads only the bootstrap entry. In runtime smoke, assert management, operator and overlay HTML all resolve while their client route chooses the expected application. Keep route keys absent from returned HTML.
 
-- [ ] **Step 5: Add browser workflow coverage**
+- [x] **Step 5: Add browser workflow coverage**
 
 In Playwright, load management, operator and a test-owned overlay route from the production-style server. Assert the correct root landmark, overlay transparency while idle, no management landmark on overlay, no overlay connection/auth regression and no console errors. Inspect resource entries and assert no URL whose manifest source belongs to `src/management/` loads on the overlay page.
 
-- [ ] **Step 6: Verify, measure and close the backlog item**
+- [x] **Step 6: Verify, measure and close the backlog item**
 
 Run:
 

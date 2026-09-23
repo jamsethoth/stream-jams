@@ -1,6 +1,6 @@
 # Repository Complexity And Documentation Audit
 
-Date: September 23, 2026. Reviewed commit: `fec768c58a8b27a6921e87ea1ac8d4a346a8c05d` from `origin/main`, after a clean fast-forward from `62a9a53`. Code references and measurements below describe that commit. The audit branch changes documentation only.
+Date: September 23, 2026. Reviewed commit: `fec768c58a8b27a6921e87ea1ac8d4a346a8c05d` from `origin/main`, after a clean fast-forward from `62a9a53`. Code references and measurements in the findings describe that commit. The audit was first committed as documentation only; the resolution section records the later implementation on the same branch without rewriting the original evidence.
 
 The principal maintenance risk is duplicated behavior and overly broad ownership, especially around alert instruction construction, local preview, runtime wiring, and management transport. The package architecture remains useful: this review does not justify replacing repositories, provider adapters, separate module queues, or desktop isolation with a new framework. Twelve findings follow; none establishes an urgent production incident.
 
@@ -128,7 +128,7 @@ Largest likely reductions first; extraction-only findings are deliberately not c
 
 **net: approximately -400 production lines, -1 direct dependency possible.** This is a conservative refactoring estimate, not an implemented diff; replacement APIs and preserved coverage determine the final result. R2/R3 primarily improve ownership, and R11 reduces delivered code rather than repository line count.
 
-Backlog ownership is [BL-054 through BL-056](../backlog.md); bundle work remains BL-041. Start with verified dead code, then transport and instruction parity, then the larger ownership refactors. Preserve one independently reviewable slice at a time.
+At the audit snapshot, backlog ownership was BL-054 through BL-056 and bundle work remained BL-041. The implementation order was verified dead code, then transport and instruction parity, then the larger ownership refactors, with each slice kept independently reviewable.
 
 ## Boundaries Worth Retaining
 
@@ -137,6 +137,42 @@ Typed SQLite repositories and aggregate mutation transactions protect persistenc
 Alerts and Screen Effects intentionally have different matching, replay, and admission rules and separate queues. Their completion machinery has similar responsibilities, but this audit does not justify a generic queue base class. Small occurrence/recipient primitives are safer candidates after parity tests establish common behavior.
 
 Desktop worker, main-process, preload, and renderer separation enforces privilege and lifecycle boundaries. Audio and visual transports have different leases, identities, transfer limits, and completion semantics. Their extra layers are not automatically redundant. Historical migrations, compatibility projections, and secret-store test seams must not be removed merely because current creation paths use newer contracts.
+
+## Resolution Status
+
+All twelve findings were resolved on September 23, 2026. The implementation removed a net 314 non-test production source lines across `apps/server/src`, `apps/web/src`, and `packages/core/src`, excluding stories and test support. The result is smaller than the audit's approximate 400-line deletion estimate because the ownership fixes added focused services and the preview controller while deleting broader mixed-responsibility code.
+
+| Finding | Resolution |
+| --- | --- |
+| R1 | `135c177` introduced the single core `buildAlertLayerInstruction` projector used by live resolution and editor tests while retaining their distinct selection and destination policy. |
+| R2 | `83d324c` moved shared output readiness and Screen Effect eligibility into focused services. Home now polls only while an event source is starting or reconnecting, keeps the last summary if refresh fails, and stops polling when the source becomes healthy or blocked. |
+| R3 | `75b9640` moved clocks, timers, media preparation, audio, object URLs, speech, cancellation, and disposal into `AlertPreviewController` behind a thin React subscription hook. |
+| R4 | `8a23da7` split management routes into narrow domain registrars and reduced the concrete service to overview/provider composition; `eed958d` replaced the partial production dependency bag and runtime type predicates with an explicit `ProductionServerAppDependencies` assembly. `app.ts`, runtime composition, the former route façade, and `AlertEditorPage` are 352, 158, 704, and 167 lines smaller respectively than the audited versions before their focused replacements are counted. |
+| R5 | `e6c7e0d` routed asset upload/download through the shared authenticated management transport and the core asset record, preserving binary handling and structured errors. |
+| R6 | `16eb8ee` changed route fixtures to the production origin, bearer-session, and CSRF pre-handler and removed the obsolete bearer-only gate; `66034a2` covered the asset-impact request header through the production CORS path. |
+| R7 | `ebfc9f0` removed the unused logger implementation and retained `RuntimeJsonlLogger` as the sole runtime writer. |
+| R8 | `e86c1e4` removed the mandatory no-op transcoder seam; validated bytes now proceed directly to metadata probing and storage. |
+| R9 | `ebfc9f0` removed the disconnected canvas-fit and editor arrow-movement implementations while retaining production behavior coverage. |
+| R10 | `c3c6e28` added one own-property path reader and one overlay route-parameter module used by both prior consumers. |
+| R11 | `d45357a` split the browser bootstrap into route-specific dynamic graphs and added manifest-enforced dependency boundaries and gzip budgets. Current totals are 67.36 KiB bootstrap, 121.15 KiB overlay, 120.38 KiB operator, and 216.67 KiB management; `e38a192` made the surface own its overlay stylesheet after Storybook exposed the isolated-render dependency. |
+| R12 | `ebfc9f0` removed the unused direct web `tslib` declaration and its lockfile entry. |
+
+The completion search confirms one Alert layer projector, one shared management transport, one production management security pre-handler, one runtime logger, explicit production server dependencies, one disposable Alert preview owner, one shared own-property reader, one shared overlay-parameter module, and route-isolated web bundles. The removed transcoder, disconnected geometry helpers, legacy management façade, bearer-only security gate, and direct web `tslib` declaration have no source or manifest references.
+
+### Resolution Verification
+
+| Check | Result |
+| --- | --- |
+| Locked dependency installation | Passed, lockfile already current |
+| `corepack.cmd pnpm lint` | Passed |
+| `corepack.cmd pnpm typecheck` | Passed |
+| `corepack.cmd pnpm test` | Passed: 249 Vitest files, 2,146 tests; 12 additional Node script tests |
+| `corepack.cmd pnpm build` | Passed, including the four route bundle budgets above |
+| `corepack.cmd pnpm build-storybook` | Passed; Storybook tool-bundle advisories remain outside the production route budgets |
+| `corepack.cmd pnpm test:storybook:ci` | Passed: 23 suites, 239 tests; the deprecated Story Store warning remains tracked as BL-035 |
+| `corepack.cmd pnpm test:e2e` with `CI=true` | Passed: 51 Chromium tests using the test-owned production build/server |
+| Strict OpenSpec validation | Passed: 44/44 items |
+| Current `origin/main` ancestry | Passed: the remediation branch remains a clean descendant of `fec768c58a8b27a6921e87ea1ac8d4a346a8c05d` after a final fetch |
 
 ## Documentation Reconciliation
 
@@ -156,7 +192,7 @@ The original canonical OpenSpec validation passed despite missing completed beha
 
 The [documentation map](../README.md) identifies current authorities, completed-but-unarchived changes, and historical records. Archive moves and implementation-task checkboxes were not changed. Pending changelog and video-shoutout proposals were not synced into implemented capabilities.
 
-## Verification And Limits
+## Original Audit Verification And Limits
 
 | Check | Result |
 | --- | --- |
@@ -173,4 +209,4 @@ The [documentation map](../README.md) identifies current authorities, completed-
 
 Initial sandboxed Corepack checks failed before running because the sandbox could not read the user's Corepack cache. The same commands passed with authorized cache access; those startup failures were environmental, not repository regressions.
 
-No application code, dependencies, data, credentials, live provider connections, or saved output routes were changed. Browser tests and runtime smoke tests provide automated evidence, not a fresh physical-device or OBS acceptance pass. Native packaging/hardware tests, external-link availability, GitHub-hosted security findings, and unresolved BL-044 native shutdown causality were not reverified. This audit is not a penetration test or a proof that all historical specification promises are implemented.
+The original audit commit changed no application code, dependencies, data, credentials, live provider connections, or saved output routes. Browser tests and runtime smoke tests provide automated evidence, not a fresh physical-device or OBS acceptance pass. Native packaging/hardware tests, external-link availability, GitHub-hosted security findings, and unresolved BL-044 native shutdown causality were not reverified. This audit is not a penetration test or a proof that all historical specification promises are implemented.

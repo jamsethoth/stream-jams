@@ -71,9 +71,6 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | --- | --- | --- | --- | --- | --- |
 | BL-052 | Main-branch changelog and validation | Planned | P2 | Existing proposal; 0/22 implementation tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-main-branch-changelog/proposal.md) |
 | BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Verify the proposal's output/intake prerequisites before implementation; 0/23 tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); separate from Screen Effects |
-| BL-054 | One owner for alert instruction building and management transport/security mechanics | Deferred | P2 | Preserve test/live routing differences, public APIs, and production security coverage | [Audit findings R1, R5, R6, R10](audits/2026-09-23-repository-complexity-and-documentation-audit.md) |
-| BL-055 | Reduce runtime, management-facade, and editor ownership coupling | Deferred | P2 | Small independently reviewable behavior-preserving refactors; no generic plugin, DI, or state-machine framework | [Audit findings R2–R4](audits/2026-09-23-repository-complexity-and-documentation-audit.md) |
-| BL-056 | Remove verified unused implementations and speculative seams | Deferred | P3 | Recheck production references and retain equivalent behavior coverage before deletion | [Audit findings R7–R9 and R12](audits/2026-09-23-repository-complexity-and-documentation-audit.md) |
 
 ## Known Issues
 
