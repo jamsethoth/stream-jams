@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   type AlertCreateInput,
+  type AlertEditorDocument,
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle
 } from "@stream-jams/core";
@@ -743,19 +744,74 @@ async function createApp() {
     windowMs: 60_000,
     clock: () => new Date("2026-07-15T05:00:00.000Z")
   });
+  const service = new StubManagementUiQueryService();
   const dependencies = {
     metadata: { appName: "stream-jams", version: "0.0.0" },
-    managementUiQueryService: new StubManagementUiQueryService(),
+    managementOverviewService: {
+      getHomeSetupSummary: () => service.getHomeSetupSummary(),
+      listRegisteredProviders: (capability: "event-source" | "tts") => service.listRegisteredProviders(capability),
+      getRegisteredProvider: (providerId: string) => service.getRegisteredProvider(providerId)
+    },
+    providerManagementService: {
+      validateProvider: () => service.validateProviderSetup(),
+      registerProvider: (input: unknown) => service.registerProvider(input),
+      activateProvider: (providerId: string, confirmWarnings: boolean) => service.activateProvider(providerId, confirmWarnings),
+      deactivateProvider: (providerId: string) => service.deactivateProvider(providerId),
+      getActivationImpact: () => service.getProviderActivationImpact(),
+      getTtsSafety: () => service.getTtsProviderSafetySettings(),
+      updateTtsSafety: (providerId: string, settings: unknown) => service.updateTtsProviderSafetySettings(providerId, settings),
+      testVoice: () => service.testProviderVoice()
+    },
+    alertSetManagementService: {
+      listSets: () => service.listAlertSets(),
+      getSet: () => service.getAlertSet(),
+      createSet: (input: { readonly name: string }) => service.createAlertSet(input),
+      createAlert: (setId: string, input: AlertCreateInput) => service.createAlert(setId, input),
+      renameSet: (setId: string, input: { readonly name: string }) => service.renameAlertSet(setId, input),
+      duplicateSet: (setId: string, input: { readonly name: string }) => service.duplicateAlertSet(setId, input),
+      getActivationImpact: () => service.getAlertSetActivationImpact(),
+      activateSet: (setId: string, confirmWarnings: boolean) => service.activateAlertSet(setId, confirmWarnings),
+      markStarterReviewComplete: (setId: string) => service.markStarterAlertSetReviewComplete(setId),
+      setAlertEnabled: (alertId: string, enabled: boolean) => service.setManagedAlertEnabled(alertId, enabled),
+      createAlertVariation: (alertId: string, input: { readonly name: string }) => service.createAlertVariation(alertId, input),
+      duplicateManagedAlert: (alertId: string) => service.duplicateManagedAlert(alertId),
+      resetManagedAlert: (alertId: string, confirmLiveImpact: boolean) => service.resetManagedAlert(alertId, confirmLiveImpact),
+      deleteManagedAlert: (alertId: string, confirmLiveImpact: boolean) => service.deleteManagedAlert(alertId, confirmLiveImpact),
+      deleteSet: (setId: string) => service.deleteAlertSet(setId)
+    },
+    alertEditorService: {
+      getDocument: () => service.getAlertEditorDocument(),
+      getVariationContext: (alertId: string) => service.getAlertVariationAuthoringContext(alertId),
+      saveDocument: (alertId: string, document: AlertEditorDocument, confirmLiveImpact: boolean, priorityAssignments: readonly { readonly variationId: string; readonly priority: number }[]) =>
+        service.saveAlertEditorDocument(alertId, document, confirmLiveImpact, priorityAssignments),
+      sendTest: (alertId: string, request: { readonly targetProfileId: "landscape" | "vertical" | null }) =>
+        service.sendAlertEditorTest(alertId, request)
+    },
+    managementAssetLibraryService: {
+      listItems: () => service.listAssetLibraryItems(),
+      updateMetadata: (assetId: string, input: { readonly displayName: string; readonly tags: readonly string[] }) =>
+        service.updateAssetMetadata(assetId, input),
+      getChangeImpact: (assetId: string, candidateMediaType?: "image" | "gif" | "video" | "audio") =>
+        service.getAssetChangeImpact(assetId, candidateMediaType),
+      deleteAsset: (assetId: string) => service.deleteAsset(assetId),
+      repairDuration: async () => { throw new Error("not configured"); }
+    },
+    reportAlertEditorError: (alertId: string, input: Parameters<StubManagementUiQueryService["reportAlertEditorError"]>[1]) =>
+      service.reportAlertEditorError(alertId, input),
+    getDiagnosticsWorkspace: () => service.getDiagnosticsWorkspace(),
+    getConfigurationBackupSummary: () => service.getConfigurationBackupSummary(),
+    openDataFolder: () => service.openDataFolder(),
+    clearOldLogs: () => service.clearOldLogs(),
     managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     generateServerErrorId: () => "err_settings_maintenance",
     serverErrorLogger: vi.fn()
-  } as unknown as ServerAppDependencies & { readonly managementUiQueryService: StubManagementUiQueryService };
+  } as unknown as ServerAppDependencies;
 
   return {
     app: createServerApp(dependencies),
     authHeaders: managementTestHeaders(session, "POST"),
-    service: dependencies.managementUiQueryService
+    service
   };
 }
 
@@ -1030,7 +1086,7 @@ class StubManagementUiQueryService {
 
   async saveAlertEditorDocument(
     alertId: string,
-    document: Awaited<ReturnType<StubManagementUiQueryService["getAlertEditorDocument"]>>,
+    document: AlertEditorDocument,
     confirmLiveImpact: boolean,
     priorityAssignments: readonly { readonly variationId: string; readonly priority: number }[]
   ) {

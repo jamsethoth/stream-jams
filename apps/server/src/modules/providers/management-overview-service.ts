@@ -1,41 +1,16 @@
 import {
   homeSetupSummarySchema,
   assessAlertConfiguration,
-  type AlertCreateInput,
   type AlertEditorDocument,
-  type AlertEditorErrorReportInput,
-  type AlertEditorErrorReportResult,
-  type AlertEditorTestRequest,
-  type AlertEditorTestResult,
-  type AlertSetActivationImpact,
-  type AlertSetActivationResult,
-  type AlertSetDetail,
   type AlertInventoryRow,
-  type AlertVariationCreateInput,
-  type AlertVariationAuthoringContext,
-  type AlertVariationPriorityAssignment,
-  type AlertSetMutationInput,
+  type AlertSetDetail,
   type AlertSetOverview,
   type AssetLibraryItem,
-  type AssetChangeImpact,
-  type AssetMediaType,
-  type AssetMetadataUpdateInput,
-  type ConfigurationBackupSummary,
-  type ClearOldLogsResult,
-  type DiagnosticsWorkspaceView,
   type HomeSetupSummary,
-  type OpenDataFolderResult,
-  type ProviderActivationImpact,
-  type ProviderActivationResult,
   type ProviderCapability,
   type ProviderLiveStatus,
-  type ProviderRegistrationAttempt,
-  type ProviderSetupInput,
-  type ProviderValidationResult,
-  type ProviderVoiceTestResult,
   type RegisteredProviderDetail,
-  type RegisteredProviderView,
-  type TtsProviderSafetySettings
+  type RegisteredProviderView
 } from "@stream-jams/core";
 import type { ProviderManagementService } from "./provider-management-service.js";
 import type { AlertSetManagementService } from "../alerts/alert-set-management-service.js";
@@ -47,62 +22,22 @@ type HomeAlertConfigurationItem = HomeAlertConfiguration["items"][number];
 
 type ProviderService = Pick<
   ProviderManagementService,
-  | "listProviders"
-  | "getProvider"
-  | "validateProvider"
-  | "registerProvider"
-  | "activateProvider"
-  | "deactivateProvider"
-  | "getActivationImpact"
-  | "getTtsSafety"
-  | "updateTtsSafety"
-  | "testVoice"
+  "listProviders" | "getProvider"
 >;
 
 type AlertSetService = Pick<
   AlertSetManagementService,
-  | "listSets"
-  | "getSet"
-  | "createSet"
-  | "createAlert"
-  | "createAlertVariation"
-  | "duplicateManagedAlert"
-  | "resetManagedAlert"
-  | "deleteManagedAlert"
-  | "renameSet"
-  | "duplicateSet"
-  | "getActivationImpact"
-  | "activateSet"
-  | "markStarterReviewComplete"
-  | "setAlertEnabled"
-  | "deleteSet"
+  "listSets" | "getSet"
 >;
 
-export interface ManagementUiServiceOptions {
+export interface ManagementOverviewServiceOptions {
   readonly providerService: ProviderService;
   readonly alertSetService: AlertSetService;
   readonly getEventSourceRuntimeView: (provider: RegisteredProviderView) => EventSourceRuntimeView;
   readonly getTwitchAuthorization: () => Promise<TwitchConnectionStatus>;
   readonly hasBrowserOutput: () => Promise<boolean>;
   readonly getAlertEditorDocument: (alertId: string) => Promise<AlertEditorDocument>;
-  readonly getAlertVariationAuthoringContext: (alertId: string) => Promise<AlertVariationAuthoringContext>;
-  readonly saveAlertEditorDocument: (
-    alertId: string,
-    document: AlertEditorDocument,
-    confirmLiveImpact: boolean,
-    priorityAssignments: readonly AlertVariationPriorityAssignment[]
-  ) => Promise<AlertEditorDocument>;
-  readonly sendAlertEditorTest: (alertId: string, request: AlertEditorTestRequest) => Promise<AlertEditorTestResult>;
-  readonly reportAlertEditorError: (alertId: string, input: AlertEditorErrorReportInput) => Promise<AlertEditorErrorReportResult>;
   readonly listAssetLibraryItems: () => Promise<readonly AssetLibraryItem[]>;
-  readonly updateAssetMetadata: (assetId: string, input: AssetMetadataUpdateInput) => Promise<AssetLibraryItem>;
-  readonly getAssetChangeImpact: (assetId: string, candidateMediaType?: AssetMediaType) => Promise<AssetChangeImpact>;
-  readonly deleteAsset: (assetId: string) => Promise<void>;
-  readonly repairAssetDuration?: ((assetId: string) => Promise<AssetLibraryItem>) | undefined;
-  readonly getDiagnosticsWorkspace: () => Promise<DiagnosticsWorkspaceView>;
-  readonly getConfigurationBackupSummary: () => Promise<ConfigurationBackupSummary>;
-  readonly openDataFolder?: () => Promise<OpenDataFolderResult>;
-  readonly clearOldLogs?: () => Promise<ClearOldLogsResult>;
 }
 
 export interface EventSourceRuntimeView {
@@ -110,10 +45,10 @@ export interface EventSourceRuntimeView {
   readonly error: RegisteredProviderView["error"];
 }
 
-export class ManagementUiService {
-  readonly #options: ManagementUiServiceOptions;
+export class ManagementOverviewService {
+  readonly #options: ManagementOverviewServiceOptions;
 
-  constructor(options: ManagementUiServiceOptions) {
+  constructor(options: ManagementOverviewServiceOptions) {
     this.#options = options;
   }
 
@@ -256,171 +191,6 @@ export class ManagementUiService {
     return detail.provider.capability === "event-source"
       ? { ...detail, provider: await this.#withLiveStatus(detail.provider) }
       : detail;
-  }
-
-  validateProviderSetup(input: ProviderSetupInput): Promise<ProviderValidationResult> {
-    return this.#options.providerService.validateProvider(input);
-  }
-
-  registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt> {
-    return this.#options.providerService.registerProvider(input);
-  }
-
-  activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult> {
-    return this.#options.providerService.activateProvider(providerId, confirmWarnings);
-  }
-
-  deactivateProvider(providerId: string): Promise<RegisteredProviderView> {
-    return this.#options.providerService.deactivateProvider(providerId);
-  }
-
-  getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact> {
-    return this.#options.providerService.getActivationImpact(providerId);
-  }
-
-  getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings> {
-    return this.#options.providerService.getTtsSafety(providerId);
-  }
-
-  updateTtsProviderSafetySettings(
-    providerId: string,
-    settings: TtsProviderSafetySettings
-  ): Promise<TtsProviderSafetySettings> {
-    return this.#options.providerService.updateTtsSafety(providerId, settings);
-  }
-
-  testProviderVoice(providerId: string): Promise<ProviderVoiceTestResult> {
-    return this.#options.providerService.testVoice(providerId, "Stream Jams voice test. Your text to speech provider is ready.");
-  }
-
-  listAlertSets(): Promise<readonly AlertSetOverview[]> {
-    return this.#options.alertSetService.listSets();
-  }
-
-  getAlertSet(setId: string): Promise<AlertSetDetail> {
-    return this.#options.alertSetService.getSet(setId);
-  }
-
-  createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview> {
-    return this.#options.alertSetService.createSet(input);
-  }
-
-  createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow> {
-    return this.#options.alertSetService.createAlert(setId, input);
-  }
-
-  createAlertVariation(alertId: string, input: AlertVariationCreateInput): Promise<AlertInventoryRow> {
-    return this.#options.alertSetService.createAlertVariation(alertId, input);
-  }
-
-  duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow> {
-    return this.#options.alertSetService.duplicateManagedAlert(alertId);
-  }
-
-  resetManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<AlertInventoryRow> {
-    return this.#options.alertSetService.resetManagedAlert(alertId, confirmLiveImpact);
-  }
-
-  deleteManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<void> {
-    return this.#options.alertSetService.deleteManagedAlert(alertId, confirmLiveImpact);
-  }
-
-  renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview> {
-    return this.#options.alertSetService.renameSet(setId, input);
-  }
-
-  duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview> {
-    return this.#options.alertSetService.duplicateSet(setId, input);
-  }
-
-  getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact> {
-    return this.#options.alertSetService.getActivationImpact(setId);
-  }
-
-  activateAlertSet(setId: string, confirmWarnings: boolean): Promise<AlertSetActivationResult> {
-    return this.#options.alertSetService.activateSet(setId, confirmWarnings);
-  }
-
-  markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview> {
-    return this.#options.alertSetService.markStarterReviewComplete(setId);
-  }
-
-  setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail> {
-    return this.#options.alertSetService.setAlertEnabled(alertId, enabled);
-  }
-
-  deleteAlertSet(setId: string): Promise<void> {
-    return this.#options.alertSetService.deleteSet(setId);
-  }
-
-  getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument> {
-    return this.#options.getAlertEditorDocument(alertId);
-  }
-
-  getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext> {
-    return this.#options.getAlertVariationAuthoringContext(alertId);
-  }
-
-  saveAlertEditorDocument(
-    alertId: string,
-    document: AlertEditorDocument,
-    confirmLiveImpact: boolean,
-    priorityAssignments: readonly AlertVariationPriorityAssignment[] = []
-  ): Promise<AlertEditorDocument> {
-    return this.#options.saveAlertEditorDocument(alertId, document, confirmLiveImpact, priorityAssignments);
-  }
-
-  sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult> {
-    return this.#options.sendAlertEditorTest(alertId, request);
-  }
-
-  listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]> {
-    return this.#options.listAssetLibraryItems();
-  }
-
-  updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem> {
-    return this.#options.updateAssetMetadata(assetId, input);
-  }
-
-  getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact> {
-    return this.#options.getAssetChangeImpact(assetId, candidateMediaType);
-  }
-
-  deleteAsset(assetId: string): Promise<void> {
-    return this.#options.deleteAsset(assetId);
-  }
-
-  repairAssetDuration(assetId: string): Promise<AssetLibraryItem> {
-    if (this.#options.repairAssetDuration === undefined) {
-      throw new Error("Asset duration repair is unavailable");
-    }
-    return this.#options.repairAssetDuration(assetId);
-  }
-
-  getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView> {
-    return this.#options.getDiagnosticsWorkspace();
-  }
-
-  reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult> {
-    return this.#options.reportAlertEditorError(alertId, input);
-  }
-
-  getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary> {
-    return this.#options.getConfigurationBackupSummary();
-  }
-
-  openDataFolder(): Promise<OpenDataFolderResult> {
-    const openDataFolder = this.#options.openDataFolder;
-    return openDataFolder === undefined
-      ? Promise.reject(new Error("Local data-folder maintenance is unavailable."))
-      : openDataFolder();
-  }
-
-  clearOldLogs(): Promise<ClearOldLogsResult> {
-    const clearOldLogs = this.#options.clearOldLogs;
-    return clearOldLogs === undefined
-      ? Promise.reject(new Error("Local log maintenance is unavailable."))
-      : clearOldLogs();
   }
 
   async #withLiveStatus(provider: RegisteredProviderView): Promise<RegisteredProviderView> {

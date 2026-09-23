@@ -20,6 +20,7 @@ import {
   isStreamerBotSubscriptionAvailable,
   overlayScopeSchema,
   type ActionableManagementError,
+  type AlertEditorErrorReportInput,
   type AudioDeviceHost,
   type AudioPlaybackSink,
   type ConfigStore,
@@ -101,7 +102,7 @@ import { SqliteOverlayAccessKeyRepository } from "../modules/overlays/sqlite-ove
 import { PlaybackCoordinator } from "../modules/playback/playback-coordinator.js";
 import { PlaybackOperationsService } from "../modules/playback/playback-operations-service.js";
 import { createAlertQueueOwner, createEffectQueueOwner } from "../modules/playback/playback-queue-owners.js";
-import { ManagementUiService } from "../modules/providers/management-ui-service.js";
+import { ManagementOverviewService } from "../modules/providers/management-overview-service.js";
 import { createProviderManagementAdapters } from "../modules/providers/provider-management-adapters.js";
 import { ProviderManagementService } from "../modules/providers/provider-management-service.js";
 import { evaluateProviderActivationImpact } from "../modules/providers/provider-activation-impact.js";
@@ -984,7 +985,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     },
     runExclusive: (work) => maintenanceGate.runMaintenance(work)
   });
-  const managementUiService = new ManagementUiService({
+  const managementOverviewService = new ManagementOverviewService({
     providerService: providerManagementService,
     alertSetService: alertSetManagementService,
     getTwitchAuthorization: () => twitchAuthService.getStatus(),
@@ -1010,41 +1011,30 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       `http://${initialConfig.server.host}:${initialConfig.server.port}`
     ),
     getAlertEditorDocument: (alertId) => alertEditorService.getDocument(alertId),
-    getAlertVariationAuthoringContext: (alertId) => alertEditorService.getVariationContext(alertId),
-    saveAlertEditorDocument: (alertId, document, confirmLiveImpact, priorityAssignments) =>
-      alertEditorService.saveDocument(alertId, document, confirmLiveImpact, priorityAssignments),
-    sendAlertEditorTest: (alertId, request) => alertEditorService.sendTest(alertId, request),
-    async reportAlertEditorError(alertId, input) {
-      await runtimeLogger.error(input.error.cause ?? input.error.summary, {
-        module: "alerts",
-        source: "management.client.error",
-        correlationId: input.error.referenceId,
-        processingId: null,
-        metadata: {
-          summary: input.error.summary,
-          nextStep: input.error.nextStep,
-          alertId,
-          ...(input.setId === null ? {} : { alertSetId: input.setId }),
-          ...(input.error.correction === null ? {} : {
-            correctionLabel: input.error.correction.label,
-            correctionRoute: input.error.correction.route
-          })
-        }
-      });
-      return { referenceId: input.error.referenceId };
-    },
-    listAssetLibraryItems: () => assetLibraryService.listItems(),
-    updateAssetMetadata: (assetId, input) => assetLibraryService.updateMetadata(assetId, input),
-    getAssetChangeImpact: (assetId, candidateMediaType) =>
-      assetLibraryService.getChangeImpact(assetId, candidateMediaType),
-    deleteAsset: (assetId) => assetLibraryService.deleteAsset(assetId),
-    repairAssetDuration: (assetId) => assetLibraryService.repairDuration(assetId),
-    getDiagnosticsWorkspace: () =>
-      diagnosticsService.getWorkspace({ limit: 200, runtimeLogLimit: 200, sinceHours: 2 }),
-    getConfigurationBackupSummary: () => configurationBackupService.summary(),
-    openDataFolder: () => localMaintenanceService.openDataFolder(),
-    clearOldLogs: () => localMaintenanceService.clearOldLogs()
+    listAssetLibraryItems: () => assetLibraryService.listItems()
   });
+  const reportAlertEditorError = async (
+    alertId: string,
+    input: AlertEditorErrorReportInput
+  ) => {
+    await runtimeLogger.error(input.error.cause ?? input.error.summary, {
+      module: "alerts",
+      source: "management.client.error",
+      correlationId: input.error.referenceId,
+      processingId: null,
+      metadata: {
+        summary: input.error.summary,
+        nextStep: input.error.nextStep,
+        alertId,
+        ...(input.setId === null ? {} : { alertSetId: input.setId }),
+        ...(input.error.correction === null ? {} : {
+          correctionLabel: input.error.correction.label,
+          correctionRoute: input.error.correction.route
+        })
+      }
+    });
+    return { referenceId: input.error.referenceId };
+  };
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
       async getModuleSnapshot(request: Parameters<EffectPlaybackCoordinator["getModuleSnapshot"]>[0]) {
@@ -1169,7 +1159,17 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     twitchEventSubStatusService: twitchEventSubRuntimeService,
     diagnosticsService,
     configurationBackupService,
-    managementUiQueryService: managementUiService,
+    managementOverviewService,
+    providerManagementService,
+    alertSetManagementService,
+    alertEditorService,
+    managementAssetLibraryService: assetLibraryService,
+    reportAlertEditorError,
+    getDiagnosticsWorkspace: () =>
+      diagnosticsService.getWorkspace({ limit: 200, runtimeLogLimit: 200, sinceHours: 2 }),
+    getConfigurationBackupSummary: () => configurationBackupService.summary(),
+    openDataFolder: () => localMaintenanceService.openDataFolder(),
+    clearOldLogs: () => localMaintenanceService.clearOldLogs(),
     overlayAccessService,
     overlayCompositionService,
     overlayOutputManagementService,

@@ -146,7 +146,7 @@ export function createServerApp(dependencies: ServerAppDependencies): FastifyIns
     });
   }
 
-  if (dependencies.managementUiQueryService !== undefined) {
+  if (dependencies.managementOverviewService !== undefined) {
     if (!hasManagementUiRouteDependencies(dependencies)) {
       throw new Error("Management UI routes require query service, management auth, and rate-limit hooks");
     }
@@ -312,7 +312,16 @@ function hasManagementUiRouteDependencies(
   dependencies: ServerAppDependencies
 ): dependencies is ServerAppDependencies & ManagementUiRouteDependencies {
   return (
-    dependencies.managementUiQueryService !== undefined &&
+    dependencies.managementOverviewService !== undefined &&
+    dependencies.providerManagementService !== undefined &&
+    dependencies.alertSetManagementService !== undefined &&
+    dependencies.alertEditorService !== undefined &&
+    dependencies.managementAssetLibraryService !== undefined &&
+    dependencies.reportAlertEditorError !== undefined &&
+    dependencies.getDiagnosticsWorkspace !== undefined &&
+    dependencies.getConfigurationBackupSummary !== undefined &&
+    dependencies.openDataFolder !== undefined &&
+    dependencies.clearOldLogs !== undefined &&
     dependencies.managementAuthPreHandler !== undefined &&
     dependencies.managementRateLimitPreHandler !== undefined
   );
