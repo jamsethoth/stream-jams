@@ -262,7 +262,7 @@ function impactFor(item: AssetLibraryItem): AssetChangeImpact {
 }
 
 function recordFor(item: AssetLibraryItem): AssetRecord {
-  return { id: item.id, originalFileName: item.originalFileName, mediaType: item.mediaType, mimeType: item.mimeType, sizeBytes: item.sizeBytes, checksum: "sha256:test", storagePath: `${item.mediaType}/${item.id}` };
+  return { id: item.id, originalFileName: item.originalFileName, mediaType: item.mediaType, mimeType: item.mimeType, sizeBytes: item.sizeBytes, checksum: "sha256:test", storagePath: `${item.mediaType}/${item.id}`, durationMs: item.durationMs };
 }
 
 const imageItem: AssetLibraryItem = {

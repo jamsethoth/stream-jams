@@ -11,12 +11,9 @@ describe("createManagementHttpClient", () => {
 
       if (url === "/read") {
         expect(init?.method).toBeUndefined();
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
-        });
-        expect(init?.headers).not.toMatchObject({
-          "x-stream-jams-csrf": "csrf_session"
-        });
+        const headers = new Headers(init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer mgmt_session");
+        expect(headers.has("x-stream-jams-csrf")).toBe(false);
         return jsonResponse({ ok: true });
       }
 
@@ -25,11 +22,10 @@ describe("createManagementHttpClient", () => {
           method: "POST",
           body: JSON.stringify({ value: 1 })
         });
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session",
-          "content-type": "application/json",
-          "x-stream-jams-csrf": "csrf_session"
-        });
+        const headers = new Headers(init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer mgmt_session");
+        expect(headers.get("content-type")).toBe("application/json");
+        expect(headers.get("x-stream-jams-csrf")).toBe("csrf_session");
         return jsonResponse({ saved: true });
       }
 
@@ -38,11 +34,10 @@ describe("createManagementHttpClient", () => {
           method: "DELETE",
           body: JSON.stringify({ confirm: true })
         });
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session",
-          "content-type": "application/json",
-          "x-stream-jams-csrf": "csrf_session"
-        });
+        const headers = new Headers(init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer mgmt_session");
+        expect(headers.get("content-type")).toBe("application/json");
+        expect(headers.get("x-stream-jams-csrf")).toBe("csrf_session");
         return jsonResponse({ deleted: true });
       }
 
@@ -146,9 +141,7 @@ describe("createManagementHttpClient", () => {
 
       if (url === "/read") {
         readNumber += 1;
-        expect(init?.headers).toMatchObject({
-          authorization: `Bearer mgmt_session_${readNumber}`
-        });
+        expect(new Headers(init?.headers).get("authorization")).toBe(`Bearer mgmt_session_${readNumber}`);
         return readNumber === 1
           ? jsonResponse({ message: "Management session is unauthorized." }, { status: 401 })
           : jsonResponse({ ok: true });
@@ -161,6 +154,79 @@ describe("createManagementHttpClient", () => {
     await expect(client.getJson("/read", "Unable to read.")).resolves.toEqual({ ok: true });
     expect(fetcher.mock.calls.filter(([url]) => String(url) === "/auth/management/sessions")).toHaveLength(2);
     expect(fetcher.mock.calls.filter(([url]) => String(url) === "/read")).toHaveLength(2);
+  });
+
+  it("sends raw bodies with protected management headers and retries once after a 401", async () => {
+    const body = new Uint8Array([4, 5, 6]).buffer;
+    let sessionNumber = 0;
+    let requestNumber = 0;
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") {
+        sessionNumber += 1;
+        return jsonResponse({ id: `mgmt_session_${sessionNumber}`, csrfToken: `csrf_session_${sessionNumber}` });
+      }
+
+      if (url === "/assets/import") {
+        requestNumber += 1;
+        const headers = new Headers(init?.headers);
+        expect(init?.method).toBe("POST");
+        expect(init?.body).toBe(body);
+        expect(headers.get("authorization")).toBe(`Bearer mgmt_session_${requestNumber}`);
+        expect(headers.get("x-stream-jams-csrf")).toBe(`csrf_session_${requestNumber}`);
+        expect(headers.get("content-type")).toBe("application/octet-stream");
+        expect(headers.get("x-stream-jams-file-name")).toBe("sample.png");
+        return requestNumber === 1
+          ? jsonResponse({ error: { code: "MANAGEMENT_SESSION_UNAUTHORIZED", message: "Expired." } }, { status: 401 })
+          : new Response(null, { status: 204 });
+      }
+
+      throw new Error("Unexpected request " + url);
+    });
+    const client = createManagementHttpClient({ fetch: fetcher });
+
+    await expect(client.request("/assets/import", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer caller-must-not-control-this",
+        "content-type": "application/octet-stream",
+        "x-stream-jams-csrf": "caller-must-not-control-this",
+        "x-stream-jams-file-name": "sample.png"
+      },
+      body,
+      fallbackMessage: "Unable to import asset."
+    })).resolves.toBeInstanceOf(Response);
+    expect(sessionNumber).toBe(2);
+    expect(requestNumber).toBe(2);
+  });
+
+  it("retains structured error details for raw requests", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/auth/management/sessions"
+        ? jsonResponse({ id: "mgmt_session", csrfToken: "csrf_session" })
+        : jsonResponse({
+            error: {
+              code: "ASSET_REPLACE_REFERENCED",
+              id: "err_asset_1",
+              message: "The asset is still referenced.",
+              nextStep: "Confirm the affected uses before replacing it."
+            }
+          }, { status: 409 })
+    );
+    const client = createManagementHttpClient({ fetch: fetcher });
+
+    const error = await client.request("/assets/asset_1/replace", {
+      method: "POST",
+      fallbackMessage: "Unable to replace asset."
+    }).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ManagementHttpError);
+    expect(error).toMatchObject({
+      code: "ASSET_REPLACE_REFERENCED",
+      referenceId: "err_asset_1",
+      nextStep: "Confirm the affected uses before replacing it.",
+      status: 409
+    });
   });
 });
 

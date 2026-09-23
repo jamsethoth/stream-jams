@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ManagementHttpError } from "../management-http-client.js";
 import { createHttpAssetApi } from "./asset-api.js";
 
 describe("createHttpAssetApi", () => {
@@ -6,7 +7,7 @@ describe("createHttpAssetApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/auth/management/sessions") return sessionResponse();
       expect(String(input)).toBe("/assets/asset_1/file");
-      expect(init?.headers).toMatchObject({ authorization: "Bearer session_asset" });
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer session_asset");
       return new Response(new Uint8Array([1, 2, 3]), { headers: { "content-type": "image/png" } });
     });
     const api = createHttpAssetApi({ fetch: fetcher });
@@ -23,14 +24,13 @@ describe("createHttpAssetApi", () => {
       if (String(input) === "/auth/management/sessions") return sessionResponse();
       expect(String(input)).toBe("/assets/asset_1/replace");
       expect(init).toMatchObject({ method: "POST" });
-      expect(init?.headers).toMatchObject({
-        authorization: "Bearer session_asset",
-        "content-type": "application/octet-stream",
-        "x-stream-jams-confirm-impact": "true",
-        "x-stream-jams-csrf": "csrf_asset",
-        "x-stream-jams-file-name": "replacement.png",
-        "x-stream-jams-mime-type": "image/png"
-      });
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer session_asset");
+      expect(headers.get("content-type")).toBe("application/octet-stream");
+      expect(headers.get("x-stream-jams-confirm-impact")).toBe("true");
+      expect(headers.get("x-stream-jams-csrf")).toBe("csrf_asset");
+      expect(headers.get("x-stream-jams-file-name")).toBe("replacement.png");
+      expect(headers.get("x-stream-jams-mime-type")).toBe("image/png");
       return jsonResponse(assetRecord());
     });
     const api = createHttpAssetApi({ fetch: fetcher });
@@ -49,10 +49,9 @@ describe("createHttpAssetApi", () => {
       }
       expect(String(input)).toBe("/assets/import");
       uploadNumber += 1;
-      expect(init?.headers).toMatchObject({
-        authorization: `Bearer session_asset_${uploadNumber}`,
-        "x-stream-jams-csrf": `csrf_asset_${uploadNumber}`
-      });
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe(`Bearer session_asset_${uploadNumber}`);
+      expect(headers.get("x-stream-jams-csrf")).toBe(`csrf_asset_${uploadNumber}`);
       expect(new Uint8Array(init?.body as ArrayBuffer)).toEqual(new Uint8Array([9, 8, 7]));
       return uploadNumber === 1
         ? jsonResponse({ error: { code: "MANAGEMENT_SESSION_UNAUTHORIZED", message: "Management session is not authorized" } }, 401)
@@ -63,6 +62,55 @@ describe("createHttpAssetApi", () => {
     await expect(api.importAsset(file)).resolves.toMatchObject({ originalFileName: "sound.wav", mediaType: "audio" });
     expect(sessionNumber).toBe(2);
     expect(uploadNumber).toBe(2);
+  });
+
+  it("preserves media duration in list and import responses", async () => {
+    const file = new File([new Uint8Array([1, 2, 3])], "clip.mp4", { type: "video/mp4" });
+    const record = {
+      ...assetRecord(),
+      originalFileName: "clip.mp4",
+      mediaType: "video" as const,
+      mimeType: "video/mp4",
+      durationMs: 1_250
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return sessionResponse();
+      if (url === "/assets") return jsonResponse([record]);
+      if (url === "/assets/import") return jsonResponse(record);
+      throw new Error("Unexpected request " + url);
+    });
+    const api = createHttpAssetApi({ fetch: fetcher });
+
+    await expect(api.listAssets()).resolves.toEqual([record]);
+    await expect(api.importAsset(file)).resolves.toEqual(record);
+  });
+
+  it("retains structured server errors from the shared management client", async () => {
+    const file = new File([new Uint8Array([9])], "replacement.png", { type: "image/png" });
+    const fetcher = vi.fn(async (input: RequestInfo | URL) =>
+      String(input) === "/auth/management/sessions"
+        ? sessionResponse()
+        : jsonResponse({
+            error: {
+              code: "ASSET_REPLACE_REFERENCED",
+              id: "err_asset_1",
+              message: "The asset is still referenced.",
+              nextStep: "Confirm the affected uses before replacing it."
+            }
+          }, 409)
+    );
+    const api = createHttpAssetApi({ fetch: fetcher });
+
+    const error = await api.replaceAsset("asset_1", file, false).catch((cause: unknown) => cause);
+
+    expect(error).toBeInstanceOf(ManagementHttpError);
+    expect(error).toMatchObject({
+      code: "ASSET_REPLACE_REFERENCED",
+      referenceId: "err_asset_1",
+      nextStep: "Confirm the affected uses before replacing it.",
+      status: 409
+    });
   });
 });
 
@@ -82,6 +130,7 @@ function assetRecord() {
     mimeType: "image/png",
     sizeBytes: 3,
     checksum: "sha256:replacement",
-    storagePath: "image/asset_1-sha256_replacement.png"
+    storagePath: "image/asset_1-sha256_replacement.png",
+    durationMs: null
   };
 }

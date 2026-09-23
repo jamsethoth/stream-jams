@@ -11,13 +11,23 @@ interface ManagementSessionResponse {
 
 type ManagementSession = ManagementSessionResponse;
 
+type ManagementMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+
+export interface ManagementRawRequestOptions {
+  readonly method?: ManagementMethod;
+  readonly headers?: HeadersInit;
+  readonly body?: BodyInit | null;
+  readonly fallbackMessage: string;
+}
+
 interface JsonRequestOptions {
-  readonly method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+  readonly method?: ManagementMethod;
   readonly body?: unknown;
   readonly fallbackMessage: string;
 }
 
 export interface ManagementHttpClient {
+  request(path: string, options: ManagementRawRequestOptions): Promise<Response>;
   getJson<T>(path: string, fallbackMessage: string): Promise<T>;
   postJson<T>(path: string, body: unknown | undefined, fallbackMessage: string): Promise<T>;
   postRequest(path: string, fallbackMessage: string, body?: unknown): Promise<void>;
@@ -118,27 +128,45 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     return response;
   }
 
+  async function request(path: string, options: ManagementRawRequestOptions): Promise<Response> {
+    const method = options.method ?? "GET";
+    return requestWithSession(
+      path,
+      (session) => {
+        const headers = new Headers(options.headers);
+        headers.set("authorization", `Bearer ${session.id}`);
+        if (method === "GET") {
+          headers.delete("x-stream-jams-csrf");
+        } else {
+          headers.set("x-stream-jams-csrf", session.csrfToken);
+        }
+        return {
+          ...(method === "GET" ? {} : { method }),
+          headers,
+          ...(options.body === undefined ? {} : { body: options.body })
+        };
+      },
+      options.fallbackMessage
+    );
+  }
+
   async function requestJson<T>(path: string, options: JsonRequestOptions): Promise<T> {
     const method = options.method ?? "GET";
     const hasBody = options.body !== undefined;
-    const response = await requestWithSession(
-      path,
-      (session) => ({
-        ...(method === "GET" ? {} : { method }),
-        headers: {
-          authorization: `Bearer ${session.id}`,
-          ...(method === "GET" ? {} : { "x-stream-jams-csrf": session.csrfToken }),
-          ...(hasBody ? { "content-type": "application/json" } : {})
-        },
-        ...(hasBody ? { body: JSON.stringify(options.body) } : {})
-      }),
-      options.fallbackMessage
-    );
+    const response = await request(path, {
+      method,
+      ...(hasBody ? {
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(options.body)
+      } : {}),
+      fallbackMessage: options.fallbackMessage
+    });
 
     return (await response.json()) as T;
   }
 
   return {
+    request,
     getJson<T>(path: string, fallbackMessage: string) {
       return requestJson<T>(path, { fallbackMessage });
     },
@@ -147,19 +175,14 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     },
     async postRequest(path: string, fallbackMessage: string, body?: unknown) {
       const hasBody = body !== undefined;
-      await requestWithSession(
-        path,
-        (session) => ({
-          method: "POST",
-          headers: {
-            authorization: `Bearer ${session.id}`,
-            "x-stream-jams-csrf": session.csrfToken,
-            ...(hasBody ? { "content-type": "application/json" } : {})
-          },
-          ...(hasBody ? { body: JSON.stringify(body) } : {})
-        }),
+      await request(path, {
+        method: "POST",
+        ...(hasBody ? {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body)
+        } : {}),
         fallbackMessage
-      );
+      });
     },
     putJson<T>(path: string, body: unknown, fallbackMessage: string) {
       return requestJson<T>(path, { method: "PUT", body, fallbackMessage });
@@ -172,19 +195,14 @@ export function createManagementHttpClient(options: HttpManagementClientOptions 
     },
     async deleteRequest(path: string, fallbackMessage: string, body?: unknown) {
       const hasBody = body !== undefined;
-      await requestWithSession(
-        path,
-        (session) => ({
-          method: "DELETE",
-          headers: {
-            authorization: `Bearer ${session.id}`,
-            "x-stream-jams-csrf": session.csrfToken,
-            ...(hasBody ? { "content-type": "application/json" } : {})
-          },
-          ...(hasBody ? { body: JSON.stringify(body) } : {})
-        }),
+      await request(path, {
+        method: "DELETE",
+        ...(hasBody ? {
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body)
+        } : {}),
         fallbackMessage
-      );
+      });
     }
   };
 }

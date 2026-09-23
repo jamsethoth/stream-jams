@@ -325,7 +325,8 @@ export function createStoryAssetApi(overrides: Partial<AssetApi> = {}): AssetApi
         mimeType: file.type || "application/octet-stream",
         sizeBytes: file.size,
         checksum: "sha256:imported-story",
-        storagePath: `storybook-assets/${file.name}`
+        storagePath: `storybook-assets/${file.name}`,
+        durationMs: null
       } satisfies AssetRecord;
     },
     async getAssetFile(assetId) {
@@ -345,7 +346,8 @@ export function createStoryAssetApi(overrides: Partial<AssetApi> = {}): AssetApi
         mimeType: file.type || "application/octet-stream",
         sizeBytes: file.size,
         checksum: "sha256:replacement-story",
-        storagePath: `storybook-assets/${file.name}`
+        storagePath: `storybook-assets/${file.name}`,
+        durationMs: null
       } satisfies AssetRecord;
     },
     ...overrides
