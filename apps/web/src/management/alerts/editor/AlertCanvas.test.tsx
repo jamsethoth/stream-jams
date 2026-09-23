@@ -281,6 +281,31 @@ describe("AlertCanvas", () => {
     expect(onSelectLayer).toHaveBeenCalledTimes(2);
     expect(props.onGeometryChange).not.toHaveBeenCalled();
   });
+
+  it("moves the focused layer by one pixel or ten with Shift", async () => {
+    const user = userEvent.setup();
+    const onGeometryChange = vi.fn();
+    render(
+      <AlertCanvas
+        assetApi={assetApi}
+        document={editorDocument}
+        onGeometryChange={onGeometryChange}
+        onSelectLayer={vi.fn()}
+        preview={false}
+        profileId="landscape"
+        samplePayload={{}}
+        selectedLayerId={null}
+      />
+    );
+    const layer = screen.getByRole("button", { name: "Badge layer" });
+    layer.focus();
+
+    await user.keyboard("{ArrowRight}");
+    await user.keyboard("{Shift>}{ArrowDown}{/Shift}");
+
+    expect(onGeometryChange).toHaveBeenNthCalledWith(1, "layer-shape", expect.objectContaining({ x: 193, y: 108 }));
+    expect(onGeometryChange).toHaveBeenNthCalledWith(2, "layer-shape", expect.objectContaining({ x: 192, y: 118 }));
+  });
 });
 
 const assetApi: AssetApi = {
