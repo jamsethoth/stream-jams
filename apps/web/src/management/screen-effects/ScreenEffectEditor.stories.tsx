@@ -5,7 +5,7 @@ import {
   type ScreenEffectDocument
 } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { expect, fn, userEvent, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 import { createStoryAudioApi } from "../../stories/audio-fixtures.js";
 import { createStoryAssetApi, createStoryManagementApi } from "../../stories/mock-apis.js";
 import { DirtyNavigationProvider } from "../navigation/dirty-navigation.js";
@@ -79,7 +79,8 @@ export const LocalDraftPreview: Story = {
     await userEvent.click(preview);
     const dialog = within(canvas.getByRole("region", { name: "Effect canvas" }));
     await expect(within(canvasElement.ownerDocument.body).queryByRole("dialog")).not.toBeInTheDocument();
-    await expect(await dialog.findByRole("button", { name: "Play preview" })).toBeEnabled();
+    const playPreview = await dialog.findByRole("button", { name: "Play preview" });
+    await waitFor(() => expect(playPreview).toBeEnabled());
     await userEvent.click(dialog.getByRole("checkbox", { name: "Mute preview" }));
     await userEvent.click(dialog.getByRole("button", { name: "Play preview" }));
     await expect(dialog.getByText(/Preview (playing|stopped)/)).toHaveTextContent("Preview playing");
