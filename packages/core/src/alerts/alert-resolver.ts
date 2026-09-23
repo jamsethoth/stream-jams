@@ -2,6 +2,7 @@ import type { AlertMatch } from "./alert-matcher.js";
 import { resolveAlertAudio } from "../audio/resolve-alert-audio.js";
 import { resolveAlertLayerDurationMs } from "../playback/media-duration.js";
 import { DefaultAlertConditionEvaluator, type AlertConditionEvaluator } from "./condition-evaluator.js";
+import { buildAlertLayerInstruction } from "./alert-layer-instruction.js";
 import type { NormalizedStreamEvent } from "../events/types.js";
 import type { ResolvedAlert } from "../playback/types.js";
 import type {
@@ -25,7 +26,7 @@ import type {
   TargetProfileId
 } from "../management/contracts.js";
 import type { ResolvedAudioLayer } from "../audio/types.js";
-import type { OverlayElementLayout, OverlayTargetProfileId } from "../overlays/types.js";
+import type { OverlayTargetProfileId } from "../overlays/types.js";
 
 export type AlertResolverIdKind = "resolved-alert" | "overlay-instruction";
 
@@ -144,9 +145,25 @@ export class DefaultAlertResolver implements AlertResolver {
       // Keep legacy visuals/TTS intact, but never bypass the editor's audio policy.
       const audioLayers = [...browserAudioLayers(document, input.visualAssetMediaTypes ?? {}, input.assetDurations).values()];
       const audioAlerts = audioLayers.flatMap(layer => {
-        const instruction = this.#createEditorLayerInstruction(
-          match, layer, undefined, document.durationMs, null, input.target, {}, layer.sourceKind, layer.playbackDurationMs
-        );
+        const instruction = buildAlertLayerInstruction({
+          base: {
+            id: this.#generateId("overlay-instruction"),
+            overlayId: input.target.overlayId,
+            moduleId: input.target.moduleId ?? "alerts",
+            purpose: input.target.purpose,
+            scope: input.target.scope,
+            targetProfileId: null,
+            durationMs: document.durationMs
+          },
+          layer,
+          layout: undefined,
+          audio: {
+            sourceKind: layer.sourceKind,
+            playbackDurationMs: layer.playbackDurationMs ?? document.durationMs,
+            fadeInMs: layer.fadeInMs ?? 0,
+            fadeOutMs: layer.fadeOutMs ?? 0
+          }
+        });
         return instruction === null ? [] : [{
           id: this.#generateId("resolved-alert"), sourceEventId: match.event.id,
           ruleId: match.rule.id, variantId: variant.id, overlayInstruction: instruction
@@ -180,19 +197,59 @@ export class DefaultAlertResolver implements AlertResolver {
       .filter((layer) => layer.visible)
       .sort((left, right) => left.order - right.order)
       .flatMap((layer) => {
-        const instruction = layer.type === "audio" ? null : this.#createEditorLayerInstruction(
-          match,
+        const instruction = layer.type === "audio" ? null : buildAlertLayerInstruction({
+          base: {
+            id: this.#generateId("overlay-instruction"),
+            overlayId: target.overlayId,
+            moduleId: target.moduleId ?? "alerts",
+            purpose: target.purpose,
+            scope: target.scope,
+            targetProfileId,
+            durationMs: resolveAlertLayerDurationMs(document, layer)
+          },
           layer,
-          layouts.get(layer.id),
-          resolveAlertLayerDurationMs(document, layer),
-          targetProfileId,
-          target,
-          visualAssetMediaTypes
-        );
+          layout: layouts.get(layer.id),
+          ...(layer.type === "text" ? {
+            renderedText: this.#renderedTextTemplateRenderer.render({
+              template: layer.template,
+              values: createAlertTemplateContext(match.event)
+            })
+          } : {}),
+          ...(layer.type === "tts" && layer.enabled ? {
+            tts: {
+              mode: layer.providerId === "browser-speech" ? "browser-speech" as const : "remote-trigger" as const,
+              text: this.#ttsTemplateRenderer.render({
+                template: layer.template,
+                values: createAlertTemplateContext(match.event)
+              }),
+              audioAssetId: null,
+              providerPayload: { providerId: layer.providerId, layerId: layer.id }
+            }
+          } : {}),
+          ...(layer.type === "image" || layer.type === "video"
+            ? { visualMediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type }
+            : {})
+        });
         const audioLayer = audioLayers.get(layer.id);
-        const audioInstruction = audioLayer === undefined ? null : this.#createEditorLayerInstruction(
-          match, audioLayer, undefined, document.durationMs, targetProfileId, target, {}, audioLayer.sourceKind, audioLayer.playbackDurationMs
-        );
+        const audioInstruction = audioLayer === undefined ? null : buildAlertLayerInstruction({
+          base: {
+            id: this.#generateId("overlay-instruction"),
+            overlayId: target.overlayId,
+            moduleId: target.moduleId ?? "alerts",
+            purpose: target.purpose,
+            scope: target.scope,
+            targetProfileId,
+            durationMs: document.durationMs
+          },
+          layer: audioLayer,
+          layout: undefined,
+          audio: {
+            sourceKind: audioLayer.sourceKind,
+            playbackDurationMs: audioLayer.playbackDurationMs ?? document.durationMs,
+            fadeInMs: audioLayer.fadeInMs ?? 0,
+            fadeOutMs: audioLayer.fadeOutMs ?? 0
+          }
+        });
         return [instruction, audioInstruction].flatMap(candidate => candidate === null ? [] : [{
           ...(targetProfileId === "landscape" && candidate.audio === null ? { desktopVisualEligible: true as const } : {}),
           id: this.#generateId("resolved-alert"),
@@ -202,85 +259,6 @@ export class DefaultAlertResolver implements AlertResolver {
           overlayInstruction: candidate
         }]);
       });
-  }
-
-  #createEditorLayerInstruction(
-    match: AlertMatch,
-    layer: AlertLayer,
-    layout: OverlayElementLayout | undefined,
-    durationMs: number,
-    targetProfileId: TargetProfileId | null,
-    target: AlertResolverTarget,
-    visualAssetMediaTypes: Readonly<Record<string, OverlayVisualInstruction["mediaType"]>>,
-    audioSourceKind: ResolvedAudioLayer["sourceKind"] = "audio",
-    audioPlaybackDurationMs = durationMs
-  ): OverlayInstruction | null {
-    const base = {
-      id: this.#generateId("overlay-instruction"),
-      overlayId: target.overlayId,
-      moduleId: target.moduleId ?? "alerts",
-      purpose: target.purpose,
-      scope: target.scope,
-      targetProfileId,
-      visual: null,
-      audio: null,
-      text: null,
-      shape: null,
-      animation: layer.animation,
-      tts: null,
-      durationMs
-    };
-    if (layer.type === "text" && layout !== undefined) {
-      return {
-        ...base,
-        text: {
-          text: this.#renderedTextTemplateRenderer.render({ template: layer.template, values: createAlertTemplateContext(match.event) }),
-          layout,
-          textStyle: layer.textStyle,
-          boxStyle: layer.boxStyle
-        }
-      };
-    }
-    if ((layer.type === "image" || layer.type === "video") && layout !== undefined) {
-      return {
-        ...base,
-        visual: {
-          assetId: layer.assetId,
-          mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type,
-          layout,
-          ...(layer.type === "video" ? { loop: layer.loop ?? false } : {})
-        }
-      };
-    }
-    if (layer.type === "audio") {
-      return {
-        ...base,
-        audio: {
-          assetId: layer.assetId,
-          volume: layer.volume,
-          sourceKind: audioSourceKind,
-          fadeInMs: layer.fadeInMs ?? 0,
-          fadeOutMs: layer.fadeOutMs ?? 0,
-          playbackDurationMs: audioPlaybackDurationMs
-        }
-      };
-    }
-    if (layer.type === "tts") {
-      if (!layer.enabled) return null;
-      return {
-        ...base,
-        tts: {
-          mode: layer.providerId === "browser-speech" ? "browser-speech" : "remote-trigger",
-          text: this.#ttsTemplateRenderer.render({ template: layer.template, values: createAlertTemplateContext(match.event) }),
-          audioAssetId: null,
-          providerPayload: { providerId: layer.providerId, layerId: layer.id }
-        }
-      };
-    }
-    if (layer.type === "shape" && layout !== undefined) {
-      return { ...base, shape: { fill: layer.fill, layout } };
-    }
-    return null;
   }
 
   #resolveMatch(

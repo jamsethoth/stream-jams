@@ -88,6 +88,8 @@ export type * from "./alerts/alert-matcher.js";
 export { DefaultAlertMatcher } from "./alerts/alert-matcher.js";
 export type * from "./alerts/alert-resolver.js";
 export { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alerts/alert-resolver.js";
+export type * from "./alerts/alert-layer-instruction.js";
+export { buildAlertLayerInstruction } from "./alerts/alert-layer-instruction.js";
 export type * from "./alerts/variation-authoring.js";
 export type { AlertVariationPriorityAssignment } from "./alerts/variation-authoring.js";
 export {
