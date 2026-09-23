@@ -224,6 +224,48 @@ describe("ScreenEffectEditor", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
   });
 
+  it("confirms variant removal and persists it through Save", async () => {
+    const user = userEvent.setup();
+    const saved = effectWithWeightedVariant();
+    const api = effectApi(saved);
+    renderEditor({ api, create: false, document: saved });
+
+    await user.click(await screen.findByRole("button", { name: "Alternate variant" }));
+    expect(screen.getByRole("button", { name: "Remove variant" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Remove variant" }));
+
+    const dialog = screen.getByRole("dialog", { name: "Remove Alternate variant?" });
+    expect(dialog).toHaveTextContent("The variant will be removed from this draft");
+    await user.click(within(dialog).getByRole("button", { name: "Remove variant" }));
+
+    expect(screen.queryByRole("button", { name: "Alternate variant" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Default variant" })).toHaveAttribute("aria-current", "true");
+    expect(screen.getByRole("button", { name: "Undo" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(api.update).toHaveBeenCalledWith(
+      saved.id,
+      expect.objectContaining({ variants: [expect.objectContaining({ id: "variant-one" })] }),
+      false
+    );
+  });
+
+  it("restores focus after variant removal leaves the draft invalid", async () => {
+    const user = userEvent.setup();
+    const saved = effectWithWeightedVariant();
+    renderEditor({ api: effectApi(saved), create: false, document: saved });
+
+    await user.click(await screen.findByRole("button", { name: "Alternate variant" }));
+    await user.clear(screen.getByLabelText("Variant name"));
+    expect(screen.getByRole("button", { name: "Copy variant" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Default variant" }));
+    await user.click(screen.getByRole("button", { name: "Remove variant" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Remove Default variant?" })).getByRole("button", { name: "Remove variant" }));
+
+    expect(screen.getByRole("button", { name: "New variant" })).toHaveFocus();
+  });
+
   it("marks unadvertised Streamer.bot bindings unavailable and omits them from new trigger choices", async () => {
     const saved = screenEffectDocumentSchema.parse({
       ...enabledEffect(false),
@@ -373,6 +415,22 @@ function enabledEffect(enabled = true): ScreenEffectDocument {
       outputs: { browserSource: true, deviceRouteIds: ["headphones"] },
       visualOutputs: { browserSource: true, desktop: false }
     }]
+  });
+}
+
+function effectWithWeightedVariant(): ScreenEffectDocument {
+  const base = enabledEffect(false);
+  return screenEffectDocumentSchema.parse({
+    ...base,
+    variants: [
+      base.variants[0],
+      {
+        ...base.variants[0],
+        id: "variant-two",
+        name: "Alternate",
+        enabled: true
+      }
+    ]
   });
 }
 
