@@ -145,7 +145,7 @@ All twelve findings were resolved on September 23, 2026. The implementation remo
 | Finding | Resolution |
 | --- | --- |
 | R1 | `135c177` introduced the single core `buildAlertLayerInstruction` projector used by live resolution and editor tests while retaining their distinct selection and destination policy. |
-| R2 | `83d324c` moved shared output readiness and Screen Effect eligibility into focused services. Home now polls only while an event source is starting or reconnecting, keeps the last summary if refresh fails, and stops polling when the source becomes healthy or blocked. |
+| R2 | `83d324c` moved shared output readiness and Screen Effect eligibility into focused services. Home now polls only while an event source is starting or reconnecting, keeps the last summary and shows an actionable stale-status error if refresh fails, and stops polling when the source becomes healthy or blocked. |
 | R3 | `75b9640` moved clocks, timers, media preparation, audio, object URLs, speech, cancellation, and disposal into `AlertPreviewController` behind a thin React subscription hook. |
 | R4 | `8a23da7` split management routes into narrow domain registrars and reduced the concrete service to overview/provider composition; `eed958d` replaced the partial production dependency bag and runtime type predicates with an explicit `ProductionServerAppDependencies` assembly. `app.ts`, runtime composition, the former route façade, and `AlertEditorPage` are 352, 158, 704, and 167 lines smaller respectively than the audited versions before their focused replacements are counted. |
 | R5 | `e6c7e0d` routed asset upload/download through the shared authenticated management transport and the core asset record, preserving binary handling and structured errors. |
@@ -154,7 +154,7 @@ All twelve findings were resolved on September 23, 2026. The implementation remo
 | R8 | `e86c1e4` removed the mandatory no-op transcoder seam; validated bytes now proceed directly to metadata probing and storage. |
 | R9 | `ebfc9f0` removed the disconnected canvas-fit and editor arrow-movement implementations while retaining production behavior coverage. |
 | R10 | `c3c6e28` added one own-property path reader and one overlay route-parameter module used by both prior consumers. |
-| R11 | `d45357a` split the browser bootstrap into route-specific dynamic graphs and added manifest-enforced dependency boundaries and gzip budgets. Current totals are 67.36 KiB bootstrap, 121.15 KiB overlay, 120.38 KiB operator, and 216.67 KiB management; `e38a192` made the surface own its overlay stylesheet after Storybook exposed the isolated-render dependency. |
+| R11 | `d45357a` split the browser bootstrap into route-specific dynamic graphs and added gzip budgets. The final gate combines the Vite manifest with a build-emitted Rollup chunk-module inventory so folded management/editor imports cannot evade route-boundary checks. Current totals are 67.36 KiB bootstrap, 121.15 KiB overlay, 120.39 KiB operator, and 216.69 KiB management; `e38a192` made the surface own its overlay stylesheet after Storybook exposed the isolated-render dependency. |
 | R12 | `ebfc9f0` removed the unused direct web `tslib` declaration and its lockfile entry. |
 
 The completion search confirms one Alert layer projector, one shared management transport, one production management security pre-handler, one runtime logger, explicit production server dependencies, one disposable Alert preview owner, one shared own-property reader, one shared overlay-parameter module, and route-isolated web bundles. The removed transcoder, disconnected geometry helpers, legacy management façade, bearer-only security gate, and direct web `tslib` declaration have no source or manifest references.
@@ -166,11 +166,11 @@ The completion search confirms one Alert layer projector, one shared management 
 | Locked dependency installation | Passed, lockfile already current |
 | `corepack.cmd pnpm lint` | Passed |
 | `corepack.cmd pnpm typecheck` | Passed |
-| `corepack.cmd pnpm test` | Passed: 249 Vitest files, 2,146 tests; 12 additional Node script tests |
+| `corepack.cmd pnpm test` | Passed: 249 Vitest files, 2,146 tests; 13 additional Node script tests |
 | `corepack.cmd pnpm build` | Passed, including the four route bundle budgets above |
 | `corepack.cmd pnpm build-storybook` | Passed; Storybook tool-bundle advisories remain outside the production route budgets |
 | `corepack.cmd pnpm test:storybook:ci` | Passed: 23 suites, 239 tests; the deprecated Story Store warning remains tracked as BL-035 |
-| `corepack.cmd pnpm test:e2e` with `CI=true` | Passed: 51 Chromium tests using the test-owned production build/server |
+| `corepack.cmd pnpm test:e2e` with `CI=true` | Passed: 52 Chromium tests: 51 workflows against the test-owned Vite server plus a production Fastify-shell smoke test for hashed route chunks and CSS |
 | Strict OpenSpec validation | Passed: 44/44 items |
 | Current `origin/main` ancestry | Passed: the remediation branch remains a clean descendant of `fec768c58a8b27a6921e87ea1ac8d4a346a8c05d` after a final fetch |
 

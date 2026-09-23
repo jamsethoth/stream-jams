@@ -24,7 +24,7 @@ The current build model intentionally stays simple:
 
 - pnpm owns workspace dependency installation and recursive package script execution.
 - TypeScript project references own TypeScript compile/typecheck ordering.
-- Vite owns route-separated management, operator, and overlay browser bundles after the web TypeScript project check passes. The production build enforces route dependency boundaries and gzip startup budgets from the generated Vite manifest.
+- Vite owns route-separated management, operator, and overlay browser bundles after the web TypeScript project check passes. The production build enforces route dependency boundaries and gzip startup budgets from the generated Vite manifest and chunk-module inventory.
 
 Turborepo is a possible future addition if the workspace grows enough to need task-graph caching, affected-package execution, or faster CI feedback. It is not part of the MVP toolchain yet.
 

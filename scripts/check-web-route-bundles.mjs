@@ -16,12 +16,14 @@ const routeSources = {
   operator: "src/operator/OperatorApp.tsx",
   overlay: "src/overlay/OverlayApp.tsx"
 };
+const routeModuleManifestFile = ".vite/route-modules.json";
 
 export async function checkWebRouteBundles({
   buildDirectory = defaultBuildDirectory,
   budgets = defaultBudgets
 } = {}) {
   const manifest = await readManifest(buildDirectory);
+  const moduleManifest = await readModuleManifest(buildDirectory);
   const bootstrapKey = findBootstrapKey(manifest);
   const bootstrapEntry = manifest[bootstrapKey];
   const routeKeys = Object.fromEntries(Object.entries(routeSources).map(([route, source]) => [
@@ -48,7 +50,7 @@ export async function checkWebRouteBundles({
     const gzipBytes = (await Promise.all(files.map(async (file) => (
       gzipSync(await readFile(join(buildDirectory, file))).byteLength
     )))).reduce((total, size) => total + size, 0);
-    return [route, { files, gzipBytes, sources: collectSources(manifest, keys) }];
+    return [route, { files, gzipBytes, sources: collectSources(manifest, keys, moduleManifest, files) }];
   })));
 
   const errors = [];
@@ -94,6 +96,20 @@ async function readManifest(buildDirectory) {
   return manifest;
 }
 
+async function readModuleManifest(buildDirectory) {
+  const raw = await readFile(join(buildDirectory, routeModuleManifestFile), "utf8");
+  const moduleManifest = JSON.parse(raw);
+  if (typeof moduleManifest !== "object" || moduleManifest === null || Array.isArray(moduleManifest)) {
+    throw new Error("Web route module manifest must be an object.");
+  }
+  for (const [file, sources] of Object.entries(moduleManifest)) {
+    if (!Array.isArray(sources) || sources.some((source) => typeof source !== "string")) {
+      throw new Error(`Web route module manifest entry ${file} is invalid.`);
+    }
+  }
+  return moduleManifest;
+}
+
 function findBootstrapKey(manifest) {
   if (manifest["index.html"]?.isEntry === true) return "index.html";
   const entry = Object.entries(manifest).find(([, candidate]) => candidate.isEntry === true);
@@ -120,11 +136,18 @@ function collectStaticGraph(manifest, startKey) {
   return visited;
 }
 
-function collectSources(manifest, keys) {
-  return [...new Set([...keys].flatMap((key) => {
+function collectSources(manifest, keys, moduleManifest, files) {
+  return [...new Set([
+    ...[...keys].flatMap((key) => {
     const source = manifest[key].src;
     return source === undefined ? [key] : [key, source];
-  }))].sort();
+    }),
+    ...files.flatMap((file) => {
+      const sources = moduleManifest[file];
+      if (sources === undefined) throw new Error(`Web route module manifest has no entry for ${file}.`);
+      return sources;
+    })
+  ])].sort();
 }
 
 function title(value) {

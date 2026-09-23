@@ -38,12 +38,14 @@ export function HomePanel({ managementApi }: HomePanelProps) {
           }
         }
       } catch (error: unknown) {
-        if (!cancelled && !hasLoadedSummary) {
+        if (!cancelled) {
           setLoadError(
             actionableError(
               error,
-              "Unable to load setup readiness",
-              "Refresh this page after confirming the local Stream Jams service is running."
+              hasLoadedSummary ? "Unable to refresh setup readiness" : "Unable to load setup readiness",
+              hasLoadedSummary
+                ? "Stream Jams will keep retrying. Confirm the local service is running if this message remains."
+                : "Refresh this page after confirming the local Stream Jams service is running."
             )
           );
         }
@@ -59,7 +61,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
     };
   }, [managementApi]);
 
-  if (loadError !== null) {
+  if (loadError !== null && summary === null) {
     return <ManagementErrorBanner error={loadError} />;
   }
   if (summary === null) {
@@ -75,6 +77,11 @@ export function HomePanel({ managementApi }: HomePanelProps) {
 
   return (
     <div className="provider-page home-panel">
+      {loadError === null ? null : (
+        <div className="provider-page__errors">
+          <ManagementErrorBanner error={loadError} />
+        </div>
+      )}
       {summary.actionableProblems.length === 0 ? null : (
         <section aria-labelledby="home-problems-title" className="provider-page__section">
           <div className="provider-page__section-heading">

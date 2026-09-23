@@ -93,9 +93,10 @@ describe("HomePanel", () => {
         ? { ...item, state: "complete" as const, actionLabel: "Review event source" }
         : item)
     };
+    const refreshError = Object.assign(new Error("temporary startup race"), { referenceId: "ref-home-refresh" });
     const getHomeSetupSummary = vi.fn()
       .mockResolvedValueOnce(starting)
-      .mockRejectedValueOnce(new Error("temporary startup race"))
+      .mockRejectedValueOnce(refreshError)
       .mockResolvedValue(healthy);
 
     render(<HomePanel managementApi={{ getHomeSetupSummary }} />);
@@ -104,10 +105,12 @@ describe("HomePanel", () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(screen.getByRole("link", { name: "Starting event source" })).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Unable to refresh setup readiness");
+    expect(screen.getByRole("alert")).toHaveTextContent("ref-home-refresh");
 
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(screen.getByRole("link", { name: "Review event source" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(getHomeSetupSummary).toHaveBeenCalledTimes(3);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
