@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import type { ManagementSessionService } from "@stream-jams/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
 import { sendHttpError } from "../errors.js";
-import { extractBearerToken } from "./management-auth.js";
+import { extractBearerToken } from "./management-bearer-token.js";
 
 interface RuntimeSecurityLogger {
   warn(message: string, context: {
@@ -37,7 +37,8 @@ const allowedRequestHeaders = [
   "content-type",
   csrfHeaderName,
   "x-stream-jams-file-name",
-  "x-stream-jams-mime-type"
+  "x-stream-jams-mime-type",
+  "x-stream-jams-confirm-impact"
 ].join(", ");
 
 export function createLocalManagementOriginPolicy(options: ManagementOriginPolicyOptions): ManagementOriginPolicy {

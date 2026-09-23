@@ -14,7 +14,7 @@ import {
 } from "../../modules/overlays/overlay-output-management-service.js";
 import { OverlayGateway } from "../../websocket/overlay-gateway.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("overlay output management routes", () => {
   it("creates, lists, regenerates, and revokes copyable URLs for management clients", async () => {
@@ -171,7 +171,7 @@ async function createApp(rawKeys: string[]) {
         secretStore
       }),
       overlayGateway,
-      managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+      managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
       managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({
         limiter: new LocalManagementRateLimiter({
           maxRequests: 100,
@@ -181,9 +181,6 @@ async function createApp(rawKeys: string[]) {
       })
     }),
     overlayGateway,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`,
-      host: "localhost:80"
-    }
+    authHeaders: { ...managementTestHeaders(session, "POST"), host: "localhost:80" }
   };
 }

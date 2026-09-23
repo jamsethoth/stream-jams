@@ -10,7 +10,7 @@ import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 import {
   AlertEditorDeliveryBlockedError,
   AlertEditorLiveImpactConfirmationRequiredError
@@ -746,7 +746,7 @@ async function createApp() {
   const dependencies = {
     metadata: { appName: "stream-jams", version: "0.0.0" },
     managementUiQueryService: new StubManagementUiQueryService(),
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     generateServerErrorId: () => "err_settings_maintenance",
     serverErrorLogger: vi.fn()
@@ -754,7 +754,7 @@ async function createApp() {
 
   return {
     app: createServerApp(dependencies),
-    authHeaders: { authorization: `Bearer ${session.id}`, "x-stream-jams-csrf": session.csrfToken },
+    authHeaders: managementTestHeaders(session, "POST"),
     service: dependencies.managementUiQueryService
   };
 }

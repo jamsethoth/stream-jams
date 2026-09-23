@@ -12,7 +12,7 @@ import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("moderation routes", () => {
   it("reads and updates management-protected moderation settings", async () => {
@@ -366,7 +366,7 @@ async function createAppWithModeration(options: {
     },
     moderationService,
     runConfigurationMutation: <T>(work: () => T) => options.mutationGate?.runConfigurationMutation(work) ?? work(),
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     generateServerErrorId: () => "err_moderation_update",
     serverErrorLogger: (entry) => serverErrors.push(entry)
@@ -377,9 +377,7 @@ async function createAppWithModeration(options: {
     app,
     moderationService,
     serverErrors,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    }
+    authHeaders: managementTestHeaders(session, "POST")
   };
 }
 

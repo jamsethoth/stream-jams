@@ -13,7 +13,7 @@ import { LocalManagementSessionService } from "../../modules/auth/management-ses
 import { LocalAssetStore } from "../../modules/assets/local-asset-store.js";
 import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 const temporaryDirectories: string[] = [];
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
@@ -433,7 +433,7 @@ async function createAppWithAssets(options: {
         return {} as never;
       }
     },
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     ...(options.overlayAccessService === undefined ? {} : { overlayAccessService: options.overlayAccessService })
   });
@@ -441,9 +441,7 @@ async function createAppWithAssets(options: {
   return {
     app,
     repository,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    }
+    authHeaders: managementTestHeaders(session, "POST")
   };
 }
 

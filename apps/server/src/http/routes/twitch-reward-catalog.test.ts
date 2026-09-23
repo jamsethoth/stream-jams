@@ -17,7 +17,7 @@ import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 const catalog: TwitchCustomRewardCatalog = {
   rewards: [
@@ -312,14 +312,14 @@ async function createProtectedCatalogApp(
   const app = createServerApp({
     metadata: { appName: "stream-jams", version: "1.2.3" },
     twitchRewardCatalogService,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     runtimeLogger
   });
 
   return {
     app,
-    authHeaders: { authorization: `Bearer ${session.id}` },
+    authHeaders: managementTestHeaders(session, "POST"),
     logs: runtimeLogger.entries
   };
 }
