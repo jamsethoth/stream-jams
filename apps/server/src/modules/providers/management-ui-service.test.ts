@@ -72,6 +72,21 @@ describe("ManagementUiService", () => {
     expect(getEventSourceRuntimeView).toHaveBeenCalledWith(active);
   });
 
+  it.each([
+    { liveStatus: "starting" as const, state: "action-required", actionLabel: "Starting event source" },
+    { liveStatus: "reconnecting" as const, state: "action-required", actionLabel: "Reconnect in progress" },
+    { liveStatus: "error" as const, state: "blocked", actionLabel: "Resolve event source" }
+  ])("maps $liveStatus event-source runtime state to Home readiness", async ({ liveStatus, state, actionLabel }) => {
+    const active = provider("event", "twitch", "event-source", true, "connected", "active", null);
+    const service = createService([active], null, () => ({ liveStatus, error: null }));
+
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      readiness: expect.arrayContaining([
+        expect.objectContaining({ id: "event-source", state, actionLabel })
+      ])
+    });
+  });
+
   it("projects the current runtime error onto event-source list and detail views", async () => {
     const active = provider("event", "twitch", "event-source", true, "connected", "active", null);
     const runtimeError = {

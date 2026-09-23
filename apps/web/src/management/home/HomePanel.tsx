@@ -17,16 +17,28 @@ export function HomePanel({ managementApi }: HomePanelProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void managementApi
-      .getHomeSetupSummary()
-      .then((loaded) => {
+    let hasLoadedSummary = false;
+    let refreshInFlight = false;
+    let interval: number | null = null;
+
+    const refresh = async () => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        const loaded = await managementApi.getHomeSetupSummary();
         if (!cancelled) {
+          hasLoadedSummary = true;
           setSummary(loaded);
           setLoadError(null);
+          if (hasTransitionalEventSource(loaded)) {
+            interval ??= window.setInterval(() => void refresh(), 5_000);
+          } else if (interval !== null) {
+            window.clearInterval(interval);
+            interval = null;
+          }
         }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
+      } catch (error: unknown) {
+        if (!cancelled && !hasLoadedSummary) {
           setLoadError(
             actionableError(
               error,
@@ -35,9 +47,15 @@ export function HomePanel({ managementApi }: HomePanelProps) {
             )
           );
         }
-      });
+      } finally {
+        refreshInFlight = false;
+      }
+    };
+
+    void refresh();
     return () => {
       cancelled = true;
+      if (interval !== null) window.clearInterval(interval);
     };
   }, [managementApi]);
 
@@ -171,6 +189,12 @@ export function HomePanel({ managementApi }: HomePanelProps) {
       </section>
     </div>
   );
+}
+
+function hasTransitionalEventSource(summary: HomeSetupSummary): boolean {
+  const eventSource = summary.readiness.find((item) => item.id === "event-source");
+  return eventSource?.state === "action-required"
+    && (eventSource.actionLabel === "Starting event source" || eventSource.actionLabel === "Reconnect in progress");
 }
 
 function readinessTone(state: HomeSetupSummary["readiness"][number]["state"]): StatusBadgeTone {

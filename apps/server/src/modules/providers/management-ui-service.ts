@@ -462,6 +462,24 @@ function eventSourceReadiness(provider: RegisteredProviderView | null): HomeRead
   if (provider.liveStatus === "healthy") {
     return setupItem("event-source", "Event source", "complete", "Review event source", "/manage/event-sources");
   }
+  if (provider.liveStatus === "starting") {
+    return setupItem(
+      "event-source",
+      "Event source",
+      "action-required",
+      "Starting event source",
+      `/manage/event-sources?provider=${encodeURIComponent(provider.id)}`
+    );
+  }
+  if (provider.liveStatus === "reconnecting") {
+    return setupItem(
+      "event-source",
+      "Event source",
+      "action-required",
+      "Reconnect in progress",
+      `/manage/event-sources?provider=${encodeURIComponent(provider.id)}`
+    );
+  }
   const blocked = provider.liveStatus === "error";
   return setupItem(
     "event-source",

@@ -71,6 +71,22 @@ export const PartiallyConfigured: Story = {
   }
 };
 
+export const EventSourceStarting: Story = {
+  args: {
+    managementApi: createStoryManagementApi({
+      getHomeSetupSummary: async () => ({
+        ...configuredSummary,
+        readiness: configuredSummary.readiness.map((item) => item.id === "event-source"
+          ? { ...item, state: "action-required" as const, actionLabel: "Starting event source" }
+          : item)
+      })
+    })
+  },
+  play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByRole("link", { name: "Starting event source" })).toBeVisible();
+  }
+};
+
 export const Configured: Story = {
   args: {
     managementApi: createStoryManagementApi({ getHomeSetupSummary: async () => configuredSummary })

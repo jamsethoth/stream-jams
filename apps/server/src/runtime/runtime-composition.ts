@@ -26,11 +26,9 @@ import {
   type DesktopConfig,
   type DesktopAudioTransport,
   type DesktopOverlayTransport,
-  type EffectContentSnapshot,
   type OverlayModuleConfigService,
   type OverlayModuleRuntime,
   type PlaybackSafetyState,
-  type AlertBrowserSourceView,
   type ProviderLiveStatus,
   type ProviderKind,
   type SecretStore
@@ -69,6 +67,7 @@ import { SqliteEffectSetRepository } from "../modules/screen-effects/sqlite-effe
 import { EffectAdmissionService } from "../modules/screen-effects/effect-admission-service.js";
 import { EffectManagementService } from "../modules/screen-effects/effect-management-service.js";
 import { EffectPlaybackCoordinator } from "../modules/screen-effects/effect-playback-coordinator.js";
+import { EffectPlaybackEligibilityService } from "../modules/screen-effects/effect-playback-eligibility-service.js";
 import { SqliteEffectModuleSettingsRepository } from "../modules/screen-effects/sqlite-effect-module-settings-repository.js";
 import { ConfigurationBackupService } from "../modules/backup/configuration-backup-service.js";
 import { LocalConfigurationBackupStore } from "../modules/backup/local-configuration-backup-store.js";
@@ -97,6 +96,7 @@ import {
   createOverlayRouteKeySecretRef,
   OverlayOutputManagementService
 } from "../modules/overlays/overlay-output-management-service.js";
+import { OutputReadinessService } from "../modules/overlays/output-readiness-service.js";
 import { SqliteOverlayAccessKeyRepository } from "../modules/overlays/sqlite-overlay-access-key-repository.js";
 import { PlaybackCoordinator } from "../modules/playback/playback-coordinator.js";
 import { PlaybackOperationsService } from "../modules/playback/playback-operations-service.js";
@@ -463,94 +463,20 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const playbackDedupeService = new DefaultPlaybackDedupeService();
   const isEffectModuleEnabled = async () =>
     (await overlayModuleConfigService.getModuleConfig("screen-effects")).enabled;
-  const validateEffectReferences = async (content: EffectContentSnapshot) => {
-    const assetIds = [
-      ...(content.variant.visual === null ? [] : [content.variant.visual.assetId]),
-      ...(content.variant.sound === null ? [] : [content.variant.sound.assetId])
-    ];
-    const assets = await assetRepository.findManyByIds(assetIds);
-    const visual = content.variant.visual;
-    if (visual !== null && assets.get(visual.assetId)?.mediaType !== visual.mediaType) return false;
-    if (
-      content.variant.sound !== null
-      && assets.get(content.variant.sound.assetId)?.mediaType !== "audio"
-    ) {
-      return false;
-    }
-    return content.variant.outputs.deviceRouteIds.every(
-      (routeId) => audioOutputRouteRepository.findById(routeId) !== null
-    );
-  };
-  const validateEffectOutputAvailability = async (content: EffectContentSnapshot) => {
-    const { variant } = content;
-    const hasBrowserVisual = variant.visual !== null && variant.visualOutputs.browserSource;
-    const hasBrowserAudio = variant.outputs.browserSource && (
-      variant.sound !== null
-      || (variant.visual?.mediaType === "video" && variant.visual.playEmbeddedAudio)
-    );
-    const connectedModuleSource = overlayGateway.clientStates.some(
-      (client) => client.connectionState === "connected"
-        && client.overlayId === "default"
-        && client.purpose === "live"
-        && client.scope === "module"
-        && client.moduleId === "screen-effects"
-        && (client.targetProfileId ?? null) === null
-    );
-    const connectedUnifiedSource = overlayGateway.clientStates.some(
-      (client) => client.connectionState === "connected"
-        && client.overlayId === "default"
-        && client.purpose === "live"
-        && client.scope === "unified"
-        && client.moduleId === null
-        && (client.targetProfileId ?? null) === null
-    );
-    let unifiedVisualEnabled = false;
-    if (hasBrowserVisual && connectedUnifiedSource) {
-      const surface = (await surfaceRepository.list()).find(
-        (candidate) => candidate.kind === "unified-browser" && candidate.overlayId === "default"
-      );
-      unifiedVisualEnabled = surface?.layers.some(
-        (layer) => layer.moduleId === "screen-effects" && layer.visible
-      ) ?? false;
-    }
-    const browserReady = isEffectBrowserOutputReady({
-      hasBrowserVisual,
-      hasBrowserAudio,
-      connectedModuleSource,
-      connectedUnifiedSource,
-      unifiedVisualEnabled
-    });
-
-    let desktopReady = false;
-    if (variant.visual !== null && variant.visualOutputs.desktop && options.desktopOverlayTransport !== undefined) {
-      const surface = (await surfaceRepository.list()).find((candidate) => candidate.kind === "desktop");
-      const displayId = surface?.kind === "desktop" ? surface.displayId : null;
-      desktopReady = surface?.kind === "desktop"
-        && surface.enabled
-        && displayId !== null
-        && surface.layers.some((layer) => layer.moduleId === "screen-effects" && layer.visible);
-      if (desktopReady && options.desktopOverlayTransport.getStatus !== undefined) {
-        try {
-          const status = await options.desktopOverlayTransport.getStatus();
-          desktopReady = status.available
-            && status.state === "ready"
-            && status.displays.some((display) => display.id === displayId);
-        } catch {
-          desktopReady = false;
-        }
-      }
-    }
-
-    let deviceReady = false;
-    if (variant.outputs.deviceRouteIds.length > 0) {
-      const selectedRouteIds = new Set(variant.outputs.deviceRouteIds);
-      const status = await audioOutputService.getStatus();
-      deviceReady = status.routes.some(
-        (route) => selectedRouteIds.has(route.route.id) && route.state === "ready"
-      );
-    }
-    return browserReady || desktopReady || deviceReady;
-  };
+  const outputReadinessService = new OutputReadinessService({
+    getClientStates: () => overlayGateway.clientStates,
+    listOutputs: (origin) => overlayOutputManagementService.listOutputs(origin),
+    listSurfaces: () => surfaceRepository.list(),
+    ...(options.desktopOverlayTransport === undefined
+      ? {}
+      : { desktopHost: options.desktopOverlayTransport }),
+    getAudioStatus: () => audioOutputService.getStatus()
+  });
+  const effectPlaybackEligibilityService = new EffectPlaybackEligibilityService({
+    assets: assetRepository,
+    routes: audioOutputRouteRepository,
+    outputs: outputReadinessService
+  });
   const playbackCoordinator = new PlaybackCoordinator({
     alertService,
     matcher: new DefaultAlertMatcher(),
@@ -611,8 +537,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
     ...(desktopVisualSink === undefined ? {} : { desktopVisualSink }),
     isModuleEnabled: isEffectModuleEnabled,
-    validateReferences: validateEffectReferences,
-    validateOutputAvailability: validateEffectOutputAvailability,
+    validateReferences: (content) => effectPlaybackEligibilityService.referencesExist(content),
+    validateOutputAvailability: (content) => effectPlaybackEligibilityService.hasAvailableOutput(content),
     onStopFailure: (error, occurrenceId) => runtimeLogger.error("Screen Effects local outputs did not acknowledge stop.", {
       module: "screen-effects",
       source: "screen-effects.playback-stop-failed",
@@ -636,8 +562,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateOccurrenceId: generateEffectOccurrenceId,
     now: () => now().getTime(),
     assetDurationCatalog,
-    validateReferences: validateEffectReferences,
-    validateOutputAvailability: validateEffectOutputAvailability,
+    validateReferences: (content) => effectPlaybackEligibilityService.referencesExist(content),
+    validateOutputAvailability: (content) => effectPlaybackEligibilityService.hasAvailableOutput(content),
     isModuleEnabled: isEffectModuleEnabled,
     onOutcome: async (result) => {
       if (result.status !== "processed") return;
@@ -871,77 +797,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     alertSetMetadataRepository,
     alertEditorDocumentRepository
   );
-  const listAlertBrowserSources = async (): Promise<readonly AlertBrowserSourceView[]> => {
-      const origin = `http://${initialConfig.server.host}:${initialConfig.server.port}`;
-      const outputs = await overlayOutputManagementService.listOutputs(origin);
-      return outputs
-        .filter(
-          (output) =>
-            output.scope === "module" &&
-            output.moduleId === "alerts" &&
-            output.purpose === "live" &&
-            (output.targetProfileId === "landscape" || output.targetProfileId === "vertical")
-        )
-        .map((output) => {
-          const states = overlayGateway.clientStates
-            .filter(
-              (client) =>
-                client.scope === output.scope &&
-                client.moduleId === output.moduleId &&
-                client.overlayId === output.overlayId &&
-                client.purpose === output.purpose &&
-                client.targetProfileId === output.targetProfileId
-            )
-            .sort((left, right) => right.connectedAt.localeCompare(left.connectedAt));
-          const connected = states.some((client) => client.connectionState === "connected");
-          const latest = states[0] ?? null;
-          return {
-            id: output.id,
-            targetProfileId: output.targetProfileId as "landscape" | "vertical",
-            purpose: "live" as const,
-            connectionState: connected ? "connected" : latest === null ? "never-connected" : "disconnected",
-            lastConnectedAt: latest?.connectedAt ?? null,
-            keyId: output.keyId,
-            url: output.url,
-            copyableUrlStatus: output.copyableUrlStatus
-          };
-        });
-  };
   const alertEditorService = new AlertEditorService({
     documents: alertEditorDocumentRepository,
     rules: alertRepository,
     metadata: alertSetMetadataRepository,
-    async hasConnectedOutput(targetProfileId) {
-      return overlayGateway.clientStates.some(
-        (client) =>
-          client.connectionState === "connected" &&
-          client.overlayId === "default" &&
-          client.scope === "module" &&
-          client.moduleId === "alerts" &&
-          client.purpose === "live" &&
-          client.targetProfileId === targetProfileId
-      );
-    },
-    async hasReadyDesktopOutput() {
-      if (options.desktopOverlayTransport === undefined) return false;
-      const surface = (await surfaceRepository.list()).find((candidate) => candidate.kind === "desktop");
-      const displayId = surface?.kind === "desktop" ? surface.displayId : null;
-      let ready = surface?.kind === "desktop"
-        && surface.enabled
-        && displayId !== null
-        && surface.layers.some((layer) => layer.moduleId === "alerts" && layer.visible);
-      if (ready && options.desktopOverlayTransport.getStatus !== undefined) {
-        try {
-          const status = await options.desktopOverlayTransport.getStatus();
-          ready = status.available
-            && status.state === "ready"
-            && status.displays.some((display) => display.id === displayId);
-        } catch {
-          ready = false;
-        }
-      }
-      return ready;
-    },
+    hasConnectedOutput: async (targetProfileId) =>
+      outputReadinessService.isModuleBrowserSourceConnected("alerts", targetProfileId),
+    hasReadyDesktopOutput: () => outputReadinessService.isDesktopVisualReady("alerts"),
     getAudioOutputStatus: () => audioOutputService.getStatus(),
     listAudioOutputRoutes: () => audioOutputService.listRoutes(),
     async enqueueTest(playback) {
@@ -969,7 +831,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     getEditorDocument: (editorId) => alertEditorService.getDocument(editorId),
     generateId: generateAlertConfigurationId,
     mutationStore: alertAggregateMutationStore,
-    listBrowserSources: listAlertBrowserSources
+    listBrowserSources: () => outputReadinessService.listAlertBrowserSources(
+      `http://${initialConfig.server.host}:${initialConfig.server.port}`
+    )
   });
   const diagnosticsService = new DiagnosticsService({
     repository: diagnosticsLogRepository,
@@ -1142,13 +1006,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
       return { liveStatus: "error", error: provider.error };
     },
-    hasBrowserOutput: async () =>
-      (await overlayOutputManagementService.listOutputs(`http://${initialConfig.server.host}:${initialConfig.server.port}`)).some(
-        (output) =>
-          output.moduleId === "alerts" &&
-          (output.targetProfileId === "landscape" || output.targetProfileId === "vertical") &&
-          output.copyableUrlStatus === "available"
-      ),
+    hasBrowserOutput: () => outputReadinessService.hasConfiguredAlertBrowserOutput(
+      `http://${initialConfig.server.host}:${initialConfig.server.port}`
+    ),
     getAlertEditorDocument: (alertId) => alertEditorService.getDocument(alertId),
     getAlertVariationAuthoringContext: (alertId) => alertEditorService.getVariationContext(alertId),
     saveAlertEditorDocument: (alertId, document, confirmLiveImpact, priorityAssignments) =>
@@ -1528,23 +1388,6 @@ function generateResolvedAlertId(kind: "resolved-alert" | "overlay-instruction")
 
 function generateEventPipelineId(kind: "event-log" | "alert-match-log" | "playback-log" | "processing"): string {
   return `event_pipeline_${kind}_${randomBytes(16).toString("base64url")}`;
-}
-
-export function isEffectBrowserOutputReady(input: {
-  readonly hasBrowserVisual: boolean;
-  readonly hasBrowserAudio: boolean;
-  readonly connectedModuleSource: boolean;
-  readonly connectedUnifiedSource: boolean;
-  readonly unifiedVisualEnabled: boolean;
-}): boolean {
-  const visualReady = input.hasBrowserVisual && (
-    input.connectedModuleSource
-    || (input.connectedUnifiedSource && input.unifiedVisualEnabled)
-  );
-  const audioReady = input.hasBrowserAudio && (
-    input.connectedModuleSource || input.connectedUnifiedSource
-  );
-  return visualReady || audioReady;
 }
 
 function generatePlaybackQueueItemId(): string {
