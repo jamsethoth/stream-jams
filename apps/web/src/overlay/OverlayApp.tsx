@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "./overlay.css";
 import type {
   OverlayComposition,
   OverlayInstruction,

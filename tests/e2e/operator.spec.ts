@@ -28,12 +28,18 @@ test("management opens the focused Operator console and global controls apply re
 
   await expect(page).toHaveURL(/\/operator$/u);
   await expect(page.getByRole("heading", { name: "Operator Console" })).toBeVisible();
+  await expect(page.locator("main.operator-console")).toBeVisible();
+  await expect(page.locator("body")).toHaveClass(/operator-shell/u);
   await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
   await expect(page.getByText("Current follow")).toBeVisible();
   await expect(page.getByText("Current sweep")).toBeVisible();
   const currentCards = page.getByRole("heading", { name: "Now playing (2)" }).locator("xpath=following-sibling::ol[1]/li");
   await expect(currentCards).toHaveCount(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const resources = await page.evaluate(() => performance.getEntriesByType("resource").map((entry) => new URL(entry.name).pathname));
+  expect(resources).toContain("/src/operator/OperatorApp.tsx");
+  expect(resources).not.toContain("/src/App.tsx");
+  expect(resources.some((path) => path.includes("/management/alerts/editor/") || path.includes("/management/screen-effects/ScreenEffectEditor"))).toBe(false);
 
   const pause = page.getByRole("button", { name: "Pause all queues" });
   await pause.focus();

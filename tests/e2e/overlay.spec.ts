@@ -3,6 +3,9 @@ import { Buffer } from "node:buffer";
 import { installOverlayWebSocketMock } from "./e2e-helpers.js";
 
 test("module test overlay renders a test alert without displaying its route key", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
   await installOverlayWebSocketMock(page);
   await page.route("**/overlay/modules/alerts/test/ovl_test/composition", async (route) => {
     await route.fulfill({
@@ -47,7 +50,20 @@ test("module test overlay renders a test alert without displaying its route key"
   await page.goto("/overlay/modules/alerts/test/ovl_test");
 
   await expect(page.getByText("Test alert rendered")).toBeVisible();
+  await expect(page.locator("body")).toHaveClass(/overlay-shell/u);
+  await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(0);
   expect(await page.locator("body").innerText()).not.toContain("ovl_test");
+  const shellState = await page.evaluate(() => ({
+    bodyBackground: getComputedStyle(document.body).backgroundColor,
+    rootBackground: getComputedStyle(document.documentElement).backgroundColor,
+    resources: performance.getEntriesByType("resource").map((entry) => new URL(entry.name).pathname)
+  }));
+  expect(shellState.bodyBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(shellState.rootBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(shellState.resources).toContain("/src/overlay/OverlayApp.tsx");
+  expect(shellState.resources).not.toContain("/src/App.tsx");
+  expect(shellState.resources.some((path) => path.startsWith("/src/management/"))).toBe(false);
+  expect(browserErrors).toEqual([]);
 });
 
 test("management test audio can be enabled after the browser blocks autoplay", async ({ page }) => {
