@@ -5,19 +5,19 @@ import { createHttpManagementApi } from "./management-api.js";
 describe("createHttpManagementApi", () => {
   it("loads and validates encoded variation sibling context URLs", async () => {
     const context = variationAuthoringContext();
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
-      if (url === "/management/alerts/alert%2Ffollow/editor/variation-context") return jsonResponse(context);
+      if (url === "/management/alerts/alert%2Ffollow/editor/variation-context") {
+        expectHeaders(init, { authorization: "Bearer mgmt_session" });
+        return jsonResponse(context);
+      }
       throw new Error(`Unexpected request ${url}`);
     });
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await expect(api.getAlertVariationAuthoringContext("alert/follow")).resolves.toEqual(context);
-    expect(fetcher).toHaveBeenCalledWith(
-      "/management/alerts/alert%2Ffollow/editor/variation-context",
-      expect.objectContaining({ headers: { authorization: "Bearer mgmt_session" } })
-    );
+    expect(fetcher.mock.calls.filter(([input]) => String(input).includes("variation-context"))).toHaveLength(1);
   });
 
   it("rejects an invalid variation sibling context response", async () => {
@@ -417,9 +417,7 @@ describe("createHttpManagementApi", () => {
         return jsonResponse(managementSession());
       }
 
-      expect(init?.headers).toMatchObject({
-        authorization: "Bearer mgmt_session"
-      });
+      expectHeaders(init, { authorization: "Bearer mgmt_session" });
 
       if (url === "/management/providers/validate") {
         expect(init).toMatchObject({ method: "POST", body: JSON.stringify(setup) });
@@ -581,7 +579,8 @@ describe("createHttpManagementApi", () => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
       if (url === "/twitch/custom-rewards") {
-        expect(init).toEqual({ headers: { authorization: "Bearer mgmt_session" } });
+        expect(init?.method).toBeUndefined();
+        expectHeaders(init, { authorization: "Bearer mgmt_session" });
         return jsonResponse(responses[responseIndex++]!);
       }
       throw new Error(`Unexpected request ${url}`);
@@ -590,10 +589,7 @@ describe("createHttpManagementApi", () => {
 
     await expect(api.getTwitchCustomRewards()).resolves.toEqual(responses[0]);
     await expect(api.getTwitchCustomRewards()).resolves.toEqual({ rewards: [] });
-    expect(fetcher).toHaveBeenCalledWith(
-      "/twitch/custom-rewards",
-      expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer mgmt_session" }) })
-    );
+    expect(fetcher.mock.calls.filter(([input]) => String(input) === "/twitch/custom-rewards")).toHaveLength(2);
   });
 
   it("rejects Twitch reward catalog responses that leak token or image data", async () => {
@@ -812,9 +808,7 @@ describe("createHttpManagementApi", () => {
       }
 
       if (url === "/config/server") {
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
-        });
+        expectHeaders(init, { authorization: "Bearer mgmt_session" });
         return jsonResponse({ host: "127.0.0.1", port: 39187 });
       }
 
@@ -848,9 +842,7 @@ describe("createHttpManagementApi", () => {
       }
 
       if (url === "/moderation/settings" && init?.method === undefined) {
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
-        });
+        expectHeaders(init, { authorization: "Bearer mgmt_session" });
         return jsonResponse(settings);
       }
 
@@ -859,7 +851,7 @@ describe("createHttpManagementApi", () => {
           method: "PATCH",
           body: JSON.stringify(settings)
         });
-        expect(init?.headers).toMatchObject({
+        expectHeaders(init, {
           authorization: "Bearer mgmt_session",
           "content-type": "application/json",
           "x-stream-jams-csrf": "csrf_session"
@@ -895,7 +887,7 @@ describe("createHttpManagementApi", () => {
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
       if (url === "/moderation/preview") {
         expect(init).toMatchObject({ method: "POST", body: JSON.stringify(input) });
-        expect(init?.headers).toMatchObject({
+        expectHeaders(init, {
           authorization: "Bearer mgmt_session",
           "content-type": "application/json",
           "x-stream-jams-csrf": "csrf_session"
@@ -956,9 +948,7 @@ describe("createHttpManagementApi", () => {
       }
 
       if (url === "/diagnostics/export?limit=2") {
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_session"
-        });
+        expectHeaders(init, { authorization: "Bearer mgmt_session" });
         return jsonResponse(exported);
       }
 
@@ -967,7 +957,7 @@ describe("createHttpManagementApi", () => {
           method: "POST",
           body: JSON.stringify({ limit: 2, runtimeLogLimit: 10, sinceHours: 1 })
         });
-        expect(init?.headers).toMatchObject({
+        expectHeaders(init, {
           authorization: "Bearer mgmt_session",
           "content-type": "application/json",
           "x-stream-jams-csrf": "csrf_session"
@@ -1003,9 +993,9 @@ describe("createHttpManagementApi", () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url === "/auth/management/sessions") return jsonResponse(managementSession());
-      expect(init?.headers).toMatchObject({ authorization: "Bearer mgmt_session" });
+      expectHeaders(init, { authorization: "Bearer mgmt_session" });
       if (url === "/management/assets/asset-1") {
-        expect(init?.headers).toMatchObject({ "x-stream-jams-csrf": "csrf_session" });
+        expectHeaders(init, { "x-stream-jams-csrf": "csrf_session" });
         if (init?.method === "PATCH") {
           expect(init.body).toBe(JSON.stringify({ displayName: "Updated", tags: ["follow", "seasonal"] }));
           return jsonResponse({ ...item, displayName: "Updated", tags: ["follow", "seasonal"] });
@@ -1055,7 +1045,7 @@ describe("createHttpManagementApi", () => {
           method: "POST",
           body: JSON.stringify(keyRequest)
         });
-        expect(init?.headers).toMatchObject({
+        expectHeaders(init, {
           authorization: "Bearer mgmt_session",
           "content-type": "application/json",
           "x-stream-jams-csrf": "csrf_session"
@@ -1072,7 +1062,7 @@ describe("createHttpManagementApi", () => {
           method: "POST",
           body: JSON.stringify(keyRequest)
         });
-        expect(init?.headers).toMatchObject({
+        expectHeaders(init, {
           authorization: "Bearer mgmt_session",
           "content-type": "application/json",
           "x-stream-jams-csrf": "csrf_session"
@@ -1161,6 +1151,13 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
     },
     ...init
   });
+}
+
+function expectHeaders(init: RequestInit | undefined, expected: Readonly<Record<string, string>>): void {
+  const headers = new Headers(init?.headers);
+  for (const [name, value] of Object.entries(expected)) {
+    expect(headers.get(name)).toBe(value);
+  }
 }
 
 function variationAuthoringContext() {

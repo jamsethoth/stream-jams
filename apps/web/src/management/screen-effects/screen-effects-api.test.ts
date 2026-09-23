@@ -32,8 +32,9 @@ describe("createHttpScreenEffectsApi", () => {
       if (url === "/overlay-modules/screen-effects/config") return json({
         moduleId: "screen-effects", enabled: true, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
       });
-      expect(init?.headers).toMatchObject({ authorization: "Bearer mgmt-effects" });
-      if (init?.method !== undefined) expect(init.headers).toMatchObject({ "x-stream-jams-csrf": "csrf-effects" });
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer mgmt-effects");
+      if (init?.method !== undefined) expect(headers.get("x-stream-jams-csrf")).toBe("csrf-effects");
       if (url === "/overlay-modules/screen-effects/enabled") return json({
         moduleId: "screen-effects", enabled: true, config: {}, updatedAt: "2026-09-13T12:00:00.000Z"
       });
