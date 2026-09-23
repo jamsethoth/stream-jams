@@ -4,7 +4,6 @@ import {
   type AssetRepository,
   type MediaImportPipeline,
   type OverlayAccessService,
-  type OverlayPurpose,
   type OverlayRouteAccessRequest
 } from "@stream-jams/core";
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
@@ -15,6 +14,7 @@ import {
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
+import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
 
 export interface AssetRouteDependencies {
   readonly assetRepository: Pick<AssetRepository, "list" | "findById">;
@@ -263,41 +263,4 @@ function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRou
     targetProfileId: null,
     rawKey: params.overlayKey
   };
-}
-
-function readModuleOverlayParams(params: unknown): {
-  readonly moduleId: string;
-  readonly purpose: OverlayPurpose | null;
-  readonly overlayKey: string;
-} {
-  const candidate = params as {
-    readonly moduleId?: unknown;
-    readonly purpose?: unknown;
-    readonly overlayKey?: unknown;
-  };
-
-  return {
-    moduleId: typeof candidate.moduleId === "string" ? candidate.moduleId : "",
-    purpose: parseOverlayPurpose(candidate.purpose),
-    overlayKey: typeof candidate.overlayKey === "string" ? candidate.overlayKey : ""
-  };
-}
-
-function readUnifiedOverlayParams(params: unknown): {
-  readonly purpose: OverlayPurpose | null;
-  readonly overlayKey: string;
-} {
-  const candidate = params as {
-    readonly purpose?: unknown;
-    readonly overlayKey?: unknown;
-  };
-
-  return {
-    purpose: parseOverlayPurpose(candidate.purpose),
-    overlayKey: typeof candidate.overlayKey === "string" ? candidate.overlayKey : ""
-  };
-}
-
-function parseOverlayPurpose(value: unknown): OverlayPurpose | null {
-  return value === "live" || value === "test" ? value : null;
 }

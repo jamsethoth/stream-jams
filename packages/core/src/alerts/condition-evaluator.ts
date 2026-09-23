@@ -1,4 +1,5 @@
 import type { NormalizedStreamEvent } from "../events/types.js";
+import { readOwnPath } from "../internal/read-own-path.js";
 import type { AlertCondition } from "./types.js";
 
 export interface AlertConditionEvaluator {
@@ -35,28 +36,28 @@ function readConditionField(event: NormalizedStreamEvent, field: string): unknow
   switch (normalizedField) {
     case "tenure":
     case "tenureMonths":
-      return readPath(event, "streakMonths");
+      return readOwnPath(event, "streakMonths");
     case "giftCount":
-      return readPath(event, "amount");
+      return readOwnPath(event, "amount");
     case "raidViewers":
     case "cheerAmount":
-      return readPath(event, "amount");
+      return readOwnPath(event, "amount");
     case "channelPointReward":
-      return readPath(event, "rewardId");
+      return readOwnPath(event, "rewardId");
     case "hypeTrainLevel":
-      return readPath(event, "level");
+      return readOwnPath(event, "level");
     case "hypeTrainProgress":
-      return readPath(event, "progress");
+      return readOwnPath(event, "progress");
     case "pollVotes":
-      return readPath(event, "totalVotes");
+      return readOwnPath(event, "totalVotes");
     case "predictionPoints":
-      return readPath(event, "totalPoints");
+      return readOwnPath(event, "totalPoints");
     case "terminalStatus":
-      return readPath(event, "status");
+      return readOwnPath(event, "status");
     case "streamType":
-      return readPath(event, "streamType");
+      return readOwnPath(event, "streamType");
     default:
-      return readPath(event, normalizedField);
+      return readOwnPath(event, normalizedField);
   }
 }
 
@@ -96,24 +97,4 @@ function evaluateRange(actual: unknown, expected: AlertCondition["value"]): bool
   }
 
   return actual >= expected[0] && actual <= expected[1];
-}
-
-function readPath(value: unknown, path: string): unknown {
-  if (path.length === 0) {
-    return undefined;
-  }
-
-  return path.split(".").reduce<unknown>((current, segment) => {
-    if (current === null || current === undefined || segment.length === 0) {
-      return undefined;
-    }
-
-    if (typeof current !== "object") {
-      return undefined;
-    }
-
-    return Object.prototype.hasOwnProperty.call(current, segment)
-      ? (current as Record<string, unknown>)[segment]
-      : undefined;
-  }, value);
 }

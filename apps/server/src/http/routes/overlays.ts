@@ -4,7 +4,6 @@ import {
   type OverlayAccessService,
   type OverlayCompositionService,
   type OverlayModuleRegistry,
-  type OverlayPurpose,
   type OverlayRouteAccessRequest
 } from "@stream-jams/core";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -14,6 +13,7 @@ import {
   parseOverlayTargetProfileQuery
 } from "../middleware/overlay-auth.js";
 import type { OverlayGateway, OverlayGatewaySocket } from "../../websocket/overlay-gateway.js";
+import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
 import { sendHtml, type WebShellRenderer } from "./web-shell.js";
 
 const defaultOverlayId = "default";
@@ -46,7 +46,7 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
     "/overlay/modules/:moduleId/:purpose/:overlayKey/composition",
     { preHandler: modulePreHandler },
     async (request) => {
-      const params = readModuleParams(request.params);
+      const params = readModuleOverlayParams(request.params);
       const profile = parseOverlayTargetProfileQuery(request.query, true);
       if (params.purpose === null || !profile.valid) {
         throw new Error("Overlay purpose must be live or test");
@@ -70,7 +70,7 @@ export function registerOverlayRoutes(app: FastifyInstance, dependencies: Overla
     "/overlay/unified/:purpose/:overlayKey/composition",
     { preHandler: unifiedPreHandler },
     async (request) => {
-      const params = readUnifiedParams(request.params);
+      const params = readUnifiedOverlayParams(request.params);
       if (params.purpose === null) {
         throw new Error("Overlay purpose must be live or test");
       }
@@ -149,7 +149,7 @@ function toGatewaySocket(socket: WebSocket): OverlayGatewaySocket {
 }
 
 function resolveModuleOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
-  const params = readModuleParams(request.params);
+  const params = readModuleOverlayParams(request.params);
   const profile = parseOverlayTargetProfileQuery(request.query, true);
   if (params.moduleId === "" || params.overlayKey === "" || params.purpose === null || !profile.valid) {
     return null;
@@ -166,7 +166,7 @@ function resolveModuleOverlayAccessRequest(request: FastifyRequest): OverlayRout
 }
 
 function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRouteAccessRequest | null {
-  const params = readUnifiedParams(request.params);
+  const params = readUnifiedOverlayParams(request.params);
   const profile = parseOverlayTargetProfileQuery(request.query, false);
   if (params.overlayKey === "" || params.purpose === null || !profile.valid) {
     return null;
@@ -180,41 +180,4 @@ function resolveUnifiedOverlayAccessRequest(request: FastifyRequest): OverlayRou
     targetProfileId: null,
     rawKey: params.overlayKey
   };
-}
-
-function readModuleParams(params: unknown): {
-  readonly moduleId: string;
-  readonly purpose: OverlayPurpose | null;
-  readonly overlayKey: string;
-} {
-  const candidate = params as {
-    readonly moduleId?: unknown;
-    readonly purpose?: unknown;
-    readonly overlayKey?: unknown;
-  };
-
-  return {
-    moduleId: typeof candidate.moduleId === "string" ? candidate.moduleId : "",
-    purpose: parseOverlayPurpose(candidate.purpose),
-    overlayKey: typeof candidate.overlayKey === "string" ? candidate.overlayKey : ""
-  };
-}
-
-function readUnifiedParams(params: unknown): {
-  readonly purpose: OverlayPurpose | null;
-  readonly overlayKey: string;
-} {
-  const candidate = params as {
-    readonly purpose?: unknown;
-    readonly overlayKey?: unknown;
-  };
-
-  return {
-    purpose: parseOverlayPurpose(candidate.purpose),
-    overlayKey: typeof candidate.overlayKey === "string" ? candidate.overlayKey : ""
-  };
-}
-
-function parseOverlayPurpose(value: unknown): OverlayPurpose | null {
-  return value === "live" || value === "test" ? value : null;
 }
