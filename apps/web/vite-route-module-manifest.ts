@@ -5,13 +5,16 @@ export const routeModuleManifestFile = ".vite/route-modules.json";
 
 export function routeModuleManifestPlugin(): Plugin {
   let projectRoot = process.cwd();
+  let enabled = false;
 
   return {
     name: "stream-jams-route-module-manifest",
     configResolved(config) {
       projectRoot = config.root;
+      enabled = config.build.manifest === true;
     },
     generateBundle(_options, bundle) {
+      if (!enabled) return;
       const chunks = Object.values(bundle)
         .filter((output) => output.type === "chunk")
         .sort((left, right) => left.fileName.localeCompare(right.fileName));

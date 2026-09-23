@@ -140,7 +140,7 @@ Desktop worker, main-process, preload, and renderer separation enforces privileg
 
 ## Resolution Status
 
-All twelve findings were resolved on September 23, 2026. The implementation removed a net 314 non-test production source lines across `apps/server/src`, `apps/web/src`, and `packages/core/src`, excluding stories and test support. The result is smaller than the audit's approximate 400-line deletion estimate because the ownership fixes added focused services and the preview controller while deleting broader mixed-responsibility code.
+All twelve findings were resolved on September 23, 2026. The implementation removed a net 307 non-test production source lines across `apps/server/src`, `apps/web/src`, and `packages/core/src`, excluding stories and test support. The result is smaller than the audit's approximate 400-line deletion estimate because the ownership fixes added focused services, readiness retry handling, and the preview controller while deleting broader mixed-responsibility code.
 
 | Finding | Resolution |
 | --- | --- |
