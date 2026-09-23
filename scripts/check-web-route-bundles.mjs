@@ -42,6 +42,11 @@ export async function checkWebRouteBundles({
     operator: collectStaticGraph(manifest, routeKeys.operator),
     management: collectStaticGraph(manifest, routeKeys.management)
   };
+  const boundaryKeys = {
+    overlay: collectRouteDependencyGraph(manifest, routeKeys.overlay, bootstrapKey),
+    operator: collectRouteDependencyGraph(manifest, routeKeys.operator, bootstrapKey),
+    management: collectRouteDependencyGraph(manifest, routeKeys.management, bootstrapKey)
+  };
   const routes = Object.fromEntries(await Promise.all(Object.entries(graphKeys).map(async ([route, keys]) => {
     const files = [...new Set([...keys]
       .map((key) => manifest[key].file)
@@ -50,7 +55,11 @@ export async function checkWebRouteBundles({
     const gzipBytes = (await Promise.all(files.map(async (file) => (
       gzipSync(await readFile(join(buildDirectory, file))).byteLength
     )))).reduce((total, size) => total + size, 0);
-    return [route, { files, gzipBytes, sources: collectSources(manifest, keys, moduleManifest, files) }];
+    const sourceKeys = boundaryKeys[route] ?? keys;
+    const sourceFiles = [...new Set([...sourceKeys]
+      .map((key) => manifest[key].file)
+      .filter((file) => file.endsWith(".js")))];
+    return [route, { files, gzipBytes, sources: collectSources(manifest, sourceKeys, moduleManifest, sourceFiles) }];
   })));
 
   const errors = [];
@@ -131,6 +140,22 @@ function collectStaticGraph(manifest, startKey) {
     if (entry === undefined) throw new Error(`Web build manifest import ${key} is missing.`);
     visited.add(key);
     for (const importedKey of entry.imports ?? []) visit(importedKey);
+  };
+  visit(startKey);
+  return visited;
+}
+
+function collectRouteDependencyGraph(manifest, startKey, bootstrapKey) {
+  const visited = new Set();
+  const visit = (key) => {
+    if (visited.has(key)) return;
+    const entry = manifest[key];
+    if (entry === undefined) throw new Error(`Web manifest dependency ${key} is missing.`);
+    visited.add(key);
+    for (const importedKey of entry.imports ?? []) visit(importedKey);
+    if (key !== bootstrapKey) {
+      for (const importedKey of entry.dynamicImports ?? []) visit(importedKey);
+    }
   };
   visit(startKey);
   return visited;

@@ -154,7 +154,7 @@ All twelve findings were resolved on September 23, 2026. The implementation remo
 | R8 | `e86c1e4` removed the mandatory no-op transcoder seam; validated bytes now proceed directly to metadata probing and storage. |
 | R9 | `ebfc9f0` removed the disconnected canvas-fit and editor arrow-movement implementations while retaining production behavior coverage. |
 | R10 | `c3c6e28` added one own-property path reader and one overlay route-parameter module used by both prior consumers. |
-| R11 | `d45357a` split the browser bootstrap into route-specific dynamic graphs and added gzip budgets. The final gate combines the Vite manifest with a build-emitted Rollup chunk-module inventory so folded management/editor imports cannot evade route-boundary checks. Current totals are 67.36 KiB bootstrap, 121.15 KiB overlay, 120.39 KiB operator, and 216.69 KiB management; `e38a192` made the surface own its overlay stylesheet after Storybook exposed the isolated-render dependency. |
+| R11 | `d45357a` split the browser bootstrap into route-specific dynamic graphs and added gzip budgets. The final gate combines the Vite manifest with a build-emitted Rollup chunk-module inventory and follows route-owned static and dynamic imports, so folded or lazy management/editor imports cannot evade route-boundary checks. Current totals are 67.35 KiB bootstrap, 121.15 KiB overlay, 120.38 KiB operator, and 216.70 KiB management; `e38a192` made the surface own its overlay stylesheet after Storybook exposed the isolated-render dependency. |
 | R12 | `ebfc9f0` removed the unused direct web `tslib` declaration and its lockfile entry. |
 
 The completion search confirms one Alert layer projector, one shared management transport, one production management security pre-handler, one runtime logger, explicit production server dependencies, one disposable Alert preview owner, one shared own-property reader, one shared overlay-parameter module, and route-isolated web bundles. The removed transcoder, disconnected geometry helpers, legacy management façade, bearer-only security gate, and direct web `tslib` declaration have no source or manifest references.
@@ -166,7 +166,7 @@ The completion search confirms one Alert layer projector, one shared management 
 | Locked dependency installation | Passed, lockfile already current |
 | `corepack.cmd pnpm lint` | Passed |
 | `corepack.cmd pnpm typecheck` | Passed |
-| `corepack.cmd pnpm test` | Passed: 249 Vitest files, 2,146 tests; 13 additional Node script tests |
+| `corepack.cmd pnpm test` | Passed: 249 Vitest files, 2,146 tests; 14 additional Node script tests |
 | `corepack.cmd pnpm build` | Passed, including the four route bundle budgets above |
 | `corepack.cmd pnpm build-storybook` | Passed; Storybook tool-bundle advisories remain outside the production route budgets |
 | `corepack.cmd pnpm test:storybook:ci` | Passed: 23 suites, 239 tests; the deprecated Story Store warning remains tracked as BL-035 |

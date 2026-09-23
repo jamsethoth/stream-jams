@@ -57,6 +57,21 @@ test("rejects a folded management import from a real Vite overlay chunk", async 
   );
 });
 
+test("rejects a management module dynamically imported by the overlay route", async () => {
+  const manifest = validManifest();
+  manifest["src/overlay/OverlayApp.tsx"].dynamicImports = ["src/management/lazy.ts"];
+  manifest["src/management/lazy.ts"] = {
+    file: "assets/management-lazy.js",
+    src: "src/management/lazy.ts"
+  };
+  const fixture = await createFixture(manifest);
+
+  await assert.rejects(
+    checkWebRouteBundles({ buildDirectory: fixture }),
+    /Overlay route includes management source src\/management\/lazy\.ts/u
+  );
+});
+
 test("rejects a route graph above its gzip budget", async () => {
   const fixture = await createFixture(validManifest());
 
