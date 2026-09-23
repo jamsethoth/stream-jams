@@ -5,7 +5,7 @@ import {
 } from "@stream-jams/core";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createOverlayOutputManagementRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { InMemoryOverlayAccessKeyRepository, LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import {

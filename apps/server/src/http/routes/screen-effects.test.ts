@@ -4,7 +4,7 @@ import {
   type ScreenEffectDocument
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createScreenEffectRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   EffectDefinitionNotFoundError,

@@ -47,7 +47,7 @@ import {
   registerScreenEffectRoutes,
   type ScreenEffectRouteDependencies
 } from "./http/routes/screen-effects.js";
-import { registerWebShellRoutes, type WebShellRenderer } from "./http/routes/web-shell.js";
+import { registerWebShellRoutes, type WebShellRouteDependencies } from "./http/routes/web-shell.js";
 import { createRedactor } from "./modules/security/redactor.js";
 
 export interface ServerErrorLogEntry {
@@ -60,284 +60,76 @@ export interface ServerErrorLogEntry {
   readonly error: unknown;
 }
 
-export interface ServerAppDependencies
-  extends Partial<ServerConfigRouteDependencies>,
-    Partial<DesktopConfigRouteDependencies>,
-    Partial<AudioOutputRouteDependencies>,
-    Partial<SurfaceSettingsRouteDependencies>,
-    Partial<ConfigurationBackupRouteDependencies>,
-    Partial<ManagementSessionRouteDependencies>,
-    Partial<ManagementUiRouteDependencies>,
-    Partial<ModerationRouteDependencies>,
-    Partial<DiagnosticsRouteDependencies>,
-    Partial<OverlayModuleRouteDependencies>,
-    Partial<OverlayOutputManagementRouteDependencies>,
-    Partial<OverlayRouteDependencies>,
-    Partial<AssetRouteDependencies>,
-    Partial<AlertRuleRouteDependencies>,
-    Partial<AlertCollectionRouteDependencies>,
-    Partial<PlaybackRouteDependencies>,
-    Partial<PlaybackOperationsRouteDependencies>,
-    Partial<TtsRouteDependencies>,
-    Partial<TwitchAuthRouteDependencies>,
-    Partial<TwitchEventSubRouteDependencies>,
-    Partial<TwitchRewardCatalogRouteDependencies>,
-    Partial<StreamerBotSubscriptionRouteDependencies>,
-    Partial<ScreenEffectRouteDependencies> {
+export interface BaseServerAppOptions {
   readonly metadata: ServerAppMetadata;
-  readonly webBuildDirectory?: string;
-  readonly webShellRenderer?: WebShellRenderer;
   readonly generateServerErrorId?: () => string;
   readonly serverErrorLogger?: (entry: ServerErrorLogEntry) => void;
 }
 
-export function createServerApp(dependencies: ServerAppDependencies): FastifyInstance {
-  const app = Fastify({
-    logger: false
-  });
-  registerServerErrorHandler(app, dependencies);
+export type ProductionServerAppDependencies = BaseServerAppOptions
+  & ServerConfigRouteDependencies
+  & DesktopConfigRouteDependencies
+  & AudioOutputRouteDependencies
+  & SurfaceSettingsRouteDependencies
+  & ConfigurationBackupRouteDependencies
+  & ManagementSessionRouteDependencies
+  & ManagementUiRouteDependencies
+  & ModerationRouteDependencies
+  & DiagnosticsRouteDependencies
+  & OverlayModuleRouteDependencies
+  & OverlayOutputManagementRouteDependencies
+  & Omit<OverlayRouteDependencies, "webShellRenderer">
+  & AssetRouteDependencies
+  & AlertRuleRouteDependencies
+  & AlertCollectionRouteDependencies
+  & PlaybackRouteDependencies
+  & PlaybackOperationsRouteDependencies
+  & TtsRouteDependencies
+  & TwitchAuthRouteDependencies
+  & TwitchEventSubRouteDependencies
+  & TwitchRewardCatalogRouteDependencies
+  & StreamerBotSubscriptionRouteDependencies
+  & ScreenEffectRouteDependencies
+  & WebShellRouteDependencies;
 
-  registerHealthRoutes(app, dependencies.metadata);
-  if (dependencies.surfaceSettingsService !== undefined) {
-    if (dependencies.managementAuthPreHandler === undefined || dependencies.managementRateLimitPreHandler === undefined) {
-      throw new Error("Overlay surface settings require management auth and rate-limit hooks");
-    }
-    registerSurfaceSettingsRoutes(app, { surfaceSettingsService: dependencies.surfaceSettingsService,
-      managementAuthPreHandler: dependencies.managementAuthPreHandler, managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler });
-  }
-  if (dependencies.audioOutputService !== undefined) {
-    if (dependencies.managementAuthPreHandler === undefined || dependencies.managementRateLimitPreHandler === undefined) {
-      throw new Error("Audio outputs require management auth and rate-limit hooks");
-    }
-    registerAudioOutputRoutes(app, {
-      audioOutputService: dependencies.audioOutputService,
-      managementAuthPreHandler: dependencies.managementAuthPreHandler,
-      managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
-    });
-  }
-  if (dependencies.desktopConfigService !== undefined) {
-    if (dependencies.managementAuthPreHandler === undefined || dependencies.managementRateLimitPreHandler === undefined) {
-      throw new Error("Desktop configuration requires management auth and rate-limit hooks");
-    }
-    registerDesktopConfigRoutes(app, {
-      desktopConfigService: dependencies.desktopConfigService,
-      managementAuthPreHandler: dependencies.managementAuthPreHandler,
-      managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler
-    });
-  }
-  const webShellRenderer = dependencies.webBuildDirectory === undefined
-    ? dependencies.webShellRenderer
-    : registerWebShellRoutes(app, {
-        webBuildDirectory: dependencies.webBuildDirectory,
-        ...(dependencies.webShellRenderer === undefined ? {} : { webShellRenderer: dependencies.webShellRenderer })
-      });
-
-  if (dependencies.managementSessionService !== undefined) {
-    if (dependencies.managementRateLimitPreHandler === undefined) {
-      throw new Error("Management session routes require a rate-limit hook");
-    }
-
-    registerManagementSessionRoutes(app, {
-      managementSessionService: dependencies.managementSessionService,
-      managementRateLimitPreHandler: dependencies.managementRateLimitPreHandler,
-      ...(dependencies.managementOriginPreHandler === undefined
-        ? {}
-        : { managementOriginPreHandler: dependencies.managementOriginPreHandler })
-    });
-  }
-
-  if (dependencies.managementOverviewService !== undefined) {
-    if (!hasManagementUiRouteDependencies(dependencies)) {
-      throw new Error("Management UI routes require query service, management auth, and rate-limit hooks");
-    }
-
-    registerManagementUiRoutes(app, dependencies);
-  }
-
-  if (dependencies.configurationBackupService !== undefined) {
-    if (!hasConfigurationBackupRouteDependencies(dependencies)) {
-      throw new Error("Configuration backup routes require service, management auth, and rate-limit hooks");
-    }
-    registerConfigurationBackupRoutes(app, dependencies);
-  }
-
-  if (dependencies.moderationService !== undefined) {
-    if (!hasModerationRouteDependencies(dependencies)) {
-      throw new Error("Moderation routes require service, management auth, and rate-limit hooks");
-    }
-
-    registerModerationRoutes(app, dependencies);
-  }
-
-  if (dependencies.diagnosticsService !== undefined) {
-    if (!hasDiagnosticsRouteDependencies(dependencies)) {
-      throw new Error("Diagnostics routes require service, management auth, and rate-limit hooks");
-    }
-
-    registerDiagnosticsRoutes(app, dependencies);
-  }
-
-  if (dependencies.alertService !== undefined) {
-    if (!hasAlertRouteDependencies(dependencies)) {
-      throw new Error("Alert routes require alert service, management auth, and rate-limit hooks");
-    }
-
-    registerAlertCollectionRoutes(app, dependencies);
-    registerAlertRoutes(app, dependencies);
-  }
-
-  if (
-    dependencies.assetRepository !== undefined ||
-    dependencies.mediaImportPipeline !== undefined ||
-    dependencies.assetStore !== undefined
-  ) {
-    if (!hasAssetRouteDependencies(dependencies)) {
-      throw new Error("Asset routes require repository, import pipeline, asset store, management auth, and rate-limit hooks");
-    }
-
-    registerAssetRoutes(app, dependencies);
-  }
-
-  if (dependencies.overlayCompositionService !== undefined) {
-    if (!hasOverlayRouteDependencies(dependencies) || webShellRenderer === undefined) {
-      throw new Error("Overlay routes require access service, composition service, module registry, and web shell renderer");
-    }
-
-    registerOverlayRoutes(app, {
-      ...dependencies,
-      webShellRenderer
-    });
-  }
-
-  if (dependencies.overlayModuleConfigService !== undefined) {
-    if (!hasOverlayModuleRouteDependencies(dependencies)) {
-      throw new Error("Overlay module routes require registry, config service, management auth, and rate-limit hooks");
-    }
-
-    registerOverlayModuleRoutes(app, dependencies);
-  }
-
-  if (dependencies.overlayOutputManagementService !== undefined) {
-    if (!hasOverlayOutputManagementRouteDependencies(dependencies)) {
-      throw new Error("Overlay output management routes require service, gateway, management auth, and rate-limit hooks");
-    }
-
-    registerOverlayOutputManagementRoutes(app, dependencies);
-  }
-
-  if (dependencies.playbackCoordinator !== undefined) {
-    if (!hasPlaybackRouteDependencies(dependencies)) {
-      throw new Error("Playback routes require coordinator, management auth, and rate-limit hooks");
-    }
-
-    registerPlaybackRoutes(app, dependencies);
-  }
-
-  if (dependencies.playbackOperationsService !== undefined) {
-    if (!hasPlaybackOperationsRouteDependencies(dependencies)) {
-      throw new Error("Playback operations routes require service, management auth, and rate-limit hooks");
-    }
-    registerPlaybackOperationsRoutes(app, dependencies);
-  }
-
-  if (dependencies.effectManagementService !== undefined) {
-    if (!hasScreenEffectRouteDependencies(dependencies)) {
-      throw new Error("Screen Effects routes require service, management auth, and rate-limit hooks");
-    }
-    registerScreenEffectRoutes(app, dependencies);
-  }
-
-  if (dependencies.ttsService !== undefined) {
-    if (!hasTtsRouteDependencies(dependencies)) {
-      throw new Error("TTS routes require service, management auth, and rate-limit hooks");
-    }
-
-    registerTtsRoutes(app, dependencies);
-  }
-
-  if (dependencies.twitchAuthService !== undefined) {
-    if (!hasTwitchAuthRouteDependencies(dependencies)) {
-      throw new Error("Twitch auth routes require service, management auth, and rate-limit hooks");
-    }
-
-    registerTwitchAuthRoutes(app, dependencies);
-  }
-
-  if (dependencies.twitchEventSubStatusService !== undefined) {
-    if (!hasTwitchEventSubRouteDependencies(dependencies)) {
-      throw new Error("Twitch EventSub routes require service, management auth, and rate-limit hooks");
-    }
-
-    registerTwitchEventSubRoutes(app, dependencies);
-  }
-
-  if (dependencies.twitchRewardCatalogService !== undefined) {
-    if (!hasTwitchRewardCatalogRouteDependencies(dependencies)) {
-      throw new Error("Twitch reward catalog routes require service, management auth, and rate-limit hooks");
-    }
-
-    registerTwitchRewardCatalogRoutes(app, dependencies);
-  }
-
-  if (dependencies.streamerBotSubscriptionService !== undefined) {
-    if (!hasStreamerBotSubscriptionRouteDependencies(dependencies)) {
-      throw new Error("Streamer.bot subscription routes require service, management auth, and rate-limit hooks");
-    }
-    registerStreamerBotSubscriptionRoutes(app, dependencies);
-  }
-
-  if (dependencies.serverConfigService !== undefined) {
-    if (!hasConfigRouteProtection(dependencies)) {
-      throw new Error("Config routes require management auth and rate-limit hooks");
-    }
-
-    registerConfigRoutes(app, dependencies);
-  }
-
+export function createBaseServerApp(options: BaseServerAppOptions): FastifyInstance {
+  const app = Fastify({ logger: false });
+  registerServerErrorHandler(app, options);
+  registerHealthRoutes(app, options.metadata);
   return app;
 }
 
-function hasModerationRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & ModerationRouteDependencies {
-  return (
-    dependencies.moderationService !== undefined &&
-    dependencies.runConfigurationMutation !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
+export function createServerApp(dependencies: ProductionServerAppDependencies): FastifyInstance {
+  const app = createBaseServerApp(dependencies);
 
-function hasManagementUiRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & ManagementUiRouteDependencies {
-  return (
-    dependencies.managementOverviewService !== undefined &&
-    dependencies.providerManagementService !== undefined &&
-    dependencies.alertSetManagementService !== undefined &&
-    dependencies.alertEditorService !== undefined &&
-    dependencies.managementAssetLibraryService !== undefined &&
-    dependencies.reportAlertEditorError !== undefined &&
-    dependencies.getDiagnosticsWorkspace !== undefined &&
-    dependencies.getConfigurationBackupSummary !== undefined &&
-    dependencies.openDataFolder !== undefined &&
-    dependencies.clearOldLogs !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
+  registerSurfaceSettingsRoutes(app, dependencies);
+  registerAudioOutputRoutes(app, dependencies);
+  registerDesktopConfigRoutes(app, dependencies);
+  const webShellRenderer = registerWebShellRoutes(app, dependencies);
+  registerManagementSessionRoutes(app, dependencies);
+  registerManagementUiRoutes(app, dependencies);
+  registerConfigurationBackupRoutes(app, dependencies);
+  registerModerationRoutes(app, dependencies);
+  registerDiagnosticsRoutes(app, dependencies);
+  registerAlertCollectionRoutes(app, dependencies);
+  registerAlertRoutes(app, dependencies);
+  registerAssetRoutes(app, dependencies);
+  registerOverlayRoutes(app, { ...dependencies, webShellRenderer });
+  registerOverlayModuleRoutes(app, dependencies);
+  registerOverlayOutputManagementRoutes(app, dependencies);
+  registerPlaybackRoutes(app, dependencies);
+  registerPlaybackOperationsRoutes(app, dependencies);
+  registerScreenEffectRoutes(app, dependencies);
+  registerTtsRoutes(app, dependencies);
+  registerTwitchAuthRoutes(app, dependencies);
+  registerTwitchEventSubRoutes(app, dependencies);
+  registerTwitchRewardCatalogRoutes(app, dependencies);
+  registerStreamerBotSubscriptionRoutes(app, dependencies);
+  registerConfigRoutes(app, dependencies);
 
-function hasConfigurationBackupRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & ConfigurationBackupRouteDependencies {
-  return (
-    dependencies.configurationBackupService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
+  return app;
 }
-
-function registerServerErrorHandler(app: FastifyInstance, dependencies: ServerAppDependencies): void {
+function registerServerErrorHandler(app: FastifyInstance, dependencies: BaseServerAppOptions): void {
   const generateServerErrorId = dependencies.generateServerErrorId ?? (() => `err_${randomUUID()}`);
   const logServerError = dependencies.serverErrorLogger ?? defaultServerErrorLogger;
 
@@ -401,158 +193,5 @@ function defaultServerErrorLogger(entry: ServerErrorLogEntry): void {
   console.error(
     `[${entry.errorId}] ${entry.code} ${entry.method} ${redactor.redactText(entry.url)} request=${entry.requestId} status=${entry.statusCode}`,
     entry.error
-  );
-}
-
-function hasDiagnosticsRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & DiagnosticsRouteDependencies {
-  return (
-    dependencies.diagnosticsService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasConfigRouteProtection(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & ServerConfigRouteDependencies {
-  return (
-    dependencies.managementAuthPreHandler !== undefined && dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasOverlayModuleRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & OverlayModuleRouteDependencies {
-  return (
-    dependencies.overlayModuleRegistry !== undefined &&
-    dependencies.overlayModuleConfigService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasOverlayRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & OverlayRouteDependencies {
-  return (
-    dependencies.overlayAccessService !== undefined &&
-    dependencies.overlayCompositionService !== undefined &&
-    dependencies.overlayModuleRegistry !== undefined
-  );
-}
-
-function hasOverlayOutputManagementRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & OverlayOutputManagementRouteDependencies {
-  return (
-    dependencies.overlayOutputManagementService !== undefined &&
-    dependencies.overlayGateway !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasAssetRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & AssetRouteDependencies {
-  return (
-    dependencies.assetRepository !== undefined &&
-    dependencies.mediaImportPipeline !== undefined &&
-    dependencies.assetStore !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasPlaybackRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & PlaybackRouteDependencies {
-  return (
-    dependencies.playbackCoordinator !== undefined &&
-    dependencies.legacyPlaybackOperationsService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasPlaybackOperationsRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & PlaybackOperationsRouteDependencies {
-  return (
-    dependencies.playbackOperationsService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasScreenEffectRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & ScreenEffectRouteDependencies {
-  return (
-    dependencies.effectManagementService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasTtsRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & TtsRouteDependencies {
-  return (
-    dependencies.ttsService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasTwitchAuthRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & TwitchAuthRouteDependencies {
-  return (
-    dependencies.twitchAuthService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasTwitchEventSubRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & TwitchEventSubRouteDependencies {
-  return (
-    dependencies.twitchEventSubStatusService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasTwitchRewardCatalogRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & TwitchRewardCatalogRouteDependencies {
-  return (
-    dependencies.twitchRewardCatalogService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasStreamerBotSubscriptionRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & StreamerBotSubscriptionRouteDependencies {
-  return (
-    dependencies.streamerBotSubscriptionService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
-  );
-}
-
-function hasAlertRouteDependencies(
-  dependencies: ServerAppDependencies
-): dependencies is ServerAppDependencies & AlertRuleRouteDependencies & AlertCollectionRouteDependencies {
-  return (
-    dependencies.alertService !== undefined &&
-    dependencies.managementAuthPreHandler !== undefined &&
-    dependencies.managementRateLimitPreHandler !== undefined
   );
 }

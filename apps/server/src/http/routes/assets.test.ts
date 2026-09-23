@@ -8,7 +8,7 @@ import {
   type AssetRepository
 } from "@stream-jams/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createAssetRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { LocalAssetStore } from "../../modules/assets/local-asset-store.js";
 import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";

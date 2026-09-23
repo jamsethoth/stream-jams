@@ -1,6 +1,6 @@
 import type { LogContext, Logger, TwitchCustomRewardCatalog } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createTwitchRewardCatalogRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   DefaultTwitchApiClient,

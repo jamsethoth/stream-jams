@@ -1,6 +1,6 @@
 import type { AppConfig, AppConfigUpdate, ConfigStore } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createConfigRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { ServerConfigService, type PortAvailabilityChecker } from "../../config/server-config-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";

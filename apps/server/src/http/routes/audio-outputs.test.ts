@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createAudioOutputRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { AudioOutputService } from "../../modules/audio/audio-output-service.js";
 import { SqliteAudioOutputRouteRepository } from "../../modules/audio/sqlite-audio-output-route-repository.js";
 import { createInMemoryStreamJamsDatabase, runInTransaction } from "../../modules/db/database.js";

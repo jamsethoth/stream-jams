@@ -5,7 +5,7 @@ import {
   compatibilityAlertTextBoxStyle,
   compatibilityAlertTextStyle
 } from "@stream-jams/core";
-import { createServerApp, type ServerAppDependencies } from "../../app.js";
+import { createManagementUiRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   createLocalManagementRateLimitPreHandler,
@@ -806,7 +806,7 @@ async function createApp() {
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     generateServerErrorId: () => "err_settings_maintenance",
     serverErrorLogger: vi.fn()
-  } as unknown as ServerAppDependencies;
+  } as unknown as Parameters<typeof createServerApp>[0];
 
   return {
     app: createServerApp(dependencies),

@@ -7,7 +7,7 @@ import type {
   UnifiedOutputRequest
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createOverlayRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 import { OverlayGateway } from "../../websocket/overlay-gateway.js";
 

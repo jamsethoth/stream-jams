@@ -10,7 +10,12 @@ import type {
   UnifiedOutputRequest
 } from "@stream-jams/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createServerApp, type ServerErrorLogEntry } from "../../app.js";
+import type { ServerErrorLogEntry } from "../../app.js";
+import {
+  createWebShellAssetRouteTestApp,
+  createWebShellOverlayRouteTestApp,
+  createWebShellRouteTestApp
+} from "./test-support/route-test-app.js";
 import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 
 const temporaryDirectories: string[] = [];
@@ -22,7 +27,7 @@ afterEach(async () => {
 describe("web shell routes", () => {
   it("serves manifest-driven management shell assets and redirects root to /manage", async () => {
     const webBuildDirectory = await createWebBuildFixture();
-    const app = createServerApp({
+    const app = createWebShellAssetRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"
@@ -115,7 +120,7 @@ describe("web shell routes", () => {
     const collidingAssetDirectory = join(webBuildDirectory, "assets", "asset_1");
     await mkdir(collidingAssetDirectory, { recursive: true });
     await writeFile(join(collidingAssetDirectory, "file"), "static route must not bypass auth", "utf8");
-    const app = createServerApp({
+    const app = createWebShellAssetRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"
@@ -154,7 +159,7 @@ describe("web shell routes", () => {
   it("returns a safe error envelope and logs details when the web build is unavailable", async () => {
     const webBuildDirectory = await createTemporaryDirectory();
     const serverErrors: ServerErrorLogEntry[] = [];
-    const app = createServerApp({
+    const app = createWebShellRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"
@@ -198,7 +203,7 @@ describe("web shell routes", () => {
       purpose: "live",
       scope: "module"
     });
-    const app = createServerApp({
+    const app = createWebShellOverlayRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"

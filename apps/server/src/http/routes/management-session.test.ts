@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { preHandlerHookHandler } from "fastify";
-import { createServerApp } from "../../app.js";
+import { createManagementSessionRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 

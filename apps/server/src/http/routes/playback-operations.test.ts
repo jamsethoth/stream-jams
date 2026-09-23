@@ -1,6 +1,6 @@
 import type { MergedOperationsSnapshot } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createPlaybackOperationsRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   PlaybackOperationsConflictError,

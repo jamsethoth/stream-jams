@@ -35,7 +35,7 @@ import {
   type SecretStore
 } from "@stream-jams/core";
 import type { FastifyInstance } from "fastify";
-import { createServerApp } from "../app.js";
+import { createServerApp, type ProductionServerAppDependencies } from "../app.js";
 import { createDefaultAppConfig, resolveConfigFilePath } from "../config/default-config.js";
 import { FileConfigStore } from "../config/file-config-store.js";
 import { ServerConfigService } from "../config/server-config-service.js";
@@ -1136,7 +1136,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       return config;
     }
   };
-  const app = createServerApp({
+  const serverDependencies = {
     surfaceSettingsService,
     metadata: {
       appName: "stream-jams",
@@ -1208,7 +1208,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         }
       });
     }
-  });
+  } satisfies ProductionServerAppDependencies;
+  const app = createServerApp(serverDependencies);
   registerManagementCorsPreflightRoute(app, managementOriginPolicy);
   cleanups.push(() => app.close());
   cleanups.push(() => {

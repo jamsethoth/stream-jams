@@ -1,281 +1,44 @@
-import { describe, expect, it } from "vitest";
-import { createServerApp } from "./app.js";
+import { describe, expect, it, vi } from "vitest";
+import { createBaseServerApp } from "./app.js";
 
-describe("createServerApp", () => {
+describe("createBaseServerApp", () => {
   it("returns health without binding a production port", async () => {
-    const app = createServerApp({
-      metadata: {
-        appName: "stream-jams",
-        version: "1.2.3"
-      }
+    const app = createBaseServerApp({
+      metadata: { appName: "stream-jams", version: "1.2.3" }
     });
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/health"
-    });
+    const response = await app.inject({ method: "GET", url: "/health" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      status: "ok",
-      app: "stream-jams",
-      version: "1.2.3"
-    });
+    expect(response.json()).toEqual({ status: "ok", app: "stream-jams", version: "1.2.3" });
     expect(response.headers["content-type"]).toContain("application/json");
   });
 
-  it("does not register config routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        serverConfigService: {
-          async getServerConfig() {
-            return {
-              host: "127.0.0.1",
-              port: 39187
-            };
-          },
-          async updateServerConfig() {
-            return {
-              host: "127.0.0.1",
-              port: 39187
-            };
-          }
-        }
-      })
-    ).toThrow("Config routes require management auth and rate-limit hooks");
-  });
+  it("keeps safe error responses and detailed server logging in the base factory", async () => {
+    const serverErrorLogger = vi.fn();
+    const app = createBaseServerApp({
+      metadata: { appName: "stream-jams", version: "1.2.3" },
+      generateServerErrorId: () => "err_base",
+      serverErrorLogger
+    });
+    app.get("/failure", async () => { throw new Error("sensitive failure detail"); });
 
-  it("does not register diagnostics routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        diagnosticsService: {
-          async getDiagnostics() {
-            throw new Error("not called");
-          },
-          async createExport() {
-            throw new Error("not called");
-          },
-          async createDebugExport() {
-            throw new Error("not called");
-          }
-        }
-      })
-    ).toThrow("Diagnostics routes require service, management auth, and rate-limit hooks");
-  });
+    const response = await app.inject({ method: "GET", url: "/failure" });
 
-  it("does not register alert routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        alertService: {
-          async listCollections() {
-            return [];
-          },
-          async createCollection() {
-            throw new Error("not called");
-          },
-          async updateCollection() {
-            throw new Error("not called");
-          },
-          async setCollectionEnabled() {
-            throw new Error("not called");
-          },
-          async deleteCollection() {},
-          async listRules() {
-            return [];
-          },
-          async createRule() {
-            throw new Error("not called");
-          },
-          async updateRule() {
-            throw new Error("not called");
-          },
-          async setRuleEnabled() {
-            throw new Error("not called");
-          },
-          async deleteRule() {},
-          async createVariant() {
-            throw new Error("not called");
-          },
-          async saveVariant() {
-            throw new Error("not called");
-          },
-          async deleteVariant() {
-            throw new Error("not called");
-          },
-          async getActivationState() {
-            return {
-              enabledCollectionIds: [],
-              disabledRuleIds: []
-            };
-          },
-          async listActiveRules() {
-            return [];
-          }
-        }
-      })
-    ).toThrow("Alert routes require alert service, management auth, and rate-limit hooks");
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        id: "err_base",
+        message: "A server error occurred. Use the error ID to find details in backend logs."
+      }
+    });
+    expect(response.body).not.toContain("sensitive failure detail");
+    expect(serverErrorLogger).toHaveBeenCalledWith(expect.objectContaining({
+      errorId: "err_base",
+      code: "INTERNAL_SERVER_ERROR",
+      method: "GET",
+      url: "/failure"
+    }));
   });
-
-  it("does not register asset routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        assetRepository: {
-          async list() {
-            return [];
-          },
-          async findById() {
-            return null;
-          }
-        },
-        mediaImportPipeline: {
-          async importMedia() {
-            throw new Error("not called");
-          }
-        },
-        assetStore: {
-          async read() {
-            throw new Error("not called");
-          }
-        }
-      })
-    ).toThrow("Asset routes require repository, import pipeline, asset store, management auth, and rate-limit hooks");
-  });
-
-  it("does not register playback routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        playbackCoordinator: {
-          getSnapshot() {
-            throw new Error("not called");
-          }
-        }
-      })
-    ).toThrow("Playback routes require coordinator, management auth, and rate-limit hooks");
-  });
-
-  it("does not register overlay module routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        overlayModuleRegistry: {
-          listModules() {
-            return [];
-          }
-        },
-        overlayModuleConfigService: {
-          async getModuleConfig() {
-            throw new Error("not called");
-          },
-          async saveModuleConfig() {
-            throw new Error("not called");
-          },
-          async setModuleEnabled() {
-            throw new Error("not called");
-          }
-        }
-      })
-    ).toThrow("Overlay module routes require registry, config service, management auth, and rate-limit hooks");
-  });
-  it("does not register TTS routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        ttsService: {
-          async listProviders() {
-            return [];
-          },
-          async testProvider() {
-            throw new Error("not called");
-          }
-        }
-      })
-    ).toThrow("TTS routes require service, management auth, and rate-limit hooks");
-  });
-
-  it("does not register Twitch auth routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        twitchAuthService: {
-          async getStatus() {
-            throw new Error("not called");
-          },
-          async createConnectionStart() {
-            throw new Error("not called");
-          },
-          async pollConnection() {
-            throw new Error("not called");
-          },
-          async refreshConnectedAccount() {
-            throw new Error("not called");
-          },
-          async disconnect() {
-            throw new Error("not called");
-          }
-        }
-      })
-    ).toThrow("Twitch auth routes require service, management auth, and rate-limit hooks");
-  });
-
-  it("does not register Twitch EventSub routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        twitchEventSubStatusService: {
-          getStatus() {
-            throw new Error("not called");
-          }
-        }
-      })
-    ).toThrow("Twitch EventSub routes require service, management auth, and rate-limit hooks");
-  });
-
-  it("does not register Twitch reward catalog routes without management auth and rate-limit hooks", () => {
-    expect(() =>
-      createServerApp({
-        metadata: {
-          appName: "stream-jams",
-          version: "1.2.3"
-        },
-        twitchRewardCatalogService: {
-          async listCustomRewards() {
-            return { rewards: [] };
-          }
-        }
-      })
-    ).toThrow("Twitch reward catalog routes require service, management auth, and rate-limit hooks");
-  });
-
 });

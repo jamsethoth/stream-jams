@@ -5,7 +5,7 @@ import {
   type ModerationSettingsRepository
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createModerationRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { RuntimeMaintenanceGate } from "../../modules/backup/runtime-maintenance-gate.js";
 import {

@@ -8,7 +8,7 @@ import {
   type NormalizedStreamEvent
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createAlertRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { SqliteAlertRepository } from "../../modules/alerts/sqlite-alert-repository.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../../modules/db/database.js";
