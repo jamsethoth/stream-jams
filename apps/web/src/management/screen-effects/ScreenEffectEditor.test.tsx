@@ -250,6 +250,22 @@ describe("ScreenEffectEditor", () => {
     );
   });
 
+  it("restores focus after variant removal leaves the draft invalid", async () => {
+    const user = userEvent.setup();
+    const saved = effectWithWeightedVariant();
+    renderEditor({ api: effectApi(saved), create: false, document: saved });
+
+    await user.click(await screen.findByRole("button", { name: "Alternate variant" }));
+    await user.clear(screen.getByLabelText("Variant name"));
+    expect(screen.getByRole("button", { name: "Copy variant" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Default variant" }));
+    await user.click(screen.getByRole("button", { name: "Remove variant" }));
+    await user.click(within(screen.getByRole("dialog", { name: "Remove Default variant?" })).getByRole("button", { name: "Remove variant" }));
+
+    expect(screen.getByRole("button", { name: "New variant" })).toHaveFocus();
+  });
+
   it("marks unadvertised Streamer.bot bindings unavailable and omits them from new trigger choices", async () => {
     const saved = screenEffectDocumentSchema.parse({
       ...enabledEffect(false),

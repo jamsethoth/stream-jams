@@ -336,13 +336,13 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
             }));
             setSelectedVariantId(id);
             setInspectorTab("Variant");
-          }} type="button">New variant</button>
+          }} ref={variantRemovalFocusFallbackRef} type="button">New variant</button>
           <button className="button button--secondary" disabled={validation?.success !== true || document.variants.length >= 50} onClick={() => {
             const id = generateId("variant");
             edit((current) => copyScreenEffectVariant(current, selectedVariant.id, { id, name: `${selectedVariant.name} copy` }));
             setSelectedVariantId(id);
             setInspectorTab("Variant");
-          }} ref={variantRemovalFocusFallbackRef} type="button">Copy variant</button>
+          }} type="button">Copy variant</button>
           <button className="button button--danger-quiet" disabled={cannotRemoveEffectVariant(document, selectedVariant)} onClick={() => setVariantRemoval(selectedVariant)} type="button">Remove variant</button>
           <button className="button button--secondary" onClick={simulateWeights} type="button">Simulate 1,000 selections</button>
         </div>
