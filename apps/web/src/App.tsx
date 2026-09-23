@@ -1,5 +1,4 @@
 import "./App.css";
-import "./overlay/overlay.css";
 import type { AssetApi } from "./management/assets/AssetManager.js";
 import { createHttpAssetApi } from "./management/assets/asset-api.js";
 import { ManagementApp } from "./management/ManagementApp.js";
