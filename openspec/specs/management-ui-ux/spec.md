@@ -1,7 +1,7 @@
 # management-ui-ux Specification
 
 ## Purpose
-TBD - created by archiving change refactor-management-ui-ux. Update Purpose after archive.
+Define the local management navigation, setup, authoring, and accessible configuration workflows.
 ## Requirements
 ### Requirement: Management Is A Configuration Surface
 
@@ -21,7 +21,7 @@ The system SHALL present management as an offline setup and configuration surfac
 
 ### Requirement: Management Uses Stable Route-Based Navigation
 
-The system SHALL provide route-based navigation for `Home`, `Event sources`, `TTS providers`, `Modules > Alerts`, `Assets`, `Diagnostics`, and `Settings` using stable identifiers for nested resources.
+The system SHALL provide route-based navigation for `Home`, `Event sources`, `TTS providers`, `Modules > Alerts`, `Modules > Screen Effects`, `Assets`, `Diagnostics`, and `Settings` using stable identifiers for nested resources. Live playback operations SHALL remain on the separate `/operator` surface.
 
 #### Scenario: Deep link restores management context
 
@@ -144,3 +144,62 @@ The system SHALL use explicit domain saves, dirty-state guards, consistent confi
 - **WHEN** a user opens the focused alert editor below the supported canvas width
 - **THEN** the system shows a clear larger-screen requirement
 - **AND** management status and simple non-canvas edits remain readable on mobile
+
+### Requirement: Advanced Settings Use Progressive Disclosure
+The management UI SHALL keep common appearance and desktop behavior accessible while grouping advanced server, storage, audio-output, and overlay-surface workflows in keyboard-operable native disclosures with meaningful visible summaries.
+
+#### Scenario: Settings opens
+- **WHEN** the user opens Settings without a deep link or active error
+- **THEN** advanced disclosures are initially collapsed and their controlled form state survives collapse and reopen
+
+#### Scenario: Settings contains attention
+- **WHEN** a grouped workflow has an error or required attention
+- **THEN** that state remains discoverable and the affected controls can be reached without losing edits
+
+#### Scenario: Enabled desktop output is unavailable
+- **WHEN** a saved desktop surface is enabled and the desktop output capability is unavailable or failed
+- **THEN** the collapsed Overlay surfaces summary reports attention and opening it reveals the actionable desktop status
+
+#### Scenario: Unused desktop output is unavailable
+- **WHEN** desktop output is unavailable but every desktop surface is disabled
+- **THEN** the collapsed Overlay surfaces summary does not report a false warning
+
+### Requirement: Home Separates Setup And Alert Configuration
+Home SHALL report setup completion separately from a read-only summary of enabled alert configuration requiring attention.
+
+#### Scenario: Setup is complete but an enabled alert needs attention
+- **WHEN** all setup steps are complete and an enabled alert configuration needs review
+- **THEN** Home retains the setup-complete result and shows a separate Alert configuration section with the alert name and editor link
+
+#### Scenario: Configuration cannot be established
+- **WHEN** there is no active set, no enabled alert, a saved document is unavailable, or readiness is ambiguous
+- **THEN** Home describes the exact empty, unavailable, or review-needed state without claiming playback or delivery readiness
+
+### Requirement: Mobile Management Navigation Uses A Compact Disclosure
+At the existing compact-navigation breakpoint, management SHALL show a short product/current-section header and an initially collapsed Navigation button that reveals all existing destinations in one readable column while desktop navigation remains unchanged.
+
+#### Scenario: Mobile route opens directly
+- **WHEN** a management child route opens at the compact breakpoint
+- **THEN** the collapsed header identifies Stream Jams and the current section within approximately 120 CSS pixels of height
+- **AND** hidden navigation links are not keyboard reachable
+- **AND** the page has no horizontal overflow at 390 CSS pixels wide
+
+#### Scenario: Navigation disclosure is operated by keyboard
+- **WHEN** a keyboard user activates the Navigation button
+- **THEN** the button exposes `aria-expanded` and `aria-controls`
+- **AND** existing destinations appear in a single column with Modules and its children visibly grouped
+- **AND** Escape closes the disclosure and restores focus to the button without trapping focus
+
+#### Scenario: Mobile navigation succeeds
+- **WHEN** a user follows a destination and the guarded route transition succeeds
+- **THEN** the active route and `aria-current` update through the existing route boundary
+- **AND** the disclosure closes
+
+#### Scenario: Dirty navigation is canceled
+- **WHEN** an unsaved-change confirmation cancels a requested mobile route transition
+- **THEN** the active route does not change
+- **AND** the navigation disclosure and current route context remain available
+
+#### Scenario: Desktop navigation is rendered
+- **WHEN** management is wider than the compact breakpoint
+- **THEN** the existing sidebar hierarchy and every current destination remain visible without disclosure interaction

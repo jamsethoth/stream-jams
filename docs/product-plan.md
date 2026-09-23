@@ -4,6 +4,8 @@ Stream Jams is a local-first streaming overlay application for streamers who wan
 
 The initial product scope is Twitch alerting: listen for stream events, resolve matching alert rules, and display configured visual and audio elements on a fullscreen transparent overlay canvas.
 
+The MVP sections below retain the original delivery boundary. Current `main` also includes the approved Windows desktop/tray runtime, named-device audio, shared desktop overlays, Screen Effects and sets, media-synchronized duration, and local-media fades and gain. See the [documentation map](README.md) for implemented requirements and the [backlog](backlog.md) for work still pending.
+
 ## Goals
 
 - Run locally on the streamer's machine.
@@ -506,11 +508,11 @@ The canonical post-MVP list, current priorities, dependency triggers, rejected d
 - The local server binds to `127.0.0.1` by default.
 - Configurable port support is required.
 
-## Open Implementation Questions
+## Remaining Implementation Questions
 
-- Which Electron packaging, signing, installer, and auto-update toolchain should be used after the MVP stabilizes?
-- When Electron packaging is introduced, should packaged builds migrate from the Node keyring adapter to Electron `safeStorage`, and where should `safeStorage` ciphertext be persisted?
-- What exact file formats and size limits should be supported for media assets in the initial validation-only importer?
-- How much of the moderation/filtering system belongs in MVP versus post-MVP?
+- Which signing, installer, durable-release, and auto-update tooling should extend the implemented Electron Forge runnable-folder pipeline?
+- Should a future approved credential migration replace the current Node keyring adapter with Electron `safeStorage`, and where should its ciphertext be persisted?
 - Should future modules be loaded only from code shipped with the app, or should a plugin-style external module system be supported later?
 - Should the future music widget be integrated by sharing code from `stream-jams-music-widget`, embedding it as a module package, or communicating with it as a separate local service?
+
+Importer formats, signatures, and size limits are implemented in [`asset-validator.ts`](../packages/core/src/assets/asset-validator.ts). Durable moderation behavior is defined in the [Alert Safety specification](../openspec/specs/alert-moderation-management/spec.md); these are no longer open initial-implementation questions.

@@ -15,11 +15,13 @@ This file documents the management theme contract in `apps/web/src/App.css`. Age
 | `--color-border` | `#c9d0d8` | Standard borders and dividers |
 | `--color-border-strong` | `#8e99a6` | Emphasized controls and dialog borders |
 | `--color-accent` | `#087a6a` | Primary actions and selected navigation |
+| `--color-accent-hover` | `#056457` | Hovered primary actions |
 | `--color-accent-soft` | `#dcefeb` | Selected navigation background |
 | `--color-info` / `--color-info-soft` | `#1f5f99` / `#e5f0fa` | Informational status and errors |
 | `--color-positive` / `--color-positive-soft` | `#237a45` / `#e1f2e7` | Connected, ready, and successful states |
 | `--color-warning` / `--color-warning-soft` | `#8a5a00` / `#fff1cf` | Review and warning states |
 | `--color-negative` / `--color-negative-soft` | `#b4232d` / `#fae7e9` | Failure and destructive actions |
+| `--color-negative-hover` | `#941c25` | Hovered destructive actions |
 | `--color-focus` | `#0a74c9` | Keyboard focus outline |
 | `--color-on-action` | `#ffffff` | Text on primary and destructive action fills |
 | Overlay text | `#ffffff` | Browser-source text output |
@@ -41,16 +43,16 @@ Dark values are defined under `:root[data-theme="dark"]`. System mode uses the s
 | `18px` | Workspace gaps |
 | `20px` | Panel padding and subsection spacing |
 | `24px` | Header bottom margin and header gaps |
-| `32px` | Desktop shell padding |
+| `--space-page` (`28px`, `16px` at the compact breakpoint) | Shell page padding |
 
 ## Typography
 
 - Font stack: `Inter`, system UI, `Segoe UI`, sans-serif.
-- Management H1: `28px`, `1.2` line-height.
-- Panel H2: `22px`, `1.25` line-height.
-- Panel H3: `16px`, `1.25` line-height.
+- Management page heading (`.management-page-header h2`): `26px`, `1.25` line-height.
+- Operator H1: `28px`; shared modal heading: `20px`.
+- Other component heading sizes are defined in their scoped styles; reuse those selectors instead of assuming one global H2/H3 size.
 - Compact labels and table headings: `13px` to `14px`.
-- Overlay text: `32px`, `800` weight, `1.15` line-height, `overflow-wrap: anywhere`.
+- Overlay text uses the validated per-layer typography and box-style contract; `alert-text-style.ts` projects it to CSS. Do not impose one fixed font size or weight on every authored layer.
 - Letter spacing should stay `0`.
 
 ## Radius

@@ -1,7 +1,7 @@
 # normalized-twitch-events Specification
 
 ## Purpose
-TBD - created by archiving change add-normalized-twitch-event-types. Update Purpose after archive.
+Define provider-independent Twitch event identities, validated fields, matching, templates, and samples.
 ## Requirements
 ### Requirement: Expanded Canonical Twitch Event Catalog
 The system SHALL represent gift subscriptions, community gifts, Hype Train lifecycle phases, poll lifecycle phases, prediction lifecycle phases, and stream online/offline transitions as separate normalized Twitch-origin event types in addition to the existing canonical types.

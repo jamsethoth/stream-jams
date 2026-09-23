@@ -1,7 +1,7 @@
 # speakerbot-tts-provider Specification
 
 ## Purpose
-TBD - created by archiving change add-speakerbot-tts-provider. Update Purpose after archive.
+Define local Speaker.bot registration, server-side voice tests, and remote-trigger TTS playback.
 ## Requirements
 ### Requirement: Speaker.bot Provider Is Registered
 The system SHALL register Speaker.bot as a supported TTS provider for the local MVP.

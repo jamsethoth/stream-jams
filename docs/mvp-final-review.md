@@ -2,6 +2,8 @@
 
 **Review date:** 2026-07-20
 
+> Historical MVP review. The results and improvement opportunities below describe the repository on the review date, not current verification. Subsequent work implemented owned runtime shutdown (`runtime/cli-shutdown.ts` and `runtime/runtime-composition.ts` under `apps/server/src`), the Windows Electron package, private preload/IPC boundaries, and desktop security tests. See the [current runbook](mvp-runbook.md), [Windows desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md), and [documentation map](README.md). The unresolved native process-exit investigation remains BL-044 in the [backlog](backlog.md).
+
 ## Completion Audit
 
 The closed MVP specifications are implemented in the current branch. The final audit compared the archived changes, the two active completion candidates, the approved UX decisions, and the production runtime without promoting post-MVP backlog items into closure requirements.

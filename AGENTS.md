@@ -3,10 +3,11 @@
 ## Product And Architecture
 
 - Stream Jams is a local-first streaming overlay app. The MVP serves a React management UI, browser-source overlays, HTTP API, assets, and WebSockets from a local Node/Fastify service bound to `127.0.0.1` by default.
-- Browser-source URLs are the only MVP output. OBS WebSocket, native OBS plugins, LAN mode, cloud sync, Docker delivery, and packaged Electron delivery remain deferred unless an approved change says otherwise.
+- Current outputs include module-specific and unified browser-source URLs plus an opt-in Windows desktop overlay and explicitly selected local audio devices. The implemented Electron host provides a tray and an unsigned Windows x64 runnable folder with verified CI artifacts. OBS WebSocket, native OBS plugins, LAN mode, cloud sync, Docker delivery, installers, signing, and automatic updates remain deferred.
 - Monorepo boundaries:
   - `apps/server`: Fastify HTTP/WebSocket service and runtime composition.
   - `apps/web`: React/Vite management and overlay UIs.
+  - `apps/desktop`: Electron host, owned local service, tray, and private audio/overlay renderers.
   - `packages/core`: framework-independent contracts, schemas, and business logic.
   - `packages/test-support`: shared test helpers.
 - Package manifests, lockfile, TypeScript configs, and OpenSpec artifacts are authoritative for current versions and implemented scope; do not duplicate version facts here.
@@ -14,6 +15,7 @@
 ## Context Routing
 
 - Product scope: `docs/product-plan.md`.
+- Documentation map and historical-record policy: `docs/README.md`. Use current canonical specs and source for implemented behavior; dated plans and verification notes retain their original scope and evidence.
 - Canonical backlog: `docs/backlog.md`. Add new deferred work there first, link detailed rationale instead of duplicating status, attach an OpenSpec change when promoted, and remove the backlog row after implementation and spec sync complete.
 - MVP architecture and slice guidance: `docs/superpowers/plans/2026-05-21-stream-jams-mvp-first-pass.md`, `docs/superpowers/stream-jams-mvp-slice-autonomy-prompt.md`, and the relevant slice plan under `docs/superpowers/plans/`.
 - Frontend/UX source of truth: `docs/ai/frontend-agent-guide.md`; follow its routing to the UX spec, UI guidelines, design tokens, and overlay error rules.

@@ -1,7 +1,7 @@
 # alert-tts-configuration Specification
 
 ## Purpose
-TBD - created by archiving change add-speakerbot-tts-provider. Update Purpose after archive.
+Define per-alert TTS configuration, normalized template inputs, and safe failure reporting.
 ## Requirements
 ### Requirement: Alert Variants Can Configure TTS
 The system SHALL allow authorized management users to configure supported TTS behavior per alert variant.
@@ -24,3 +24,11 @@ The system SHALL log and display TTS failures without exposing secrets, local cr
 #### Scenario: Provider failure is redacted
 - **WHEN** a configured Speaker.bot TTS trigger fails
 - **THEN** diagnostics include provider, status, and safe message details without secret values
+
+### Requirement: Browser Speech Numeric Controls Explain Units
+Browser Speech volume and rate controls SHALL expose their unchanged normalized values with explicit units and associated explanatory guidance.
+
+#### Scenario: Speech safety values are edited
+- **WHEN** the user edits volume, minimum rate, or maximum rate
+- **THEN** labels read `Volume (0–1)`, `Minimum rate (×)`, and `Maximum rate (×)` with associated explanations for zero, one, half, and double speed
+- **AND** saving submits the same numeric typed payload and validation boundaries

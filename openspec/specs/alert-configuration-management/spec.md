@@ -794,7 +794,7 @@ Alert Sets and focused-editor navigation SHALL organize alert rows into collapsi
 
 #### Scenario: Canonical event has no alert
 - **WHEN** the canonical event catalog contains an event type with no stored default
-- **THEN** its collapsed event group remains available with zero counts
+- **THEN** its collapsed event group is available with zero counts when Show unused event types is enabled
 - **AND** it offers an Add alert action preselected to that event type
 
 #### Scenario: Stored event is unknown to the catalog
@@ -984,3 +984,120 @@ Each alert row SHALL keep Edit, Test saved, and Enable or Disable inline and SHA
 - **WHEN** an alert has a long name, validation summary, or multiple test profiles
 - **THEN** row content and actions wrap without hiding primary actions
 - **AND** default and variation rows retain their correct eligibility and disabled states
+
+### Requirement: Reward Conditions Use Catalog-Backed Readable Summaries
+Alert condition summaries SHALL use the existing typed local reward catalog once per page context and SHALL preserve stored reward identifiers.
+
+#### Scenario: Reward title is available
+- **WHEN** a stored reward identifier matches a loaded catalog entry
+- **THEN** the condition summary shows the reward title without changing the stored condition
+
+#### Scenario: Reward title is unavailable
+- **WHEN** the catalog cannot load or the stored identifier has no matching entry
+- **THEN** the condition summary shows `Unavailable reward` and retains the identifier in secondary diagnostic details
+
+### Requirement: Enabled Alert Attention Respects Rule And Route Semantics
+The server SHALL derive Home alert-configuration attention from enabled default and variation inventory entries, intended visual profiles, route intent, and existing validation results, while preserving the active overview's existing zero-enabled-rules boundary.
+
+#### Scenario: Enabled child variation needs attention
+- **WHEN** the default variant is disabled but an enabled child variation requires configuration review
+- **THEN** the alert appears in Home attention
+
+#### Scenario: Unused visual profile needs review
+- **WHEN** an enabled alert has one usable intended visual profile and an unused profile remains unreviewed
+- **THEN** the unused profile alone does not place the alert in attention
+
+#### Scenario: Route is device-only
+- **WHEN** an enabled alert routes only resolved device audio and has no intended visual output
+- **THEN** missing visual profiles alone do not mark the alert broken
+
+#### Scenario: Saved configuration cannot be read
+- **WHEN** an enabled alert document is missing, unreadable, or cannot be evaluated safely
+- **THEN** the summary reports attention or unavailable and never an all-clear
+
+#### Scenario: Editor readiness follows the current draft
+- **WHEN** an operator changes the enabled profiles, content, or output destinations in the alert editor
+- **THEN** readiness is derived from the current draft rather than retained inventory targets or saved validation issues
+
+#### Scenario: Saved editor facts are reconciled
+- **WHEN** an alert document saves successfully
+- **THEN** the editor refreshes saved set facts without discarding edits made while the save was in flight
+
+#### Scenario: Enabled content is empty
+- **WHEN** an enabled alert has no visible browser content and no resolved device audio
+- **THEN** Home and the editor require review instead of reporting configuration ready
+
+#### Scenario: Device-only audio is configured
+- **WHEN** an enabled alert has resolved device audio, no browser output, and no enabled visual profile
+- **THEN** Home and the editor do not require a visual profile solely for that route
+
+#### Scenario: Browser and device outputs are mixed
+- **WHEN** resolved audio targets a device and Browser Source while an enabled browser profile still needs review
+- **THEN** Home and the editor keep the browser-profile review requirement
+
+### Requirement: Configured Event Types Are Primary In Grouped Alert Surfaces
+Alert Sets and focused-editor navigation SHALL initially display event groups containing at least one configured alert and SHALL provide an explicit unchecked Show unused event types control that reveals the complete canonical catalog without changing stored alert data, selection, or drafts.
+
+#### Scenario: Configured and unused events are loaded
+- **WHEN** a set contains alerts for only some canonical event types
+- **THEN** the default grouped view shows each event with a stored default or variation
+- **AND** disabled-only and invalid configured groups remain visible with their warnings
+- **AND** unused canonical event groups remain hidden until Show unused event types is enabled
+
+#### Scenario: Search has no matches
+- **WHEN** search or filters match no configured alert after event visibility is determined from the unfiltered inventory
+- **THEN** the surface explains that no alerts match
+- **AND** it offers the existing filter-clearing action instead of treating configured groups as unused
+
+#### Scenario: Unused events are revealed
+- **WHEN** Show unused event types is enabled
+- **THEN** every canonical event group appears in catalog order
+- **AND** turning it off does not discard editor drafts or change the selected alert
+
+#### Scenario: Alert set is completely empty
+- **WHEN** a valid alert set contains no stored alerts
+- **THEN** the surface presents a concise create-alert action
+- **AND** it retains access to Show unused event types and the complete catalog
+
+#### Scenario: Alert is created in an unused event
+- **WHEN** creation succeeds for a formerly unused event type
+- **THEN** that event becomes visible in the default grouped view
+- **AND** the Add alert flow remains able to choose every supported canonical event type regardless of current visibility
+
+### Requirement: Alerts Support Media-Synchronized Duration
+The system SHALL let an Alert use `media` or `custom` duration mode and SHALL default newly created Alerts to `media` while treating an absent persisted mode as `custom`.
+
+#### Scenario: Longest visible timed layer wins
+- **WHEN** a Media-mode Alert references multiple visible audio or video assets
+- **THEN** its effective duration SHALL equal the longest positive stored duration up to 120000 milliseconds
+- **AND** images, GIFs, hidden layers, and TTS SHALL NOT contribute
+
+#### Scenario: Media duration is unavailable
+- **WHEN** no eligible Alert asset has positive stored duration
+- **THEN** the Alert SHALL use 5000 milliseconds
+- **AND** the editor SHALL show a fallback warning without changing the selected mode
+
+#### Scenario: Operator selects Custom
+- **WHEN** an operator selects Custom duration
+- **THEN** the editor SHALL enable the bounded duration field
+- **AND** preview, save, test, and live playback SHALL use that custom value
+
+### Requirement: Alert Editor Authors Local Audio Fades
+The system SHALL expose independent Fade in and Fade out controls for Alert audio layers and enabled video soundtracks.
+
+#### Scenario: Fade is enabled
+- **WHEN** an operator enables a previously disabled fade
+- **THEN** its editable duration SHALL default to 500 milliseconds
+- **AND** the unsaved preview SHALL apply the requested envelope
+
+#### Scenario: Legacy Alert is opened
+- **WHEN** a stored Alert lacks duration-mode or fade fields
+- **THEN** the editor SHALL present Custom duration and disabled fades while preserving its existing duration and volume
+
+### Requirement: Alert Editor Uses Percentage Media Volume
+The system SHALL present Alert audio-layer and enabled video-soundtrack volume as a percentage from 0% through 200% while persisting normalized gain from 0 through 2.
+
+#### Scenario: Operator amplifies local media
+- **WHEN** an operator sets an Alert media source to 200%
+- **THEN** preview and saved playback SHALL use normalized gain 2
+- **AND** the editor SHALL restore the value as 200%

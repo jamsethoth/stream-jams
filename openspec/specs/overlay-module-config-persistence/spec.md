@@ -1,7 +1,7 @@
 # overlay-module-config-persistence Specification
 
 ## Purpose
-TBD - created by archiving change persist-overlay-module-config. Update Purpose after archive.
+Define durable, schema-validated configuration and enablement for registered overlay modules.
 ## Requirements
 ### Requirement: Module Config Persists Across Restart
 The system SHALL persist overlay module enablement and schema-backed config in SQLite across local app restarts.

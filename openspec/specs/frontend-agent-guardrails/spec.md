@@ -1,7 +1,7 @@
 # frontend-agent-guardrails Specification
 
 ## Purpose
-TBD - created by archiving change add-frontend-agent-guardrails. Update Purpose after archive.
+Define repository guidance, production-component stories, accessibility checks, and frontend verification expectations.
 ## Requirements
 ### Requirement: Frontend Agent Guidance
 The repository SHALL provide durable frontend guidance that agents can use before changing `apps/web`.

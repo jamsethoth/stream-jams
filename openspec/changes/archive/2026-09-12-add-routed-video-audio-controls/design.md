@@ -4,7 +4,7 @@ The current `alert-audio-routing` specification deliberately keeps all alert vid
 
 ## Goals / Non-Goals
 
-Execution details: [routed video audio implementation plan](../../../docs/superpowers/plans/2026-09-08-routed-video-audio-controls.md).
+Execution details: [routed video audio implementation plan](../../../../docs/superpowers/plans/2026-09-08-routed-video-audio-controls.md).
 
 **Goals:** Explicit per-video soundtrack toggle and volume, silent migration of existing alerts, common item-wide destinations, coordinated media timing, reused components in each owning editor.
 
