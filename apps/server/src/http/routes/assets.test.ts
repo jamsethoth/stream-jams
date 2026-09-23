@@ -4,7 +4,6 @@ import { join } from "node:path";
 import {
   DefaultAssetValidator,
   DefaultMediaImportPipeline,
-  NoopMediaTranscodingStage,
   type AssetRecord,
   type AssetRepository
 } from "@stream-jams/core";
@@ -379,7 +378,6 @@ async function createAppWithAssets(options: {
     validator: new DefaultAssetValidator(),
     repository,
     store,
-    transcoder: new NoopMediaTranscodingStage(),
     probe: { inspect: async () => ({ durationMs: null }) },
     generateId: () => "asset_1",
     calculateChecksum: () => "sha256:test"

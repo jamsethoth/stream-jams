@@ -9,17 +9,6 @@ export interface MediaImportInput {
   readonly bytes: Uint8Array;
 }
 
-export interface MediaTranscodeInput extends MediaImportInput {
-  readonly mediaType: AssetMediaType;
-  readonly normalizedExtension: string;
-}
-
-export type MediaTranscodeOutput = MediaTranscodeInput;
-
-export interface MediaTranscodingStage {
-  transcode(input: MediaTranscodeInput): Promise<MediaTranscodeOutput>;
-}
-
 export interface MediaMetadataProbeInput {
   readonly mediaType: AssetMediaType;
   readonly mimeType: string;
@@ -52,7 +41,6 @@ export interface DefaultMediaImportPipelineOptions {
   readonly validator: AssetValidator;
   readonly repository: AssetRepository;
   readonly store: MediaAssetStore;
-  readonly transcoder: MediaTranscodingStage;
   readonly probe: MediaMetadataProbe;
   readonly generateId: () => string;
   readonly calculateChecksum: (bytes: Uint8Array) => string;
@@ -68,17 +56,10 @@ export class InvalidMediaImportError extends Error {
   }
 }
 
-export class NoopMediaTranscodingStage implements MediaTranscodingStage {
-  async transcode(input: MediaTranscodeInput): Promise<MediaTranscodeOutput> {
-    return input;
-  }
-}
-
 export class DefaultMediaImportPipeline implements MediaImportPipeline {
   readonly #validator: AssetValidator;
   readonly #repository: AssetRepository;
   readonly #store: MediaAssetStore;
-  readonly #transcoder: MediaTranscodingStage;
   readonly #probe: MediaMetadataProbe;
   readonly #generateId: () => string;
   readonly #calculateChecksum: (bytes: Uint8Array) => string;
@@ -87,7 +68,6 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
     this.#validator = options.validator;
     this.#repository = options.repository;
     this.#store = options.store;
-    this.#transcoder = options.transcoder;
     this.#probe = options.probe;
     this.#generateId = options.generateId;
     this.#calculateChecksum = options.calculateChecksum;
@@ -104,21 +84,21 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
       throw new InvalidMediaImportError(validation.reason ?? "Invalid media import");
     }
 
-    const transcoded = await this.#transcoder.transcode({
+    const accepted = {
       ...input,
       mediaType: validation.mediaType,
       normalizedExtension: validation.normalizedExtension
-    });
+    };
     const assetId = input.assetId ?? this.#generateId();
-    const checksum = this.#calculateChecksum(transcoded.bytes);
+    const checksum = this.#calculateChecksum(accepted.bytes);
     let durationMs: number | null = null;
-    if (transcoded.mediaType === "audio" || transcoded.mediaType === "video") {
+    if (accepted.mediaType === "audio" || accepted.mediaType === "video") {
       try {
         durationMs = (await this.#probe.inspect({
-          mediaType: transcoded.mediaType,
-          mimeType: transcoded.mimeType,
-          sizeBytes: transcoded.bytes.byteLength,
-          bytes: transcoded.bytes
+          mediaType: accepted.mediaType,
+          mimeType: accepted.mimeType,
+          sizeBytes: accepted.bytes.byteLength,
+          bytes: accepted.bytes
         })).durationMs;
       } catch {
         durationMs = null;
@@ -126,19 +106,19 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
     }
     const { storagePath } = await this.#store.write({
       assetId,
-      originalFileName: transcoded.originalFileName,
-      mediaType: transcoded.mediaType,
-      normalizedExtension: transcoded.normalizedExtension,
+      originalFileName: accepted.originalFileName,
+      mediaType: accepted.mediaType,
+      normalizedExtension: accepted.normalizedExtension,
       ...(input.assetId === undefined ? {} : { storageVersion: checksum }),
-      bytes: transcoded.bytes
+      bytes: accepted.bytes
     });
 
     return this.#repository.save({
       id: assetId,
-      originalFileName: transcoded.originalFileName,
-      mediaType: transcoded.mediaType,
-      mimeType: transcoded.mimeType,
-      sizeBytes: transcoded.bytes.byteLength,
+      originalFileName: accepted.originalFileName,
+      mediaType: accepted.mediaType,
+      mimeType: accepted.mimeType,
+      sizeBytes: accepted.bytes.byteLength,
       checksum,
       storagePath,
       durationMs

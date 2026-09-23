@@ -4,8 +4,7 @@ import type { AssetStorageWrite, MediaAssetStore } from "./media-import-pipeline
 import { describe, expect, it, vi } from "vitest";
 import {
   DefaultMediaImportPipeline,
-  InvalidMediaImportError,
-  NoopMediaTranscodingStage
+  InvalidMediaImportError
 } from "./media-import-pipeline.js";
 import { DefaultAssetValidator } from "./asset-validator.js";
 
@@ -14,16 +13,16 @@ describe("DefaultMediaImportPipeline", () => {
     const repository = new RecordingAssetRepository();
     const store = new RecordingMediaAssetStore();
     const generateId = vi.fn(() => "asset_1");
+    const calculateChecksum = vi.fn(() => "sha256:abc123");
     const pipeline = new DefaultMediaImportPipeline({
       validator: new DefaultAssetValidator(),
       repository,
       store,
-      transcoder: new NoopMediaTranscodingStage(),
       probe: { inspect: vi.fn(async () => ({ durationMs: null })) },
       generateId,
-      calculateChecksum: () => "sha256:abc123"
+      calculateChecksum
     });
-    const bytes = pngBytes;
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 
     await expect(
       pipeline.importMedia({
@@ -36,7 +35,7 @@ describe("DefaultMediaImportPipeline", () => {
       originalFileName: "Alert.PNG",
       mediaType: "image",
       mimeType: "image/png",
-      sizeBytes: pngBytes.byteLength,
+      sizeBytes: bytes.byteLength,
       checksum: "sha256:abc123",
       storagePath: "image/asset_1.png",
       durationMs: null
@@ -52,6 +51,8 @@ describe("DefaultMediaImportPipeline", () => {
     ]);
     expect(repository.records).toHaveLength(1);
     expect(generateId).toHaveBeenCalledOnce();
+    expect(calculateChecksum).toHaveBeenCalledWith(bytes);
+    expect(store.writes[0]?.bytes).toBe(bytes);
   });
 
   it("uses a supplied asset ID without generating a replacement ID", async () => {
@@ -62,7 +63,6 @@ describe("DefaultMediaImportPipeline", () => {
       validator: new DefaultAssetValidator(),
       repository,
       store,
-      transcoder: new NoopMediaTranscodingStage(),
       probe: { inspect: vi.fn(async () => ({ durationMs: null })) },
       generateId,
       calculateChecksum: () => "sha256:abc123"
@@ -91,7 +91,6 @@ describe("DefaultMediaImportPipeline", () => {
       validator: new DefaultAssetValidator(),
       repository,
       store,
-      transcoder: new NoopMediaTranscodingStage(),
       probe: { inspect: vi.fn(async () => ({ durationMs: null })) },
       generateId: () => "asset_1",
       calculateChecksum: () => "sha256:abc123"
@@ -111,19 +110,19 @@ describe("DefaultMediaImportPipeline", () => {
   it("probes normalized timed media and persists its duration", async () => {
     const repository = new RecordingAssetRepository();
     const probe = { inspect: vi.fn(async () => ({ durationMs: 4_321 })) };
+    const bytes = new Uint8Array([1, 2]);
     const pipeline = new DefaultMediaImportPipeline({
       validator: { validate: () => ({ accepted: true, reason: null, mediaType: "audio", normalizedExtension: ".mp3" }) },
       repository,
       store: new RecordingMediaAssetStore(),
-      transcoder: new NoopMediaTranscodingStage(),
       probe,
       generateId: () => "asset_audio",
       calculateChecksum: () => "sha256:audio"
     });
 
-    await expect(pipeline.importMedia({ originalFileName: "tone.mp3", mimeType: "audio/mpeg", bytes: new Uint8Array([1, 2]) }))
+    await expect(pipeline.importMedia({ originalFileName: "tone.mp3", mimeType: "audio/mpeg", bytes }))
       .resolves.toMatchObject({ durationMs: 4_321 });
-    expect(probe.inspect).toHaveBeenCalledWith(expect.objectContaining({ mediaType: "audio", sizeBytes: 2 }));
+    expect(probe.inspect).toHaveBeenCalledWith({ mediaType: "audio", mimeType: "audio/mpeg", sizeBytes: 2, bytes });
   });
 
   it("keeps a valid timed asset when metadata probing fails", async () => {
@@ -131,7 +130,6 @@ describe("DefaultMediaImportPipeline", () => {
       validator: { validate: () => ({ accepted: true, reason: null, mediaType: "video", normalizedExtension: ".mp4" }) },
       repository: new RecordingAssetRepository(),
       store: new RecordingMediaAssetStore(),
-      transcoder: new NoopMediaTranscodingStage(),
       probe: { inspect: vi.fn(async () => { throw new Error("bad metadata"); }) },
       generateId: () => "asset_video",
       calculateChecksum: () => "sha256:video"
@@ -141,26 +139,6 @@ describe("DefaultMediaImportPipeline", () => {
       .resolves.toMatchObject({ durationMs: null });
   });
 
-  it("keeps MVP transcoding as a replaceable no-op stage", async () => {
-    const transcoder = new NoopMediaTranscodingStage();
-    const bytes = new Uint8Array([5, 6, 7]);
-
-    await expect(
-      transcoder.transcode({
-        originalFileName: "sound.mp3",
-        mimeType: "audio/mpeg",
-        mediaType: "audio",
-        normalizedExtension: ".mp3",
-        bytes
-      })
-    ).resolves.toEqual({
-      originalFileName: "sound.mp3",
-      mimeType: "audio/mpeg",
-      mediaType: "audio",
-      normalizedExtension: ".mp3",
-      bytes
-    });
-  });
 });
 
 class RecordingAssetRepository implements AssetRepository {

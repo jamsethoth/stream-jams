@@ -15,7 +15,6 @@ import {
   DefaultPlaybackDedupeService,
   DefaultPlaybackQueue,
   DefaultTtsService,
-  NoopMediaTranscodingStage,
   createAppVersion,
   createDefaultOverlayModuleRegistry,
   isStreamerBotSubscriptionAvailable,
@@ -274,7 +273,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     validator: assetValidator,
     repository: assetRepository,
     store: assetStore,
-    transcoder: new NoopMediaTranscodingStage(),
     probe: mediaMetadataProbe,
     generateId: generateAssetId,
     calculateChecksum
