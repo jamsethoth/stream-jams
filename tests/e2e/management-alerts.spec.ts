@@ -138,7 +138,14 @@ test("management alerts reviews the starter set and safely manages its landscape
     testRequests.push(route.request().postDataJSON());
     await route.fulfill({
       contentType: "application/json",
-      json: { status: "queued", targetProfileId: "landscape", referenceId: "ref-inline-e2e", test: true }
+      json: {
+        status: "queued",
+        targetProfileId: "landscape",
+        referenceId: "ref-inline-e2e",
+        test: true,
+        deliveredDestinations: [{ kind: "desktop-overlay", id: "desktop:primary", name: "Desktop Overlay" }],
+        unavailableDestinations: []
+      }
     });
   });
   await page.route("**/management/overlay-outputs/keys/regenerate", async (route) => {
@@ -216,7 +223,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   await page.keyboard.press("Escape");
   await expect(actionMenu).toHaveCount(0);
   await expect(moreAction).toBeFocused();
-  await expect(alertRow.getByText(/Saved input.*Browser Landscape.*Audio and TTS included/u)).toBeVisible();
+  await expect(alertRow.getByText(/Saved input.*Browser Landscape.*Desktop Landscape when ready.*Audio and TTS included/u)).toBeVisible();
   const enableToggle = alertRow.getByRole("button", { name: "Enable New follower" });
   await expect(enableToggle).toBeVisible();
   const enableBox = await enableToggle.boundingBox();
@@ -243,10 +250,9 @@ test("management alerts reviews the starter set and safely manages its landscape
   const reviewWarning = page.locator(".management-toast--warning");
   await expect(reviewWarning).toContainText("Starter review marked complete.");
   await expect(reviewWarning).toContainText("Alerts remain disabled until you enable them.");
-  listening = true;
   await page.getByRole("button", { name: "Test saved New follower" }).click();
   const successToast = page.locator(".management-toast--success");
-  await expect(successToast).toContainText("Test queued on Landscape. Reference ref-inline-e2e.");
+  await expect(successToast).toContainText("Test queued on Desktop Overlay. Reference ref-inline-e2e.");
   const toastBounds = await successToast.boundingBox();
   if (toastBounds === null) throw new Error("Expected the success toast to have visible bounds.");
   expect(toastBounds.x).toBeGreaterThanOrEqual(0);
