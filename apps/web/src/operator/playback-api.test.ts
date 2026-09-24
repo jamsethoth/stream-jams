@@ -56,9 +56,9 @@ describe("createHttpPlaybackApi", () => {
       "/playback/operations/screen-effects/clear",
       "/playback/operations/screen-effects/pause"
     ]);
-    expect(requests[0]?.init?.headers).toMatchObject({ authorization: "Bearer mgmt_operator" });
+    expect(new Headers(requests[0]?.init?.headers).get("authorization")).toBe("Bearer mgmt_operator");
     expect(requests.filter(({ init }) => init?.method === "POST").every(({ init }) =>
-      (init?.headers as Record<string, string>)["x-stream-jams-csrf"] === "csrf_operator"
+      new Headers(init?.headers).get("x-stream-jams-csrf") === "csrf_operator"
     )).toBe(true);
     expect(requests.find(({ path }) => path === "/playback/do-not-disturb")?.init?.body).toBe(JSON.stringify({ enabled: true }));
     expect(requests.find(({ path }) => path.endsWith("/clear"))?.init?.body).toBe(JSON.stringify({ expectedPendingCount: 2, observedRevision: 4 }));

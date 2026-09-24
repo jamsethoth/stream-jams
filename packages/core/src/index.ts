@@ -88,6 +88,8 @@ export type * from "./alerts/alert-matcher.js";
 export { DefaultAlertMatcher } from "./alerts/alert-matcher.js";
 export type * from "./alerts/alert-resolver.js";
 export { AlertVariantSelectionError, DefaultAlertResolver, createAlertTemplateContext } from "./alerts/alert-resolver.js";
+export type * from "./alerts/alert-layer-instruction.js";
+export { buildAlertLayerInstruction } from "./alerts/alert-layer-instruction.js";
 export type * from "./alerts/variation-authoring.js";
 export type { AlertVariationPriorityAssignment } from "./alerts/variation-authoring.js";
 export {
@@ -141,7 +143,7 @@ export type * from "./assets/repository.js";
 export type * from "./assets/asset-validator.js";
 export type * from "./assets/media-import-pipeline.js";
 export { DefaultAssetValidator, defaultAssetValidationPolicy } from "./assets/asset-validator.js";
-export { DefaultMediaImportPipeline, InvalidMediaImportError, NoopMediaTranscodingStage } from "./assets/media-import-pipeline.js";
+export { DefaultMediaImportPipeline, InvalidMediaImportError } from "./assets/media-import-pipeline.js";
 export { assetMediaTypeSchema, assetRecordSchema, assetValidationResultSchema } from "./assets/schemas.js";
 
 export type * from "./events/types.js";
@@ -323,5 +325,4 @@ export * from "./screen-effects/effect-queue.js";
 export * from "./screen-effects/module-definition.js";
 export * from "./screen-effects/authoring.js";
 export * from "./screen-effects/effect-queue.js";
-export * from "./screen-effects/layout.js";
 export * from "./screen-effects/sets.js";

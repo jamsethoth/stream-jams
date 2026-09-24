@@ -36,7 +36,7 @@ Add future items to the backlog first. Add or update a section here only when an
 
 **Captured:** 2026-06-16.
 
-**Why deferred:** The MVP currently has one Alerts module, so the module definition can stay enabled by default without adding first-run setup flow complexity.
+**Why deferred:** The original MVP shipped one Alerts module. Alerts and Screen Effects now both ship, so the multiple-module trigger in BL-027 has been reached. A first-run setup wizard still needs a separately approved workflow and evidence that existing module configuration is insufficient.
 
 **Future capability:** When multiple overlay modules exist, guide users through choosing which modules to enable and configure during initial startup.
 

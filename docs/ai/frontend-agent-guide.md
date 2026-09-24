@@ -4,10 +4,12 @@ Use this guide for changes that touch `apps/web`, Storybook, browser-visible man
 
 ## Target
 
-Stream Jams is a local-first streamer tool. The frontend has two distinct surfaces:
+Stream Jams is a local-first streamer tool. Its frontend surfaces have distinct responsibilities:
 
 - Management UI: dense, quiet, operational controls for repeated setup and troubleshooting.
+- Operator UI: focused live playback and safety controls at `/operator`, using management authorization.
 - Overlay UI: fullscreen transparent browser-source output that must not expose secrets or debug text on live routes.
+- Private desktop-overlay renderer: transparent output hosted by Electron, with a narrow preload boundary and no management credentials.
 
 Do not treat this as a marketing site. Build the actual management or overlay workflow first.
 
@@ -91,7 +93,7 @@ openspec.cmd validate <change-name> --strict
 ## Current Gaps
 
 - Storybook now provides a local component workbench and CI gate, but hosted visual approval is not selected.
-- The Storybook test-runner is the default gate. The Storybook Vitest addon remains a backlog evaluation item until this baseline is stable.
+- The Storybook test-runner is the current gate. Its deprecated Story Store integration is tracked for migration to the Storybook Vitest addon in [BL-035](../backlog.md); retain interaction, accessibility, and console-failure coverage during that migration.
 - Local Playwright screenshots are the default visual-regression path for now. Hosted options are documented in `docs/ai/visual-regression-options.md`.
 
 ## Sources

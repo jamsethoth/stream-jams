@@ -4,7 +4,7 @@ The merged Windows runtime owns a local service, management window, tray and san
 
 ## Goals / Non-Goals
 
-Execution details: [shared desktop overlay implementation plan](../../../docs/superpowers/plans/2026-09-08-shared-desktop-overlay-surface.md).
+Execution details: [shared desktop overlay implementation plan](../../../../docs/superpowers/plans/2026-09-08-shared-desktop-overlay-surface.md).
 
 **Goals:** One opt-in Windows overlay reusable by registered modules; persisted display/opacity/layers; independent bounded desktop completion; unchanged module-specific browser outputs and audio routing.
 

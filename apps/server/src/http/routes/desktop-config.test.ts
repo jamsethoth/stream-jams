@@ -2,7 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createDesktopConfigRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { DesktopConfigService } from "../../config/desktop-config-service.js";
 import { createDefaultAppConfig } from "../../config/default-config.js";
 import { FileConfigStore } from "../../config/file-config-store.js";

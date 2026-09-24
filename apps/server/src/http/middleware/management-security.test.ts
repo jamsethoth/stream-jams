@@ -131,6 +131,7 @@ describe("management security middleware", () => {
     expect(managementPreflight.statusCode).toBe(204);
     expect(managementPreflight.headers["access-control-allow-origin"]).toBe("http://127.0.0.1:5173");
     expect(managementPreflight.headers["access-control-allow-headers"]).toContain("x-stream-jams-csrf");
+    expect(managementPreflight.headers["access-control-allow-headers"]).toContain("x-stream-jams-confirm-impact");
     expect(overlayPreflight.statusCode).toBe(404);
   });
 });

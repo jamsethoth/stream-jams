@@ -1,6 +1,6 @@
 import type { LogContext, Logger } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createTwitchAuthRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   TwitchOAuthAuthorizationError,
@@ -11,7 +11,7 @@ import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("twitch auth routes", () => {
   it("starts device authorization for management sessions and awaits the service", async () => {
@@ -264,12 +264,12 @@ async function createAppWithTwitchAuth(
   const app = createServerApp({
     metadata: { appName: "stream-jams", version: "1.2.3" },
     twitchAuthService: service,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter }),
     runtimeLogger
   });
 
-  return { app, authHeaders: { authorization: `Bearer ${session.id}` }, logs: runtimeLogger.entries, service };
+  return { app, authHeaders: managementTestHeaders(session, "POST"), logs: runtimeLogger.entries, service };
 }
 
 class RecordingLogger implements Logger {

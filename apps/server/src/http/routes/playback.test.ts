@@ -1,9 +1,9 @@
 import type { PlaybackQueueSnapshot } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createPlaybackRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("playback routes", () => {
   it("returns a protected playback snapshot", async () => {
@@ -149,16 +149,14 @@ async function createAppWithPlayback() {
     },
     playbackCoordinator,
     legacyPlaybackOperationsService: playbackCoordinator,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
 
   return {
     app,
     playbackCoordinator,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    }
+    authHeaders: managementTestHeaders(session, "POST")
   };
 }
 

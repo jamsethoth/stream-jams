@@ -378,6 +378,7 @@ describe("AlertEditorPage", () => {
     await waitFor(() => expect(play).toHaveBeenCalledTimes(2));
     expect(pause).toHaveBeenCalledOnce();
     cleanup();
+    await act(() => Promise.resolve());
     expect(pause).toHaveBeenCalledTimes(2);
   });
 
@@ -3041,6 +3042,54 @@ describe("AlertEditorPage", () => {
     expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
     expect(getAssetFile).not.toHaveBeenCalledWith("asset-audio");
     expect(speak).not.toHaveBeenCalled();
+  });
+
+  it("does not reopen preview when old moderation finishes after a draft edit", async () => {
+    let resolveModeration!: (result: Awaited<ReturnType<AlertEditorPageApi["previewModeration"]>>) => void;
+    const moderationResult = new Promise<Awaited<ReturnType<AlertEditorPageApi["previewModeration"]>>>((resolve) => {
+      resolveModeration = resolve;
+    });
+    const previewModeration = vi.fn(() => moderationResult);
+    render(
+      <DirtyNavigationProvider>
+        <AlertEditorPage
+          alertId="alert-follow"
+          assetApi={assetApi}
+          managementApi={{
+            getAlertEditorDocument: vi.fn(async () => editorDocument()),
+            getAlertSet: vi.fn(async () => alertSetDetail(false)),
+            listRegisteredProviders: vi.fn(async () => []),
+            getAssetChangeImpact: vi.fn(),
+            listAssetLibraryItems: vi.fn(async () => []),
+            deleteAsset: vi.fn(),
+            updateAssetMetadata: vi.fn(),
+            saveAlertEditorDocument: vi.fn(async (_alertId, document) => document),
+            sendAlertEditorTest: vi.fn(),
+            previewModeration
+          }}
+          onBack={() => undefined}
+          onOpenAlert={() => undefined}
+        />
+      </DirtyNavigationProvider>
+    );
+
+    await screen.findByRole("region", { name: "Landscape alert canvas" });
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(previewModeration).toHaveBeenCalledOnce());
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Event" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Session payload (JSON)" }), {
+      target: { value: JSON.stringify({ userName: "Edited" }) }
+    });
+    await act(async () => resolveModeration({
+      target: "rendered",
+      settings: { maxLength: 240, blockedTerms: [], stripUrls: false },
+      text: "Stale moderated text",
+      actions: []
+    }));
+
+    expect(screen.queryByRole("button", { name: "Pause preview" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Local preview is running.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Stale moderated text")).not.toBeInTheDocument();
   });
 
   it("shows the active TTS provider and persists its runtime provider id", async () => {

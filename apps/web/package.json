@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b tsconfig.json && vite build && vite build --config vite.desktop-overlay.config.ts",
+    "build": "tsc -b tsconfig.json && vite build && node ../../scripts/check-web-route-bundles.mjs && vite build --config vite.desktop-overlay.config.ts",
     "typecheck": "tsc -b tsconfig.json",
     "storybook": "storybook dev --host 127.0.0.1 --port 6006",
     "build-storybook": "storybook build",
@@ -31,7 +31,6 @@
     "jsdom": "29.1.1",
     "start-server-and-test": "3.0.12",
     "storybook": "10.6.0",
-    "tslib": "2.8.1",
     "typescript": "6.0.3",
     "vite": "8.3.0"
   }

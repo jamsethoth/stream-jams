@@ -205,6 +205,37 @@ describe("AlertSetsPage", () => {
     expect(screen.getByText("Test queued on Vertical. Reference ref-inline-test.").closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
+  it("keeps the saved Landscape profile selected when only the desktop overlay is available", async () => {
+    const source = detail();
+    source.browserSources = source.browserSources.map((entry) => entry.targetProfileId === "landscape"
+      ? { ...entry, connectionState: "disconnected" as const }
+      : entry);
+    const saved = editorDocument();
+    const sendAlertEditorTest = vi.fn(async (_alertId, request) => ({
+      status: "queued" as const,
+      targetProfileId: request.targetProfileId,
+      referenceId: "ref-desktop-test",
+      deliveredDestinations: [{ kind: "desktop-overlay" as const, id: "desktop:primary", name: "Desktop Overlay" }],
+      unavailableDestinations: [],
+      test: true as const
+    }));
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      getAlertSet: vi.fn(async () => source),
+      getAlertEditorDocument: vi.fn(async () => saved),
+      sendAlertEditorTest
+    })} onEditAlert={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
+
+    await waitFor(() => expect(sendAlertEditorTest).toHaveBeenCalledWith("alert-follow", expect.objectContaining({
+      document: saved,
+      targetProfileId: "landscape"
+    })));
+    expect(screen.getAllByText(/Desktop Landscape when ready/u)[0]).toBeVisible();
+    expect(screen.getByText("Test queued on Desktop Overlay. Reference ref-desktop-test.")).toBeVisible();
+  });
+
   it("keeps the text-only sample separate from saved delivery and secondary actions", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();

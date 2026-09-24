@@ -29,21 +29,23 @@ describe("RuntimeJsonlLogger", () => {
     });
 
     await logger.debug("debug detail", baseContext);
+    const metadata = {
+      outcome: "failed",
+      statusCode: 502,
+      authorization: "Bearer oauth-secret",
+      overlayKey: "ovl_secretKey",
+      rawProviderPayload: {
+        token: "oauth-secret"
+      },
+      httpErrorBody: "oauth-secret",
+      nested: {
+        token: "oauth-secret"
+      }
+    };
+    const metadataBeforeLogging = structuredClone(metadata);
     await logger.info("Provider failed with Authorization: Bearer oauth-secret for ovl_secretKey", {
       ...baseContext,
-      metadata: {
-        outcome: "failed",
-        statusCode: 502,
-        authorization: "Bearer oauth-secret",
-        overlayKey: "ovl_secretKey",
-        rawProviderPayload: {
-          token: "oauth-secret"
-        },
-        httpErrorBody: "oauth-secret",
-        nested: {
-          token: "oauth-secret"
-        }
-      }
+      metadata
     });
 
     const entries = await readJsonl(join(logDirectory, "runtime-2026053102.jsonl"));
@@ -68,6 +70,7 @@ describe("RuntimeJsonlLogger", () => {
     expect(JSON.stringify(entries)).not.toContain("rawProviderPayload");
     expect(JSON.stringify(entries)).not.toContain("httpErrorBody");
     expect(JSON.stringify(entries)).not.toContain("nested");
+    expect(metadata).toEqual(metadataBeforeLogging);
   });
 
   it("rolls over hourly, exposes metadata, reads bounded recent entries, and applies default retention", async () => {

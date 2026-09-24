@@ -1,5 +1,7 @@
 # UI Refactor Implementation Audit
 
+> Historical MVP closure record, verified July 20, 2026. Test counts, workflow labels, and backlog boundaries below describe that review. Later work includes `/operator`, Alert Safety, desktop outputs, Screen Effects, and further management changes; use the [documentation map](../README.md) for current requirements and evidence.
+
 This audit maps every approved high-fidelity board to production UI, automated evidence, and the MVP boundary in `ui-refactor-mvp-ux-spec.md`. It is the durable implementation-status companion to the visual review guide.
 
 Status: **21 of 21 approved boards are represented by production workflows.** Deferred extensions remain in the existing MVP backlog; no approved board is left without implementation or an explicit boundary.

@@ -13,7 +13,8 @@
   "include": [
     "src",
     "vite.config.ts",
-    "vite.desktop-overlay.config.ts"
+    "vite.desktop-overlay.config.ts",
+    "vite-route-module-manifest.ts"
   ],
   "references": [
     {

@@ -8,6 +8,7 @@ import {
   getAlertEditorAffectedProfileIds,
   createAlertTemplateContext,
   createNormalizedAlertSampleEvent,
+  buildAlertLayerInstruction,
   collectAlertDurationAssetIds,
   resolveAlertAudio,
   resolveAlertLayerDurationMs,
@@ -36,8 +37,7 @@ import {
   type AudioOutputStatus,
   type AudioOutputRoute,
   type TargetProfileId,
-  type ModerationService,
-  type TemplateRenderer
+  type ModerationService
 } from "@stream-jams/core";
 import type {
   AlertRuleManagementMetadata,
@@ -424,32 +424,66 @@ export class AlertEditorService {
 
     return layers.flatMap((layer) => {
       const layout = layouts.get(layer.id);
-      const instruction = layer.type === "audio" ? null : createLayerInstruction(
-        layer, layout, resolveAlertLayerDurationMs(request.document, layer), profile.id, context,
-        this.#renderedTextTemplateRenderer, this.#ttsTemplateRenderer,
-        this.#options.generateId(), visualAssetMediaTypes
-      );
+      const instruction = layer.type === "audio" ? null : buildAlertLayerInstruction({
+        base: {
+          id: this.#options.generateId(),
+          overlayId: "default",
+          moduleId: "alerts",
+          operatorTest: true,
+          purpose: "live",
+          scope: "module",
+          targetProfileId: profile.id,
+          durationMs: resolveAlertLayerDurationMs(request.document, layer)
+        },
+        layer,
+        layout,
+        ...(layer.type === "text" ? {
+          renderedText: this.#renderedTextTemplateRenderer.render({ template: layer.template, values: context })
+        } : {}),
+        ...(layer.type === "tts" && layer.enabled ? {
+          tts: {
+            mode: "browser-speech" as const,
+            text: this.#ttsTemplateRenderer.render({ template: layer.template, values: context }),
+            audioAssetId: null,
+            providerPayload: null
+          }
+        } : {}),
+        ...(layer.type === "image" || layer.type === "video"
+          ? { visualMediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type }
+          : {})
+      });
       const audioSource = browserAudioLayers.get(layer.id);
-      const audioInstruction = audioSource === undefined ? null : createLayerInstruction(
-        {
-          ...layer,
+      const audioInstruction = audioSource === undefined ? null : buildAlertLayerInstruction({
+        base: {
+          id: this.#options.generateId(),
+          overlayId: "default",
+          moduleId: "alerts",
+          operatorTest: true,
+          purpose: "live",
+          scope: "module",
+          targetProfileId: profile.id,
+          durationMs: request.document.durationMs
+        },
+        layer: {
+          id: layer.id,
+          name: layer.name,
+          visible: layer.visible,
+          order: layer.order,
+          animation: layer.animation,
           type: "audio",
           assetId: audioSource.assetId,
-          volume: audioSource.volume
+          volume: audioSource.volume,
+          fadeInMs: audioSource.fadeInMs,
+          fadeOutMs: audioSource.fadeOutMs
         },
-        undefined,
-        request.document.durationMs,
-        profile.id,
-        context,
-        this.#renderedTextTemplateRenderer,
-        this.#ttsTemplateRenderer,
-        this.#options.generateId(),
-        {},
-        audioSource.sourceKind,
-        audioSource.playbackDurationMs,
-        audioSource.fadeInMs,
-        audioSource.fadeOutMs
-      );
+        layout: undefined,
+        audio: {
+          sourceKind: audioSource.sourceKind,
+          playbackDurationMs: audioSource.playbackDurationMs ?? request.document.durationMs,
+          fadeInMs: audioSource.fadeInMs ?? 0,
+          fadeOutMs: audioSource.fadeOutMs ?? 0
+        }
+      });
       return [instruction, audioInstruction].flatMap((candidate) => candidate === null ? [] : [{
           ...(profile.id === "landscape" && candidate.audio === null ? { desktopVisualEligible: true as const } : {}),
           id: this.#options.generateId(),
@@ -1118,82 +1152,4 @@ function builtInSamples(normal: Record<string, unknown>, edge: Record<string, un
     { id: "normal", label: `Normal ${label}`, kind: "built-in" as const, payload: normal },
     { id: "edge", label: `Edge ${label}`, kind: "built-in" as const, payload: edge }
   ];
-}
-
-function createLayerInstruction(
-  layer: AlertLayer,
-  layout: OverlayElementLayout | undefined,
-  durationMs: number,
-  targetProfileId: TargetProfileId,
-  context: Record<string, unknown>,
-  renderedTextTemplateRenderer: TemplateRenderer,
-  ttsTemplateRenderer: TemplateRenderer,
-  instructionId: string,
-  visualAssetMediaTypes: Readonly<Record<string, "image" | "gif" | "video">>,
-  audioSourceKind: ResolvedAlertAudio["layers"][number]["sourceKind"] = "audio",
-  audioPlaybackDurationMs = durationMs,
-  audioFadeInMs = 0,
-  audioFadeOutMs = 0
-): ResolvedAlert["overlayInstruction"] | null {
-  const base = {
-    id: instructionId,
-    overlayId: "default",
-    moduleId: "alerts",
-    operatorTest: true as const,
-    purpose: "live" as const,
-    scope: "module" as const,
-    targetProfileId,
-    visual: null,
-    audio: null,
-    text: null,
-    shape: null,
-    animation: layer.animation,
-    tts: null,
-    durationMs
-  };
-  if (layer.type === "text" && layout !== undefined) {
-    return {
-      ...base,
-      text: {
-        text: renderedTextTemplateRenderer.render({ template: layer.template, values: context }),
-        layout,
-        textStyle: layer.textStyle,
-        boxStyle: layer.boxStyle
-      }
-    };
-  }
-  if ((layer.type === "image" || layer.type === "video") && layout !== undefined) {
-    return {
-      ...base,
-      visual: { assetId: layer.assetId, mediaType: visualAssetMediaTypes[layer.assetId] ?? layer.type, layout, ...(layer.type === "video" ? { loop: layer.loop ?? false } : {}) }
-    };
-  }
-  if (layer.type === "audio") {
-    return {
-      ...base,
-      audio: {
-        assetId: layer.assetId,
-        volume: layer.volume,
-        sourceKind: audioSourceKind,
-        fadeInMs: audioFadeInMs,
-        fadeOutMs: audioFadeOutMs,
-        playbackDurationMs: audioPlaybackDurationMs
-      }
-    };
-  }
-  if (layer.type === "tts") {
-    return {
-      ...base,
-      tts: {
-        mode: "browser-speech",
-        text: ttsTemplateRenderer.render({ template: layer.template, values: context }),
-        audioAssetId: null,
-        providerPayload: null
-      }
-    };
-  }
-  if (layer.type === "shape" && layout !== undefined) {
-    return { ...base, shape: { fill: layer.fill, layout } };
-  }
-  return null;
 }

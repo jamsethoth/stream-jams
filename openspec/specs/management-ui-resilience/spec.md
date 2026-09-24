@@ -1,7 +1,7 @@
 # management-ui-resilience Specification
 
 ## Purpose
-TBD - created by archiving change improve-management-ui-ux-audit-followups. Update Purpose after archive.
+Define reliable management loading, navigation, status, error, and feedback behavior across supported layouts.
 ## Requirements
 ### Requirement: Internal Management Navigation Preserves Dirty-State Protection
 The management UI SHALL route same-origin internal management links through the existing dirty-navigation confirmation flow while preserving native external, modified-click, download, and new-window behavior.

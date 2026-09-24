@@ -3,11 +3,11 @@ import type {
   StreamerBotSubscriptionUpdateInput
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createStreamerBotSubscriptionRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { StreamerBotSubscriptionInactiveError } from "../../modules/providers/provider-management-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 const catalog: StreamerBotSubscriptionCatalog = {
   providerId: "provider-streamerbot",
@@ -97,12 +97,12 @@ async function fixture(options: { readonly error?: Error } = {}) {
   const app = createServerApp({
     metadata: { appName: "stream-jams", version: "1.2.3" },
     streamerBotSubscriptionService: service,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(sessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter })
   });
   return {
     app,
-    headers: { authorization: `Bearer ${session.id}` },
+    headers: managementTestHeaders(session, "POST"),
     service
   };
 }

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createTwitchEventSubRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("twitch eventsub routes", () => {
   it("reads provider status for management sessions", async () => {
@@ -67,15 +67,13 @@ async function createAppWithEventSubStatus() {
       version: "1.2.3"
     },
     twitchEventSubStatusService: service,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
 
   return {
     app,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    },
+    authHeaders: managementTestHeaders(session, "POST"),
     service
   };
 }

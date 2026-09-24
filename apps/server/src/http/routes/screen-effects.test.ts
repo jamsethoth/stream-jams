@@ -4,13 +4,13 @@ import {
   type ScreenEffectDocument
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createScreenEffectRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   EffectDefinitionNotFoundError,
   EffectLiveImpactConfirmationRequiredError
 } from "../../modules/screen-effects/effect-management-service.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
 
 function effect(): ScreenEffectDocument {
@@ -117,8 +117,8 @@ async function fixture() {
     metadata: { appName: "stream-jams", version: "1.2.3" },
     effectManagementService: service,
     effectSets: sets,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(sessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter })
   });
-  return { app, headers: { authorization: `Bearer ${session.id}` }, service, sets };
+  return { app, headers: managementTestHeaders(session, "POST"), service, sets };
 }

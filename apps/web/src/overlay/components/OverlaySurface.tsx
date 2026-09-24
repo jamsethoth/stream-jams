@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import "../overlay.css";
 import { prepareTimedMedia, rgbaColorSchema, targetProfileDefinitions } from "@stream-jams/core";
 import type {
   OverlayComposition,

@@ -1,20 +1,17 @@
 import type {
   AlertEditorDocument,
   AlertSetDetail,
-  AlertVariationAuthoringContext,
   AlertSetOverview,
   AssetLibraryItem,
-  ConfigurationBackupSummary,
-  DiagnosticsWorkspaceView,
   ProviderCapability,
   ProviderKind,
   ProviderLiveStatus,
   RegisteredProviderView
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { ManagementUiService, type ManagementUiServiceOptions } from "./management-ui-service.js";
+import { ManagementOverviewService, type ManagementOverviewServiceOptions } from "./management-overview-service.js";
 
-describe("ManagementUiService", () => {
+describe("ManagementOverviewService", () => {
   it("reports first-run setup actions without treating OBS verification as readiness", async () => {
     const service = createService([]);
 
@@ -70,6 +67,21 @@ describe("ManagementUiService", () => {
       readiness: expect.arrayContaining([expect.objectContaining({ id: "event-source", state: "complete" })])
     });
     expect(getEventSourceRuntimeView).toHaveBeenCalledWith(active);
+  });
+
+  it.each([
+    { liveStatus: "starting" as const, state: "action-required", actionLabel: "Starting event source" },
+    { liveStatus: "reconnecting" as const, state: "action-required", actionLabel: "Reconnect in progress" },
+    { liveStatus: "error" as const, state: "blocked", actionLabel: "Resolve event source" }
+  ])("maps $liveStatus event-source runtime state to Home readiness", async ({ liveStatus, state, actionLabel }) => {
+    const active = provider("event", "twitch", "event-source", true, "connected", "active", null);
+    const service = createService([active], null, () => ({ liveStatus, error: null }));
+
+    await expect(service.getHomeSetupSummary()).resolves.toMatchObject({
+      readiness: expect.arrayContaining([
+        expect.objectContaining({ id: "event-source", state, actionLabel })
+      ])
+    });
   });
 
   it("projects the current runtime error onto event-source list and detail views", async () => {
@@ -233,63 +245,6 @@ describe("ManagementUiService", () => {
     });
   });
 
-  it("forwards managed-alert authoring commands without changing their inputs", async () => {
-    const createVariation = vi.fn(async () => ({ id: "variant-1" }));
-    const duplicateAlert = vi.fn(async () => ({ id: "alert-copy" }));
-    const resetAlert = vi.fn(async () => ({ id: "alert-1" }));
-    const deleteAlert = vi.fn(async () => undefined);
-    const service = createService([], null, undefined, {
-      createAlertVariation: createVariation as never,
-      duplicateManagedAlert: duplicateAlert as never,
-      resetManagedAlert: resetAlert as never,
-      deleteManagedAlert: deleteAlert
-    });
-
-    await service.createAlertVariation("alert-1", { name: "VIP" });
-    await service.duplicateManagedAlert("alert-1");
-    await service.resetManagedAlert("alert-1", true);
-    await service.deleteManagedAlert("variant-1", false);
-
-    expect(createVariation).toHaveBeenCalledWith("alert-1", { name: "VIP" });
-    expect(duplicateAlert).toHaveBeenCalledWith("alert-1");
-    expect(resetAlert).toHaveBeenCalledWith("alert-1", true);
-    expect(deleteAlert).toHaveBeenCalledWith("variant-1", false);
-  });
-
-  it("forwards focused variation context reads without changing the editor ID", async () => {
-    const context: AlertVariationAuthoringContext = {
-      ruleId: "alert-follow",
-      eventType: "follow",
-      candidates: [{
-        editorId: "alert-follow",
-        variantId: "variant-follow",
-        kind: "default",
-        name: "New follower",
-        enabled: true,
-        conditions: [],
-        weight: 1,
-        priority: null
-      }]
-    };
-    const getAlertVariationAuthoringContext = vi.fn(async () => context);
-    const service = createService([], null, undefined, {}, undefined, getAlertVariationAuthoringContext);
-
-    await expect(service.getAlertVariationAuthoringContext("variant-vip")).resolves.toEqual(context);
-    expect(getAlertVariationAuthoringContext).toHaveBeenCalledWith("variant-vip");
-  });
-
-  it("forwards complete sibling priority assignments through the existing save command", async () => {
-    const document = { id: "variant-vip" } as AlertEditorDocument;
-    const assignments = [
-      { variationId: "variant-vip", priority: 3 },
-      { variationId: "variant-raid", priority: 2 }
-    ];
-    const saveAlertEditorDocument = vi.fn(async (_alertId, saved: AlertEditorDocument) => saved);
-    const service = createService([], null, undefined, {}, undefined, undefined, saveAlertEditorDocument);
-
-    await expect(service.saveAlertEditorDocument("variant-vip", document, true, assignments)).resolves.toBe(document);
-    expect(saveAlertEditorDocument).toHaveBeenCalledWith("variant-vip", document, true, assignments);
-  });
 });
 
 function createService(
@@ -299,14 +254,14 @@ function createService(
     readonly liveStatus: ProviderLiveStatus;
     readonly error: RegisteredProviderView["error"];
   }) | undefined = undefined,
-  alertSetOverrides: Partial<ManagementUiServiceOptions["alertSetService"]> = {},
-  getTwitchAuthorization: ManagementUiServiceOptions["getTwitchAuthorization"] | undefined = undefined,
-  getAlertVariationAuthoringContext: ManagementUiServiceOptions["getAlertVariationAuthoringContext"] = async () => {
-    throw new Error("not configured");
-  },
-  saveAlertEditorDocument: ManagementUiServiceOptions["saveAlertEditorDocument"] = async (_alertId, document) => document,
-  optionOverrides: Partial<ManagementUiServiceOptions> = {}
+  alertSetOverrides: Partial<ManagementOverviewServiceOptions["alertSetService"]> = {},
+  getTwitchAuthorization: ManagementOverviewServiceOptions["getTwitchAuthorization"] | undefined = undefined,
+  getAlertVariationAuthoringContext: unknown = undefined,
+  saveAlertEditorDocument: unknown = undefined,
+  optionOverrides: Partial<ManagementOverviewServiceOptions> = {}
 ) {
+  void getAlertVariationAuthoringContext;
+  void saveAlertEditorDocument;
   const resolvedGetTwitchAuthorization = getTwitchAuthorization ?? (async () => ({
     connected: false,
     authorizationState: "disconnected",
@@ -321,7 +276,7 @@ function createService(
         : "error",
     error: providerView.error
   }));
-  const options: ManagementUiServiceOptions = {
+  const options: ManagementOverviewServiceOptions = {
     providerService: {
       listProviders: vi.fn(async (capability: ProviderCapability) =>
         providers.filter((providerView) => providerView.capability === capability)
@@ -332,93 +287,22 @@ function createService(
         availableVoices: [],
         ttsSafety: null
       })),
-      validateProvider: vi.fn(),
-      registerProvider: vi.fn(),
-      activateProvider: vi.fn(),
-      deactivateProvider: vi.fn(),
-      getActivationImpact: vi.fn(),
-      getTtsSafety: vi.fn(),
-      updateTtsSafety: vi.fn(),
-      testVoice: vi.fn()
     },
     alertSetService: {
       listSets: async () => (activeSet === null ? [] : [activeSet]),
       getSet: vi.fn(async () => activeSet === null ? undefined as never : alertSetDetail(activeSet, [])),
-      createSet: vi.fn(),
-      createAlert: vi.fn(),
-      createAlertVariation: vi.fn(),
-      duplicateManagedAlert: vi.fn(),
-      resetManagedAlert: vi.fn(),
-      deleteManagedAlert: vi.fn(),
-      renameSet: vi.fn(),
-      duplicateSet: vi.fn(),
-      getActivationImpact: vi.fn(),
-      activateSet: vi.fn(),
-      markStarterReviewComplete: vi.fn(),
-      setAlertEnabled: vi.fn(),
-      deleteSet: vi.fn(),
       ...alertSetOverrides
     },
     hasBrowserOutput: async () => false,
     getAlertEditorDocument: async (): Promise<AlertEditorDocument> => {
       throw new Error("not configured");
     },
-    getAlertVariationAuthoringContext,
-    saveAlertEditorDocument,
-    sendAlertEditorTest: async (_alertId, request) => ({
-      status: "queued",
-      targetProfileId: request.targetProfileId,
-      referenceId: "ref-test",
-      test: true,
-      deliveredDestinations: [],
-      unavailableDestinations: []
-    }),
-    reportAlertEditorError: async (_alertId, input) => ({ referenceId: input.error.referenceId }),
     listAssetLibraryItems: async (): Promise<readonly AssetLibraryItem[]> => [],
-    updateAssetMetadata: async (_assetId, input) => ({
-      id: "asset-1",
-      originalFileName: "asset.png",
-      mediaType: "image",
-      mimeType: "image/png",
-      sizeBytes: 1,
-      width: null,
-      height: null,
-      durationMs: null,
-      health: "available",
-      createdAt: "2026-07-15T05:00:00.000Z",
-      updatedAt: "2026-07-15T05:00:00.000Z",
-      usage: { assetId: "asset-1", totalUsageCount: 0, usages: [] },
-      ...input
-    }),
-    getAssetChangeImpact: async (assetId) => ({
-      assetId,
-      usage: { assetId, totalUsageCount: 0, usages: [] },
-      owners: [],
-      canDelete: true,
-      requiresConfirmation: false,
-      warnings: []
-    }),
-    deleteAsset: async () => undefined,
-    getDiagnosticsWorkspace: async (): Promise<DiagnosticsWorkspaceView> => ({ problems: [], events: [], rawLogs: [] }),
-    getConfigurationBackupSummary: async (): Promise<ConfigurationBackupSummary> => ({
-      state: "ready",
-      appVersion: "0.0.0",
-      schemaVersion: 5,
-      configurationRecordCount: 0,
-      assetCount: 0,
-      totalAssetBytes: 0,
-      dataDirectory: "C:/Users/James/.stream-jams/data",
-      assetDirectory: "C:/Users/James/.stream-jams/assets",
-      logLevel: "INFO",
-      logRetentionHours: 48,
-      secretExclusions: ["Provider credentials", "Overlay route keys"],
-      blockers: []
-    }),
     getEventSourceRuntimeView: runtimeView,
     getTwitchAuthorization: resolvedGetTwitchAuthorization,
     ...optionOverrides
   };
-  return new ManagementUiService(options);
+  return new ManagementOverviewService(options);
 }
 
 function alertSetDetail(overview: AlertSetOverview, inventory: AlertSetDetail["inventory"]): AlertSetDetail {

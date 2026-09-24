@@ -136,7 +136,8 @@ export const storyImageAsset = {
   mimeType: "image/svg+xml",
   sizeBytes: 912,
   checksum: "sha256:storybook-alert",
-  storagePath: "storybook-assets/tiny-alert.svg"
+  storagePath: "storybook-assets/tiny-alert.svg",
+  durationMs: null
 } satisfies AssetRecord;
 
 export const storyAudioAsset = {
@@ -146,7 +147,8 @@ export const storyAudioAsset = {
   mimeType: "audio/wav",
   sizeBytes: 1536,
   checksum: "sha256:storybook-chime",
-  storagePath: "storybook-assets/short-chime.wav"
+  storagePath: "storybook-assets/short-chime.wav",
+  durationMs: 250
 } satisfies AssetRecord;
 
 export const storyAssets = [storyImageAsset, storyAudioAsset] satisfies readonly AssetRecord[];

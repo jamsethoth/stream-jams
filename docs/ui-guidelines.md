@@ -9,7 +9,7 @@ Do not build landing-page or marketing layouts for product work.
 ## Management UI
 
 - Favor dense, scannable layouts over decorative cards or hero sections.
-- Keep the current max-width shell and tabbed management workspace unless a change explicitly redesigns navigation.
+- Keep the route-based management shell, desktop sidebar hierarchy, and compact mobile Navigation disclosure. Tabs belong within the workflows that use them, such as editor inspectors and Diagnostics.
 - Use clear labels and status copy that helps a streamer operate quickly during setup or live troubleshooting.
 - Keep page sections unframed. Use cards only for repeated items, modals, or truly framed tools.
 - Avoid nested cards.

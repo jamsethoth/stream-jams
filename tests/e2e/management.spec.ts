@@ -1,5 +1,30 @@
 import { expect, test } from "@playwright/test";
 
+test("management route loads the management application without operator or overlay modules", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  await page.route("**/auth/management/sessions", (route) => route.fulfill({ json: { id: "mgmt_shell_e2e" } }));
+  await page.route("**/management/overlay-clients", (route) => route.fulfill({ json: [] }));
+  await page.route("**/management/home", (route) => route.fulfill({ json: {
+    readiness: [],
+    activeAlertSet: null,
+    alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] },
+    actionableProblems: []
+  } }));
+
+  await page.goto("/manage");
+
+  await expect(page.locator("main.management-main")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+  await expect(page.locator("body")).toHaveClass(/management-shell/u);
+  const resources = await loadedSourcePaths(page);
+  expect(resources).toContain("/src/App.tsx");
+  expect(resources).not.toContain("/src/operator/OperatorApp.tsx");
+  expect(resources).not.toContain("/src/overlay/OverlayApp.tsx");
+  expect(browserErrors).toEqual([]);
+});
+
 test("management diagnostics include backend error code and id", async ({ page }) => {
   await page.route("**/auth/management/sessions", async (route) => {
     await route.fulfill({
@@ -252,6 +277,10 @@ test("event source onboarding connects validates and registers Twitch", async ({
   await expect(page.getByText("Twitch is inactive.")).toBeVisible();
   expect(deactivationRequests).toBe(1);
 });
+
+async function loadedSourcePaths(page: import("@playwright/test").Page): Promise<readonly string[]> {
+  return page.evaluate(() => performance.getEntriesByType("resource").map((entry) => new URL(entry.name).pathname));
+}
 
 test("diagnostics workspace preserves correction context and copies sanitized evidence", async ({ page, context }) => {
   await page.setViewportSize({ width: 390, height: 844 });

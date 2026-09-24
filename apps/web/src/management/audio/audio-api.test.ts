@@ -14,11 +14,10 @@ describe("createHttpAudioApi", () => {
           method: "POST",
           body: JSON.stringify({ name: "Headphones", deviceId: "endpoint-a" })
         });
-        expect(init?.headers).toMatchObject({
-          authorization: "Bearer mgmt_audio",
-          "content-type": "application/json",
-          "x-stream-jams-csrf": "csrf_audio"
-        });
+        const headers = new Headers(init?.headers);
+        expect(headers.get("authorization")).toBe("Bearer mgmt_audio");
+        expect(headers.get("content-type")).toBe("application/json");
+        expect(headers.get("x-stream-jams-csrf")).toBe("csrf_audio");
         return jsonResponse(routeResponse(), { status: 201 });
       }
       if (url === "/audio/routes/route-a") {

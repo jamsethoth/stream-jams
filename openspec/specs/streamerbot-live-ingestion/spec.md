@@ -1,7 +1,7 @@
 # streamerbot-live-ingestion Specification
 
 ## Purpose
-TBD - created by archiving change add-streamerbot-live-event-ingestion. Update Purpose after archive.
+Define active Streamer.bot runtime ownership, configured subscriptions, normalization, and shared event delivery.
 ## Requirements
 ### Requirement: Active Streamer.bot Runtime Lifecycle
 

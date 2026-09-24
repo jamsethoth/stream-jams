@@ -12,7 +12,6 @@ type LayerLayout = AlertEditorDocument["targetProfiles"][number]["layerLayouts"]
 export type TargetProfileId = AlertEditorDocument["targetProfiles"][number]["id"];
 export type LayerGeometry = Pick<LayerLayout, "x" | "y" | "width" | "height">;
 export type LayerGeometryByProfile = Partial<Record<TargetProfileId, LayerGeometry>>;
-export type EditorArrowKey = "ArrowUp" | "ArrowDown" | "ArrowLeft" | "ArrowRight";
 
 export interface CanvasViewState {
   readonly zoom: number;
@@ -435,33 +434,6 @@ export function updateLayerGeometry(
   });
 
   return changed ? { ...document, targetProfiles } : document;
-}
-
-export function moveLayerWithArrow(
-  document: AlertEditorDocument,
-  profileId: TargetProfileId,
-  layerId: string,
-  key: EditorArrowKey,
-  accelerated = false
-): AlertEditorDocument {
-  const layout = document.targetProfiles
-    .find((profile) => profile.id === profileId)
-    ?.layerLayouts.find((candidate) => candidate.layerId === layerId);
-  if (layout === undefined) {
-    return document;
-  }
-
-  const step = accelerated ? 10 : 1;
-  switch (key) {
-    case "ArrowUp":
-      return updateLayerGeometry(document, profileId, layerId, { y: layout.y - step });
-    case "ArrowDown":
-      return updateLayerGeometry(document, profileId, layerId, { y: layout.y + step });
-    case "ArrowLeft":
-      return updateLayerGeometry(document, profileId, layerId, { x: layout.x - step });
-    case "ArrowRight":
-      return updateLayerGeometry(document, profileId, layerId, { x: layout.x + step });
-  }
 }
 
 export function snapLayerGeometry(

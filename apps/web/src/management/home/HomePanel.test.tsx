@@ -1,5 +1,5 @@
 import type { ActionableManagementError, HomeSetupSummary } from "@stream-jams/core";
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HomePanel } from "./HomePanel.js";
 
@@ -73,7 +73,49 @@ const configuredSummary: HomeSetupSummary = {
 };
 
 describe("HomePanel", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
+
+  it("refreshes transitional event-source readiness until startup becomes healthy", async () => {
+    vi.useFakeTimers();
+    const starting = {
+      ...configuredSummary,
+      readiness: configuredSummary.readiness.map((item) => item.id === "event-source"
+        ? { ...item, state: "action-required" as const, actionLabel: "Starting event source" }
+        : item),
+      actionableProblems: []
+    };
+    const healthy = {
+      ...starting,
+      readiness: starting.readiness.map((item) => item.id === "event-source"
+        ? { ...item, state: "complete" as const, actionLabel: "Review event source" }
+        : item)
+    };
+    const refreshError = Object.assign(new Error("temporary startup race"), { referenceId: "ref-home-refresh" });
+    const getHomeSetupSummary = vi.fn()
+      .mockResolvedValueOnce(starting)
+      .mockRejectedValueOnce(refreshError)
+      .mockResolvedValue(healthy);
+
+    render(<HomePanel managementApi={{ getHomeSetupSummary }} />);
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByRole("link", { name: "Starting event source" })).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByRole("link", { name: "Starting event source" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Unable to refresh setup readiness");
+    expect(screen.getByRole("alert")).toHaveTextContent("ref-home-refresh");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByRole("link", { name: "Review event source" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(getHomeSetupSummary).toHaveBeenCalledTimes(3);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(getHomeSetupSummary).toHaveBeenCalledTimes(3);
+  });
 
   it("shows derived readiness actions, active set status, and actionable problems", async () => {
     render(<HomePanel managementApi={{ getHomeSetupSummary: vi.fn(async () => configuredSummary) }} />);

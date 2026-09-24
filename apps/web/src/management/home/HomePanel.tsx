@@ -17,31 +17,51 @@ export function HomePanel({ managementApi }: HomePanelProps) {
 
   useEffect(() => {
     let cancelled = false;
-    void managementApi
-      .getHomeSetupSummary()
-      .then((loaded) => {
+    let hasLoadedSummary = false;
+    let refreshInFlight = false;
+    let interval: number | null = null;
+
+    const refresh = async () => {
+      if (refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        const loaded = await managementApi.getHomeSetupSummary();
         if (!cancelled) {
+          hasLoadedSummary = true;
           setSummary(loaded);
           setLoadError(null);
+          if (hasTransitionalEventSource(loaded)) {
+            interval ??= window.setInterval(() => void refresh(), 5_000);
+          } else if (interval !== null) {
+            window.clearInterval(interval);
+            interval = null;
+          }
         }
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         if (!cancelled) {
           setLoadError(
             actionableError(
               error,
-              "Unable to load setup readiness",
-              "Refresh this page after confirming the local Stream Jams service is running."
+              hasLoadedSummary ? "Unable to refresh setup readiness" : "Unable to load setup readiness",
+              hasLoadedSummary
+                ? "Stream Jams will keep retrying. Confirm the local service is running if this message remains."
+                : "Refresh this page after confirming the local Stream Jams service is running."
             )
           );
         }
-      });
+      } finally {
+        refreshInFlight = false;
+      }
+    };
+
+    void refresh();
     return () => {
       cancelled = true;
+      if (interval !== null) window.clearInterval(interval);
     };
   }, [managementApi]);
 
-  if (loadError !== null) {
+  if (loadError !== null && summary === null) {
     return <ManagementErrorBanner error={loadError} />;
   }
   if (summary === null) {
@@ -57,6 +77,11 @@ export function HomePanel({ managementApi }: HomePanelProps) {
 
   return (
     <div className="provider-page home-panel">
+      {loadError === null ? null : (
+        <div className="provider-page__errors">
+          <ManagementErrorBanner error={loadError} />
+        </div>
+      )}
       {summary.actionableProblems.length === 0 ? null : (
         <section aria-labelledby="home-problems-title" className="provider-page__section">
           <div className="provider-page__section-heading">
@@ -171,6 +196,12 @@ export function HomePanel({ managementApi }: HomePanelProps) {
       </section>
     </div>
   );
+}
+
+function hasTransitionalEventSource(summary: HomeSetupSummary): boolean {
+  const eventSource = summary.readiness.find((item) => item.id === "event-source");
+  return eventSource?.state === "action-required"
+    && (eventSource.actionLabel === "Starting event source" || eventSource.actionLabel === "Reconnect in progress");
 }
 
 function readinessTone(state: HomeSetupSummary["readiness"][number]["state"]): StatusBadgeTone {

@@ -1,5 +1,7 @@
 # Stream Jams MVP Runbook
 
+This runbook covers the local application and its implemented post-MVP Windows and Screen Effects additions. See the [documentation map](README.md) for current specifications and historical verification boundaries.
+
 ## Startup
 
 1. Install dependencies with `corepack pnpm install --frozen-lockfile`.
@@ -87,7 +89,9 @@ Disconnecting the selected display clears its desktop content without moving it 
 
 Open **Modules → Screen Effects**, expand a set, and choose **New effect** to create a definition. Exactly one set is live: only its enabled effects respond to automatic triggers. Existing effects migrate into the active **Default** set. Create or duplicate sets to prepare inactive alternatives, then explicitly **Activate set** to switch; already queued effects retain their saved playback. The active set cannot be deleted. Expand an effect to see its variants, then select a variant to open it in the editor. A new effect starts disabled and selecting media never plays it. Choose one local image, GIF or video and/or one local sound, then select visual and audio destinations explicitly. New variants default to **Match longest media**: the longest local video or separate sound sets the duration, with a 10-second fallback and a 2-minute cap. Choose **Custom** for a fixed duration. Existing variants remain Custom until changed. Video soundtrack and separate sound can both be enabled with independent volumes and independent fade-in/fade-out controls; they share the variant's Browser Source and named-device selections. An audio-only effect is valid when at least one explicit audio destination is usable.
 
-Add one or more trusted triggers. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** plays the selected draft variant locally with its layout, animation, duration and sound. Use **Play preview**, **Stop preview**, and **Mute preview**; preview never sends to live output routes. **Live Test** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation.
+Add one or more trusted triggers. Twitch channel-point bindings use stable broadcaster and reward IDs. Streamer.bot bindings use an exact source/type already selected under **Event sources**; saving an effect does not change subscriptions or switch the active provider. Save the definition, return to the inventory and explicitly enable it. **Preview** plays the selected draft variant locally with its layout, duration and sound. Use **Play preview**, **Stop preview**, and **Mute preview**; preview never sends to live output routes. **Test saved…** requires a saved, enabled, unchanged definition, lists the destinations it will affect, and sends the exact selected variant only after confirmation. Screen Effects has no animation controls; Alert-layer animation remains separate.
+
+Every enabled variant participates in one weighted pool. Use **New variant** for a blank disabled variant or **Copy variant** to clone the selection. **Remove variant** changes only the draft after confirmation and supports Undo; the last variant and the only enabled variant cannot be removed. Save persists removal. Queue priority orders waiting effects without interrupting the current effect. Per-effect cooldown is owned by the triggering event; the optional module cooldown remains available.
 
 For OBS, copy the Screen Effects module Browser Source from its inventory setup panel or include the module in a unified surface. For the Windows overlay, open **Settings → Overlay surfaces**, show `screen-effects` on the explicitly bound desktop surface, place it in the desired topmost-first order, and save. Visual membership is independent from Browser Source or named-device audio; do not add both a module-specific and unified browser source with audio enabled unless duplicate audio is intentional.
 
@@ -115,7 +119,7 @@ Run `corepack pnpm test:e2e` for browser-visible management and overlay workflow
 
 The Alerts module is enabled by default on a fresh database. Changes to module enablement and canvas size are persisted in SQLite and survive local runtime restarts over the same data directory.
 
-The module config UI only saves schema-backed canvas fields. Alert collections, rules, variants, and media setup live in the alert configuration UI instead of the module config save path.
+The management API exposes schema-validated module configuration at `/overlay-modules/:moduleId/config`. The current management UI uses the dedicated Alert and Screen Effect workflows; it does not render a generic module canvas-configuration wizard. Alert sets, rules, variants, and media are saved through their own authoring APIs.
 
 ## Runtime Logs
 
@@ -200,17 +204,19 @@ Live alerts send one server-side Speaker.bot `Speak` request before the visual/a
 ## Diagnostics Export
 
 1. Open `Diagnostics` in the management UI.
-2. Adjust `Diagnostics limit` when a smaller export is enough.
-3. Select `Reload diagnostics` to confirm the current event, match, playback, and provider-error view.
-4. Select `Export diagnostics`.
+2. Use `Problems`, `Events`, or `Raw logs`, with Search, the view-specific filter, and Sort to inspect the relevant evidence.
+3. Select `Refresh` after reproducing the issue and inspect any load warning before treating the view as current.
+4. Select `Export support bundle` for the default sanitized download. View filters do not change the export contract.
 5. Use `Export with recent logs` only when troubleshooting needs bounded recent runtime log entries.
 6. Share only the exported redacted payload when troubleshooting.
 
 The default diagnostics export includes safe log settings, log location metadata, retention metadata, and file window metadata. It does not include runtime log entries. The debug export is a separate CSRF-protected management action and includes only bounded, recent, redacted runtime log entries. Review the exported payload before sending it outside the local machine.
 
-## Local UI Test Note
+## Local Browser Test Setup
 
-CI installs Playwright dependencies on Ubuntu 24.04 with `pnpm exec playwright install --with-deps chromium`. On this Ubuntu 26.04 workstation, Playwright 1.60.0 cannot run `install-deps`; Chromium needs `libnspr4` and `libnss3`.
+The browser E2E and Storybook jobs use version-matched official Playwright containers configured in `.github/workflows/ci.yml`. On a supported local host, install the matching browser with `corepack pnpm exec playwright install chromium`; on supported Linux hosts, `corepack pnpm exec playwright install --with-deps chromium` also installs system dependencies. The [README](../README.md#playwright-e2e-tests) documents the Docker browser-server alternative.
+
+The following is a historical workaround from the July 2026 Ubuntu 26.04/Playwright 1.60.0 investigation, not a statement about the current host or pinned toolchain. Use it only after confirming missing NSS/NSPR libraries in that environment.
 
 If sudo is available, install the missing system packages:
 
@@ -225,6 +231,6 @@ mkdir -p /tmp/playwright-deps/downloads /tmp/playwright-deps/extract
 cd /tmp/playwright-deps/downloads
 apt-get download libnspr4 libnss3
 for package in *.deb; do dpkg-deb -x "$package" /tmp/playwright-deps/extract; done
-cd /home/jams/dev/stream-jams
+cd /path/to/stream-jams
 env LD_LIBRARY_PATH=/tmp/playwright-deps/extract/usr/lib/x86_64-linux-gnu pnpm test:e2e
 ```

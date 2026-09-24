@@ -165,7 +165,7 @@ function fixture() {
   };
   const assetApi: AssetApi = {
     listAssets: vi.fn(async () => []),
-    importAsset: vi.fn(async () => ({ id: "asset-new", originalFileName: "new.png", mediaType: "image" as const, mimeType: "image/png", sizeBytes: pngBytes.byteLength, checksum: "sha256:new", storagePath: "image/asset-new.png" })),
+    importAsset: vi.fn(async () => ({ id: "asset-new", originalFileName: "new.png", mediaType: "image" as const, mimeType: "image/png", sizeBytes: pngBytes.byteLength, checksum: "sha256:new", storagePath: "image/asset-new.png", durationMs: null })),
     getAssetFile: vi.fn(async () => new Blob([pngBytes], { type: "image/png" })),
     replaceAsset: vi.fn(async () => { throw new Error("not called"); })
   };

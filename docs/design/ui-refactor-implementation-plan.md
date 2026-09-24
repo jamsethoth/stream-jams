@@ -1,10 +1,10 @@
 # Stream Jams UI Refactor Implementation Plan
 
-Status: approved for implementation.
+Status: historical plan, implemented. The baseline below describes the pre-refactor repository, not current work to repeat. See [the implementation audit](ui-refactor-implementation-audit.md), [current canonical specifications](../../openspec/specs/management-ui-ux/spec.md), and [the documentation map](../README.md).
 
 This plan implements the approved MVP UX in `docs/design/ui-refactor-mvp-ux-spec.md` and the synced high-fidelity boards under `docs/design/hifi-concept-boards/`.
 
-## Current State
+## Baseline Before Implementation
 
 - The management UI is currently a tab-state app in `apps/web/src/management/ManagementApp.tsx`.
 - Current nav still includes old surfaces: `Dashboard`, `Twitch`, `Overlays`, `Playback`, `TTS`, `Settings`, `Alerts`, and `Assets`.

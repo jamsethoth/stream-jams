@@ -1,9 +1,9 @@
 import type { AppConfig, AppConfigUpdate, ConfigStore } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createConfigRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { ServerConfigService, type PortAvailabilityChecker } from "../../config/server-config-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 
 const baseConfig: AppConfig = {
@@ -226,12 +226,10 @@ async function createAppWithConfig(
       version: "1.2.3"
     },
     serverConfigService,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
-  const authHeaders = {
-    authorization: `Bearer ${session.id}`
-  };
+  const authHeaders = managementTestHeaders(session, "POST");
 
   return { app, store, portAvailability, authHeaders };
 }

@@ -7,7 +7,7 @@ This is the canonical index for deferred, planned, and intentionally rejected St
 - Add a new deferred idea here before or with detailed notes elsewhere.
 - Keep one row per product outcome; link supporting detail instead of copying it into this file.
 - Use `Planned` only when an apply-ready OpenSpec change exists, and link that change.
-- When implementation is complete and its specs are synced, remove the row; durable specs and the changelog retain completed history.
+- When implementation is complete and its specs are synced, remove the row; durable specs, archives, and Git history retain completed history. A maintained main-branch changelog is still planned under BL-052.
 - `Not planned` entries are deliberate product boundaries, not implementation suggestions. Reopening one requires an explicit product decision.
 - Priority means: `P0` next critical work, `P1` high value, `P2` useful follow-up, and `P3` low urgency or evidence-dependent.
 
@@ -19,9 +19,9 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | --- | --- | --- | --- | --- | --- |
 | BL-007 | Bulk alert and asset operations | Deferred | P2 | Stable list selection and impact-summary contracts | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-008 | Versioned alert and alert-set package import/export | Deferred | P2 | Stable styled-alert schema and asset packaging | [Product plan](product-plan.md) |
-| BL-009 | User-created alert templates and `Save as template` | Deferred | P2 | BL-006 and BL-008 | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
+| BL-009 | User-created alert templates and `Save as template` | Deferred | P2 | Implemented bundled starter themes and BL-008 | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-010 | Per-alert TTS voice, rate, volume, pitch, and delay overrides where providers permit | Deferred | P2 | Stable provider-capability contract | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
-| BL-011 | Advanced condition builder with generic AND/OR groups and additional safe normalized fields | Deferred | P2 | BL-004 and BL-005 for viewer-controlled text fields | [Future-feature notes](future-features.md#advanced-alert-condition-builder) |
+| BL-011 | Advanced condition builder with generic AND/OR groups and additional safe normalized fields | Deferred | P2 | Implemented variation authoring and durable moderation for viewer-controlled text fields | [Future-feature notes](future-features.md#advanced-alert-condition-builder) |
 | BL-012 | Media crop, fit, focal-point, and positioning controls | Deferred | P2 | Stable visual-style and overlay presentation contracts | Product decision, 2026-07-20 |
 | BL-013 | Additional bounded animation presets | Deferred | P2 | Stable style and animation contracts | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-014 | Alert version history, rollback, soft delete, and selective recovery | Deferred | P2 | Existing backup/restore plus a bounded history policy | [Future-feature notes](future-features.md#alert-version-history-and-rollback) |
@@ -30,7 +30,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-017 | Translation-ready management UI, selected locales, contrast checks, and alert reduced-motion guidance | Deferred | P3 | Named target locales and accessibility acceptance criteria | Product decision, 2026-07-20 |
 | BL-018 | Constrained per-layer timeline and keyframe editor | Long-term | P3 | Preset animations prove insufficient; the implemented text-style contract and BL-013 are stable | Must remain schema-validated and exclude arbitrary code. |
 | BL-019 | Full provider-event simulation and persisted custom sample library | Deferred | P3 | Stable normalized catalogs and Diagnostics simulation boundary | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
-| BL-040 | Shape border and drop-shadow appearance controls | Deferred | P2 | BL-003 | Add bounded border color/width and an optional drop shadow; gradients, rounded corners, additional primitives, masks, SVG, and general composition remain out of scope. |
+| BL-040 | Shape border and drop-shadow appearance controls | Deferred | P2 | Implemented solid-fill shape layers | Add bounded border color/width and an optional drop shadow; gradients, rounded corners, additional primitives, masks, SVG, and general composition remain out of scope. |
 
 ## Events, Providers, And Integrations
 
@@ -48,7 +48,7 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 
 | ID | Feature | Status | Priority | Dependency or trigger | Detail |
 | --- | --- | --- | --- | --- | --- |
-| BL-027 | Startup module selection/setup wizard | Trigger-based | P3 | Multiple shipped overlay modules | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
+| BL-027 | Startup module selection/setup wizard | Trigger reached; deferred | P3 | Alerts and Screen Effects now ship; a bounded onboarding workflow still needs approval | [Future-feature notes](future-features.md#startup-module-setup-wizard) |
 | BL-028 | Music widget and additional overlay modules | Deferred | P2 | A separately approved module slice | [Product plan](product-plan.md) |
 | BL-029 | Expanded output management, connected-client history, route-key audit, and OBS-aware readiness | Deferred | P3 | Output workflow outgrows the current Alerts section | [UI decisions](design/ui-refactor-decisions.md) |
 | BL-030 | Desktop installer, signing, durable releases, updater/startup/service integration, and `safeStorage` migration | Deferred | P2 | Separately approved release and credential-migration changes | The runnable folder, tray lifecycle, and authenticated short-lived CI artifact publication are implemented. Installer, signing, durable release publication, automatic updates, startup-at-login, Windows service, and credential migration remain deferred. [Desktop requirements](../openspec/specs/windows-desktop-runtime/spec.md); [Product plan](product-plan.md) |
@@ -59,12 +59,18 @@ Completed desktop/tray, portable-artifact, alert-routing, shared desktop-surface
 | BL-035 | Migrate Storybook browser tests away from the deprecated Story Store API | Deferred | P2 | Stable Storybook inventory and defined interaction/accessibility parity | Replace the Story Store-based test runner with the Storybook Vitest addon while preserving Chromium interactions, accessibility checks, and console-failure coverage. [Future-feature notes](future-features.md#evaluate-storybook-vitest-addon) |
 | BL-036 | Optional encryption for exported backups | Deferred | P3 | Stable backup format and a defined password/key recovery model | [Product plan](product-plan.md) |
 | BL-037 | Alert scheduling | Deferred | P3 | A concrete scheduling workflow and safe clock/time-zone semantics | [Product plan](product-plan.md) |
-| BL-038 | Full operator console expansion for intake, event review, and attention workflows | Deferred | P2 | BL-001 and demonstrated live-operation needs | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
-| BL-041 | Production web bundle splitting and performance budget | Deferred | P2 | Production entry chunk remains above Vite's 500 kB advisory threshold | Measure management startup, define an initial-load budget, and lazy-load heavy management surfaces, especially the alert editor, without weakening overlay reliability. |
+| BL-038 | Full operator console expansion for intake, event review, and attention workflows | Deferred | P2 | Implemented multi-module playback controls and demonstrated live-operation needs | [MVP UX](design/ui-refactor-mvp-ux-spec.md) |
 | BL-048 | Cross-platform desktop overlay support | Deferred | P3 | Windows surface proven; named macOS/Linux packaging, input, display and audio acceptance targets | Windows first. [Shared-surface verification](verification/shared-desktop-overlay.md) |
 | BL-049 | Exclusive-full-screen desktop overlay compatibility evaluation | Evidence-dependent | P3 | Demonstrated need beyond windowed/borderless; explicit backend and anti-cheat/support-risk decision | No graphics injection or automatic game-setting changes are authorized by the shared desktop surface or Screen Effects. [Shared-surface requirements](../openspec/specs/shared-overlay-surfaces/spec.md) |
 | BL-050 | Optional cloud service deployment with a local desktop bridge | Deferred candidate | P3 | Explicit deployment need, local-device ownership boundary and separately approved authentication/transport model | Current app remains local-first; this does not reopen marketplace or general cloud sync. [Product plan](product-plan.md) |
 | BL-051 | Automatic desktop display reconnection after display ID changes | Deferred | P2 | Implemented shared desktop surface; validated Windows hardware-identity matching and an approved persistence/recovery design | Save reliable physical-monitor identity and automatically rebind only when exactly one current monitor matches. Missing or ambiguous identity requires explicit selection; never fall back to the primary display or match solely by name/position. Recovery applies to future effects only, with no interrupted-content replay. Observed during the September 10 test; the user reported a driver update/display refresh, but causality is unconfirmed. [Test evidence](verification/shared-desktop-overlay.md#integrated-representative-video-attempt--september-10); [Windows monitor identity](https://learn.microsoft.com/en-us/windows/win32/wmicoreprov/wmimonitorid). |
+
+## Planned Changes And Maintenance Candidates
+
+| ID | Outcome | Status | Priority | Dependency or trigger | Detail |
+| --- | --- | --- | --- | --- | --- |
+| BL-052 | Main-branch changelog and validation | Planned | P2 | Existing proposal; 0/22 implementation tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-main-branch-changelog/proposal.md) |
+| BL-053 | Manual Streamer.bot video shoutout overlay module | Planned | P2 | Verify the proposal's output/intake prerequisites before implementation; 0/23 tasks at the September 23 audit | [OpenSpec change](../openspec/changes/add-video-shoutout-overlay-module/proposal.md); separate from Screen Effects |
 
 ## Known Issues
 

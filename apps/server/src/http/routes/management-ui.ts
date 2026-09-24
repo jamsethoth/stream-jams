@@ -1,818 +1,114 @@
-import { randomUUID } from "node:crypto";
-import {
-  alertCreateInputSchema,
-  alertVariationCreateInputSchema,
-  alertEditorDocumentSchema,
-  alertEditorErrorReportInputSchema,
-  alertEditorErrorReportResultSchema,
-  alertEditorSaveInputSchema,
-  alertEditorTestRequestSchema,
-  alertEditorTestResultSchema,
-  alertVariationAuthoringContextSchema,
-  alertSetActivationImpactSchema,
-  alertSetActivationResultSchema,
-  alertSetDetailSchema,
-  alertSetMutationInputSchema,
-  alertSetOverviewSchema,
-  alertInventoryRowSchema,
-  managedAlertMutationInputSchema,
-  assetLibraryItemSchema,
-  assetChangeImpactSchema,
-  assetMediaTypeSchema,
-  assetMetadataUpdateInputSchema,
-  clearOldLogsResultSchema,
-  configurationBackupSummarySchema,
-  diagnosticsWorkspaceViewSchema,
-  homeSetupSummarySchema,
-  openDataFolderResultSchema,
-  providerActivationResultSchema,
-  providerActivationImpactSchema,
-  providerCapabilitySchema,
-  providerRegistrationAttemptSchema,
-  providerSetupInputSchema,
-  providerValidationResultSchema,
-  providerVoiceTestResultSchema,
-  registeredProviderDetailSchema,
-  registeredProviderViewSchema,
-  ttsProviderSafetySettingsSchema,
-  type AlertEditorDocument,
-  type AlertEditorErrorReportInput,
-  type AlertEditorErrorReportResult,
-  type AlertCreateInput,
-  type AlertEditorTestRequest,
-  type AlertEditorTestResult,
-  type AlertSetActivationImpact,
-  type AlertSetActivationResult,
-  type AlertSetDetail,
-  type AlertInventoryRow,
-  type AlertSetMutationInput,
-  type AlertSetOverview,
-  type AlertVariationCreateInput,
-  type AlertVariationAuthoringContext,
-  type AlertVariationPriorityAssignment,
-  type AssetLibraryItem,
-  type AssetChangeImpact,
-  type AssetMediaType,
-  type AssetMetadataUpdateInput,
-  type ClearOldLogsResult,
-  type ConfigurationBackupSummary,
-  type DiagnosticsWorkspaceView,
-  type HomeSetupSummary,
-  type OpenDataFolderResult,
-  type ProviderActivationImpact,
-  type ProviderActivationResult,
-  type ProviderCapability,
-  type ProviderRegistrationAttempt,
-  type ProviderSetupInput,
-  type ProviderValidationResult,
-  type ProviderVoiceTestResult,
-  type RegisteredProviderDetail,
-  type RegisteredProviderView,
-  type TtsProviderSafetySettings
+import type {
+  AlertEditorErrorReportInput,
+  AlertEditorErrorReportResult,
+  ClearOldLogsResult,
+  ConfigurationBackupSummary,
+  DiagnosticsWorkspaceView,
+  OpenDataFolderResult
 } from "@stream-jams/core";
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
-import { sendHttpError } from "../errors.js";
-import {
-  ProviderActivationBlockedError,
-  ProviderActivationConfirmationRequiredError,
-  ProviderRegistrationNotFoundError
-} from "../../modules/providers/provider-management-service.js";
-import {
-  AlertRuleForSetNotFoundError,
-  AlertManagedLiveImpactConfirmationRequiredError,
-  AlertSetActivationBlockedError,
-  AlertSetActivationConfirmationRequiredError,
-  AlertSetDeleteBlockedError,
-  AlertSetNameConflictError,
-  AlertSetNotFoundError,
-  AlertVariationNameConflictError
-} from "../../modules/alerts/alert-set-management-service.js";
-import {
-  AssetLibraryInUseError,
-  AssetLibraryNotFoundError
-} from "../../modules/assets/asset-library-service.js";
-import {
-  AlertEditorDeliveryBlockedError,
-  AlertEditorLiveImpactConfirmationRequiredError,
-  AlertEditorNotFoundError,
-  AlertEditorValidationError
-} from "../../modules/alerts/alert-editor-service.js";
-
-export interface ManagementUiQueryService {
-  getHomeSetupSummary(): Promise<HomeSetupSummary>;
-  listRegisteredProviders(capability: ProviderCapability): Promise<readonly RegisteredProviderView[]>;
-  getRegisteredProvider(providerId: string): Promise<RegisteredProviderDetail>;
-  validateProviderSetup(input: ProviderSetupInput): Promise<ProviderValidationResult>;
-  registerProvider(input: ProviderSetupInput): Promise<ProviderRegistrationAttempt>;
-  activateProvider(providerId: string, confirmWarnings: boolean): Promise<ProviderActivationResult>;
-  deactivateProvider(providerId: string): Promise<RegisteredProviderView>;
-  getProviderActivationImpact(providerId: string): Promise<ProviderActivationImpact>;
-  getTtsProviderSafetySettings(providerId: string): Promise<TtsProviderSafetySettings>;
-  updateTtsProviderSafetySettings(
-    providerId: string,
-    settings: TtsProviderSafetySettings
-  ): Promise<TtsProviderSafetySettings>;
-  testProviderVoice(providerId: string): Promise<ProviderVoiceTestResult>;
-  listAlertSets(): Promise<readonly AlertSetOverview[]>;
-  getAlertSet(setId: string): Promise<AlertSetDetail>;
-  createAlertSet(input: AlertSetMutationInput): Promise<AlertSetOverview>;
-  createAlert(setId: string, input: AlertCreateInput): Promise<AlertInventoryRow>;
-  createAlertVariation(alertId: string, input: AlertVariationCreateInput): Promise<AlertInventoryRow>;
-  duplicateManagedAlert(alertId: string): Promise<AlertInventoryRow>;
-  resetManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<AlertInventoryRow>;
-  deleteManagedAlert(alertId: string, confirmLiveImpact: boolean): Promise<void>;
-  renameAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
-  duplicateAlertSet(setId: string, input: AlertSetMutationInput): Promise<AlertSetOverview>;
-  getAlertSetActivationImpact(setId: string): Promise<AlertSetActivationImpact>;
-  activateAlertSet(setId: string, confirmWarnings: boolean): Promise<AlertSetActivationResult>;
-  markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview>;
-  setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
-  deleteAlertSet(setId: string): Promise<void>;
-  getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
-  getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext>;
-  saveAlertEditorDocument(
-    alertId: string,
-    document: AlertEditorDocument,
-    confirmLiveImpact: boolean,
-    priorityAssignments: readonly AlertVariationPriorityAssignment[]
-  ): Promise<AlertEditorDocument>;
-  sendAlertEditorTest(alertId: string, request: AlertEditorTestRequest): Promise<AlertEditorTestResult>;
-  reportAlertEditorError(alertId: string, input: AlertEditorErrorReportInput): Promise<AlertEditorErrorReportResult>;
-  listAssetLibraryItems(): Promise<readonly AssetLibraryItem[]>;
-  updateAssetMetadata(assetId: string, input: AssetMetadataUpdateInput): Promise<AssetLibraryItem>;
-  getAssetChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact>;
-  deleteAsset(assetId: string): Promise<void>;
-  repairAssetDuration?(assetId: string): Promise<AssetLibraryItem>;
-  getDiagnosticsWorkspace(): Promise<DiagnosticsWorkspaceView>;
-  getConfigurationBackupSummary(): Promise<ConfigurationBackupSummary>;
-  openDataFolder(): Promise<OpenDataFolderResult>;
-  clearOldLogs(): Promise<ClearOldLogsResult>;
-}
+import type { AlertEditorService } from "../../modules/alerts/alert-editor-service.js";
+import type { AlertSetManagementService } from "../../modules/alerts/alert-set-management-service.js";
+import type { AssetLibraryService } from "../../modules/assets/asset-library-service.js";
+import type { ManagementOverviewService } from "../../modules/providers/management-overview-service.js";
+import type { ProviderManagementService } from "../../modules/providers/provider-management-service.js";
+import { registerManagementAlertRoutes } from "./management-alerts.js";
+import { registerManagementAssetRoutes } from "./management-assets.js";
+import { registerManagementDiagnosticsRoutes } from "./management-diagnostics.js";
+import { registerManagementHomeRoutes } from "./management-home.js";
+import { registerManagementProviderRoutes } from "./management-providers.js";
 
 export interface ManagementUiRouteDependencies {
-  readonly managementUiQueryService: ManagementUiQueryService;
+  readonly managementOverviewService: Pick<
+    ManagementOverviewService,
+    "getHomeSetupSummary" | "listRegisteredProviders" | "getRegisteredProvider"
+  >;
+  readonly providerManagementService: Pick<
+    ProviderManagementService,
+    | "validateProvider"
+    | "registerProvider"
+    | "activateProvider"
+    | "deactivateProvider"
+    | "getActivationImpact"
+    | "getTtsSafety"
+    | "updateTtsSafety"
+    | "testVoice"
+  >;
+  readonly alertSetManagementService: Pick<
+    AlertSetManagementService,
+    | "listSets"
+    | "getSet"
+    | "createSet"
+    | "createAlert"
+    | "createAlertVariation"
+    | "duplicateManagedAlert"
+    | "resetManagedAlert"
+    | "deleteManagedAlert"
+    | "renameSet"
+    | "duplicateSet"
+    | "getActivationImpact"
+    | "activateSet"
+    | "markStarterReviewComplete"
+    | "setAlertEnabled"
+    | "deleteSet"
+  >;
+  readonly alertEditorService: Pick<
+    AlertEditorService,
+    "getDocument" | "getVariationContext" | "saveDocument" | "sendTest"
+  >;
+  readonly managementAssetLibraryService: Pick<
+    AssetLibraryService,
+    "listItems" | "updateMetadata" | "getChangeImpact" | "deleteAsset" | "repairDuration"
+  >;
+  readonly reportAlertEditorError: (
+    alertId: string,
+    input: AlertEditorErrorReportInput
+  ) => Promise<AlertEditorErrorReportResult>;
+  readonly getDiagnosticsWorkspace: () => Promise<DiagnosticsWorkspaceView>;
+  readonly getConfigurationBackupSummary: () => Promise<ConfigurationBackupSummary>;
+  readonly openDataFolder: () => Promise<OpenDataFolderResult>;
+  readonly clearOldLogs: () => Promise<ClearOldLogsResult>;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly generateServerErrorId?: (() => string) | undefined;
 }
 
-export function registerManagementUiRoutes(app: FastifyInstance, dependencies: ManagementUiRouteDependencies): void {
-  const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
-  const service = dependencies.managementUiQueryService;
-  const generateErrorId = dependencies.generateServerErrorId ?? (() => `err_${randomUUID()}`);
+export function registerManagementUiRoutes(
+  app: FastifyInstance,
+  dependencies: ManagementUiRouteDependencies
+): void {
+  const preHandlers = [
+    dependencies.managementRateLimitPreHandler,
+    dependencies.managementAuthPreHandler
+  ];
 
-  app.get("/management/home", { preHandler }, async () =>
-    homeSetupSummarySchema.parse(await service.getHomeSetupSummary())
-  );
-
-  app.get("/management/providers", { preHandler }, async (request, reply) => {
-    const capability = providerCapabilitySchema.safeParse(readValue(request.query, "capability"));
-    if (!capability.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_PROVIDER_CAPABILITY",
-        message: "Provider capability must be event-source or tts"
-      });
-    }
-
-    return parseList(await service.listRegisteredProviders(capability.data), registeredProviderViewSchema);
+  registerManagementHomeRoutes(app, {
+    overview: dependencies.managementOverviewService,
+    preHandlers
   });
-
-  app.post("/management/providers/validate", { preHandler }, async (request) =>
-    providerValidationResultSchema.parse(
-      await service.validateProviderSetup(providerSetupInputSchema.parse(request.body))
-    )
-  );
-
-  app.post("/management/providers", { preHandler }, async (request, reply) => {
-    const result = providerRegistrationAttemptSchema.parse(
-      await service.registerProvider(providerSetupInputSchema.parse(request.body))
-    );
-    return reply.status(result.status === "registered" ? 201 : 422).send(result);
+  registerManagementProviderRoutes(app, {
+    overview: dependencies.managementOverviewService,
+    providers: dependencies.providerManagementService,
+    preHandlers
   });
-
-  app.get("/management/providers/:providerId", { preHandler }, async (request, reply) => {
-    try {
-      return registeredProviderDetailSchema.parse(
-        await service.getRegisteredProvider(readParam(request.params, "providerId"))
-      );
-    } catch (error) {
-      return sendProviderCommandError(reply, error);
-    }
+  registerManagementAlertRoutes(app, {
+    alertSets: dependencies.alertSetManagementService,
+    alertEditor: dependencies.alertEditorService,
+    reportClientError: dependencies.reportAlertEditorError,
+    preHandlers,
+    ...(dependencies.generateServerErrorId === undefined
+      ? {}
+      : { generateServerErrorId: dependencies.generateServerErrorId })
   });
-
-  app.post("/management/providers/:providerId/activate", { preHandler }, async (request, reply) => {
-    const confirmation = readValue(request.body, "confirmWarnings");
-    if (confirmation !== undefined && typeof confirmation !== "boolean") {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_PROVIDER_ACTIVATION_CONFIRMATION",
-        message: "confirmWarnings must be true or false"
-      });
-    }
-    try {
-      return providerActivationResultSchema.parse(
-        await service.activateProvider(readParam(request.params, "providerId"), confirmation ?? false)
-      );
-    } catch (error) {
-      return sendProviderCommandError(reply, error);
-    }
+  registerManagementAssetRoutes(app, {
+    assets: dependencies.managementAssetLibraryService,
+    preHandlers
   });
-
-  app.post("/management/providers/:providerId/deactivate", { preHandler }, async (request, reply) => {
-    try {
-      return registeredProviderViewSchema.parse(
-        await service.deactivateProvider(readParam(request.params, "providerId"))
-      );
-    } catch (error) {
-      return sendProviderCommandError(reply, error);
-    }
+  registerManagementDiagnosticsRoutes(app, {
+    getDiagnosticsWorkspace: dependencies.getDiagnosticsWorkspace,
+    getConfigurationBackupSummary: dependencies.getConfigurationBackupSummary,
+    openDataFolder: dependencies.openDataFolder,
+    clearOldLogs: dependencies.clearOldLogs,
+    preHandlers
   });
-
-  app.get("/management/providers/:providerId/activation-impact", { preHandler }, async (request) =>
-    providerActivationImpactSchema.parse(
-      await service.getProviderActivationImpact(readParam(request.params, "providerId"))
-    )
-  );
-
-  app.get("/management/providers/:providerId/tts-safety", { preHandler }, async (request) =>
-    ttsProviderSafetySettingsSchema.parse(
-      await service.getTtsProviderSafetySettings(readParam(request.params, "providerId"))
-    )
-  );
-
-  app.put("/management/providers/:providerId/tts-safety", { preHandler }, async (request, reply) => {
-    try {
-      return ttsProviderSafetySettingsSchema.parse(
-        await service.updateTtsProviderSafetySettings(
-          readParam(request.params, "providerId"),
-          ttsProviderSafetySettingsSchema.parse(request.body)
-        )
-      );
-    } catch (error) {
-      return sendProviderCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/providers/:providerId/test-voice", { preHandler }, async (request, reply) => {
-    try {
-      return providerVoiceTestResultSchema.parse(
-        await service.testProviderVoice(readParam(request.params, "providerId"))
-      );
-    } catch (error) {
-      return sendProviderCommandError(reply, error);
-    }
-  });
-
-  app.get("/management/alert-sets", { preHandler }, async () =>
-    parseList(await service.listAlertSets(), alertSetOverviewSchema)
-  );
-
-  app.get("/management/alert-sets/:setId", { preHandler }, async (request, reply) => {
-    try {
-      return alertSetDetailSchema.parse(await service.getAlertSet(readParam(request.params, "setId")));
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alert-sets", { preHandler }, async (request, reply) => {
-    const input = readAlertSetMutationInput(request.body, reply);
-    if (input === null) return;
-    try {
-      return reply.status(201).send(alertSetOverviewSchema.parse(await service.createAlertSet(input)));
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.patch("/management/alert-sets/:setId", { preHandler }, async (request, reply) => {
-    const input = readAlertSetMutationInput(request.body, reply);
-    if (input === null) return;
-    try {
-      return alertSetOverviewSchema.parse(
-        await service.renameAlertSet(readParam(request.params, "setId"), input)
-      );
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alert-sets/:setId/alerts", { preHandler }, async (request, reply) => {
-    const input = alertCreateInputSchema.safeParse(request.body);
-    if (!input.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_CREATE_INPUT",
-        message: "Choose a supported event type, reward selection, and starter theme, and enter an alert name between 1 and 120 characters."
-      });
-    }
-    try {
-      return reply.status(201).send(alertInventoryRowSchema.parse(
-        await service.createAlert(readParam(request.params, "setId"), input.data)
-      ));
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alert-sets/:setId/duplicate", { preHandler }, async (request, reply) => {
-    const input = readAlertSetMutationInput(request.body, reply);
-    if (input === null) return;
-    try {
-      return reply.status(201).send(
-        alertSetOverviewSchema.parse(await service.duplicateAlertSet(readParam(request.params, "setId"), input))
-      );
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.get("/management/alert-sets/:setId/activation-impact", { preHandler }, async (request, reply) => {
-    try {
-      return alertSetActivationImpactSchema.parse(
-        await service.getAlertSetActivationImpact(readParam(request.params, "setId"))
-      );
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alert-sets/:setId/activate", { preHandler }, async (request, reply) => {
-    const confirmation = readValue(request.body, "confirmWarnings");
-    if (confirmation !== undefined && typeof confirmation !== "boolean") {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_SET_ACTIVATION_CONFIRMATION",
-        message: "confirmWarnings must be true or false"
-      });
-    }
-    try {
-      return alertSetActivationResultSchema.parse(
-        await service.activateAlertSet(readParam(request.params, "setId"), confirmation ?? false)
-      );
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alert-sets/:setId/starter-review", { preHandler }, async (request, reply) => {
-    try {
-      return alertSetOverviewSchema.parse(
-        await service.markStarterAlertSetReviewComplete(readParam(request.params, "setId"))
-      );
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.patch("/management/alerts/:alertId/enabled", { preHandler }, async (request, reply) => {
-    const enabled = readValue(request.body, "enabled");
-    if (typeof enabled !== "boolean") {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_ENABLED_STATE",
-        message: "enabled must be true or false"
-      });
-    }
-    try {
-      return alertSetDetailSchema.parse(
-        await service.setManagedAlertEnabled(readParam(request.params, "alertId"), enabled)
-      );
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alerts/:alertId/variations", { preHandler }, async (request, reply) => {
-    const input = alertVariationCreateInputSchema.safeParse(request.body);
-    if (!input.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_VARIATION_INPUT",
-        message: "Enter a variation name between 1 and 120 characters."
-      });
-    }
-    try {
-      return reply.status(201).send(alertInventoryRowSchema.parse(
-        await service.createAlertVariation(readParam(request.params, "alertId"), input.data)
-      ));
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alerts/:alertId/duplicate", { preHandler }, async (request, reply) => {
-    try {
-      return reply.status(201).send(alertInventoryRowSchema.parse(
-        await service.duplicateManagedAlert(readParam(request.params, "alertId"))
-      ));
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/alerts/:alertId/reset", { preHandler }, async (request, reply) => {
-    const input = managedAlertMutationInputSchema.safeParse(request.body ?? {});
-    if (!input.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_MUTATION_CONFIRMATION",
-        message: "confirmLiveImpact must be true or false."
-      });
-    }
-    try {
-      return alertInventoryRowSchema.parse(await service.resetManagedAlert(
-        readParam(request.params, "alertId"),
-        input.data.confirmLiveImpact
-      ));
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.delete("/management/alerts/:alertId", { preHandler }, async (request, reply) => {
-    const input = managedAlertMutationInputSchema.safeParse(request.body ?? {});
-    if (!input.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ALERT_MUTATION_CONFIRMATION",
-        message: "confirmLiveImpact must be true or false."
-      });
-    }
-    try {
-      await service.deleteManagedAlert(readParam(request.params, "alertId"), input.data.confirmLiveImpact);
-      return reply.status(204).send();
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.delete("/management/alert-sets/:setId", { preHandler }, async (request, reply) => {
-    try {
-      await service.deleteAlertSet(readParam(request.params, "setId"));
-      return reply.status(204).send();
-    } catch (error) {
-      return sendAlertSetCommandError(reply, error);
-    }
-  });
-
-  app.get("/management/alerts/:alertId/editor", { preHandler }, async (request, reply) => {
-    const alertId = readParam(request.params, "alertId");
-    try {
-      return alertEditorDocumentSchema.parse(await service.getAlertEditorDocument(alertId));
-    } catch (error) {
-      return sendAlertEditorCommandError(reply, error, {
-        service,
-        generateErrorId,
-        alertId,
-        setId: null,
-        summary: "The alert editor could not be opened",
-        nextStep: "Return to Alerts and choose the alert again."
-      });
-    }
-  });
-
-  app.get("/management/alerts/:alertId/editor/variation-context", { preHandler }, async (request, reply) => {
-    const alertId = readParam(request.params, "alertId");
-    try {
-      return alertVariationAuthoringContextSchema.parse(
-        await service.getAlertVariationAuthoringContext(alertId)
-      );
-    } catch (error) {
-      return sendAlertEditorCommandError(reply, error, {
-        service,
-        generateErrorId,
-        alertId,
-        setId: null,
-        summary: "The alert variation context could not be opened",
-        nextStep: "Return to Alerts and choose the alert again."
-      });
-    }
-  });
-
-  app.put("/management/alerts/:alertId/editor", { preHandler }, async (request, reply) => {
-    const alertId = readParam(request.params, "alertId");
-    const input = alertEditorSaveInputSchema.safeParse(request.body);
-    if (!input.success) {
-      return recordAlertEditorError(reply, {
-        service,
-        generateErrorId,
-        alertId,
-        setId: null,
-        summary: "The alert was not saved",
-        nextStep: "Review the alert layers and target profiles, then try saving again."
-      }, 400, "INVALID_ALERT_EDITOR_DOCUMENT", "Review the alert layers and target profiles, then try saving again.");
-    }
-    try {
-      return alertEditorDocumentSchema.parse(
-        await service.saveAlertEditorDocument(
-          alertId,
-          input.data.document,
-          input.data.confirmLiveImpact,
-          input.data.priorityAssignments
-        )
-      );
-    } catch (error) {
-      return sendAlertEditorCommandError(reply, error, {
-        service,
-        generateErrorId,
-        alertId,
-        setId: input.data.document.setId,
-        summary: "The alert was not saved",
-        nextStep: "Review the selected profile and highlighted fields, then try again."
-      });
-    }
-  });
-
-  app.post("/management/alerts/:alertId/editor/test", { preHandler }, async (request, reply) => {
-    const alertId = readParam(request.params, "alertId");
-    const input = alertEditorTestRequestSchema.safeParse(request.body);
-    if (!input.success) {
-      return recordAlertEditorError(reply, {
-        service,
-        generateErrorId,
-        alertId,
-        setId: null,
-        summary: "The alert test was not sent",
-        nextStep: "Choose a valid target profile or device-only delivery and sample payload, then try Send test again."
-      }, 400, "INVALID_ALERT_EDITOR_TEST", "Choose a valid target profile or device-only delivery and sample payload, then try Send test again.");
-    }
-    try {
-      return alertEditorTestResultSchema.parse(
-        await service.sendAlertEditorTest(alertId, input.data)
-      );
-    } catch (error) {
-      return sendAlertEditorCommandError(reply, error, {
-        service,
-        generateErrorId,
-        alertId,
-        setId: input.data.document.setId,
-        summary: "The alert test was not sent",
-        nextStep: input.data.targetProfileId === null
-          ? "Connect and review a Browser Source or choose an available device route, then try again."
-          : `Connect and review the ${input.data.targetProfileId} output or choose an available device route, then try again.`
-      });
-    }
-  });
-
-  app.get("/management/assets/library", { preHandler }, async () =>
-    parseList(await service.listAssetLibraryItems(), assetLibraryItemSchema)
-  );
-
-  app.patch("/management/assets/:assetId", { preHandler }, async (request, reply) => {
-    const input = assetMetadataUpdateInputSchema.safeParse(request.body);
-    if (!input.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ASSET_METADATA",
-        message: "Enter a display name and valid asset tags."
-      });
-    }
-    try {
-      return assetLibraryItemSchema.parse(
-        await service.updateAssetMetadata(readParam(request.params, "assetId"), input.data)
-      );
-    } catch (error) {
-      return sendAssetCommandError(reply, error);
-    }
-  });
-
-  app.get("/management/assets/:assetId/change-impact", { preHandler }, async (request, reply) => {
-    const candidateValue = readValue(request.query, "candidateMediaType");
-    const candidate = candidateValue === undefined ? undefined : assetMediaTypeSchema.safeParse(candidateValue);
-    if (candidate !== undefined && !candidate.success) {
-      return sendHttpError(reply, 400, {
-        code: "INVALID_ASSET_MEDIA_TYPE",
-        message: "candidateMediaType must be image, gif, video, or audio."
-      });
-    }
-    try {
-      return assetChangeImpactSchema.parse(
-        await service.getAssetChangeImpact(
-          readParam(request.params, "assetId"),
-          candidate?.data
-        )
-      );
-    } catch (error) {
-      return sendAssetCommandError(reply, error);
-    }
-  });
-
-  app.post("/management/assets/:assetId/repair-duration", { preHandler }, async (request, reply) => {
-    if (service.repairAssetDuration === undefined) {
-      return sendHttpError(reply, 503, { code: "ASSET_DURATION_REPAIR_UNAVAILABLE", message: "Asset duration repair is unavailable" });
-    }
-    try {
-      return assetLibraryItemSchema.parse(
-        await service.repairAssetDuration(readParam(request.params, "assetId"))
-      );
-    } catch (error) {
-      if (error instanceof AssetLibraryNotFoundError) {
-        return sendHttpError(reply, 404, { code: "ASSET_NOT_FOUND", message: error.message });
-      }
-      throw error;
-    }
-  });
-
-  app.delete("/management/assets/:assetId", { preHandler }, async (request, reply) => {
-    try {
-      await service.deleteAsset(readParam(request.params, "assetId"));
-      return reply.status(204).send();
-    } catch (error) {
-      return sendAssetCommandError(reply, error);
-    }
-  });
-
-  app.get("/management/diagnostics/workspace", { preHandler }, async () =>
-    diagnosticsWorkspaceViewSchema.parse(await service.getDiagnosticsWorkspace())
-  );
-
-  app.post("/management/alerts/:alertId/editor/errors", { preHandler }, async (request) =>
-    alertEditorErrorReportResultSchema.parse(await service.reportAlertEditorError(
-      readParam(request.params, "alertId"),
-      alertEditorErrorReportInputSchema.parse(request.body)
-    ))
-  );
-
-  app.get("/management/settings/backup-summary", { preHandler }, async () =>
-    configurationBackupSummarySchema.parse(await service.getConfigurationBackupSummary())
-  );
-
-  app.post("/management/settings/open-data-folder", { preHandler }, async () =>
-    openDataFolderResultSchema.parse(await service.openDataFolder())
-  );
-
-  app.post("/management/settings/clear-old-logs", { preHandler }, async () =>
-    clearOldLogsResultSchema.parse(await service.clearOldLogs())
-  );
-}
-
-function sendAssetCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
-  if (error instanceof AssetLibraryNotFoundError) {
-    return sendHttpError(reply, 404, {
-      code: "ASSET_NOT_FOUND",
-      message: "The selected asset no longer exists. Refresh the asset library and try again."
-    });
-  }
-  if (error instanceof AssetLibraryInUseError) {
-    return reply.status(409).send({
-      error: {
-        code: "ASSET_IN_USE",
-        message: "This asset is still in use. Reassign the listed Alerts and Screen Effects before deleting it."
-      },
-      impact: error.impact
-    });
-  }
-  throw error;
-}
-
-interface AlertEditorErrorContext {
-  readonly service: Pick<ManagementUiQueryService, "reportAlertEditorError">;
-  readonly generateErrorId: () => string;
-  readonly alertId: string;
-  readonly setId: string | null;
-  readonly summary: string;
-  readonly nextStep: string;
-}
-
-async function sendAlertEditorCommandError(
-  reply: Parameters<typeof sendHttpError>[0],
-  error: unknown,
-  context: AlertEditorErrorContext
-) {
-  if (error instanceof AlertEditorNotFoundError) {
-    return recordAlertEditorError(
-      reply,
-      context,
-      404,
-      error.code,
-      "The selected alert no longer exists. Return to the alert set and choose another alert."
-    );
-  }
-  if (error instanceof AlertEditorValidationError) {
-    return recordAlertEditorError(
-      reply,
-      context,
-      422,
-      error.code,
-      `${error.message} Review the highlighted editor settings and try again.`
-    );
-  }
-  if (error instanceof AlertEditorDeliveryBlockedError) {
-    return recordAlertEditorError(reply, context, 409, error.code, error.message);
-  }
-  if (error instanceof AlertEditorLiveImpactConfirmationRequiredError) {
-    return sendHttpError(reply, 409, {
-      code: error.code,
-      message: error.message
-    });
-  }
-  throw error;
-}
-
-async function recordAlertEditorError(
-  reply: Parameters<typeof sendHttpError>[0],
-  context: AlertEditorErrorContext,
-  statusCode: number,
-  code: string,
-  message: string
-) {
-  const referenceId = context.generateErrorId();
-  await context.service.reportAlertEditorError(context.alertId, {
-    setId: context.setId,
-    error: {
-      summary: context.summary,
-      cause: message,
-      nextStep: context.nextStep,
-      severity: "error",
-      occurredAt: new Date().toISOString(),
-      referenceId,
-      correction: null
-    }
-  });
-  return sendHttpError(reply, statusCode, { code, id: referenceId, message });
-}
-
-function sendProviderCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
-  if (error instanceof ProviderRegistrationNotFoundError) {
-    return sendHttpError(reply, 404, {
-      code: error.code,
-      message: "The selected provider registration no longer exists. Refresh the provider list and try again."
-    });
-  }
-  if (error instanceof ProviderActivationBlockedError) {
-    return reply.status(409).send({ error: { code: error.code, message: error.message }, impact: error.impact });
-  }
-  if (error instanceof ProviderActivationConfirmationRequiredError) {
-    return reply.status(409).send({ error: { code: error.code, message: error.message }, impact: error.impact });
-  }
-  throw error;
-}
-
-function readAlertSetMutationInput(
-  body: unknown,
-  reply: Parameters<typeof sendHttpError>[0]
-): AlertSetMutationInput | null {
-  const input = alertSetMutationInputSchema.safeParse(body);
-  if (input.success) return input.data;
-  sendHttpError(reply, 400, {
-    code: "INVALID_ALERT_SET_NAME",
-    message: "Enter an alert set name between 1 and 120 characters."
-  });
-  return null;
-}
-
-function sendAlertSetCommandError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
-  if (error instanceof AlertSetNotFoundError || error instanceof AlertRuleForSetNotFoundError) {
-    return sendHttpError(reply, 404, {
-      code: "ALERT_SET_NOT_FOUND",
-      message: "The selected alert set or alert no longer exists. Refresh the alert set and try again."
-    });
-  }
-  if (error instanceof AlertSetNameConflictError) {
-    return sendHttpError(reply, 409, {
-      code: "ALERT_SET_NAME_CONFLICT",
-      message: "Choose a different name; alert set names must be unique."
-    });
-  }
-  if (error instanceof AlertVariationNameConflictError) {
-    return sendHttpError(reply, 409, {
-      code: "ALERT_VARIATION_NAME_CONFLICT",
-      message: "Choose a different name; variations for the same alert must be unique."
-    });
-  }
-  if (error instanceof AlertSetActivationBlockedError) {
-    return reply.status(409).send({
-      error: { code: "ALERT_SET_ACTIVATION_BLOCKED", message: error.message },
-      impact: error.impact
-    });
-  }
-  if (error instanceof AlertSetActivationConfirmationRequiredError) {
-    return reply.status(409).send({
-      error: { code: "ALERT_SET_ACTIVATION_CONFIRMATION_REQUIRED", message: error.message },
-      impact: error.impact
-    });
-  }
-  if (error instanceof AlertSetDeleteBlockedError) {
-    return sendHttpError(reply, 409, {
-      code: error.reason === "active" ? "ACTIVE_ALERT_SET_DELETE_BLOCKED" : "ONLY_ALERT_SET_DELETE_BLOCKED",
-      message: error.message
-    });
-  }
-  if (error instanceof AlertManagedLiveImpactConfirmationRequiredError) {
-    return sendHttpError(reply, 409, {
-      code: error.code,
-      message: error.message
-    });
-  }
-  throw error;
-}
-
-interface RuntimeContract<T> {
-  parse(input: unknown): T;
-}
-
-function parseList<T>(input: readonly unknown[], contract: RuntimeContract<T>): readonly T[] {
-  return input.map((item) => contract.parse(item));
-}
-
-function readValue(record: unknown, key: string): unknown {
-  return typeof record === "object" && record !== null ? (record as Record<string, unknown>)[key] : undefined;
-}
-
-function readParam(params: unknown, key: string): string {
-  const value = readValue(params, key);
-  return typeof value === "string" ? value : "";
 }

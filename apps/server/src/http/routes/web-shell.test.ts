@@ -10,7 +10,12 @@ import type {
   UnifiedOutputRequest
 } from "@stream-jams/core";
 import { afterEach, describe, expect, it } from "vitest";
-import { createServerApp, type ServerErrorLogEntry } from "../../app.js";
+import type { ServerErrorLogEntry } from "../../app.js";
+import {
+  createWebShellAssetRouteTestApp,
+  createWebShellOverlayRouteTestApp,
+  createWebShellRouteTestApp
+} from "./test-support/route-test-app.js";
 import { LocalOverlayAccessService } from "../../modules/overlays/overlay-access-service.js";
 
 const temporaryDirectories: string[] = [];
@@ -22,7 +27,7 @@ afterEach(async () => {
 describe("web shell routes", () => {
   it("serves manifest-driven management shell assets and redirects root to /manage", async () => {
     const webBuildDirectory = await createWebBuildFixture();
-    const app = createServerApp({
+    const app = createWebShellAssetRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"
@@ -94,6 +99,9 @@ describe("web shell routes", () => {
     expect(management.body).toContain('<link rel="modulepreload" crossorigin href="/assets/vendor-test.js">');
     expect(management.body).toContain('<link rel="stylesheet" crossorigin href="/assets/index-test.css">');
     expect(management.body).toContain('<script type="module" crossorigin src="/assets/index-test.js"></script>');
+    expect(management.body).not.toContain("management-test.js");
+    expect(management.body).not.toContain("operator-test.js");
+    expect(management.body).not.toContain("overlay-test.js");
     expect(management.body).not.toContain("/src/main.tsx");
     expect(nestedManagement.statusCode).toBe(200);
     expect(nestedManagement.headers["content-type"]).toContain("text/html");
@@ -115,7 +123,7 @@ describe("web shell routes", () => {
     const collidingAssetDirectory = join(webBuildDirectory, "assets", "asset_1");
     await mkdir(collidingAssetDirectory, { recursive: true });
     await writeFile(join(collidingAssetDirectory, "file"), "static route must not bypass auth", "utf8");
-    const app = createServerApp({
+    const app = createWebShellAssetRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"
@@ -154,7 +162,7 @@ describe("web shell routes", () => {
   it("returns a safe error envelope and logs details when the web build is unavailable", async () => {
     const webBuildDirectory = await createTemporaryDirectory();
     const serverErrors: ServerErrorLogEntry[] = [];
-    const app = createServerApp({
+    const app = createWebShellRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"
@@ -198,7 +206,7 @@ describe("web shell routes", () => {
       purpose: "live",
       scope: "module"
     });
-    const app = createServerApp({
+    const app = createWebShellOverlayRouteTestApp({
       metadata: {
         appName: "stream-jams",
         version: "1.2.3"
@@ -235,6 +243,9 @@ async function createWebBuildFixture(): Promise<string> {
   await writeFile(join(webBuildDirectory, "assets", "index-test.js"), "console.log('built app');", "utf8");
   await writeFile(join(webBuildDirectory, "assets", "index-test.css"), "body { color: black; }", "utf8");
   await writeFile(join(webBuildDirectory, "assets", "vendor-test.js"), "export {};", "utf8");
+  await writeFile(join(webBuildDirectory, "assets", "management-test.js"), "export {};", "utf8");
+  await writeFile(join(webBuildDirectory, "assets", "operator-test.js"), "export {};", "utf8");
+  await writeFile(join(webBuildDirectory, "assets", "overlay-test.js"), "export {};", "utf8");
   await writeFile(
     join(webBuildDirectory, ".vite", "manifest.json"),
     JSON.stringify({
@@ -242,10 +253,29 @@ async function createWebBuildFixture(): Promise<string> {
         file: "assets/index-test.js",
         isEntry: true,
         css: ["assets/index-test.css"],
-        imports: ["_vendor.js"]
+        imports: ["_vendor.js"],
+        dynamicImports: ["src/App.tsx", "src/operator/OperatorApp.tsx", "src/overlay/OverlayApp.tsx"]
       },
       "_vendor.js": {
         file: "assets/vendor-test.js"
+      },
+      "src/App.tsx": {
+        file: "assets/management-test.js",
+        src: "src/App.tsx",
+        isDynamicEntry: true,
+        imports: ["_vendor.js"]
+      },
+      "src/operator/OperatorApp.tsx": {
+        file: "assets/operator-test.js",
+        src: "src/operator/OperatorApp.tsx",
+        isDynamicEntry: true,
+        imports: ["_vendor.js"]
+      },
+      "src/overlay/OverlayApp.tsx": {
+        file: "assets/overlay-test.js",
+        src: "src/overlay/OverlayApp.tsx",
+        isDynamicEntry: true,
+        imports: ["_vendor.js"]
       }
     }),
     "utf8"

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { createDefaultOverlayModuleRegistry } from "@stream-jams/core";
-import { createServerApp } from "../../app.js";
+import { createSurfaceSettingsRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { SurfaceSettingsService } from "../../modules/overlay-surfaces/surface-settings-service.js";
 import { SqliteSurfaceRepository } from "../../modules/overlay-surfaces/sqlite-surface-repository.js";
 import { createInMemoryStreamJamsDatabase } from "../../modules/db/database.js";

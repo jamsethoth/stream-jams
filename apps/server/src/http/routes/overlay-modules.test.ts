@@ -4,10 +4,10 @@ import {
   createDefaultOverlayModuleRegistry
 } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createOverlayModuleRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("overlay module routes", () => {
   it("lists registered modules for authenticated management clients", async () => {
@@ -311,14 +311,12 @@ async function createAppWithOverlayModules() {
     },
     overlayModuleRegistry: registry,
     overlayModuleConfigService: moduleConfigService,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
 
   return {
     app,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    }
+    authHeaders: managementTestHeaders(session, "POST")
   };
 }

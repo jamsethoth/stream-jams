@@ -5,8 +5,9 @@ const json = (value: unknown) => new Response(JSON.stringify(value), { headers: 
 it("uses protected requests, encoded complete surface identity, and an empty retry", async () => {
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input); if (url === "/auth/management/sessions") return json({ id: "mgmt_test", csrfToken: "csrf_test" });
-    expect(init?.headers).toMatchObject({ authorization: "Bearer mgmt_test" });
-    if (init?.method !== undefined) expect(init.headers).toMatchObject({ "x-stream-jams-csrf": "csrf_test" });
+    const headers = new Headers(init?.headers);
+    expect(headers.get("authorization")).toBe("Bearer mgmt_test");
+    if (init?.method !== undefined) expect(headers.get("x-stream-jams-csrf")).toBe("csrf_test");
     if (url === "/overlay-surfaces/unified-browser%3Aspace%2Fone") expect(init).toMatchObject({ method: "PUT", body: JSON.stringify({ id: "unified-browser:space/one", kind: "unified-browser", overlayId: "space/one", layers: [] }) });
     if (url === "/overlay-surfaces/desktop/retry") { expect(init?.method).toBe("POST"); expect(init?.body).toBeUndefined(); }
     return json(view);

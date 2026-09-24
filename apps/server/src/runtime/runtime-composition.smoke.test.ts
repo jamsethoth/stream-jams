@@ -1060,6 +1060,7 @@ describe("runtime app composition smoke", () => {
 
     const health = await app.inject({ method: "GET", url: "/health" });
     const management = await app.inject({ method: "GET", url: "/manage" });
+    const operator = await app.inject({ method: "GET", url: "/operator" });
     const builtScript = await app.inject({ method: "GET", url: "/assets/index-smoke.js" });
     const viteSource = await app.inject({ method: "GET", url: "/src/main.tsx" });
     const moduleOverlay = await app.inject({
@@ -1139,6 +1140,10 @@ describe("runtime app composition smoke", () => {
     expect(management.headers["content-type"]).toContain("text/html");
     expect(management.body).toContain('<script type="module" crossorigin src="/assets/index-smoke.js"></script>');
     expect(management.body).not.toContain("/src/main.tsx");
+    expect(management.body).not.toContain("management-smoke.js");
+    expect(operator.statusCode).toBe(200);
+    expect(operator.body).toContain('<script type="module" crossorigin src="/assets/index-smoke.js"></script>');
+    expect(operator.body).not.toContain("operator-smoke.js");
     expect(builtScript.statusCode).toBe(200);
     expect(builtScript.body).toBe("console.log('runtime smoke');");
     expect(viteSource.statusCode).toBe(404);
@@ -1826,13 +1831,35 @@ async function createWebBuildFixture(testRoot: string): Promise<string> {
   await mkdir(join(webBuildDirectory, "assets"), { recursive: true });
   await writeFile(join(webBuildDirectory, "assets", "index-smoke.js"), "console.log('runtime smoke');", "utf8");
   await writeFile(join(webBuildDirectory, "assets", "index-smoke.css"), "body { color: black; }", "utf8");
+  await writeFile(join(webBuildDirectory, "assets", "management-smoke.js"), "export {};", "utf8");
+  await writeFile(join(webBuildDirectory, "assets", "operator-smoke.js"), "export {};", "utf8");
+  await writeFile(join(webBuildDirectory, "assets", "overlay-smoke.js"), "export {};", "utf8");
   await writeFile(
     join(webBuildDirectory, ".vite", "manifest.json"),
     JSON.stringify({
       "index.html": {
         file: "assets/index-smoke.js",
         isEntry: true,
-        css: ["assets/index-smoke.css"]
+        css: ["assets/index-smoke.css"],
+        dynamicImports: ["src/App.tsx", "src/operator/OperatorApp.tsx", "src/overlay/OverlayApp.tsx"]
+      },
+      "src/App.tsx": {
+        file: "assets/management-smoke.js",
+        src: "src/App.tsx",
+        isDynamicEntry: true,
+        imports: ["index.html"]
+      },
+      "src/operator/OperatorApp.tsx": {
+        file: "assets/operator-smoke.js",
+        src: "src/operator/OperatorApp.tsx",
+        isDynamicEntry: true,
+        imports: ["index.html"]
+      },
+      "src/overlay/OverlayApp.tsx": {
+        file: "assets/overlay-smoke.js",
+        src: "src/overlay/OverlayApp.tsx",
+        isDynamicEntry: true,
+        imports: ["index.html"]
       }
     }),
     "utf8"

@@ -578,7 +578,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       ]);
       const profiles = saved.targetProfiles.filter((profile) => profile.enabled && profile.reviewState === "ready"
         && currentSet.overview.targetProfiles.some((candidate) => candidate.id === profile.id && candidate.enabled && candidate.reviewState === "ready")
-        && currentSet.browserSources.some((source) => source.targetProfileId === profile.id && source.connectionState === "connected"));
+        && (profile.id === "landscape"
+          || currentSet.browserSources.some((source) => source.targetProfileId === profile.id && source.connectionState === "connected")));
       if (profiles.length <= 1) {
         await sendInlineTest(alert, profiles[0]?.id ?? null, saved);
       } else {
@@ -1142,7 +1143,7 @@ function AlertRowsTable({
                       triggerClassName="button button--secondary button--compact"
                     />
                   </div>
-                  <small className="alert-sets-page__test-summary">Saved input · Browser {alert.targetProfileIds.map(formatProfile).join(", ") || "none"} · Selected device outputs · Audio and TTS included</small>
+                  <small className="alert-sets-page__test-summary">Saved input · Browser {alert.targetProfileIds.map(formatProfile).join(", ") || "none"}{alert.targetProfileIds.includes("landscape") ? " · Desktop Landscape when ready" : ""} · Selected device outputs · Audio and TTS included</small>
                   {testMenuOpen ? <div aria-label={`Choose test profile for ${alert.name}`} className="alert-sets-page__test-profiles" role="group">{testMenuProfileIds.map((targetProfileId) => <button aria-label={`Send ${alert.name} saved test to ${formatProfile(targetProfileId)}`} className="button button--secondary button--compact" key={targetProfileId} onClick={() => onTestProfile(alert, targetProfileId)} type="button">{formatProfile(targetProfileId)}</button>)}</div> : null}
                 </td>
               </tr>

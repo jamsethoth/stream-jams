@@ -1,13 +1,13 @@
 import type { MergedOperationsSnapshot } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createPlaybackOperationsRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   PlaybackOperationsConflictError,
   UnknownPlaybackOwnerError
 } from "../../modules/playback/playback-operations-service.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 const snapshot: MergedOperationsSnapshot = {
   revision: 3,
@@ -75,10 +75,10 @@ async function createApp() {
   const app = createServerApp({
     metadata: { appName: "stream-jams", version: "1.2.3" },
     playbackOperationsService: service,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: sessions }),
+    managementAuthPreHandler: createTestManagementSecurity(sessions),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter })
   });
-  return { app, service, authHeaders: { authorization: `Bearer ${session.id}` } };
+  return { app, service, authHeaders: managementTestHeaders(session, "POST") };
 }
 
 class RecordingOperationsService {

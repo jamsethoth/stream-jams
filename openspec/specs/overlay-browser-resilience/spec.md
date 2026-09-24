@@ -1,7 +1,7 @@
 # overlay-browser-resilience Specification
 
 ## Purpose
-TBD - created by archiving change improve-management-ui-ux-audit-followups. Update Purpose after archive.
+Define bounded browser-overlay reconnection, playback cleanup, and transparent failure behavior.
 ## Requirements
 ### Requirement: Overlay Transport Reconnects After Interruption
 The browser-source overlay SHALL reconnect after an unexpected WebSocket close using bounded backoff and SHALL stop reconnecting after the overlay is disposed.

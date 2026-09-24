@@ -1,7 +1,7 @@
 # twitch-device-oauth Specification
 
 ## Purpose
-TBD - created by archiving change replace-twitch-oauth-with-device-code. Update Purpose after archive.
+Define local Twitch Device Code authorization, secure token lifecycle, and connection recovery without a client secret.
 ## Requirements
 ### Requirement: Public Twitch application identity
 The system SHALL use the project Twitch Client ID `r6jy78npqxcqe68xpsctkcecti6ba3` by default, SHALL permit `TWITCH_CLIENT_ID` to override it, and SHALL NOT require or ship a Twitch client secret.

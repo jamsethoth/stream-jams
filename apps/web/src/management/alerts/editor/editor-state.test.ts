@@ -19,7 +19,6 @@ import {
   duplicateLayer,
   isEditorDirty,
   markEditorSaved,
-  moveLayerWithArrow,
   redoEditorUpdate,
   reorderLayer,
   revertEditorChanges,
@@ -491,24 +490,6 @@ describe("alert editor profile geometry", () => {
       width: 500,
       height: 120
     });
-  });
-
-  it.each([
-    ["ArrowUp", { x: 710, y: 419 }],
-    ["ArrowDown", { x: 710, y: 421 }],
-    ["ArrowLeft", { x: 709, y: 420 }],
-    ["ArrowRight", { x: 711, y: 420 }]
-  ] as const)("moves one pixel for %s", (key, expected) => {
-    const moved = moveLayerWithArrow(createDocument(), "landscape", "layer-text", key);
-    expect(profileLayout(moved, "landscape", "layer-text")).toMatchObject(expected);
-  });
-
-  it("moves ten pixels when the arrow move is accelerated", () => {
-    const document = createDocument();
-    const moved = moveLayerWithArrow(document, "landscape", "layer-text", "ArrowRight", true);
-
-    expect(profileLayout(moved, "landscape", "layer-text")).toMatchObject({ x: 720, y: 420 });
-    expect(profileLayout(moved, "vertical", "layer-text")).toBe(profileLayout(document, "vertical", "layer-text"));
   });
 
   it("snaps positions to grid, canvas edges, and center lines for each profile", () => {

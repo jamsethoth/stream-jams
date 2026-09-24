@@ -8,12 +8,12 @@ import {
   type NormalizedStreamEvent
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createAlertRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { SqliteAlertRepository } from "../../modules/alerts/sqlite-alert-repository.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import { createInMemoryStreamJamsDatabase, type StreamJamsDatabase } from "../../modules/db/database.js";
 import { createLocalManagementRateLimitPreHandler, LocalManagementRateLimiter } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 import type { AlertTestPlaybackCoordinator } from "./alerts.js";
 
 describe("alert rule routes", () => {
@@ -365,16 +365,14 @@ async function createAppWithAlerts(
     ...(options.alertTestPlaybackCoordinator === undefined
       ? {}
       : { alertTestPlaybackCoordinator: options.alertTestPlaybackCoordinator }),
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
 
   return {
     app,
     alertService,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    }
+    authHeaders: managementTestHeaders(session, "POST")
   };
 }
 

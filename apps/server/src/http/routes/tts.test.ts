@@ -1,12 +1,12 @@
 import type { TtsProviderDescriptor, TtsProviderTestInput, TtsProviderTestResult, TtsService } from "@stream-jams/core";
 import { describe, expect, it } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createTtsRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { LocalManagementSessionService } from "../../modules/auth/management-session-service.js";
 import {
   createLocalManagementRateLimitPreHandler,
   LocalManagementRateLimiter
 } from "../middleware/local-management-rate-limit.js";
-import { createManagementAuthPreHandler } from "../middleware/management-auth.js";
+import { createTestManagementSecurity, managementTestHeaders } from "../test-support/management-security-fixture.js";
 
 describe("tts routes", () => {
   it("lists provider capabilities and runs management-protected test actions", async () => {
@@ -162,16 +162,14 @@ async function createAppWithTts(options: { readonly testProviderError?: Error | 
       version: "1.2.3"
     },
     ttsService,
-    managementAuthPreHandler: createManagementAuthPreHandler({ sessionService: managementSessionService }),
+    managementAuthPreHandler: createTestManagementSecurity(managementSessionService),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: managementRateLimiter })
   });
 
   return {
     app,
     ttsService,
-    authHeaders: {
-      authorization: `Bearer ${session.id}`
-    }
+    authHeaders: managementTestHeaders(session, "POST")
   };
 }
 

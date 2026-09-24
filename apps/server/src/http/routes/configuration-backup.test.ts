@@ -4,7 +4,7 @@ import type {
   ConfigurationRestoreResult
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
-import { createServerApp } from "../../app.js";
+import { createConfigurationBackupRouteTestApp as createServerApp } from "./test-support/route-test-app.js";
 import { ConfigurationRestoreBlockedError } from "../../modules/backup/configuration-backup-service.js";
 import {
   createLocalManagementRateLimitPreHandler,

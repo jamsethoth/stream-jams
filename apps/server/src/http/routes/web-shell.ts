@@ -21,6 +21,7 @@ interface ViteManifestEntry {
   readonly src?: string;
   readonly css?: readonly string[];
   readonly imports?: readonly string[];
+  readonly dynamicImports?: readonly string[];
 }
 
 type ViteManifest = Record<string, ViteManifestEntry>;
@@ -148,7 +149,8 @@ function parseManifest(candidate: unknown): ViteManifest {
       ...(entry.isEntry === undefined ? {} : { isEntry: entry.isEntry === true }),
       ...(typeof entry.src === "string" ? { src: entry.src } : {}),
       ...(Array.isArray(entry.css) ? { css: entry.css.filter(isString) } : {}),
-      ...(Array.isArray(entry.imports) ? { imports: entry.imports.filter(isString) } : {})
+      ...(Array.isArray(entry.imports) ? { imports: entry.imports.filter(isString) } : {}),
+      ...(Array.isArray(entry.dynamicImports) ? { dynamicImports: entry.dynamicImports.filter(isString) } : {})
     };
   }
 

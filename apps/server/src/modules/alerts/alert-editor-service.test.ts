@@ -4,12 +4,14 @@ import {
   normalizedStreamEventSchema,
   streamEventTypes,
   validateAlertSamplePayload,
+  DefaultAlertResolver,
   DefaultModerationService,
   AlertEditorDocument,
   AlertRule,
   AlertEditorTestRequest,
   type AssetRecord,
-  type AudioOutputStatus
+  type AudioOutputStatus,
+  type OverlayInstruction
 } from "@stream-jams/core";
 import {
   AlertEditorDeliveryBlockedError,
@@ -1609,6 +1611,88 @@ describe("AlertEditorService", () => {
     expect(playback.audio[0]).toMatchObject({ durationMs: 3_971, layers: [{ playbackDurationMs: 3_971 }] });
   });
 
+  it("keeps live and selected-document layer projection aligned while preserving their TTS modes", async () => {
+    const harness = createHarness();
+    const source = await harness.service.getDocument(rule.id);
+    const animation = source.layers[0]!.animation;
+    const image = {
+      id: "layer-image", name: "Image", type: "image" as const, visible: true,
+      order: source.layers.length, animation, assetId: "asset-image"
+    };
+    const audio = {
+      id: "layer-audio", name: "Audio", type: "audio" as const, visible: true,
+      order: source.layers.length + 1, animation, assetId: "asset-audio", volume: 0.6,
+      fadeInMs: 125, fadeOutMs: 250
+    };
+    const tts = {
+      id: "layer-tts", name: "Speech", type: "tts" as const, visible: true,
+      order: source.layers.length + 2, animation, enabled: true,
+      providerId: "speakerbot", template: "Welcome {userName}"
+    };
+    const shape = {
+      id: "layer-shape", name: "Shape", type: "shape" as const, visible: true,
+      order: source.layers.length + 3, animation, fill: "#336699CC"
+    };
+    const document: AlertEditorDocument = {
+      ...source,
+      layers: [...source.layers, image, audio, tts, shape],
+      targetProfiles: source.targetProfiles.map((profile) => profile.id === "landscape" ? {
+        ...profile,
+        layerLayouts: [
+          ...profile.layerLayouts,
+          { layerId: image.id, x: 20, y: 30, width: 320, height: 180, zIndex: image.order },
+          { layerId: shape.id, x: 40, y: 50, width: 240, height: 120, zIndex: shape.order }
+        ]
+      } : profile)
+    };
+
+    await harness.service.sendTest(rule.id, {
+      document,
+      targetProfileId: "landscape",
+      samplePayload: { userName: "James", actor: { id: "viewer-1", displayName: "James" } },
+      includeAudio: true,
+      includeTts: true
+    });
+    const testPlayback = harness.enqueueTest.mock.calls[0]![0] as AlertEditorTestPlayback;
+    let nextId = 0;
+    const liveAlerts = new DefaultAlertResolver({
+      generateId: (kind) => `${kind}-${++nextId}`
+    }).resolveMatches({
+      matches: [{ rule, event: testPlayback.sourceEvent }],
+      target: {
+        overlayId: "default",
+        moduleId: "alerts",
+        purpose: "live",
+        scope: "module",
+        targetProfileId: "landscape"
+      },
+      editorDocuments: new Map([[document.id, document]])
+    });
+
+    const testCommon = testPlayback.alerts
+      .map((alert) => alert.overlayInstruction)
+      .filter((instruction) => instruction.tts === null)
+      .map(commonInstructionContent);
+    const liveCommon = liveAlerts
+      .map((alert) => alert.overlayInstruction)
+      .filter((instruction) => instruction.tts === null)
+      .map(commonInstructionContent);
+    expect(testCommon).toEqual(liveCommon);
+
+    expect(liveAlerts.find((alert) => alert.overlayInstruction.tts !== null)?.overlayInstruction.tts).toEqual({
+      mode: "remote-trigger",
+      text: "Welcome James",
+      audioAssetId: null,
+      providerPayload: { providerId: "speakerbot", layerId: "layer-tts" }
+    });
+    expect(testPlayback.alerts.find((alert) => alert.overlayInstruction.tts !== null)?.overlayInstruction.tts).toEqual({
+      mode: "browser-speech",
+      text: "Welcome James",
+      audioAssetId: null,
+      providerPayload: null
+    });
+  });
+
   it("omits configured audio and TTS layers when both test inclusion flags are disabled", async () => {
     const harness = createHarness();
     const document = await harness.service.getDocument(rule.id);
@@ -1704,6 +1788,27 @@ describe("AlertEditorService", () => {
     await expect(storedDocuments.find(rule.id)).resolves.toBeNull();
   });
 });
+
+function commonInstructionContent(instruction: OverlayInstruction) {
+  const {
+    id,
+    overlayId,
+    moduleId,
+    operatorTest,
+    purpose,
+    scope,
+    targetProfileId,
+    ...content
+  } = instruction;
+  void id;
+  void overlayId;
+  void moduleId;
+  void operatorTest;
+  void purpose;
+  void scope;
+  void targetProfileId;
+  return content;
+}
 
 function createHarness(
   activeSet = false,
