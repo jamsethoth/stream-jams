@@ -67,19 +67,19 @@ it("reconciles only an opted-in unique exact label and reports other outcomes", 
   expect(f.routes.findById(optedOut.id)?.deviceId).toBe("a");
 });
 
-it("does not overwrite a manual rebind or resurrect deletion while reconciliation is pending", async () => {
+it("does not overwrite a same-label manual rebind or resurrect deletion while reconciliation is pending", async () => {
   using f = fixture();
   const manual = await f.service.createRoute({ name: "Manual", deviceId: "a", autoFollowDeviceName: true });
   const deleted = await f.service.createRoute({ name: "Deleted", deviceId: "a", autoFollowDeviceName: true });
   const devices = deferred<Array<{ deviceId: string; label: string }>>();
   f.host.listOutputDevices.mockReturnValue(devices.promise);
   const pending = f.service.reconcileBindings();
-  f.routes.save({ ...manual, deviceId: "chosen", deviceLabel: "Chosen" });
+  f.routes.save({ ...manual, deviceId: "chosen", deviceLabel: "Headphones" });
   f.routes.delete(deleted.id);
-  devices.resolve([{ deviceId: "new", label: "Headphones" }, { deviceId: "chosen", label: "Chosen" }]);
+  devices.resolve([{ deviceId: "new", label: "Headphones" }]);
   await pending;
 
-  expect(f.routes.findById(manual.id)).toMatchObject({ deviceId: "chosen", deviceLabel: "Chosen" });
+  expect(f.routes.findById(manual.id)).toMatchObject({ deviceId: "chosen", deviceLabel: "Headphones" });
   expect(f.routes.findById(deleted.id)).toBeNull();
 });
 

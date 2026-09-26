@@ -45,6 +45,17 @@ it("derives trusted display labels, rejects browser labels, and clears consent w
   expect(cleared.surfaces[0]).toMatchObject({ displayId: null, displayLabel: null, autoFollowDisplayName: false });
 });
 
+it("allows a disconnected legacy display without a saved label to be disabled", async () => {
+  const { service, surfaces, host, value } = fixture();
+  await surfaces.save({ ...(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), enabled: true, displayId: "legacy", displayLabel: null, autoFollowDisplayName: false });
+  host.getStatus.mockResolvedValue({ available: true, displays: [], state: "unavailable", message: "disconnected" });
+
+  await expect(service.save("desktop:primary", {
+    ...editable(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), enabled: false
+  })).resolves.toBeDefined();
+  expect(value()).toMatchObject({ enabled: false, displayId: "legacy", displayLabel: null, autoFollowDisplayName: false });
+});
+
 it("reconciles one exact display name durably and reports ambiguity without fallback", async () => {
   const { service, surfaces, host, value } = fixture();
   await surfaces.save({ ...(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), enabled: true, displayId: "old", displayLabel: "VG27A", autoFollowDisplayName: true });
@@ -66,6 +77,25 @@ it("reconciles one exact display name durably and reports ambiguity without fall
   await service.reconcileDesktopBinding();
   expect(host.configure).not.toHaveBeenCalled();
   expect((await service.load()).desktopBindingState).toBe("ambiguous");
+});
+
+it("reconciles a unique replacement discovered after startup during settings refresh", async () => {
+  const { service, surfaces, host, value } = fixture();
+  await surfaces.save({ ...(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), enabled: true, displayId: "old", displayLabel: "VG27A", autoFollowDisplayName: true });
+  host.getStatus.mockResolvedValueOnce({ available: true, displays: [
+    { id: "old", label: "VG27A", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }
+  ], state: "ready", message: null });
+  await service.initializeDesktop();
+  host.configure.mockClear();
+  host.getStatus.mockResolvedValue({ available: true, displays: [
+    { id: "new", label: "VG27A", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }
+  ], state: "unavailable", message: null });
+
+  const refreshed = await service.load();
+
+  expect(refreshed.desktopBindingState).toBe("rebound");
+  expect(value()).toMatchObject({ displayId: "new", displayLabel: "VG27A" });
+  expect(host.configure).toHaveBeenCalledWith(expect.objectContaining({ displayId: "new" }));
 });
 
 it("applies only successfully persisted configuration and exposes failed runtime apply without undoing intent", async () => {

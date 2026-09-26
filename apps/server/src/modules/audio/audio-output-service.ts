@@ -35,7 +35,7 @@ export class AudioOutputService {
     const content = structuredClone(audio);
     const capability = await this.getDevices();
     if (capability.available) {
-      try { await this.#reconcileWithCapability(capability); }
+      try { await this.#reconcileWithCapability(capability, routes); }
       catch { /* Current playback remains fail-closed against its captured route snapshot. */ }
     }
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
@@ -69,9 +69,10 @@ export class AudioOutputService {
   }
 
   async getStatus() {
+    const snapshots = structuredClone(this.listRoutes());
     const capability = await this.getDevices();
     if (capability.available) {
-      try { await this.#reconcileWithCapability(capability); }
+      try { await this.#reconcileWithCapability(capability, snapshots); }
       catch { /* Preserve the saved route as authoritative when persistence fails. */ }
     }
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
@@ -92,9 +93,10 @@ export class AudioOutputService {
   }
 
   async reconcileBindings(): Promise<void> {
+    const snapshots = structuredClone(this.listRoutes());
     const capability = await this.getDevices();
     if (!capability.available) return;
-    await this.#reconcileWithCapability(capability);
+    await this.#reconcileWithCapability(capability, snapshots);
   }
 
   async createRoute(candidate: unknown): Promise<AudioOutputRoute> {
@@ -220,9 +222,9 @@ export class AudioOutputService {
     return { deviceId: device.deviceId, deviceLabel: device.label };
   }
 
-  async #reconcileWithCapability(capability: AudioDeviceCapability): Promise<void> {
+  async #reconcileWithCapability(capability: AudioDeviceCapability, snapshots: readonly AudioOutputRoute[]): Promise<void> {
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
-    for (const snapshot of structuredClone(this.listRoutes())) {
+    for (const snapshot of snapshots) {
       if (snapshot.deviceId === null || availableIds.has(snapshot.deviceId)) {
         if (this.#automaticBindingStates.get(snapshot.id) !== "rebound") {
           this.#automaticBindingStates.set(snapshot.id, "not-needed");

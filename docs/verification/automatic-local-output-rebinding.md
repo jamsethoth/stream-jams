@@ -29,3 +29,7 @@ Verified on Windows on 2026-09-26 from `codex/automatic-local-output-rebinding`.
 ## Packaged and hardware boundary
 
 The runnable Windows package was rebuilt and exercised with isolated temporary profiles. The desktop suite enumerated this machine's current explicit audio outputs and verified the production audio and overlay transports without changing the user's existing Stream Jams profile. Physical device IDs were not forced to churn; deterministic synthetic tests cover changed-ID, ambiguity, persistence-failure, and restart reconciliation behavior.
+
+## Independent review follow-up
+
+An independent read-only PR review found three important edge cases. The corrective patch now snapshots audio bindings before enumeration, reconciles display topology changes during serialized settings refreshes, and permits an opted-out legacy missing display to be disabled without inventing a label. The focused service and HTTP suite passed 31 tests; lint and typecheck passed. A post-review full unit rerun passed 2,165 of 2,166 tests and hit the pre-existing five-second timeout in the unrelated media-matched Alert Editor timing test; that exact test passed immediately in isolation. The earlier clean full run passed all 2,164 then-existing tests.
