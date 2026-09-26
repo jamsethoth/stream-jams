@@ -58,9 +58,6 @@ function validateSurfaceUpdateIdentity(value: {
   if (value.kind === "desktop" && value.enabled && value.displayId === null) {
     context.addIssue({ code: "custom", path: ["displayId"], message: "Enabled desktop output requires an explicit display" });
   }
-  if (value.kind === "desktop" && value.autoFollowDisplayName && value.displayId === null) {
-    context.addIssue({ code: "custom", path: ["autoFollowDisplayName"], message: "Choose a display before enabling automatic following" });
-  }
   if (value.kind === "unified-browser" && value.id !== `unified-browser:${value.overlayId}`) {
     context.addIssue({ code: "custom", path: ["id"], message: "Surface identity must match its output" });
   }

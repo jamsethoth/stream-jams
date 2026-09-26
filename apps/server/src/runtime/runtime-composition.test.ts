@@ -334,7 +334,13 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
   const transport: DesktopOverlayTransport = {
     configure: vi.fn(async () => { if (fails) throw new Error("desktop unavailable"); }), prepare: vi.fn(async () => "ready" as const),
-    start: vi.fn(async () => {}), stop: vi.fn(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {})
+    start: vi.fn(async () => {}), stop: vi.fn(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    getStatus: vi.fn(async () => ({
+      available: true as const,
+      displays: [{ id: "replacement-monitor", label: "VG27A", bounds: { x: 0, y: 0, width: 2560, height: 1440 }, scaleFactor: 1 }],
+      state: "disabled" as const,
+      message: null
+    }))
   };
   try {
     const options = { homeDirectory: testRoot, webBuildDirectory: await createWebBuildFixture(testRoot),
@@ -346,14 +352,13 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
     const surfaces = await composition.app.inject({ method: "GET", url: "/overlay-surfaces", headers: managementAuthHeaders(session) });
     expect(surfaces.statusCode).toBe(200);
     expect(surfaces.json()).toMatchObject({ surfaces: expect.arrayContaining([expect.objectContaining({ id: "desktop:primary" })]) });
-    const saved = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "selected-monitor", opacity: 0.7, layers: [] };
+    const saved = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "old-monitor", displayLabel: "VG27A", autoFollowDisplayName: true, opacity: 0.7, layers: [] };
     composition.database.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ? WHERE id = 'desktop:primary'").run(JSON.stringify(saved));
     await composition.close();
     composition = await createRuntimeAppComposition(options);
     expect(transport.configure).toHaveBeenLastCalledWith({
       ...saved,
-      displayLabel: null,
-      autoFollowDisplayName: false,
+      displayId: "replacement-monitor",
       layers: [
         { moduleId: "alerts", visible: false },
         { moduleId: "screen-effects", visible: false }

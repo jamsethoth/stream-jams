@@ -1,5 +1,6 @@
-import { desktopOverlayStatusSchema, surfaceConfigurationSchema, surfaceSettingsViewSchema, validateSurfaceOrder,
-  type DesktopOverlayStatus, type DesktopOverlayTransport, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
+import { desktopOverlayStatusSchema, findExactUniqueLabelMatch, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema,
+  surfaceSettingsViewSchema, validateSurfaceOrder, type AutomaticBindingState, type DesktopOverlayStatus,
+  type DesktopOverlayTransport, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
 
 export class SurfaceSettingsError extends Error {
   constructor(readonly statusCode: number, readonly code: string, message: string) { super(message); }
@@ -16,41 +17,54 @@ export interface SurfaceSettingsServiceDependencies {
 export class SurfaceSettingsService {
   #saving = false;
   #applicationFailure: string | null = null;
+  #desktopBindingState: AutomaticBindingState = "not-needed";
   constructor(private readonly dependencies: SurfaceSettingsServiceDependencies) {}
 
   async load(): Promise<SurfaceSettingsView> {
     const [surfaces, desktop] = await Promise.all([this.dependencies.surfaces.list(), this.#status()]);
-    return surfaceSettingsViewSchema.parse({ surfaces, desktop: this.#applicationFailure === null ? desktop : {
-      ...desktop, state: "failed", message: this.#applicationFailure
-    } });
+    return surfaceSettingsViewSchema.parse({
+      surfaces,
+      desktop: this.#applicationFailure === null ? desktop : { ...desktop, state: "failed", message: this.#applicationFailure },
+      desktopBindingState: this.#desktopBindingState
+    });
   }
 
   save(surfaceId: string, candidate: unknown): Promise<SurfaceSettingsView> {
     return this.#mutate(async () => {
-      const parsed = surfaceConfigurationSchema.safeParse(candidate);
+      const parsed = surfaceConfigurationUpdateSchema.safeParse(candidate);
       if (!parsed.success || parsed.data.id !== surfaceId) throw invalid();
-      const config = parsed.data;
-      try { validateSurfaceOrder(config.layers, this.dependencies.moduleIds()); } catch { throw invalid(); }
       const surfaces = await this.dependencies.surfaces.list();
       if (!surfaces.some(surface => surface.id === surfaceId)) throw new SurfaceSettingsError(404, "SURFACE_NOT_FOUND", "This overlay surface no longer exists. Refresh Settings and try again.");
-      if (config.kind === "desktop" && config.enabled) {
-        const status = await this.#status();
-        if (!status.available || !status.displays.some(display => display.id === config.displayId)) {
-          throw new SurfaceSettingsError(409, "SURFACE_DISPLAY_UNAVAILABLE", "The selected desktop display is unavailable. Reconnect it or select an available display, then save again.");
-        }
-      }
+      const current = surfaces.find(surface => surface.id === surfaceId)!;
+      const config = parsed.data.kind === "desktop"
+        ? await this.#trustedDesktopConfiguration(parsed.data, current)
+        : surfaceConfigurationSchema.parse(parsed.data);
+      try { validateSurfaceOrder(config.layers, this.dependencies.moduleIds()); } catch { throw invalid(); }
       try { await this.dependencies.surfaces.save(config); }
       catch { throw new SurfaceSettingsError(500, "SURFACE_SAVE_FAILED", "Overlay settings could not be saved. Check data-folder permissions and retry; the running overlay was not changed."); }
       try {
         if (config.kind === "desktop") await this.dependencies.host?.configure(config);
         await this.dependencies.changed(config);
-        if (config.kind === "desktop") this.#applicationFailure = null;
+        if (config.kind === "desktop") {
+          this.#applicationFailure = null;
+          this.#desktopBindingState = "not-needed";
+        }
       } catch {
         if (config.kind === "unified-browser") throw new SurfaceSettingsError(503, "SURFACE_APPLY_FAILED", "Settings were saved, but browser outputs could not be updated. Refresh the browser source or save the layer settings again.");
         this.#applicationFailure = "Settings were saved, but the overlay could not apply them. Check the display and explicitly retry the desktop overlay.";
       }
       return this.load();
     });
+  }
+
+  async initializeDesktop(): Promise<void> {
+    await this.#reconcileDesktopBinding(false);
+    const config = (await this.dependencies.surfaces.list()).find(surface => surface.kind === "desktop");
+    if (config?.kind === "desktop") await this.dependencies.host?.configure(config);
+  }
+
+  async reconcileDesktopBinding(): Promise<void> {
+    await this.#reconcileDesktopBinding(true);
   }
 
   retry(): Promise<SurfaceSettingsView> {
@@ -72,6 +86,58 @@ export class SurfaceSettingsService {
     if (this.dependencies.host?.getStatus === undefined) return { available: false, displays: [], state: "unavailable", message: "Desktop overlays require the Windows desktop app. Browser-source outputs remain available." };
     try { return desktopOverlayStatusSchema.parse(await this.dependencies.host.getStatus()); }
     catch { return { available: false, displays: [], state: "unavailable", message: "The desktop host is unavailable. Restart the Windows app and retry." }; }
+  }
+
+  async #trustedDesktopConfiguration(
+    candidate: Extract<ReturnType<typeof surfaceConfigurationUpdateSchema.parse>, { kind: "desktop" }>,
+    current: SurfaceConfiguration
+  ): Promise<Extract<SurfaceConfiguration, { kind: "desktop" }>> {
+    if (candidate.displayId === null) {
+      return surfaceConfigurationSchema.parse({ ...candidate, displayLabel: null, autoFollowDisplayName: false }) as Extract<SurfaceConfiguration, { kind: "desktop" }>;
+    }
+    const saved = current.kind === "desktop" ? current : null;
+    const canPreserveDisabled = !candidate.enabled
+      && saved?.displayId === candidate.displayId && saved.displayLabel !== null;
+    if (canPreserveDisabled) {
+      return surfaceConfigurationSchema.parse({ ...candidate, displayLabel: saved.displayLabel }) as Extract<SurfaceConfiguration, { kind: "desktop" }>;
+    }
+    const status = await this.#status();
+    const display = status.available ? status.displays.find(item => item.id === candidate.displayId) : undefined;
+    if (display === undefined) {
+      throw new SurfaceSettingsError(409, "SURFACE_DISPLAY_UNAVAILABLE", "The selected desktop display is unavailable. Reconnect it or select an available display, then save again.");
+    }
+    return surfaceConfigurationSchema.parse({ ...candidate, displayLabel: display.label }) as Extract<SurfaceConfiguration, { kind: "desktop" }>;
+  }
+
+  async #reconcileDesktopBinding(configure: boolean): Promise<void> {
+    const snapshot = (await this.dependencies.surfaces.list()).find(surface => surface.kind === "desktop");
+    if (snapshot?.kind !== "desktop" || snapshot.displayId === null) {
+      this.#desktopBindingState = "not-needed";
+      return;
+    }
+    const status = await this.#status();
+    if (!status.available) return;
+    if (status.displays.some(display => display.id === snapshot.displayId)) {
+      if (this.#desktopBindingState !== "rebound") this.#desktopBindingState = "not-needed";
+      return;
+    }
+    if (!snapshot.autoFollowDisplayName || snapshot.displayLabel === null) {
+      this.#desktopBindingState = "disabled";
+      return;
+    }
+    const match = findExactUniqueLabelMatch(status.displays, snapshot.displayLabel);
+    if (match.kind === "none") { this.#desktopBindingState = "no-match"; return; }
+    if (match.kind === "ambiguous") { this.#desktopBindingState = "ambiguous"; return; }
+    const committed = await this.dependencies.runMutation(async () => {
+      const current = (await this.dependencies.surfaces.list()).find(surface => surface.id === snapshot.id);
+      if (current?.kind !== "desktop" || current.displayId !== snapshot.displayId || current.displayLabel !== snapshot.displayLabel || current.autoFollowDisplayName !== snapshot.autoFollowDisplayName) return null;
+      const next = surfaceConfigurationSchema.parse({ ...current, displayId: match.value.id });
+      await this.dependencies.surfaces.save(next);
+      return next.kind === "desktop" ? next : null;
+    });
+    if (committed === null) return;
+    if (configure) await this.dependencies.host?.configure(committed);
+    this.#desktopBindingState = "rebound";
   }
 
   async #mutate<T>(work: () => Promise<T>): Promise<T> {

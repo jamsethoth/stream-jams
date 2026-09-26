@@ -193,7 +193,7 @@ export { desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisual
 export type { DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
 export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";
 export { selectedDesktopDisplaySchema, desktopOverlayStatusSchema, surfaceSettingsViewSchema } from "./overlays/desktop-overlay-status.js";
-export type { SelectedDesktopDisplay, DesktopOverlayStatus, SurfaceSettingsView } from "./overlays/desktop-overlay-status.js";
+export type { SelectedDesktopDisplay, DesktopOverlayStatus, SurfaceSettingsView, DesktopBindingState } from "./overlays/desktop-overlay-status.js";
 export type { AlertsOverlayModuleConfig } from "./overlay-modules/module-definition.js";
 export { alertsOverlayModuleConfigSchema, alertsOverlayModuleDefinition } from "./overlay-modules/module-definition.js";
 export type { OverlayModuleRegistry } from "./overlay-modules/module-registry.js";
