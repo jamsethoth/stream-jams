@@ -167,6 +167,8 @@ function desktopSurface(): SurfaceConfiguration {
     kind: "desktop",
     enabled: true,
     displayId: "display-1",
+    displayLabel: "display-1",
+    autoFollowDisplayName: false,
     opacity: 1,
     layers: [{ moduleId: "screen-effects", visible: true }]
   };
@@ -195,8 +197,9 @@ function audioStatusFixture(routes: readonly [string, AudioOutputStatus["routes"
     capability: { available: true, devices: [], reason: null, nextStep: null },
     muted: false,
     routes: routes.map(([id, state]) => ({
-      route: { id, name: id, deviceId: `${id}-device`, deviceLabel: id },
-      state
+      route: { id, name: id, deviceId: `${id}-device`, deviceLabel: id, autoFollowDeviceName: false },
+      state,
+      automaticBindingState: "not-needed"
     }))
   };
 }

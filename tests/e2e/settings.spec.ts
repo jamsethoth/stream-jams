@@ -1,22 +1,22 @@
 import { expect, test, type Page } from "@playwright/test";
 import { mockManagementShell } from "./e2e-helpers.js";
-import type { SurfaceConfiguration, SurfaceSettingsView } from "@stream-jams/core";
+import type { SurfaceConfigurationUpdate, SurfaceSettingsView } from "@stream-jams/core";
 
 test("overlay surfaces keep independent drafts and apply only explicit saves", async ({ page }, testInfo) => {
   await mockManagementShell(page);
   await mockSettingsSummary(page);
   await page.route("**/config/server", route => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
   let view: SurfaceSettingsView = { surfaces: [
-    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [{ moduleId: "alerts", visible: false }, { moduleId: "screen-effects", visible: false }] },
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: false }, { moduleId: "screen-effects", visible: false }] },
     { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "alerts", visible: true }, { moduleId: "screen-effects", visible: false }] }
-  ], desktop: { available: true, displays: [{ id: "portrait", label: "Portrait display", bounds: { x: -1080, y: 0, width: 1080, height: 1920 }, scaleFactor: 1 }], state: "disabled", message: null } };
-  const writes: SurfaceConfiguration[] = [];
+  ], desktop: { available: true, displays: [{ id: "portrait", label: "Portrait display", bounds: { x: -1080, y: 0, width: 1080, height: 1920 }, scaleFactor: 1 }], state: "disabled", message: null }, desktopBindingState: "not-needed" };
+  const writes: SurfaceConfigurationUpdate[] = [];
   await page.route("**/overlay-surfaces", route => route.fulfill({ json: view }));
   await page.route("**/overlay-surfaces/*", async route => {
     expect(route.request().method()).toBe("PUT");
     expect(route.request().headers()["x-stream-jams-csrf"]).toBe("csrf_e2e");
-    const config = route.request().postDataJSON() as SurfaceConfiguration;
-    writes.push(config); view = { ...view, surfaces: view.surfaces.map(saved => saved.id === config.id ? config : saved),
+    const config = route.request().postDataJSON() as SurfaceConfigurationUpdate;
+    writes.push(config); view = { ...view, surfaces: view.surfaces.map(saved => saved.id === config.id ? (config.kind === "desktop" ? { ...config, displayLabel: view.desktop.displays.find(display => display.id === config.displayId)?.label ?? null } : config) : saved),
       desktop: config.kind === "desktop" ? { ...view.desktop, state: config.enabled ? "ready" : "disabled" } : view.desktop };
     await route.fulfill({ json: view });
   });
@@ -25,6 +25,7 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
   await page.goto("/manage/settings#overlay-surfaces");
   await expect(page.getByRole("heading", { name: "Overlay surfaces" })).toBeVisible();
   await page.getByLabel("Desktop display").selectOption("portrait");
+  await page.getByRole("checkbox", { name: "Automatically follow this display name" }).check();
   await page.getByLabel("Enable desktop overlay").check();
   await page.getByRole("checkbox", { name: "Show alerts on Desktop overlay" }).check();
   await page.getByRole("button", { name: "Move Screen Effects up on Desktop overlay" }).click();
@@ -34,7 +35,8 @@ test("overlay surfaces keep independent drafts and apply only explicit saves", a
   await expect(page.getByRole("button", { name: "Save Desktop overlay" })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
   expect(writes).toHaveLength(1);
-  expect(writes[0]).toMatchObject({ enabled: true, displayId: "portrait", layers: [{ moduleId: "screen-effects", visible: false }, { moduleId: "alerts", visible: true }] });
+  expect(writes[0]).toMatchObject({ enabled: true, displayId: "portrait", autoFollowDisplayName: true, layers: [{ moduleId: "screen-effects", visible: false }, { moduleId: "alerts", visible: true }] });
+  expect(writes[0]).not.toHaveProperty("displayLabel");
   await page.getByRole("button", { name: "Save Unified browser: default" }).click();
   await expect(page.getByRole("button", { name: "Save Unified browser: default" })).toBeDisabled();
   await page.reload();

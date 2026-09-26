@@ -3145,6 +3145,7 @@ describe("AlertEditorPage", () => {
     await user.click(liveTtsSummary);
     expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     expect(enabled).toBeVisible();
+    expect(enabled.closest("label")).toHaveClass("alert-editor-inspector__check");
     expect(screen.getByText("Studio Speaker.bot")).toBeVisible();
     expect(screen.getByText("Speaker.bot is used for live TTS.")).toBeVisible();
     expect(enabled).toBeChecked();

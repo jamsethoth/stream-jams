@@ -58,7 +58,7 @@ describe("SettingsPanel", () => {
   it("saves both server and surface drafts through the shared navigation guard", async () => {
     const user = userEvent.setup();
     const managementApi = createManagementApi();
-    const value = { surfaces: [{ id: "unified-browser:default", kind: "unified-browser" as const, overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable" as const, message: null } };
+    const value = { surfaces: [{ id: "unified-browser:default", kind: "unified-browser" as const, overlayId: "default", layers: [{ moduleId: "alerts", visible: true }] }], desktop: { available: false, displays: [], state: "unavailable" as const, message: null }, desktopBindingState: "not-needed" as const };
     const surfaceApi: SurfaceSettingsApi = { load: async () => value, save: vi.fn(async surface => ({ ...value, surfaces: [surface] })), retry: vi.fn() };
     window.history.replaceState(null, "", "/manage/settings");
     render(<DirtyNavigationProvider><SettingsNavigationHarness audioApi={createAudioApi()} managementApi={managementApi} surfaceApi={surfaceApi} /></DirtyNavigationProvider>);
@@ -435,14 +435,15 @@ function createAudioApi(): AudioApi {
     getStatus: vi.fn(async () => ({
       capability: { available: true, devices: [{ deviceId: "endpoint-a", label: "USB headphones" }], reason: null, nextStep: null },
       muted: false,
-      routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones" }, state: "ready" as const }]
+      routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: false }, state: "ready" as const, automaticBindingState: "not-needed" as const }]
     })),
     createRoute: vi.fn(),
     updateRoute: vi.fn(async (id, input) => ({
       id,
       name: input.name ?? "Headphones",
       deviceId: input.deviceId === undefined ? "endpoint-a" : input.deviceId,
-      deviceLabel: input.deviceId === null ? null : "USB headphones"
+      deviceLabel: input.deviceId === null ? null : "USB headphones",
+      autoFollowDeviceName: input.autoFollowDeviceName ?? false
     })),
     deleteRoute: vi.fn(async () => undefined),
     testRoute: vi.fn(async (routeId) => ({ routeId, muted: false })),

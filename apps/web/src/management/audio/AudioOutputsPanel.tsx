@@ -30,8 +30,10 @@ interface RouteDraft {
   readonly id: string;
   readonly savedName: string;
   readonly savedDeviceId: string | null;
+  readonly savedAutoFollowDeviceName: boolean;
   readonly name: string;
   readonly deviceId: string | null;
+  readonly autoFollowDeviceName: boolean;
 }
 
 interface ConflictState {
@@ -62,6 +64,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
   const [drafts, setDrafts] = useState<readonly RouteDraft[]>([]);
   const [newName, setNewName] = useState("");
   const [newDeviceId, setNewDeviceId] = useState<string | null>(null);
+  const [newAutoFollowDeviceName, setNewAutoFollowDeviceName] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteRoute, setDeleteRoute] = useState<AudioOutputRoute | null>(null);
   const [conflict, setConflict] = useState<ConflictState | null>(null);
@@ -80,7 +83,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
     });
   }, [status]);
 
-  const newOutputDirty = newName !== "" || newDeviceId !== null;
+  const newOutputDirty = newName !== "" || newDeviceId !== null || newAutoFollowDeviceName;
   const dirty = drafts.some(isDirty) || newOutputDirty;
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
   useEffect(() => {
@@ -100,6 +103,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       const route = await audioApi.updateRoute(draft.id, {
         ...(draft.name !== draft.savedName ? { name: draft.name.trim() } : {}),
         ...(draft.deviceId !== draft.savedDeviceId ? { deviceId: draft.deviceId } : {}),
+        ...(draft.autoFollowDeviceName !== draft.savedAutoFollowDeviceName ? { autoFollowDeviceName: draft.autoFollowDeviceName } : {}),
         confirmLiveImpact
       });
       setDrafts((current) => current.map((candidate) => candidate.id === route.id ? toDraft(route) : candidate));
@@ -142,9 +146,10 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
     setActionError(null);
     setConflict(null);
     try {
-      const created = await audioApi.createRoute({ name, deviceId: newDeviceId });
+      const created = await audioApi.createRoute({ name, deviceId: newDeviceId, autoFollowDeviceName: newAutoFollowDeviceName });
       setNewName("");
       setNewDeviceId(null);
+      setNewAutoFollowDeviceName(false);
       setDrafts((current) => [...current, toDraft(created)]);
       setNotice({
         tone: created.deviceId === null ? "warning" : "success",
@@ -160,7 +165,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
       mutationInProgressRef.current = false;
       setBusyId(null);
     }
-  }, [audioApi, newDeviceId, newName, newOutputDirty, refresh]);
+  }, [audioApi, newAutoFollowDeviceName, newDeviceId, newName, newOutputDirty, refresh]);
 
   const saveAll = useCallback(async (): Promise<boolean> => {
     if (mutationInProgressRef.current) return false;
@@ -182,6 +187,7 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
     if (status !== null) setDrafts(status.routes.map(({ route }) => toDraft(route)));
     setNewName("");
     setNewDeviceId(null);
+    setNewAutoFollowDeviceName(false);
     setConflict(null);
     setActionError(null);
   }, [status]);
@@ -311,7 +317,10 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
 
       <form className="audio-outputs__create" onSubmit={createOutput}>
         <label><span>New output name</span><input disabled={busyId !== null} maxLength={120} onChange={(event) => setNewName(event.currentTarget.value)} value={newName} /></label>
-        <DeviceSelect available={status.capability.available} devices={devices} disabled={busyId !== null} label="New output device" onChange={setNewDeviceId} route={null} value={newDeviceId} />
+        <div className="audio-outputs__device-field">
+          <DeviceSelect available={status.capability.available} devices={devices} disabled={busyId !== null} label="New output device" onChange={(deviceId) => { setNewDeviceId(deviceId); if (deviceId === null) setNewAutoFollowDeviceName(false); }} route={null} value={newDeviceId} />
+          <label className="audio-outputs__checkbox"><input checked={newAutoFollowDeviceName} disabled={busyId !== null || newDeviceId === null} onChange={(event) => setNewAutoFollowDeviceName(event.currentTarget.checked)} type="checkbox" />Automatically follow this device name</label>
+        </div>
         <button disabled={busyId !== null || newName.trim() === ""} type="submit">{busyId === "new" ? "Creating output..." : "Create output"}</button>
       </form>
 
@@ -325,8 +334,12 @@ export const AudioOutputsPanel = forwardRef<AudioOutputsPanelHandle, AudioOutput
               <fieldset aria-label={`${route.name} audio output`} className="audio-output-route" disabled={busyId !== null} key={route.id}>
                 <legend><span>{route.name}</span><StatusBadge label={stateLabel(routeStatus.state)} tone={stateTone(routeStatus.state)} /></legend>
                 <label><span>Output name</span><input maxLength={120} onChange={(event) => updateDraft(setDrafts, draft.id, { name: event.currentTarget.value })} value={draft.name} /></label>
-                <DeviceSelect available={status.capability.available} devices={devices} disabled={busyId !== null} label="Output device" onChange={(deviceId) => updateDraft(setDrafts, draft.id, { deviceId })} route={route} value={draft.deviceId} />
+                <div className="audio-outputs__device-field">
+                  <DeviceSelect available={status.capability.available} devices={devices} disabled={busyId !== null} label="Output device" onChange={(deviceId) => updateDraft(setDrafts, draft.id, { deviceId, ...(deviceId === null ? { autoFollowDeviceName: false } : {}) })} route={route} value={draft.deviceId} />
+                  <label className="audio-outputs__checkbox"><input checked={draft.autoFollowDeviceName} disabled={busyId !== null || draft.deviceId === null || !hasTrustedDeviceLabel(draft, route, devices)} onChange={(event) => updateDraft(setDrafts, draft.id, { autoFollowDeviceName: event.currentTarget.checked })} type="checkbox" />Automatically follow this device name</label>
+                </div>
                 <p className="audio-output-route__state">{stateDescription(routeStatus)}</p>
+                {automaticBindingDescription(routeStatus) === null ? null : <p className="audio-output-route__state">{automaticBindingDescription(routeStatus)}</p>}
                 <div className="audio-output-route__actions">
                   <button disabled={!isDirty(draft) || draft.name.trim() === ""} onClick={() => void saveOne(draft)} type="button">{routeBusy ? "Saving output..." : "Save output"}</button>
                   <button className="button button--secondary" disabled={routeStatus.state !== "ready" || isDirty(draft) || busyId !== null} onClick={() => void testOutput(route)} type="button">Test {route.name}</button>
@@ -401,21 +414,32 @@ function ConflictNotice({ busy, conflict, onConfirm }: { readonly busy: boolean;
 function updateDraft(
   setDrafts: Dispatch<SetStateAction<readonly RouteDraft[]>>,
   id: string,
-  patch: Partial<Pick<RouteDraft, "name" | "deviceId">>
+  patch: Partial<Pick<RouteDraft, "name" | "deviceId" | "autoFollowDeviceName">>
 ) {
   setDrafts((current) => current.map((draft) => draft.id === id ? { ...draft, ...patch } : draft));
 }
 
 function toDraft(route: AudioOutputRoute): RouteDraft {
-  return { id: route.id, name: route.name, deviceId: route.deviceId, savedName: route.name, savedDeviceId: route.deviceId };
+  return { id: route.id, name: route.name, deviceId: route.deviceId, autoFollowDeviceName: route.autoFollowDeviceName, savedName: route.name, savedDeviceId: route.deviceId, savedAutoFollowDeviceName: route.autoFollowDeviceName };
 }
 
 function isDirty(draft: RouteDraft): boolean {
-  return draft.name !== draft.savedName || draft.deviceId !== draft.savedDeviceId;
+  return draft.name !== draft.savedName || draft.deviceId !== draft.savedDeviceId || draft.autoFollowDeviceName !== draft.savedAutoFollowDeviceName;
 }
 
 function fallbackStatus(draft: RouteDraft): AudioRouteStatus {
-  return { route: { id: draft.id, name: draft.savedName, deviceId: draft.savedDeviceId, deviceLabel: draft.savedDeviceId }, state: draft.savedDeviceId === null ? "unbound" : "unavailable" };
+  return { route: { id: draft.id, name: draft.savedName, deviceId: draft.savedDeviceId, deviceLabel: draft.savedDeviceId, autoFollowDeviceName: draft.savedAutoFollowDeviceName }, state: draft.savedDeviceId === null ? "unbound" : "unavailable", automaticBindingState: "not-needed" };
+}
+
+function hasTrustedDeviceLabel(draft: RouteDraft, route: AudioOutputRoute, devices: readonly AudioOutputDevice[]): boolean {
+  return draft.deviceId !== null && (devices.some(device => device.deviceId === draft.deviceId) || (route.deviceId === draft.deviceId && route.deviceLabel !== null));
+}
+
+function automaticBindingDescription(status: AudioRouteStatus): string | null {
+  if (status.automaticBindingState === "rebound") return `Automatically reconnected to ${status.route.deviceLabel}.`;
+  if (status.automaticBindingState === "no-match") return `No connected device has the exact saved name ${status.route.deviceLabel ?? "for this route"}.`;
+  if (status.automaticBindingState === "ambiguous") return `More than one connected device has the exact saved name ${status.route.deviceLabel ?? "for this route"}; choose one manually.`;
+  return null;
 }
 
 function stateLabel(state: AudioRouteStatus["state"]): string {

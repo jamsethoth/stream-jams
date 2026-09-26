@@ -7,7 +7,7 @@ function instruction(durationMs = 3000): OverlayInstruction {
     text: { text: "Hello", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } };
 }
 function harness() {
-  const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } as const;
+  const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } as const;
   const list = vi.fn<SurfaceRepository["list"]>(async () => [{ ...config, layers: [...config.layers] }]);
   const resolve = vi.fn<(input: Omit<DesktopVisualBatch, "assets">) => Promise<DesktopVisualBatch>>(async input => ({ ...input, assets: [] }));
   const transport = { configure: vi.fn<DesktopOverlayTransport["configure"]>(async () => {}), prepare: vi.fn<DesktopOverlayTransport["prepare"]>(async () => "ready"),

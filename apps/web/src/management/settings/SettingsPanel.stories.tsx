@@ -13,7 +13,7 @@ const meta = {
   title: "Management/Settings/Backup and restore",
   component: SettingsPanel,
   args: { audioApi: createAudioStoryApi(), managementApi: createSettingsStoryApi(), surfaceApi: {
-    load: async () => ({ surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null } }),
+    load: async () => ({ surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null }, desktopBindingState: "not-needed" }),
     save: async () => { throw new Error("No surface selected"); }, retry: async () => { throw new Error("Desktop unavailable"); }
   } },
   parameters: { layout: "fullscreen" }
@@ -178,7 +178,7 @@ function createAudioStoryApi(): AudioApi {
     getStatus: fn(async () => ({
       capability: { available: true, devices: [{ deviceId: "endpoint-a", label: "USB headphones" }], reason: null, nextStep: null },
       muted: false,
-      routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones" }, state: "ready" as const }]
+      routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: false }, state: "ready" as const, automaticBindingState: "not-needed" as const }]
     })),
     createRoute: fn(),
     updateRoute: fn(),

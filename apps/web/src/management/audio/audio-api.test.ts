@@ -12,7 +12,7 @@ describe("createHttpAudioApi", () => {
       if (url === "/audio/routes") {
         expect(init).toMatchObject({
           method: "POST",
-          body: JSON.stringify({ name: "Headphones", deviceId: "endpoint-a" })
+          body: JSON.stringify({ name: "Headphones", deviceId: "endpoint-a", autoFollowDeviceName: true })
         });
         const headers = new Headers(init?.headers);
         expect(headers.get("authorization")).toBe("Bearer mgmt_audio");
@@ -41,7 +41,7 @@ describe("createHttpAudioApi", () => {
     const api = createHttpAudioApi({ fetch: fetcher });
 
     await expect(api.getStatus()).resolves.toEqual(statusResponse());
-    await expect(api.createRoute({ name: "Headphones", deviceId: "endpoint-a" })).resolves.toEqual(routeResponse());
+    await expect(api.createRoute({ name: "Headphones", deviceId: "endpoint-a", autoFollowDeviceName: true })).resolves.toEqual(routeResponse());
     await expect(api.updateRoute("route-a", { name: "Private mix" })).resolves.toMatchObject({ name: "Private mix" });
     await expect(api.testRoute("route-a")).resolves.toEqual({ routeId: "route-a", muted: true });
     await expect(api.deleteRoute("route-a")).resolves.toBeUndefined();
@@ -56,21 +56,21 @@ describe("createHttpAudioApi", () => {
     );
     const api = createHttpAudioApi({ fetch: fetcher });
 
-    await expect(api.createRoute({ name: "", deviceId: "default" })).rejects.toThrow();
+    await expect(api.createRoute({ name: "", deviceId: "default", autoFollowDeviceName: false })).rejects.toThrow();
     expect(fetcher).not.toHaveBeenCalled();
     await expect(api.getStatus()).rejects.toThrow();
   });
 });
 
 function routeResponse() {
-  return { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones" };
+  return { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: true };
 }
 
 function statusResponse() {
   return {
     capability: { available: true, devices: [{ deviceId: "endpoint-a", label: "USB headphones" }], reason: null, nextStep: null },
     muted: true,
-    routes: [{ route: routeResponse(), state: "ready" as const }]
+    routes: [{ route: routeResponse(), state: "ready" as const, automaticBindingState: "not-needed" as const }]
   };
 }
 

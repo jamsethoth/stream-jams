@@ -9,6 +9,9 @@
 .audio-outputs__conflict ul { margin: 0; padding-left: 20px; }
 .audio-outputs__create { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(240px, 1fr) auto; align-items: end; gap: 12px; }
 .audio-outputs__create label, .audio-output-route label { display: grid; gap: 6px; }
+.audio-outputs__device-field { display: grid; gap: 8px; }
+.audio-outputs label.audio-outputs__checkbox { display: flex; align-items: center; gap: 8px; font-size: 0.875rem; }
+.audio-outputs__checkbox input { width: 16px; height: 16px; margin: 0; flex: 0 0 16px; }
 .audio-outputs__list { display: grid; gap: 12px; }
 .audio-output-route { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.2fr); align-items: end; gap: 12px 16px; margin: 0; padding: 14px 16px; border: 1px solid var(--color-border); border-radius: 8px; }
 .audio-output-route legend { display: flex; align-items: center; gap: 10px; padding-inline: 6px; font-weight: 700; }

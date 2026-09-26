@@ -816,6 +816,7 @@ export const ActiveSpeakerBotTts: Story = {
     await userEvent.click(liveTtsSummary);
     await expect(liveTtsSummary.closest("details")).toHaveAttribute("open");
     await expect(enabled).toBeVisible();
+    await expect(enabled.closest("label")).toHaveClass("alert-editor-inspector__check");
     await expect(enabled).toBeChecked();
     await expect(canvas.getByText("Studio Speaker.bot")).toBeVisible();
     await expect(canvas.getByText("Speaker.bot is used for live TTS.")).toBeVisible();

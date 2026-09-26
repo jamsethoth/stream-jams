@@ -208,7 +208,7 @@ describe("ConfigurationBackupService", () => {
       await seedRoutedAlerts(source.database);
       await seedRoutedAlerts(target.database);
       const routes = new SqliteAudioOutputRouteRepository(target.database.connection);
-      routes.save({ id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset" });
+      routes.save({ id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset", autoFollowDeviceName: false });
       const documents = new SqliteAlertEditorDocumentRepository(target.database.connection);
       for (const id of ["rule-routed", "rule-routed-default"]) {
         const document = await documents.find(id);
@@ -953,8 +953,8 @@ function createRewardRule(id: string, condition: AlertRule["conditions"][number]
 
 async function seedRoutedAlerts(database: StreamJamsDatabase): Promise<void> {
   const routes = new SqliteAudioOutputRouteRepository(database.connection);
-  routes.save({ id: "route-headphones", name: "Headphones", deviceId: "source-endpoint-headphones", deviceLabel: "Source headset" });
-  routes.save({ id: "route-stream", name: "Stream mix", deviceId: "source-endpoint-stream", deviceLabel: "Source mixer" });
+  routes.save({ id: "route-headphones", name: "Headphones", deviceId: "source-endpoint-headphones", deviceLabel: "Source headset", autoFollowDeviceName: false });
+  routes.save({ id: "route-stream", name: "Stream mix", deviceId: "source-endpoint-stream", deviceLabel: "Source mixer", autoFollowDeviceName: false });
   await new SqliteAlertRepository(database.connection).saveRule(createRewardRule("rule-routed", {
     field: "channelPointReward", operator: "equals", value: "reward-routed"
   }));

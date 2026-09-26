@@ -1,4 +1,4 @@
-import { surfaceConfigurationSchema, type ActionableManagementError, type SurfaceConfiguration, type SurfaceSettingsView } from "@stream-jams/core";
+import { surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, type ActionableManagementError, type SurfaceConfiguration, type SurfaceConfigurationUpdate, type SurfaceSettingsView } from "@stream-jams/core";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { ManagementErrorBanner } from "../foundation/ManagementErrorBanner.js";
 import { ManagementErrorToast, ManagementToast, type ManagementToastNotice } from "../foundation/ManagementToast.js";
@@ -73,7 +73,7 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
     const requestVersion = ++version.current;
     try {
       for (const value of values) {
-        const response = await api.save(surfaceConfigurationSchema.parse(value));
+        const response = await api.save(toUpdate(value));
         if (!mounted.current || requestVersion !== version.current) return false;
         setModel(current => mergeView(current, response, value.id)); setRefreshError(null);
         const warning = value.kind === "desktop" && (response.desktop.state === "failed" || response.desktop.state === "unavailable");
@@ -125,7 +125,7 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
       return <form key={draft.id} className="overlay-surfaces__surface" aria-label={name} onSubmit={event => { event.preventDefault(); void saveValues([draft]); }}>
         <div className="overlay-surfaces__heading"><h4>{name}</h4><span>{changed ? "Unsaved changes" : "Saved settings"}</span></div>
         {draft.kind === "desktop" ? <>
-          <p>Desktop status: <strong>{stateLabel(view.desktop.state)}</strong>. Saved display: {selected?.label ?? savedDesktop?.displayId ?? "Not selected"}.</p>
+          <p>Desktop status: <strong>{stateLabel(view.desktop.state)}</strong>. Saved display: {selected?.label ?? savedDesktop?.displayLabel ?? savedDesktop?.displayId ?? "Not selected"}.</p>
           {view.desktop.message === null ? null : <p className="overlay-surfaces__message">{view.desktop.message}</p>}
           <p>Exclusive fullscreen may cover the overlay. Use borderless or windowed mode; graphics injection is not used.</p>
         </> : null}
@@ -133,13 +133,15 @@ export const OverlaySurfacesPanel = forwardRef<OverlaySurfacesPanelHandle, Overl
           <legend className="overlay-surfaces__legend">{name} configuration</legend>
           {draft.kind === "desktop" ? <div className="overlay-surfaces__desktop-fields">
             <label className="overlay-surfaces__checkbox"><input type="checkbox" checked={draft.enabled} onChange={event => edit({ ...draft, enabled: event.currentTarget.checked })} />Enable desktop overlay</label>
-            <label>Desktop display<select value={draft.displayId ?? ""} onChange={event => edit({ ...draft, displayId: event.currentTarget.value || null })}>
+            <label>Desktop display<select value={draft.displayId ?? ""} onChange={event => { const displayId = event.currentTarget.value || null; const display = view.desktop.displays.find(candidate => candidate.id === displayId); edit({ ...draft, displayId, displayLabel: display?.label ?? null, ...(displayId === null ? { autoFollowDisplayName: false } : {}) }); }}>
               <option value="">Select a display</option>
               {draft.displayId !== null && !view.desktop.displays.some(display => display.id === draft.displayId) ? <option value={draft.displayId}>{draft.displayId} (missing)</option> : null}
               {view.desktop.displays.map(display => <option key={display.id} value={display.id}>{display.label}</option>)}
             </select></label>
+            <label className="overlay-surfaces__checkbox overlay-surfaces__auto-follow"><input type="checkbox" checked={draft.autoFollowDisplayName} disabled={draft.displayId === null || draft.displayLabel === null} onChange={event => edit({ ...draft, autoFollowDisplayName: event.currentTarget.checked })} />Automatically follow this display name</label>
             <label>Desktop opacity<input type="number" min="0" max="1" step="0.05" value={Number.isFinite(draft.opacity) ? draft.opacity : ""} onChange={event => edit({ ...draft, opacity: event.currentTarget.valueAsNumber })} /></label>
           </div> : null}
+          {draft.kind === "desktop" ? <p className="overlay-surfaces__message">{automaticBindingDescription(view.desktopBindingState, draft.displayLabel)}</p> : null}
           {invalid ? <p role="alert">Select a display when enabled and enter an opacity from 0 to 1 before saving.</p> : null}
           <p>Modules are listed topmost first. Visibility changes affect this surface only.</p>
           {draft.layers.length === 0 ? <p>No registered modules on this surface.</p> : <ol className="overlay-surfaces__layers" aria-label={`${name} module order`}>
@@ -169,8 +171,26 @@ function mergeView(current: Model, view: SurfaceSettingsView, savedId?: string):
   return { view, drafts };
 }
 function same(a: SurfaceConfiguration | undefined, b: SurfaceConfiguration | undefined): boolean { return JSON.stringify(a) === JSON.stringify(b); }
+function toUpdate(value: SurfaceConfiguration): SurfaceConfigurationUpdate {
+  if (value.kind === "unified-browser") return surfaceConfigurationUpdateSchema.parse(value);
+  return surfaceConfigurationUpdateSchema.parse({
+    id: value.id,
+    kind: value.kind,
+    enabled: value.enabled,
+    displayId: value.displayId,
+    autoFollowDisplayName: value.autoFollowDisplayName,
+    opacity: value.opacity,
+    layers: value.layers
+  });
+}
 function title(surface: SurfaceConfiguration): string { return surface.kind === "desktop" ? "Desktop overlay" : `Unified browser: ${surface.overlayId}`; }
 function stateLabel(state: SurfaceSettingsView["desktop"]["state"]): string { return state === "ready" ? "Ready for future alerts" : state === "disabled" ? "Disabled" : state === "failed" ? "Failed — Retry required" : "Unavailable"; }
+function automaticBindingDescription(state: SurfaceSettingsView["desktopBindingState"], displayLabel: string | null): string {
+  if (state === "rebound") return `Automatically reconnected to ${displayLabel ?? "the saved display"}.`;
+  if (state === "no-match") return `No connected display has the exact saved name ${displayLabel ?? "for this overlay"}.`;
+  if (state === "ambiguous") return `More than one connected display has the exact saved name ${displayLabel ?? "for this overlay"}; choose one manually.`;
+  return "Automatic matching is opt-in and only uses an exact saved display name.";
+}
 function actionable(summary: string, cause: unknown, nextStep: string): ActionableManagementError {
   const error = cause instanceof ManagementHttpError ? cause : null;
   return { summary, cause: cause instanceof Error ? cause.message : "The operation did not complete.", nextStep: error?.nextStep ?? nextStep, severity: "error", occurredAt: new Date().toISOString(), referenceId: error?.referenceId ?? null, correction: null };

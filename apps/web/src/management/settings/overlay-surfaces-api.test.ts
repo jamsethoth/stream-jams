@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { createHttpSurfaceSettingsApi } from "./overlay-surfaces-api.js";
-const view = { surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: "Use Windows desktop." } };
+const view = { surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: "Use Windows desktop." }, desktopBindingState: "not-needed" };
 const json = (value: unknown) => new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
 it("uses protected requests, encoded complete surface identity, and an empty retry", async () => {
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
@@ -20,6 +20,13 @@ it("uses protected requests, encoded complete surface identity, and an empty ret
 it("rejects invalid drafts before network access and malformed responses", async () => {
   const fetcher = vi.fn<typeof fetch>(async input => String(input) === "/auth/management/sessions" ? json({ id: "mgmt_test", csrfToken: "csrf_test" }) : json({ ...view, token: "unexpected" }));
   const api = createHttpSurfaceSettingsApi({ fetch: fetcher });
-  await expect(api.save({ id: "desktop:primary", kind: "desktop", enabled: true, displayId: null, opacity: 1, layers: [] })).rejects.toThrow(); expect(fetcher).not.toHaveBeenCalled();
+  await expect(api.save({ id: "desktop:primary", kind: "desktop", enabled: true, displayId: null, autoFollowDisplayName: false, opacity: 1, layers: [] })).rejects.toThrow(); expect(fetcher).not.toHaveBeenCalled();
   await expect(api.load()).rejects.toThrow();
+});
+
+it("accepts desktop automatic matching but rejects browser-supplied display labels", async () => {
+  const fetcher = vi.fn<typeof fetch>(async (input, init) => String(input) === "/auth/management/sessions" ? json({ id: "mgmt_test", csrfToken: "csrf_test" }) : (expect(JSON.parse(String(init?.body))).toEqual({ id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", autoFollowDisplayName: true, opacity: 1, layers: [] }), json(view)));
+  const api = createHttpSurfaceSettingsApi({ fetch: fetcher });
+  await expect(api.save({ id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", autoFollowDisplayName: true, opacity: 1, layers: [] })).resolves.toEqual(view);
+  await expect(api.save({ id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "spoofed", autoFollowDisplayName: true, opacity: 1, layers: [] } as never)).rejects.toThrow();
 });

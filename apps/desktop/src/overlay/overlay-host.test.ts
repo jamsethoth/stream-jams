@@ -9,7 +9,7 @@ vi.mock("electron", () => ({ BrowserWindow: class {}, screen: { getAllDisplays: 
   { id: 6, label: " ", bounds: { x: -2560, y: -100, width: 2560, height: 1440 }, scaleFactor: 1.5 }
 ] } }));
 
-const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", opacity: 1, layers: [] } as const;
+const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [] } as const;
 function batch(id = "one"): DesktopVisualBatch {
   return { key: { surfaceId: "desktop:primary", moduleId: id, occurrenceId: id, generation: 1 }, timing: { startsAtEpochMs: 0, endsAtEpochMs: 1000 }, instructions: [], assets: [] };
 }

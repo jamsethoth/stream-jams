@@ -21,7 +21,8 @@ const route = {
   id: "route-headphones",
   name: "Headphones",
   deviceId: "device-headphones",
-  deviceLabel: "XLR headphones"
+  deviceLabel: "XLR headphones",
+  autoFollowDeviceName: false
 };
 
 describe("SqliteEffectRepository", () => {
@@ -106,7 +107,8 @@ describe("SqliteEffectRepository", () => {
     database.connection.exec(`DROP TRIGGER screen_effect_assign_set;
       DROP TABLE screen_effect_set_memberships; DROP TABLE screen_effect_sets;
       ALTER TABLE asset_metadata DROP COLUMN duration_ms;
-      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata', '025-remove-screen-effect-animations');`);
+      ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name;
+      DELETE FROM schema_migrations WHERE id IN ('023-screen-effect-sets', '024-asset-duration-metadata', '025-remove-screen-effect-animations', '026-automatic-output-rebinding');`);
     const effects = new SqliteEffectRepository(database.connection);
     const original = { ...effectDocument(), enabled: true };
     await effects.save(original);

@@ -30,7 +30,7 @@ type Occurrence = {
 
 /** Browser-only media lifetime owner. Native transport owns the final watchdog. */
 export class DesktopOverlayController {
-  #snapshot: DesktopOverlaySnapshot = { config: { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] }, occurrences: [] };
+  #snapshot: DesktopOverlaySnapshot = { config: { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] }, occurrences: [] };
   #generation: number | null = null;
   #disposed = false;
   #records = new Map<string, Occurrence>();

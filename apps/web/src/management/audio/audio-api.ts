@@ -15,11 +15,13 @@ import {
 export type AudioRouteCreateInput = {
   readonly name: string;
   readonly deviceId: string | null;
+  readonly autoFollowDeviceName: boolean;
 };
 
 export type AudioRouteUpdateInput = {
   readonly name?: string | undefined;
   readonly deviceId?: string | null | undefined;
+  readonly autoFollowDeviceName?: boolean | undefined;
   readonly confirmLiveImpact?: boolean | undefined;
 };
 

@@ -1634,7 +1634,7 @@ function LayerInspector({
                     <a href="/manage/tts-providers">Set up a TTS provider</a>
                   </div>
                 )}
-                <label>
+                <label className="alert-editor-inspector__check">
                   <span>Use TTS for this alert</span>
                   <input
                     aria-label="Enable TTS for this alert"

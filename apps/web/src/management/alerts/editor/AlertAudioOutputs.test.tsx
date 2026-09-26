@@ -9,7 +9,7 @@ it("retains missing selections and changes only the explicitly toggled alert-wid
   const onChange = vi.fn();
   render(<AlertAudioOutputs value={{ browserSource: true, deviceRouteIds: ["lost"] }} status={{
     muted: false, capability: { available: true, devices: [], reason: null, nextStep: null },
-    routes: [{ route: { id: "private", name: "Headphones", deviceId: null, deviceLabel: null }, state: "unbound" }]
+    routes: [{ route: { id: "private", name: "Headphones", deviceId: null, deviceLabel: null, autoFollowDeviceName: false }, state: "unbound", automaticBindingState: "not-needed" }]
   }} loading={false} error={null} onChange={onChange} />);
   expect(screen.getByRole("checkbox", { name: /lost/ })).toBeChecked();
   await userEvent.click(screen.getByRole("checkbox", { name: /Headphones/ }));

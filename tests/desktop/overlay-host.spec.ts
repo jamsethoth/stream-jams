@@ -102,7 +102,10 @@ test("packaged production host renders an isolated silent Landscape event withou
     }
     async function configure(enabled: boolean, visible: boolean) {
       const surface = (await api<SurfaceSettingsView>("/overlay-surfaces")).surfaces.find(candidate => candidate.kind === "desktop")!;
-      await api(`/overlay-surfaces/${surface.id}`, "PUT", { ...surface, enabled, layers: surface.layers.map(entry => entry.moduleId === "alerts" ? { ...entry, visible } : entry) });
+      await api(`/overlay-surfaces/${surface.id}`, "PUT", {
+        id: surface.id, kind: surface.kind, enabled, displayId: surface.displayId, autoFollowDisplayName: surface.autoFollowDisplayName,
+        opacity: surface.opacity, layers: surface.layers.map(entry => entry.moduleId === "alerts" ? { ...entry, visible } : entry)
+      });
     }
     await event("native-overlay-first");
     const playing = await api<{ current: { startedAt: string } }>("/playback");

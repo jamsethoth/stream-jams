@@ -10,7 +10,7 @@ type Pending = { resolve(reply: DesktopVisualReply): void; reject(error: Error):
 
 /** The main process owns the final visual lifetime boundary. Interrupted media is never replayed. */
 export class OverlayHost implements DesktopOverlayTransport {
-  #config: Configuration = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] };
+  #config: Configuration = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] };
   #port: OverlayRendererPort | null = null;
   #generation = 0;
   #ready: Promise<void> | null = null;
@@ -49,7 +49,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     this.serviceLost();
     this.#owned = true;
     this.#failures = 0;
-    this.#config = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] };
+    this.#config = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] };
     this.refreshLease();
     this.#leaseTimer = setInterval(() => { if (Date.now() - this.#leaseAt >= 10_000) this.serviceLost(); }, 1000);
   }

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import type { SurfaceConfiguration } from "@stream-jams/core";
+import type { DesktopOverlayStatus, SurfaceConfiguration } from "@stream-jams/core";
 import { SurfaceSettingsService } from "./surface-settings-service.js";
 
 function fixture() {
@@ -7,7 +7,7 @@ function fixture() {
     displayLabel: null, autoFollowDisplayName: false, opacity: 1,
     layers: [{ moduleId: "alerts", visible: false }] };
   const surfaces = { list: vi.fn(async () => [saved]), save: vi.fn(async (value: SurfaceConfiguration) => { saved = value; }) };
-  const host = { configure: vi.fn(async () => {}), retry: vi.fn(async () => {}), getStatus: vi.fn(async () => ({ available: true,
+  const host = { configure: vi.fn(async () => {}), retry: vi.fn(async () => {}), getStatus: vi.fn(async (): Promise<DesktopOverlayStatus> => ({ available: true,
     displays: [{ id: "monitor", label: "Monitor", bounds: { x: -1080, y: 0, width: 1080, height: 1920 }, scaleFactor: 1 }], state: "disabled" as const, message: null })) };
   const changed = vi.fn(async () => {});
   const service = new SurfaceSettingsService({ surfaces, host, moduleIds: () => ["alerts"], changed,
@@ -47,7 +47,7 @@ it("derives trusted display labels, rejects browser labels, and clears consent w
 
 it("reconciles one exact display name durably and reports ambiguity without fallback", async () => {
   const { service, surfaces, host, value } = fixture();
-  await surfaces.save({ ...value(), enabled: true, displayId: "old", displayLabel: "VG27A", autoFollowDisplayName: true });
+  await surfaces.save({ ...(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), enabled: true, displayId: "old", displayLabel: "VG27A", autoFollowDisplayName: true });
   host.getStatus.mockResolvedValue({ available: true, displays: [
     { id: "new", label: "VG27A", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }
   ], state: "unavailable", message: null });
@@ -57,7 +57,7 @@ it("reconciles one exact display name durably and reports ambiguity without fall
   expect(host.configure).toHaveBeenLastCalledWith(expect.objectContaining({ displayId: "new" }));
   expect((await service.load()).desktopBindingState).toBe("rebound");
 
-  await surfaces.save({ ...value(), displayId: "old", displayLabel: "VG27A", autoFollowDisplayName: true });
+  await surfaces.save({ ...(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), displayId: "old", displayLabel: "VG27A", autoFollowDisplayName: true });
   host.getStatus.mockResolvedValue({ available: true, displays: [
     { id: "first", label: "VG27A", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 },
     { id: "second", label: "VG27A", bounds: { x: 1920, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }

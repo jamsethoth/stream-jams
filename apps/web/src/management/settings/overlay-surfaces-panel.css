@@ -10,6 +10,8 @@
 .overlay-surfaces__desktop-fields { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(100px, 160px); gap: 12px; align-items: end; }
 .overlay-surfaces__desktop-fields label { display: grid; gap: 6px; }
 .overlay-surfaces label.overlay-surfaces__checkbox { display: flex; align-items: center; gap: 8px; overflow-wrap: anywhere; }
+.overlay-surfaces__checkbox input { width: 16px; height: 16px; margin: 0; flex: 0 0 16px; }
+.overlay-surfaces label.overlay-surfaces__auto-follow { align-self: center; font-size: 0.875rem; }
 .overlay-surfaces__layers { display: grid; gap: 8px; margin: 0; padding-left: 24px; }
 .overlay-surfaces__layers li { padding-left: 4px; }
 .overlay-surfaces__layers li > label { display: inline-flex; }

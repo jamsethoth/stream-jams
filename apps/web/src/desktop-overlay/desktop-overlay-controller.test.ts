@@ -3,7 +3,7 @@ import type { DesktopVisualBatch, DesktopVisualCommand, DesktopVisualRendererReq
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
 import type { DesktopOverlayControllerDependencies } from "./desktop-overlay-controller.js";
 
-const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } as const;
+const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } as const;
 let sequence = 0;
 const request = (command: DesktopVisualCommand, generation = 1): DesktopVisualRendererRequest => ({ generation, requestId: `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`, command });
 function batch(moduleId = "alerts", media = false): DesktopVisualBatch {
