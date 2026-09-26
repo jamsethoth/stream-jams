@@ -78,8 +78,10 @@ describe("named audio route contracts", () => {
   it("trims names but accepts only paired explicit device bindings", () => {
     const schema = audioSchema("audioOutputRouteSchema");
     const route = { id: "route-a", name: " Private ", deviceId: "sink-a", deviceLabel: "Headphones" };
-    expect(schema.parse(route)).toEqual({ ...route, name: "Private" });
+    expect(schema.parse(route)).toEqual({ ...route, name: "Private", autoFollowDeviceName: false });
+    expect(schema.parse({ ...route, autoFollowDeviceName: true })).toMatchObject({ autoFollowDeviceName: true });
     expect(schema.parse({ ...route, deviceId: null, deviceLabel: null })).toMatchObject({ deviceId: null, deviceLabel: null });
+    expect(schema.safeParse({ ...route, deviceId: null, deviceLabel: null, autoFollowDeviceName: true }).success).toBe(false);
     for (const invalid of [
       { name: " " }, { id: " " }, { deviceId: "default" }, { deviceId: "communications" },
       { deviceId: "" }, { deviceId: null }, { deviceLabel: null }, { deviceLabel: " " }
@@ -89,8 +91,11 @@ describe("named audio route contracts", () => {
   it("only accepts intended route mutation fields and explicit binding intent", () => {
     const create = audioSchema("audioOutputRouteCreateSchema");
     const patch = audioSchema("audioOutputRoutePatchSchema");
-    expect(create.parse({ name: " Monitor " })).toEqual({ name: "Monitor", deviceId: null });
+    expect(create.parse({ name: " Monitor " })).toEqual({ name: "Monitor", deviceId: null, autoFollowDeviceName: false });
+    expect(create.parse({ name: "Monitor", deviceId: "sink-a", autoFollowDeviceName: true })).toMatchObject({ autoFollowDeviceName: true });
+    expect(create.safeParse({ name: "Monitor", autoFollowDeviceName: true }).success).toBe(false);
     expect(patch.parse({ deviceId: null })).toMatchObject({ deviceId: null });
+    expect(patch.parse({ autoFollowDeviceName: true })).toMatchObject({ autoFollowDeviceName: true });
     for (const invalid of [{}, { name: " " }, { deviceId: "default" }, { deviceLabel: "Pretend device" }, { arbitrary: true }]) {
       expect(patch.safeParse(invalid).success).toBe(false);
     }

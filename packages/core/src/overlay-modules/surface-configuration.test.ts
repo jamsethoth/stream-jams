@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   reconcileSurfaceLayers,
   surfaceConfigurationSchema,
+  surfaceConfigurationUpdateSchema,
   validateSurfaceOrder
 } from "./surface-configuration.js";
 
@@ -46,8 +47,36 @@ describe("surface configuration", () => {
 
   it("preserves explicit monitor IDs and permits transparent opacity", () => {
     expect(surfaceConfigurationSchema.parse({ ...desktop, enabled: true, displayId: "4022276724", opacity: 0 }))
-      .toEqual({ ...desktop, enabled: true, displayId: "4022276724", opacity: 0 });
-    expect(surfaceConfigurationSchema.parse(desktop)).toEqual(desktop);
+      .toEqual({ ...desktop, enabled: true, displayId: "4022276724", displayLabel: null, autoFollowDisplayName: false, opacity: 0 });
+    expect(surfaceConfigurationSchema.parse(desktop)).toEqual({ ...desktop, displayLabel: null, autoFollowDisplayName: false });
+  });
+
+  it("requires a trusted saved label for persisted auto-follow and omits it from browser updates", () => {
+    expect(surfaceConfigurationSchema.safeParse({
+      ...desktop,
+      enabled: true,
+      displayId: "42",
+      displayLabel: null,
+      autoFollowDisplayName: true
+    }).success).toBe(false);
+    expect(surfaceConfigurationSchema.safeParse({
+      ...desktop,
+      enabled: true,
+      displayId: "42",
+      displayLabel: "VG27A",
+      autoFollowDisplayName: true
+    }).success).toBe(true);
+    expect(surfaceConfigurationUpdateSchema.safeParse({
+      ...desktop,
+      displayId: "42",
+      autoFollowDisplayName: true
+    }).success).toBe(true);
+    expect(surfaceConfigurationUpdateSchema.safeParse({
+      ...desktop,
+      displayId: "42",
+      displayLabel: "Browser-authored",
+      autoFollowDisplayName: true
+    }).success).toBe(false);
   });
 
   it.each([

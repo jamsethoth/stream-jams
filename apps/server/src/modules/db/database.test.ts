@@ -33,7 +33,8 @@ const expectedMigrations = [
   "022-screen-effects",
   "023-screen-effect-sets",
   "024-asset-duration-metadata",
-  "025-remove-screen-effect-animations"
+  "025-remove-screen-effect-animations",
+  "026-automatic-output-rebinding"
 ] as const;
 
 const expectedTables = [
@@ -71,7 +72,11 @@ describe("Stream Jams SQLite database", () => {
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.prepare("DELETE FROM schema_migrations WHERE id = ?").run("025-remove-screen-effect-animations");
+    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?)").run(
+      "025-remove-screen-effect-animations",
+      "026-automatic-output-rebinding"
+    );
+    db.exec("ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name");
     db.prepare(`
       INSERT INTO screen_effects (id, schema_version, name, enabled, description, category, priority, cooldown_seconds, updated_at)
       VALUES (?, 1, ?, 0, NULL, NULL, 0, 0, ?)
@@ -196,6 +201,22 @@ describe("Stream Jams SQLite database", () => {
         tts_strip_urls: 1
       }
     ]);
+    expect(database.connection.prepare("PRAGMA table_info(audio_output_routes)").all().map(column => String(column.name)))
+      .toContain("auto_follow_device_name");
+  });
+
+  it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const db = database.connection;
+    db.prepare("DELETE FROM schema_migrations WHERE id = ?").run("026-automatic-output-rebinding");
+    db.exec("ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name");
+    db.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)")
+      .run("legacy", "Legacy", "old", "Headphones");
+
+    database.runMigrations();
+
+    expect(db.prepare("SELECT auto_follow_device_name FROM audio_output_routes WHERE id = ?").get("legacy"))
+      .toEqual({ auto_follow_device_name: 0 });
   });
 
   it("enforces foreign keys for child records", () => {
@@ -484,7 +505,8 @@ describe("Stream Jams SQLite database", () => {
         '022-screen-effects',
         '023-screen-effect-sets',
         '024-asset-duration-metadata',
-        '025-remove-screen-effect-animations'
+        '025-remove-screen-effect-animations',
+        '026-automatic-output-rebinding'
       );
     `);
 

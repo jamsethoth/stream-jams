@@ -26,6 +26,7 @@ import { screenEffectsMigration } from "./migrations/022-screen-effects.js";
 import { screenEffectSetsMigration } from "./migrations/023-screen-effect-sets.js";
 import { assetDurationMetadataMigration } from "./migrations/024-asset-duration-metadata.js";
 import { removeScreenEffectAnimationsMigration } from "./migrations/025-remove-screen-effect-animations.js";
+import { automaticOutputRebindingMigration } from "./migrations/026-automatic-output-rebinding.js";
 
 export interface StreamJamsMigration {
   readonly id: string;
@@ -63,7 +64,8 @@ const migrations = [
   screenEffectsMigration,
   screenEffectSetsMigration,
   assetDurationMetadataMigration,
-  removeScreenEffectAnimationsMigration
+  removeScreenEffectAnimationsMigration,
+  automaticOutputRebindingMigration
 ] satisfies readonly StreamJamsMigration[];
 
 export const currentSchemaVersion = migrations.length;

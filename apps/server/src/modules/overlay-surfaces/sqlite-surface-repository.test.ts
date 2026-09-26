@@ -12,18 +12,34 @@ it("creates a disabled unbound desktop and persists explicit settings across res
   const root = mkdtempSync(join(tmpdir(), "stream-jams-surfaces-"));
   const path = join(root, "test.sqlite");
   const saved = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: true, displayId: "42", opacity: 0.5,
+    displayLabel: "VG27A", autoFollowDisplayName: true,
     layers: [{ moduleId: "alerts", visible: true }] };
   try {
     {
       using db = openStreamJamsDatabase(path);
       const repository = new SqliteSurfaceRepository(db.connection, registry);
       expect(await repository.list()).toEqual([{ ...saved, enabled: false, displayId: null, opacity: 1,
+        displayLabel: null, autoFollowDisplayName: false,
         layers: [{ moduleId: "alerts", visible: false }] }]);
       await repository.save(saved);
     }
     using db = openStreamJamsDatabase(path);
     expect(await new SqliteSurfaceRepository(db.connection, registry).list()).toEqual([saved]);
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("normalizes legacy desktop JSON without losing its selected ID or presentation", async () => {
+  using db = createInMemoryStreamJamsDatabase();
+  db.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ?, updated_at = ? WHERE id = ?")
+    .run(JSON.stringify({
+      id: "desktop:primary", kind: "desktop", enabled: true, displayId: "legacy-id", opacity: 0.4,
+      layers: [{ moduleId: "alerts", visible: true }]
+    }), "2026-09-26T00:00:00.000Z", "desktop:primary");
+
+  await expect(new SqliteSurfaceRepository(db.connection, registry).list()).resolves.toEqual([{
+    id: "desktop:primary", kind: "desktop", enabled: true, displayId: "legacy-id", displayLabel: null,
+    autoFollowDisplayName: false, opacity: 0.4, layers: [{ moduleId: "alerts", visible: true }]
+  }]);
 });
 
 it("preserves existing unified paint order and appends later modules hidden", async () => {

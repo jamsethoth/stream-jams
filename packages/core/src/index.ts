@@ -39,6 +39,8 @@ export type { AudioDeviceCapability, AudioRouteStatus, AudioOutputStatus } from 
 export type { AudioOutputRouteRepository } from "./audio/audio-output-route-repository.js";
 export { resolveAudioDestinations } from "./audio/resolve-audio-destinations.js";
 export { resolveAlertAudio } from "./audio/resolve-alert-audio.js";
+export { findExactUniqueLabelMatch } from "./local-outputs/exact-label-match.js";
+export type { AutomaticBindingState, ExactLabelMatch } from "./local-outputs/exact-label-match.js";
 export {
   alertAudioOutputsSchema,
   audioRouteIdSchema,
@@ -181,8 +183,8 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./overlay-modules/types.js";
-export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
-export type { SurfaceLayer, SurfaceConfiguration, SurfaceRepository } from "./overlay-modules/surface-configuration.js";
+export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
+export type { SurfaceLayer, SurfaceConfiguration, SurfaceConfigurationUpdate, SurfaceRepository } from "./overlay-modules/surface-configuration.js";
 export { visualRecipientKeySchema } from "./overlays/visual-recipient.js";
 export type { VisualRecipientKey } from "./overlays/visual-recipient.js";
 export { playbackTimingSchema } from "./overlays/playback-timing.js";

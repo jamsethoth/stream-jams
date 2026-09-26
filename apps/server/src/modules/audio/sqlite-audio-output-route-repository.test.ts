@@ -13,7 +13,7 @@ import { SqliteAssetRepository } from "../assets/sqlite-asset-repository.js";
 import { SqliteEffectRepository } from "../screen-effects/sqlite-effect-repository.js";
 import { SqliteAudioOutputRouteRepository } from "./sqlite-audio-output-route-repository.js";
 
-const route = { id: "route-a", name: "Headphones", deviceId: "device-a", deviceLabel: "XLR headphones" };
+const route = { id: "route-a", name: "Headphones", deviceId: "device-a", deviceLabel: "XLR headphones", autoFollowDeviceName: true };
 
 it("persists rename/bind/unbind across restart and enforces SQLite NOCASE names", () => {
   const root = mkdtempSync(join(tmpdir(), "stream-jams-audio-routes-"));
@@ -30,8 +30,8 @@ it("persists rename/bind/unbind across restart and enforces SQLite NOCASE names"
     using db = openStreamJamsDatabase(path);
     const repository = new SqliteAudioOutputRouteRepository(db.connection);
     expect(repository.list()).toEqual([{ ...route, name: "Monitor" }]);
-    repository.save({ ...route, name: "Monitor", deviceId: null, deviceLabel: null });
-    expect(repository.findById(route.id)).toMatchObject({ deviceId: null, deviceLabel: null });
+    repository.save({ ...route, name: "Monitor", deviceId: null, deviceLabel: null, autoFollowDeviceName: false });
+    expect(repository.findById(route.id)).toMatchObject({ deviceId: null, deviceLabel: null, autoFollowDeviceName: false });
     repository.delete(route.id);
     expect(repository.findById(route.id)).toBeNull();
   } finally { rmSync(root, { recursive: true, force: true }); }
