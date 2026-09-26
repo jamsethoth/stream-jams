@@ -460,6 +460,19 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
     runTest: work => maintenanceGate.runIntake(work)
   });
+  if (audioDeviceHost !== undefined) {
+    try {
+      await audioOutputService.reconcileBindings();
+    } catch {
+      await runtimeLogger.error("Automatic audio output rebinding could not be saved. The previous binding remains unavailable.", {
+        module: "audio-output",
+        source: "audio-output.reconcile.failed",
+        correlationId: generateRuntimeReferenceId(),
+        processingId: null,
+        metadata: { nextStep: "Open Audio outputs, choose a connected device, and save the route again." }
+      }).catch(() => undefined);
+    }
+  }
   const playbackCooldownService = new DefaultPlaybackCooldownService();
   const playbackDedupeService = new DefaultPlaybackDedupeService();
   const isEffectModuleEnabled = async () =>

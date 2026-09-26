@@ -27,14 +27,93 @@ function fixture(available = true) {
 it("creates, renames, binds and unbinds using only an enumerated explicit device label", async () => {
   using f = fixture();
   const route = await f.service.createRoute({ name: " Me " });
-  expect(route).toEqual({ id: "route-1", name: "Me", deviceId: null, deviceLabel: null });
+  expect(route).toEqual({ id: "route-1", name: "Me", deviceId: null, deviceLabel: null, autoFollowDeviceName: false });
   expect(await f.service.updateRoute(route.id, { deviceId: "a" })).toMatchObject({ deviceId: "a", deviceLabel: "Headphones" });
+  expect(await f.service.updateRoute(route.id, { autoFollowDeviceName: true })).toMatchObject({ autoFollowDeviceName: true });
   f.host.listOutputDevices.mockResolvedValue([]);
   expect(await f.service.updateRoute(route.id, { name: "Monitor" })).toMatchObject({ name: "Monitor", deviceId: "a" });
   expect((await f.service.getStatus()).routes).toMatchObject([{ state: "missing-device" }]);
-  expect(await f.service.updateRoute(route.id, { deviceId: null })).toMatchObject({ deviceId: null, deviceLabel: null });
+  expect(await f.service.updateRoute(route.id, { deviceId: null })).toMatchObject({ deviceId: null, deviceLabel: null, autoFollowDeviceName: false });
   f.service.deleteRoute(route.id);
   expect(f.service.listRoutes()).toEqual([]);
+});
+
+it("reconciles only an opted-in unique exact label and reports other outcomes", async () => {
+  using f = fixture();
+  const optedOut = await f.service.createRoute({ name: "Opted out", deviceId: "a" });
+  const unique = await f.service.createRoute({ name: "Unique", deviceId: "a", autoFollowDeviceName: true });
+  const caseMismatch = await f.service.createRoute({ name: "Case", deviceId: "a", autoFollowDeviceName: true });
+  const ambiguous = await f.service.createRoute({ name: "Ambiguous", deviceId: "a", autoFollowDeviceName: true });
+  f.routes.save({ ...caseMismatch, deviceLabel: "HEADPHONES" });
+  f.host.listOutputDevices.mockResolvedValue([
+    { deviceId: "new-a", label: "Headphones" },
+    { deviceId: "new-b", label: "Headphones" }
+  ]);
+
+  let status = await f.service.getStatus();
+  expect(status.routes.find(item => item.route.id === optedOut.id)).toMatchObject({ state: "missing-device", automaticBindingState: "disabled" });
+  expect(status.routes.find(item => item.route.id === caseMismatch.id)).toMatchObject({ state: "missing-device", automaticBindingState: "no-match" });
+  expect(status.routes.find(item => item.route.id === ambiguous.id)).toMatchObject({ state: "missing-device", automaticBindingState: "ambiguous" });
+  expect(status.routes.find(item => item.route.id === unique.id)).toMatchObject({ state: "missing-device", automaticBindingState: "ambiguous" });
+
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "new-a", label: "Headphones" }]);
+  await f.service.reconcileBindings();
+  status = await f.service.getStatus();
+  expect(status.routes.find(item => item.route.id === unique.id)).toMatchObject({
+    state: "ready",
+    automaticBindingState: "rebound",
+    route: { deviceId: "new-a", deviceLabel: "Headphones", name: "Unique", autoFollowDeviceName: true }
+  });
+  expect(f.routes.findById(optedOut.id)?.deviceId).toBe("a");
+});
+
+it("does not overwrite a manual rebind or resurrect deletion while reconciliation is pending", async () => {
+  using f = fixture();
+  const manual = await f.service.createRoute({ name: "Manual", deviceId: "a", autoFollowDeviceName: true });
+  const deleted = await f.service.createRoute({ name: "Deleted", deviceId: "a", autoFollowDeviceName: true });
+  const devices = deferred<Array<{ deviceId: string; label: string }>>();
+  f.host.listOutputDevices.mockReturnValue(devices.promise);
+  const pending = f.service.reconcileBindings();
+  f.routes.save({ ...manual, deviceId: "chosen", deviceLabel: "Chosen" });
+  f.routes.delete(deleted.id);
+  devices.resolve([{ deviceId: "new", label: "Headphones" }, { deviceId: "chosen", label: "Chosen" }]);
+  await pending;
+
+  expect(f.routes.findById(manual.id)).toMatchObject({ deviceId: "chosen", deviceLabel: "Chosen" });
+  expect(f.routes.findById(deleted.id)).toBeNull();
+});
+
+it("keeps the saved ID authoritative when automatic persistence fails", async () => {
+  using f = fixture();
+  const route = await f.service.createRoute({ name: "Private", deviceId: "a", autoFollowDeviceName: true });
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "new", label: "Headphones" }]);
+  f.db.connection.exec("CREATE TRIGGER fail_rebind BEFORE UPDATE ON audio_output_routes BEGIN SELECT RAISE(ABORT, 'save failed'); END");
+
+  await expect(f.service.reconcileBindings()).rejects.toThrow("save failed");
+  expect(f.routes.findById(route.id)?.deviceId).toBe("a");
+  await expect(f.service.preparePlayback("failed", [{
+    documentId: "alert", durationMs: 1000,
+    outputs: { browserSource: false, deviceRouteIds: [route.id] },
+    layers: [{ sourceKind: "audio", layerId: "sound", assetId: "tone", volume: 1 }]
+  }])).resolves.toEqual({ batches: [], unavailableRouteIds: [route.id] });
+});
+
+it("persists discovery-triggered recovery for only the next occurrence", async () => {
+  using f = fixture();
+  const route = await f.service.createRoute({ name: "Private", deviceId: "a", autoFollowDeviceName: true });
+  const audio: ResolvedAlertAudio[] = [{
+    documentId: "alert", durationMs: 1000,
+    outputs: { browserSource: false, deviceRouteIds: [route.id] },
+    layers: [{ sourceKind: "audio", layerId: "sound", assetId: "tone", volume: 1 }]
+  }];
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "new", label: "Headphones" }]);
+
+  expect(await f.service.preparePlayback("trigger", audio)).toEqual({ batches: [], unavailableRouteIds: [route.id] });
+  expect(f.routes.findById(route.id)?.deviceId).toBe("new");
+  expect(await f.service.preparePlayback("later", audio)).toMatchObject({
+    unavailableRouteIds: [],
+    batches: [{ destinations: [{ deviceId: "new", routeIds: [route.id] }] }]
+  });
 });
 
 it("rejects invalid fields, unavailable devices and missing routes before touching playback", async () => {

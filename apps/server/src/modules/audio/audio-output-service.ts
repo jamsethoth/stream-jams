@@ -2,9 +2,10 @@ import { randomUUID } from "node:crypto";
 import {
   audioDeviceCapabilitySchema, audioOutputDeviceSchema, audioOutputRouteCreateSchema,
   audioOutputRoutePatchSchema, audioOutputRouteTestSchema, audioOutputStatusSchema, audioRouteIdSchema,
-  resolveAudioDestinations, deviceAudioBatchSchema,
+  resolveAudioDestinations, deviceAudioBatchSchema, findExactUniqueLabelMatch,
   type AudioDeviceHost, type AudioOutputRoute, type AudioOutputRouteRepository,
-  type ResolvedAlertAudio, type DeviceAudioBatch
+  type ResolvedAlertAudio, type DeviceAudioBatch, type AutomaticBindingState,
+  type AudioDeviceCapability
 } from "@stream-jams/core";
 import { AudioOutputError } from "./audio-output-error.js";
 
@@ -19,6 +20,7 @@ interface AudioOutputServiceDependencies {
 
 export class AudioOutputService {
   #testing = false;
+  readonly #automaticBindingStates = new Map<string, AutomaticBindingState>();
   constructor(private readonly dependencies: AudioOutputServiceDependencies) {}
 
   listRoutes(): readonly AudioOutputRoute[] { return this.dependencies.routes.list(); }
@@ -32,6 +34,10 @@ export class AudioOutputService {
     const routes = structuredClone(this.listRoutes());
     const content = structuredClone(audio);
     const capability = await this.getDevices();
+    if (capability.available) {
+      try { await this.#reconcileWithCapability(capability); }
+      catch { /* Current playback remains fail-closed against its captured route snapshot. */ }
+    }
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
     const unavailable = new Set<string>();
     const batches = content.flatMap(item => {
@@ -64,11 +70,31 @@ export class AudioOutputService {
 
   async getStatus() {
     const capability = await this.getDevices();
+    if (capability.available) {
+      try { await this.#reconcileWithCapability(capability); }
+      catch { /* Preserve the saved route as authoritative when persistence fails. */ }
+    }
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
     return audioOutputStatusSchema.parse({
       capability, muted: this.dependencies.isMuted(),
-      routes: this.listRoutes().map(route => ({ route, state: route.deviceId === null ? "unbound" : !capability.available ? "unavailable" : availableIds.has(route.deviceId) ? "ready" : "missing-device" }))
+      routes: this.listRoutes().map(route => {
+        const state = route.deviceId === null ? "unbound" : !capability.available ? "unavailable" : availableIds.has(route.deviceId) ? "ready" : "missing-device";
+        const automaticBindingState = state === "ready"
+          ? this.#automaticBindingStates.get(route.id) ?? "not-needed"
+          : state === "missing-device"
+            ? route.autoFollowDeviceName
+              ? this.#automaticBindingStates.get(route.id) ?? "no-match"
+              : "disabled"
+            : "not-needed";
+        return { route, state, automaticBindingState };
+      })
     });
+  }
+
+  async reconcileBindings(): Promise<void> {
+    const capability = await this.getDevices();
+    if (!capability.available) return;
+    await this.#reconcileWithCapability(capability);
   }
 
   async createRoute(candidate: unknown): Promise<AudioOutputRoute> {
@@ -78,8 +104,9 @@ export class AudioOutputService {
     return this.dependencies.runMutation(() => {
       const id = (this.dependencies.generateId ?? randomUUID)();
       if (this.dependencies.routes.findById(id) !== null) throw new AudioOutputError(409, "AUDIO_ROUTE_ID_CONFLICT", "The route could not be created.", "Retry creating the route.");
-      const route = { id, name: input.data.name, ...binding };
+      const route = { id, name: input.data.name, ...binding, autoFollowDeviceName: input.data.autoFollowDeviceName };
       this.dependencies.routes.save(route);
+      this.#automaticBindingStates.delete(id);
       return route;
     });
   }
@@ -108,8 +135,17 @@ export class AudioOutputService {
           );
         }
       }
-      const route = { ...current, name: input.data.name ?? current.name, ...binding };
+      const nextBinding = binding ?? { deviceId: current.deviceId, deviceLabel: current.deviceLabel };
+      const route = {
+        ...current,
+        name: input.data.name ?? current.name,
+        ...nextBinding,
+        autoFollowDeviceName: nextBinding.deviceId === null
+          ? false
+          : input.data.autoFollowDeviceName ?? current.autoFollowDeviceName
+      };
       this.dependencies.routes.save(route);
+      this.#automaticBindingStates.delete(id);
       return route;
     });
   }
@@ -118,6 +154,7 @@ export class AudioOutputService {
     this.dependencies.runMutation(() => {
       this.#requireRoute(id);
       this.dependencies.routes.delete(id);
+      this.#automaticBindingStates.delete(id);
     });
   }
 
@@ -181,6 +218,40 @@ export class AudioOutputService {
     const device = capability.devices.find(device => device.deviceId === deviceId);
     if (device === undefined) throw new AudioOutputError(409, "AUDIO_DEVICE_UNAVAILABLE", "The selected output device is unavailable.", "Refresh the device list and explicitly choose a connected output.");
     return { deviceId: device.deviceId, deviceLabel: device.label };
+  }
+
+  async #reconcileWithCapability(capability: AudioDeviceCapability): Promise<void> {
+    const availableIds = new Set(capability.devices.map(device => device.deviceId));
+    for (const snapshot of structuredClone(this.listRoutes())) {
+      if (snapshot.deviceId === null || availableIds.has(snapshot.deviceId)) {
+        if (this.#automaticBindingStates.get(snapshot.id) !== "rebound") {
+          this.#automaticBindingStates.set(snapshot.id, "not-needed");
+        }
+        continue;
+      }
+      if (!snapshot.autoFollowDeviceName) {
+        this.#automaticBindingStates.set(snapshot.id, "disabled");
+        continue;
+      }
+      const match = findExactUniqueLabelMatch(capability.devices, snapshot.deviceLabel!);
+      if (match.kind === "none") {
+        this.#automaticBindingStates.set(snapshot.id, "no-match");
+        continue;
+      }
+      if (match.kind === "ambiguous") {
+        this.#automaticBindingStates.set(snapshot.id, "ambiguous");
+        continue;
+      }
+      const changed = this.dependencies.runMutation(() => {
+        const current = this.dependencies.routes.findById(snapshot.id);
+        if (current === null || current.deviceId !== snapshot.deviceId || current.deviceLabel !== snapshot.deviceLabel || current.autoFollowDeviceName !== snapshot.autoFollowDeviceName) {
+          return false;
+        }
+        this.dependencies.routes.save({ ...current, deviceId: match.value.deviceId });
+        return true;
+      });
+      if (changed) this.#automaticBindingStates.set(snapshot.id, "rebound");
+    }
   }
 }
 
