@@ -73,7 +73,8 @@ class RecordingRuntime implements OverlayModuleRuntime {
 describe("overlay composition service", () => {
   it("uses independent topmost-first surface rows without suppressing audio or changing module outputs", async () => {
     const surfaces: SurfaceConfiguration[] = [
-      { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1,
+      { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null,
+        autoFollowDisplayName: false, opacity: 1,
         layers: [{ moduleId: "alerts", visible: false }, { moduleId: "second", visible: true }] },
       { id: "unified-browser:overlay-main", kind: "unified-browser", overlayId: "overlay-main",
         layers: [{ moduleId: "alerts", visible: false }, { moduleId: "second", visible: true }] }

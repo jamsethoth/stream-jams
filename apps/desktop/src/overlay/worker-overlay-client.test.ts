@@ -4,7 +4,7 @@ import type { OverlayWorkerMessage } from "./overlay-ipc.js";
 
 afterEach(() => vi.useRealTimers());
 const key = { surfaceId: "desktop:primary" as const, moduleId: "alerts", occurrenceId: "one", generation: 1 };
-const config = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: false, displayId: null, opacity: 1, layers: [] };
+const config = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] };
 it("requests status and rejects wrong result types or a lost host safely", async () => {
   vi.useFakeTimers(); const messages: OverlayWorkerMessage[] = []; const client = new WorkerOverlayClient(3, message => messages.push(message));
   const status = { available: true, displays: [], state: "disabled", message: null };

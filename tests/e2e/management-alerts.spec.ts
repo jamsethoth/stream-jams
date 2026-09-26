@@ -1822,6 +1822,10 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
   await liveTtsSummary.focus();
   await page.keyboard.press("Enter");
   await expect(enabled).toBeVisible();
+  await expect.poll(() => enabled.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return { width: bounds.width, height: bounds.height };
+  })).toEqual({ width: 16, height: 16 });
   await expect(page.getByText("Studio Speaker.bot")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save" })).toBeDisabled();
   await page.getByRole("textbox", { name: "TTS template" }).fill("Hello {actor.displayName}");

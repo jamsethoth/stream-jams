@@ -28,7 +28,16 @@ export class SqliteSurfaceRepository implements SurfaceRepository {
     const rows = this.connection.prepare("SELECT configuration_json FROM overlay_surfaces ORDER BY id").all();
     const surfaces = rows.map(row => surfaceConfigurationSchema.parse(JSON.parse(String(row.configuration_json))));
     if (!surfaces.some(surface => surface.id === "desktop:primary")) {
-      const desktop: SurfaceConfiguration = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] };
+      const desktop: SurfaceConfiguration = {
+        id: "desktop:primary",
+        kind: "desktop",
+        enabled: false,
+        displayId: null,
+        displayLabel: null,
+        autoFollowDisplayName: false,
+        opacity: 1,
+        layers: []
+      };
       this.write(desktop);
       surfaces.push(desktop);
     }

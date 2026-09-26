@@ -64,8 +64,8 @@ describe("ConfigurationBackupService", () => {
 
       expect(preflight.state).toBe("valid");
       expect(archive.configuration.tables.audio_output_routes).toEqual([
-        { id: "route-headphones", name: "Headphones", device_id: null, device_label: null },
-        { id: "route-stream", name: "Stream mix", device_id: null, device_label: null }
+        { id: "route-headphones", name: "Headphones", device_id: null, device_label: null, auto_follow_device_name: 0 },
+        { id: "route-stream", name: "Stream mix", device_id: null, device_label: null, auto_follow_device_name: 0 }
       ]);
       expect(JSON.stringify(archive)).not.toMatch(/source-endpoint|Source headset|Source mixer/);
       const rebindWarnings = ["Headphones", "Stream mix"].map((name) => expect.objectContaining({
@@ -84,8 +84,8 @@ describe("ConfigurationBackupService", () => {
 
       expect(result.warnings).toEqual(expect.arrayContaining(rebindWarnings));
       expect(new SqliteAudioOutputRouteRepository(target.database.connection).list()).toEqual([
-        { id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null },
-        { id: "route-stream", name: "Stream mix", deviceId: null, deviceLabel: null }
+        { id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null, autoFollowDeviceName: false },
+        { id: "route-stream", name: "Stream mix", deviceId: null, deviceLabel: null, autoFollowDeviceName: false }
       ]);
       const documents = new SqliteAlertEditorDocumentRepository(target.database.connection);
       await expect(documents.find("rule-routed")).resolves.toMatchObject({
@@ -208,7 +208,7 @@ describe("ConfigurationBackupService", () => {
       await seedRoutedAlerts(source.database);
       await seedRoutedAlerts(target.database);
       const routes = new SqliteAudioOutputRouteRepository(target.database.connection);
-      routes.save({ id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset" });
+      routes.save({ id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset", autoFollowDeviceName: false });
       const documents = new SqliteAlertEditorDocumentRepository(target.database.connection);
       for (const id of ["rule-routed", "rule-routed-default"]) {
         const document = await documents.find(id);
@@ -233,11 +233,11 @@ describe("ConfigurationBackupService", () => {
         archive, archiveId: preflight.archiveId!, confirmation: "RESTORE", regenerateRouteKeys: true
       })).rejects.toMatchObject({ code: "RESTORE_FAILED" });
 
-      expect(replacedRoute).toEqual({ id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null });
+      expect(replacedRoute).toEqual({ id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null, autoFollowDeviceName: false });
       expect(replacedDocument).toMatchObject({ outputs: { browserSource: false, deviceRouteIds: ["route-headphones"] } });
       expect(target.snapshotRepository.captureRestorePoint()).toEqual(previous);
       expect(routes.findById("route-headphones")).toEqual({
-        id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset"
+        id: "route-headphones", name: "Previous headphones", deviceId: "target-endpoint", deviceLabel: "Target headset", autoFollowDeviceName: false
       });
       for (const id of ["rule-routed", "rule-routed-default"]) {
         await expect(documents.find(id)).resolves.toMatchObject({ outputs: { browserSource: false, deviceRouteIds: ["route-stream"] } });
@@ -282,7 +282,7 @@ describe("ConfigurationBackupService", () => {
         await restoring;
       }
       expect(new SqliteAudioOutputRouteRepository(target.database.connection).findById("route-headphones"))
-        .toEqual({ id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null });
+        .toEqual({ id: "route-headphones", name: "Headphones", deviceId: null, deviceLabel: null, autoFollowDeviceName: false });
       expect(() => gate.runConfigurationMutation(() => undefined)).not.toThrow();
     } finally {
       target.database.close();
@@ -953,8 +953,8 @@ function createRewardRule(id: string, condition: AlertRule["conditions"][number]
 
 async function seedRoutedAlerts(database: StreamJamsDatabase): Promise<void> {
   const routes = new SqliteAudioOutputRouteRepository(database.connection);
-  routes.save({ id: "route-headphones", name: "Headphones", deviceId: "source-endpoint-headphones", deviceLabel: "Source headset" });
-  routes.save({ id: "route-stream", name: "Stream mix", deviceId: "source-endpoint-stream", deviceLabel: "Source mixer" });
+  routes.save({ id: "route-headphones", name: "Headphones", deviceId: "source-endpoint-headphones", deviceLabel: "Source headset", autoFollowDeviceName: false });
+  routes.save({ id: "route-stream", name: "Stream mix", deviceId: "source-endpoint-stream", deviceLabel: "Source mixer", autoFollowDeviceName: false });
   await new SqliteAlertRepository(database.connection).saveRule(createRewardRule("rule-routed", {
     field: "channelPointReward", operator: "equals", value: "reward-routed"
   }));

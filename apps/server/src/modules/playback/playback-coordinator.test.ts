@@ -572,7 +572,7 @@ describe("PlaybackCoordinator", () => {
     audio.sink.play.mockRejectedValueOnce(new Error("private device details"));
     const coordinator = createCoordinator({ ...audio.dependencies, audioOutputService: {
       ...audio.dependencies.audioOutputService,
-      listRoutes: () => [{ id: "personal", name: "Private headphones", deviceId: "private-device-id", deviceLabel: "Private device label" }]
+      listRoutes: () => [{ id: "personal", name: "Private headphones", deviceId: "private-device-id", deviceLabel: "Private device label", autoFollowDeviceName: false }]
     }, logger: { error }, generateReferenceId: () => "audio-ref" });
     coordinator.enqueueResolvedTest({ sourceEvent: createCheerEvent(), alerts: [], audio: [deviceAudio(), { ...deviceAudio(), documentId: "second" }] });
     await vi.waitFor(() => expect(audio.sink.play).toHaveBeenCalledTimes(2));

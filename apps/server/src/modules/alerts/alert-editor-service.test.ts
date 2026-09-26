@@ -1894,12 +1894,14 @@ function audioStatusFixture(): AudioOutputStatus {
     muted: false,
     routes: [
       {
-        route: { id: "route-headphones", name: "Headphones", deviceId: "device-headphones", deviceLabel: "Headphones" },
-        state: "ready"
+        route: { id: "route-headphones", name: "Headphones", deviceId: "device-headphones", deviceLabel: "Headphones", autoFollowDeviceName: false },
+        state: "ready",
+        automaticBindingState: "not-needed"
       },
       {
-        route: { id: "route-stream", name: "Stream mix", deviceId: "device-stream", deviceLabel: "Stream mix" },
-        state: "missing-device"
+        route: { id: "route-stream", name: "Stream mix", deviceId: "device-stream", deviceLabel: "Stream mix", autoFollowDeviceName: false },
+        state: "missing-device",
+        automaticBindingState: "not-needed"
       }
     ]
   };

@@ -157,7 +157,7 @@ it("serves audio routes over loopback, observes global mute, and retains binding
     const session = await fetch(`${address}/auth/management/sessions`, { method: "POST" });
     const sessionData = await session.json() as { id: string; csrfToken: string };
     const headers = { authorization: `Bearer ${sessionData.id}`, "x-stream-jams-csrf": sessionData.csrfToken, "content-type": "application/json" };
-    const created = await fetch(`${address}/audio/routes`, { method: "POST", headers, body: JSON.stringify({ name: "Private", deviceId: "test-device" }) });
+    const created = await fetch(`${address}/audio/routes`, { method: "POST", headers, body: JSON.stringify({ name: "Private", deviceId: "test-device", autoFollowDeviceName: true }) });
     expect(created.status).toBe(201);
     const route = await created.json() as { id: string };
     await composition.playbackOperationsService.setSafety({ muted: true });
@@ -254,15 +254,76 @@ it("serves audio routes over loopback, observes global mute, and retains binding
     });
     await composition.close();
     expect(closeAudio).toHaveBeenCalledTimes(1);
-    composition = await createRuntimeAppComposition(options);
+    composition = await createRuntimeAppComposition({
+      ...options,
+      audioDeviceHost: {
+        listOutputDevices: async () => [{ deviceId: "replacement-device", label: "Test output" }],
+        testOutput
+      }
+    });
     const restartedAddress = await composition.app.listen({ host: "127.0.0.1", port: 0 });
     const restartedSession = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
     const status = await fetch(`${restartedAddress}/audio/status`, { headers: managementAuthHeaders(restartedSession) });
-    expect(await status.json()).toMatchObject({ capability: { available: false, reason: "desktop-unavailable" }, routes: [{
-      state: "unavailable", route: { id: route.id, name: "Private", deviceId: "test-device", deviceLabel: "Test output" }
+    expect(await status.json()).toMatchObject({ capability: { available: true, reason: null }, routes: [{
+      state: "ready", automaticBindingState: "rebound",
+      route: { id: route.id, name: "Private", deviceId: "replacement-device", deviceLabel: "Test output", autoFollowDeviceName: true }
     }] });
   } finally {
     devicePlayback.resolve({ failedRouteIds: [] });
+    await composition?.close();
+    await rm(testRoot, { recursive: true, force: true });
+  }
+});
+
+it("keeps the old audio binding unavailable when startup reconciliation cannot persist", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-audio-rebind-failure-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const options = {
+    homeDirectory: testRoot,
+    webBuildDirectory: await createWebBuildFixture(testRoot),
+    configStore: new StaticConfigStore(createConfig(testRoot)),
+    environment: {},
+    secretStore: new TestSecretStore(),
+    scheduleRecurring: () => ({ scheduled: true }),
+    cancelRecurring: () => {}
+  };
+  try {
+    composition = await createRuntimeAppComposition({
+      ...options,
+      audioDeviceHost: {
+        listOutputDevices: async () => [{ deviceId: "old-device", label: "Headphones" }],
+        testOutput: async () => {}
+      }
+    });
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const created = await composition.app.inject({
+      method: "POST",
+      url: "/audio/routes",
+      headers: managementAuthHeaders(session),
+      payload: { name: "Private", deviceId: "old-device", autoFollowDeviceName: true }
+    });
+    const route = created.json() as { readonly id: string };
+    composition.database.connection.exec("CREATE TRIGGER fail_startup_rebind BEFORE UPDATE ON audio_output_routes BEGIN SELECT RAISE(ABORT, 'save failed'); END");
+    await composition.close();
+
+    composition = await createRuntimeAppComposition({
+      ...options,
+      audioDeviceHost: {
+        listOutputDevices: async () => [{ deviceId: "new-device", label: "Headphones" }],
+        testOutput: async () => {}
+      }
+    });
+    const restartedSession = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const status = await composition.app.inject({
+      method: "GET",
+      url: "/audio/status",
+      headers: managementAuthHeaders(restartedSession)
+    });
+    expect(status.json()).toMatchObject({ routes: [{
+      state: "missing-device",
+      route: { id: route.id, deviceId: "old-device", deviceLabel: "Headphones", autoFollowDeviceName: true }
+    }] });
+  } finally {
     await composition?.close();
     await rm(testRoot, { recursive: true, force: true });
   }
@@ -273,7 +334,13 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
   const transport: DesktopOverlayTransport = {
     configure: vi.fn(async () => { if (fails) throw new Error("desktop unavailable"); }), prepare: vi.fn(async () => "ready" as const),
-    start: vi.fn(async () => {}), stop: vi.fn(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {})
+    start: vi.fn(async () => {}), stop: vi.fn(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {}),
+    getStatus: vi.fn(async () => ({
+      available: true as const,
+      displays: [{ id: "replacement-monitor", label: "VG27A", bounds: { x: 0, y: 0, width: 2560, height: 1440 }, scaleFactor: 1 }],
+      state: "disabled" as const,
+      message: null
+    }))
   };
   try {
     const options = { homeDirectory: testRoot, webBuildDirectory: await createWebBuildFixture(testRoot),
@@ -285,12 +352,13 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
     const surfaces = await composition.app.inject({ method: "GET", url: "/overlay-surfaces", headers: managementAuthHeaders(session) });
     expect(surfaces.statusCode).toBe(200);
     expect(surfaces.json()).toMatchObject({ surfaces: expect.arrayContaining([expect.objectContaining({ id: "desktop:primary" })]) });
-    const saved = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "selected-monitor", opacity: 0.7, layers: [] };
+    const saved = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "old-monitor", displayLabel: "VG27A", autoFollowDisplayName: true, opacity: 0.7, layers: [] };
     composition.database.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ? WHERE id = 'desktop:primary'").run(JSON.stringify(saved));
     await composition.close();
     composition = await createRuntimeAppComposition(options);
     expect(transport.configure).toHaveBeenLastCalledWith({
       ...saved,
+      displayId: "replacement-monitor",
       layers: [
         { moduleId: "alerts", visible: false },
         { moduleId: "screen-effects", visible: false }
@@ -330,7 +398,7 @@ it("applies persisted mute before wiring the desktop transport for device playba
       cancelRecurring: () => {},
       desktopAudioTransport: transport
     });
-    expect(calls).toEqual(["mute:true"]);
+    expect(calls).toEqual(["mute:true", "devices"]);
 
     await mkdir(join(testRoot, "assets", "audio"), { recursive: true });
     await writeFile(join(testRoot, "assets", "audio", "tone.mp3"), Buffer.from([1, 2, 3]));
@@ -368,7 +436,7 @@ it("applies persisted mute before wiring the desktop transport for device playba
       deadlineMs: expect.any(Number),
       startDeadlineMs: expect.any(Number)
     }));
-    expect(calls).toEqual(["mute:true", "devices", "devices", "play"]);
+    expect(calls).toEqual(["mute:true", "devices", "devices", "devices", "play"]);
     expect((await composition.app.inject({ method: "POST", url: "/audio/retry", headers })).statusCode).toBe(204);
     expect(transport.retry).toHaveBeenCalledTimes(1);
   } finally {

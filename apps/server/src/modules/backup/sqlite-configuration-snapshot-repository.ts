@@ -63,8 +63,8 @@ const tableDefinitions = [
   table("alert_set_metadata", ["set_id", "starter", "starter_review_state", "landscape_enabled", "landscape_review_state", "vertical_enabled", "vertical_review_state"], ["set_id"]),
   table("alert_rule_management_metadata", ["rule_id", "provider_kind", "review_state", "target_profile_ids_json"], ["rule_id"], ["target_profile_ids_json"]),
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
-  table("audio_output_routes", ["id", "name", "device_id", "device_label"], ["id"], [],
-    "SELECT id, name, NULL AS device_id, NULL AS device_label FROM audio_output_routes"),
+  table("audio_output_routes", ["id", "name", "device_id", "device_label", "auto_follow_device_name"], ["id"], [],
+    "SELECT id, name, NULL AS device_id, NULL AS device_label, 0 AS auto_follow_device_name FROM audio_output_routes"),
   table("screen_effect_sets", ["id", "name", "active"], ["id"]),
   table("screen_effects", ["id", "schema_version", "name", "enabled", "description", "category", "priority", "cooldown_seconds", "updated_at"], ["id"]),
   table("screen_effect_set_memberships", ["effect_id", "set_id"], ["effect_id"]),
@@ -341,7 +341,13 @@ function isSqliteRestorePoint(value: unknown): value is SqliteConfigurationResto
 
 function portableSurfaceRow(row: BackupRow): BackupRow {
   const config = surfaceConfigurationSchema.parse(JSON.parse(String(row.configuration_json)));
-  return { ...row, configuration_json: JSON.stringify(config.kind === "desktop" ? { ...config, enabled: false, displayId: null } : config) };
+  return { ...row, configuration_json: JSON.stringify(config.kind === "desktop" ? {
+    ...config,
+    enabled: false,
+    displayId: null,
+    displayLabel: null,
+    autoFollowDisplayName: false
+  } : config) };
 }
 
 function insertCapturedRows(connection: DatabaseSync, tableName: string, rows: readonly BackupRow[]): void {
@@ -422,6 +428,10 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     const parsed = surfaceConfigurationSchema.safeParse(parseJsonValue(row.configuration_json));
     if (!parsed.success || parsed.data.id !== row.id || parsed.data.kind !== row.kind) {
       errors.push(`overlay_surfaces[${index}] contains invalid surface configuration or identity.`);
+    } else if (parsed.data.kind === "desktop" && (
+      parsed.data.enabled || parsed.data.displayId !== null || parsed.data.displayLabel !== null || parsed.data.autoFollowDisplayName
+    )) {
+      errors.push(`overlay_surfaces[${index}] must be disabled and unbound in a portable backup.`);
     }
   }
 
@@ -595,9 +605,10 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
 
   for (const [index, row] of (tables.audio_output_routes ?? []).entries()) {
     pushSchemaError(errors, `audio_output_routes[${index}]`, audioOutputRouteSchema.safeParse({
-      id: row.id, name: row.name, deviceId: row.device_id, deviceLabel: row.device_label
+      id: row.id, name: row.name, deviceId: row.device_id, deviceLabel: row.device_label,
+      autoFollowDeviceName: row.auto_follow_device_name === 1
     }));
-    if (row.device_id !== null || row.device_label !== null) errors.push(`audio_output_routes[${index}] must be unbound in a portable backup.`);
+    if (row.device_id !== null || row.device_label !== null || row.auto_follow_device_name !== 0) errors.push(`audio_output_routes[${index}] must be unbound in a portable backup.`);
     if (typeof row.name === "string" && row.name !== row.name.trim()) errors.push(`audio_output_routes[${index}].name must be trimmed.`);
   }
   errors.push(...validateScreenEffects(tables));

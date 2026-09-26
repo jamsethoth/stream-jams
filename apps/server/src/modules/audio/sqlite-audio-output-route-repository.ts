@@ -72,9 +72,13 @@ export class SqliteAudioOutputRouteRepository implements AudioOutputRouteReposit
       const conflict = this.connection.prepare("SELECT id FROM audio_output_routes WHERE name = ? COLLATE NOCASE AND id <> ?").get(route.name, route.id);
       if (conflict !== undefined) throw new AudioOutputError(409, "AUDIO_ROUTE_NAME_CONFLICT", "That route name is already in use.", "Choose a different route name.");
       this.connection.prepare(`
-        INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET name = excluded.name, device_id = excluded.device_id, device_label = excluded.device_label
-      `).run(route.id, route.name, route.deviceId, route.deviceLabel);
+        INSERT INTO audio_output_routes (id, name, device_id, device_label, auto_follow_device_name) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          device_id = excluded.device_id,
+          device_label = excluded.device_label,
+          auto_follow_device_name = excluded.auto_follow_device_name
+      `).run(route.id, route.name, route.deviceId, route.deviceLabel, route.autoFollowDeviceName ? 1 : 0);
     });
   }
 
@@ -99,5 +103,11 @@ export class SqliteAudioOutputRouteRepository implements AudioOutputRouteReposit
 }
 
 function readRoute(row: Record<string, unknown>): AudioOutputRoute {
-  return audioOutputRouteSchema.parse({ id: row.id, name: row.name, deviceId: row.device_id, deviceLabel: row.device_label });
+  return audioOutputRouteSchema.parse({
+    id: row.id,
+    name: row.name,
+    deviceId: row.device_id,
+    deviceLabel: row.device_label,
+    autoFollowDeviceName: row.auto_follow_device_name === 1
+  });
 }

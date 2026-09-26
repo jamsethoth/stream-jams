@@ -5,7 +5,10 @@ const display = { id: "one", label: "Left display", bounds: { x: -1920, y: -100,
 const status = { available: true, displays: [display], state: "disabled", message: null };
 it("accepts negative desktop coordinates and validated saved surfaces", () => {
   expect(selectedDesktopDisplaySchema.parse(display)).toEqual(display);
-  expect(surfaceSettingsViewSchema.parse({ surfaces: [{ id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] }], desktop: status })).toMatchObject({ desktop: status });
+  expect(surfaceSettingsViewSchema.parse({ surfaces: [{ id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, opacity: 1, layers: [] }], desktop: status })).toMatchObject({
+    surfaces: [{ displayLabel: null, autoFollowDisplayName: false }],
+    desktop: status
+  });
 });
 it("accepts status RPC without authorizing audio commands or unknown fields", () => {
   expect(desktopVisualCommandSchema.safeParse({ type: "status" }).success).toBe(true);

@@ -130,7 +130,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
   it("round-trips portable Screen Effects disabled and accepts legacy snapshots without effect tables", async () => {
     const effects = new SqliteEffectRepository(database.connection);
-    database.connection.prepare("INSERT INTO audio_output_routes VALUES (?, ?, ?, ?)").run(
+    database.connection.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)").run(
       "route-effect",
       "Effect headphones",
       "machine-only-effect-device",
@@ -172,7 +172,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       { variant_id: "variant-backup", route_id: "route-effect", position: 0 }
     ]);
     expect(snapshot.tables.audio_output_routes).toEqual([
-      { id: "route-effect", name: "Effect headphones", device_id: null, device_label: null }
+      { id: "route-effect", name: "Effect headphones", device_id: null, device_label: null, auto_follow_device_name: 0 }
     ]);
     expect(JSON.stringify(snapshot)).not.toContain("machine-only-effect-device");
     expect(snapshot.tables.module_playback_settings).toEqual([
@@ -226,12 +226,12 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
   it("exports unbound desktop settings and preserves local bindings only in rollback points", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
-    const local = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "private-monitor", opacity: 0.4,
+    const local = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "private-monitor", displayLabel: "VG27A", autoFollowDisplayName: true, opacity: 0.4,
       layers: [{ moduleId: "alerts", visible: true }] };
     database.connection.prepare("UPDATE overlay_surfaces SET configuration_json = ?").run(JSON.stringify(local));
     const point = repository.captureRestorePoint();
     const snapshot = repository.snapshot();
-    const portable = { ...local, enabled: false, displayId: null };
+    const portable = { ...local, enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false };
     expect(JSON.parse(String(snapshot.tables.overlay_surfaces?.[0]?.configuration_json))).toEqual(portable);
     expect(JSON.stringify(snapshot)).not.toContain("private-monitor");
     repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
@@ -239,8 +239,8 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     repository.restoreRestorePoint(point);
     expect(JSON.parse(String(database.connection.prepare("SELECT configuration_json FROM overlay_surfaces").get()?.configuration_json))).toEqual(local);
     snapshot.tables.overlay_surfaces![0]!.configuration_json = JSON.stringify(local);
-    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
-    expect(JSON.parse(String(database.connection.prepare("SELECT configuration_json FROM overlay_surfaces").get()?.configuration_json))).toEqual(portable);
+    expect(() => repository.replace({ tables: snapshot.tables, assets: [seededAsset()] })).toThrow(/disabled and unbound/i);
+    expect(JSON.parse(String(database.connection.prepare("SELECT configuration_json FROM overlay_surfaces").get()?.configuration_json))).toEqual(local);
   });
 
   it("restores legacy tables to a disabled desktop and rejects secret-bearing surface records atomically", () => {
@@ -263,13 +263,13 @@ describe("SqliteConfigurationSnapshotRepository", () => {
 
   it("exports portable route identities without bindings and restores exact local bindings on rollback", () => {
     const db = database.connection;
-    db.prepare("INSERT INTO audio_output_routes VALUES (?, ?, ?, ?)").run("route-a", "Private", "machine-only-device", "Machine headphones");
+    db.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label, auto_follow_device_name) VALUES (?, ?, ?, ?, ?)").run("route-a", "Private", "machine-only-device", "Machine headphones", 1);
     const outputs = { browserSource: false, deviceRouteIds: ["route-a"] };
     db.prepare("UPDATE alert_editor_documents SET document_json = ?").run(JSON.stringify({ ...editorDocument(), outputs }));
     const repository = new SqliteConfigurationSnapshotRepository(db);
     const restorePoint = repository.captureRestorePoint();
     const snapshot = repository.snapshot();
-    expect(snapshot.tables.audio_output_routes).toEqual([{ id: "route-a", name: "Private", device_id: null, device_label: null }]);
+    expect(snapshot.tables.audio_output_routes).toEqual([{ id: "route-a", name: "Private", device_id: null, device_label: null, auto_follow_device_name: 0 }]);
     expect(JSON.stringify(snapshot)).not.toContain("machine-only-device");
     expect(JSON.stringify(snapshot)).not.toContain("Machine headphones");
     expect(JSON.parse(String(snapshot.tables.alert_editor_documents?.[0]?.document_json)).outputs).toEqual(outputs);
@@ -283,7 +283,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
   it("rejects unknown route references, portable hardware bindings, and NOCASE name conflicts before replacement", () => {
     const repository = new SqliteConfigurationSnapshotRepository(database.connection);
     const snapshot = repository.snapshot();
-    const route = { id: "route-a", name: "Private", device_id: null, device_label: null };
+    const route = { id: "route-a", name: "Private", device_id: null, device_label: null, auto_follow_device_name: 0 };
     const withMissingRoute = { ...snapshot.tables, audio_output_routes: [], alert_editor_documents: [
       { alert_id: "alert-follow", updated_at: "2026-09-05", document_json: JSON.stringify({ ...editorDocument(), outputs: { browserSource: false, deviceRouteIds: ["missing"] } }) }
     ] };
@@ -382,7 +382,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
   });
 
   it("keeps portable table mappings aligned with migrated columns", async () => {
-    database.connection.prepare("INSERT INTO audio_output_routes VALUES (?, ?, ?, ?)")
+    database.connection.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)")
       .run("route-a", "Private", "local-endpoint", "Local headset");
     const effectDraft = createScreenEffectDocument({
       id: "effect-mapping",

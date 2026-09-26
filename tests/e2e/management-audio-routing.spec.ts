@@ -23,10 +23,10 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
   const tests: unknown[] = [];
   await page.route("**/audio/status", (route) => route.fulfill({ json: status }));
   await page.route("**/audio/routes", async (route) => {
-    const body = route.request().postDataJSON() as { name: string; deviceId: string | null };
+    const body = route.request().postDataJSON() as { name: string; deviceId: string | null; autoFollowDeviceName?: boolean };
     commands.push({ method: route.request().method(), body });
-    const output = { id: "private", ...body, deviceLabel: body.deviceId === null ? null : "Private endpoint" };
-    status.routes.push({ route: output, state: "ready" });
+    const output = { id: "private", ...body, autoFollowDeviceName: body.autoFollowDeviceName ?? false, deviceLabel: body.deviceId === null ? null : "Private endpoint" };
+    status.routes.push({ route: output, state: "ready", automaticBindingState: "not-needed" });
     await route.fulfill({ status: 201, json: output });
   });
   await page.route("**/config/server", (route) => route.fulfill({ json: { host: "127.0.0.1", port: 39187 } }));
@@ -60,10 +60,11 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
   await expect(page.getByRole("heading", { name: "Audio outputs", exact: true })).toBeVisible();
   await page.getByLabel("New output name").fill("Private mix");
   await page.getByLabel("New output device").selectOption("fake-private");
+  await page.getByRole("checkbox", { name: "Automatically follow this device name" }).check();
   expect(commands).toEqual([]);
   await page.getByRole("button", { name: "Create output" }).click();
   await expect(page.getByRole("group", { name: "Private mix audio output" })).toBeVisible();
-  expect(commands).toEqual([{ method: "POST", body: { name: "Private mix", deviceId: "fake-private" } }]);
+  expect(commands).toEqual([{ method: "POST", body: { name: "Private mix", deviceId: "fake-private", autoFollowDeviceName: true } }]);
   if (process.env.STREAM_JAMS_QA_SCREENSHOT_DIRECTORY) {
     await page.getByRole("button", { name: "Dismiss success", exact: true }).click();
     await page.screenshot({ path: `${process.env.STREAM_JAMS_QA_SCREENSHOT_DIRECTORY}/audio-settings-desktop.png`, fullPage: true });

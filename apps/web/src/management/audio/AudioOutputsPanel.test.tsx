@@ -17,10 +17,11 @@ describe("AudioOutputsPanel", () => {
     await user.type(await screen.findByLabelText("New output name"), "Stream headphones");
     expect(screen.getByRole("heading", { name: "Audio outputs" })).toBeVisible();
     await user.selectOptions(screen.getByLabelText("New output device"), "endpoint-b");
+    await user.click(screen.getAllByRole("checkbox", { name: "Automatically follow this device name" })[0]!);
     expect(api.testRoute).not.toHaveBeenCalled();
     expect(api.createRoute).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Create output" }));
-    expect(api.createRoute).toHaveBeenCalledWith({ name: "Stream headphones", deviceId: "endpoint-b" });
+    expect(api.createRoute).toHaveBeenCalledWith({ name: "Stream headphones", deviceId: "endpoint-b", autoFollowDeviceName: true });
 
     const route = await screen.findByRole("group", { name: "Headphones audio output" });
     await user.clear(within(route).getByLabelText("Output name"));
@@ -32,6 +33,16 @@ describe("AudioOutputsPanel", () => {
     expect(api.updateRoute).toHaveBeenCalledWith("route-a", {
       name: "Private mix", deviceId: "endpoint-b", confirmLiveImpact: false
     });
+  });
+
+  it("keeps automatic matching opt-in and unavailable until a device is selected", async () => {
+    const user = userEvent.setup();
+    render(<AudioOutputsPanel audioApi={createApi()} />);
+    const checkbox = (await screen.findAllByRole("checkbox", { name: "Automatically follow this device name" }))[0]!;
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText("New output device"), "endpoint-b");
+    expect(checkbox).toBeEnabled();
   });
 
   it("keeps a route draft during polling and marks retained status stale after a refresh failure", async () => {
@@ -91,7 +102,7 @@ describe("AudioOutputsPanel", () => {
         "Review the listed alerts and confirm the binding change.",
         [{ alertId: "alert-a", name: "New follower" }]
       ))
-      .mockResolvedValueOnce({ id: "route-a", name: "Headphones", deviceId: "endpoint-b", deviceLabel: "Stream speakers" });
+      .mockResolvedValueOnce({ id: "route-a", name: "Headphones", deviceId: "endpoint-b", deviceLabel: "Stream speakers", autoFollowDeviceName: false });
     const api = createApi({ updateRoute });
     render(<AudioOutputsPanel audioApi={api} />);
 
@@ -113,7 +124,7 @@ describe("AudioOutputsPanel", () => {
     const api = createApi({
       getStatus: vi.fn(async () => status({
         capability: { available: false, devices: [], reason: "desktop-unavailable", nextStep: "Open the desktop app." },
-        routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-gone", deviceLabel: "Unplugged headset" }, state: "unavailable" }]
+        routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-gone", deviceLabel: "Unplugged headset", autoFollowDeviceName: false }, state: "unavailable", automaticBindingState: "not-needed" }]
       }))
     });
     render(<AudioOutputsPanel audioApi={api} />);
@@ -135,7 +146,7 @@ describe("AudioOutputsPanel", () => {
     const getStatus = vi.fn()
       .mockResolvedValueOnce(status())
       .mockImplementationOnce(() => new Promise((resolve) => { finishStalePoll = resolve; }))
-      .mockResolvedValueOnce(status({ routes: [{ route: { id: "route-a", name: "Private mix", deviceId: "endpoint-a", deviceLabel: "USB headphones" }, state: "ready" }] }));
+      .mockResolvedValueOnce(status({ routes: [{ route: { id: "route-a", name: "Private mix", deviceId: "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: false }, state: "ready", automaticBindingState: "not-needed" }] }));
     const api = createApi({ getStatus });
     render(<AudioOutputsPanel audioApi={api} />);
     const name = await screen.findByLabelText("Output name");
@@ -160,7 +171,7 @@ describe("AudioOutputsPanel", () => {
       getStatus: vi.fn(async () => status({
         capability: { available: false, devices: [], reason: "desktop-unavailable", nextStep: "Open the desktop app and retry." },
         muted: true,
-        routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "gone", deviceLabel: "Old headset" }, state: "unavailable" }]
+        routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "gone", deviceLabel: "Old headset", autoFollowDeviceName: false }, state: "unavailable", automaticBindingState: "not-needed" }]
       })),
       testRoute: vi.fn(async () => ({ routeId: "route-a", muted: true }))
     });
@@ -186,8 +197,8 @@ describe("AudioOutputsPanel", () => {
 function createApi(overrides: Partial<AudioApi> = {}): AudioApi {
   return {
     getStatus: vi.fn(async () => status()),
-    createRoute: vi.fn(async ({ name, deviceId }) => ({ id: "route-new", name, deviceId, deviceLabel: deviceId === null ? null : "Stream speakers" })),
-    updateRoute: vi.fn(async (id, input) => ({ id, name: input.name ?? "Headphones", deviceId: input.deviceId ?? "endpoint-a", deviceLabel: "USB headphones" })),
+    createRoute: vi.fn(async ({ name, deviceId, autoFollowDeviceName }) => ({ id: "route-new", name, deviceId, deviceLabel: deviceId === null ? null : "Stream speakers", autoFollowDeviceName })),
+    updateRoute: vi.fn(async (id, input) => ({ id, name: input.name ?? "Headphones", deviceId: input.deviceId ?? "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: input.autoFollowDeviceName ?? false })),
     deleteRoute: vi.fn(async () => undefined),
     testRoute: vi.fn(async (routeId) => ({ routeId, muted: false })),
     retry: vi.fn(async () => undefined),
@@ -199,7 +210,7 @@ function status(overrides: Partial<AudioOutputStatus> = {}): AudioOutputStatus {
   return {
     capability: { available: true, devices: [{ deviceId: "endpoint-a", label: "USB headphones" }, { deviceId: "endpoint-b", label: "Stream speakers" }], reason: null, nextStep: null },
     muted: false,
-    routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones" }, state: "ready" }],
+    routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: false }, state: "ready", automaticBindingState: "not-needed" }],
     ...overrides
   };
 }

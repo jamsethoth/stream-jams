@@ -34,10 +34,18 @@ export const DesktopUnavailable: Story = {
     audioApi: createAudioApi({
       getStatus: fn(async () => status({
         capability: { available: false, devices: [], reason: "desktop-unavailable", nextStep: "Open or restart the desktop app, then retry." },
-        routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-gone", deviceLabel: "USB headphones" }, state: "unavailable" }]
+        routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-gone", deviceLabel: "USB headphones", autoFollowDeviceName: true }, state: "unavailable", automaticBindingState: "no-match" }]
       }))
     })
   }
+};
+
+export const AutomaticallyRebound: Story = {
+  args: { audioApi: createAudioApi({ getStatus: fn(async () => status({ routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-b", deviceLabel: "USB headphones", autoFollowDeviceName: true }, state: "ready", automaticBindingState: "rebound" }] })) }) }
+};
+
+export const AmbiguousExactName: Story = {
+  args: { audioApi: createAudioApi({ getStatus: fn(async () => status({ routes: [{ route: { id: "route-a", name: "Headphones", deviceId: "endpoint-gone", deviceLabel: "USB headphones", autoFollowDeviceName: true }, state: "missing-device", automaticBindingState: "ambiguous" }] })) }) }
 };
 
 export const DeletionConflict: Story = {
@@ -81,8 +89,8 @@ export const TestCompletedWhileMuted: Story = {
 function createAudioApi(overrides: Partial<AudioApi> = {}): AudioApi {
   return {
     getStatus: fn(async () => status()),
-    createRoute: fn(async ({ name, deviceId }) => ({ id: "route-new", name, deviceId, deviceLabel: deviceId === null ? null : "Broadcast speakers" })),
-    updateRoute: fn(async (routeId, input) => ({ id: routeId, name: input.name ?? "Headphones", deviceId: input.deviceId ?? "endpoint-a", deviceLabel: "USB headphones" })),
+    createRoute: fn(async ({ name, deviceId, autoFollowDeviceName }) => ({ id: "route-new", name, deviceId, deviceLabel: deviceId === null ? null : "Broadcast speakers", autoFollowDeviceName })),
+    updateRoute: fn(async (routeId, input) => ({ id: routeId, name: input.name ?? "Headphones", deviceId: input.deviceId ?? "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: input.autoFollowDeviceName ?? false })),
     deleteRoute: fn(async () => undefined),
     testRoute: fn(async (routeId) => ({ routeId, muted: false })),
     retry: fn(async () => undefined),
@@ -103,9 +111,9 @@ function status(overrides: Partial<AudioOutputStatus> = {}): AudioOutputStatus {
     },
     muted: false,
     routes: [
-      { route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones" }, state: "ready" },
-      { route: { id: "route-b", name: "Private monitor", deviceId: "endpoint-gone", deviceLabel: "Wave Link SFX" }, state: "missing-device" },
-      { route: { id: "route-c", name: "Studio speakers", deviceId: null, deviceLabel: null }, state: "unbound" }
+      { route: { id: "route-a", name: "Headphones", deviceId: "endpoint-a", deviceLabel: "USB headphones", autoFollowDeviceName: true }, state: "ready", automaticBindingState: "not-needed" },
+      { route: { id: "route-b", name: "Private monitor", deviceId: "endpoint-gone", deviceLabel: "Wave Link SFX", autoFollowDeviceName: true }, state: "missing-device", automaticBindingState: "no-match" },
+      { route: { id: "route-c", name: "Studio speakers", deviceId: null, deviceLabel: null, autoFollowDeviceName: false }, state: "unbound", automaticBindingState: "not-needed" }
     ],
     ...overrides
   };

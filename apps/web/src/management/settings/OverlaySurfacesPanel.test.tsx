@@ -9,10 +9,10 @@ import type { OverlaySurfacesPanelHandle } from "./OverlaySurfacesPanel.js";
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 function harness() {
   let view: SurfaceSettingsView = { surfaces: [
-    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: "one", opacity: 1, layers: [{ moduleId: "alerts", visible: true }, { moduleId: "future", visible: false }] },
+    { id: "desktop:primary", kind: "desktop", enabled: false, displayId: "one", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }, { moduleId: "future", visible: false }] },
     { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "future", visible: true }, { moduleId: "alerts", visible: true }] }
-  ], desktop: { available: true, state: "disabled", message: null, displays: [{ id: "one", label: "Main monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] } };
-  const api = { load: vi.fn<SurfaceSettingsApi["load"]>(async () => structuredClone(view)), save: vi.fn<SurfaceSettingsApi["save"]>(async value => { view = { ...view, surfaces: view.surfaces.map(surface => surface.id === value.id ? value : surface) }; return structuredClone(view); }), retry: vi.fn<SurfaceSettingsApi["retry"]>(async () => structuredClone(view)) };
+  ], desktop: { available: true, state: "disabled", message: null, displays: [{ id: "one", label: "Main monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] }, desktopBindingState: "not-needed" };
+  const api = { load: vi.fn<SurfaceSettingsApi["load"]>(async () => structuredClone(view)), save: vi.fn<SurfaceSettingsApi["save"]>(async value => { view = { ...view, surfaces: view.surfaces.map(surface => surface.id === value.id ? (value.kind === "desktop" ? { ...value, displayLabel: view.desktop.displays.find(display => display.id === value.displayId)?.label ?? null } : value) : surface) }; return structuredClone(view); }), retry: vi.fn<SurfaceSettingsApi["retry"]>(async () => structuredClone(view)) };
   return { api, get view() { return view; }, set view(value: SurfaceSettingsView) { view = value; } };
 }
 it("shows readable known and unknown module names without changing saved IDs", async () => {
@@ -30,6 +30,22 @@ it("keeps local independent drafts and explicitly saves only the selected surfac
   expect(api.save).toHaveBeenCalledTimes(1); expect(api.save.mock.calls[0]![0]).toMatchObject({ kind: "desktop", enabled: true });
   expect(screen.getByRole("checkbox", { name: "Show Alerts on Unified browser: default" })).not.toBeChecked();
   expect(screen.getByRole("button", { name: "Save Unified browser: default" })).toBeEnabled();
+});
+it("stores the selected display label locally, opts in explicitly, and omits the label from the update", async () => {
+  const { api } = harness(); const user = userEvent.setup(); render(<OverlaySurfacesPanel api={api} />);
+  await user.click(await screen.findByRole("checkbox", { name: "Automatically follow this display name" }));
+  await user.click(screen.getByRole("button", { name: "Save Desktop overlay" }));
+  expect(api.save).toHaveBeenCalledWith(expect.objectContaining({ displayId: "one", autoFollowDisplayName: true }));
+  expect(api.save.mock.calls[0]![0]).not.toHaveProperty("displayLabel");
+});
+
+it("keeps display automatic matching disabled until a current display supplies a trusted label", async () => {
+  const state = harness();
+  const desktop = state.view.surfaces[0]!;
+  if (desktop.kind !== "desktop") throw new Error("Expected desktop fixture");
+  state.view.surfaces[0] = { ...desktop, displayLabel: null, autoFollowDisplayName: false };
+  render(<OverlaySurfacesPanel api={state.api} />);
+  expect(await screen.findByRole("checkbox", { name: "Automatically follow this display name" })).toBeDisabled();
 });
 it("provides keyboard ordering and sends the complete top-first row list", async () => {
   const { api } = harness(); const user = userEvent.setup(); render(<OverlaySurfacesPanel api={api} />);
@@ -76,7 +92,7 @@ it("refreshes capabilities while preserving dirty drafts and retains stale state
   expect(screen.getByText("Overlay status could not be refreshed")).toBeVisible(); expect(screen.getByText("Selected monitor disconnected.")).toBeVisible();
 });
 it("retries only saved desktop settings without saving the draft", async () => {
-  const state = harness(); state.view.surfaces[0] = { ...state.view.surfaces[0]!, kind: "desktop", id: "desktop:primary", enabled: true, displayId: "one", opacity: 1 };
+  const state = harness(); const desktop = state.view.surfaces[0]!; if (desktop.kind !== "desktop") throw new Error("Expected desktop fixture"); state.view.surfaces[0] = { ...desktop, enabled: true, displayId: "one", opacity: 1 };
   const user = userEvent.setup(); render(<OverlaySurfacesPanel api={state.api} />); const opacity = await screen.findByRole("spinbutton", { name: "Desktop opacity" });
   fireEvent.change(opacity, { target: { value: "0.5" } }); await user.click(screen.getByRole("button", { name: "Retry desktop output" }));
   expect(state.api.retry).toHaveBeenCalledOnce(); expect(state.api.save).not.toHaveBeenCalled(); expect(opacity).toHaveValue(0.5);

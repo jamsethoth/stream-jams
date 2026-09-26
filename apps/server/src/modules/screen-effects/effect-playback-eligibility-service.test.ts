@@ -77,7 +77,7 @@ function createHarness(records: readonly AssetRecord[], routeIds: readonly strin
   };
   const routes = {
     findById: vi.fn((id: string) => routeIds.includes(id)
-      ? { id, name: id, deviceId: `${id}-device`, deviceLabel: id }
+      ? { id, name: id, deviceId: `${id}-device`, deviceLabel: id, autoFollowDeviceName: false }
       : null)
   };
   const outputs = {

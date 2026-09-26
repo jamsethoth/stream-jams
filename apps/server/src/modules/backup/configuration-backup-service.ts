@@ -632,6 +632,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 23) return [19, 20, 21, 22].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 24) return [19, 20, 21, 22, 23].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 25) return [19, 20, 21, 22, 23, 24].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 26) return [19, 20, 21, 22, 23, 24, 25].includes(archiveSchemaVersion);
   return false;
 }
 
@@ -639,17 +640,38 @@ function upgradeLegacyConfiguration(
   configuration: BackupConfiguration,
   schemaVersion: number
 ): BackupConfiguration {
-  if (schemaVersion >= 25 || configuration.tables.screen_effect_variants === undefined) return configuration;
-  return {
-    ...configuration,
-    tables: {
-      ...configuration.tables,
-      screen_effect_variants: configuration.tables.screen_effect_variants.map((row) => ({
+  let tables = configuration.tables;
+  if (schemaVersion < 25 && tables.screen_effect_variants !== undefined) {
+    tables = {
+      ...tables,
+      screen_effect_variants: tables.screen_effect_variants.map((row) => ({
         ...row,
         document_json: removeLegacyScreenEffectAnimation(row.document_json)
       }))
-    }
-  };
+    };
+  }
+  if (schemaVersion < 26) {
+    tables = {
+      ...tables,
+      ...(tables.audio_output_routes === undefined ? {} : {
+        audio_output_routes: tables.audio_output_routes.map(row => ({ ...row, auto_follow_device_name: 0 }))
+      }),
+      ...(tables.overlay_surfaces === undefined ? {} : {
+        overlay_surfaces: tables.overlay_surfaces.map(row => portableLegacySurfaceRow(row))
+      })
+    };
+  }
+  return tables === configuration.tables ? configuration : { ...configuration, tables };
+}
+
+function portableLegacySurfaceRow(row: Record<string, unknown>): Record<string, unknown> {
+  if (typeof row.configuration_json !== "string") return row;
+  try {
+    const parsed = JSON.parse(row.configuration_json) as Record<string, unknown>;
+    return parsed.kind === "desktop"
+      ? { ...row, configuration_json: JSON.stringify({ ...parsed, enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false }) }
+      : row;
+  } catch { return row; }
 }
 
 function removeLegacyScreenEffectAnimation(value: unknown): unknown {

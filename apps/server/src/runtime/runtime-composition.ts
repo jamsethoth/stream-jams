@@ -351,16 +351,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
-  if (options.desktopOverlayTransport !== undefined) {
-    const surface = (await surfaceRepository.list()).find(surface => surface.kind === "desktop");
-    try { if (surface?.kind === "desktop") await desktopVisualSink!.configure(surface); }
-    catch {
-      await runtimeLogger.error("Desktop overlay could not be configured. Other outputs remain available.", {
-        module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
-        metadata: { nextStep: "Check the selected display and explicitly retry the desktop overlay in Settings." }
-      }).catch(() => undefined);
-    }
-  }
   const speakerBotSocketFactory = options.speakerBotSocketFactory ?? createNodeProviderWebSocket;
   const ttsProviderRegistry = createDefaultTtsProviderRegistry({
     speakerBot: {
@@ -460,6 +450,19 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
     runTest: work => maintenanceGate.runIntake(work)
   });
+  if (audioDeviceHost !== undefined) {
+    try {
+      await audioOutputService.reconcileBindings();
+    } catch {
+      await runtimeLogger.error("Automatic audio output rebinding could not be saved. The previous binding remains unavailable.", {
+        module: "audio-output",
+        source: "audio-output.reconcile.failed",
+        correlationId: generateRuntimeReferenceId(),
+        processingId: null,
+        metadata: { nextStep: "Open Audio outputs, choose a connected device, and save the route again." }
+      }).catch(() => undefined);
+    }
+  }
   const playbackCooldownService = new DefaultPlaybackCooldownService();
   const playbackDedupeService = new DefaultPlaybackDedupeService();
   const isEffectModuleEnabled = async () =>
@@ -1081,6 +1084,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     changed: async surface => { if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface); },
     runMutation: work => maintenanceGate.runIntake(work)
   });
+  if (options.desktopOverlayTransport !== undefined) {
+    try {
+      await surfaceSettingsService.initializeDesktop();
+    } catch {
+      await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
+        module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
+        metadata: { nextStep: "Check the selected display and explicitly retry the desktop overlay in Settings." }
+      }).catch(() => undefined);
+    }
+  }
   const effectManagementService = new EffectManagementService({
     sets: effectSetRepository,
     isInActiveSet: (id) => effectRepository.isInActiveSet(id),

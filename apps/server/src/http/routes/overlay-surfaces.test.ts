@@ -42,7 +42,10 @@ it("requires management auth, CSRF and trusted origin before any host access", a
 it("saves complete settings explicitly and rejects malformed identity/order/retry without changes", async () => {
   const { app, host, headers, value, surfaces } = await fixture();
   expect((await app.inject({ method: "GET", url: "/overlay-surfaces", headers })).statusCode).toBe(200);
-  const enabled = { ...value, enabled: true, displayId: "one" };
+  const enabled = {
+    id: value.id, kind: value.kind, enabled: true, displayId: "one", autoFollowDisplayName: true,
+    opacity: value.kind === "desktop" ? value.opacity : 1, layers: value.layers
+  };
   for (const payload of [{ ...enabled, id: "other" }, { ...enabled, layers: [] }, { ...enabled, layers: [{ moduleId: "alerts", visible: true }, { moduleId: "alerts", visible: false }] }]) {
     expect((await app.inject({ method: "PUT", url: "/overlay-surfaces/desktop%3Aprimary", headers, payload })).statusCode).toBe(400);
   }
@@ -50,7 +53,7 @@ it("saves complete settings explicitly and rejects malformed identity/order/retr
   expect(host.configure).not.toHaveBeenCalled();
   const saved = await app.inject({ method: "PUT", url: "/overlay-surfaces/desktop%3Aprimary", headers, payload: enabled });
   expect(saved.statusCode, saved.body).toBe(200);
-  expect(host.configure).toHaveBeenCalledExactlyOnceWith(enabled);
+  expect(host.configure).toHaveBeenCalledExactlyOnceWith({ ...enabled, displayLabel: "Display" });
   expect((await app.inject({ method: "POST", url: "/overlay-surfaces/desktop/retry", headers, payload: { play: true } })).statusCode).toBe(400);
   expect(host.retry).not.toHaveBeenCalled();
   expect((await app.inject({ method: "POST", url: "/overlay-surfaces/desktop/retry", headers })).statusCode).toBe(200);

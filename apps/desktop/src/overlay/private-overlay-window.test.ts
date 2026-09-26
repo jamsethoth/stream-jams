@@ -34,7 +34,7 @@ import { overlayPlayerScheme } from "./overlay-player-policy.js";
 import { PrivateOverlayWindow } from "./private-overlay-window.js";
 import { OVERLAY_REPLY_CHANNEL } from "./overlay-ipc.js";
 
-const config = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: true, displayId: "2", opacity: 0.5, layers: [] };
+const config = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: true, displayId: "2", displayLabel: "Secondary", autoFollowDisplayName: false, opacity: 0.5, layers: [] };
 beforeEach(() => { native.windows = []; native.available = true; native.reads = []; vi.clearAllMocks(); });
 
 it("registers the audio and private overlay schemes in a single privileged registration", () => {

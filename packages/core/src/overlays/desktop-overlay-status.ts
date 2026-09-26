@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { surfaceConfigurationSchema } from "../overlay-modules/surface-configuration.js";
+import type { AutomaticBindingState } from "../local-outputs/exact-label-match.js";
 const identity = z.string().min(1).refine(value => value === value.trim());
 export const selectedDesktopDisplaySchema = z.object({
   id: identity,
@@ -15,5 +16,10 @@ export const desktopOverlayStatusSchema = z.object({
   message: z.string().nullable()
 }).strict();
 export type DesktopOverlayStatus = z.infer<typeof desktopOverlayStatusSchema>;
-export const surfaceSettingsViewSchema = z.object({ surfaces: z.array(surfaceConfigurationSchema), desktop: desktopOverlayStatusSchema }).strict();
+export const surfaceSettingsViewSchema = z.object({
+  surfaces: z.array(surfaceConfigurationSchema),
+  desktop: desktopOverlayStatusSchema,
+  desktopBindingState: z.enum(["not-needed", "disabled", "no-match", "ambiguous", "rebound"]).default("not-needed")
+}).strict();
 export type SurfaceSettingsView = z.infer<typeof surfaceSettingsViewSchema>;
+export type DesktopBindingState = AutomaticBindingState;

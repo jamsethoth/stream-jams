@@ -5,8 +5,8 @@ export const storyAudioStatus: AudioOutputStatus = {
   capability: { available: true, devices: [{ deviceId: "story-headphones", label: "Headphones" }], reason: null, nextStep: null },
   muted: false,
   routes: [
-    { route: { id: "private", name: "Private headphones", deviceId: "story-headphones", deviceLabel: "Headphones" }, state: "ready" },
-    { route: { id: "stream", name: "Stream mix", deviceId: null, deviceLabel: null }, state: "unbound" }
+    { route: { id: "private", name: "Private headphones", deviceId: "story-headphones", deviceLabel: "Headphones", autoFollowDeviceName: false }, state: "ready", automaticBindingState: "not-needed" },
+    { route: { id: "stream", name: "Stream mix", deviceId: null, deviceLabel: null, autoFollowDeviceName: false }, state: "unbound", automaticBindingState: "not-needed" }
   ]
 };
 

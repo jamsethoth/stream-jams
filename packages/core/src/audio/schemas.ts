@@ -23,19 +23,32 @@ export const audioOutputRouteSchema = z.object({
   id: audioRouteIdSchema,
   name: z.string().trim().min(1),
   deviceId: explicitAudioDeviceIdSchema.nullable(),
-  deviceLabel: z.string().trim().min(1).nullable()
-}).strict().refine(route => (route.deviceId === null) === (route.deviceLabel === null), "Device ID and label must both be set or both be null") satisfies z.ZodType<AudioOutputRoute>;
+  deviceLabel: z.string().trim().min(1).nullable(),
+  autoFollowDeviceName: z.boolean().default(false)
+}).strict().superRefine((route, context) => {
+  if ((route.deviceId === null) !== (route.deviceLabel === null)) {
+    context.addIssue({ code: "custom", path: ["deviceId"], message: "Device ID and label must both be set or both be null" });
+  }
+  if (route.autoFollowDeviceName && (route.deviceId === null || route.deviceLabel === null)) {
+    context.addIssue({ code: "custom", path: ["autoFollowDeviceName"], message: "Automatic following requires a bound device with a trusted label" });
+  }
+}) satisfies z.ZodType<AudioOutputRoute>;
 
 export const audioOutputRouteCreateSchema = z.object({
   name: z.string().trim().min(1),
-  deviceId: explicitAudioDeviceIdSchema.nullable().default(null)
-}).strict();
+  deviceId: explicitAudioDeviceIdSchema.nullable().default(null),
+  autoFollowDeviceName: z.boolean().default(false)
+}).strict().refine(input => !input.autoFollowDeviceName || input.deviceId !== null, {
+  path: ["autoFollowDeviceName"],
+  message: "Choose a device before enabling automatic following"
+});
 
 export const audioOutputRoutePatchSchema = z.object({
   name: z.string().trim().min(1).optional(),
   deviceId: explicitAudioDeviceIdSchema.nullable().optional(),
+  autoFollowDeviceName: z.boolean().optional(),
   confirmLiveImpact: z.boolean().default(false)
-}).strict().refine(patch => patch.name !== undefined || patch.deviceId !== undefined, "Choose a name or device binding to change");
+}).strict().refine(patch => patch.name !== undefined || patch.deviceId !== undefined || patch.autoFollowDeviceName !== undefined, "Choose a name, device binding, or automatic-follow preference to change");
 
 export const audioOutputRouteTestSchema = z.object({}).strict().default({});
 const uniqueIds = z.array(audioRouteIdSchema).refine(ids => new Set(ids).size === ids.length, "IDs must be unique");
@@ -81,7 +94,8 @@ export const audioDeviceCapabilitySchema = z.object({
 }).strict();
 export const audioRouteStatusSchema = z.object({
   route: audioOutputRouteSchema,
-  state: z.enum(["ready", "unbound", "missing-device", "unavailable"])
+  state: z.enum(["ready", "unbound", "missing-device", "unavailable"]),
+  automaticBindingState: z.enum(["not-needed", "disabled", "no-match", "ambiguous", "rebound"]).default("not-needed")
 }).strict();
 export const audioOutputStatusSchema = z.object({
   capability: audioDeviceCapabilitySchema,

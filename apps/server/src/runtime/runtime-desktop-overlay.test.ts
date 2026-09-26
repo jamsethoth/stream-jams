@@ -78,7 +78,8 @@ async function setup(withMedia = false) {
     const settings = (await runtime.app.inject({ method: "GET", url: "/overlay-surfaces", headers })).json() as SurfaceSettingsView;
     const desktop = settings.surfaces.find(surface => surface.kind === "desktop")!;
     const response = await runtime.app.inject({ method: "PUT", url: `/overlay-surfaces/${desktop.id}`, headers, payload: {
-      ...desktop, enabled, displayId: "monitor", layers: desktop.layers.map(entry => ({ ...entry, visible: entry.moduleId === "alerts" ? visible : entry.visible }))
+      id: desktop.id, kind: desktop.kind, enabled, displayId: "monitor", autoFollowDisplayName: desktop.autoFollowDisplayName,
+      opacity: desktop.opacity, layers: desktop.layers.map(entry => ({ ...entry, visible: entry.moduleId === "alerts" ? visible : entry.visible }))
     } });
     expect(response.statusCode, response.body).toBe(200);
   }

@@ -16,6 +16,7 @@ export interface AudioOutputRoute {
   readonly name: string;
   readonly deviceId: string | null;
   readonly deviceLabel: string | null;
+  readonly autoFollowDeviceName: boolean;
 }
 
 export interface AudioRouteReference {

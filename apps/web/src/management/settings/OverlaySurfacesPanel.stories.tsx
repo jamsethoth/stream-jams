@@ -6,18 +6,18 @@ import type { SurfaceSettingsApi } from "./overlay-surfaces-api.js";
 
 function view(): SurfaceSettingsView {
   return { surfaces: [
-    { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "display-left", opacity: 0.85, layers: [{ moduleId: "alerts", visible: true }, { moduleId: "future-module", visible: false }] },
+    { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "display-left", displayLabel: "Left monitor — 2560 × 1440", autoFollowDisplayName: true, opacity: 0.85, layers: [{ moduleId: "alerts", visible: true }, { moduleId: "future-module", visible: false }] },
     { id: "unified-browser:default", kind: "unified-browser", overlayId: "default", layers: [{ moduleId: "future-module", visible: false }, { moduleId: "alerts", visible: true }] }
   ], desktop: { available: true, state: "ready", message: null, displays: [
     { id: "display-left", label: "Left monitor — 2560 × 1440", bounds: { x: -2560, y: 0, width: 2560, height: 1440 }, scaleFactor: 1.25 },
     { id: "display-main", label: "Main monitor — 1920 × 1080", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }
-  ] } };
+  ] }, desktopBindingState: "not-needed" };
 }
 function api(initial = view(), overrides: Partial<SurfaceSettingsApi> = {}): SurfaceSettingsApi {
   let saved = structuredClone(initial);
   return {
     load: fn(async () => structuredClone(saved)),
-    save: fn(async value => { saved = { ...saved, surfaces: saved.surfaces.map(surface => surface.id === value.id ? value : surface) }; return structuredClone(saved); }),
+    save: fn(async value => { saved = { ...saved, surfaces: saved.surfaces.map(surface => surface.id === value.id ? (value.kind === "desktop" ? { ...value, displayLabel: saved.desktop.displays.find(display => display.id === value.displayId)?.label ?? null } : value) : surface) }; return structuredClone(saved); }),
     retry: fn(async () => structuredClone(saved)), ...overrides
   };
 }
@@ -38,6 +38,8 @@ export const IndependentDrafts: Story = {
 };
 export const CliUnavailable: Story = { args: { api: api({ ...view(), desktop: { available: false, displays: [], state: "unavailable", message: "Desktop output requires the Windows desktop application. Unified browser settings remain available." } }) } };
 export const MissingDisplay: Story = { args: { api: api({ ...view(), desktop: { ...view().desktop, displays: [], state: "unavailable", message: "The saved left display is disconnected. Select a connected display and save; output will not fall back automatically." } }) } };
+export const AutomaticallyReboundDisplay: Story = { args: { api: api({ ...view(), desktopBindingState: "rebound" }) } };
+export const AmbiguousDisplayName: Story = { args: { api: api({ ...view(), desktop: { ...view().desktop, displays: [], state: "unavailable", message: "Choose a display manually." }, desktopBindingState: "ambiguous" }) } };
 export const UnusedDesktopUnavailable: Story = { args: { api: api({
   ...view(),
   surfaces: view().surfaces.map((surface) => surface.kind === "desktop" ? { ...surface, enabled: false } : surface),

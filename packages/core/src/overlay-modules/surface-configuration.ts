@@ -13,32 +13,76 @@ const layersSchema = z.array(surfaceLayerSchema).refine(
 );
 export const surfaceLayersSchema = layersSchema;
 
-export const surfaceConfigurationSchema = z.discriminatedUnion("kind", [
-  z.object({
+const desktopSurfaceFields = {
     id: z.literal("desktop:primary"),
     kind: z.literal("desktop"),
     enabled: z.boolean(),
     displayId: identitySchema.nullable(),
     opacity: z.number().finite().min(0).max(1),
     layers: layersSchema
-  }).strict(),
-  z.object({
+};
+const unifiedSurfaceSchema = z.object({
     id: identitySchema,
     kind: z.literal("unified-browser"),
     overlayId: identitySchema,
     layers: layersSchema
-  }).strict()
-]).superRefine((value, context) => {
+  }).strict();
+
+function validateSurfaceIdentity(value: {
+  kind: "desktop";
+  enabled: boolean;
+  displayId: string | null;
+  displayLabel?: string | null;
+  autoFollowDisplayName?: boolean;
+} | z.infer<typeof unifiedSurfaceSchema>, context: z.RefinementCtx): void {
+  if (value.kind === "desktop" && value.enabled && value.displayId === null) {
+    context.addIssue({ code: "custom", path: ["displayId"], message: "Enabled desktop output requires an explicit display" });
+  }
+  if (value.kind === "desktop" && value.displayId === null && value.displayLabel != null) {
+    context.addIssue({ code: "custom", path: ["displayLabel"], message: "A display label requires a selected display" });
+  }
+  if (value.kind === "desktop" && value.autoFollowDisplayName && (value.displayId === null || value.displayLabel == null)) {
+    context.addIssue({ code: "custom", path: ["autoFollowDisplayName"], message: "Automatic following requires a selected display with a trusted label" });
+  }
+  if (value.kind === "unified-browser" && value.id !== `unified-browser:${value.overlayId}`) {
+    context.addIssue({ code: "custom", path: ["id"], message: "Surface identity must match its output" });
+  }
+}
+
+function validateSurfaceUpdateIdentity(value: {
+  kind: "desktop";
+  enabled: boolean;
+  displayId: string | null;
+  autoFollowDisplayName?: boolean;
+} | z.infer<typeof unifiedSurfaceSchema>, context: z.RefinementCtx): void {
   if (value.kind === "desktop" && value.enabled && value.displayId === null) {
     context.addIssue({ code: "custom", path: ["displayId"], message: "Enabled desktop output requires an explicit display" });
   }
   if (value.kind === "unified-browser" && value.id !== `unified-browser:${value.overlayId}`) {
     context.addIssue({ code: "custom", path: ["id"], message: "Surface identity must match its output" });
   }
-});
+}
+
+export const surfaceConfigurationSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...desktopSurfaceFields,
+    displayLabel: z.string().trim().min(1).nullable().default(null),
+    autoFollowDisplayName: z.boolean().default(false)
+  }).strict(),
+  unifiedSurfaceSchema
+]).superRefine(validateSurfaceIdentity);
+
+export const surfaceConfigurationUpdateSchema = z.discriminatedUnion("kind", [
+  z.object({
+    ...desktopSurfaceFields,
+    autoFollowDisplayName: z.boolean().default(false)
+  }).strict(),
+  unifiedSurfaceSchema
+]).superRefine(validateSurfaceUpdateIdentity);
 
 export type SurfaceLayer = z.infer<typeof surfaceLayerSchema>;
 export type SurfaceConfiguration = z.infer<typeof surfaceConfigurationSchema>;
+export type SurfaceConfigurationUpdate = z.infer<typeof surfaceConfigurationUpdateSchema>;
 
 export interface SurfaceRepository {
   list(): Promise<SurfaceConfiguration[]>;

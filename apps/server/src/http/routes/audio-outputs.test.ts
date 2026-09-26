@@ -39,11 +39,13 @@ async function fixture(available = true, maxRequests = 100) {
 it("serves protected CRUD, device/status and explicit test APIs", async () => {
   const { app, headers, host } = await fixture();
   expect((await app.inject({ method: "GET", url: "/audio/routes", headers })).json()).toEqual({ routes: [] });
-  const created = await app.inject({ method: "POST", url: "/audio/routes", headers, payload: { name: " Me ", deviceId: "headphones" } });
+  const created = await app.inject({ method: "POST", url: "/audio/routes", headers, payload: { name: " Me ", deviceId: "headphones", autoFollowDeviceName: true } });
   expect(created.statusCode, created.body).toBe(201);
-  expect(created.json()).toMatchObject({ id: "route-a", name: "Me", deviceLabel: "Headphones" });
+  expect(created.json()).toMatchObject({ id: "route-a", name: "Me", deviceLabel: "Headphones", autoFollowDeviceName: true });
   expect((await app.inject({ method: "GET", url: "/audio/devices", headers })).json()).toMatchObject({ available: true, devices: [{ deviceId: "headphones" }] });
-  expect((await app.inject({ method: "GET", url: "/audio/status", headers })).json()).toMatchObject({ muted: false, routes: [{ route: { id: "route-a" }, state: "ready" }] });
+  expect((await app.inject({ method: "GET", url: "/audio/status", headers })).json()).toMatchObject({ muted: false, routes: [{ route: { id: "route-a" }, state: "ready", automaticBindingState: "not-needed" }] });
+  expect((await app.inject({ method: "PATCH", url: "/audio/routes/route-a", headers, payload: { autoFollowDeviceName: false } })).json())
+    .toMatchObject({ autoFollowDeviceName: false });
   expect((await app.inject({ method: "POST", url: "/audio/routes/route-a/test", headers })).json()).toEqual({ routeId: "route-a", muted: false });
   expect(host.testOutput).toHaveBeenCalledExactlyOnceWith("headphones");
   expect((await app.inject({ method: "POST", url: "/audio/retry", headers })).statusCode).toBe(204);
@@ -54,7 +56,7 @@ it("serves protected CRUD, device/status and explicit test APIs", async () => {
 
 it("requires authentication on every route, and CSRF plus trusted origin for every mutation", async () => {
   const { app, headers, host, routes } = await fixture();
-  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones" });
+  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones", autoFollowDeviceName: false });
   for (const url of ["/audio/routes", "/audio/devices", "/audio/status"]) {
     expect((await app.inject({ method: "GET", url })).statusCode).toBe(401);
   }
@@ -77,7 +79,7 @@ it("requires authentication on every route, and CSRF plus trusted origin for eve
 
 it("rejects malformed/unknown fields and throttles explicit tests before the sink", async () => {
   const { app, headers, host, routes } = await fixture(true, 3);
-  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones" });
+  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones", autoFollowDeviceName: false });
   for (const payload of [{ deviceId: "default" }, { volume: 1 }, { confirmLiveImpact: true }]) {
     expect((await app.inject({ method: "POST", url: "/audio/routes/route-a/test", headers, payload })).statusCode).toBe(400);
   }
@@ -94,7 +96,7 @@ it("rejects unsupported retry fields before reaching the desktop host", async ()
 
 it("returns safe reference conflicts and requires confirmation before rebinding used routes", async () => {
   const { app, headers, routes, db, host } = await fixture();
-  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones" });
+  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones", autoFollowDeviceName: false });
   db.connection.exec("INSERT INTO alert_rules VALUES ('alert-a', 'Follow', 'follow', 0, 0, 0)");
   db.connection.prepare("INSERT INTO alert_editor_documents VALUES (?, ?, ?)").run("alert-a", JSON.stringify({ name: "Follow", outputs: { browserSource: false, deviceRouteIds: ["route-a"] } }), "2026-09-05");
   const deleted = await app.inject({ method: "DELETE", url: "/audio/routes/route-a", headers });
@@ -112,7 +114,7 @@ it("returns safe reference conflicts and requires confirmation before rebinding 
 
 it("fails closed when desktop is unavailable or maintenance owns configuration", async () => {
   const { app, headers, routes, gate, host } = await fixture(false);
-  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones" });
+  routes.save({ id: "route-a", name: "Me", deviceId: "headphones", deviceLabel: "Headphones", autoFollowDeviceName: false });
   expect((await app.inject({ method: "GET", url: "/audio/devices", headers })).json()).toMatchObject({ available: false, devices: [] });
   expect((await app.inject({ method: "POST", url: "/audio/routes/route-a/test", headers })).statusCode).toBe(503);
   await gate.runMaintenance(async () => {
