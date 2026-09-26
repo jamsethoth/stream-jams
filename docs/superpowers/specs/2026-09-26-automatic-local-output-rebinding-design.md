@@ -6,7 +6,9 @@ Stream Jams persists explicit Chromium audio-device IDs for named audio routes a
 
 The existing fail-closed behavior is intentional: missing audio never falls back to the default output or Browser Source, and a missing desktop display never falls back to the primary display, coordinates, or another monitor. That behavior remains the default. This change adds an explicit, per-binding opt-in that can repair identity churn only when one current endpoint has the exact previously saved label.
 
-The applicable MVP UX boundaries are Audio outputs under Settings, the Desktop overlay configuration under Overlay surfaces, actionable management diagnostics, local-only output bindings, and unchanged separation between visual and audio delivery. Native Windows endpoint identity, fuzzy matching, coordinate-based monitor matching, and a generic device-identity subsystem remain outside this slice.
+The same review also found a presentation regression in the Alert editor's Live TTS configuration. Its native checkbox lacks the established compact inspector-checkbox class, so the generic inspector input rule stretches it like a text field. This slice restores the existing compact checkbox pattern without changing TTS behavior.
+
+The applicable MVP UX boundaries are Audio outputs under Settings, the Desktop overlay configuration under Overlay surfaces, actionable management diagnostics, local-only output bindings, the focused Alert editor inspector, and unchanged separation between visual, audio, and TTS delivery. Native Windows endpoint identity, fuzzy matching, coordinate-based monitor matching, and a generic device-identity subsystem remain outside this slice.
 
 ## Product behavior
 
@@ -44,6 +46,12 @@ The current `Device missing` and desktop `Unavailable` states remain visible whe
 After a successful automatic update, management shows a session-scoped notice such as `Updated automatically to VG27A using its exact saved name.` The notice does not expose opaque device IDs and is cleared by a later manual binding change or process restart without another recovery.
 
 The checkbox is disabled when no endpoint is bound or when a legacy desktop binding has no saved label. Its accessible description states that matching is exact, ambiguous names remain unavailable, and no default endpoint is used.
+
+### Live TTS checkbox normalization
+
+The Alert editor's `Use TTS for this alert` control uses the existing `alert-editor-inspector__check` presentation shared by other native inspector checkboxes. The control remains a semantic checkbox with its existing accessible name, enabled and disabled behavior, provider requirement, dirty-state behavior, and keyboard operation.
+
+The rendered checkbox is 16 by 16 pixels and remains inline with its label. The correction does not change the Live TTS disclosure, active-provider selection, alert document schema, preview behavior, or live TTS routing.
 
 ## Selected approach
 
@@ -117,6 +125,8 @@ Both controls use native checkboxes, explicit labels, keyboard focus, and concis
 
 Storybook covers ready, opted-out missing, opted-in no-match, opted-in ambiguous, automatically updated, and legacy-display-without-label states. Existing desktop and audio settings layouts remain otherwise unchanged.
 
+The Alert editor reuses its existing compact checkbox class for the Live TTS checkbox rather than adding a new component or another CSS rule. The existing active-provider and missing-provider Storybook states continue to cover the disclosure and control; their interaction checks additionally assert the compact presentation hook.
+
 ## OpenSpec changes
 
 The implementation change updates the canonical requirements rather than treating label recovery as an exception hidden in code:
@@ -127,6 +137,8 @@ The implementation change updates the canonical requirements rather than treatin
 
 The OpenSpec proposal and implementation plan will use one slice because the same observed startup problem, matching rule, management settings surface, and backup boundary apply to both domains. The services remain separately testable and can be implemented in ordered tasks.
 
+The Live TTS checkbox correction conforms to the existing Alert editor and accessibility requirements and does not introduce a new persisted or runtime behavior requirement, so it does not need a separate OpenSpec delta.
+
 ## Verification
 
 - Pure core tests cover exact unique matches, case differences, no match, duplicate labels, blank labels, and unchanged current IDs.
@@ -136,9 +148,11 @@ The OpenSpec proposal and implementation plan will use one slice because the sam
 - Management component tests cover checkbox enablement, dirty/save/revert behavior, accessible labels, all missing and ambiguity guidance, and successful-reconciliation notices.
 - Storybook visual and accessibility checks cover the new route and display states.
 - Playwright covers opting in for an audio route and desktop display, simulating new IDs with the same unique labels across restart, observing the durable ready state, and verifying duplicate labels remain unavailable.
+- The existing Alert editor Live TTS component and Storybook scenarios assert that the checkbox uses the shared compact inspector pattern without changing its accessible name, provider-dependent disabled state, or disclosure behavior.
+- Focused browser verification opens Live TTS and confirms the native checkbox renders at 16 by 16 pixels rather than inheriting the full-width text-input dimensions.
 - Packaged Windows verification uses the actual enumerated audio devices and displays to confirm settings survive an app restart, while synthetic automated coverage owns the forced-ID-change cases.
 - Run focused tests first, then affected lint, typecheck, unit, build, Storybook, Playwright, packaged-app, strict OpenSpec, and diff checks before publication.
 
 ## Delivery
 
-Implementation will be specified by one dedicated OpenSpec change and delivered as one independently reviewable pull request. It does not add native dependencies or alter the Windows installer boundary. The live installed app is not modified during design or planning; packaged verification occurs only after implementation and rebuild.
+Implementation will be specified by one dedicated OpenSpec change and delivered as one independently reviewable pull request that also contains the explicitly requested Live TTS checkbox conformance correction. The UI correction remains a separate focused commit within that branch. The slice does not add native dependencies or alter the Windows installer boundary. The live installed app is not modified during design or planning; packaged verification occurs only after implementation and rebuild.
