@@ -16,6 +16,18 @@ it("accepts status RPC without authorizing audio commands or unknown fields", ()
   expect(desktopVisualCommandSchema.safeParse({ type: "status", audio: {} }).success).toBe(false);
   expect(desktopVisualReplySchema.safeParse({ type: "status", status, token: "private" }).success).toBe(false);
 });
+it("accepts bounded desktop failure diagnostics and rejects unknown diagnostic fields", () => {
+  const diagnostic = {
+    kind: "renderer-process-gone",
+    operation: null,
+    reason: "crashed",
+    exitCode: -1073741819,
+    occurredAt: "2026-09-27T19:51:40.000Z",
+    consecutiveFailures: 2
+  };
+  expect(desktopOverlayStatusSchema.parse({ ...status, state: "failed", diagnostic })).toMatchObject({ diagnostic });
+  expect(desktopOverlayStatusSchema.safeParse({ ...status, diagnostic: { ...diagnostic, assetPath: "C:/private/video.webm" } }).success).toBe(false);
+});
 it.each([
   { ...display, scaleFactor: 0 }, { ...display, scaleFactor: Infinity }, { ...display, bounds: { ...display.bounds, width: -1 } },
   { ...display, bounds: { ...display.bounds, height: 0 } }, { ...display, bounds: { ...display.bounds, x: NaN } },

@@ -476,7 +476,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ...(options.desktopOverlayTransport === undefined
       ? {}
       : { desktopHost: options.desktopOverlayTransport }),
-    getAudioStatus: () => audioOutputService.getStatus()
+    getAudioStatus: () => audioOutputService.getStatus(),
+    logger: runtimeLogger,
+    generateReferenceId: generateRuntimeReferenceId
   });
   const effectPlaybackEligibilityService = new EffectPlaybackEligibilityService({
     assets: assetRepository,

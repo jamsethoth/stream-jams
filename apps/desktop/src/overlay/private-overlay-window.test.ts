@@ -1,11 +1,11 @@
 import { EventEmitter } from "node:events";
 import { beforeEach, expect, it, vi, type Mock } from "vitest";
 
-interface MockWindow { options: unknown; webContents: EventEmitter & { mainFrame: { url: string } }; destroyed: boolean }
+interface MockWindow { options: unknown; webContents: EventEmitter & { mainFrame: { url: string } }; destroyed: boolean; loadURL: Mock }
 interface MockSession extends EventEmitter {
   protocol: { handle: Mock; unhandle: Mock }; setPermissionCheckHandler: Mock; setPermissionRequestHandler: Mock;
 }
-const native = vi.hoisted(() => ({ windows: [] as MockWindow[], sessions: [] as MockSession[], available: true, reads: [] as string[] }));
+const native = vi.hoisted(() => ({ windows: [] as MockWindow[], sessions: [] as MockSession[], available: true, reads: [] as string[], loadError: null as Error | null }));
 vi.mock("node:fs/promises", () => ({ readFile: async (path: string) => { native.reads.push(path); return new Uint8Array([60, 62]); } }));
 vi.mock("electron", async () => {
   const { EventEmitter } = await import("node:events");
@@ -21,7 +21,7 @@ vi.mock("electron", async () => {
       webContents = Object.assign(new EventEmitter(), { mainFrame: { url: "stream-jams-overlay://surface/" }, setWindowOpenHandler: vi.fn(), send: vi.fn() });
       destroyed = false;
       setIgnoreMouseEvents = vi.fn(); setAlwaysOnTop = vi.fn(); setBounds = vi.fn(); setOpacity = vi.fn();
-      showInactive = vi.fn(); hide = vi.fn(); removeMenu = vi.fn(); loadURL = vi.fn(async () => {});
+      showInactive = vi.fn(); hide = vi.fn(); removeMenu = vi.fn(); loadURL = vi.fn(async () => { if (native.loadError !== null) throw native.loadError; });
       isDestroyed = () => this.destroyed;
       destroy = () => { if (!this.destroyed) { this.destroyed = true; this.emit("closed"); } };
       constructor(public options: unknown) { super(); native.windows.push(this); }
@@ -31,11 +31,12 @@ vi.mock("electron", async () => {
 import { ipcMain, session, protocol } from "electron";
 import { registerAudioPlayerScheme } from "../audio/audio-window.js";
 import { overlayPlayerScheme } from "./overlay-player-policy.js";
+import { OverlayHost } from "./overlay-host.js";
 import { PrivateOverlayWindow } from "./private-overlay-window.js";
 import { OVERLAY_REPLY_CHANNEL } from "./overlay-ipc.js";
 
 const config = { id: "desktop:primary" as const, kind: "desktop" as const, enabled: true, displayId: "2", displayLabel: "Secondary", autoFollowDisplayName: false, opacity: 0.5, layers: [] };
-beforeEach(() => { native.windows = []; native.available = true; native.reads = []; vi.clearAllMocks(); });
+beforeEach(() => { native.windows = []; native.available = true; native.reads = []; native.loadError = null; vi.clearAllMocks(); });
 
 it("registers the audio and private overlay schemes in a single privileged registration", () => {
   registerAudioPlayerScheme([overlayPlayerScheme]);
@@ -108,4 +109,31 @@ it("accepts replies only from its owned top frame and releases its listeners", a
   expect((ipcMain as unknown as EventEmitter).listenerCount(OVERLAY_REPLY_CHANNEL)).toBe(before);
   expect(native.sessions[0]!.protocol.unhandle).toHaveBeenCalledOnce();
   expect(w.destroyed).toBe(true);
+});
+
+it("preserves a native load rejection as renderer-load-failed through the private adapter", async () => {
+  native.loadError = new TypeError("private renderer load failed");
+  const host = new OverlayHost(
+    (candidate, callbacks) => PrivateOverlayWindow.create(candidate, callbacks),
+    () => ({ available: true, displays: [{ id: "2", label: "Secondary", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] })
+  );
+  host.beginOwnership();
+  await host.configure(config);
+
+  await expect(host.prepare({
+    key: { surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId: "load-failure", generation: 1 },
+    timing: { startsAtEpochMs: Date.now(), endsAtEpochMs: Date.now() + 1000 },
+    instructions: [],
+    assets: []
+  })).resolves.toBe("unavailable");
+  await expect(host.getStatus()).resolves.toMatchObject({
+    diagnostic: {
+      kind: "renderer-load-failed",
+      operation: null,
+      reason: "TypeError:private renderer load failed",
+      exitCode: null,
+      consecutiveFailures: 1
+    }
+  });
+  await host.close();
 });

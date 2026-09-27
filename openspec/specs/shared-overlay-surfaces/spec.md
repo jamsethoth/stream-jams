@@ -109,6 +109,18 @@ Desktop work SHALL be scoped by surface, module, occurrence and renderer generat
 - **AND** it preserves the saved display configuration and renderer crash budget, recreates the renderer only when new work requires it, and does not replay interrupted visuals
 - **AND** leases from an old worker generation or during shutdown cannot restore ownership
 
+### Requirement: Desktop Failure Diagnostics Are Bounded And Actionable
+The host SHALL retain a bounded diagnostic for the latest renderer exit, load or command timeout, display loss or lease expiry. Readiness rejection SHALL emit a deduplicated structured failure log and a later recovery log without asset paths, media bytes, route keys or media content.
+
+#### Scenario: Renderer failure blocks desktop readiness
+- **WHEN** a renderer failure leaves an otherwise configured desktop destination unavailable
+- **THEN** the next readiness evaluation records the failure category, reason, exit code when available, occurrence time and consecutive failure count
+
+#### Scenario: Failed desktop readiness is checked repeatedly
+- **WHEN** the same unavailable desktop status is evaluated more than once before recovery
+- **THEN** the runtime records one structured failure transition rather than flooding the log
+- **AND** it records a recovery transition after the destination becomes ready again
+
 ### Requirement: Shared Surface Configuration Preserves Security And UX
 Shared surface configuration SHALL use protected management Settings, existing auth/CSRF/origin/rate-limit controls, explicit saves and actionable capability errors. Desktop renderers SHALL be sandboxed and context-isolated with Node integration disabled, no management session, and no authority to read arbitrary paths or execute code.
 

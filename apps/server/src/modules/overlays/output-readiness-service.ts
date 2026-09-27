@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import type {
   AlertBrowserSourceView,
   AudioOutputStatus,
+  DesktopOverlayStatus,
   DesktopOverlayTransport,
+  Logger,
   OverlayOutputView,
   SurfaceConfiguration,
   TargetProfileId
@@ -14,9 +17,12 @@ export interface OutputReadinessServiceOptions {
   readonly listSurfaces: () => Promise<readonly SurfaceConfiguration[]>;
   readonly desktopHost?: Pick<DesktopOverlayTransport, "getStatus"> | undefined;
   readonly getAudioStatus: () => Promise<AudioOutputStatus>;
+  readonly logger?: Logger;
+  readonly generateReferenceId?: () => string;
 }
 
 export class OutputReadinessService {
+  readonly #desktopSignatures = new Map<string, string>();
   constructor(private readonly options: OutputReadinessServiceOptions) {}
 
   isModuleBrowserSourceConnected(moduleId: string, targetProfileId: TargetProfileId | null): boolean {
@@ -112,12 +118,72 @@ export class OutputReadinessService {
       }
       if (desktopHost.getStatus === undefined) return true;
       const status = await desktopHost.getStatus();
-      return status.available
+      const ready = status.available
         && status.state === "ready"
         && status.displays.some((display) => display.id === surface.displayId);
-    } catch {
+      if (!ready) {
+        await this.#logDesktopUnavailable(moduleId, status, surface.displayId);
+      } else if (this.#desktopSignatures.has(moduleId)) {
+        const logged = await this.#log("info", "Desktop overlay readiness recovered.", "desktop-overlay.readiness.recovered", {
+          moduleId,
+          hostState: status.state,
+          displayCount: status.displays.length,
+          selectedDisplayAvailable: true,
+          nextStep: "Test the desktop overlay to confirm playback."
+        });
+        if (logged) this.#desktopSignatures.delete(moduleId);
+      }
+      return ready;
+    } catch (error) {
+      const reason = error instanceof Error ? `${error.name}:${error.message}`.slice(0, 256) : "UnknownError";
+      const signature = `status-error:${reason}`;
+      if (this.#desktopSignatures.get(moduleId) !== signature) {
+        const logged = await this.#log("warn", "Desktop overlay readiness could not be inspected.", "desktop-overlay.readiness.failed", {
+          moduleId,
+          error: reason,
+          nextStep: "Restart the Windows desktop app and test the desktop overlay again."
+        });
+        if (logged) this.#desktopSignatures.set(moduleId, signature);
+      }
       return false;
     }
+  }
+
+  async #logDesktopUnavailable(moduleId: string, status: DesktopOverlayStatus, displayId: string): Promise<void> {
+    const diagnostic = status.diagnostic ?? null;
+    const selectedDisplayAvailable = status.displays.some(display => display.id === displayId);
+    const signature = JSON.stringify([status.state, status.message, selectedDisplayAvailable, diagnostic]);
+    if (this.#desktopSignatures.get(moduleId) === signature) return;
+    const logged = await this.#log("warn", "Desktop overlay is not ready for visual output.", "desktop-overlay.readiness.unavailable", {
+      moduleId,
+      hostState: status.state,
+      hostMessage: status.message,
+      displayCount: status.displays.length,
+      selectedDisplayAvailable,
+      failureKind: diagnostic?.kind ?? null,
+      failureOperation: diagnostic?.operation ?? null,
+      failureReason: diagnostic?.reason ?? null,
+      failureExitCode: diagnostic?.exitCode ?? null,
+      failureOccurredAt: diagnostic?.occurredAt ?? null,
+      consecutiveFailures: diagnostic?.consecutiveFailures ?? 0,
+      nextStep: "Open Settings and retry the desktop overlay. Interrupted content is not replayed."
+    });
+    if (logged) this.#desktopSignatures.set(moduleId, signature);
+  }
+
+  async #log(level: "info" | "warn", message: string, source: string, metadata: Record<string, unknown>): Promise<boolean> {
+    const logger = this.options.logger;
+    if (logger === undefined) return false;
+    try {
+      await logger[level](message, {
+        module: "overlay-readiness",
+        source,
+        correlationId: (this.options.generateReferenceId ?? randomUUID)(),
+        processingId: null,
+        metadata
+      });
+      return true;
+    } catch { return false; }
   }
 
   async hasReadyAudioRoute(routeIds: readonly string[]): Promise<boolean> {

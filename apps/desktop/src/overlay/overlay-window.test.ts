@@ -56,14 +56,20 @@ it("shows only ready content without taking focus and releases display listeners
   expect(window.destroyed).toBe(true);
 });
 
-it("tracks only the bound display geometry and fails transparent on renderer loss", async () => {
-  const overlay = OverlayWindow.create({ enabled: true, selectedId: "2" })!;
+it("reports renderer exit details before failing transparent", async () => {
+  const unavailable = vi.fn();
+  const overlay = OverlayWindow.create({ enabled: true, selectedId: "2", onUnavailable: unavailable })!;
   const window = native.windows[0]!;
   await overlay.load("data:text/html,neutral");
   native.displays[0]!.bounds = { x: 0, y: -1440, width: 2560, height: 1440 };
   (screen as unknown as EventEmitter).emit("display-metrics-changed");
   expect(window.setBounds).toHaveBeenLastCalledWith(native.displays[0]!.bounds);
-  window.webContents.emit("render-process-gone");
+  window.webContents.emit("render-process-gone", {}, { reason: "crashed", exitCode: -1073741819 });
+  expect(unavailable).toHaveBeenCalledWith({
+    kind: "renderer-process-gone",
+    reason: "crashed",
+    exitCode: -1073741819
+  });
   expect(window.destroyed).toBe(true);
 });
 
@@ -105,5 +111,6 @@ it("uses an owned preload and notifies the host once when the bound display disa
   (screen as unknown as EventEmitter).emit("display-removed");
   (screen as unknown as EventEmitter).emit("display-metrics-changed");
   expect(unavailable).toHaveBeenCalledOnce();
+  expect(unavailable).toHaveBeenCalledWith({ kind: "display-unavailable", reason: "selected-display-missing", exitCode: null });
   overlay.destroy();
 });
