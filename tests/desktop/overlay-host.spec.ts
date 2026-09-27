@@ -81,10 +81,29 @@ test("packaged production host renders an isolated silent Landscape event withou
     expect(home.activeAlertSet.active).toBe(true);
     const rule = (await api<AlertRule[]>("/alerts/rules")).find(candidate => candidate.eventType === "follow")!;
     const document = await api<AlertEditorDocument>(`/management/alerts/${rule.id}/editor`);
-    const layer = document.layers.find(candidate => candidate.type === "text")!;
+    const layer: AlertEditorDocument["layers"][number] = {
+      id: `${rule.id}:desktop-fixture:text`,
+      name: "Message",
+      type: "text",
+      visible: true,
+      order: 0,
+      template: "Neutral desktop {actor.displayName}",
+      textStyle: {
+        fontPreset: "system-sans",
+        fontSizePx: 42,
+        fontWeight: 800,
+        lineHeight: 1.15,
+        horizontalAlign: "center",
+        verticalAlign: "center",
+        color: "#FFFFFFFF",
+        shadow: { offsetX: 0, offsetY: 2, blur: 8, color: "#000000B8" }
+      },
+      boxStyle: { backgroundColor: "#00000000", paddingPx: 0, cornerRadiusPx: 0, shadow: null },
+      animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" }
+    };
     const edited: AlertEditorDocument = {
       ...document, enabled: true, durationMode: "custom", durationMs: 12000,
-      layers: [{ ...layer, template: "Neutral desktop {actor.displayName}" }],
+      layers: [layer],
       targetProfiles: document.targetProfiles.map(profile => profile.id === "landscape" ? {
         ...profile, enabled: true, reviewState: "ready", layerLayouts: [{ layerId: layer.id, x: 100, y: 100, width: 700, height: 100, zIndex: 1 }]
       } : { ...profile, enabled: false, reviewState: "needs-review" })

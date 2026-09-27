@@ -139,7 +139,8 @@ async function probeProductionSoundtrack(player: Page, port: number, bytes: Uint
   const document = await api<import("../../packages/core/dist/index.js").AlertEditorDocument>(`/management/alerts/${rule.id}/editor`);
   const draft = { ...document, durationMode: "custom" as const, durationMs: 5000, outputs: { browserSource: false, deviceRouteIds: [route.id] },
     layers: [0, 1].map(index => ({ id: `probe-video-${index}`, type: "video", name: `Silent video ${index}`, assetId: asset.id,
-      visible: true, order: index, playEmbeddedAudio: true, audioVolume: 0, animation: document.layers[0]!.animation })) };
+      visible: true, order: index, playEmbeddedAudio: true, audioVolume: 0,
+      animation: { mode: "preset", entrance: "fade", exit: "fade", durationMs: 300, delayMs: 0, easing: "ease-out" } })) };
   const response = await api<{ status: string }>(`/management/alerts/${rule.id}/editor/test`, "POST", {
     document: draft, targetProfileId: null, includeAudio: true, includeTts: false, samplePayload: document.samplePayloads[0]!.payload
   });
