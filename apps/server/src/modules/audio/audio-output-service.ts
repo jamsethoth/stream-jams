@@ -24,6 +24,7 @@ export class AudioOutputService {
   #testing = false;
   #lastDeviceDiagnosticSignature: string | null = null;
   #lastRouteDiagnosticSignature: string | null = null;
+  #lastMissingRouteCount = 0;
   readonly #automaticBindingStates = new Map<string, AutomaticBindingState>();
   constructor(private readonly dependencies: AudioOutputServiceDependencies) {}
 
@@ -112,7 +113,15 @@ export class AudioOutputService {
       });
     const missing = routes.filter(route => route.state === "missing-device");
     if (missing.length === 0) {
+      if (this.#lastRouteDiagnosticSignature !== null) {
+        await this.#log("info", "Saved audio output bindings recovered.", "audio-output.routes.recovered", {
+          detectedDeviceCount: capability.devices.length,
+          recoveredRouteCount: this.#lastMissingRouteCount,
+          nextStep: "Test the recovered audio output route to confirm playback."
+        });
+      }
       this.#lastRouteDiagnosticSignature = null;
+      this.#lastMissingRouteCount = 0;
     } else {
       const counts = {
         ambiguousMatchCount: missing.filter(route => route.automaticBindingState === "ambiguous").length,
@@ -122,6 +131,7 @@ export class AudioOutputService {
       const signature = `${missing.length}:${counts.ambiguousMatchCount}:${counts.autoFollowDisabledCount}:${counts.noMatchCount}:${capability.devices.length}`;
       if (this.#lastRouteDiagnosticSignature !== signature) {
         this.#lastRouteDiagnosticSignature = signature;
+        this.#lastMissingRouteCount = missing.length;
         await this.#log("warn", "Saved audio output bindings are unavailable.", "audio-output.routes.missing-device", {
           ambiguousMatchCount: counts.ambiguousMatchCount,
           autoFollowDisabledCount: counts.autoFollowDisabledCount,

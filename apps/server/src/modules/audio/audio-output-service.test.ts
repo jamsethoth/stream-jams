@@ -125,6 +125,28 @@ it("logs missing saved audio bindings once when other output devices are still d
   });
 });
 
+it("logs when missing saved audio bindings recover", async () => {
+  using f = fixture();
+  f.routes.save({ id: "route-saved", name: "Speakers", deviceId: "disconnected", deviceLabel: "Speakers", autoFollowDeviceName: false });
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "headphones", label: "Headphones" }]);
+  await f.service.getStatus();
+
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "disconnected", label: "Speakers" }]);
+  await f.service.getStatus();
+
+  expect(f.logger.info).toHaveBeenCalledWith("Saved audio output bindings recovered.", {
+    module: "audio-output",
+    source: "audio-output.routes.recovered",
+    correlationId: "ref-audio-devices",
+    processingId: null,
+    metadata: {
+      detectedDeviceCount: 1,
+      recoveredRouteCount: 1,
+      nextStep: "Test the recovered audio output route to confirm playback."
+    }
+  });
+});
+
 it("creates, renames, binds and unbinds using only an enumerated explicit device label", async () => {
   using f = fixture();
   const route = await f.service.createRoute({ name: " Me " });

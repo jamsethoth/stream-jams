@@ -296,6 +296,30 @@ describe("AlertSetManagementService", () => {
     }
   });
 
+  it("seeds the complete first-run starter aggregate in one atomic commit", async () => {
+    const fixture = createFixture();
+    const commit = vi.spyOn(fixture.mutationStore, "commit");
+    const expectedEventTypes = ["follow", "raid", "subscription", "channel_point_redemption"] as const;
+
+    await fixture.service.listSets();
+
+    expect(commit).toHaveBeenCalledOnce();
+    expect(commit).toHaveBeenCalledWith(expect.objectContaining({
+      missingCollectionIds: [expect.any(String)],
+      missingRuleIds: expect.arrayContaining([expect.any(String)]),
+      saveCollections: [expect.objectContaining({ name: "Default", enabled: true })],
+      saveSetMetadata: [expect.objectContaining({ starter: true, starterReviewState: "pending" })],
+      saveRules: expect.arrayContaining(expectedEventTypes.map((eventType) => expect.objectContaining({ eventType }))),
+      saveRuleMetadata: expect.arrayContaining(expectedEventTypes.map(() => expect.objectContaining({ reviewState: "needs-review" }))),
+      saveDocuments: expect.arrayContaining(expectedEventTypes.map(() => expect.objectContaining({ layers: [] })))
+    }));
+    const mutation = commit.mock.calls[0]![0];
+    expect(mutation.missingRuleIds).toHaveLength(expectedEventTypes.length);
+    expect(mutation.saveRules).toHaveLength(expectedEventTypes.length);
+    expect(mutation.saveRuleMetadata).toHaveLength(expectedEventTypes.length);
+    expect(mutation.saveDocuments).toHaveLength(expectedEventTypes.length);
+  });
+
   it("creates every canonical event without expanding the starter set", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
