@@ -114,6 +114,34 @@ it("destroys the failed renderer at absolute end plus 5000 without extending pla
   await vi.advanceTimersByTimeAsync(1); await playing; expect(ports[0]!.destroy).toHaveBeenCalledOnce(); await host.close();
 });
 
+it("records start timeout when the occurrence watchdog shares its deadline", async () => {
+  const { host } = harness(); await host.configure({ ...config, layers: [] }); await host.prepare(batch());
+  const playing = host.start(batch().key).catch(() => {});
+
+  await vi.advanceTimersByTimeAsync(6000); await playing;
+
+  expect(await host.getStatus()).toMatchObject({ diagnostic: {
+    kind: "renderer-command-timeout", operation: "start", reason: "timeout-after-6000ms"
+  } });
+  await host.close();
+});
+
+it("lets a late stop command own timeout classification after the occurrence deadline", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [] }); await host.prepare(batch());
+  ports[0]!.auto = false;
+  await vi.advanceTimersByTimeAsync(4500);
+  const stopping = host.stop(batch().key);
+
+  await vi.advanceTimersByTimeAsync(1500);
+  expect(ports[0]!.destroy).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(500); await stopping;
+
+  expect(await host.getStatus()).toMatchObject({ diagnostic: {
+    kind: "renderer-command-timeout", operation: "stop", reason: "timeout-after-2000ms"
+  } });
+  await host.close();
+});
+
 it("ignores stale renderer callbacks after rebind and does not consume recovery for missing displays", async () => {
   const { host, ports } = harness(); await host.configure({ ...config, layers: [] }); await host.prepare(batch());
   await host.configure({ ...config, displayId: "two", layers: [] }); await host.prepare(batch());

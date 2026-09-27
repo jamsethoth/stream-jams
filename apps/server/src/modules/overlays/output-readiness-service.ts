@@ -123,26 +123,27 @@ export class OutputReadinessService {
         && status.displays.some((display) => display.id === surface.displayId);
       if (!ready) {
         await this.#logDesktopUnavailable(moduleId, status, surface.displayId);
-      } else if (this.#desktopSignatures.delete(moduleId)) {
-        await this.#log("info", "Desktop overlay readiness recovered.", "desktop-overlay.readiness.recovered", {
+      } else if (this.#desktopSignatures.has(moduleId)) {
+        const logged = await this.#log("info", "Desktop overlay readiness recovered.", "desktop-overlay.readiness.recovered", {
           moduleId,
           hostState: status.state,
           displayCount: status.displays.length,
           selectedDisplayAvailable: true,
           nextStep: "Test the desktop overlay to confirm playback."
         });
+        if (logged) this.#desktopSignatures.delete(moduleId);
       }
       return ready;
     } catch (error) {
       const reason = error instanceof Error ? `${error.name}:${error.message}`.slice(0, 256) : "UnknownError";
       const signature = `status-error:${reason}`;
       if (this.#desktopSignatures.get(moduleId) !== signature) {
-        this.#desktopSignatures.set(moduleId, signature);
-        await this.#log("warn", "Desktop overlay readiness could not be inspected.", "desktop-overlay.readiness.failed", {
+        const logged = await this.#log("warn", "Desktop overlay readiness could not be inspected.", "desktop-overlay.readiness.failed", {
           moduleId,
           error: reason,
           nextStep: "Restart the Windows desktop app and test the desktop overlay again."
         });
+        if (logged) this.#desktopSignatures.set(moduleId, signature);
       }
       return false;
     }
@@ -153,8 +154,7 @@ export class OutputReadinessService {
     const selectedDisplayAvailable = status.displays.some(display => display.id === displayId);
     const signature = JSON.stringify([status.state, status.message, selectedDisplayAvailable, diagnostic]);
     if (this.#desktopSignatures.get(moduleId) === signature) return;
-    this.#desktopSignatures.set(moduleId, signature);
-    await this.#log("warn", "Desktop overlay is not ready for visual output.", "desktop-overlay.readiness.unavailable", {
+    const logged = await this.#log("warn", "Desktop overlay is not ready for visual output.", "desktop-overlay.readiness.unavailable", {
       moduleId,
       hostState: status.state,
       hostMessage: status.message,
@@ -168,18 +168,22 @@ export class OutputReadinessService {
       consecutiveFailures: diagnostic?.consecutiveFailures ?? 0,
       nextStep: "Open Settings and retry the desktop overlay. Interrupted content is not replayed."
     });
+    if (logged) this.#desktopSignatures.set(moduleId, signature);
   }
 
-  async #log(level: "info" | "warn", message: string, source: string, metadata: Record<string, unknown>): Promise<void> {
+  async #log(level: "info" | "warn", message: string, source: string, metadata: Record<string, unknown>): Promise<boolean> {
     const logger = this.options.logger;
-    if (logger === undefined) return;
-    await logger[level](message, {
-      module: "overlay-readiness",
-      source,
-      correlationId: (this.options.generateReferenceId ?? randomUUID)(),
-      processingId: null,
-      metadata
-    }).catch(() => undefined);
+    if (logger === undefined) return false;
+    try {
+      await logger[level](message, {
+        module: "overlay-readiness",
+        source,
+        correlationId: (this.options.generateReferenceId ?? randomUUID)(),
+        processingId: null,
+        metadata
+      });
+      return true;
+    } catch { return false; }
   }
 
   async hasReadyAudioRoute(routeIds: readonly string[]): Promise<boolean> {

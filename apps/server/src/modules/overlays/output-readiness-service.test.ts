@@ -94,6 +94,18 @@ describe("OutputReadinessService", () => {
     });
   });
 
+  it("retries an unchanged desktop diagnostic when the previous log write failed", async () => {
+    const harness = createHarness();
+    harness.surfaces.push(desktopSurface());
+    harness.desktopStatus.mockResolvedValue(desktopStatus("failed", ["display-1"]));
+    harness.logger.warn.mockRejectedValueOnce(new Error("log unavailable"));
+
+    await expect(harness.service.isDesktopVisualReady("screen-effects")).resolves.toBe(false);
+    await expect(harness.service.isDesktopVisualReady("screen-effects")).resolves.toBe(false);
+
+    expect(harness.logger.warn).toHaveBeenCalledTimes(2);
+  });
+
   it("logs recovery after a previously unavailable desktop destination becomes ready", async () => {
     const harness = createHarness();
     harness.surfaces.push(desktopSurface());

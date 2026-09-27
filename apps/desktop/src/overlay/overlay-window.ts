@@ -14,7 +14,7 @@ interface OverlayWindowOptions {
 }
 
 export interface OverlayWindowFailure {
-  readonly kind: "renderer-process-gone" | "display-unavailable";
+  readonly kind: "renderer-process-gone" | "renderer-load-failed" | "display-unavailable";
   readonly reason: string;
   readonly exitCode: number | null;
 }
@@ -85,6 +85,7 @@ export class OverlayWindow {
       this.#ready = true;
       this.#updateDisplay();
     } catch (error) {
+      this.#onUnavailable?.({ kind: "renderer-load-failed", reason: safeReason(error, "renderer-load-failed"), exitCode: null });
       this.destroy();
       throw error;
     }
@@ -93,4 +94,9 @@ export class OverlayWindow {
   destroy(): void {
     if (!this.window.isDestroyed()) this.window.destroy();
   }
+}
+
+function safeReason(error: unknown, fallback: string): string {
+  if (!(error instanceof Error) || error.message.trim() === "") return fallback;
+  return `${error.name}:${error.message}`.slice(0, 256);
 }

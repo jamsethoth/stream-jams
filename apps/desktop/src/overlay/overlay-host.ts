@@ -103,7 +103,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     const id = identity(payload.key);
     const bytes = payload.assets.reduce((sum, asset) => sum + asset.bytes.byteLength, 0);
     if (!this.#owned || !this.#config.enabled || this.#config.displayId === null || Date.now() >= payload.timing.endsAtEpochMs || this.#occurrences.has(id) || this.#occurrences.size >= 64 || this.#bytes + bytes > maxDesktopVisualTransferBytes) return "unavailable";
-    const record: Occurrence = { key: payload.key, endsAt: payload.timing.endsAtEpochMs, bytes, state: "preparing", timer: setTimeout(() => this.#discard(true), payload.timing.endsAtEpochMs + 5000 - Date.now()) };
+    const record: Occurrence = { key: payload.key, endsAt: payload.timing.endsAtEpochMs, bytes, state: "preparing", timer: setTimeout(() => this.#expireOccurrence(id, record), payload.timing.endsAtEpochMs + 5000 - Date.now()) };
     this.#occurrences.set(id, record); this.#bytes += bytes;
     try {
       await this.#ensure();
@@ -178,7 +178,7 @@ export class OverlayHost implements DesktopOverlayTransport {
       onUnavailable: failure => {
         if (generation !== this.#generation) return;
         const diagnostic = failure ?? { kind: "display-unavailable", operation: null, reason: "selected-display-missing", exitCode: null };
-        this.#discard(diagnostic.kind === "renderer-process-gone", diagnostic);
+        this.#discard(diagnostic.kind !== "display-unavailable", diagnostic);
       }
     });
     if (port === null) throw unavailable();
@@ -234,6 +234,12 @@ export class OverlayHost implements DesktopOverlayTransport {
   #release(id: string, record: Occurrence): void {
     if (this.#occurrences.get(id) !== record) return;
     clearTimeout(record.timer); this.#occurrences.delete(id); this.#bytes -= record.bytes;
+  }
+  #expireOccurrence(id: string, record: Occurrence): void {
+    if (this.#occurrences.get(id) !== record) return;
+    // A request timer owns failure classification when both deadlines coincide.
+    if ([...this.#pending.values()].some(pending => pending.record === record)) return;
+    this.#release(id, record);
   }
   #discard(failed: boolean, diagnostic?: RendererFailure): void {
     const port = this.#port;
