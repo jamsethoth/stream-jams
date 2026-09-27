@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { desktopOverlayStatusSchema, desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopOverlayStatus, type SelectedDesktopDisplay, type DesktopOverlayTransport, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopOverlayStatusSchema, desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopOverlayDiagnostic, type DesktopOverlayStatus, type SelectedDesktopDisplay, type DesktopOverlayTransport, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 import { overlayRendererReplySchema, type OverlayRendererRequest } from "./overlay-ipc.js";
 
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
-export interface OverlayRendererCallbacks { onReply(candidate: unknown): void; onDestroyed(): void; onUnavailable(): void }
+type RendererFailure = Pick<DesktopOverlayDiagnostic, "kind" | "reason" | "exitCode"> & { readonly operation?: DesktopOverlayDiagnostic["operation"] };
+export interface OverlayRendererCallbacks { onReply(candidate: unknown): void; onDestroyed(failure?: RendererFailure): void; onUnavailable(failure?: RendererFailure): void }
 export interface OverlayRendererPort { load(): Promise<void>; send(request: OverlayRendererRequest): void; destroy(): void }
 type Occurrence = { key: VisualRecipientKey; endsAt: number; bytes: number; state: "preparing" | "prepared" | "started" | "stopping"; timer: ReturnType<typeof setTimeout> };
 type Pending = { resolve(reply: DesktopVisualReply): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout>; key: string | null; record: Occurrence | undefined; expected: DesktopVisualReply["type"] };
@@ -18,6 +19,7 @@ export class OverlayHost implements DesktopOverlayTransport {
   #cancelLoad: (() => void) | null = null;
   #owned = false;
   #failures = 0;
+  #diagnostic: DesktopOverlayDiagnostic | null = null;
   #leaseAt = 0;
   #leaseTimer: ReturnType<typeof setInterval> | undefined;
   #pending = new Map<string, Pending>();
@@ -37,12 +39,12 @@ export class OverlayHost implements DesktopOverlayTransport {
       available = desktopOverlayStatusSchema.shape.available.parse(capabilities.available);
       displays = desktopOverlayStatusSchema.shape.displays.parse(capabilities.displays);
     } catch { return { available: false, displays: [], state: "unavailable", message: "Desktop displays could not be inspected. Restart the desktop application and try again." }; }
-    if (!available) return { available, displays, state: "unavailable", message: "Desktop output requires the Windows desktop application." };
-    if (!this.#owned) return { available, displays, state: "unavailable", message: "The desktop service is disconnected. Restart the service to restore desktop output." };
-    if (!this.#config.enabled) return { available, displays, state: "disabled", message: null };
-    if (!displays.some(display => display.id === this.#config.displayId)) return { available, displays, state: "unavailable", message: "The selected display is unavailable. Select a connected display and save the desktop settings." };
-    if (this.#failures > 1) return { available, displays, state: "failed", message: "Desktop output failed repeatedly. Use Retry to restore it for future alerts." };
-    return { available, displays, state: "ready", message: null };
+    if (!available) return { available, displays, state: "unavailable", message: "Desktop output requires the Windows desktop application.", diagnostic: this.#diagnostic };
+    if (!this.#owned) return { available, displays, state: "unavailable", message: "The desktop service is disconnected. Restart the service to restore desktop output.", diagnostic: this.#diagnostic };
+    if (!this.#config.enabled) return { available, displays, state: "disabled", message: null, diagnostic: this.#diagnostic };
+    if (!displays.some(display => display.id === this.#config.displayId)) return { available, displays, state: "unavailable", message: "The selected display is unavailable. Select a connected display and save the desktop settings.", diagnostic: this.#diagnostic };
+    if (this.#failures > 1) return { available, displays, state: "failed", message: "Desktop output failed repeatedly. Use Retry to restore it for future alerts.", diagnostic: this.#diagnostic };
+    return { available, displays, state: "ready", message: null, diagnostic: this.#diagnostic };
   }
 
   beginOwnership(): void {
@@ -150,13 +152,18 @@ export class OverlayHost implements DesktopOverlayTransport {
     if (!this.#owned) throw unavailable();
     this.#discard(false); this.#failures = 0;
     await this.#ensure();
+    this.#diagnostic = null;
   }
   async close(): Promise<void> { this.serviceLost(); }
 
   #startLease(): void {
     this.#leaseAt = Date.now();
     clearInterval(this.#leaseTimer);
-    this.#leaseTimer = setInterval(() => { if (Date.now() - this.#leaseAt >= 10_000) this.serviceLost(); }, 1000);
+    this.#leaseTimer = setInterval(() => {
+      if (Date.now() - this.#leaseAt < 10_000) return;
+      this.#recordDiagnostic({ kind: "service-lease-expired", operation: null, reason: "lease-missed-for-10000ms", exitCode: null });
+      this.serviceLost();
+    }, 1000);
   }
 
   async #ensure(): Promise<void> {
@@ -165,23 +172,35 @@ export class OverlayHost implements DesktopOverlayTransport {
     const generation = ++this.#generation;
     const port = this.createRenderer(this.#config, {
       onReply: candidate => this.#receive(candidate, generation),
-      onDestroyed: () => { if (generation === this.#generation) this.#discard(true); },
-      onUnavailable: () => { if (generation === this.#generation) this.#discard(false); }
+      onDestroyed: failure => {
+        if (generation === this.#generation) this.#discard(true, failure ?? { kind: "renderer-window-closed", operation: null, reason: "window-closed", exitCode: null });
+      },
+      onUnavailable: failure => {
+        if (generation !== this.#generation) return;
+        const diagnostic = failure ?? { kind: "display-unavailable", operation: null, reason: "selected-display-missing", exitCode: null };
+        this.#discard(diagnostic.kind === "renderer-process-gone", diagnostic);
+      }
     });
     if (port === null) throw unavailable();
     this.#port = port;
     this.#ready = (async () => {
       let timer: ReturnType<typeof setTimeout> | undefined;
+      let loadTimedOut = false;
       try {
         await Promise.race([Promise.resolve().then(() => port.load()), new Promise<never>((_, reject) => {
           this.#cancelLoad = () => reject(unavailable());
-          timer = setTimeout(() => reject(unavailable()), 5000);
+          timer = setTimeout(() => { loadTimedOut = true; reject(unavailable()); }, 5000);
         })]);
         if (generation !== this.#generation || port !== this.#port) throw unavailable();
         this.#loaded = true;
         await this.#request({ type: "configure", config: this.#config }, 2000);
-      } catch {
-        if (generation === this.#generation) this.#discard(true);
+      } catch (error) {
+        if (generation === this.#generation) this.#discard(true, {
+          kind: loadTimedOut ? "renderer-load-timeout" : "renderer-load-failed",
+          operation: null,
+          reason: loadTimedOut ? "load-timeout-after-5000ms" : safeReason(error, "renderer-load-failed"),
+          exitCode: null
+        });
         throw unavailable();
       } finally { clearTimeout(timer); if (generation === this.#generation) this.#cancelLoad = null; }
     })();
@@ -192,7 +211,9 @@ export class OverlayHost implements DesktopOverlayTransport {
     const requestId = randomUUID();
     return new Promise((resolve, reject) => {
       const key = command.type === "prepare" ? identity(command.batch.key) : "key" in command ? identity(command.key) : null;
-      this.#pending.set(requestId, { resolve, reject, key, record: key === null ? undefined : this.#occurrences.get(key), expected: command.type === "prepare" ? "ready" : command.type === "start" ? "complete" : "ok", timer: setTimeout(() => this.#discard(true), Math.max(1, timeoutMs)) });
+      this.#pending.set(requestId, { resolve, reject, key, record: key === null ? undefined : this.#occurrences.get(key), expected: command.type === "prepare" ? "ready" : command.type === "start" ? "complete" : "ok", timer: setTimeout(() => this.#discard(true, {
+        kind: "renderer-command-timeout", operation: command.type, reason: `timeout-after-${Math.max(1, timeoutMs)}ms`, exitCode: null
+      }), Math.max(1, timeoutMs)) });
       try { this.#port!.send({ generation: this.#generation, requestId, command }); }
       catch { this.#discard(true); }
     });
@@ -214,19 +235,34 @@ export class OverlayHost implements DesktopOverlayTransport {
     if (this.#occurrences.get(id) !== record) return;
     clearTimeout(record.timer); this.#occurrences.delete(id); this.#bytes -= record.bytes;
   }
-  #discard(failed: boolean): void {
+  #discard(failed: boolean, diagnostic?: RendererFailure): void {
     const port = this.#port;
     this.#port = null; this.#ready = null; this.#loaded = false; this.#generation++;
     // Invalidate callbacks, then destroy before settling any caller obligation.
     port?.destroy();
     if (failed && port !== null) this.#failures++;
+    if (diagnostic !== undefined) this.#recordDiagnostic(diagnostic);
     this.#cancelLoad?.(); this.#cancelLoad = null;
     for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(unavailable()); }
     this.#pending.clear();
     for (const [id, record] of this.#occurrences) this.#release(id, record);
     this.#stops.clear();
   }
+  #recordDiagnostic(failure: RendererFailure): void {
+    this.#diagnostic = {
+      kind: failure.kind,
+      operation: failure.operation ?? null,
+      reason: failure.reason.slice(0, 256),
+      exitCode: failure.exitCode,
+      occurredAt: new Date().toISOString(),
+      consecutiveFailures: this.#failures
+    };
+  }
 }
 function identity(key: VisualRecipientKey): string { return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation]); }
 function unavailable(): Error { return new Error("Desktop overlay is unavailable. Retry explicitly if automatic recovery is exhausted."); }
 function ok(): DesktopVisualReply { return { type: "ok" }; }
+function safeReason(error: unknown, fallback: string): string {
+  if (!(error instanceof Error) || error.message.trim() === "") return fallback;
+  return `${error.name}:${error.message}`.slice(0, 256);
+}

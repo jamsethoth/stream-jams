@@ -213,11 +213,86 @@ it("status preserves the crash budget and reports explicit Retry recovery", asyn
       callback.onReply({ generation: request.generation, requestId: request.requestId, result: request.command.type === "prepare" ? { type: "ready", key: request.command.batch.key } : { type: "ok" } });
     } };
   }, () => ({ available: true, displays: [{ id: "one", label: "One", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }] }));
-  host.beginOwnership(); await host.configure({ ...config, layers: [] }); await host.prepare(batch()); callbacks[0]!.onDestroyed();
+  host.beginOwnership(); await host.configure({ ...config, layers: [] }); await host.prepare(batch());
+  (callbacks[0]!.onDestroyed as (diagnostic: object) => void)({ kind: "renderer-process-gone", reason: "crashed", exitCode: -1073741819 });
   expect((await host.getStatus()).state).toBe("ready"); await host.prepare(batch()); callbacks[1]!.onDestroyed();
-  expect(await host.getStatus()).toMatchObject({ state: "failed", message: expect.stringMatching(/retry/i) });
+  expect(await host.getStatus()).toMatchObject({
+    state: "failed",
+    message: expect.stringMatching(/retry/i),
+    diagnostic: {
+      kind: "renderer-window-closed",
+      operation: null,
+      reason: "window-closed",
+      exitCode: null,
+      occurredAt: "1970-01-01T00:00:00.000Z",
+      consecutiveFailures: 2
+    }
+  });
   expect((await host.getStatus()).state).toBe("failed"); expect(callbacks).toHaveLength(2);
-  await host.retry(); expect((await host.getStatus()).state).toBe("ready"); await host.close();
+  await host.retry(); expect(await host.getStatus()).toMatchObject({ state: "ready", diagnostic: null }); await host.close();
+});
+
+it("reports the operation and timeout that exhaust the renderer crash budget", async () => {
+  const { host, ports } = harness();
+  await host.configure({ ...config, layers: [] });
+  const first = host.prepare({ ...batch(), timing: { startsAtEpochMs: 0, endsAtEpochMs: 15_000 } });
+  ports[0]!.auto = false; await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(2000); await first;
+  const second = host.prepare({ ...batch(), timing: { startsAtEpochMs: 2000, endsAtEpochMs: 15_000 } });
+  ports[1]!.auto = false; await vi.advanceTimersByTimeAsync(0);
+  await vi.advanceTimersByTimeAsync(2000); await second;
+
+  expect(await host.getStatus()).toMatchObject({
+    state: "failed",
+    diagnostic: {
+      kind: "renderer-command-timeout",
+      operation: "configure",
+      reason: "timeout-after-2000ms",
+      exitCode: null,
+      occurredAt: "1970-01-01T00:00:04.000Z",
+      consecutiveFailures: 2
+    }
+  });
+  await host.close();
+});
+
+it("distinguishes a renderer load rejection from a load timeout", async () => {
+  const { host } = harness(async () => { throw new TypeError("neutral renderer load failed"); });
+  await host.configure({ ...config, layers: [] });
+
+  expect(await host.prepare(batch())).toBe("unavailable");
+  expect(await host.getStatus()).toMatchObject({
+    state: "ready",
+    diagnostic: {
+      kind: "renderer-load-failed",
+      operation: null,
+      reason: "TypeError:neutral renderer load failed",
+      exitCode: null,
+      occurredAt: "1970-01-01T00:00:00.000Z",
+      consecutiveFailures: 1
+    }
+  });
+  await host.close();
+});
+
+it("retains the lease-expiry reason when a later lease restores ownership", async () => {
+  const { host } = harness(); await host.configure({ ...config, layers: [] });
+  await vi.advanceTimersByTimeAsync(10_000);
+
+  expect(await host.getStatus()).toMatchObject({
+    state: "unavailable",
+    diagnostic: {
+      kind: "service-lease-expired",
+      operation: null,
+      reason: "lease-missed-for-10000ms",
+      exitCode: null,
+      occurredAt: "1970-01-01T00:00:10.000Z",
+      consecutiveFailures: 0
+    }
+  });
+  host.refreshLease();
+  expect(await host.getStatus()).toMatchObject({ state: "ready", diagnostic: { kind: "service-lease-expired" } });
+  await host.close();
 });
 it("enumerates current Electron display labels, fallback identity and mixed-DPI bounds", () => {
   expect(enumerateDesktopDisplays()).toEqual([

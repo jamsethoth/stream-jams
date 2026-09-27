@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { surfaceConfigurationSchema } from "../overlay-modules/surface-configuration.js";
 import type { AutomaticBindingState } from "../local-outputs/exact-label-match.js";
+import { isoDateTimeSchema } from "../shared/schemas.js";
 const identity = z.string().min(1).refine(value => value === value.trim());
 export const selectedDesktopDisplaySchema = z.object({
   id: identity,
@@ -9,11 +10,29 @@ export const selectedDesktopDisplaySchema = z.object({
   scaleFactor: z.number().finite().positive()
 }).strict();
 export type SelectedDesktopDisplay = z.infer<typeof selectedDesktopDisplaySchema>;
+export const desktopOverlayDiagnosticSchema = z.object({
+  kind: z.enum([
+    "renderer-process-gone",
+    "renderer-window-closed",
+    "renderer-load-failed",
+    "renderer-load-timeout",
+    "renderer-command-timeout",
+    "display-unavailable",
+    "service-lease-expired"
+  ]),
+  operation: z.enum(["status", "configure", "prepare", "start", "stop", "retry", "close"]).nullable(),
+  reason: z.string().trim().min(1).max(256),
+  exitCode: z.number().int().nullable(),
+  occurredAt: isoDateTimeSchema,
+  consecutiveFailures: z.number().int().nonnegative()
+}).strict();
+export type DesktopOverlayDiagnostic = z.infer<typeof desktopOverlayDiagnosticSchema>;
 export const desktopOverlayStatusSchema = z.object({
   available: z.boolean(),
   displays: z.array(selectedDesktopDisplaySchema),
   state: z.enum(["disabled", "ready", "unavailable", "failed"]),
-  message: z.string().nullable()
+  message: z.string().nullable(),
+  diagnostic: desktopOverlayDiagnosticSchema.nullable().optional()
 }).strict();
 export type DesktopOverlayStatus = z.infer<typeof desktopOverlayStatusSchema>;
 export const surfaceSettingsViewSchema = z.object({

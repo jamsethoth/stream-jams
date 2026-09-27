@@ -10,7 +10,13 @@ interface OverlayWindowOptions {
   enabled: boolean;
   selectedId: string | null;
   preloadPath?: string;
-  onUnavailable?: () => void;
+  onUnavailable?: (failure: OverlayWindowFailure) => void;
+}
+
+export interface OverlayWindowFailure {
+  readonly kind: "renderer-process-gone" | "display-unavailable";
+  readonly reason: string;
+  readonly exitCode: number | null;
 }
 
 /** Native feasibility adapter. Production ownership and private transport are added by the configured host. */
@@ -19,7 +25,7 @@ export class OverlayWindow {
   readonly #selectedId: string;
   #ready = false;
   #contentInterrupted = false;
-  readonly #onUnavailable: (() => void) | undefined;
+  readonly #onUnavailable: ((failure: OverlayWindowFailure) => void) | undefined;
   readonly #updateDisplay = (): void => {
     if (this.window.isDestroyed()) return;
     const selected = selectBoundDisplay(enumerateDesktopDisplays(), this.#selectedId);
@@ -28,7 +34,7 @@ export class OverlayWindow {
       this.#contentInterrupted = true;
       this.#ready = false; // A reconnect must not replay interrupted content.
       this.window.hide();
-      if (firstInterruption) this.#onUnavailable?.();
+      if (firstInterruption) this.#onUnavailable?.({ kind: "display-unavailable", reason: "selected-display-missing", exitCode: null });
       return;
     }
     this.window.setBounds(selected.bounds);
@@ -56,7 +62,10 @@ export class OverlayWindow {
     this.window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     this.window.webContents.on("will-navigate", event => event.preventDefault());
     this.window.webContents.on("will-attach-webview", event => event.preventDefault());
-    this.window.webContents.on("render-process-gone", () => this.destroy());
+    this.window.webContents.on("render-process-gone", (_event, details) => {
+      this.#onUnavailable?.({ kind: "renderer-process-gone", reason: details.reason, exitCode: details.exitCode });
+      this.destroy();
+    });
     this.window.on("closed", () => {
       screen.removeListener("display-added", this.#updateDisplay);
       screen.removeListener("display-removed", this.#updateDisplay);

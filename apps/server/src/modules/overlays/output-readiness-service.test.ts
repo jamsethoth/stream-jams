@@ -53,6 +53,71 @@ describe("OutputReadinessService", () => {
     await expect(harness.service.isDesktopVisualReady("screen-effects")).resolves.toBe(false);
   });
 
+  it("logs one detailed diagnostic when a configured desktop destination is not ready", async () => {
+    const harness = createHarness();
+    harness.surfaces.push(desktopSurface());
+    harness.desktopStatus.mockResolvedValue({
+      ...desktopStatus("failed", ["display-1"]),
+      diagnostic: {
+        kind: "renderer-process-gone",
+        operation: null,
+        reason: "crashed",
+        exitCode: -1073741819,
+        occurredAt: "2026-09-27T19:51:40.000Z",
+        consecutiveFailures: 2
+      }
+    } as DesktopOverlayStatus);
+
+    await expect(harness.service.isDesktopVisualReady("screen-effects")).resolves.toBe(false);
+    await expect(harness.service.isDesktopVisualReady("screen-effects")).resolves.toBe(false);
+
+    expect(harness.logger.warn).toHaveBeenCalledOnce();
+    expect(harness.logger.warn).toHaveBeenCalledWith("Desktop overlay is not ready for visual output.", {
+      module: "overlay-readiness",
+      source: "desktop-overlay.readiness.unavailable",
+      correlationId: "ref-readiness",
+      processingId: null,
+      metadata: {
+        moduleId: "screen-effects",
+        hostState: "failed",
+        hostMessage: null,
+        displayCount: 1,
+        selectedDisplayAvailable: true,
+        failureKind: "renderer-process-gone",
+        failureOperation: null,
+        failureReason: "crashed",
+        failureExitCode: -1073741819,
+        failureOccurredAt: "2026-09-27T19:51:40.000Z",
+        consecutiveFailures: 2,
+        nextStep: "Open Settings and retry the desktop overlay. Interrupted content is not replayed."
+      }
+    });
+  });
+
+  it("logs recovery after a previously unavailable desktop destination becomes ready", async () => {
+    const harness = createHarness();
+    harness.surfaces.push(desktopSurface());
+    harness.desktopStatus.mockResolvedValueOnce(desktopStatus("failed", ["display-1"]))
+      .mockResolvedValueOnce(desktopStatus("ready", ["display-1"]));
+
+    await harness.service.isDesktopVisualReady("screen-effects");
+    await expect(harness.service.isDesktopVisualReady("screen-effects")).resolves.toBe(true);
+
+    expect(harness.logger.info).toHaveBeenCalledWith("Desktop overlay readiness recovered.", {
+      module: "overlay-readiness",
+      source: "desktop-overlay.readiness.recovered",
+      correlationId: "ref-readiness",
+      processingId: null,
+      metadata: {
+        moduleId: "screen-effects",
+        hostState: "ready",
+        displayCount: 1,
+        selectedDisplayAvailable: true,
+        nextStep: "Test the desktop overlay to confirm playback."
+      }
+    });
+  });
+
   it("accepts one ready named audio route and fails closed when status cannot be read", async () => {
     const harness = createHarness();
     harness.audioStatus.mockResolvedValue(audioStatusFixture([
@@ -105,14 +170,18 @@ function createHarness(includeDesktopHost = true) {
     void origin;
     return outputs;
   });
-  const service = new OutputReadinessService({
+  const logger = { debug: vi.fn(async () => {}), info: vi.fn(async () => {}), warn: vi.fn(async () => {}), error: vi.fn(async () => {}) };
+  const options = {
     getClientStates: () => clients,
     listOutputs,
     listSurfaces: async () => surfaces,
     ...(includeDesktopHost ? { desktopHost: { getStatus: desktopStatus } } : {}),
-    getAudioStatus: audioStatus
-  });
-  return { service, clients, outputs, surfaces, desktopStatus, audioStatus, listOutputs };
+    getAudioStatus: audioStatus,
+    logger,
+    generateReferenceId: () => "ref-readiness"
+  };
+  const service = new OutputReadinessService(options);
+  return { service, clients, outputs, surfaces, desktopStatus, audioStatus, listOutputs, logger };
 }
 
 function client(overrides: Partial<OverlayGatewayClientState> = {}): OverlayGatewayClientState {
