@@ -112,7 +112,10 @@ export class AudioOutputService {
         return { route, state, automaticBindingState };
       });
     const missing = routes.filter(route => route.state === "missing-device");
-    if (missing.length === 0) {
+    if (!capability.available) {
+      // Preserve a prior missing-binding transition until enumeration can
+      // prove that the saved destinations are usable again.
+    } else if (missing.length === 0) {
       if (this.#lastRouteDiagnosticSignature !== null) {
         await this.#log("info", "Saved audio output bindings recovered.", "audio-output.routes.recovered", {
           detectedDeviceCount: capability.devices.length,
