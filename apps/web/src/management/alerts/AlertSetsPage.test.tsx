@@ -315,19 +315,15 @@ describe("AlertSetsPage", () => {
 
     await user.click(await screen.findByRole("button", { name: "Add alert" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
-    expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
-    expect(within(dialog).getAllByText("Thanks for following, StreamSpark!")).toHaveLength(6);
+    expect(within(dialog).queryByRole("radio", { name: "Clean Signal" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByText("Choose a starting look")).not.toBeInTheDocument();
     await user.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
     expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
-    expect(within(dialog).getAllByText("Thanks for the cheer, StreamSpark!")).toHaveLength(6);
-    await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
-    expect(within(dialog).getByRole("radio", { name: "Bold Pop" })).toBeChecked();
     await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
 
     await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
       eventType: "cheer",
-      name: "New cheer",
-      themeId: "bold-pop"
+      name: "New cheer"
     }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Edit New cheer" })).toHaveFocus());
     expect(onEditAlert).not.toHaveBeenCalled();
@@ -347,7 +343,6 @@ describe("AlertSetsPage", () => {
 
     await user.clear(within(dialog).getByLabelText("Alert name"));
     await user.paste("Shared hydration");
-    await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
     await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
 
     expect(getTwitchCustomRewards).toHaveBeenCalledOnce();
@@ -379,7 +374,6 @@ describe("AlertSetsPage", () => {
     await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
       eventType: "channel_point_redemption",
       name: "Shared hydration",
-      themeId: "clean-signal",
       channelPointRewardSelection: {
         mode: "selected",
         rewardIds: ["reward-hydrate", "reward-stretch"]
@@ -404,7 +398,6 @@ describe("AlertSetsPage", () => {
     await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
       eventType: "channel_point_redemption",
       name: "Custom reward",
-      themeId: "clean-signal",
       channelPointRewardSelection: { mode: "all" }
     }));
   });
@@ -448,7 +441,7 @@ describe("AlertSetsPage", () => {
     expect(within(dialog).getByRole("button", { name: "Create alert" })).toBeDisabled();
   });
 
-  it("preserves name, theme, and reward selection when catalog refresh fails", async () => {
+  it("preserves name and reward selection when catalog refresh fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const getTwitchCustomRewards = vi.fn()
       .mockResolvedValueOnce({ rewards: twitchRewards() })
@@ -462,14 +455,12 @@ describe("AlertSetsPage", () => {
     await within(dialog).findByText("3 custom rewards loaded.");
     await user.clear(within(dialog).getByLabelText("Alert name"));
     await user.type(within(dialog).getByLabelText("Alert name"), "Shared hydration");
-    await user.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
     await user.click(within(dialog).getByRole("radio", { name: "Selected rewards" }));
     await user.click(within(dialog).getByRole("checkbox", { name: /Hydrate/u }));
     await user.click(within(dialog).getByRole("button", { name: "Refresh rewards" }));
 
     expect(await within(dialog).findByText("Twitch rewards could not be loaded")).toBeVisible();
     expect(within(dialog).getByLabelText("Alert name")).toHaveValue("Shared hydration");
-    expect(within(dialog).getByRole("radio", { name: "Bold Pop" })).toBeChecked();
     expect(within(dialog).getByRole("radio", { name: "Selected rewards" })).toBeChecked();
     expect(within(dialog).getByRole("checkbox", { name: /Hydrate/u })).toBeChecked();
   });
@@ -493,8 +484,7 @@ describe("AlertSetsPage", () => {
 
     await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
       eventType: "raid",
-      name: "New raid",
-      themeId: "clean-signal"
+      name: "New raid"
     }));
   });
 
@@ -590,7 +580,6 @@ describe("AlertSetsPage", () => {
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
     await user.selectOptions(within(dialog).getByLabelText("Event type"), "raid");
     await user.type(within(dialog).getByLabelText("Alert name"), "Canceled raid");
-    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
 
     expect(screen.queryByRole("dialog", { name: "Add alert" })).not.toBeInTheDocument();
@@ -758,15 +747,14 @@ describe("AlertSetsPage", () => {
     await user.click(screen.getByRole("button", { name: "Add alert for Resubscription" }));
     const dialog = screen.getByRole("dialog", { name: "Add alert" });
     expect(within(dialog).getByLabelText("Event type")).toBeDisabled();
-    expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+    expect(within(dialog).queryByRole("radio", { name: "Clean Signal" })).not.toBeInTheDocument();
     await user.clear(within(dialog).getByLabelText("Alert name"));
     await user.type(within(dialog).getByLabelText("Alert name"), "Member welcome");
     await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
 
     await waitFor(() => expect(createAlert).toHaveBeenCalledWith("set-default", {
       eventType: "resubscription",
-      name: "Member welcome",
-      themeId: "clean-signal"
+      name: "Member welcome"
     }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Edit Member welcome" })).toHaveFocus());
   });
@@ -881,22 +869,20 @@ describe("AlertSetsPage", () => {
     await user.selectOptions(within(dialog).getByLabelText("Event type"), "raid");
     await user.clear(within(dialog).getByLabelText("Alert name"));
     await user.type(within(dialog).getByLabelText("Alert name"), "Retry raid");
-    await user.click(within(dialog).getByRole("radio", { name: "Neon Terminal" }));
     await user.click(within(dialog).getByRole("button", { name: "Create alert" }));
 
     const failure = await within(dialog).findByRole("alert");
     expect(failure).toHaveTextContent("The alert was not created");
     expect(failure).toHaveTextContent("Local persistence failed");
-    expect(failure).toHaveTextContent("Review the event type, alert name, and starter theme, then try again.");
+    expect(failure).toHaveTextContent("Review the event type and alert name, then try again.");
     expect(within(dialog).getByLabelText("Event type")).toHaveValue("raid");
     expect(within(dialog).getByLabelText("Alert name")).toHaveValue("Retry raid");
-    expect(within(dialog).getByRole("radio", { name: "Neon Terminal" })).toBeChecked();
     expect(dialog).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
     expect(createAlert).toHaveBeenCalledOnce();
     await user.click(screen.getByRole("button", { name: "Add alert" }));
-    expect(within(screen.getByRole("dialog", { name: "Add alert" })).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
+    expect(within(screen.getByRole("dialog", { name: "Add alert" })).queryByRole("radio", { name: "Clean Signal" })).not.toBeInTheDocument();
   });
 
   it("shows activation impact and requires explicit warning confirmation", async () => {

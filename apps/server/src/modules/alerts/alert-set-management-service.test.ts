@@ -1,4 +1,5 @@
 import {
+  applyAlertStarterTheme,
   alertCreateInputSchema,
   alertEditorDocumentSchema,
   DefaultAlertService,
@@ -34,7 +35,7 @@ describe("AlertSetManagementService", () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
     const source = (await fixture.service.getSet(starter!.id)).inventory[0]!;
-    const document = await fixture.alertEditorService.getDocument(source.id);
+    const document = applyAlertStarterTheme(await fixture.alertEditorService.getDocument(source.id), "clean-signal");
     expect(document.outputs).toEqual({ browserSource: true, deviceRouteIds: [] });
     const outputs = { browserSource: false, deviceRouteIds: ["private", "stream"] };
     const video = { id: "video", name: "Video", type: "video" as const, visible: true, order: document.layers.length,
@@ -96,14 +97,10 @@ describe("AlertSetManagementService", () => {
     ]);
     expect(detail.inventory.every((row) => !row.enabled && row.reviewState === "needs-review")).toBe(true);
     expect(detail.browserSources.map((output) => output.targetProfileId)).toEqual(["landscape", "vertical"]);
-    const lazyStarterDocument = await fixture.alertEditorService.getDocument(detail.inventory[0]!.id);
-    expect(alertEditorDocumentSchema.parse(lazyStarterDocument)).toEqual(lazyStarterDocument);
-    expect(lazyStarterDocument.layers).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        id: `${detail.inventory[0]!.id}:clean-signal:panel`,
-        fill: "#07111DDE"
-      })
-    ]));
+    const starterDocument = await fixture.alertEditorService.getDocument(detail.inventory[0]!.id);
+    expect(alertEditorDocumentSchema.parse(starterDocument)).toEqual(starterDocument);
+    expect(starterDocument.layers).toEqual([]);
+    expect(starterDocument.targetProfiles.every((profile) => profile.layerLayouts.length === 0)).toBe(true);
   });
 
   it("bulk-loads set metadata, rule metadata, and editor documents for set detail", async () => {
@@ -135,7 +132,7 @@ describe("AlertSetManagementService", () => {
     expect(detail.inventory.every((row) => !row.enabled)).toBe(true);
   });
 
-  it("creates a disabled needs-review alert from the canonical event starter template", async () => {
+  it("creates a disabled needs-review alert with empty layouts", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
 
@@ -160,25 +157,22 @@ describe("AlertSetManagementService", () => {
     const document = await fixture.documents.find(created.id);
     expect(alertEditorDocumentSchema.parse(document)).toEqual(document);
     expect(document).toMatchObject({
-      layers: expect.arrayContaining([
-        expect.objectContaining({ id: `${created.id}:clean-signal:panel`, fill: "#07111DDE" })
-      ]),
+      layers: [],
       targetProfiles: [
-        expect.objectContaining({ id: "landscape", reviewState: "needs-review" }),
-        expect.objectContaining({ id: "vertical", reviewState: "needs-review" })
+        expect.objectContaining({ id: "landscape", reviewState: "needs-review", layerLayouts: [] }),
+        expect.objectContaining({ id: "vertical", reviewState: "needs-review", layerLayouts: [] })
       ]
     });
   });
 
-  it("creates an explicit Bold Pop document in the same aggregate as its rule and metadata", async () => {
+  it("creates an empty document in the same aggregate as its rule and metadata", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
     const commit = vi.spyOn(fixture.mutationStore, "commit");
 
     const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
       eventType: "raid",
-      name: "Big raid",
-      themeId: "bold-pop"
+      name: "Big raid"
     }));
 
     expect(commit).toHaveBeenCalledOnce();
@@ -190,10 +184,8 @@ describe("AlertSetManagementService", () => {
     expect(mutation.saveDocuments).toHaveLength(1);
     const document = mutation.saveDocuments![0]!;
     expect(alertEditorDocumentSchema.parse(document)).toEqual(document);
-    expect(document.layers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: `${created.id}:bold-pop:magenta-block`, fill: "#EF3F8FFF" }),
-      expect.objectContaining({ id: `${created.id}:bold-pop:panel`, fill: "#171321F2" })
-    ]));
+    expect(document.layers).toEqual([]);
+    expect(document.targetProfiles.every((profile) => profile.layerLayouts.length === 0)).toBe(true);
   });
 
   it.each([
@@ -254,7 +246,7 @@ describe("AlertSetManagementService", () => {
     });
   });
 
-  it("creates a selected-reward alert with an explicit starter theme", async () => {
+  it("creates a selected-reward alert with an empty design", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
     const commit = vi.spyOn(fixture.mutationStore, "commit");
@@ -262,7 +254,6 @@ describe("AlertSetManagementService", () => {
     const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
       eventType: "channel_point_redemption",
       name: "Bold rewards",
-      themeId: "bold-pop",
       channelPointRewardSelection: { mode: "selected", rewardIds: ["reward-bold"] }
     }));
 
@@ -277,11 +268,32 @@ describe("AlertSetManagementService", () => {
       expect.objectContaining({
         id: created.id,
         conditions: [{ field: "channelPointReward", operator: "oneOf", value: ["reward-bold"] }],
-        layers: expect.arrayContaining([
-          expect.objectContaining({ id: `${created.id}:bold-pop:magenta-block`, fill: "#EF3F8FFF" })
-        ])
+        layers: [],
+        targetProfiles: [
+          expect.objectContaining({ id: "landscape", layerLayouts: [] }),
+          expect.objectContaining({ id: "vertical", layerLayouts: [] })
+        ]
       })
     ]);
+  });
+
+  it("persists empty documents for every first-run starter alert", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const detail = await fixture.service.getSet(starter!.id);
+
+    for (const alert of detail.inventory) {
+      const document = await fixture.documents.find(alert.id);
+      expect(alertEditorDocumentSchema.parse(document)).toEqual(document);
+      expect(document).toMatchObject({
+        enabled: false,
+        layers: [],
+        targetProfiles: [
+          expect.objectContaining({ id: "landscape", reviewState: "needs-review", layerLayouts: [] }),
+          expect.objectContaining({ id: "vertical", reviewState: "needs-review", layerLayouts: [] })
+        ]
+      });
+    }
   });
 
   it("creates every canonical event without expanding the starter set", async () => {
@@ -319,8 +331,10 @@ describe("AlertSetManagementService", () => {
     const [starter] = await fixture.service.listSets();
     const sourceDetail = await fixture.service.getSet(starter!.id);
     const sourceAlert = sourceDetail.inventory[0]!;
-    const editorDocument = await fixture.documents.find(sourceAlert.id)
-      ?? await fixture.alertEditorService.getDocument(sourceAlert.id);
+    const editorDocument = applyAlertStarterTheme(
+      await fixture.documents.find(sourceAlert.id) ?? await fixture.alertEditorService.getDocument(sourceAlert.id),
+      "clean-signal"
+    );
     await fixture.documents.save({
       ...editorDocument,
       layers: editorDocument.layers.map((layer) =>
@@ -477,7 +491,7 @@ describe("AlertSetManagementService", () => {
     const [starter] = await fixture.service.listSets();
     const defaultAlert = (await fixture.service.getSet(starter!.id)).inventory[0]!;
     const variation = await fixture.service.createAlertVariation(defaultAlert.id, { name: "VIP follower" });
-    const sourceDocument = (await fixture.documents.find(variation.id))!;
+    const sourceDocument = applyAlertStarterTheme((await fixture.documents.find(variation.id))!, "clean-signal");
     await fixture.documents.save({
       ...sourceDocument,
       layers: [
@@ -549,29 +563,23 @@ describe("AlertSetManagementService", () => {
     await expect(fixture.documents.find(variation.id)).resolves.toBeNull();
   });
 
-  it("resets a default alert to a schema-valid Clean Signal document", async () => {
+  it("resets a default alert to a schema-valid empty document", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
     const created = await fixture.service.createAlert(starter!.id, alertCreateInputSchema.parse({
       eventType: "raid",
-      name: "Themed raid",
-      themeId: "bold-pop"
+      name: "Customized raid"
     }));
 
-    await expect(fixture.documents.find(created.id)).resolves.toMatchObject({
-      layers: expect.arrayContaining([
-        expect.objectContaining({ id: `${created.id}:bold-pop:panel`, fill: "#171321F2" })
-      ])
-    });
+    const stored = await fixture.documents.find(created.id);
+    await fixture.documents.save(applyAlertStarterTheme(stored!, "bold-pop"));
 
     await fixture.service.resetManagedAlert(created.id, false);
 
     const resetDocument = await fixture.documents.find(created.id);
     expect(alertEditorDocumentSchema.parse(resetDocument)).toEqual(resetDocument);
-    expect(resetDocument?.layers).toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: `${created.id}:clean-signal:panel`, fill: "#07111DDE" })
-    ]));
-    expect(resetDocument?.layers.some((layer) => layer.id.includes(":bold-pop:"))).toBe(false);
+    expect(resetDocument?.layers).toEqual([]);
+    expect(resetDocument?.targetProfiles.every((profile) => profile.layerLayouts.length === 0)).toBe(true);
   });
 
   it("requires confirmation before resetting or deleting enabled active output", async () => {

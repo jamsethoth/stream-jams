@@ -1,13 +1,29 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AlertEditorDocument, AlertRule, AppConfig, DesktopOverlayTransport, SurfaceSettingsView } from "@stream-jams/core";
+import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
+  type AlertEditorDocument,
+  type AlertRule,
+  type AppConfig,
+  type DesktopOverlayTransport,
+  type SurfaceSettingsView
+} from "@stream-jams/core";
 import { InMemorySecretStore } from "@stream-jams/test-support";
 import { afterEach, expect, it, vi } from "vitest";
 import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runtime-composition.js";
 
 const roots: string[] = [];
 const runtimes: RuntimeAppComposition[] = [];
+const testLayerAnimation = {
+  mode: "preset" as const,
+  entrance: "none",
+  exit: "none",
+  durationMs: 0,
+  delayMs: 0,
+  easing: "linear"
+};
 afterEach(async () => {
   await Promise.all(runtimes.splice(0).map(runtime => runtime.close()));
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })));
@@ -50,7 +66,17 @@ async function setup(withMedia = false) {
   const rules = (await runtime.app.inject({ method: "GET", url: "/alerts/rules", headers })).json() as AlertRule[];
   const rule = rules.find(candidate => candidate.eventType === "follow")!;
   const document = (await runtime.app.inject({ method: "GET", url: `/management/alerts/${rule.id}/editor`, headers })).json() as AlertEditorDocument;
-  const layer = document.layers.find(candidate => candidate.type === "text")!;
+  const layer = {
+    id: `${rule.id}-text`,
+    name: "Message",
+    type: "text" as const,
+    visible: true,
+    order: 0,
+    animation: testLayerAnimation,
+    template: "Desktop {actor.displayName}",
+    textStyle: compatibilityAlertTextStyle,
+    boxStyle: compatibilityAlertTextBoxStyle
+  };
   const pngBytes = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=", "base64");
   let assetId: string | undefined;
   if (withMedia) {
@@ -64,7 +90,7 @@ async function setup(withMedia = false) {
   }
   const edited: AlertEditorDocument = {
     ...document, enabled: true,
-    layers: [{ ...layer, template: "Desktop {actor.displayName}" }, ...(assetId === undefined ? [] : [{
+    layers: [layer, ...(assetId === undefined ? [] : [{
       id: "desktop-image", name: "Imported image", type: "image" as const, visible: true, order: 1, animation: layer.animation, assetId
     }])],
     targetProfiles: document.targetProfiles.map(profile => profile.id === "landscape" ? {

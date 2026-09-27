@@ -20,7 +20,7 @@ describe("AssetPicker", () => {
     expect(screen.queryByRole("button", { name: /Raid chime/ })).not.toBeInTheDocument();
     await userEvent.click(followerAsset);
     await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
-    expect(onSelect).toHaveBeenCalledWith("asset-image", "image");
+    expect(onSelect).toHaveBeenCalledWith("asset-image", "image", imageItem);
   });
 
   it("keeps invalid uploads in context with allowed types, limits, and a next step", async () => {
@@ -53,7 +53,11 @@ describe("AssetPicker", () => {
       displayName: "New follower art",
       tags: ["seasonal", "follow"]
     }));
-    expect(onSelect).toHaveBeenCalledWith("asset-new", "image");
+    expect(onSelect).toHaveBeenCalledWith("asset-new", "image", expect.objectContaining({
+      id: "asset-new",
+      displayName: "New follower art",
+      tags: ["seasonal", "follow"]
+    }));
   });
 
   it("does not reload when its parent rerenders with equivalent compatible media types", async () => {
@@ -108,7 +112,7 @@ describe("AssetPicker", () => {
     const audioOption = await screen.findByRole("button", { name: /Raid chime/ });
     expect(audioOption).toHaveAttribute("aria-pressed", "true");
     await userEvent.click(screen.getByRole("button", { name: "Use selected asset" }));
-    expect(onSelect).toHaveBeenCalledWith("asset-audio", "audio");
+    expect(onSelect).toHaveBeenCalledWith("asset-audio", "audio", audioItem);
   });
 
   it("disables stale selection synchronously when the selected asset ID changes", async () => {

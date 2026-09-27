@@ -171,6 +171,7 @@ MVP Home content:
 - When all items are complete, Home shows a concise completion summary instead of an expanded checklist.
 - Provider checklist items complete only when provider validates.
 - Starter alert review completes when the default set has at least one enabled valid alert or user marks starter review done.
+- First-run starter alerts are stored disabled and `Needs review` with empty Landscape and Vertical layouts and no layers.
 - Active alert set summary: set name, blocker/warning counts, enabled alert count, active target profiles.
 - Top active actionable problems only, with links to Diagnostics or correction screens.
 
@@ -445,7 +446,7 @@ Hierarchy:
 
 Rules:
 
-- Event type has default design.
+- Event types can have default alerts; new defaults start with no layers or profile geometry.
 - Variation is conditional alert under event type.
 - Variation starts from event default and can diverge.
 - Users can rename alerts and variations.
@@ -453,7 +454,7 @@ Rules:
 - Provider catalog and event type labels are system-defined; provider catalog context is not an implicit runtime eligibility condition.
 - Registered provider instances can have nicknames on integration pages.
 - Empty event types remain visible with `Add alert`.
-- `Add alert` opens template chooser scoped to provider/event type.
+- `Add alert` collects the event type, alert name, and event-specific matching input without a design or theme chooser.
 
 MVP variation conditions:
 
@@ -467,7 +468,7 @@ MVP actions:
 - `Create variation from default`.
 - `Duplicate variation`.
 - `Duplicate alert within the same event type and set`.
-- `Reset to event default`.
+- `Reset` returns a default alert to an empty design; resetting a variation copies its source default design.
 - `Copy design from...`.
 
 Duplicate alerts and sets are disabled and `Needs review` by default.
@@ -477,7 +478,7 @@ Bulk operations are high-priority backlog. Tables/lists should leave room for fu
 
 ## Alert Editor
 
-MVP editor is canvas-first and template-assisted.
+MVP editor is canvas-first, with direct layer authoring and `Copy design from...` for reuse.
 
 Layout:
 
@@ -521,7 +522,7 @@ Canvas supports:
 
 - Free positioning/resizing.
 - Exact inspector values: `x`, `y`, `width`, `height` in target-profile pixels.
-- Snap/grid and reset-to-template.
+- Snap/grid and explicit profile-layout controls.
 - Safe-area guides per target profile.
 - Safe-area toggle.
 - Fit-to-view, 100%, zoom in/out, zoom percent display.

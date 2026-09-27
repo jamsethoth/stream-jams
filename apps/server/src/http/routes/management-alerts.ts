@@ -118,7 +118,7 @@ export function registerManagementAlertRoutes(
     if (!input.success) {
       return sendHttpError(reply, 400, {
         code: "INVALID_ALERT_CREATE_INPUT",
-        message: "Choose a supported event type, reward selection, and starter theme, and enter an alert name between 1 and 120 characters."
+        message: "Choose a supported event type and reward selection, and enter an alert name between 1 and 120 characters."
       });
     }
     try {

@@ -293,7 +293,7 @@ describe("createHttpManagementApi", () => {
     await expect(api.deleteAlertSet("set-seasonal")).resolves.toBeUndefined();
   });
 
-  it("serializes an explicitly selected starter theme without adding defaults for omitted callers", async () => {
+  it("serializes alert creation without a starter-theme field", async () => {
     const bodies: string[] = [];
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -307,15 +307,9 @@ describe("createHttpManagementApi", () => {
     const api = createHttpManagementApi({ fetch: fetcher });
 
     await api.createAlert("set-default", { eventType: "follow", name: "Compatible caller" });
-    await api.createAlert("set-default", {
-      eventType: "raid",
-      name: "Neon raid",
-      themeId: "neon-terminal"
-    });
 
     expect(bodies).toEqual([
-      JSON.stringify({ eventType: "follow", name: "Compatible caller" }),
-      JSON.stringify({ eventType: "raid", name: "Neon raid", themeId: "neon-terminal" })
+      JSON.stringify({ eventType: "follow", name: "Compatible caller" })
     ]);
   });
 

@@ -28,11 +28,6 @@ Each alert default or variation SHALL own one output selection containing a Brow
 - **THEN** its output selection is copied and can subsequently diverge independently
 - **AND** existing disabled/needs-review creation safeguards remain effective
 
-#### Scenario: Visual theme is applied
-- **WHEN** the operator applies a starter theme
-- **THEN** output assignments are preserved with existing nonvisual behavior
-- **AND** existing alert-disable, profile-review, dirty-state, and save rules still apply
-
 #### Scenario: Embedded and separate sound are both enabled
 - **WHEN** a video soundtrack and a separate sound layer are enabled in the same selected document
 - **THEN** both follow that document's audio output selection with independent layer volumes

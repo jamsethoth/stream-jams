@@ -34,7 +34,7 @@ import {
 } from "@stream-jams/core";
 import type { AlertAggregateMutationStore } from "./alert-aggregate-mutation-store.js";
 import {
-  createAlertEditorDocumentFromRule,
+  createEmptyAlertEditorDocumentFromRule,
   type AlertEditorDocumentRepository
 } from "./alert-editor-service.js";
 
@@ -185,7 +185,7 @@ export class AlertSetManagementService {
       missingRuleIds: [created.id],
       saveRules: [created],
       saveRuleMetadata: [metadata],
-      saveDocuments: [createAlertEditorDocumentFromRule(created, 0, metadata, input.themeId)]
+      saveDocuments: [createEmptyAlertEditorDocumentFromRule(created, 0, metadata)]
     });
     return (await this.#toInventoryRows(setId, created))[0]!;
   }
@@ -339,7 +339,7 @@ export class AlertSetManagementService {
         enabled: resolved.rule.variants.slice(1).some((variant) => variant.enabled)
       });
       updatedMetadata = { ...metadata, reviewState: "needs-review" };
-      document = createAlertEditorDocumentFromRule(updatedRule, 0, {
+      document = createEmptyAlertEditorDocumentFromRule(updatedRule, 0, {
         ...metadata,
         reviewState: "needs-review"
       });
@@ -560,12 +560,13 @@ export class AlertSetManagementService {
     });
     for (const definition of starterAlerts) {
       const rule = await this.#alertService.createRule(starterRuleInput(starter.id, definition));
-      await this.#metadataRepository.saveRule({
+      const metadata = await this.#metadataRepository.saveRule({
         ruleId: rule.id,
         providerKind: "twitch",
         reviewState: "needs-review",
         targetProfileIds: ["landscape", "vertical"]
       });
+      await this.#documents.save(createEmptyAlertEditorDocumentFromRule(rule, 0, metadata));
     }
   }
 
