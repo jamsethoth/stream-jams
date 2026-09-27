@@ -127,6 +127,31 @@ describe("ScreenEffectEditor", () => {
     );
   });
 
+  it("refreshes Match longest media when a fresh picker asset is selected after the editor opens", async () => {
+    const user = userEvent.setup();
+    const saved = enabledEffect(false);
+    const shortVideo = { ...asset("video-one", "Short clip", "video"), durationMs: 1_000 };
+    const longVideo = { ...asset("video-long", "Long clip", "video"), durationMs: 8_000 };
+    const initialAssets = [shortVideo, asset("tone-one", "Tone one", "audio")];
+    const listAssetLibraryItems = vi.fn()
+      .mockResolvedValueOnce(initialAssets)
+      .mockResolvedValue([shortVideo, longVideo, initialAssets[1]!]);
+    renderEditor({
+      api: effectApi(saved),
+      create: false,
+      document: saved,
+      managementApi: managementApi({ listAssetLibraryItems })
+    });
+
+    await user.click(await screen.findByRole("tab", { name: "Variant" }));
+    expect(screen.getByText("Matched to Short clip (1s).")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Choose visual asset" }));
+    await user.click(await screen.findByRole("button", { name: /Long clip, video/u }));
+    await user.click(screen.getByRole("button", { name: "Use selected asset" }));
+
+    expect(screen.getByText("Matched to Long clip (8s).")).toBeInTheDocument();
+  });
+
   it("previews locally without live delivery and confirms saved test destinations", async () => {
     const user = userEvent.setup();
     const saved = enabledEffect();

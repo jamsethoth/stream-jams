@@ -324,7 +324,6 @@ export const defaultAlertStarterThemeId = "clean-signal" as const satisfies Aler
 export const alertCreateInputSchema = z.object({
   eventType: streamEventTypeSchema,
   name: z.string().trim().min(1).max(120),
-  themeId: alertStarterThemeIdSchema.default(defaultAlertStarterThemeId),
   channelPointRewardSelection: channelPointRewardSelectionSchema.optional()
 }).superRefine((input, refinement) => {
   if (input.eventType !== "channel_point_redemption" && input.channelPointRewardSelection !== undefined) {

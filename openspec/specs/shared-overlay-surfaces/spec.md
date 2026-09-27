@@ -103,6 +103,12 @@ Desktop work SHALL be scoped by surface, module, occurrence and renderer generat
 - **WHEN** the occurrence deadline plus 5 seconds expires
 - **THEN** the runtime clears or destroys the unresponsive visual recipient and releases its queue obligations
 
+#### Scenario: Current service resumes its ownership lease
+- **WHEN** the active service worker sends a valid lease after ownership expired without being replaced or entering shutdown
+- **THEN** the desktop host restores display availability without requiring an app restart
+- **AND** it preserves the saved display configuration and renderer crash budget, recreates the renderer only when new work requires it, and does not replay interrupted visuals
+- **AND** leases from an old worker generation or during shutdown cannot restore ownership
+
 ### Requirement: Shared Surface Configuration Preserves Security And UX
 Shared surface configuration SHALL use protected management Settings, existing auth/CSRF/origin/rate-limit controls, explicit saves and actionable capability errors. Desktop renderers SHALL be sandboxed and context-isolated with Node integration disabled, no management session, and no authority to read arbitrary paths or execute code.
 

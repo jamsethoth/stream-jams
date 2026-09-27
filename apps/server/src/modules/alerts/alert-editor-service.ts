@@ -610,10 +610,9 @@ function hydrateOrCreateDocument(
     : hydrateDocument(stored, resolved, metadata);
 }
 
-function createDocumentFromRule(
+function createCompatibilityDocumentFromRule(
   resolved: ResolvedEditorItem,
-  metadata: AlertRuleManagementMetadata | null,
-  themeId: AlertStarterThemeId = defaultAlertStarterThemeId
+  metadata: AlertRuleManagementMetadata | null
 ): AlertEditorDocument {
   const { rule, variant } = resolved;
   if (rule.collectionIds[0] === undefined) {
@@ -674,7 +673,15 @@ function createDocumentFromRule(
     templateVariables: getAlertTemplateVariableCatalog(rule.eventType),
     samplePayloads: createBuiltInSamples(rule.eventType)
   };
-  const compatibilityDocument = alertEditorDocumentSchema.parse(document);
+  return alertEditorDocumentSchema.parse(document);
+}
+
+function createDocumentFromRule(
+  resolved: ResolvedEditorItem,
+  metadata: AlertRuleManagementMetadata | null,
+  themeId: AlertStarterThemeId = defaultAlertStarterThemeId
+): AlertEditorDocument {
+  const compatibilityDocument = createCompatibilityDocumentFromRule(resolved, metadata);
   const themedDocument = applyAlertStarterTheme(compatibilityDocument, themeId);
   return alertEditorDocumentSchema.parse({
     ...themedDocument,
@@ -712,6 +719,34 @@ export function createAlertEditorDocumentFromRule(
     editorId: variantIndex === 0 ? rule.id : variant.id,
     kind: variantIndex === 0 ? "default" : "variation"
   }, metadata, themeId);
+}
+
+export function createEmptyAlertEditorDocumentFromRule(
+  rule: AlertRule,
+  variantIndex: number,
+  metadata: AlertRuleManagementMetadata | null
+): AlertEditorDocument {
+  const variant = rule.variants[variantIndex];
+  if (variant === undefined || variantIndex < 0) {
+    throw new AlertEditorNotFoundError(variantIndex === 0 ? rule.id : String(variantIndex));
+  }
+  const document = createCompatibilityDocumentFromRule({
+    rule,
+    variant,
+    variantIndex,
+    editorId: variantIndex === 0 ? rule.id : variant.id,
+    kind: variantIndex === 0 ? "default" : "variation"
+  }, metadata);
+  return alertEditorDocumentSchema.parse({
+    ...document,
+    enabled: false,
+    layers: [],
+    targetProfiles: document.targetProfiles.map((profile) => ({
+      ...profile,
+      reviewState: "needs-review",
+      layerLayouts: []
+    }))
+  });
 }
 
 function hydrateDocument(

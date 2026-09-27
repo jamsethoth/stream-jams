@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import type { DesktopOverlayStatus, SurfaceConfiguration } from "@stream-jams/core";
+import type { DesktopOverlayStatus, Logger, SurfaceConfiguration } from "@stream-jams/core";
 import { SurfaceSettingsService } from "./surface-settings-service.js";
 
 function fixture() {
@@ -10,10 +10,98 @@ function fixture() {
   const host = { configure: vi.fn(async () => {}), retry: vi.fn(async () => {}), getStatus: vi.fn(async (): Promise<DesktopOverlayStatus> => ({ available: true,
     displays: [{ id: "monitor", label: "Monitor", bounds: { x: -1080, y: 0, width: 1080, height: 1920 }, scaleFactor: 1 }], state: "disabled" as const, message: null })) };
   const changed = vi.fn(async () => {});
-  const service = new SurfaceSettingsService({ surfaces, host, moduleIds: () => ["alerts"], changed,
-    runMutation: async work => work() });
-  return { service, surfaces, host, changed, value: () => saved };
+  const logger: Logger = {
+    debug: vi.fn(async () => {}), info: vi.fn(async () => {}), warn: vi.fn(async () => {}), error: vi.fn(async () => {})
+  };
+  const dependencies = { surfaces, host, moduleIds: () => ["alerts"], changed,
+    runMutation: <T>(work: () => Promise<T>) => work(), logger, generateReferenceId: () => "ref-desktop-displays" };
+  const service = new SurfaceSettingsService(dependencies);
+  return { service, surfaces, host, changed, logger, value: () => saved };
 }
+
+it("logs desktop display detection and retry failures with their native causes", async () => {
+  const { service, surfaces, host, logger, value } = fixture();
+  await surfaces.save({ ...(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), enabled: true,
+    displayId: "monitor", displayLabel: "Monitor" });
+  host.getStatus.mockRejectedValue(new Error("screen API unavailable"));
+
+  await expect(service.load()).resolves.toMatchObject({ desktop: { available: false, state: "unavailable" } });
+
+  expect(logger.warn).toHaveBeenCalledWith("Desktop display detection failed.", {
+    module: "overlay-surfaces",
+    source: "desktop-overlay.displays.detection-failed",
+    correlationId: "ref-desktop-displays",
+    processingId: null,
+    metadata: {
+      errorName: "Error",
+      errorMessage: "screen API unavailable",
+      nextStep: "Restart the Windows desktop app and retry display detection."
+    }
+  });
+
+  host.getStatus.mockResolvedValue({ available: true, displays: [{ id: "monitor", label: "Monitor",
+    bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }], state: "failed", message: "renderer unavailable" });
+  host.retry.mockRejectedValueOnce(new Error("renderer window creation failed"));
+  await service.retry();
+
+  expect(logger.error).toHaveBeenCalledWith("Desktop overlay recovery failed.", {
+    module: "overlay-surfaces",
+    source: "desktop-overlay.retry.failed",
+    correlationId: "ref-desktop-displays",
+    processingId: null,
+    metadata: {
+      displayCount: 1,
+      errorName: "Error",
+      errorMessage: "renderer window creation failed",
+      selectedDisplayAvailable: true,
+      nextStep: "Check the selected display and retry. Interrupted content will not replay."
+    }
+  });
+});
+
+it("logs an unavailable display-detection state once while settings polling remains unchanged", async () => {
+  const { service, host, logger } = fixture();
+  host.getStatus.mockResolvedValue({ available: true, displays: [], state: "unavailable", message: "No displays were returned." });
+
+  await service.load();
+  await service.load();
+
+  expect(logger.warn).toHaveBeenCalledOnce();
+  expect(logger.warn).toHaveBeenCalledWith("Desktop display detection is unavailable.", {
+    module: "overlay-surfaces",
+    source: "desktop-overlay.displays.unavailable",
+    correlationId: "ref-desktop-displays",
+    processingId: null,
+    metadata: {
+      displayCount: 0,
+      hostMessage: "No displays were returned.",
+      hostState: "unavailable",
+      nextStep: "Reconnect the display and retry. Restart the Windows desktop app if detection remains unavailable."
+    }
+  });
+});
+
+it("logs when desktop display detection recovers", async () => {
+  const { service, host, logger } = fixture();
+  host.getStatus.mockRejectedValue(new Error("screen API unavailable"));
+  await service.load();
+
+  host.getStatus.mockResolvedValue({ available: true, displays: [{ id: "monitor", label: "Monitor",
+    bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }], state: "disabled", message: null });
+  await service.load();
+
+  expect(logger.info).toHaveBeenCalledWith("Desktop display detection recovered.", {
+    module: "overlay-surfaces",
+    source: "desktop-overlay.displays.recovered",
+    correlationId: "ref-desktop-displays",
+    processingId: null,
+    metadata: {
+      displayCount: 1,
+      hostState: "disabled",
+      nextStep: "Test the desktop overlay to confirm playback on the restored display."
+    }
+  });
+});
 
 function editable(surface: Extract<SurfaceConfiguration, { kind: "desktop" }>) {
   return {

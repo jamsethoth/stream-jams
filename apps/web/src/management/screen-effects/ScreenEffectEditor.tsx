@@ -391,9 +391,15 @@ export function ScreenEffectEditor(props: ScreenEffectEditorProps) {
       compatibleMediaTypes={picker === "sound" ? soundMediaTypes : visualMediaTypes}
       managementApi={props.managementApi}
       onCancel={() => setPicker(null)}
-      onSelect={(assetId, mediaType) => {
+      onSelect={(assetId, mediaType, item) => {
         const target = picker;
         setPicker(null);
+        setContext((current) => ({
+          ...current,
+          assets: current.assets.some((asset) => asset.id === item.id)
+            ? current.assets.map((asset) => asset.id === item.id ? item : asset)
+            : [...current.assets, item]
+        }));
         if (target === "visual" && mediaType !== "audio") {
           edit((current) => updateEffectVariant(current, selectedVariant.id, (variant) => ({
             ...variant,

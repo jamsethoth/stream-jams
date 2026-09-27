@@ -1,6 +1,5 @@
 import {
   alertEditorDocumentSchema,
-  materializeAlertStarterTheme,
   type AlertEditorDocument
 } from "@stream-jams/core";
 import { expect, test } from "@playwright/test";
@@ -443,15 +442,14 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
   await expect(createdRow).toContainText("Needs review");
   expect(createAlertRequests).toEqual([{
     eventType: "community_gift",
-    name: "Community gift received",
-    themeId: "clean-signal"
+    name: "Community gift received"
   }]);
 });
 
-test("management alerts creates a Raid alert from the selected Bold Pop theme", async ({ page }) => {
+test("management alerts creates a Raid alert without theme controls or starter layers", async ({ page }) => {
   await mockManagementShell(page);
   const createAlertRequests: unknown[] = [];
-  const createdDocument = boldPopRaidDocument();
+  const createdDocument = emptyRaidDocument();
   let raidCreated = false;
   const overview = {
     id: "set-default",
@@ -524,37 +522,25 @@ test("management alerts creates a Raid alert from the selected Bold Pop theme", 
   await selectedSet.getByRole("checkbox", { name: "Show unused event types" }).check();
   await selectedSet.getByRole("button", { name: "Add alert for Raid" }).click();
   const createDialog = page.getByRole("dialog", { name: "Add alert" });
-  const boldPopChoice = createDialog.getByRole("radio", { name: "Bold Pop" });
-  await boldPopChoice.click();
-  await expect(boldPopChoice).toBeChecked();
-
-  const themeChooser = createDialog.getByRole("radiogroup", { name: "Starter theme" });
-  const landscapePreview = themeChooser.getByRole("img", { name: "Bold Pop Landscape 16:9 preview" });
-  const verticalPreview = themeChooser.getByRole("img", { name: "Bold Pop Vertical 9:16 preview" });
-  await expect(landscapePreview).toBeVisible();
-  await expect(verticalPreview).toBeVisible();
-  await expect(landscapePreview).toContainText("Welcome raiders from StreamSpark!");
-  await expect(verticalPreview).toContainText("Welcome raiders from StreamSpark!");
+  await expect(createDialog.getByRole("radiogroup", { name: "Starter theme" })).toHaveCount(0);
+  await expect(createDialog.getByRole("radio", { name: "Bold Pop" })).toHaveCount(0);
 
   await createDialog.getByRole("button", { name: "Create alert" }).click();
   expect(createAlertRequests).toEqual([{
     eventType: "raid",
-    name: "New raid",
-    themeId: "bold-pop"
+    name: "New raid"
   }]);
 
   const createdRow = page.getByRole("row", { name: /New raid/u });
   await createdRow.getByRole("button", { name: "Edit New raid" }).click();
   const landscapeCanvas = page.getByRole("region", { name: "Landscape alert canvas" });
   await expect(landscapeCanvas).toBeVisible();
-  await expect(landscapeCanvas).toContainText("Welcome raiders from StreamSpark!");
-  await expect(landscapeCanvas.locator(".alert-canvas__shape")).toHaveCount(4);
+  await expect(landscapeCanvas.locator(".alert-canvas__layer")).toHaveCount(0);
 
   await page.getByRole("button", { name: /^Vertical/u }).click();
   const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
   await expect(verticalCanvas).toBeVisible();
-  await expect(verticalCanvas).toContainText("Welcome raiders from StreamSpark!");
-  await expect(verticalCanvas.locator(".alert-canvas__shape")).toHaveCount(4);
+  await expect(verticalCanvas.locator(".alert-canvas__layer")).toHaveCount(0);
 });
 
 test("management alerts creates selected and catch-all channel point reward alerts", async ({ page }) => {
@@ -679,7 +665,6 @@ test("management alerts creates selected and catch-all channel point reward aler
   expect(createAlertRequests[0]).toEqual({
     eventType: "channel_point_redemption",
     name: "Shared hydration rewards",
-    themeId: "clean-signal",
     channelPointRewardSelection: {
       mode: "selected",
       rewardIds: ["reward-hydrate", "reward-stretch"]
@@ -697,7 +682,6 @@ test("management alerts creates selected and catch-all channel point reward aler
   expect(createAlertRequests[1]).toEqual({
     eventType: "channel_point_redemption",
     name: "Custom reward",
-    themeId: "clean-signal",
     channelPointRewardSelection: { mode: "all" }
   });
   expect(browserErrors).toEqual([]);
@@ -848,152 +832,35 @@ test("focused alert editor preserves reward IDs and previews representative samp
   expect(browserErrors).toEqual([]);
 });
 
-test("focused alert editor applies Neon Terminal while preserving nonvisual behavior", async ({ page }) => {
+test("focused alert editor does not expose starter-theme re-theming", async ({ page }) => {
   await mockManagementShell(page);
-  let document = reThemeRaidDocument();
-  const savedDocuments: AlertEditorDocument[] = [];
+  const document = reThemeRaidDocument();
   const overview = {
-    id: "set-default",
-    name: "Default",
-    active: false,
-    starter: false,
-    starterReviewState: "complete",
-    enabledAlertCount: 1,
+    id: "set-default", name: "Default", active: false, starter: false,
+    starterReviewState: "complete", enabledAlertCount: 1, validationIssues: [], outputs: [],
     targetProfiles: [
       { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
       { id: "vertical", enabled: false, reviewState: "ready", blockerCount: 0, warningCount: 0 }
-    ],
-    validationIssues: [],
-    outputs: []
+    ]
   };
-  const detail = {
-    overview,
-    inventory: [{
-      id: document.id,
-      setId: document.setId,
-      providerKind: document.providerKind,
-      eventType: document.eventType,
-      parentAlertId: document.parentAlertId,
-      name: document.name,
-      kind: document.kind,
-      enabled: document.enabled,
-      reviewState: "ready",
-      targetProfileIds: ["landscape", "vertical"],
-      previewText: "Custom raid from StreamSpark!"
-    }],
-    browserSources: []
-  };
-
-  await page.route("**/management/providers?capability=tts", (route) => route.fulfill({
-    contentType: "application/json",
-    json: [{
-      id: "provider-speakerbot",
-      name: "Studio Speaker.bot",
-      kind: "speakerbot",
-      capability: "tts",
-      active: true,
-      connectionState: "connected",
-      intakeState: null,
-      validatedAt: "2026-08-26T12:00:00.000Z",
-      error: null,
-      usedByAlertCount: 1
-    }]
-  }));
   await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({
     contentType: "application/json",
-    json: detail
+    json: { overview, inventory: [{
+      id: document.id, setId: document.setId, providerKind: document.providerKind,
+      eventType: document.eventType, parentAlertId: document.parentAlertId, name: document.name,
+      kind: document.kind, enabled: document.enabled, reviewState: "ready",
+      targetProfileIds: ["landscape", "vertical"], previewText: "Custom raid from StreamSpark!"
+    }], browserSources: [] }
   }));
-  await page.route(`**/management/alerts/${document.id}/editor`, async (route) => {
-    if (route.request().method() === "PUT") {
-      const body = route.request().postDataJSON() as { readonly document: AlertEditorDocument };
-      const candidate = alertEditorDocumentSchema.parse(body.document);
-      const reviewIssue = editorSaveReviewIssue(document, candidate);
-      if (reviewIssue !== null) {
-        await route.fulfill({
-          status: 422,
-          contentType: "application/json",
-          json: { error: { code: "ALERT_EDITOR_INVALID", message: reviewIssue } }
-        });
-        return;
-      }
-      document = candidate;
-      savedDocuments.push(document);
-    }
-    await route.fulfill({ contentType: "application/json", json: document });
-  });
+  await page.route(`**/management/alerts/${document.id}/editor`, (route) => route.fulfill({ contentType: "application/json", json: document }));
   await page.route(`**/management/alerts/${document.id}/editor/variation-context`, (route) => route.fulfill({
-    contentType: "application/json",
-    json: defaultVariationContext(document)
+    contentType: "application/json", json: defaultVariationContext(document)
   }));
 
   await page.goto(`/manage/modules/alerts/editor/${document.id}?profile=landscape`);
-  await page.getByRole("tab", { name: "Layers" }).click();
-  await expect(page.locator(".alert-editor-inspector__layer-list").getByText("Message", { exact: true })).toBeVisible();
-  await expect(page.getByText("Old raid image", { exact: true })).toBeVisible();
-  await expect(page.getByText("Old raid video", { exact: true })).toBeVisible();
-
   await page.getByRole("tab", { name: "Alert" }).click();
-  await page.getByRole("button", { name: "Apply starter theme" }).click();
-  const dialog = page.getByRole("dialog", { name: "Apply starter theme?" });
-  await expect(dialog).toContainText("All text, shape, image, and video layers will be replaced.");
-  await expect(dialog).toContainText("The primary message, audio, TTS");
-  await expect(dialog).toContainText("The alert will be disabled.");
-  await expect(dialog).toContainText("both profiles return to Needs review.");
-  await dialog.getByRole("radio", { name: "Neon Terminal" }).click();
-  await dialog.getByRole("button", { name: "Apply theme" }).click();
-
-  const guidance = page.locator(".management-toast--warning");
-  await expect(guidance).toContainText("Starter theme applied.");
-  await expect(guidance).toContainText("Review both Landscape and Vertical before saving or re-enabling.");
-  await expect(page.getByText("Alert disabled")).toBeVisible();
-  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
-  await expect(page.getByRole("checkbox", { name: "Use this profile for live alerts" })).toBeChecked();
-
-  await page.getByRole("tab", { name: "Layers" }).click();
-  const landscapeCanvas = page.getByRole("region", { name: "Landscape alert canvas" });
-  await expect(landscapeCanvas).toContainText("Custom raid from StreamSpark!");
-  await expect(landscapeCanvas.locator(".alert-canvas__shape")).toHaveCount(2);
-  await expect(page.getByText("Old raid image", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Old raid video", { exact: true })).toHaveCount(0);
-
-  await page.getByRole("button", { name: /^Vertical/u }).click();
-  const verticalCanvas = page.getByRole("region", { name: "Vertical alert canvas" });
-  await expect(verticalCanvas).toBeVisible();
-  await expect(verticalCanvas).toContainText("Custom raid from StreamSpark!");
-  await expect(verticalCanvas.locator(".alert-canvas__shape")).toHaveCount(2);
-  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
-  await page.getByRole("tab", { name: "Alert" }).click();
-  await expect(page.getByRole("checkbox", { name: "Use this profile for live alerts" })).not.toBeChecked();
-  await page.locator(".alert-editor-page__profile-warning").getByRole("button", { name: "Mark reviewed" }).click();
-  await page.getByRole("button", { name: /^Landscape/u }).click();
-  await expect(page.locator(".alert-editor-page__profile-warning")).toContainText("Needs review");
-  await page.locator(".alert-editor-page__profile-warning").getByRole("button", { name: "Mark reviewed" }).click();
-
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByText("Alert saved.")).toBeVisible();
-  expect(savedDocuments).toHaveLength(1);
-  await page.reload();
-  await expect(page.getByText("Saved")).toBeVisible();
-  await expect(page.getByText("Alert disabled")).toBeVisible();
-  await expect(page.locator(".alert-editor-page__profile-warning")).toHaveCount(0);
-
-  const saved = savedDocuments[0]!;
-  const savedTextLayers = saved.layers.filter((layer) => layer.type === "text");
-  const savedShapeLayers = saved.layers.filter((layer) => layer.type === "shape");
-  expect(saved.enabled).toBe(false);
-  expect(saved.targetProfiles).toMatchObject([
-    { id: "landscape", enabled: true, reviewState: "ready" },
-    { id: "vertical", enabled: false, reviewState: "ready" }
-  ]);
-  expect(saved.layers.some((layer) => layer.type === "image" || layer.type === "video")).toBe(false);
-  expect(saved.layers).toEqual(expect.arrayContaining([
-    expect.objectContaining({ id: "layer-audio", type: "audio", assetId: "asset-theme-audio", volume: 0.65 }),
-    expect.objectContaining({ id: "layer-tts", type: "tts", enabled: true, providerId: "speakerbot", template: "Raid incoming from {userName}" })
-  ]));
-  expect(savedTextLayers).toEqual(expect.arrayContaining([
-    expect.objectContaining({ name: "Message", template: "Custom raid from {userName}!", textStyle: expect.objectContaining({ fontPreset: "monospace" }) })
-  ]));
-  expect(savedShapeLayers.map((layer) => layer.fill)).toEqual(expect.arrayContaining(["#020805F2", "#31F577FF"]));
+  await expect(page.getByRole("button", { name: "Apply starter theme" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Apply starter theme?" })).toHaveCount(0);
 });
 
 test("management alerts resets event disclosures when switching alert sets", async ({ page }) => {
@@ -1088,6 +955,20 @@ test("alert variation can be created edited duplicated and selectively deleted",
     previewText: "Raid preview"
   };
   let inventory: AlertInventoryFixture[] = [defaultRaid];
+  let defaultDocument = {
+    ...alertEditorDocument(),
+    id: defaultRaid.id,
+    eventType: "raid",
+    name: defaultRaid.name,
+    weight: 1,
+    priority: 0,
+    samplePayloads: [{
+      id: "normal",
+      label: "Normal raid",
+      kind: "built-in",
+      payload: { userName: "Raider", raidViewers: 25, amount: 25 }
+    }]
+  };
   let variationDocument = {
     ...alertEditorDocument(),
     id: "variant-large-raid",
@@ -1140,6 +1021,29 @@ test("alert variation can be created edited duplicated and selectively deleted",
     variationDocument = { ...variationDocument, name: body.name };
     requests.push({ command: "create", id: defaultRaid.id, body });
     await route.fulfill({ contentType: "application/json", status: 201, json: created });
+  });
+  await page.route("**/management/alerts/alert-raid/editor", async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = route.request().postDataJSON() as { readonly document: typeof defaultDocument };
+      defaultDocument = body.document;
+      requests.push({ command: "save-default", id: defaultDocument.id, body });
+    }
+    await route.fulfill({ contentType: "application/json", json: defaultDocument });
+  });
+  await page.route("**/management/alerts/alert-raid/editor/variation-context", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      json: {
+        ruleId: defaultRaid.id,
+        eventType: "raid",
+        candidates: [
+          { editorId: defaultRaid.id, variantId: "alert-raid-default-resolver", kind: "default", name: "Bean Boozle 1", enabled: true, conditions: [], weight: defaultDocument.weight, priority: 0 },
+          { editorId: "variant-bean-2", variantId: "variant-bean-2-resolver", kind: "variation", name: "Bean Boozle 2", enabled: true, conditions: [], weight: 2, priority: 0 },
+          { editorId: "variant-bean-3", variantId: "variant-bean-3-resolver", kind: "variation", name: "Bean Boozle 3", enabled: true, conditions: [], weight: 5, priority: 0 },
+          { editorId: "variant-bean-4", variantId: "variant-bean-4-resolver", kind: "variation", name: "Bean Boozle 4", enabled: true, conditions: [], weight: 1, priority: 0 }
+        ]
+      }
+    });
   });
   await page.route("**/management/alerts/variant-large-raid/editor", async (route) => {
     if (route.request().method() === "PUT") {
@@ -1226,10 +1130,23 @@ test("alert variation can be created edited duplicated and selectively deleted",
   await page.getByRole("button", { name: "Edit Large raid" }).click();
 
   await expect(page).toHaveURL(/\/modules\/alerts\/editor\/variant-large-raid/u);
+  await page.getByRole("button", { name: "New raid Enabled" }).click();
+  await expect(page).toHaveURL(/\/modules\/alerts\/editor\/alert-raid/u);
+  await page.getByRole("tab", { name: "Event" }).click();
+  const defaultControls = page.getByRole("group", { name: "Affects this default only" });
+  const defaultChance = defaultControls.getByRole("spinbutton", { name: "Relative chance" });
+  await expect(defaultChance).toHaveValue("1");
+  await defaultChance.fill("2");
+  await expect(page.getByRole("region", { name: "Sample selection explanation" })).toContainText("2/10 weight · 20% relative chance");
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("dialog", { name: "Save changes to active alert?" }).getByRole("button", { name: "Save changes" }).click();
+  await expect(page.getByText("Alert saved.")).toBeVisible();
+  await page.getByRole("button", { name: "Large raid Variation of New raid" }).click();
+  await expect(page).toHaveURL(/\/modules\/alerts\/editor\/variant-large-raid/u);
   await page.getByRole("tab", { name: "Alert" }).click();
   await page.getByRole("checkbox", { name: "Alert enabled" }).check();
-  await page.getByRole("button", { name: "Mark profile reviewed" }).click();
-  await page.getByRole("checkbox", { name: "Use this profile for live alerts" }).check();
+  await page.getByRole("button", { name: "Review and enable profile" }).click();
+  await expect(page.getByRole("checkbox", { name: "Use this profile for live alerts" })).toBeChecked();
   await page.getByRole("tab", { name: "Event" }).click();
   const priorityGroups = page.getByRole("region", { name: "Priority groups" });
   await priorityGroups.getByRole("group", { name: "Priority group 2" }).getByRole("button", { name: "Move group earlier" }).click();
@@ -1322,6 +1239,7 @@ test("alert variation can be created edited duplicated and selectively deleted",
 
   expect(requests).toEqual([
     { command: "create", id: "alert-raid", body: { name: "Large raid" } },
+    expect.objectContaining({ command: "save-default", id: "alert-raid" }),
     expect.objectContaining({ command: "save", id: "variant-large-raid" }),
     expect.objectContaining({ command: "save-failed", id: "variant-large-raid" }),
     { command: "duplicate", id: "variant-large-raid", body: null },
@@ -1540,7 +1458,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   const landscapeReviewWarning = page.locator(".alert-editor-page__profile-warning");
   await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Landscape must be reviewed");
   await expect(landscapeReviewWarning).toContainText("Needs review");
-  await landscapeReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
+  await landscapeReviewWarning.getByRole("button", { name: "Review and enable" }).click();
   await expect(page.getByRole("region", { name: "Live readiness" })).toContainText("Vertical must be reviewed");
   await expect(page.getByText("Unsaved", { exact: true })).toBeVisible();
   expect(savedDocuments).toHaveLength(0);
@@ -1681,7 +1599,7 @@ test("focused alert editor saves layouts and separates preview from test deliver
   await expect(page.getByLabel("Padding")).toHaveValue("16");
   const verticalReviewWarning = page.locator(".alert-editor-page__profile-warning");
   await expect(verticalReviewWarning).toContainText("Needs review");
-  await verticalReviewWarning.getByRole("button", { name: "Mark reviewed" }).click();
+  await verticalReviewWarning.getByRole("button", { name: "Review and enable" }).click();
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Alert saved.")).toBeVisible();
 
@@ -1837,14 +1755,9 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
   });
 });
 
-function boldPopRaidDocument(): AlertEditorDocument {
-  const composition = materializeAlertStarterTheme({
-    documentId: "alert-raid-bold-pop",
-    eventType: "raid",
-    themeId: "bold-pop"
-  });
+function emptyRaidDocument(): AlertEditorDocument {
   return alertEditorDocumentSchema.parse({ schemaVersion: 1,
-    id: "alert-raid-bold-pop",
+    id: "alert-raid-empty",
     setId: "set-default",
     providerKind: "twitch",
     eventType: "raid",
@@ -1854,18 +1767,14 @@ function boldPopRaidDocument(): AlertEditorDocument {
     enabled: false,
     conditions: [],
     durationMs: 5_000,
-    layers: composition.layers,
-    targetProfiles: composition.targetProfiles,
+    layers: [],
+    targetProfiles: [
+      { id: "landscape", enabled: true, reviewState: "needs-review", layerLayouts: [] },
+      { id: "vertical", enabled: true, reviewState: "needs-review", layerLayouts: [] }
+    ],
     samplePayloads: [{
-      id: "normal",
-      label: "Raid",
-      kind: "built-in",
-      payload: {
-        actor: { id: "sample-raid-user", displayName: "StreamSpark" },
-        userName: "StreamSpark",
-        amount: 125,
-        raidViewers: 125
-      }
+      id: "normal", label: "Raid", kind: "built-in",
+      payload: { actor: { id: "sample-raid-user", displayName: "StreamSpark" }, userName: "StreamSpark", amount: 125, raidViewers: 125 }
     }]
   });
 }
@@ -1959,27 +1868,6 @@ function reThemeRaidDocument(): AlertEditorDocument {
       }
     }]
   });
-}
-
-function editorSaveReviewIssue(
-  current: AlertEditorDocument,
-  candidate: AlertEditorDocument
-): string | null {
-  const enabledProfiles = candidate.targetProfiles.filter((profile) => profile.enabled);
-  if (enabledProfiles.length === 0) return "Enable at least one target profile before saving.";
-  if (!enabledProfiles.some((profile) => profile.reviewState === "ready")) {
-    return "Finish reviewing at least one enabled target profile before saving.";
-  }
-  for (const profile of enabledProfiles) {
-    const currentProfile = current.targetProfiles.find((item) => item.id === profile.id);
-    if (
-      profile.reviewState !== "ready"
-      && !(currentProfile?.enabled === true && currentProfile.reviewState === "needs-review")
-    ) {
-      return `Finish reviewing the ${profile.id} profile before enabling it.`;
-    }
-  }
-  return null;
 }
 
 function alertEditorDocument() {

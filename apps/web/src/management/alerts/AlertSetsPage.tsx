@@ -1,6 +1,5 @@
 import {
   alertStarterTemplates,
-  defaultAlertStarterThemeId,
   type ActionableManagementError,
   type AlertBrowserSourceView,
   type AlertEditorDocument,
@@ -8,7 +7,6 @@ import {
   type AlertSetActivationImpact,
   type AlertSetDetail,
   type AlertSetOverview,
-  type AlertStarterThemeId,
   type AlertValidationIssue,
   type ChannelPointRewardSelection,
   type StreamEventType,
@@ -23,7 +21,6 @@ import { StatusBadge } from "../foundation/StatusBadge.js";
 import { formatCount, formatDateTime } from "../foundation/formatters.js";
 import { formatEventLabel } from "../foundation/presentation-labels.js";
 import type { ManagementApi } from "../management-api.js";
-import { AlertThemeChooser } from "./AlertThemeChooser.js";
 import { alertTestNotice } from "./alert-test-notice.js";
 import { TwitchRewardPicker } from "./TwitchRewardPicker.js";
 import {
@@ -105,7 +102,6 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [createAlertEventLocked, setCreateAlertEventLocked] = useState(false);
   const [createAlertEventType, setCreateAlertEventType] = useState<StreamEventType>(alertStarterTemplates[0].eventType);
   const [createAlertName, setCreateAlertName] = useState<string>(alertStarterTemplates[0].defaultName);
-  const [createAlertThemeId, setCreateAlertThemeId] = useState<AlertStarterThemeId>(defaultAlertStarterThemeId);
   const [createAlertRewardSelection, setCreateAlertRewardSelection] = useState<ChannelPointRewardSelection>({ mode: "all" });
   const [createAlertError, setCreateAlertError] = useState<ActionableManagementError | null>(null);
   const [variationParent, setVariationParent] = useState<AlertInventoryRow | null>(null);
@@ -362,7 +358,6 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     const template = alertStarterTemplates.find((candidate) => candidate.eventType === eventType) ?? alertStarterTemplates[0];
     setCreateAlertEventType(template.eventType);
     setCreateAlertName(template.defaultName);
-    setCreateAlertThemeId(defaultAlertStarterThemeId);
     setCreateAlertRewardSelection({ mode: "all" });
     setCreateAlertEventLocked(eventType !== undefined);
     setCreateAlertError(null);
@@ -393,7 +388,6 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       const created = await managementApi.createAlert(detail.overview.id, {
         eventType: createAlertEventType,
         name: createAlertName.trim(),
-        themeId: createAlertThemeId,
         ...(createAlertEventType === "channel_point_redemption"
           ? { channelPointRewardSelection: createAlertRewardSelection }
           : {})
@@ -409,7 +403,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       setCreateAlertError(toActionableError(
         "The alert was not created",
         cause,
-        "Review the event type, alert name, and starter theme, then try again."
+        "Review the event type and alert name, then try again."
       ));
     } finally {
       setBusy(false);
@@ -838,7 +832,6 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         eventTypeLocked={createAlertEventLocked}
         loadTwitchCustomRewards={loadTwitchCustomRewards}
         name={createAlertName}
-        onTheme={setCreateAlertThemeId}
         onCancel={() => setCreateAlertOpen(false)}
         onEventType={selectAlertEventType}
         onName={setCreateAlertName}
@@ -847,7 +840,6 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
         open={createAlertOpen}
         overlapAlertNames={createAlertOverlapNames}
         rewardSelection={createAlertRewardSelection}
-        themeId={createAlertThemeId}
       />
       <VariationDialog alert={variationParent} busy={busy} error={variationError} name={variationName} onCancel={() => setVariationParent(null)} onName={setVariationName} onSubmit={submitVariation} />
       <ActivationDialog busy={busy} impact={activationImpact} onCancel={() => { setActivationSet(null); setActivationImpact(null); }} onConfirm={() => void confirmActivation()} set={activationSet} />
@@ -1257,7 +1249,7 @@ function NameDialog({ busy, draft, onCancel, onChange, onSubmit, state }: { read
   return <ModalSurface labelledBy="alert-set-name-dialog-title" onCancel={onCancel} open={state !== null}><form className="alert-sets-page__modal" onSubmit={onSubmit}><div><h2 id="alert-set-name-dialog-title">{title}</h2><p>Saving does not change which alert set is active.</p></div><label><span>Alert set name</span><input autoComplete="off" autoFocus maxLength={120} onChange={(event) => onChange(event.currentTarget.value)} required value={draft} /></label><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button><button disabled={busy || draft.trim() === ""} type="submit">{state?.action === "duplicate" ? "Duplicate" : "Save"}</button></div></form></ModalSurface>;
 }
 
-function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitchCustomRewards, name, onCancel, onEventType, onName, onRewardSelection, onSubmit, onTheme, open, overlapAlertNames, rewardSelection, themeId }: {
+function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitchCustomRewards, name, onCancel, onEventType, onName, onRewardSelection, onSubmit, open, overlapAlertNames, rewardSelection }: {
   readonly busy: boolean;
   readonly error: ActionableManagementError | null;
   readonly eventType: StreamEventType;
@@ -1269,11 +1261,9 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
   readonly onName: (name: string) => void;
   readonly onRewardSelection: (selection: ChannelPointRewardSelection) => void;
   readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  readonly onTheme: (themeId: AlertStarterThemeId) => void;
   readonly open: boolean;
   readonly overlapAlertNames: readonly string[];
   readonly rewardSelection: ChannelPointRewardSelection;
-  readonly themeId: AlertStarterThemeId;
 }) {
   const groups = [...new Set(alertStarterTemplates.map((candidate) => candidate.group))];
   const rewardSelectionInvalid = eventType === "channel_point_redemption"
@@ -1281,10 +1271,10 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
     && rewardSelection.rewardIds.length === 0;
   return (
     <ModalSurface labelledBy="alert-create-dialog-title" onCancel={onCancel} open={open}>
-      <form className="alert-sets-page__modal alert-sets-page__theme-dialog" onSubmit={onSubmit}>
+      <form className="alert-sets-page__modal" onSubmit={onSubmit}>
         <div>
           <h2 id="alert-create-dialog-title">Add alert</h2>
-          <p>The alert starts disabled. Review both target profiles in the editor before enabling it.</p>
+          <p>The alert starts empty and disabled. Add its content, then review both target profiles in the editor before enabling it.</p>
         </div>
         {error === null ? null : <ManagementErrorBanner error={error} />}
         <label>
@@ -1310,7 +1300,6 @@ function CreateAlertDialog({ busy, error, eventType, eventTypeLocked, loadTwitch
             selection={rewardSelection}
           />
         ) : null}
-        <AlertThemeChooser disabled={busy} eventType={eventType} onChange={onTheme} value={themeId} />
         <div className="management-modal__actions">
           <button className="button button--secondary" disabled={busy} onClick={onCancel} type="button">Cancel</button>
           <button disabled={busy || name.trim() === "" || rewardSelectionInvalid} type="submit">{busy ? "Creating..." : "Create alert"}</button>

@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import type { ResolvedAlertAudio } from "@stream-jams/core";
+import type { Logger, ResolvedAlertAudio } from "@stream-jams/core";
 import { createInMemoryStreamJamsDatabase, runInTransaction } from "../db/database.js";
 import { RuntimeMaintenanceGate } from "../backup/runtime-maintenance-gate.js";
 import { SqliteAudioOutputRouteRepository } from "./sqlite-audio-output-route-repository.js";
@@ -16,13 +16,153 @@ function fixture(available = true) {
     testOutput: vi.fn<(deviceId: string) => Promise<void>>(async () => {}),
     retry: vi.fn(async () => {})
   };
-  const service = new AudioOutputService({
+  const logger: Logger = {
+    debug: vi.fn(async () => {}),
+    info: vi.fn(async () => {}),
+    warn: vi.fn(async () => {}),
+    error: vi.fn(async () => {})
+  };
+  const dependencies = {
     routes, ...(available ? { host } : {}), isMuted: () => muted, generateId: () => `route-${++id}`,
-    runMutation: work => gate.runConfigurationMutation(() => runInTransaction(db.connection, work)),
-    runTest: work => gate.runIntake(work)
-  });
-  return { db, routes, gate, service, host, mute: () => { muted = true; }, [Symbol.dispose]: () => db.close() };
+    runMutation: <T>(work: () => T) => gate.runConfigurationMutation(() => runInTransaction(db.connection, work)),
+    runTest: <T>(work: () => Promise<T>) => gate.runIntake(work), logger, generateReferenceId: () => "ref-audio-devices"
+  };
+  const service = new AudioOutputService(dependencies);
+  return { db, routes, gate, service, host, logger, mute: () => { muted = true; }, [Symbol.dispose]: () => db.close() };
 }
+
+it("logs the native cause when audio device detection and explicit recovery fail", async () => {
+  using f = fixture();
+  f.host.listOutputDevices.mockRejectedValueOnce(new Error("renderer channel closed"));
+  f.host.retry.mockRejectedValueOnce(new Error("audio renderer did not initialize"));
+
+  await expect(f.service.getDevices()).resolves.toMatchObject({ available: false, reason: "enumeration-failed" });
+  await expect(f.service.retry()).rejects.toMatchObject({ code: "AUDIO_RETRY_FAILED" });
+
+  expect(f.logger.warn).toHaveBeenCalledWith("Audio output device detection failed.", {
+    module: "audio-output",
+    source: "audio-output.devices.enumeration-failed",
+    correlationId: "ref-audio-devices",
+    processingId: null,
+    metadata: {
+      errorName: "Error",
+      errorMessage: "renderer channel closed",
+      nextStep: "Reconnect the output device and retry. Restart the desktop app if device discovery remains unavailable."
+    }
+  });
+  expect(f.logger.error).toHaveBeenCalledWith("Desktop audio recovery failed.", {
+    module: "audio-output",
+    source: "audio-output.retry.failed",
+    correlationId: "ref-audio-devices",
+    processingId: null,
+    metadata: {
+      errorName: "Error",
+      errorMessage: "audio renderer did not initialize",
+      nextStep: "Restart the desktop app if retry continues to fail."
+    }
+  });
+});
+
+it("logs a transition to zero detected audio outputs without repeating it on status polling", async () => {
+  using f = fixture();
+  f.host.listOutputDevices.mockResolvedValue([]);
+
+  await f.service.getDevices();
+  await f.service.getDevices();
+
+  expect(f.logger.warn).toHaveBeenCalledOnce();
+  expect(f.logger.warn).toHaveBeenCalledWith("No explicit audio output devices were detected.", {
+    module: "audio-output",
+    source: "audio-output.devices.none-detected",
+    correlationId: "ref-audio-devices",
+    processingId: null,
+    metadata: { deviceCount: 0, nextStep: "Reconnect the output device, then retry detection from Audio outputs." }
+  });
+});
+
+it("logs when audio output device detection recovers", async () => {
+  using f = fixture();
+  f.host.listOutputDevices.mockRejectedValue(new Error("renderer channel closed"));
+
+  await f.service.getDevices();
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "a", label: "Headphones" }]);
+  await f.service.getDevices();
+
+  expect(f.logger.info).toHaveBeenCalledWith("Audio output device detection recovered.", {
+    module: "audio-output",
+    source: "audio-output.devices.recovered",
+    correlationId: "ref-audio-devices",
+    processingId: null,
+    metadata: {
+      deviceCount: 1,
+      nextStep: "Test an audio output to confirm playback on the restored device."
+    }
+  });
+});
+
+it("logs missing saved audio bindings once when other output devices are still detected", async () => {
+  using f = fixture();
+  f.routes.save({ id: "route-saved", name: "Speakers", deviceId: "disconnected", deviceLabel: "Speakers", autoFollowDeviceName: true });
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "headphones", label: "Headphones" }]);
+
+  await f.service.getStatus();
+  await f.service.getStatus();
+
+  expect(f.logger.warn).toHaveBeenCalledOnce();
+  expect(f.logger.warn).toHaveBeenCalledWith("Saved audio output bindings are unavailable.", {
+    module: "audio-output",
+    source: "audio-output.routes.missing-device",
+    correlationId: "ref-audio-devices",
+    processingId: null,
+    metadata: {
+      ambiguousMatchCount: 0,
+      autoFollowDisabledCount: 0,
+      detectedDeviceCount: 1,
+      missingRouteCount: 1,
+      noMatchCount: 1,
+      nextStep: "Reconnect the saved device or bind each unavailable route to a detected output."
+    }
+  });
+});
+
+it("logs when missing saved audio bindings recover", async () => {
+  using f = fixture();
+  f.routes.save({ id: "route-saved", name: "Speakers", deviceId: "disconnected", deviceLabel: "Speakers", autoFollowDeviceName: false });
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "headphones", label: "Headphones" }]);
+  await f.service.getStatus();
+
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "disconnected", label: "Speakers" }]);
+  await f.service.getStatus();
+
+  expect(f.logger.info).toHaveBeenCalledWith("Saved audio output bindings recovered.", {
+    module: "audio-output",
+    source: "audio-output.routes.recovered",
+    correlationId: "ref-audio-devices",
+    processingId: null,
+    metadata: {
+      detectedDeviceCount: 1,
+      recoveredRouteCount: 1,
+      nextStep: "Test the recovered audio output route to confirm playback."
+    }
+  });
+});
+
+it("does not report missing bindings recovered while device enumeration is unavailable", async () => {
+  using f = fixture();
+  f.routes.save({ id: "route-saved", name: "Speakers", deviceId: "disconnected", deviceLabel: "Speakers", autoFollowDeviceName: false });
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "headphones", label: "Headphones" }]);
+  await f.service.getStatus();
+
+  f.host.listOutputDevices.mockRejectedValue(new Error("renderer channel closed"));
+  await f.service.getStatus();
+  expect(f.logger.info).not.toHaveBeenCalledWith("Saved audio output bindings recovered.", expect.anything());
+
+  f.host.listOutputDevices.mockResolvedValue([{ deviceId: "disconnected", label: "Speakers" }]);
+  await f.service.getStatus();
+  expect(f.logger.info).toHaveBeenCalledWith("Saved audio output bindings recovered.", expect.objectContaining({
+    source: "audio-output.routes.recovered"
+  }));
+});
 
 it("creates, renames, binds and unbinds using only an enumerated explicit device label", async () => {
   using f = fixture();

@@ -182,8 +182,7 @@ export const CreateAlert: Story = {
     const dialog = await canvas.findByRole("dialog", { name: "Add alert" });
     await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "cheer");
     await expect(within(dialog).getByLabelText("Alert name")).toHaveValue("New cheer");
-    await userEvent.click(within(dialog).getByRole("radio", { name: "Bold Pop" }));
-    await expect(within(dialog).getByRole("radio", { name: "Bold Pop" })).toBeChecked();
+    await expect(within(dialog).queryByRole("radio", { name: "Clean Signal" })).not.toBeInTheDocument();
     await userEvent.click(within(dialog).getByRole("button", { name: "Create alert" }));
     await waitFor(() => expect(createAlert).toHaveBeenCalled());
     await expect(args.onEditAlert).not.toHaveBeenCalled();
@@ -191,7 +190,7 @@ export const CreateAlert: Story = {
   }
 };
 
-export const CreateAlertThemeSelection: Story = {
+export const CreateAlertWithoutThemeChooser: Story = {
   args: {
     managementApi: { ...api([activeSet], detail(activeSet)), createAlert },
     onEditAlert: fn()
@@ -201,9 +200,8 @@ export const CreateAlertThemeSelection: Story = {
     await userEvent.click(await canvas.findByRole("button", { name: "Add alert" }));
     const dialog = within(await canvas.findByRole("dialog", { name: "Add alert" }));
     await userEvent.selectOptions(dialog.getByLabelText("Event type"), "raid");
-    await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
-    await expect(dialog.getByRole("radio", { name: "Neon Terminal" })).toBeChecked();
-    await expect(dialog.getAllByText("Welcome raiders from StreamSpark!")).toHaveLength(6);
+    await expect(dialog.queryByRole("radio", { name: "Neon Terminal" })).not.toBeInTheDocument();
+    await expect(dialog.queryByText("Choose a starting look")).not.toBeInTheDocument();
   }
 };
 
@@ -287,7 +285,7 @@ export const CreateAlertFailure: Story = {
     const failure = await dialog.findByRole("alert");
     await expect(failure).toHaveTextContent("The alert was not created");
     await expect(failure).toHaveTextContent("Local persistence failed");
-    await expect(failure).toHaveTextContent("Review the event type, alert name, and starter theme, then try again.");
+    await expect(failure).toHaveTextContent("Review the event type and alert name, then try again.");
     await expect(failure).toHaveTextContent("ref_story_create_alert");
     await expect(dialog.getByLabelText("Alert name")).toHaveValue("New cheer");
     await expect(dialog.getByRole("button", { name: "Create alert" })).toBeEnabled();
@@ -307,8 +305,7 @@ export const GroupedEventPicker: Story = {
       await expect(dialog.querySelector(`optgroup[label="${group}"]`)).not.toBeNull();
     }
     await userEvent.selectOptions(within(dialog).getByLabelText("Event type"), "community_gift");
-    await expect(within(dialog).getByRole("radio", { name: "Clean Signal" })).toBeChecked();
-    await expect(within(dialog).getAllByText("StreamSpark gifted 5 Tier 1000 subscriptions!")).toHaveLength(6);
+    await expect(within(dialog).queryByRole("radio", { name: "Clean Signal" })).not.toBeInTheDocument();
   }
 };
 

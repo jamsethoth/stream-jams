@@ -28,6 +28,20 @@ describe("OverlaySurface", () => {
     expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("loop", true);
   });
 
+  it.each([
+    { loop: false, visibleAfterEnding: false },
+    { loop: true, visibleAfterEnding: true }
+  ])("keeps a video visible after ended=$visibleAfterEnding when loop=$loop", ({ loop, visibleAfterEnding }) => {
+    const value = { ...instruction(), visual: { assetId: "video", mediaType: "video" as const, loop,
+      layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } } };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/video.webm"} />);
+    const video = screen.getByTestId("overlay-video-instruction-1");
+
+    fireEvent.ended(video);
+
+    expect(video).toHaveStyle({ visibility: visibleAfterEnding ? "visible" : "hidden" });
+  });
+
   it("uses a hidden video media element for a routed video soundtrack", () => {
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     const value = {

@@ -1,6 +1,7 @@
+import { randomUUID } from "node:crypto";
 import { desktopOverlayStatusSchema, findExactUniqueLabelMatch, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema,
   surfaceSettingsViewSchema, validateSurfaceOrder, type AutomaticBindingState, type DesktopOverlayStatus,
-  type DesktopOverlayTransport, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
+  type DesktopOverlayTransport, type Logger, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
 
 export class SurfaceSettingsError extends Error {
   constructor(readonly statusCode: number, readonly code: string, message: string) { super(message); }
@@ -12,12 +13,15 @@ export interface SurfaceSettingsServiceDependencies {
   moduleIds(): readonly string[];
   changed(surface: SurfaceConfiguration): Promise<void>;
   runMutation<T>(work: () => Promise<T>): Promise<T>;
+  logger?: Logger;
+  generateReferenceId?: () => string;
 }
 
 export class SurfaceSettingsService {
   #saving = false;
   #applicationFailure: string | null = null;
   #desktopBindingState: AutomaticBindingState = "not-needed";
+  #lastDesktopDiagnosticSignature: string | null = null;
   constructor(private readonly dependencies: SurfaceSettingsServiceDependencies) {}
 
   async load(): Promise<SurfaceSettingsView> {
@@ -86,16 +90,59 @@ export class SurfaceSettingsService {
       if (config?.kind !== "desktop" || !config.enabled || !status.displays.some(display => display.id === config.displayId)) {
         throw new SurfaceSettingsError(409, "SURFACE_DISPLAY_UNAVAILABLE", "Enable the desktop overlay and save an available display before retrying.");
       }
-      try { await host.configure(config); await host.retry(); this.#applicationFailure = null; }
-      catch { this.#applicationFailure = "Desktop overlay recovery failed. Check the selected display and retry. Interrupted content will not replay."; }
+      try {
+        await host.configure(config);
+        await host.retry();
+        this.#applicationFailure = null;
+        await this.#log("info", "Desktop overlay recovery completed.", "desktop-overlay.retry.completed", {
+          displayCount: status.displays.length,
+          selectedDisplayAvailable: true,
+          nextStep: "Test the desktop overlay to confirm playback on the selected display."
+        });
+      } catch (error) {
+        this.#applicationFailure = "Desktop overlay recovery failed. Check the selected display and retry. Interrupted content will not replay.";
+        await this.#log("error", "Desktop overlay recovery failed.", "desktop-overlay.retry.failed", {
+          displayCount: status.displays.length,
+          ...errorMetadata(error),
+          selectedDisplayAvailable: status.displays.some(display => display.id === config.displayId),
+          nextStep: "Check the selected display and retry. Interrupted content will not replay."
+        });
+      }
       return this.#view();
     });
   }
 
   async #status(): Promise<DesktopOverlayStatus> {
     if (this.dependencies.host?.getStatus === undefined) return { available: false, displays: [], state: "unavailable", message: "Desktop overlays require the Windows desktop app. Browser-source outputs remain available." };
-    try { return desktopOverlayStatusSchema.parse(await this.dependencies.host.getStatus()); }
-    catch { return { available: false, displays: [], state: "unavailable", message: "The desktop host is unavailable. Restart the Windows app and retry." }; }
+    try {
+      const status = desktopOverlayStatusSchema.parse(await this.dependencies.host.getStatus());
+      if (status.state === "unavailable" || status.state === "failed" || status.displays.length === 0) {
+        const signature = `${status.state}:${status.displays.length}:${status.message ?? ""}`;
+        await this.#logDesktopTransition(signature, "Desktop display detection is unavailable.", "desktop-overlay.displays.unavailable", {
+          displayCount: status.displays.length,
+          hostMessage: status.message ?? "The desktop host did not provide an additional message.",
+          hostState: status.state,
+          nextStep: "Reconnect the display and retry. Restart the Windows desktop app if detection remains unavailable."
+        });
+      } else {
+        if (this.#lastDesktopDiagnosticSignature !== null) {
+          await this.#log("info", "Desktop display detection recovered.", "desktop-overlay.displays.recovered", {
+            displayCount: status.displays.length,
+            hostState: status.state,
+            nextStep: "Test the desktop overlay to confirm playback on the restored display."
+          });
+        }
+        this.#lastDesktopDiagnosticSignature = null;
+      }
+      return status;
+    } catch (error) {
+      await this.#logDesktopTransition(`detection-failed:${errorSummary(error)}`, "Desktop display detection failed.",
+        "desktop-overlay.displays.detection-failed", {
+          ...errorMetadata(error),
+          nextStep: "Restart the Windows desktop app and retry display detection."
+        });
+      return { available: false, displays: [], state: "unavailable", message: "The desktop host is unavailable. Restart the Windows app and retry." };
+    }
   }
 
   async #trustedDesktopConfiguration(
@@ -155,5 +202,44 @@ export class SurfaceSettingsService {
     try { return await this.dependencies.runMutation(work); }
     finally { this.#saving = false; }
   }
+
+  async #logDesktopTransition(
+    signature: string,
+    message: string,
+    source: string,
+    metadata: Record<string, string | number | boolean | null>
+  ): Promise<void> {
+    if (this.#lastDesktopDiagnosticSignature === signature) return;
+    this.#lastDesktopDiagnosticSignature = signature;
+    await this.#log("warn", message, source, metadata);
+  }
+
+  async #log(
+    level: "info" | "warn" | "error",
+    message: string,
+    source: string,
+    metadata: Record<string, string | number | boolean | null>
+  ): Promise<void> {
+    const logger = this.dependencies.logger;
+    if (logger === undefined) return;
+    await logger[level](message, {
+      module: "overlay-surfaces",
+      source,
+      correlationId: (this.dependencies.generateReferenceId ?? randomUUID)(),
+      processingId: null,
+      metadata
+    }).catch(() => undefined);
+  }
+}
+
+function errorMetadata(error: unknown): { errorName: string; errorMessage: string } {
+  return error instanceof Error
+    ? { errorName: error.name, errorMessage: error.message }
+    : { errorName: "UnknownError", errorMessage: "The native operation failed without an Error object." };
+}
+
+function errorSummary(error: unknown): string {
+  const details = errorMetadata(error);
+  return `${details.errorName}:${details.errorMessage}`;
 }
 function invalid(): SurfaceSettingsError { return new SurfaceSettingsError(400, "INVALID_SURFACE_SETTINGS", "Overlay settings are invalid. Refresh the registered module list and select a valid display, opacity and complete layer order."); }

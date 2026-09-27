@@ -32,7 +32,7 @@ The system SHALL allow authorized management users to create, edit, enable, disa
 #### Scenario: Alert is created from the selected set
 
 - **WHEN** a management user chooses `Add alert` in an expanded alert set and selects a supported canonical event type
-- **THEN** the system creates a disabled alert from the built-in starter template for that event type
+- **THEN** the system creates a disabled empty alert for that event type
 - **AND** both target profiles and the alert are marked for review
 - **AND** the focused editor opens for the new alert without changing which alert set is active
 - **AND** creation failure remains visible with a human-readable cause, next step, and reference ID when available
@@ -58,6 +58,35 @@ The system SHALL allow authorized management users to create, edit, enable, disa
 - **WHEN** a management user requests deletion of an alert variation
 - **THEN** the system shows a confirmation with an impact summary before deletion is accepted
 - **AND** the summary explains that only the selected variation and its profile layouts are removed
+
+### Requirement: Empty Alert Initialization Is Explicit And Non-Destructive
+
+The system SHALL persist new default alerts and first-run starter alerts as disabled, needs-review editor documents with zero text, shape, image, video, audio, or TTS layers and empty Landscape and Vertical layer layouts. Default reset SHALL produce the same empty document. Existing stored alerts SHALL NOT be rewritten, while variations and duplicates SHALL continue copying their source alert design.
+
+#### Scenario: First-run starter alerts are created
+
+- **WHEN** the system creates the first Default alert set
+- **THEN** each seeded starter alert has a stored editor document with no layers
+- **AND** its Landscape and Vertical layouts contain no layer geometry
+- **AND** it remains disabled and needs review
+
+#### Scenario: New default alert is created
+
+- **WHEN** a management user creates a supported default alert
+- **THEN** its stored editor document has no layers or profile geometry
+- **AND** no starter theme is selected or materialized
+
+#### Scenario: Default alert is reset
+
+- **WHEN** a management user confirms reset of a default alert
+- **THEN** its design is replaced by the empty alert document
+- **AND** its variations retain their own saved designs
+
+#### Scenario: Existing and copied designs are preserved
+
+- **WHEN** the change is deployed or a management user creates a variation or duplicate
+- **THEN** existing stored alert documents are not rewritten
+- **AND** the variation or duplicate retains the source alert's layers and profile geometry
 
 ### Requirement: Alert Test Workflow Uses Real Matching Path
 
@@ -701,11 +730,11 @@ The alert condition editor SHALL expose useful scalar normalized fields for the 
 - **WHEN** a user edits any expanded Twitch-origin alert
 - **THEN** the existing optional direct-Twitch or Streamer.bot ingestion-provider restriction remains available
 
-### Requirement: Curated Starter Theme Catalog Is Bounded And Universal
-The system SHALL provide exactly the `clean-signal`, `bold-pop`, and `neon-terminal` curated starter themes, SHALL default to `clean-signal`, and SHALL support every canonical event type with landscape `1920x1080` and vertical `1080x1920` profiles. Themes SHALL contain only text and solid-fill shape layers and SHALL NOT introduce assets, dependencies, migrations, external fonts, arbitrary CSS/HTML/JS, marketplace/download behavior, or persistent theme linkage.
+### Requirement: Dormant Curated Starter Theme Catalog Is Bounded And Universal
+The dormant materialization module SHALL retain exactly the `clean-signal`, `bold-pop`, and `neon-terminal` curated starter themes, SHALL default direct materialization to `clean-signal`, and SHALL support every canonical event type with landscape `1920x1080` and vertical `1080x1920` profiles. Themes SHALL contain only text and solid-fill shape layers and SHALL NOT introduce assets, dependencies, migrations, external fonts, arbitrary CSS/HTML/JS, marketplace/download behavior, or persistent theme linkage. Active alert creation and editing SHALL NOT expose or invoke this catalog.
 
-#### Scenario: Catalog is requested for a canonical event
-- **WHEN** a management client requests or selects a starter theme for any canonical event type
+#### Scenario: Dormant catalog is exercised directly
+- **WHEN** direct module coverage materializes a starter theme for any canonical event type
 - **THEN** all three themes are available with Clean Signal identified as the default
 - **AND** each theme provides valid landscape and vertical output
 
@@ -729,59 +758,6 @@ The system SHALL materialize a selected starter theme deterministically and idem
 - **WHEN** the same document identity, canonical event input, and theme ID are materialized twice
 - **THEN** the outputs have the same layer IDs, order, and content
 - **AND** each output validates as an alert editor document
-
-### Requirement: Alert Creation Selects A Starter Theme Compatibly
-The management alert-create input SHALL accept an optional validated starter theme ID and SHALL parse an omitted value as `clean-signal`. `AlertCreateRequestInput` SHALL be the optional-theme caller/wire type derived with `z.input<typeof alertCreateInputSchema>`, and `AlertCreateInput` SHALL be the required-theme parsed internal type derived with `z.output<typeof alertCreateInputSchema>`. The HTTP route SHALL parse request bodies before passing required parsed input to management services. The Add alert workflow SHALL show an event-scoped accessible chooser and SHALL always submit its selected theme, while legacy callers remain permitted to omit it.
-
-#### Scenario: Existing caller omits theme
-- **WHEN** an existing create caller submits a valid event type and name without a theme ID
-- **THEN** the parsed input uses `clean-signal`
-- **AND** the created editor document is materialized with Clean Signal
-
-#### Scenario: Operator chooses a theme for a new alert
-- **WHEN** an operator selects Bold Pop or Neon Terminal in Add alert and submits
-- **THEN** the request includes the selected validated theme ID
-- **AND** the created alert has that theme's ordinary editable document
-
-### Requirement: Existing Alert Re-theming Preserves Behavior And Resets Visual Review
-The focused editor SHALL require an explicit `Apply theme` action before applying a starter theme to an existing draft. Application SHALL preserve alert identity, name, event type, matching and variation behavior, cooldown, priority, duration, samples, template variables, audio, and TTS; SHALL replace text, shape, image, and video composition; SHALL disable the alert; SHALL mark both profiles `needs-review`; and SHALL preserve profile availability.
-
-#### Scenario: Operator applies a theme to an existing draft
-- **WHEN** an operator confirms `Apply theme` in the focused editor
-- **THEN** the selected theme replaces the draft's visual composition while preserving its nonvisual behavior and profile availability
-- **AND** the alert is disabled and both profiles require review
-- **AND** existing undo, dirty-state, save, and live-impact behavior apply to the updated draft
-
-#### Scenario: Operator opens then cancels the chooser
-- **WHEN** an operator opens the starter-theme flow but does not activate `Apply theme`
-- **THEN** the editor draft remains unchanged
-- **AND** no alert state or review state is changed
-
-### Requirement: Re-theming Preserves The Primary Message Deterministically
-When applying a starter theme, the system SHALL choose the primary message from a text layer named `Message` case-insensitively, then the first visible text layer by order, then the first text layer by order, and finally the canonical starter message. Applying a theme SHALL materialize an ordinary editable document, and future catalog changes SHALL NOT silently mutate an existing alert.
-
-#### Scenario: Existing alert contains text layers
-- **WHEN** an operator applies a theme to an alert with a case-insensitive `Message` text layer
-- **THEN** the resulting theme message uses that layer's message
-- **AND** other visual layers are replaced
-
-#### Scenario: Existing alert has no text layers
-- **WHEN** an operator applies a theme to an alert with no text layers
-- **THEN** the resulting theme message uses the canonical starter message
-- **AND** later catalog changes do not alter the saved materialized document
-
-### Requirement: Theme Previews And Review Guidance Are Actionable
-The management UI SHALL render resolved read-only landscape and vertical previews for each chooser option by delegating template interpolation to the exported core `DefaultTemplateRenderer` with `escapeHtml: false`, and SHALL NOT implement a second placeholder formatter. It SHALL provide confirmation and post-application guidance that visual composition is replaced, nonvisual behavior is preserved, the alert is disabled, both profiles require review, and the draft must be saved.
-
-#### Scenario: Operator views a theme chooser
-- **WHEN** an operator opens starter-theme selection for a canonical event
-- **THEN** each option exposes readable landscape and vertical previews with resolved sample text rather than raw template placeholders
-- **AND** the controls remain keyboard-operable and accurately reflect the selected value
-
-#### Scenario: Theme is applied
-- **WHEN** the editor applies a starter theme
-- **THEN** it shows guidance to review both profiles and save the draft
-- **AND** the guidance does not imply that a catalog link will update the alert later
 
 ### Requirement: Alert Lists Use Canonical Event-Type Disclosures
 Alert Sets and focused-editor navigation SHALL organize alert rows into collapsible canonical event-type groups, SHALL retain multiple defaults per event, and SHALL nest each variation beneath its owning default without creating persisted event-group records.
@@ -848,11 +824,11 @@ Search and filters SHALL operate over complete event groups, SHALL preserve the 
 - **AND** it offers a Clear filters action without replacing the loaded set
 
 ### Requirement: Event-Grouped Mutations Preserve Existing Semantics And Focus
-Event grouping SHALL reuse current create, duplicate, reset, enable/disable, preview, test, and delete behavior and SHALL restore useful keyboard focus after a row is created, duplicated, or deleted.
+Event grouping SHALL reuse current empty-default creation, source-copy duplicate and variation, reset, enable/disable, preview, test, and delete behavior and SHALL restore useful keyboard focus after a row is created, duplicated, or deleted.
 
 #### Scenario: Alert is created from an event group
 - **WHEN** a user chooses Add alert from an event group and creation succeeds
-- **THEN** the existing starter-template workflow creates the default for that event
+- **THEN** the empty-alert workflow creates the default for that event
 - **AND** the owning group expands and focus moves to the new row
 
 #### Scenario: Alert is created from the global action

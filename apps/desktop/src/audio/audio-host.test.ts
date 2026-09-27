@@ -45,14 +45,36 @@ it("permits one automatic recreation, rejects stale replies and needs explicit r
   expect(ports).toHaveLength(3);
   await host.close();
 });
-it("expires the service lease after ten seconds and never recreates until new ownership", async () => {
+it("restores timed-out ownership from a later lease without changing mute state or eagerly recreating", async () => {
   vi.useFakeTimers();
   const { host, ports } = harness();
+  await host.setMuted(false);
   await host.listOutputDevices();
   await vi.advanceTimersByTimeAsync(9000); host.refreshLease();
   await vi.advanceTimersByTimeAsync(9999); expect(ports[0]!.destroy).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(1001); expect(ports[0]!.destroy).toHaveBeenCalledOnce();
   await expect(host.retry()).rejects.toThrow();
+  host.refreshLease();
+  expect(ports).toHaveLength(1);
+  await host.listOutputDevices();
+  expect(ports).toHaveLength(2);
+  expect(ports[1]!.sent[0]!.command).toEqual({ type: "initialize", muted: false });
+  await host.close();
+});
+
+it("preserves the renderer crash budget when a late lease restores ownership", async () => {
+  const { host, ports } = harness();
+  await host.listOutputDevices();
+  ports[0]!.callbacks.onDestroyed();
+  await host.listOutputDevices();
+  ports[1]!.callbacks.onDestroyed();
+  host.serviceLost();
+
+  host.refreshLease();
+
+  await expect(host.listOutputDevices()).rejects.toThrow();
+  await host.retry();
+  expect(ports).toHaveLength(3);
   await host.close();
 });
 

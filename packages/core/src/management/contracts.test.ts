@@ -3,7 +3,6 @@ import * as core from "../index.js";
 import type {
   AlertCreateInput,
   AlertCreateRequestInput,
-  AlertStarterThemeId,
   ChannelPointRewardSelection
 } from "../index.js";
 
@@ -154,7 +153,7 @@ describe("management target and provider contracts", () => {
 });
 
 describe("management alert contracts and rules", () => {
-  it("exports the bounded starter-theme catalog and defaults omitted create input", () => {
+  it("keeps the dormant starter-theme catalog while alert creation has no theme field", () => {
     const themeId = schema("alertStarterThemeIdSchema");
     const createAlert = schema("alertCreateInputSchema");
 
@@ -173,20 +172,17 @@ describe("management alert contracts and rules", () => {
     ]);
     expect(createAlert.parse({ eventType: "raid", name: "Raid" })).toEqual({
       eventType: "raid",
-      name: "Raid",
-      themeId: "clean-signal"
+      name: "Raid"
     });
     expect(createAlert.parse({ eventType: "raid", name: "Raid", themeId: "bold-pop" })).toEqual({
       eventType: "raid",
-      name: "Raid",
-      themeId: "bold-pop"
+      name: "Raid"
     });
     const unknownTheme = { eventType: "raid", name: "Raid", themeId: "unknown" };
-    expect(createAlert.safeParse(unknownTheme).success).toBe(false);
+    expect(createAlert.safeParse(unknownTheme).success).toBe(true);
     expect(unknownTheme).toEqual({ eventType: "raid", name: "Raid", themeId: "unknown" });
 
-    expectTypeOf<AlertCreateRequestInput["themeId"]>().toEqualTypeOf<AlertStarterThemeId | undefined>();
-    expectTypeOf<AlertCreateInput["themeId"]>().toEqualTypeOf<AlertStarterThemeId>();
+    expectTypeOf<AlertCreateRequestInput>().toEqualTypeOf<AlertCreateInput>();
   });
 
   it("accepts channel point reward selections only for channel point redemption alerts", () => {
@@ -219,8 +215,7 @@ describe("management alert contracts and rules", () => {
     });
     expect(createAlert.parse({ eventType: "channel_point_redemption", name: "Legacy catch-all" })).toEqual({
       eventType: "channel_point_redemption",
-      name: "Legacy catch-all",
-      themeId: "clean-signal"
+      name: "Legacy catch-all"
     });
 
     expect(createAlert.safeParse({

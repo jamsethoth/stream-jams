@@ -26,12 +26,16 @@ export class AudioHost implements DesktopAudioTransport {
     this.#owned = true;
     this.#muted = true;
     this.#failures = 0;
-    this.refreshLease();
-    this.#leaseTimer = setInterval(() => {
-      if (Date.now() - this.#leaseAt >= 10_000) this.serviceLost();
-    }, 1000);
+    this.#startLease();
   }
-  refreshLease(): void { if (this.#owned) this.#leaseAt = Date.now(); }
+  refreshLease(): void {
+    if (!this.#owned) {
+      this.#owned = true;
+      this.#startLease();
+      return;
+    }
+    this.#leaseAt = Date.now();
+  }
   serviceLost(): void {
     this.#owned = false;
     clearInterval(this.#leaseTimer);
@@ -102,6 +106,13 @@ export class AudioHost implements DesktopAudioTransport {
         fadeInMs: 0, fadeOutMs: 0, playbackDurationMs: 1000 }], destinations: [{ deviceId, routeIds: ["route-test"] }]
     }, assets: [{ assetId: "tone", mimeType: "audio/wav", bytes }], startDeadlineMs: Date.now() + 1000, deadlineMs: Date.now() + 1000 });
     if (result.failedRouteIds.length > 0) throw unavailable();
+  }
+  #startLease(): void {
+    this.#leaseAt = Date.now();
+    clearInterval(this.#leaseTimer);
+    this.#leaseTimer = setInterval(() => {
+      if (Date.now() - this.#leaseAt >= 10_000) this.serviceLost();
+    }, 1000);
   }
   async #ensure(): Promise<void> {
     if (!this.#owned || this.#failures > 1) throw unavailable();

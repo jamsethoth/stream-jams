@@ -68,6 +68,23 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
   const rewardSelection = props.document.kind === "default" && props.document.eventType === "channel_point_redemption"
     ? readChannelPointRewardSelection(props.document.conditions)
     : null;
+  const relativeChanceControl = (
+    <>
+      <label><span>Relative chance</span><input aria-describedby={relativeChanceError === null ? "alert-editor-relative-chance-help" : "alert-editor-relative-chance-error"} aria-invalid={relativeChanceError === null ? undefined : true} min="1" onChange={(event) => {
+        const value = event.currentTarget.value;
+        const weight = Number(value);
+        if (value.trim() === "" || !Number.isInteger(weight) || weight <= 0) {
+          setRelativeChanceDraft(value);
+          return;
+        }
+        setRelativeChanceDraft(null);
+        props.onChange((document) => ({ ...document, weight }));
+      }} step="1" type="number" value={relativeChanceDraft ?? props.document.weight} /></label>
+      {relativeChanceError === null
+        ? <p id="alert-editor-relative-chance-help">Used when this alert shares the first eligible priority group.</p>
+        : <p className="alert-editor-inspector__field-error" id="alert-editor-relative-chance-error" role="alert">{relativeChanceError}</p>}
+    </>
+  );
 
   useEffect(() => {
     props.onDraftError(eventDraftError);
@@ -113,7 +130,12 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
         onMoveGroup={props.onMovePriorityGroup}
         onMoveVariation={props.onMoveVariation}
       />
-      {props.document.kind === "variation" ? (
+      {props.document.kind === "default" ? (
+        <fieldset className="alert-editor-inspector__impact">
+          <legend>Affects this default only</legend>
+          {relativeChanceControl}
+        </fieldset>
+      ) : (
         <fieldset className="alert-editor-inspector__impact">
           <legend>Affects this variation only</legend>
           <ConditionList
@@ -124,19 +146,9 @@ export function AlertEventInspector(props: AlertEventInspectorProps) {
             onChange={(variantConditions) => props.onChange((document) => ({ ...document, variantConditions: [...variantConditions] }))}
             onDraftError={setVariationDraftError}
           />
-          <label><span>Relative chance</span><input aria-describedby={relativeChanceError === null ? undefined : "alert-editor-relative-chance-error"} aria-invalid={relativeChanceError === null ? undefined : true} min="1" onChange={(event) => {
-            const value = event.currentTarget.value;
-            const weight = Number(value);
-            if (value.trim() === "" || !Number.isInteger(weight) || weight <= 0) {
-              setRelativeChanceDraft(value);
-              return;
-            }
-            setRelativeChanceDraft(null);
-            props.onChange((document) => ({ ...document, weight }));
-          }} step="1" type="number" value={relativeChanceDraft ?? props.document.weight} /></label>
-          {relativeChanceError === null ? null : <p className="alert-editor-inspector__field-error" id="alert-editor-relative-chance-error" role="alert">{relativeChanceError}</p>}
+          {relativeChanceControl}
         </fieldset>
-      ) : null}
+      )}
       <h3>Event sample</h3>
       <label><span>Sample payload</span><select onChange={(event) => props.onSample(event.currentTarget.value)} value={props.sampleId ?? ""}>{props.document.samplePayloads.map((sample) => <option key={sample.id} value={sample.id}>{sample.label}</option>)}</select></label>
       <label><span>Session payload (JSON)</span><textarea aria-describedby={props.sampleError === null ? undefined : "alert-editor-sample-error"} aria-invalid={props.sampleError !== null} onChange={(event) => props.onSampleDraft(event.currentTarget.value)} rows={12} value={props.sampleDraft} /></label>

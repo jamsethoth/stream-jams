@@ -585,7 +585,7 @@ describe("management UI contract routes", () => {
       ["duplicate", "set-default", "Everyday copy"],
       ["activate", "set-default", true],
       ["review", "set-default"],
-      ["create-alert", "set-default", "cheer", "Big cheer", "clean-signal"],
+      ["create-alert", "set-default", "cheer", "Big cheer"],
       ["enable-alert", "alert-follow", true],
       ["create-variation", "alert-follow", "VIP follower"],
       ["duplicate-alert", "alert-follow"],
@@ -595,7 +595,7 @@ describe("management UI contract routes", () => {
     ]);
   });
 
-  it("passes an explicit starter theme through the parsed alert-create boundary", async () => {
+  it("strips a legacy starter theme at the parsed alert-create boundary", async () => {
     const { app, authHeaders, service } = await createApp();
 
     const response = await app.inject({
@@ -606,8 +606,9 @@ describe("management UI contract routes", () => {
     });
 
     expect(response.statusCode).toBe(201);
+    expect(service.alertCreateInputs).toEqual([{ eventType: "cheer", name: "Bold cheer" }]);
     expect(service.alertSetCommands).toEqual([
-      ["create-alert", "set-default", "cheer", "Bold cheer", "bold-pop"]
+      ["create-alert", "set-default", "cheer", "Bold cheer"]
     ]);
   });
 
@@ -632,7 +633,6 @@ describe("management UI contract routes", () => {
     expect(service.alertCreateInputs).toEqual([{
       eventType: "channel_point_redemption",
       name: "Shared rewards",
-      themeId: "clean-signal",
       channelPointRewardSelection: {
         mode: "selected",
         rewardIds: ["reward-second", "reward-first"]
@@ -659,14 +659,14 @@ describe("management UI contract routes", () => {
     expect(response.json()).toEqual({
       error: {
         code: "INVALID_ALERT_CREATE_INPUT",
-        message: "Choose a supported event type, reward selection, and starter theme, and enter an alert name between 1 and 120 characters."
+        message: "Choose a supported event type and reward selection, and enter an alert name between 1 and 120 characters."
       }
     });
     expect(service.alertCreateInputs).toEqual([]);
     expect(service.alertSetCommands).toEqual([]);
   });
 
-  it("rejects an unknown starter theme before calling the alert-create service", async () => {
+  it("ignores an unknown legacy starter theme", async () => {
     const { app, authHeaders, service } = await createApp();
 
     const response = await app.inject({
@@ -676,14 +676,11 @@ describe("management UI contract routes", () => {
       payload: { eventType: "cheer", name: "Unknown theme", themeId: "laser-grid" }
     });
 
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({
-      error: {
-        code: "INVALID_ALERT_CREATE_INPUT",
-        message: expect.stringContaining("starter theme")
-      }
-    });
-    expect(service.alertSetCommands).toEqual([]);
+    expect(response.statusCode).toBe(201);
+    expect(service.alertCreateInputs).toEqual([{ eventType: "cheer", name: "Unknown theme" }]);
+    expect(service.alertSetCommands).toEqual([
+      ["create-alert", "set-default", "cheer", "Unknown theme"]
+    ]);
   });
 
   it("rejects malformed alert-set command input with actionable client errors", async () => {
@@ -942,7 +939,7 @@ class StubManagementUiQueryService {
 
   async createAlert(setId: string, input: AlertCreateInput) {
     this.alertCreateInputs.push(structuredClone(input));
-    this.alertSetCommands.push(["create-alert", setId, input.eventType, input.name, input.themeId]);
+    this.alertSetCommands.push(["create-alert", setId, input.eventType, input.name]);
     return {
       ...alertInventoryRow(),
       id: "alert-cheer",

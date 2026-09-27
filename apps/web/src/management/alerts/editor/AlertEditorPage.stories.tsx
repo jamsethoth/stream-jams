@@ -385,7 +385,7 @@ export const DirectDraftReadinessActions: Story = {
     await expect(canvas.getByText("Unsaved")).toBeVisible();
     await expect(directReadinessSave).not.toHaveBeenCalled();
 
-    await userEvent.click(readiness.getByRole("button", { name: "Mark Landscape reviewed" }));
+    await userEvent.click(readiness.getByRole("button", { name: "Review and enable Landscape" }));
     await expect(eventTab).toHaveAttribute("aria-selected", "true");
     await expect(readiness.getByText(/Unsaved draft.*Configuration ready/u)).toBeVisible();
     await expect(directReadinessSave).not.toHaveBeenCalled();
@@ -414,29 +414,11 @@ export const DeviceOnlyConfiguration: Story = {
   }
 };
 
-export const StarterThemeConfirmation: Story = {
+export const NoStarterThemeControl: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Apply starter theme" }));
-    const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Apply starter theme?" }));
-    await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
-    await expect(dialog.getByRole("radio", { name: "Neon Terminal" })).toBeChecked();
-    await expect(dialog.getByRole("button", { name: "Apply theme" })).toBeVisible();
-  }
-};
-
-export const StarterThemeAppliedWarning: Story = {
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Apply starter theme" }));
-    const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Apply starter theme?" }));
-    await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
-    await userEvent.click(dialog.getByRole("button", { name: "Apply theme" }));
-    await expect(canvas.getByText("Starter theme applied.")).toBeVisible();
-    await expect(canvas.getByText("Alert disabled")).toBeVisible();
-    await expect(canvas.getAllByText("Needs review").length).toBeGreaterThanOrEqual(2);
+    await expect(canvas.queryByRole("button", { name: "Apply starter theme" })).not.toBeInTheDocument();
   }
 };
 
@@ -552,7 +534,7 @@ export const VerticalNeedsReview: Story = {
     const warning = (await canvas.findByText(/This generated layout is editable/u)).closest(".alert-editor-page__profile-warning");
     await expect(warning).not.toBeNull();
     const warningCanvas = within(warning as HTMLElement);
-    await userEvent.click(warningCanvas.getByRole("button", { name: "Mark reviewed" }));
+    await userEvent.click(warningCanvas.getByRole("button", { name: "Review and enable" }));
     await expect(canvas.getByText("Unsaved")).toBeVisible();
     await expect(canvas.queryByText(/This generated layout is editable/u)).not.toBeInTheDocument();
   }
@@ -582,20 +564,6 @@ export const HiddenGuidesWithTestBackground: Story = {
     await userEvent.selectOptions(canvas.getByRole("combobox", { name: "Canvas background" }), "test");
     await expect(canvas.getByLabelText("Test background color")).toBeVisible();
     await expect(canvas.getByText("Guides hidden")).toBeVisible();
-  }
-};
-
-export const StarterThemeProfileInspection: Story = {
-  play: async ({ canvasElement }) => {
-    const canvas = within(canvasElement);
-    await userEvent.click(await canvas.findByRole("tab", { name: "Alert" }));
-    await userEvent.click(canvas.getByRole("button", { name: "Apply starter theme" }));
-    const dialog = within(await within(globalThis.document.body).findByRole("dialog", { name: "Apply starter theme?" }));
-    await userEvent.click(dialog.getByRole("radio", { name: "Neon Terminal" }));
-    await userEvent.click(dialog.getByRole("button", { name: "Apply theme" }));
-    await userEvent.click(canvas.getByRole("button", { name: /^Vertical/u }));
-    await expect(canvas.getByRole("region", { name: "Vertical alert canvas" })).toBeVisible();
-    await expect(within(globalThis.document.body).queryByRole("dialog", { name: "Switch profiles with unsaved changes?" })).not.toBeInTheDocument();
   }
 };
 
@@ -868,6 +836,41 @@ export const VariationAuthoring: Story = {
     await expect(canvas.getByRole("spinbutton", { name: "Relative chance" })).toHaveValue(2);
     await expect(canvas.getByRole("region", { name: "Priority groups" })).toBeVisible();
     await expect(canvas.getByText("These rule controls are shared by the default and every variation for this event.")).toBeVisible();
+  }
+};
+
+export const DefaultInWeightedPool: Story = {
+  args: {
+    alertId: "alert-raid",
+    managementApi: variationStoryApi({
+      ...editorDocument(),
+      id: "alert-raid",
+      eventType: "raid",
+      name: "Bean Boozle 1",
+      priority: 0,
+      samplePayloads: [{
+        id: "normal",
+        label: "Normal raid",
+        kind: "built-in",
+        payload: { userName: "Raider", raidViewers: 25, amount: 25 }
+      }]
+    }, [
+      variationCandidate("variant-bean-2", "Bean Boozle 2", { priority: 0, weight: 2 }),
+      variationCandidate("variant-bean-3", "Bean Boozle 3", { priority: 0, weight: 5 }),
+      variationCandidate("variant-bean-4", "Bean Boozle 4", { priority: 0, weight: 1 })
+    ])
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("tab", { name: "Event" }));
+    const defaultControls = canvas.getByRole("group", { name: "Affects this default only" });
+    const relativeChance = within(defaultControls).getByRole("spinbutton", { name: "Relative chance" });
+    await expect(relativeChance).toHaveValue(1);
+    await userEvent.clear(relativeChance);
+    await userEvent.type(relativeChance, "2");
+    await expect(canvas.getByRole("region", { name: "Sample selection explanation" })).toHaveTextContent(
+      "2/10 weight · 20% relative chance"
+    );
   }
 };
 

@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  compatibilityAlertTextBoxStyle,
+  compatibilityAlertTextStyle,
   createScreenEffectDocument,
   moduleOverlayWebSocketPath,
   type AlertEditorDocument,
@@ -41,6 +43,28 @@ import { createRuntimeAppComposition, type RuntimeAppComposition } from "./runti
 
 const temporaryDirectories: string[] = [];
 const runtimeCompositions: RuntimeAppComposition[] = [];
+const testLayerAnimation = {
+  mode: "preset" as const,
+  entrance: "none",
+  exit: "none",
+  durationMs: 0,
+  delayMs: 0,
+  easing: "linear"
+};
+
+function testTextLayer(id: string, template: string) {
+  return {
+    id,
+    name: "Message",
+    type: "text" as const,
+    visible: true,
+    order: 0,
+    animation: testLayerAnimation,
+    template,
+    textStyle: compatibilityAlertTextStyle,
+    boxStyle: compatibilityAlertTextBoxStyle
+  };
+}
 
 afterEach(async () => {
   await Promise.all(runtimeCompositions.splice(0).map((composition) => composition.close()));
@@ -1272,12 +1296,12 @@ describe("runtime app composition smoke", () => {
       url: `/management/alerts/${followRule.id}/editor`,
       headers: authHeaders
     })).json() as AlertEditorDocument;
-    const primaryLayer = document.layers.find((layer) => layer.type === "text")!;
+    const primaryLayer = testTextLayer(`${followRule.id}-text`, "Primary {actor.displayName}");
     const editedDocument: AlertEditorDocument = {
       ...document,
       enabled: true,
       layers: [
-        { ...primaryLayer, name: "Primary", order: 0, template: "Primary {actor.displayName}" },
+        { ...primaryLayer, name: "Primary" },
         { ...primaryLayer, id: "layer-secondary", name: "Secondary", order: 1, template: "Secondary {actor.displayName}" }
       ],
       targetProfiles: document.targetProfiles.map((profile) =>
@@ -1469,7 +1493,7 @@ describe("runtime app composition smoke", () => {
           enabled: true,
           providerId: "speakerbot",
           order: document.layers.length,
-          animation: document.layers[0]!.animation,
+          animation: testLayerAnimation,
           template: "Welcome badword"
         }
       ],

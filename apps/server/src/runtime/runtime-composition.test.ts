@@ -176,7 +176,7 @@ it("serves audio routes over loopback, observes global mute, and retains binding
     const createdAlert = await fetch(`${address}/management/alert-sets/${set.id}/alerts`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ eventType: "follow", name: "Audio test", themeId: "clean-signal" })
+      body: JSON.stringify({ eventType: "follow", name: "Audio test" })
     });
     expect(createdAlert.status).toBe(201);
     const alert = await createdAlert.json() as { readonly id: string };

@@ -34,7 +34,7 @@ import {
 } from "@stream-jams/core";
 import type { AlertAggregateMutationStore } from "./alert-aggregate-mutation-store.js";
 import {
-  createAlertEditorDocumentFromRule,
+  createEmptyAlertEditorDocumentFromRule,
   type AlertEditorDocumentRepository
 } from "./alert-editor-service.js";
 
@@ -185,7 +185,7 @@ export class AlertSetManagementService {
       missingRuleIds: [created.id],
       saveRules: [created],
       saveRuleMetadata: [metadata],
-      saveDocuments: [createAlertEditorDocumentFromRule(created, 0, metadata, input.themeId)]
+      saveDocuments: [createEmptyAlertEditorDocumentFromRule(created, 0, metadata)]
     });
     return (await this.#toInventoryRows(setId, created))[0]!;
   }
@@ -339,7 +339,7 @@ export class AlertSetManagementService {
         enabled: resolved.rule.variants.slice(1).some((variant) => variant.enabled)
       });
       updatedMetadata = { ...metadata, reviewState: "needs-review" };
-      document = createAlertEditorDocumentFromRule(updatedRule, 0, {
+      document = createEmptyAlertEditorDocumentFromRule(updatedRule, 0, {
         ...metadata,
         reviewState: "needs-review"
       });
@@ -550,23 +550,34 @@ export class AlertSetManagementService {
       return;
     }
 
-    const starter = await this.#alertService.createCollection({ name: "Default", enabled: true });
-    await this.#metadataRepository.saveSet({
+    const starter = alertCollectionSchema.parse({
+      id: this.#generateId("collection"),
+      name: "Default",
+      enabled: true
+    });
+    const setMetadata = {
       ...defaultSetMetadata(starter.id),
       starter: true,
       starterReviewState: "pending",
       landscapeReviewState: "needs-review",
       verticalReviewState: "needs-review"
-    });
-    for (const definition of starterAlerts) {
-      const rule = await this.#alertService.createRule(starterRuleInput(starter.id, definition));
-      await this.#metadataRepository.saveRule({
+    } as const;
+    const rules = starterAlerts.map((definition) => this.#materializeRule(starterRuleInput(starter.id, definition)));
+    const ruleMetadata = rules.map((rule) => ({
         ruleId: rule.id,
-        providerKind: "twitch",
-        reviewState: "needs-review",
-        targetProfileIds: ["landscape", "vertical"]
-      });
-    }
+        providerKind: "twitch" as const,
+        reviewState: "needs-review" as const,
+        targetProfileIds: ["landscape", "vertical"] as const
+      }));
+    this.#mutationStore.commit({
+      missingCollectionIds: [starter.id],
+      missingRuleIds: rules.map((rule) => rule.id),
+      saveCollections: [starter],
+      saveSetMetadata: [setMetadata],
+      saveRules: rules,
+      saveRuleMetadata: ruleMetadata,
+      saveDocuments: rules.map((rule, index) => createEmptyAlertEditorDocumentFromRule(rule, 0, ruleMetadata[index]!))
+    });
   }
 
   #toOverview(
