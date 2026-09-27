@@ -5,7 +5,7 @@ import {
   resolveAudioDestinations, deviceAudioBatchSchema, findExactUniqueLabelMatch,
   type AudioDeviceHost, type AudioOutputRoute, type AudioOutputRouteRepository,
   type ResolvedAlertAudio, type DeviceAudioBatch, type AutomaticBindingState,
-  type AudioDeviceCapability
+  type AudioDeviceCapability, type Logger
 } from "@stream-jams/core";
 import { AudioOutputError } from "./audio-output-error.js";
 
@@ -16,10 +16,14 @@ interface AudioOutputServiceDependencies {
   readonly generateId?: () => string;
   readonly runMutation: <T>(work: () => T) => T;
   readonly runTest: <T>(work: () => Promise<T>) => Promise<T>;
+  readonly logger?: Logger;
+  readonly generateReferenceId?: () => string;
 }
 
 export class AudioOutputService {
   #testing = false;
+  #lastDeviceDiagnosticSignature: string | null = null;
+  #lastRouteDiagnosticSignature: string | null = null;
   readonly #automaticBindingStates = new Map<string, AutomaticBindingState>();
   constructor(private readonly dependencies: AudioOutputServiceDependencies) {}
 
@@ -60,10 +64,29 @@ export class AudioOutputService {
       const devices = (await this.dependencies.host.listOutputDevices())
         .filter(device => device.deviceId !== "default" && device.deviceId !== "communications")
         .map(device => audioOutputDeviceSchema.parse(device));
-      return audioDeviceCapabilitySchema.parse({
+      const capability = audioDeviceCapabilitySchema.parse({
         available: true, devices: [...new Map(devices.map(device => [device.deviceId, device])).values()], reason: null, nextStep: null
       });
-    } catch {
+      if (capability.devices.length === 0) {
+        await this.#logDeviceTransition("none-detected", "warn", "No explicit audio output devices were detected.",
+          "audio-output.devices.none-detected", {
+            deviceCount: 0,
+            nextStep: "Reconnect the output device, then retry detection from Audio outputs."
+          });
+      } else {
+        if (this.#lastDeviceDiagnosticSignature !== null) {
+          await this.#log("info", "Audio output device detection recovered.", "audio-output.devices.recovered", {
+            deviceCount: capability.devices.length,
+            nextStep: "Test an audio output to confirm playback on the restored device."
+          });
+        }
+        this.#lastDeviceDiagnosticSignature = null;
+      }
+      return capability;
+    } catch (error) {
+      const nextStep = "Reconnect the output device and retry. Restart the desktop app if device discovery remains unavailable.";
+      await this.#logDeviceTransition(`enumeration-failed:${errorSummary(error)}`, "warn", "Audio output device detection failed.",
+        "audio-output.devices.enumeration-failed", { ...errorMetadata(error), nextStep });
       return audioDeviceCapabilitySchema.parse({ available: false, devices: [], reason: "enumeration-failed", nextStep: "Reconnect the output device and retry. Restart the desktop app if device discovery remains unavailable." });
     }
   }
@@ -76,9 +99,7 @@ export class AudioOutputService {
       catch { /* Preserve the saved route as authoritative when persistence fails. */ }
     }
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
-    return audioOutputStatusSchema.parse({
-      capability, muted: this.dependencies.isMuted(),
-      routes: this.listRoutes().map(route => {
+    const routes = this.listRoutes().map(route => {
         const state = route.deviceId === null ? "unbound" : !capability.available ? "unavailable" : availableIds.has(route.deviceId) ? "ready" : "missing-device";
         const automaticBindingState = state === "ready"
           ? this.#automaticBindingStates.get(route.id) ?? "not-needed"
@@ -88,8 +109,30 @@ export class AudioOutputService {
               : "disabled"
             : "not-needed";
         return { route, state, automaticBindingState };
-      })
-    });
+      });
+    const missing = routes.filter(route => route.state === "missing-device");
+    if (missing.length === 0) {
+      this.#lastRouteDiagnosticSignature = null;
+    } else {
+      const counts = {
+        ambiguousMatchCount: missing.filter(route => route.automaticBindingState === "ambiguous").length,
+        autoFollowDisabledCount: missing.filter(route => route.automaticBindingState === "disabled").length,
+        noMatchCount: missing.filter(route => route.automaticBindingState === "no-match").length
+      };
+      const signature = `${missing.length}:${counts.ambiguousMatchCount}:${counts.autoFollowDisabledCount}:${counts.noMatchCount}:${capability.devices.length}`;
+      if (this.#lastRouteDiagnosticSignature !== signature) {
+        this.#lastRouteDiagnosticSignature = signature;
+        await this.#log("warn", "Saved audio output bindings are unavailable.", "audio-output.routes.missing-device", {
+          ambiguousMatchCount: counts.ambiguousMatchCount,
+          autoFollowDisabledCount: counts.autoFollowDisabledCount,
+          detectedDeviceCount: capability.devices.length,
+          missingRouteCount: missing.length,
+          noMatchCount: counts.noMatchCount,
+          nextStep: "Reconnect the saved device or bind each unavailable route to a detected output."
+        });
+      }
+    }
+    return audioOutputStatusSchema.parse({ capability, muted: this.dependencies.isMuted(), routes });
   }
 
   async reconcileBindings(): Promise<void> {
@@ -194,7 +237,13 @@ export class AudioOutputService {
       this.#testing = true;
       try {
         await this.dependencies.host.retry();
-      } catch {
+        await this.#log("info", "Desktop audio recovery completed.", "audio-output.retry.completed", {
+          nextStep: "Refresh Audio outputs to confirm the expected devices are available."
+        });
+      } catch (error) {
+        await this.#log("error", "Desktop audio recovery failed.", "audio-output.retry.failed", {
+          ...errorMetadata(error), nextStep: "Restart the desktop app if retry continues to fail."
+        });
         throw new AudioOutputError(503, "AUDIO_RETRY_FAILED", "The desktop audio player could not be restarted.", "Restart the desktop app if retry continues to fail.");
       } finally {
         this.#testing = false;
@@ -255,6 +304,46 @@ export class AudioOutputService {
       if (changed) this.#automaticBindingStates.set(snapshot.id, "rebound");
     }
   }
+
+  async #logDeviceTransition(
+    signature: string,
+    level: "warn" | "error",
+    message: string,
+    source: string,
+    metadata: Record<string, string | number | boolean | null>
+  ): Promise<void> {
+    if (this.#lastDeviceDiagnosticSignature === signature) return;
+    this.#lastDeviceDiagnosticSignature = signature;
+    await this.#log(level, message, source, metadata);
+  }
+
+  async #log(
+    level: "info" | "warn" | "error",
+    message: string,
+    source: string,
+    metadata: Record<string, string | number | boolean | null>
+  ): Promise<void> {
+    const logger = this.dependencies.logger;
+    if (logger === undefined) return;
+    await logger[level](message, {
+      module: "audio-output",
+      source,
+      correlationId: (this.dependencies.generateReferenceId ?? randomUUID)(),
+      processingId: null,
+      metadata
+    }).catch(() => undefined);
+  }
+}
+
+function errorMetadata(error: unknown): { errorName: string; errorMessage: string } {
+  return error instanceof Error
+    ? { errorName: error.name, errorMessage: error.message }
+    : { errorName: "UnknownError", errorMessage: "The native operation failed without an Error object." };
+}
+
+function errorSummary(error: unknown): string {
+  const details = errorMetadata(error);
+  return `${details.errorName}:${details.errorMessage}`;
 }
 
 function invalidInput(): AudioOutputError {

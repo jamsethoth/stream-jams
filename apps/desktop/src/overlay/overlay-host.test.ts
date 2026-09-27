@@ -23,7 +23,9 @@ function harness(load = async () => {}, missing = false) {
       port.sent.push(request);
       if (port.auto && request.command.type !== "start") reply(port, request, request.command.type === "prepare" ? { type: "ready", key: request.command.batch.key } : { type: "ok" });
     } };
-  });
+  }, () => ({ available: true, displays: [
+    { id: "one", label: "Main monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }
+  ] }));
   host.beginOwnership();
   return { host, ports };
 }
@@ -72,11 +74,30 @@ it("destroys synchronously on service loss and settles every active module", asy
   host.serviceLost(); expect(ports[0]!.destroy).toHaveBeenCalledOnce(); await Promise.all([first, second]);
   expect(vi.getTimerCount()).toBe(0);
 });
-it("expires ownership at 10000ms and has no timers after close", async () => {
-  const { host } = harness(); await host.configure({ ...config, layers: [] });
+it("restores timed-out ownership from a later lease without replaying or losing configuration", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [] });
   await vi.advanceTimersByTimeAsync(9999); await host.retry();
   await vi.advanceTimersByTimeAsync(1); await expect(host.retry()).rejects.toThrow();
+  host.refreshLease();
+  expect(ports).toHaveLength(1);
+  expect(await host.getStatus()).toMatchObject({ state: "ready" });
+  expect(await host.prepare({ ...batch(), timing: { startsAtEpochMs: 10_000, endsAtEpochMs: 11_000 } })).toBe("ready");
+  expect(ports).toHaveLength(2);
   await host.close(); await host.close(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("preserves the overlay crash budget when a late lease restores ownership", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [] });
+  await host.prepare(batch()); ports[0]!.callbacks.onDestroyed();
+  await host.prepare(batch()); ports[1]!.callbacks.onDestroyed();
+  host.serviceLost();
+
+  host.refreshLease();
+
+  expect(await host.getStatus()).toMatchObject({ state: "failed" });
+  await host.retry();
+  expect(ports).toHaveLength(3);
+  await host.close();
 });
 it("rejects duplicates and expired starts and applies opacity without replay", async () => {
   const { host, ports } = harness(); await host.configure({ ...config, layers: [] });

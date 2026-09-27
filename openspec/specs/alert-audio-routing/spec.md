@@ -133,6 +133,12 @@ The system SHALL fail closed for unavailable, disconnected or rejected device si
 - **WHEN** the server exits, its IPC link closes, or its 10-second ownership lease expires
 - **THEN** the desktop host stops local audio rather than continuing unsupervised playback
 
+#### Scenario: Current service resumes its ownership lease
+- **WHEN** the active service worker sends a valid lease after ownership expired without being replaced or entering shutdown
+- **THEN** the desktop host restores audio-device availability without requiring an app restart
+- **AND** it preserves mute state and the renderer crash budget, recreates the renderer only when new work requires it, and does not replay interrupted audio
+- **AND** leases from an old worker generation or during shutdown cannot restore ownership
+
 ### Requirement: Routing Does Not Change TTS Or Other Video Modules
 The routing controls SHALL apply to explicit alert audio layers and deliberately enabled video soundtracks. Visual video elements SHALL remain internally muted in preview, test and live output; selected soundtracks SHALL use the routed media-audio path. Browser-speech and Speaker.bot routing SHALL remain unchanged. The separate video-shoutout module SHALL NOT be altered by this policy.
 

@@ -448,7 +448,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     ...(audioDeviceHost === undefined ? {} : { host: audioDeviceHost }),
     isMuted: () => playbackQueue.getSnapshot().muted,
     runMutation: work => maintenanceGate.runConfigurationMutation(() => runInTransaction(database.connection, work)),
-    runTest: work => maintenanceGate.runIntake(work)
+    runTest: work => maintenanceGate.runIntake(work),
+    logger: runtimeLogger,
+    generateReferenceId: generateRuntimeReferenceId
   });
   if (audioDeviceHost !== undefined) {
     try {
@@ -1082,7 +1084,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     } }),
     moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
     changed: async surface => { if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface); },
-    runMutation: work => maintenanceGate.runIntake(work)
+    runMutation: work => maintenanceGate.runIntake(work),
+    logger: runtimeLogger,
+    generateReferenceId: generateRuntimeReferenceId
   });
   if (options.desktopOverlayTransport !== undefined) {
     try {

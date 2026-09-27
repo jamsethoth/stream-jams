@@ -38,6 +38,8 @@ it("routes overlay RPC separately, ignores stale leases, and clears visuals befo
   await vi.waitFor(() => expect(worker.messages.at(-1)).toEqual({ type: "overlay-response", generation, requestId, result: { type: "ok" } }));
   const stop = supervisor.stop();
   expect(overlay.serviceLost).toHaveBeenCalledOnce();
+  worker.emit("message", { type: "overlay-lease", generation, requestId: null });
+  expect(overlay.refreshLease).toHaveBeenCalledOnce();
   worker.emit("message", { type: "overlay-request", generation, requestId, command: { type: "retry" } });
   await vi.waitFor(() => expect(worker.messages.at(-1)).toMatchObject({ type: "overlay-response", result: null }));
   expect(overlay.handle).toHaveBeenCalledOnce();
@@ -61,6 +63,24 @@ it("routes only owned validated audio RPC and tears audio down with service loss
   worker.emit("exit", 1);
   expect(audio.serviceLost).toHaveBeenCalled();
   expect(supervisor.state).toBe("failed");
+});
+
+it("ignores audio ownership leases while the worker is stopping", async () => {
+  const worker = new Worker();
+  const audio = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(async () => ({ type: "ok" as const })) };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, audio);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false }); await ready;
+  worker.emit("message", { type: "audio-lease", generation, requestId: null });
+  expect(audio.refreshLease).toHaveBeenCalledOnce();
+
+  const stop = supervisor.stop();
+  worker.emit("message", { type: "audio-lease", generation, requestId: null });
+
+  expect(audio.refreshLease).toHaveBeenCalledOnce();
+  worker.emit("exit", 0);
+  await stop;
 });
 
 it("starts one worker, accepts only its generation, and applies persisted mute state", async () => {

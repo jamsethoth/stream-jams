@@ -50,10 +50,16 @@ export class OverlayHost implements DesktopOverlayTransport {
     this.#owned = true;
     this.#failures = 0;
     this.#config = { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] };
-    this.refreshLease();
-    this.#leaseTimer = setInterval(() => { if (Date.now() - this.#leaseAt >= 10_000) this.serviceLost(); }, 1000);
+    this.#startLease();
   }
-  refreshLease(): void { if (this.#owned) this.#leaseAt = Date.now(); }
+  refreshLease(): void {
+    if (!this.#owned) {
+      this.#owned = true;
+      this.#startLease();
+      return;
+    }
+    this.#leaseAt = Date.now();
+  }
   serviceLost(): void {
     this.#owned = false;
     clearInterval(this.#leaseTimer);
@@ -146,6 +152,12 @@ export class OverlayHost implements DesktopOverlayTransport {
     await this.#ensure();
   }
   async close(): Promise<void> { this.serviceLost(); }
+
+  #startLease(): void {
+    this.#leaseAt = Date.now();
+    clearInterval(this.#leaseTimer);
+    this.#leaseTimer = setInterval(() => { if (Date.now() - this.#leaseAt >= 10_000) this.serviceLost(); }, 1000);
+  }
 
   async #ensure(): Promise<void> {
     if (!this.#owned || !this.#config.enabled || this.#config.displayId === null || this.#failures > 1) throw unavailable();

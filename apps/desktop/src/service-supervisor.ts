@@ -115,7 +115,10 @@ export class ServiceSupervisor {
     const parsed = workerMessageSchema.safeParse(candidate);
     if (!parsed.success) { this.#fail("The service sent an invalid desktop message. Retry or quit."); return; }
     const message = parsed.data;
-    if (message.type === "overlay-lease") { this.overlay?.refreshLease(); return; }
+    if (message.type === "overlay-lease") {
+      if (this.state === "running" || this.state === "starting") this.overlay?.refreshLease();
+      return;
+    }
     if (message.type === "overlay-request") {
       const worker = this.#worker;
       const permitted = this.state === "running" || this.state === "starting" ||
@@ -129,7 +132,10 @@ export class ServiceSupervisor {
       });
       return;
     }
-    if (message.type === "audio-lease") { this.audio?.refreshLease(); return; }
+    if (message.type === "audio-lease") {
+      if (this.state === "running" || this.state === "starting") this.audio?.refreshLease();
+      return;
+    }
     if (message.type === "audio-request") {
       const worker = this.#worker;
       const permitted = this.state === "running" || this.state === "starting" ||
