@@ -158,12 +158,15 @@ function OverlayInstructionLayer({
   const endsAt = instruction.timing?.endsAtEpochMs;
   const [timingActive, setTimingActive] = useState(() => startsAt === undefined || (Date.now() >= startsAt && Date.now() < endsAt!));
   const [videoReady, setVideoReady] = useState(startsAt === undefined);
+  const [videoEnded, setVideoEnded] = useState(false);
   const initialOffset = useRef(startsAt === undefined ? 0 : Math.max(0, Date.now() - startsAt));
   const audioElementRef = useRef<HTMLMediaElement | null>(null);
   const audioPreparationRef = useRef<AbortController | null>(null);
   const speechConsideredRef = useRef(false);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [audioStarted, setAudioStarted] = useState(instruction.audio === null && !presentationInvalid);
+  const visualAssetId = instruction.visual?.assetId;
+  const visualLoop = instruction.visual?.mediaType === "video" && instruction.visual.loop === true;
   const reportFailure = useCallback((message: string) => {
     if (completionReportedRef.current) {
       return;
@@ -176,6 +179,10 @@ function OverlayInstructionLayer({
       message
     });
   }, [instruction.id, onPlaybackEvent]);
+
+  useEffect(() => {
+    setVideoEnded(false);
+  }, [instruction.id, visualAssetId, visualLoop, startsAt, endsAt]);
 
   useEffect(() => {
     if (startsAt === undefined || endsAt === undefined) return;
@@ -359,10 +366,11 @@ function OverlayInstructionLayer({
           ref={videoElementRef}
           data-testid={`overlay-video-${instruction.id}`}
           muted={instruction.moduleId === "alerts" || muted}
+          onEnded={() => { if (!visualLoop) setVideoEnded(true); }}
           onError={() => reportFailure("Video playback failed")}
           src={resolveAssetUrl(instruction.visual.assetId)}
           style={{ ...elementStyle(instruction.visual.layout, instruction.animation, instruction.durationMs, initialOffset.current), objectFit: "contain",
-            ...(videoReady ? {} : { visibility: "hidden" }) }}
+            ...(videoReady && !videoEnded ? {} : { visibility: "hidden" }) }}
         />
       ) : (
         <img
