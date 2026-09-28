@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { workerMessageSchema, type WorkerRequest } from "./desktop-ipc.js";
-import type { AudioTransportCommand, AudioTransportResult, DesktopVisualCommand, DesktopVisualReply, SerializedException } from "@stream-jams/core";
+import { overlayPlaybackFailureSchema, type AudioTransportCommand, type AudioTransportResult, type DesktopVisualCommand, type DesktopVisualReply, type OverlayPlaybackFailure, type SerializedException } from "@stream-jams/core";
 import type { DesktopDiagnosticInput, DesktopDiagnosticReport } from "./desktop-diagnostics.js";
 
 export interface SupervisedOverlayHost {
@@ -156,12 +156,18 @@ export class ServiceSupervisor {
       const permitted = this.state === "running" || this.state === "starting" ||
         (this.state === "stopping" && ["stop", "close"].includes(message.command.type));
       const result = permitted && this.overlay !== undefined ? this.overlay.handle(message.command) : Promise.reject(new Error("Overlay unavailable"));
-      void result.catch((error: unknown) => {
-        this.#record("desktop.overlay.command-failed", "The desktop overlay command failed.", error);
-        return null;
+      void result.then(reply => ({ result: reply })).catch((error: unknown) => {
+        const failure = findOverlayFailure(error);
+        this.#record(
+          "desktop.overlay.command-failed",
+          failure?.message ?? "The desktop overlay command failed.",
+          failure?.exception ?? error,
+          failure?.referenceId
+        );
+        return { result: null, ...(failure === undefined ? {} : { failure }) };
       }).then(reply => {
         if (worker !== null && this.#worker === worker && generation === this.#generation) {
-          try { this.#send({ type: "overlay-response", generation, requestId: message.requestId, result: reply }); }
+          try { this.#send({ type: "overlay-response", generation, requestId: message.requestId, ...reply }); }
           catch (error) { this.#fail("The local overlay connection was lost. Retry or quit.", error); }
         }
       });
@@ -283,4 +289,16 @@ function remoteWorkerError(message: string, referenceId: string, exception: Seri
   error.name = "ServiceWorkerError";
   Object.defineProperty(error, "referenceId", { value: referenceId, enumerable: true });
   return error;
+}
+
+function findOverlayFailure(value: unknown): OverlayPlaybackFailure | undefined {
+  const seen = new Set<unknown>();
+  let candidate: unknown = value;
+  while (candidate !== null && candidate !== undefined && !seen.has(candidate)) {
+    seen.add(candidate);
+    const parsed = overlayPlaybackFailureSchema.safeParse(candidate);
+    if (parsed.success) return parsed.data;
+    candidate = typeof candidate === "object" && "cause" in candidate ? candidate.cause : undefined;
+  }
+  return undefined;
 }

@@ -87,8 +87,8 @@ interface HelloMessage {
 export class StreamerBotProtocolError extends Error {
   readonly code = "STREAMERBOT_PROTOCOL_ERROR";
 
-  constructor(message = "Streamer.bot protocol request failed") {
-    super(message);
+  constructor(message = "Streamer.bot protocol request failed", options?: ErrorOptions) {
+    super(message, options);
     this.name = "StreamerBotProtocolError";
   }
 }
@@ -337,7 +337,7 @@ export class StreamerBotClient {
         message: null
       });
     } catch (error) {
-      this.#rejectPending(id, error instanceof Error ? error : new StreamerBotProtocolError());
+      this.#rejectPending(id, error instanceof Error ? error : new StreamerBotProtocolError(undefined, { cause: error }));
       this.#setError("Streamer.bot response was invalid");
     }
   }

@@ -328,8 +328,13 @@ export class TwitchOAuthService {
         this.#restoreSecret(accessTokenRef, previousAccessToken),
         this.#restoreSecret(refreshTokenRef, previousRefreshToken)
       ]);
-      if (rollback.some((result) => result.status === "rejected")) {
-        throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+      const rollbackErrors = rollback
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => result.reason);
+      if (rollbackErrors.length > 0) {
+        throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage, {
+          cause: new AggregateError(rollbackErrors, "Twitch token rollback failed", { cause: error })
+        });
       }
       throw error;
     }

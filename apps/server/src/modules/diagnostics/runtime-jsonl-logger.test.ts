@@ -107,6 +107,35 @@ describe("RuntimeJsonlLogger", () => {
     expect(JSON.stringify(entries)).not.toContain("ovl_secretKey");
   });
 
+  it("persists the primary cause and bounded secondary failures from AggregateError", async () => {
+    const logDirectory = await createTemporaryDirectory();
+    const logger = new RuntimeJsonlLogger({
+      logDirectory,
+      settings: defaultLogSettings,
+      redactor: createRedactor(),
+      now: () => new Date("2026-05-31T02:15:30.000Z")
+    });
+    const primary = new Error("Import failed for token=oauth-secret");
+    const cleanup = new Error("Rollback failed for password=hunter2");
+
+    await logger.error(
+      "Import and rollback failed",
+      baseContext,
+      new AggregateError([cleanup], "Import and rollback failed", { cause: primary })
+    );
+
+    const entries = await readJsonl(join(logDirectory, "runtime-2026053102.jsonl"));
+    expect(entries[0]).toMatchObject({
+      exception: {
+        type: "AggregateError",
+        cause: { message: "Import failed for token=[REDACTED]" },
+        secondary: [{ message: "Rollback failed for password=[REDACTED]" }]
+      }
+    });
+    expect(JSON.stringify(entries)).not.toContain("oauth-secret");
+    expect(JSON.stringify(entries)).not.toContain("hunter2");
+  });
+
   it("normalizes historical JSONL entries without an exception field", async () => {
     const logDirectory = await createTemporaryDirectory();
     await writeFile(join(logDirectory, "runtime-2026053102.jsonl"), `${JSON.stringify({

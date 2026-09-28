@@ -138,6 +138,9 @@ function sanitizeException(exception: SerializedException): SerializedException 
     stack: exception.stack === null ? null : sanitizeText(exception.stack),
     code: exception.code === null ? null : sanitizeText(exception.code),
     cause: exception.cause === null ? null : sanitizeException(exception.cause),
+    ...(exception.secondary === undefined ? {} : {
+      secondary: exception.secondary.slice(0, 4).map(sanitizeException)
+    }),
     thrownValue: exception.thrownValue === null ? null : sanitizeText(exception.thrownValue)
   };
 }

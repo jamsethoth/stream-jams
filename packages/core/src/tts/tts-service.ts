@@ -57,12 +57,10 @@ export class UnsupportedTtsOptionError extends Error {
 
 export class TtsProviderFailureError extends Error {
   readonly code = "TTS_PROVIDER_FAILURE";
-  readonly cause: unknown;
 
-  constructor(readonly providerId: string, cause: unknown) {
-    super(`TTS provider "${providerId}" failed to create a playback instruction`);
+  constructor(readonly providerId: string, options?: ErrorOptions) {
+    super(`TTS provider "${providerId}" failed to create a playback instruction`, options);
     this.name = "TtsProviderFailureError";
-    this.cause = cause;
   }
 }
 
@@ -134,7 +132,7 @@ export class DefaultTtsService implements TtsService {
         moderationActions: moderationResult.actions
       };
     } catch (error) {
-      throw new TtsProviderFailureError(provider.id, error);
+      throw new TtsProviderFailureError(provider.id, { cause: error });
     }
   }
 }

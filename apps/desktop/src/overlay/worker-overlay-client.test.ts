@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { WorkerOverlayClient } from "./worker-overlay-client.js";
 import type { OverlayWorkerMessage } from "./overlay-ipc.js";
+import { serializeException } from "@stream-jams/core";
 
 afterEach(() => vi.useRealTimers());
 const key = { surfaceId: "desktop:primary" as const, moduleId: "alerts", occurrenceId: "one", generation: 1 };
@@ -16,6 +17,33 @@ it("requests status and rejects wrong result types or a lost host safely", async
   client.receive({ type: "overlay-response", generation: 3, requestId: messages[1]!.requestId, result: { type: "ok" } }); await rejection;
   const lost = client.getStatus(); const lostRejection = expect(lost).rejects.toThrow(/unavailable/i); client.dispose(); await lostRejection;
   await expect(client.getStatus()).rejects.toThrow(/unavailable/i); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("reconstructs a renderer failure with its original reference and exception", async () => {
+  vi.useFakeTimers();
+  const messages: OverlayWorkerMessage[] = [];
+  const client = new WorkerOverlayClient(3, message => messages.push(message));
+  const request = client.configure(config).catch((error: unknown) => error as Error & { referenceId?: string; stage?: string });
+  const query = messages[0]!;
+  const exception = serializeException(new Error("video decode failed", { cause: new Error("invalid frame") }));
+
+  client.receive({
+    type: "overlay-response",
+    generation: 3,
+    requestId: query.requestId,
+    result: null,
+    failure: { referenceId: "err_overlay_decode", stage: "decode", message: "The alert video could not be decoded.", exception }
+  });
+
+  const error = await request;
+  expect(error).toMatchObject({
+    name: "DesktopOverlayPlaybackError",
+    message: "The alert video could not be decoded.",
+    referenceId: "err_overlay_decode",
+    stage: "decode",
+    cause: exception
+  });
+  client.dispose();
 });
 it("ignores malformed status authority and completes only with the validated response", async () => {
   vi.useFakeTimers(); const messages: OverlayWorkerMessage[] = []; const client = new WorkerOverlayClient(3, message => messages.push(message));

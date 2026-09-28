@@ -51,6 +51,40 @@ it("routes overlay RPC separately, ignores stale leases, and clears visuals befo
   await stop;
 });
 
+it("preserves renderer failure provenance across the main-to-worker overlay response", async () => {
+  const worker = new Worker();
+  const diagnose = vi.fn();
+  const exception = serializeException(new Error("video decode failed", { cause: new Error("invalid frame") }));
+  const failure = {
+    referenceId: "err_overlay_decode",
+    stage: "decode" as const,
+    message: "The alert video could not be decoded.",
+    exception
+  };
+  const overlay = {
+    beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(),
+    handle: vi.fn(async () => { throw new Error("Desktop overlay is unavailable.", { cause: failure }); })
+  };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, overlay, diagnose);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  const requestId = randomUUID();
+
+  worker.emit("message", { type: "overlay-request", generation, requestId, command: { type: "retry" } });
+
+  await vi.waitFor(() => expect(worker.messages.at(-1)).toEqual({
+    type: "overlay-response", generation, requestId, result: null, failure
+  }));
+  expect(diagnose).toHaveBeenCalledWith(expect.objectContaining({
+    source: "desktop.overlay.command-failed",
+    referenceId: failure.referenceId,
+    exception
+  }));
+  const stop = supervisor.stop(); worker.emit("exit", 0); await stop;
+});
+
 it("routes only owned validated audio RPC and tears audio down with service loss", async () => {
   const worker = new Worker();
   const audio = { beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(), handle: vi.fn(async () => ({ type: "devices" as const, devices: [] })) };

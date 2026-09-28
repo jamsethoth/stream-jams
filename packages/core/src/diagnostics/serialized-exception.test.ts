@@ -121,4 +121,22 @@ describe("serializeException", () => {
 
     expect(serializeException(transported)).toEqual(transported);
   });
+
+  it("retains bounded AggregateError cleanup failures as secondary evidence", () => {
+    const primary = new Error("write failed", { cause: new Error("disk unavailable") });
+    const cleanup = new Error("temporary cleanup failed");
+
+    const result = serializeException(new AggregateError(
+      [primary, cleanup],
+      "write and cleanup failed",
+      { cause: primary }
+    ));
+
+    expect(result).toMatchObject({
+      type: "AggregateError",
+      cause: { message: "write failed", cause: { message: "disk unavailable" } },
+      secondary: [{ message: "temporary cleanup failed" }]
+    });
+    expect(serializedExceptionSchema.parse(result)).toEqual(result);
+  });
 });

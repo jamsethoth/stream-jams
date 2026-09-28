@@ -457,8 +457,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     } catch (error) {
       try { await options.desktopAudioTransport.close(); }
       catch (cleanupError) {
-        // eslint-disable-next-line preserve-caught-error -- AggregateError retains both initialization and cleanup errors in order
-        throw new AggregateError([error, cleanupError], "Desktop audio initialization and cleanup failed");
+        throw new AggregateError(
+          [error, cleanupError],
+          "Desktop audio initialization and cleanup failed",
+          // eslint-disable-next-line preserve-caught-error -- the outer initialization failure stays primary; cleanup remains secondary in errors
+          { cause: error }
+        );
       }
       throw error;
     }
@@ -1330,8 +1334,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   } catch (error) {
     try { await close(); } catch (cleanupError) {
-      // eslint-disable-next-line preserve-caught-error -- AggregateError retains both composition and cleanup errors in order
-      throw new AggregateError([error, cleanupError], "Runtime composition and cleanup failed");
+      throw new AggregateError(
+        [error, cleanupError],
+        "Runtime composition and cleanup failed",
+        // eslint-disable-next-line preserve-caught-error -- the outer composition failure stays primary; cleanup remains secondary in errors
+        { cause: error }
+      );
     }
     throw error;
   }

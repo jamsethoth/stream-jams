@@ -8,9 +8,10 @@ import {
 export class PlaybackOperationsConflictError extends Error {
   constructor(
     message: string,
-    readonly snapshot: MergedOperationsSnapshot
+    readonly snapshot: MergedOperationsSnapshot,
+    options?: ErrorOptions
   ) {
-    super(message);
+    super(message, options);
     this.name = "PlaybackOperationsConflictError";
   }
 }
@@ -45,7 +46,8 @@ export function createHttpPlaybackApi(options: HttpManagementClientOptions = {})
       if (conflictSnapshot !== null) {
         throw new PlaybackOperationsConflictError(
           error instanceof Error ? error.message : fallback,
-          conflictSnapshot
+          conflictSnapshot,
+          { cause: error }
         );
       }
       throw error;

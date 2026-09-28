@@ -58,4 +58,30 @@ describe("EmergencyLogWriter", () => {
     expect(stderr[0]).toContain("err_emergency_1");
     expect(stderr[0]).not.toContain("oauth-secret");
   });
+
+  it("redacts credential assignments and nested secondary exceptions", () => {
+    const lines: string[] = [];
+    const writer = new EmergencyLogWriter({
+      filePath: "C:/logs/emergency.jsonl",
+      appendFile: (_path, data) => { lines.push(data); },
+      writeStderr: vi.fn()
+    });
+    const primary = new Error("password=hunter2");
+    const cleanup = new Error("client_secret: cleanup-secret credential=credential-secret");
+
+    writer.write({
+      ...input,
+      originalException: new AggregateError([primary, cleanup], "token=outer-secret", { cause: primary })
+    });
+
+    const output = lines.join("");
+    expect(output).toContain("password=[REDACTED]");
+    expect(output).toContain("client_secret=[REDACTED]");
+    expect(output).toContain("token=[REDACTED]");
+    expect(output).toContain("credential=[REDACTED]");
+    expect(output).not.toContain("hunter2");
+    expect(output).not.toContain("cleanup-secret");
+    expect(output).not.toContain("outer-secret");
+    expect(output).not.toContain("credential-secret");
+  });
 });

@@ -36,6 +36,32 @@ test("opt-in shutdown evidence separates Cancel from cleanup and native exit", a
     const page = await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
     await page.waitForLoadState("load");
     await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: "Close window to tray" })).toBeVisible();
+    const diagnosticSessionId = await page.evaluate(async () => {
+      const response = await fetch("/auth/management/sessions", { method: "POST" });
+      if (!response.ok) throw new Error("Could not establish the diagnostic test session");
+      return ((await response.json()) as { id: string }).id;
+    });
+    await desktop.evaluate(({ BrowserWindow }) => {
+      const managementWindow = BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.getURL().includes("/manage"));
+      if (managementWindow === undefined) throw new Error("Expected the packaged management renderer");
+      managementWindow.webContents.emit("render-process-gone", {} as Electron.Event, {
+        reason: "crashed",
+        exitCode: -1
+      });
+    });
+    await expect.poll(async () => page.evaluate(async (sessionId) => {
+      const workspace = await fetch("/management/diagnostics/workspace", {
+        headers: { authorization: `Bearer ${sessionId}` }
+      }).then(response => response.json()) as {
+        rawLogs: Array<{ event: string; referenceId: string | null; data: { reason?: string; exitCode?: number } }>;
+      };
+      return workspace.rawLogs.find((entry) => entry.event === "desktop.renderer.gone") ?? null;
+    }, diagnosticSessionId)).toMatchObject({
+      event: "desktop.renderer.gone",
+      referenceId: expect.stringMatching(/^err_/),
+      data: { reason: "crashed", exitCode: -1 }
+    });
     await page.getByRole("checkbox", { name: "Close window to tray" }).uncheck();
     const identities = await desktop.evaluate(({ app, BrowserWindow }) => ({ pids: app.getAppMetrics().map(entry => entry.pid), persistent: BrowserWindow.getAllWindows().map(window => window.webContents.session.isPersistent()) }));
     identities.pids.forEach(pid => pids.add(pid));

@@ -31,8 +31,8 @@ export type StreamerBotNormalizationResult =
 export class StreamerBotEventNormalizationError extends Error {
   readonly code = "STREAMERBOT_EVENT_NORMALIZATION_FAILED";
 
-  constructor(source: string, type: string) {
-    super(`Streamer.bot ${source}.${type} payload was invalid`);
+  constructor(source: string, type: string, options?: ErrorOptions) {
+    super(`Streamer.bot ${source}.${type} payload was invalid`, options);
     this.name = "StreamerBotEventNormalizationError";
   }
 }
@@ -97,7 +97,7 @@ export function normalizeStreamerBotEvent(envelope: StreamerBotEventEnvelope): S
     if (error instanceof StreamerBotEventNormalizationError) {
       throw error;
     }
-    throw new StreamerBotEventNormalizationError(envelope.event.source, envelope.event.type);
+    throw new StreamerBotEventNormalizationError(envelope.event.source, envelope.event.type, { cause: error });
   }
 }
 

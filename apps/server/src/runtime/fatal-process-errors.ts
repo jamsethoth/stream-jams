@@ -6,6 +6,7 @@ export interface FatalProcessAdapter {
   exitCode?: string | number | null | undefined;
   on(event: FatalProcessEvent, listener: (error: unknown) => void): unknown;
   off(event: FatalProcessEvent, listener: (error: unknown) => void): unknown;
+  exit(code: number): never | void;
 }
 
 export interface FatalProcessErrorOptions {
@@ -15,7 +16,7 @@ export interface FatalProcessErrorOptions {
   readonly now?: (() => Date) | undefined;
 }
 
-/** Installs synchronous last-resort observers. The process remains on a failing exit path. */
+/** Installs synchronous last-resort owners which write evidence and terminate immediately. */
 export function installFatalProcessErrorHandlers(options: FatalProcessErrorOptions): () => void {
   const now = options.now ?? (() => new Date());
   const own = (event: FatalProcessEvent) => (error: unknown): void => {
@@ -29,6 +30,7 @@ export function installFatalProcessErrorHandlers(options: FatalProcessErrorOptio
       originalException: error,
       loggerException: null
     });
+    options.process.exit(1);
   };
   const uncaughtException = own("uncaughtException");
   const unhandledRejection = own("unhandledRejection");

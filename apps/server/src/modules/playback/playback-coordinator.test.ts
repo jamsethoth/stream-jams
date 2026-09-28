@@ -78,6 +78,31 @@ describe("PlaybackCoordinator", () => {
     await coordinator.close();
   });
 
+  it("does not duplicate a desktop renderer failure already owned under its transported reference", async () => {
+    const error = new Error("The alert video could not be decoded.", { cause: { type: "Error", message: "decode failed" } });
+    error.name = "DesktopOverlayPlaybackError";
+    Object.defineProperty(error, "referenceId", { value: "err_overlay_decode", enumerable: true });
+    const wrapped = new Error("Desktop visual playback is unavailable or was interrupted", {
+      cause: new Error("Desktop visual playback is unavailable", { cause: error })
+    });
+    const logger = { error: vi.fn(async () => {}) };
+    const desktop = { play: vi.fn(async () => { throw wrapped; }), stop: vi.fn(async () => {}), close: vi.fn(async () => {}) };
+    const coordinator = createCoordinator({ desktopVisualSink: desktop, logger, generateReferenceId: () => "err_duplicate" });
+    const event = createCheerEvent({ id: "owned-desktop-failure" });
+    const alert = createResolvedAlert(event.id, "resolved", "instruction");
+
+    coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [{
+      ...alert,
+      desktopVisualEligible: true,
+      overlayInstruction: { ...alert.overlayInstruction, targetProfileId: "landscape" }
+    }] });
+
+    await vi.waitFor(() => expect(desktop.play).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(coordinator.getSnapshot().current).toBeNull());
+    expect(logger.error).not.toHaveBeenCalled();
+    await coordinator.close();
+  });
+
   it("stops desktop obligations before advancing a skipped occurrence", async () => {
     let finishStop!: () => void;
     const desktop = { play: vi.fn(() => new Promise<void>(() => {})), stop: vi.fn(() => new Promise<void>(resolve => { finishStop = resolve; })), close: vi.fn(async () => {}) };

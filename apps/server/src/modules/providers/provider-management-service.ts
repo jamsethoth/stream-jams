@@ -398,10 +398,11 @@ export class ProviderManagementService {
       try {
         await runtimeMutation.rollback();
       } catch (rollbackError) {
-        // eslint-disable-next-line preserve-caught-error -- AggregateError retains both persistence and rollback errors in order
         throw new AggregateError(
           [error, rollbackError],
-          "Provider persistence failed and the live Streamer.bot subscription rollback also failed"
+          "Provider persistence failed and the live Streamer.bot subscription rollback also failed",
+          // eslint-disable-next-line preserve-caught-error -- the outer persistence failure stays primary; rollback remains secondary in errors
+          { cause: error }
         );
       }
       throw error;

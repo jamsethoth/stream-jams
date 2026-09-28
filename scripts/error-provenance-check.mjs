@@ -61,7 +61,7 @@ export function scanErrorProvenance(sourceText, fileName) {
   };
 
   visit(sourceFile);
-  return diagnostics.sort((left, right) => left.line - right.line || left.column - right.column || left.rule.localeCompare(right.rule));
+  return dedupe(diagnostics).sort((left, right) => left.line - right.line || left.column - right.column || left.rule.localeCompare(right.rule));
 }
 
 function isExcluded(fileName) {
@@ -85,10 +85,52 @@ function hasValidExemption(sourceText, node) {
 
 function usesBinding(body, binding) {
   let used = false;
-  walk(body, (node) => {
-    if (ts.isIdentifier(node) && node.text === binding) used = true;
-  });
+  const visit = (node, shadowed) => {
+    if (used) return;
+    const nestedScope = node !== body && introducesBindingScope(node, binding);
+    const nextShadowed = shadowed || nestedScope;
+    if (!nextShadowed && ts.isIdentifier(node) && node.text === binding && isValueReference(node)) {
+      used = true;
+      return;
+    }
+    ts.forEachChild(node, (child) => visit(child, nextShadowed));
+  };
+  visit(body, false);
   return used;
+}
+
+function introducesBindingScope(node, binding) {
+  if (ts.isFunctionLike(node)) {
+    return node.parameters.some((parameter) => bindingNameContains(parameter.name, binding));
+  }
+  if (!ts.isBlock(node)) return false;
+  return node.statements.some((statement) => {
+    if (ts.isVariableStatement(statement)) {
+      return statement.declarationList.declarations.some((declaration) => bindingNameContains(declaration.name, binding));
+    }
+    return (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement)) && statement.name?.text === binding;
+  });
+}
+
+function bindingNameContains(name, binding) {
+  if (ts.isIdentifier(name)) return name.text === binding;
+  return name.elements.some((element) => !ts.isOmittedExpression(element) && bindingNameContains(element.name, binding));
+}
+
+function isValueReference(node) {
+  const parent = node.parent;
+  if (parent === undefined) return false;
+  if ((ts.isVariableDeclaration(parent) || ts.isParameter(parent) || ts.isBindingElement(parent) ||
+      ts.isFunctionDeclaration(parent) || ts.isFunctionExpression(parent) || ts.isClassDeclaration(parent) ||
+      ts.isClassExpression(parent) || ts.isTypeParameterDeclaration(parent)) && parent.name === node) return false;
+  if (ts.isPropertyAccessExpression(parent) && parent.name === node) return false;
+  if ((ts.isPropertyAssignment(parent) || ts.isMethodDeclaration(parent) || ts.isPropertyDeclaration(parent) ||
+      ts.isPropertySignature(parent) || ts.isMethodSignature(parent) || ts.isGetAccessorDeclaration(parent) ||
+      ts.isSetAccessorDeclaration(parent)) && parent.name === node) return false;
+  if (ts.isLabeledStatement(parent) || ts.isBreakOrContinueStatement(parent) || ts.isImportSpecifier(parent) ||
+      ts.isExportSpecifier(parent) || ts.isImportClause(parent) || ts.isNamespaceImport(parent) ||
+      ts.isTypeReferenceNode(parent) || ts.isExpressionWithTypeArguments(parent)) return false;
+  return true;
 }
 
 function walk(node, visitor) {
@@ -97,7 +139,8 @@ function walk(node, visitor) {
 }
 
 function isErrorConstructor(expression) {
-  return ts.isIdentifier(expression) && expression.text === "Error";
+  if (ts.isIdentifier(expression)) return expression.text.endsWith("Error");
+  return ts.isPropertyAccessExpression(expression) && expression.name.text.endsWith("Error");
 }
 
 function hasCauseOption(node) {

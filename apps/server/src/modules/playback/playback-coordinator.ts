@@ -682,7 +682,9 @@ export class PlaybackCoordinator {
   async #dispatchDesktop(instructions: readonly OverlayInstruction[], startsAt: number, state: DevicePlaybackState): Promise<void> {
     try { await this.#desktopVisualSink!.play(state.transportId, instructions, startsAt); }
     catch (error) {
-      if (!state.cancelled) void this.#logger?.error("Desktop visual playback unavailable. Browser and audio outputs continue independently.", {
+      // A transported desktop renderer failure is already owned and persisted by
+      // the supervisor under its renderer reference. Do not create a duplicate.
+      if (!state.cancelled && ownedFailureReferenceId(error) === null) void this.#logger?.error("Desktop visual playback unavailable. Browser and audio outputs continue independently.", {
         module: "overlay-surfaces", source: "desktop-overlay.playback.failed", correlationId: this.#generateReferenceId?.() ?? state.occurrenceId, processingId: null,
         metadata: { playbackId: state.occurrenceId, nextStep: "Check the selected display and retry the desktop overlay in Settings. Interrupted content is not replayed." }
       }, error);
@@ -900,6 +902,18 @@ export class PlaybackCoordinator {
       enqueuedAlertIds
     };
   }
+}
+
+function ownedFailureReferenceId(value: unknown): string | null {
+  const seen = new Set<object>();
+  let candidate = value;
+  while (typeof candidate === "object" && candidate !== null && !seen.has(candidate)) {
+    seen.add(candidate);
+    const reference = Object.getOwnPropertyDescriptor(candidate, "referenceId")?.value;
+    if (typeof reference === "string" && reference.trim() !== "") return reference;
+    candidate = Object.getOwnPropertyDescriptor(candidate, "cause")?.value;
+  }
+  return null;
 }
 
 function readProviderPayloadString(payload: Record<string, unknown> | null, key: string): string | null {

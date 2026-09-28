@@ -52,6 +52,10 @@ describe("createRedactor", () => {
         "Authorization: Bearer oauth-token-value; overlay=http://127.0.0.1:39187/overlay/unified/test/ovl_testSecretValue"
       )
     ).toBe("Authorization: Bearer [REDACTED]; overlay=http://127.0.0.1:39187/overlay/unified/test/[REDACTED]");
+    expect(redactor.redactText("password=hunter2 token: oauth-secret client_secret=value"))
+      .toBe("password=[REDACTED] token=[REDACTED] client_secret=[REDACTED]");
+    expect(redactor.redactText("authorization=opaque-secret credential: first credentials=second"))
+      .toBe("authorization=[REDACTED] credential=[REDACTED] credentials=[REDACTED]");
   });
 
   it("redacts generated-style overlay route keys from module and unified URLs", () => {

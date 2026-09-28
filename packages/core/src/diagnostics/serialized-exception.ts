@@ -6,11 +6,13 @@ export interface SerializedException {
   readonly stack: string | null;
   readonly code: string | null;
   readonly cause: SerializedException | null;
+  readonly secondary?: readonly SerializedException[] | undefined;
   readonly thrownValue: string | null;
 }
 
 export interface ExceptionSerializationLimits {
   readonly causeDepth: number;
+  readonly secondaryErrors: number;
   readonly messageCharacters: number;
   readonly stackCharacters: number;
   readonly thrownValueCharacters: number;
@@ -19,6 +21,7 @@ export interface ExceptionSerializationLimits {
 
 export const defaultExceptionSerializationLimits: ExceptionSerializationLimits = {
   causeDepth: 5,
+  secondaryErrors: 4,
   messageCharacters: 4_096,
   stackCharacters: 32_768,
   thrownValueCharacters: 4_096,
@@ -31,6 +34,7 @@ const exceptionNodeSchema: z.ZodType<SerializedException> = z.lazy(() => z.objec
   stack: z.string().max(defaultExceptionSerializationLimits.stackCharacters).nullable(),
   code: z.string().max(256).nullable(),
   cause: exceptionNodeSchema.nullable(),
+  secondary: z.array(exceptionNodeSchema).max(defaultExceptionSerializationLimits.secondaryErrors).optional(),
   thrownValue: z.string().max(defaultExceptionSerializationLimits.thrownValueCharacters).nullable()
 }).strict());
 
@@ -96,6 +100,7 @@ function serializeValue(
   const stack = readProperty(value, "stack");
   const code = readProperty(value, "code");
   const cause = readProperty(value, "cause");
+  const aggregateErrors = readProperty(value, "errors");
   const errorLike = value instanceof Error || typeof message === "string";
 
   if (!errorLike) {
@@ -109,6 +114,14 @@ function serializeValue(
     };
   }
 
+  const serializedCause = cause === inaccessible || cause === undefined || cause === null
+    ? null
+    : serializeValue(cause, limits, seen, depth + 1);
+  const secondaryValues = Array.isArray(aggregateErrors)
+    ? aggregateErrors.filter((candidate) => candidate !== cause && candidate !== value).slice(0, limits.secondaryErrors)
+    : [];
+  const secondary = secondaryValues.map((candidate) => serializeValue(candidate, limits, seen, depth + 1));
+
   return {
     type: truncate(
       typeof name === "string" && name.trim() !== "" ? name : safeConstructorName(value),
@@ -117,9 +130,8 @@ function serializeValue(
     message: truncate(typeof message === "string" ? message : "An exception was thrown.", limits.messageCharacters),
     stack: typeof stack === "string" ? truncate(stack, limits.stackCharacters) : null,
     code: typeof code === "string" || typeof code === "number" ? truncate(String(code), 256) : null,
-    cause: cause === inaccessible || cause === undefined || cause === null
-      ? null
-      : serializeValue(cause, limits, seen, depth + 1),
+    cause: serializedCause,
+    ...(secondary.length === 0 ? {} : { secondary }),
     thrownValue: null
   };
 }
@@ -161,6 +173,9 @@ function fitTotalSize(value: SerializedException, limits: ExceptionSerialization
   const bounded: SerializedException = {
     ...value,
     stack: null,
+    ...(value.secondary === undefined ? {} : {
+      secondary: [fallbackException("SecondarySizeLimit", "Secondary exceptions exceeded the configured size.")]
+    }),
     cause: value.cause === null
       ? null
       : fallbackException("CauseSizeLimit", "The exception cause chain exceeded the configured size.")
@@ -184,6 +199,10 @@ function fitTotalSize(value: SerializedException, limits: ExceptionSerialization
 function normalizeLimits(overrides: Partial<ExceptionSerializationLimits>): ExceptionSerializationLimits {
   return {
     causeDepth: positiveInteger(overrides.causeDepth, defaultExceptionSerializationLimits.causeDepth),
+    secondaryErrors: Math.min(
+      defaultExceptionSerializationLimits.secondaryErrors,
+      positiveInteger(overrides.secondaryErrors, defaultExceptionSerializationLimits.secondaryErrors)
+    ),
     messageCharacters: positiveInteger(overrides.messageCharacters, defaultExceptionSerializationLimits.messageCharacters),
     stackCharacters: positiveInteger(overrides.stackCharacters, defaultExceptionSerializationLimits.stackCharacters),
     thrownValueCharacters: positiveInteger(

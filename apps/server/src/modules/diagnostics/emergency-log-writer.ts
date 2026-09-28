@@ -104,6 +104,9 @@ function sanitizeExceptionNode(value: SerializedException): SerializedException 
     stack: value.stack === null ? null : sanitizeText(value.stack, 8_192),
     code: value.code === null ? null : sanitizeText(value.code, 256),
     cause: value.cause === null ? null : sanitizeExceptionNode(value.cause),
+    ...(value.secondary === undefined ? {} : {
+      secondary: value.secondary.slice(0, 4).map(sanitizeExceptionNode)
+    }),
     thrownValue: value.thrownValue === null ? null : sanitizeText(value.thrownValue, 4_096)
   };
 }
@@ -115,6 +118,8 @@ function sanitizeText(value: string, limit: number): string {
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, (_match, scheme: string) => `${scheme} [REDACTED]`)
     .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[REDACTED]")
     .replace(/ovl_[A-Za-z0-9_-]+/g, "[REDACTED]")
+    .replace(/\b(authorization)\s*([:=])\s*(?!(?:Bearer|Basic)\b)[^\s,;&]+/gi, "$1$2[REDACTED]")
+    .replace(/\b(credentials?|password|passwd|token|access[-_ ]?token|refresh[-_ ]?token|secret|client[-_ ]?secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?[^\s,;&]+/gi, "$1=[REDACTED]")
     .replace(/([?&](?:access_token|refresh_token|token|api_key|apikey|key|signature|sig|x-amz-signature|x-amz-credential|x-amz-security-token|key-pair-id)=)[^&\s]+/gi, "$1[REDACTED]");
   if (normalized.length <= limit) return normalized;
   const marker = "…[truncated]";

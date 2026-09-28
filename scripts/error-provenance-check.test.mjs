@@ -18,10 +18,32 @@ test("rejects promise handlers that erase rejection values", () => {
   assert.deepEqual(rules("void work().catch((error) => { recover(); });"), ["unused-catch-value"]);
 });
 
+test("does not mistake property names or shadowed identifiers for caught-value use", () => {
+  assert.deepEqual(rules("try { work(); } catch (error) { void ({ error: 1 }); }"), ["unused-catch-value"]);
+  assert.deepEqual(rules(`
+    try { work(); } catch (error) {
+      (() => { const error = "shadow"; console.log(error); })();
+    }
+  `), ["unused-catch-value"]);
+  assert.deepEqual(rules("try { work(); } catch (error) { console.log(error); }"), []);
+});
+
 test("rejects cause-free contextual errors and string-only failure envelopes", () => {
   assert.deepEqual(rules(`
     try { work(); } catch (error) {
       throw new Error("Import failed");
+    }
+  `), ["missing-error-cause"]);
+  assert.deepEqual(rules(`
+    try { work(); } catch (error) {
+      try { cleanup(); } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "Import and cleanup failed");
+      }
+    }
+  `), ["missing-error-cause"]);
+  assert.deepEqual(rules(`
+    try { work(); } catch (error) {
+      throw new ImportOperationError("Import failed");
     }
   `), ["missing-error-cause"]);
   assert.deepEqual(rules(`
@@ -37,6 +59,14 @@ test("accepts rethrow, narrowing, cause, owner logging, and structured envelopes
     }
     try { work(); } catch (error) {
       throw new Error("Import failed", { cause: error });
+    }
+    try { work(); } catch (error) {
+      try { cleanup(); } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "Import and cleanup failed", { cause: error });
+      }
+    }
+    try { work(); } catch (error) {
+      throw new ImportOperationError("Import failed", { cause: error });
     }
     work().catch((error: unknown) => logger.error("failed", context, error));
     work().catch((error: unknown) => send({ type: "command-failed", message: "failed", referenceId, exception: serializeException(error) }));

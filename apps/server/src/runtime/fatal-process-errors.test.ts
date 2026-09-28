@@ -2,8 +2,8 @@ import { EventEmitter } from "node:events";
 import { expect, it, vi } from "vitest";
 import { installFatalProcessErrorHandlers } from "./fatal-process-errors.js";
 
-it.each(["uncaughtException", "unhandledRejection"] as const)("durably owns %s without throwing from the observer", (event) => {
-  const processAdapter = new EventEmitter() as EventEmitter & { exitCode?: number };
+it.each(["uncaughtException", "unhandledRejection"] as const)("durably owns %s and enters an immediate failing termination path", (event) => {
+  const processAdapter = Object.assign(new EventEmitter(), { exitCode: undefined as number | undefined, exit: vi.fn() });
   const emergencyWriter = { write: vi.fn() };
   const remove = installFatalProcessErrorHandlers({
     process: processAdapter,
@@ -15,6 +15,8 @@ it.each(["uncaughtException", "unhandledRejection"] as const)("durably owns %s w
 
   expect(() => processAdapter.emit(event, failure)).not.toThrow();
   expect(processAdapter.exitCode).toBe(1);
+  expect(processAdapter.exit).toHaveBeenCalledOnce();
+  expect(processAdapter.exit).toHaveBeenCalledWith(1);
   expect(emergencyWriter.write).toHaveBeenCalledWith(expect.objectContaining({
     event: `process.${event}`,
     referenceId: "fatal_ref",

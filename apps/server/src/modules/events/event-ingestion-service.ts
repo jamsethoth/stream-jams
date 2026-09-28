@@ -259,10 +259,11 @@ export class EventIngestionService {
       await this.#onDiagnostic({ ...diagnostic, referenceId });
     } catch (loggingError) {
       this.#status = { ...this.#status, message: "Event ingestion diagnostics logging failed" };
-      // eslint-disable-next-line preserve-caught-error -- the aggregate retains the diagnostic failure and its logger failure
       throw new AggregateError(
         diagnostic.exception === undefined ? [loggingError] : [diagnostic.exception, loggingError],
-        "Event ingestion and diagnostic logging failed"
+        "Event ingestion and diagnostic logging failed",
+        // eslint-disable-next-line preserve-caught-error -- the original diagnostic exception stays primary when present; logger failure remains secondary
+        { cause: diagnostic.exception ?? loggingError }
       );
     }
     return { status: "rejected", message, referenceId };
