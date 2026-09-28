@@ -106,3 +106,42 @@ it("rejects expired occurrences and media errors", async () => {
   await expect(work).rejects.toThrow(/media/);
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("retains a currentTime assignment failure as a seek-stage cause", async () => {
+  const cause = new DOMException("seek denied", "InvalidStateError");
+  class ThrowingSeekMedia extends Media {
+    override get currentTime() { return super.currentTime; }
+    override set currentTime(_value: number) { throw cause; }
+  }
+  vi.setSystemTime(3600);
+
+  await expect(prepareTimedMedia(new ThrowingSeekMedia(), timing, {
+    signal: new AbortController().signal,
+    deadlineMs: 6000
+  })).rejects.toMatchObject({
+    name: "TimedMediaPreparationError",
+    stage: "seek",
+    cause
+  });
+});
+
+it("classifies metadata deadlines and media errors without discarding their causes", async () => {
+  const metadataMedia = new Media();
+  metadataMedia.readyState = 0;
+  const metadataWork = prepareTimedMedia(metadataMedia, timing, {
+    signal: new AbortController().signal,
+    deadlineMs: 6000
+  });
+  const metadataAssertion = expect(metadataWork).rejects.toMatchObject({ stage: "metadata" });
+  await vi.advanceTimersByTimeAsync(5000);
+  await metadataAssertion;
+
+  vi.setSystemTime(1000);
+  const decodeMedia = new Media();
+  const decodeWork = prepareTimedMedia(decodeMedia, timing, {
+    signal: new AbortController().signal,
+    deadlineMs: 6000
+  });
+  decodeMedia.dispatchEvent(new Event("error"));
+  await expect(decodeWork).rejects.toMatchObject({ stage: "decode" });
+});

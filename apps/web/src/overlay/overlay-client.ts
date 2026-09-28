@@ -1,5 +1,6 @@
 import { surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
+  OverlayPlaybackFailure,
   OverlayComposition,
   OverlayInstruction,
   OverlayPurpose,
@@ -21,7 +22,7 @@ export interface ParsedOverlayRoute {
 export interface OverlayPlaybackReporter {
   reportStarted(instructionId: string): void;
   reportCompleted(instructionId: string): void;
-  reportFailed(instructionId: string, message: string): void;
+  reportFailed(instructionId: string, failure: OverlayPlaybackFailure): void;
 }
 
 export interface OverlaySocketLike {
@@ -149,11 +150,11 @@ export function createOverlayPlaybackReporter(socket: OverlaySocketLike): Overla
         instructionId
       });
     },
-    reportFailed(instructionId: string, message: string) {
+    reportFailed(instructionId: string, failure: OverlayPlaybackFailure) {
       sendIfOpen(socket, {
         type: "overlay.playback.failed",
         instructionId,
-        message
+        ...failure
       });
     }
   };

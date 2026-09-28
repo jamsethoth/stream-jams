@@ -1,20 +1,21 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import "../overlay.css";
-import { prepareTimedMedia, rgbaColorSchema, targetProfileDefinitions } from "@stream-jams/core";
+import { prepareTimedMedia, rgbaColorSchema, serializeException, targetProfileDefinitions, TimedMediaPreparationError } from "@stream-jams/core";
 import type {
   OverlayComposition,
   OverlayElementLayout,
   OverlayInstruction,
-  OverlayPresetAnimationInstruction
+  OverlayPresetAnimationInstruction,
+  OverlayPlaybackFailure,
+  OverlayPlaybackFailureStage
 } from "@stream-jams/core";
 import { alertTextLayerStyle } from "./alert-text-style.js";
 import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
 
-export interface OverlayPlaybackEvent {
-  readonly instructionId: string;
-  readonly status: "started" | "completed" | "failed";
-  readonly message?: string;
-}
+export type OverlayPlaybackEvent =
+  | { readonly instructionId: string; readonly status: "started" }
+  | { readonly instructionId: string; readonly status: "completed" }
+  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure };
 
 export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;
@@ -167,7 +168,7 @@ function OverlayInstructionLayer({
   const [audioStarted, setAudioStarted] = useState(instruction.audio === null && !presentationInvalid);
   const visualAssetId = instruction.visual?.assetId;
   const visualLoop = instruction.visual?.mediaType === "video" && instruction.visual.loop === true;
-  const reportFailure = useCallback((message: string) => {
+  const reportFailure = useCallback((stage: OverlayPlaybackFailureStage, message: string, cause: unknown) => {
     if (completionReportedRef.current) {
       return;
     }
@@ -176,7 +177,12 @@ function OverlayInstructionLayer({
     onPlaybackEvent?.({
       instructionId: instruction.id,
       status: "failed",
-      message
+      failure: {
+        referenceId: `err_${crypto.randomUUID()}`,
+        stage,
+        message,
+        exception: serializeException(cause)
+      }
     });
   }, [instruction.id, onPlaybackEvent]);
 
@@ -206,13 +212,18 @@ function OverlayInstructionLayer({
     );
     const startTimer = window.setTimeout(() => {
       preparation.abort(); video.pause();
-      reportFailure("Video playback could not start before its preparation deadline.");
+      reportFailure(video.readyState < 1 ? "metadata" : "seek", "Video playback could not start before its preparation deadline.",
+        new TimedMediaPreparationError(video.readyState < 1 ? "metadata" : "seek", "Video playback preparation deadline exceeded."));
     }, Math.max(0, deadline - Date.now()));
     void prepareTimedMedia(video, { startsAtEpochMs: startsAt, endsAtEpochMs: endsAt },
       { signal: preparation.signal, deadlineMs: deadline })
       .then(() => { if (!preparation.signal.aborted) return video.play(); })
       .then(() => { if (!preparation.signal.aborted && Date.now() < endsAt) { videoHasStartedRef.current = true; setVideoReady(true); } })
-      .catch(() => { if (!preparation.signal.aborted) { video.pause(); reportFailure("Video playback could not start at the shared offset."); } })
+      .catch((error: unknown) => { if (!preparation.signal.aborted) { video.pause(); reportFailure(
+        error instanceof TimedMediaPreparationError ? error.stage : "play",
+        "Video playback could not start at the shared offset.",
+        error
+      ); } })
       .finally(() => window.clearTimeout(startTimer));
     return () => { preparation.abort(); window.clearTimeout(startTimer); video.pause(); };
   }, [startsAt, endsAt, visualVisible, timingActive, reportFailure]);
@@ -244,7 +255,7 @@ function OverlayInstructionLayer({
   useEffect(() => {
     if (!presentationInvalid) return;
     onTestAudioBlockedChange(instruction.id, false);
-    reportFailure(presentationFailureMessage);
+    reportFailure("source-load", presentationFailureMessage, new Error(presentationFailureMessage));
   }, [instruction.id, onTestAudioBlockedChange, presentationFailureMessage, presentationInvalid, reportFailure]);
 
   useEffect(() => {
@@ -291,7 +302,8 @@ function OverlayInstructionLayer({
     const startTimer = startsAt === undefined || endsAt === undefined ? undefined : window.setTimeout(() => {
       if (!active()) return;
       preparation.abort(); element.pause();
-      reportFailure("Audio playback could not start before its preparation deadline.");
+      reportFailure(element.readyState < 1 ? "metadata" : "seek", "Audio playback could not start before its preparation deadline.",
+        new TimedMediaPreparationError(element.readyState < 1 ? "metadata" : "seek", "Audio playback preparation deadline exceeded."));
     }, Math.max(0, Math.min(endsAt, startsAt + 5000) - Date.now()));
     preparation.signal.addEventListener("abort", () => window.clearTimeout(startTimer), { once: true });
     const play = () => active() ? element.play() : Promise.resolve();
@@ -312,7 +324,7 @@ function OverlayInstructionLayer({
       }
 
       element.pause();
-      reportFailure(audioStartFailureMessage(error));
+      reportFailure(error instanceof TimedMediaPreparationError ? error.stage : "play", audioStartFailureMessage(error), error);
     }).finally(() => window.clearTimeout(startTimer));
   }, [
     audioAssetId,
@@ -339,7 +351,8 @@ function OverlayInstructionLayer({
 
     const timeoutId = window.setTimeout(() => {
       onTestAudioBlockedChange(instruction.id, false);
-      reportFailure(audioStartFailureMessage(new DOMException("Playback requires user interaction", "NotAllowedError")));
+      const error = new DOMException("Playback requires user interaction", "NotAllowedError");
+      reportFailure("play", audioStartFailureMessage(error), error);
     }, 30_000);
     return () => window.clearTimeout(timeoutId);
   }, [audioBlocked, instruction.id, onTestAudioBlockedChange, reportFailure]);
@@ -367,7 +380,7 @@ function OverlayInstructionLayer({
           data-testid={`overlay-video-${instruction.id}`}
           muted={instruction.moduleId === "alerts" || muted}
           onEnded={() => { if (!visualLoop) setVideoEnded(true); }}
-          onError={() => reportFailure("Video playback failed")}
+          onError={(event) => reportFailure("source-load", "Video playback failed", event.currentTarget.error ?? event.nativeEvent)}
           src={resolveAssetUrl(instruction.visual.assetId)}
           style={{ ...elementStyle(instruction.visual.layout, instruction.animation, instruction.durationMs, initialOffset.current), objectFit: "contain",
             ...(videoReady && !videoEnded ? {} : { visibility: "hidden" }) }}
@@ -376,7 +389,7 @@ function OverlayInstructionLayer({
         <img
           alt=""
           data-testid={`overlay-visual-${instruction.id}`}
-          onError={() => reportFailure("Image playback failed")}
+          onError={(event) => reportFailure("source-load", "Image playback failed", event.nativeEvent)}
           src={resolveAssetUrl(instruction.visual.assetId)}
           style={{ ...elementStyle(instruction.visual.layout, instruction.animation, instruction.durationMs, initialOffset.current), objectFit: "contain" }}
         />
@@ -408,9 +421,9 @@ function OverlayInstructionLayer({
         <video
           data-testid={`overlay-audio-${instruction.id}`}
           muted={muted}
-          onError={() => {
+          onError={(event) => {
             onTestAudioBlockedChange(instruction.id, false);
-            reportFailure("Audio playback failed. Confirm the video soundtrack is supported, then retry.");
+            reportFailure("source-load", "Audio playback failed. Confirm the video soundtrack is supported, then retry.", event.currentTarget.error ?? event.nativeEvent);
           }}
           preload="auto"
           ref={(element) => { audioElementRef.current = element; }}
@@ -421,9 +434,9 @@ function OverlayInstructionLayer({
         <audio
           data-testid={`overlay-audio-${instruction.id}`}
           muted={muted}
-          onError={() => {
+          onError={(event) => {
             onTestAudioBlockedChange(instruction.id, false);
-            reportFailure("Audio playback failed. Confirm the audio file is supported, then retry.");
+            reportFailure("source-load", "Audio playback failed. Confirm the audio file is supported, then retry.", event.currentTarget.error ?? event.nativeEvent);
           }}
           preload="auto"
           ref={(element) => { audioElementRef.current = element; }}

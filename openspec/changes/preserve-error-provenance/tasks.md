@@ -12,8 +12,8 @@
 
 ## 3. Overlay media provenance
 
-- [ ] 3.1 Preserve preparation and playback stages and causes.
-- [ ] 3.2 Carry bounded failure reports through the overlay WebSocket and verify transparent browser-source behavior.
+- [x] 3.1 Preserve preparation and playback stages and causes.
+- [x] 3.2 Carry bounded failure reports through the overlay WebSocket and verify transparent browser-source behavior.
 
 ## 4. Server boundaries
 

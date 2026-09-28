@@ -150,7 +150,10 @@ describe("RuntimeJsonlLogger", () => {
         redactor,
         emergencyWriter,
         fileSystem,
-        retentionService: { async cleanupExpiredLogs() { if (failureStage === "retention") throw stageFailure; } },
+        retentionService: { async cleanupExpiredLogs() {
+          if (failureStage === "retention") throw stageFailure;
+          return { deletedFilePaths: [], retainedFilePaths: [] };
+        } },
         serialize: failureStage === "serialize" ? () => { throw stageFailure; } : undefined,
         now: () => new Date("2026-05-31T02:15:30.000Z")
       });

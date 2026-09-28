@@ -104,7 +104,7 @@ export function OverlayApp() {
     } else if (event.status === "completed") {
       reporter.reportCompleted(event.instructionId);
     } else {
-      reporter.reportFailed(event.instructionId, event.message ?? "Overlay playback failed");
+      reporter.reportFailed(event.instructionId, event.failure);
     }
   }, []);
   const resolveOverlayAssetUrl = useCallback(

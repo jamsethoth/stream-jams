@@ -349,6 +349,7 @@ describe("OverlayGateway", () => {
           moduleId: "alerts",
           purpose: "live",
           scope: "module",
+          targetProfileId: "vertical",
           rawKey: "ovl_moduleLive"
         }
       ],
@@ -360,7 +361,8 @@ describe("OverlayGateway", () => {
       moduleId: "alerts",
       purpose: "live",
       scope: "module",
-      rawKey: "ovl_moduleLive"
+      rawKey: "ovl_moduleLive",
+      targetProfileId: "vertical"
     });
 
     gateway.handleClientMessage(
@@ -375,7 +377,12 @@ describe("OverlayGateway", () => {
       JSON.stringify({
         type: "overlay.playback.failed",
         instructionId: "instruction-2",
-        message: "media decode failed"
+        referenceId: "err_decode",
+        stage: "decode",
+        message: "media decode failed",
+        exception: { type: "NotSupportedError", message: "codec unsupported", stack: null, code: null, cause: null, thrownValue: null },
+        clientId: "spoofed-client",
+        targetProfileId: "landscape"
       })
     );
 
@@ -384,15 +391,33 @@ describe("OverlayGateway", () => {
         clientId: "client-1",
         instructionId: "instruction-1",
         status: "completed",
-        message: null
+        message: null,
+        referenceId: null,
+        stage: null,
+        exception: null,
+        targetProfileId: "vertical"
       },
       {
         clientId: "client-1",
         instructionId: "instruction-2",
         status: "failed",
-        message: "media decode failed"
+        message: "media decode failed",
+        referenceId: "err_decode",
+        stage: "decode",
+        exception: { type: "NotSupportedError", message: "codec unsupported", stack: null, code: null, cause: null, thrownValue: null },
+        targetProfileId: "vertical"
       }
     ]);
+
+    gateway.handleClientMessage("client-1", JSON.stringify({
+      type: "overlay.playback.failed",
+      instructionId: "bad",
+      referenceId: "err_bad",
+      stage: "decode",
+      message: "bad",
+      exception: { type: "Error", message: "x", stack: "x".repeat(40_000) }
+    }));
+    expect(reports).toHaveLength(2);
   });
 });
 

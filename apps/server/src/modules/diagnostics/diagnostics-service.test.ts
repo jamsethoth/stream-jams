@@ -29,7 +29,8 @@ describe("DiagnosticsService", () => {
   it("links audio destination failures to route setup rather than TTS or browser sources", async () => {
     const source = new RecordingRuntimeLogSource([{
       timestamp: "2026-09-07T13:00:00.000Z", level: "ERROR", event: "audio.playback.failed", component: "alerts",
-      message: "Audio output unavailable: Private speakers. No fallback was used.", correlationId: "ref-audio", processingId: null
+      message: "Audio output unavailable: Private speakers. No fallback was used.", correlationId: "ref-audio", processingId: null,
+      exception: null
     }]);
     const workspace = await createService(new RecordingDiagnosticsRepository(), [], source).getWorkspace();
     expect(workspace.problems).toContainEqual(expect.objectContaining({
@@ -205,6 +206,7 @@ describe("DiagnosticsService", () => {
       message: "Speaker.bot requires a default voice before it can be tested.",
       correlationId: "provider-ref-voice-test",
       processingId: null,
+      exception: null,
       details: {
         summary: "Voice test failed",
         nextStep: "Save a default voice alias, then retry the voice test."
@@ -231,6 +233,7 @@ describe("DiagnosticsService", () => {
       message: "Database write failed.",
       correlationId: "err_editor_save",
       processingId: null,
+      exception: null,
       details: {
         summary: "The alert was not saved",
         nextStep: "Review the selected profile and try again.",
@@ -262,7 +265,8 @@ describe("DiagnosticsService", () => {
       component: "events",
       message: "Normalized stream event ingestion failed",
       correlationId: "ref-ingestion-1",
-      processingId: null
+      processingId: null,
+      exception: null
     }]);
     const service = createService(new RecordingDiagnosticsRepository(), [
       {
@@ -655,6 +659,7 @@ class RecordingRuntimeLogSource implements DiagnosticsRuntimeLogSource {
       message: "Provider failed with Bearer oauth-secret",
       correlationId: "correlation-1",
       processingId: null,
+      exception: null,
       details: {
         authorization: "Bearer oauth-secret"
       }

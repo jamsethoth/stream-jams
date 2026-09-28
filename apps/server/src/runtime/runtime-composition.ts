@@ -394,13 +394,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           {
             module: "overlay",
             source: "overlay.playback.failed",
-            correlationId: report.instructionId,
+            correlationId: report.referenceId ?? report.instructionId,
             processingId: null,
             metadata: {
               clientId: report.clientId,
-              instructionId: report.instructionId
+              instructionId: report.instructionId,
+              stage: report.stage,
+              targetProfileId: report.targetProfileId
             }
-          }
+          },
+          report.exception
         );
       }
       if (report.status === "completed" || report.status === "failed") {

@@ -153,7 +153,12 @@ describe("OverlayApp playback lifecycle", () => {
 
     fireEvent.error(screen.getByTestId("overlay-visual-instruction-failed"));
 
-    expect(clientHarness.reportFailed).toHaveBeenCalledWith("instruction-failed", "Image playback failed");
+    expect(clientHarness.reportFailed).toHaveBeenCalledWith("instruction-failed", expect.objectContaining({
+      referenceId: expect.stringMatching(/^err_/),
+      stage: "source-load",
+      message: "Image playback failed",
+      exception: expect.objectContaining({ type: expect.any(String) })
+    }));
     expect(screen.queryByTestId("overlay-visual-instruction-failed")).not.toBeInTheDocument();
   });
 

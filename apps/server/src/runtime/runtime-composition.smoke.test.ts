@@ -547,7 +547,17 @@ describe("runtime app composition smoke", () => {
     socket.send(JSON.stringify({
       type: "overlay.playback.failed",
       instructionId: "instruction-audio-blocked",
-      message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
+      referenceId: "err_audio_blocked",
+      stage: "play",
+      message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry.",
+      exception: {
+        type: "NotAllowedError",
+        message: "Playback requires user interaction",
+        stack: "NotAllowedError: Playback requires user interaction",
+        code: null,
+        cause: null,
+        thrownValue: null
+      }
     }));
 
     await waitFor(async () => {
@@ -557,7 +567,7 @@ describe("runtime app composition smoke", () => {
         headers: authHeaders
       });
       const workspace = response.json() as { readonly rawLogs: readonly Record<string, unknown>[] };
-      return workspace.rawLogs.some((entry) => entry.referenceId === "instruction-audio-blocked");
+      return workspace.rawLogs.some((entry) => entry.referenceId === "err_audio_blocked");
     });
     const workspace = (await composition.app.inject({
       method: "GET",
@@ -571,7 +581,7 @@ describe("runtime app composition smoke", () => {
     expect(workspace.problems).toEqual(expect.arrayContaining([
       expect.objectContaining({
         area: "outputs",
-        referenceId: "instruction-audio-blocked",
+        referenceId: "err_audio_blocked",
         summary: expect.stringContaining("Audio playback was blocked by the browser"),
         correction: expect.objectContaining({ label: "Open browser sources" })
       })
@@ -579,8 +589,14 @@ describe("runtime app composition smoke", () => {
     expect(workspace.rawLogs).toEqual(expect.arrayContaining([
       expect.objectContaining({
         event: "overlay.playback.failed",
-        referenceId: "instruction-audio-blocked",
-        message: expect.stringContaining("Audio playback was blocked by the browser")
+        referenceId: "err_audio_blocked",
+        message: expect.stringContaining("Audio playback was blocked by the browser"),
+        data: expect.objectContaining({
+          stage: "play",
+          instructionId: "instruction-audio-blocked",
+          targetProfileId: "landscape",
+          exception: expect.objectContaining({ type: "NotAllowedError" })
+        })
       })
     ]));
     socket.close();
