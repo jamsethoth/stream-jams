@@ -17,6 +17,12 @@ export {
   logSettingsSchema,
   logSettingsUpdateSchema
 } from "./diagnostics/logging.js";
+export type { ExceptionSerializationLimits, SerializedException } from "./diagnostics/serialized-exception.js";
+export {
+  defaultExceptionSerializationLimits,
+  serializeException,
+  serializedExceptionSchema
+} from "./diagnostics/serialized-exception.js";
 export type * from "./diagnostics/repository.js";
 
 export type * from "./config/types.js";

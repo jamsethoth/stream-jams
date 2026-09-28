@@ -38,5 +38,5 @@ export interface Logger {
   debug(message: string, context: LogContext): Promise<void>;
   info(message: string, context: LogContext): Promise<void>;
   warn(message: string, context: LogContext): Promise<void>;
-  error(message: string, context: LogContext): Promise<void>;
+  error(message: string, context: LogContext, exception?: unknown): Promise<void>;
 }
