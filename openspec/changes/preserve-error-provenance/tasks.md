@@ -27,8 +27,8 @@
 
 ## 6. Desktop boundaries
 
-- [ ] 6.1 Preserve exceptions through Electron IPC and worker messages and record process termination evidence.
-- [ ] 6.2 Keep Crashpad local, audit desktop catch paths and verify the packaged runtime.
+- [x] 6.1 Preserve exceptions through Electron IPC and worker messages and record process termination evidence.
+- [x] 6.2 Keep Crashpad local, audit desktop catch paths and verify the packaged runtime.
 
 ## 7. Repository enforcement
 

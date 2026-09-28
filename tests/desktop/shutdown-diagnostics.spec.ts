@@ -32,6 +32,7 @@ test("opt-in shutdown evidence separates Cancel from cleanup and native exit", a
   try {
     desktop = await _electron.launch({ executablePath: resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe"), cwd: root, env, chromiumSandbox: true, timeout: 30_000 });
     child = desktop.process();
+    expect(await desktop.evaluate(({ crashReporter }) => crashReporter.getUploadToServer())).toBe(false);
     const page = await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
     await page.waitForLoadState("load");
     await page.getByRole("link", { name: "Settings", exact: true }).click();

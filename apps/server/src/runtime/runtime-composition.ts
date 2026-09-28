@@ -33,7 +33,8 @@ import {
   type PlaybackSafetyState,
   type ProviderLiveStatus,
   type ProviderKind,
-  type SecretStore
+  type SecretStore,
+  type SerializedException
 } from "@stream-jams/core";
 import type { FastifyInstance } from "fastify";
 import { createServerApp, type ProductionServerAppDependencies } from "../app.js";
@@ -209,8 +210,20 @@ export interface RuntimeAppComposition {
   readonly twitchEventSubRuntimeService: TwitchEventSubRuntimeService;
   readonly streamerBotRuntimeService: StreamerBotRuntimeService;
   readonly eventIngestionService: EventIngestionService;
+  recordDesktopDiagnostic(report: RuntimeDesktopDiagnostic): Promise<void>;
   syncEventSourceRuntime(): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface RuntimeDesktopDiagnostic {
+  readonly referenceId: string;
+  readonly component: string;
+  readonly source: string;
+  readonly message: string;
+  readonly exception: SerializedException | null;
+  readonly reason: string | null;
+  readonly exitCode: number | null;
+  readonly occurredAt: string;
 }
 
 export async function createRuntimeAppComposition(options: RuntimeAppCompositionOptions): Promise<RuntimeAppComposition> {
@@ -1267,6 +1280,20 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     }
   } satisfies ProductionServerAppDependencies;
   const app = createServerApp(serverDependencies);
+  const recordDesktopDiagnostic = async (report: RuntimeDesktopDiagnostic): Promise<void> => {
+    await runtimeLogger.error(report.message, {
+      module: "desktop",
+      source: report.source,
+      correlationId: report.referenceId,
+      processingId: null,
+      metadata: {
+        component: report.component,
+        reason: report.reason,
+        exitCode: report.exitCode,
+        occurredAt: report.occurredAt
+      }
+    }, report.exception ?? undefined);
+  };
   registerManagementCorsPreflightRoute(app, managementOriginPolicy);
   cleanups.push(() => app.close());
   cleanups.push(() => {
@@ -1291,6 +1318,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     twitchEventSubRuntimeService,
     streamerBotRuntimeService,
     eventIngestionService,
+    recordDesktopDiagnostic,
     syncEventSourceRuntime,
     close
   };

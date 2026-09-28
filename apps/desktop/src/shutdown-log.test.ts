@@ -72,6 +72,20 @@ describe("shutdown phase evidence", () => {
     expect(await readdir(root)).toEqual(["phases.jsonl"]);
   });
 
+  it("retains structured shutdown exception evidence with its reference", async () => {
+    const { file } = await fixture();
+    const log = new ShutdownLog(file);
+    log.recordFailure("service-stop-failed", new Error("stop failed", { cause: new Error("worker pipe closed") }), "err_shutdown_1");
+    log.close();
+    await expect.poll(async () => (await contents(file)).trim().length).toBeGreaterThan(0);
+    const row = JSON.parse((await contents(file)).trim());
+    expect(row).toMatchObject({
+      phase: "service-stop-failed",
+      referenceId: "err_shutdown_1",
+      exception: { message: "stop failed", cause: { message: "worker pipe closed" } }
+    });
+  });
+
   it("bounds accepted and queued evidence during repeated requests", async () => {
     const { file } = await fixture();
     const log = new ShutdownLog(file);

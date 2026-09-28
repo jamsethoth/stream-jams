@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -105,6 +105,10 @@ test("an unavailable renderer requires native confirmation before service shutdo
     await expect.poll(() => nativeDialogMessages(desktop!)).toEqual(expect.arrayContaining([
       expect.stringContaining("Management cannot confirm whether your changes are saved")
     ]));
+    await expect.poll(async () => {
+      const entries = await runtimeLogEntries(join(fixture.root, "data", "logs"));
+      return entries.some((entry) => entry.event === "desktop.renderer.gone" && entry.details?.reason === "crashed" && typeof entry.details.exitCode === "number");
+    }).toBe(true);
     await expectHealth(fixture.port, true);
 
     const closed = desktop.waitForEvent("close");
@@ -217,6 +221,19 @@ function launch(fixture: DesktopFixture): Promise<ElectronApplication> {
     chromiumSandbox: true,
     timeout: 30_000
   });
+}
+
+async function runtimeLogEntries(directory: string): Promise<Array<{ event?: string; details?: Record<string, unknown> }>> {
+  const files = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  const entries: Array<{ event?: string; details?: Record<string, unknown> }> = [];
+  for (const file of files.filter((candidate) => /^runtime-\d{10}\.jsonl$/u.test(candidate))) {
+    const text = await readFile(join(directory, file), "utf8");
+    for (const line of text.split("\n").filter(Boolean)) entries.push(JSON.parse(line));
+  }
+  return entries;
 }
 
 interface HeldNativeDialog {

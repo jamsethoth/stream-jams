@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { audioTransportCommandSchema, audioTransportResultSchema } from "@stream-jams/core";
 import { overlayWorkerMessageSchema, overlayWorkerResponseSchema } from "./overlay/overlay-ipc.js";
+import { desktopDiagnosticReportSchema } from "./desktop-diagnostics.js";
+import { serializedExceptionSchema } from "@stream-jams/core";
 
 const envelope = { generation: z.number().int().positive(), requestId: z.uuid().nullable() };
 const url = z.string().url().refine((value) => {
@@ -13,15 +15,17 @@ export const workerRequestSchema = z.discriminatedUnion("type", [
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("audio-response"), result: audioTransportResultSchema.nullable() }).strict(),
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("start") }).strict(),
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("stop") }).strict(),
-  z.object({ ...envelope, requestId: z.uuid(), type: z.literal("set-muted"), muted: z.boolean() }).strict()
+  z.object({ ...envelope, requestId: z.uuid(), type: z.literal("set-muted"), muted: z.boolean() }).strict(),
+  z.object({ ...envelope, requestId: z.uuid(), type: z.literal("record-diagnostic"), report: desktopDiagnosticReportSchema }).strict()
 ]);
 export const workerMessageSchema = z.discriminatedUnion("type", [
   ...overlayWorkerMessageSchema.options,
   z.object({ ...envelope, requestId: z.uuid(), type: z.literal("audio-request"), command: audioTransportCommandSchema }).strict(),
   z.object({ ...envelope, requestId: z.null(), type: z.literal("audio-lease") }).strict(),
   z.object({ ...envelope, type: z.literal("ready"), url, closeToTray: z.boolean(), muted: z.boolean() }).strict(),
-  z.object({ ...envelope, type: z.literal("failed"), message: z.string().min(1).max(500) }).strict(),
-  z.object({ ...envelope, type: z.literal("command-failed"), message: z.string().min(1).max(500) }).strict(),
+  z.object({ ...envelope, type: z.literal("failed"), message: z.string().min(1).max(500), referenceId: z.string().min(1).max(256), exception: serializedExceptionSchema }).strict(),
+  z.object({ ...envelope, type: z.literal("command-failed"), message: z.string().min(1).max(500), referenceId: z.string().min(1).max(256), exception: serializedExceptionSchema }).strict(),
+  z.object({ ...envelope, requestId: z.uuid(), type: z.literal("diagnostic-recorded") }).strict(),
   z.object({ ...envelope, type: z.literal("stopped") }).strict(),
   z.object({ ...envelope, type: z.literal("desktop-config-changed"), closeToTray: z.boolean() }).strict(),
   z.object({ ...envelope, type: z.literal("playback-state-changed"), muted: z.boolean() }).strict()
