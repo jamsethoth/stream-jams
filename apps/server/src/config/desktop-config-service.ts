@@ -27,7 +27,9 @@ export class DesktopConfigService {
       }
       return { ...config.desktop, available: true };
     });
-    this.#pending = result.catch(() => undefined);
+    this.#pending = result.catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => undefined);
     return result;
   }
 

@@ -223,7 +223,9 @@ export class AssetLibraryService {
         const updated = await this.#options.assetRepository.save({ ...record, durationMs: result.durationMs });
         this.#options.durationCatalog?.store(updated);
       }
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       // A valid legacy asset remains usable; automatic timing displays its documented fallback.
     }
     return this.getItem(assetId);

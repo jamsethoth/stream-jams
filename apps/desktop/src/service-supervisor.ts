@@ -129,7 +129,9 @@ export class ServiceSupervisor {
     try {
       this.#send({ type: "record-diagnostic", generation: this.#generation, requestId, report });
       return true;
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       this.#diagnostics.delete(requestId);
       clearTimeout(timer);
       return false;

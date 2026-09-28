@@ -223,7 +223,9 @@ export class EffectPlaybackCoordinator {
     state.timer = this.#scheduleTimer(
       () => {
         void this.#stopAndComplete(occurrence.id, "failed").catch((error: unknown) => {
-          void Promise.resolve(this.#onStopFailure(error, occurrence.id)).catch(() => undefined);
+          void Promise.resolve(this.#onStopFailure(error, occurrence.id)).catch(
+          // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+          () => undefined);
         });
       },
       occurrence.content.variant.durationMs + COMPLETION_GRACE_MS
@@ -351,7 +353,9 @@ export class EffectPlaybackCoordinator {
         state.browserInstructions.map((instruction) => instruction.id)
       );
     } catch (error) {
-      void Promise.resolve(this.#onStopFailure(error, occurrenceId)).catch(() => {
+      void Promise.resolve(this.#onStopFailure(error, occurrenceId)).catch(
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      () => {
         // error-provenance: allow cleanup -- the production logger owns its own emergency fallback
       });
       // A disconnected browser cannot block local silence.
@@ -381,7 +385,9 @@ export class EffectPlaybackCoordinator {
   }
 
   #reportPlaybackFailure(error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio"): void {
-    void Promise.resolve(this.#onPlaybackFailure(error, occurrenceId, recipient)).catch(() => {
+    void Promise.resolve(this.#onPlaybackFailure(error, occurrenceId, recipient)).catch(
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+    () => {
       // error-provenance: allow cleanup -- the production logger owns its own emergency fallback
     });
   }

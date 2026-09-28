@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { audioPlaybackPayloadSchema, audioTransportCommandSchema, type AudioPlaybackPayload, type AudioTransportCommand, type AudioTransportResult, type DesktopAudioTransport } from "@stream-jams/core";
 import { audioRendererReplySchema, type AudioRendererRequest } from "./audio-ipc.js";
+import type { DesktopDiagnosticInput } from "../desktop-diagnostics.js";
 
 export interface AudioRendererCallbacks { onReply(reply: unknown): void; onDestroyed(): void }
 export interface AudioRendererPort { load(): Promise<void>; send(request: AudioRendererRequest): void; destroy(): void }
@@ -19,7 +20,7 @@ export class AudioHost implements DesktopAudioTransport {
   #leaseAt = 0;
   #leaseTimer: ReturnType<typeof setInterval> | undefined;
 
-  constructor(private readonly createRenderer: (callbacks: AudioRendererCallbacks) => AudioRendererPort) {}
+  constructor(private readonly createRenderer: (callbacks: AudioRendererCallbacks) => AudioRendererPort, private readonly diagnose?: (input: DesktopDiagnosticInput) => void) {}
 
   beginOwnership(): void {
     this.serviceLost();
@@ -79,7 +80,11 @@ export class AudioHost implements DesktopAudioTransport {
     try {
       const result = await this.#request({ type: "stop", playbackId }, 2000);
       if (result.type !== "ok") this.#discard(true);
-    } catch { this.#discard(false); }
+    }
+    catch (error) {
+      this.diagnose?.({ component: "audio-renderer", source: "desktop.audio.stop-failed", message: "Desktop audio could not confirm playback stop.", exception: error });
+      this.#discard(false, error);
+    }
   }
   async setMuted(muted: boolean): Promise<void> {
     this.#muted = muted;
@@ -87,7 +92,8 @@ export class AudioHost implements DesktopAudioTransport {
     try {
       const result = await this.#request({ type: "set-muted", muted }, 2000);
       if (result.type !== "ok") { this.#discard(true); throw unavailable(); }
-    } catch { this.#discard(false); throw unavailable(); }
+    }
+    catch (error) { this.#discard(false, error); throw unavailable(error); }
   }
   async retry(): Promise<void> {
     if (!this.#owned) throw unavailable();
@@ -132,9 +138,10 @@ export class AudioHost implements DesktopAudioTransport {
         if (this.#port !== port || generation !== this.#generation) throw unavailable();
         const result = await this.#request({ type: "initialize", muted: this.#muted }, 2000);
         if (result.type !== "ok") throw unavailable();
-      } catch {
-        if (this.#port === port) this.#discard(true);
-        throw unavailable();
+      }
+      catch (error) {
+        if (this.#port === port) this.#discard(true, error);
+        throw unavailable(error);
       } finally { clearTimeout(timer); }
     })();
     return this.#ready;
@@ -146,7 +153,7 @@ export class AudioHost implements DesktopAudioTransport {
       const timer = setTimeout(() => this.#discard(true), timeoutMs);
       this.#pending.set(requestId, { resolve, reject, timer });
       try { this.#port!.send({ generation: this.#generation, requestId, command }); }
-      catch { this.#discard(true); }
+      catch (error) { this.#discard(true, error); }
     });
   }
   #receive(candidate: unknown, generation: number): void {
@@ -155,12 +162,12 @@ export class AudioHost implements DesktopAudioTransport {
     if (!parsed.success || parsed.data.generation !== generation) return;
     const pending = this.#pending.get(parsed.data.requestId);
     if (pending === undefined) return;
-    if (parsed.data.result === null) { this.#discard(true); return; }
+    if (parsed.data.result === null) { this.#discard(true, parsed.data.exception); return; }
     this.#pending.delete(parsed.data.requestId);
     clearTimeout(pending.timer);
     pending.resolve(parsed.data.result);
   }
-  #discard(failed: boolean): void {
+  #discard(failed: boolean, cause?: unknown): void {
     const port = this.#port;
     this.#port = null;
     this.#ready = null;
@@ -169,11 +176,13 @@ export class AudioHost implements DesktopAudioTransport {
     // Destroy synchronously before rejecting terminal promises or acknowledging stop.
     port?.destroy();
     if (failed && port !== null) this.#failures++;
-    for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(unavailable()); }
+    for (const pending of this.#pending.values()) { clearTimeout(pending.timer); pending.reject(unavailable(cause)); }
     this.#pending.clear();
   }
 }
-function unavailable(): Error { return new Error("Local audio is unavailable. Retry the audio backend explicitly if automatic recovery has been exhausted."); }
+function unavailable(cause?: unknown): Error {
+  return new Error("Local audio is unavailable. Retry the audio backend explicitly if automatic recovery has been exhausted.", cause === undefined ? undefined : { cause });
+}
 function testTone(): Uint8Array<ArrayBuffer> {
   const samples = 24_000;
   const bytes = new Uint8Array(44 + samples * 2);

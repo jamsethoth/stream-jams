@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { BrowserWindow, dialog, ipcMain, shell, type IpcMainEvent } from "electron";
 import { isManagementNavigation, isTrustedManagementSender } from "./close-policy.js";
 import { quitReplySchema } from "./desktop-ipc.js";
+import type { DesktopDiagnosticInput } from "./desktop-diagnostics.js";
 
 const externalHosts = new Set(["www.twitch.tv", "id.twitch.tv", "dev.twitch.tv", "obsproject.com", "streamer.bot", "speaker.bot"]);
 export class ManagementWindow {
@@ -12,7 +13,7 @@ export class ManagementWindow {
   #unavailableConfirmation: Promise<boolean> | null = null;
   #pending: { id: string; resolve(allow: boolean): void } | null = null;
 
-  constructor(readonly origin: string) {
+  constructor(readonly origin: string, private readonly diagnose?: (input: DesktopDiagnosticInput) => void) {
     this.window = new BrowserWindow({
       width: 1280, height: 850, minWidth: 760, minHeight: 540, show: false, title: "Stream Jams",
       webPreferences: {
@@ -26,9 +27,14 @@ export class ManagementWindow {
       try {
         const url = new URL(candidate);
         if (url.protocol === "https:" && externalHosts.has(url.hostname) && !url.username && !url.password) {
-          void shell.openExternal(url.href).catch(() => dialog.showErrorBox("Link could not be opened", "Open the provider website in your browser and retry."));
+          void shell.openExternal(url.href).catch((error: unknown) => {
+            this.diagnose?.({ component: "management-window", source: "desktop.management.external-link-failed", message: "An approved external link could not be opened.", exception: error, reason: url.hostname });
+            dialog.showErrorBox("Link could not be opened", "Open the provider website in your browser and retry.");
+          });
         }
-      } catch { /* Invalid and unapproved URLs are never opened. */ }
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch { /* Invalid and unapproved URLs are never opened. */ }
     };
     this.window.webContents.on("will-navigate", (event, url) => {
       if (!isManagementNavigation(url, origin)) { event.preventDefault(); external(url); }

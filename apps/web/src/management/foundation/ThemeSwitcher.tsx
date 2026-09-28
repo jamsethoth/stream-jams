@@ -19,7 +19,9 @@ export function ThemeSwitcher() {
     try {
       window.localStorage.setItem(storageKey, nextPreference);
       setError(null);
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       setError("Theme preference could not be saved for the next session.");
     }
   }
@@ -55,7 +57,9 @@ function readThemePreference(): { readonly preference: ThemePreference; readonly
       preference: stored === "dark" || stored === "light" ? stored : "system",
       error: null
     };
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return { preference: "system", error: "Theme preference storage is unavailable in this browser session." };
   }
 }

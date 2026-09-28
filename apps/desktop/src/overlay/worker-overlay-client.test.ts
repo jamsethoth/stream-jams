@@ -148,7 +148,7 @@ it("bounds pending requests and rejects all of them on disposal", async () => {
   vi.useFakeTimers();
   const messages: OverlayWorkerMessage[] = [];
   const client = new WorkerOverlayClient(1, message => messages.push(message));
-  const pending = Array.from({ length: 64 }, () => client.configure(config).catch(error => error as Error));
+  const pending = Array.from({ length: 64 }, () => client.configure(config).catch((error: unknown) => error as Error));
   await expect(client.configure(config)).rejects.toThrow(/unavailable/i);
   expect(messages).toHaveLength(64);
   client.dispose();
@@ -165,7 +165,7 @@ it("settles missing completion at the occurrence end plus five seconds", async (
   await ready;
   const completion = client.start(key);
   let rejected = false;
-  const checked = completion.catch(error => { rejected = true; return error as Error; });
+  const checked = completion.catch((error: unknown) => { rejected = true; return error as Error; });
   await vi.advanceTimersByTimeAsync(5999);
   expect(rejected).toBe(false);
   await vi.advanceTimersByTimeAsync(1);
@@ -194,7 +194,7 @@ it("does not use the completion grace period to start expired content", async ()
   client.receive({ type: "overlay-response", generation: 1, requestId: messages[0]!.requestId, result: { type: "ready", key } });
   await ready;
   await vi.advanceTimersByTimeAsync(1000);
-  const start = client.start(key).catch(error => error as Error);
+  const start = client.start(key).catch((error: unknown) => error as Error);
   try { expect(messages).toHaveLength(1); }
   finally { client.dispose(); }
   expect(await start).toBeInstanceOf(Error);
@@ -208,8 +208,8 @@ it("coalesces overlapping stops without releasing the occurrence before acknowle
   const ready = client.prepare(batch);
   client.receive({ type: "overlay-response", generation: 1, requestId: messages[0]!.requestId, result: { type: "ready", key } });
   await ready;
-  const first = client.stop(key).catch(error => error as Error);
-  const second = client.stop(key).catch(error => error as Error);
+  const first = client.stop(key).catch((error: unknown) => error as Error);
+  const second = client.stop(key).catch((error: unknown) => error as Error);
   try {
     await vi.advanceTimersByTimeAsync(1);
     expect(await client.prepare(batch)).toBe("unavailable");

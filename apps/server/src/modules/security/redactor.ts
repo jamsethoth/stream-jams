@@ -91,7 +91,9 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
 
     try {
       url = new URL(value, "http://stream-jams.local");
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       return value;
     }
 
@@ -113,6 +115,7 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
 }
 
 function normalizeControlCharacters(value: string): string {
+  // eslint-disable-next-line no-control-regex -- logs must not retain control bytes
   return value.replace(/[\u0000-\u001F\u007F]/g, " ");
 }
 

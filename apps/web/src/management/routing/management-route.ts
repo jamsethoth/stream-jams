@@ -255,7 +255,9 @@ function normalizePath(pathname: string): string {
 function decodePathSegment(value: string): string | null {
   try {
     return decodeURIComponent(value);
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 }

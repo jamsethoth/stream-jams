@@ -25,23 +25,22 @@ if (isolatedUserData !== undefined) {
   app.setPath("userData", isolatedUserData);
 }
 let management: ManagementWindow | null = null;
-const audio = new AudioHost(callbacks => new AudioWindow(callbacks));
+const audio = new AudioHost(callbacks => new AudioWindow(callbacks), (input) => diagnostics.record(input));
 const overlay = new OverlayHost((config, callbacks) => PrivateOverlayWindow.create(config, callbacks), () => ({
   available: process.platform === "win32", displays: process.platform === "win32" ? enumerateDesktopDisplays() : []
-}));
+}), (input) => diagnostics.record(input));
 let tray: ReturnType<typeof createTray> | null = null;
 let exiting = false;
 let quitPending: Promise<void> | null = null;
 let failureVisible = false;
 let firstHide = true;
 let shutdownLog: ShutdownLog | undefined;
-let diagnostics: DesktopDiagnostics;
 
 const supervisor = new ServiceSupervisor(() => utilityProcess.fork(resolve(import.meta.dirname, "service-worker.js"), [], { serviceName: "Stream Jams local service", stdio: "ignore" }), () => {
   tray?.update(supervisor.snapshot);
   if (supervisor.state === "failed" && !exiting) void showFailure();
 }, audio, overlay, (input) => diagnostics.record(input), (report) => diagnostics.fallback(report));
-diagnostics = new DesktopDiagnostics({
+const diagnostics = new DesktopDiagnostics({
   send: (report) => supervisor.recordDiagnostic(report),
   writeFallback: createDesktopDiagnosticFallbackWriter(resolve(app.getPath("logs"), "desktop-emergency.jsonl"))
 });
@@ -80,7 +79,7 @@ async function start(): Promise<void> {
   try {
     const ready = await supervisor.start();
     management?.window.destroy();
-    management = new ManagementWindow(new URL(ready.url).origin);
+    management = new ManagementWindow(new URL(ready.url).origin, (input) => diagnostics.record(input));
     management.window.on("close", (event) => {
       if (exiting) return;
       event.preventDefault();

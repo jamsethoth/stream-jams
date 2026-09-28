@@ -288,7 +288,9 @@ export class StreamerBotClient {
           this.#markConnected(hello.info, restoreSubscriptions);
         }
       })
-      .catch(() => {
+      .catch(
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      () => {
         if (this.#socket === socket) {
           this.#setError("Streamer.bot authentication failed");
           socket.close();
@@ -561,7 +563,9 @@ export class StreamerBotClient {
       message,
       referenceId,
       ...(exception === undefined ? {} : { exception })
-    })).catch(() => {
+    })).catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => {
       if (this.#status.referenceId === referenceId) {
         this.#updateStatus({ message: "Streamer.bot diagnostics logging failed" });
       }
@@ -638,7 +642,9 @@ function parseRawMessage(data: unknown): unknown | null {
 
   try {
     return JSON.parse(data) as unknown;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 }

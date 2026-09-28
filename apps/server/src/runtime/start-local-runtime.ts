@@ -32,7 +32,8 @@ export async function startLocalRuntime(options: RuntimeAppCompositionOptions): 
     return { composition, url: result.url, close: composition.close };
   } catch (error) {
     try { await composition.close(); } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Local runtime startup and cleanup failed", { cause: error });
+      // eslint-disable-next-line preserve-caught-error -- AggregateError retains both startup and cleanup errors in order
+      throw new AggregateError([error, cleanupError], "Local runtime startup and cleanup failed");
     }
     throw error;
   }

@@ -58,7 +58,9 @@ export function serializeException(
     }
 
     return fitTotalSize(serializeValue(value, limits, new WeakSet<object>(), 0), limits);
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return fallbackException("ExceptionSerializationError", "The exception could not be serialized.");
   }
 }
@@ -127,7 +129,9 @@ function readTransportedException(value: unknown): SerializedException | null {
   try {
     const parsed = serializedExceptionSchema.safeParse(value);
     return parsed.success ? parsed.data : null;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 }
@@ -135,7 +139,9 @@ function readTransportedException(value: unknown): SerializedException | null {
 function readProperty(value: object, property: string): unknown | typeof inaccessible {
   try {
     return Reflect.get(value, property);
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return inaccessible;
   }
 }

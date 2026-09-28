@@ -12,7 +12,7 @@ async function fixture() {
   return { root, file: join(root, "phases.jsonl") };
 }
 async function contents(file: string): Promise<string> {
-  return readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return ""; throw error; });
+  return readFile(file, "utf8").catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""; throw error; });
 }
 
 describe("shutdown phase evidence", () => {

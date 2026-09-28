@@ -98,7 +98,9 @@ function readAlertPreviewPreferences(): { readonly audio: boolean; readonly tts:
       const preferences = value as Record<string, unknown>;
       return { audio: preferences.audio === true, tts: preferences.tts === true };
     }
-  } catch { /* Use muted defaults when storage is unavailable or invalid. */ }
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch { /* Use muted defaults when storage is unavailable or invalid. */ }
   return { audio: false, tts: false };
 }
 
@@ -240,7 +242,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     onError: onPreviewError
   });
   useEffect(() => {
-    try { window.localStorage.setItem(alertPreviewPreferencesKey, JSON.stringify(previewPreferences)); } catch { /* Keep the preference session-only. */ }
+    try { window.localStorage.setItem(alertPreviewPreferencesKey, JSON.stringify(previewPreferences)); }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch { /* Keep the preference session-only. */ }
   }, [previewPreferences]);
   const resetEventInspectorDraft = useCallback(() => {
     setConditionDraftError(null);
@@ -318,7 +322,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     });
     void props.managementApi.listAssetLibraryItems().then((items) => {
       if (active) setAssets(items);
-    }).catch(() => {
+    }).catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => {
       if (active) setAssets([]);
     });
     return () => {
@@ -344,7 +350,9 @@ export function AlertEditorPage(props: AlertEditorPageProps) {
     void props.managementApi.listAssetLibraryItems().then((items) => {
       if (!active) return;
       setVisualAssetMediaTypes(Object.fromEntries(items.flatMap((item) => item.mediaType === "audio" ? [] : [[item.id, item.mediaType]])));
-    }).catch(() => {
+    }).catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => {
       if (active) setVisualAssetMediaTypes(null);
     });
     return () => { active = false; };
@@ -2003,7 +2011,9 @@ function deriveLiveReadiness(
   let assessment: ReturnType<typeof assessAlertConfiguration>;
   try {
     assessment = assessAlertConfiguration(document, visualAssetMediaTypes ?? {});
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return { action: null, actionLabel: null, message: `${prefix}Alert content could not be checked. Configuration readiness is not confirmed.`, profileId: null, ready: false };
   }
   if (assessment.issue === "profile-review" && assessment.profileId !== null) return { action: "review-profile", actionLabel: `Review and enable ${profileLabel(assessment.profileId)}`, message: `${prefix}${profileLabel(assessment.profileId)} must be reviewed and enabled before it can be used.`, profileId: assessment.profileId, ready: false };
@@ -2060,7 +2070,9 @@ function parseSample(value: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(value) as unknown;
     return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 }

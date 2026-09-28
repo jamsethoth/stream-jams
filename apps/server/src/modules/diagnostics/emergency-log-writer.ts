@@ -33,9 +33,8 @@ export class EmergencyLogWriter {
   write(input: EmergencyLogInput): void {
     if (this.#writing) return;
     this.#writing = true;
-    let line = "";
     try {
-      line = `${JSON.stringify({
+      const line = `${JSON.stringify({
         timestamp: sanitizeText(input.timestamp, 128),
         level: "ERROR",
         component: sanitizeText(input.component, 256),
@@ -48,10 +47,16 @@ export class EmergencyLogWriter {
       })}\n`;
       try {
         this.#appendFile(this.#filePath, line);
-      } catch {
-        try { this.#writeStderr(line); } catch { /* No further safe sink exists. */ }
       }
-    } catch {
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
+        try { this.#writeStderr(line); }
+        // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+        catch { /* No further safe sink exists. */ }
+      }
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       const fallback = `${JSON.stringify({
         timestamp: sanitizeText(input.timestamp, 128),
         level: "ERROR",
@@ -61,7 +66,9 @@ export class EmergencyLogWriter {
         message: "The emergency diagnostic record could not be encoded.",
         emergency: true
       })}\n`;
-      try { this.#writeStderr(fallback); } catch { /* No further safe sink exists. */ }
+      try { this.#writeStderr(fallback); }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch { /* No further safe sink exists. */ }
     } finally {
       this.#writing = false;
     }
@@ -76,7 +83,9 @@ function appendEmergencyFile(path: string, data: string): void {
 function sanitizeException(value: unknown): SerializedException {
   try {
     return sanitizeExceptionNode(serializeException(value));
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return {
       type: "UnserializableException",
       message: "Exception detail was unavailable to the emergency logger.",
@@ -101,6 +110,7 @@ function sanitizeExceptionNode(value: SerializedException): SerializedException 
 
 function sanitizeText(value: string, limit: number): string {
   const normalized = value
+    // eslint-disable-next-line no-control-regex -- normalize control bytes before writing emergency JSONL
     .replace(/[\u0000-\u001F\u007F]/g, " ")
     .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, (_match, scheme: string) => `${scheme} [REDACTED]`)
     .replace(/\bsk-[A-Za-z0-9_-]+\b/g, "[REDACTED]")

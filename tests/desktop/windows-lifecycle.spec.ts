@@ -224,8 +224,8 @@ function launch(fixture: DesktopFixture): Promise<ElectronApplication> {
 }
 
 async function runtimeLogEntries(directory: string): Promise<Array<{ event?: string; details?: Record<string, unknown> }>> {
-  const files = await readdir(directory).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return [];
+  const files = await readdir(directory).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   });
   const entries: Array<{ event?: string; details?: Record<string, unknown> }> = [];

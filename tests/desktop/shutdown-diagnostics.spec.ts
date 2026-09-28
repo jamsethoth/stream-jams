@@ -26,7 +26,7 @@ test("opt-in shutdown evidence separates Cancel from cleanup and native exit", a
   let child: ChildProcess | undefined;
   const pids = new Set<number>();
   const rows = async (): Promise<{ phase: string; attempt: number }[]> => {
-    const text = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return ""; throw error; });
+    const text = await readFile(file, "utf8").catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""; throw error; });
     return text.split("\n").slice(0, -1).map(line => JSON.parse(line) as { phase: string; attempt: number });
   };
   try {

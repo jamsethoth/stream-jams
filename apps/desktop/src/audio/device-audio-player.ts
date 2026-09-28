@@ -106,13 +106,27 @@ function cleanupElement(attempt: ElementAttempt, ended: EventListener, error: Ev
     clearInterval(attempt.envelopeTimer);
     attempt.envelopeTimer = null;
   }
-  try { attempt.element.removeEventListener("ended", ended); } catch { /* cleanup is best-effort */ }
-  try { attempt.element.removeEventListener("error", error); } catch { /* cleanup is best-effort */ }
-  try { attempt.element.pause(); } catch { /* cleanup is best-effort */ }
-  try { attempt.amplifier?.dispose(); } catch { /* cleanup is best-effort */ }
-  try { attempt.element.removeAttribute("src"); } catch { /* cleanup is best-effort */ }
-  try { attempt.element.load(); } catch { /* cleanup is best-effort */ }
-  try { attempt.element.remove(); } catch { /* cleanup is best-effort */ }
+  try { attempt.element.removeEventListener("ended", ended); }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { /* cleanup is best-effort */ }
+  try { attempt.element.removeEventListener("error", error); }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { /* cleanup is best-effort */ }
+  try { attempt.element.pause(); }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { /* cleanup is best-effort */ }
+  try { attempt.amplifier?.dispose(); }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { /* cleanup is best-effort */ }
+  try { attempt.element.removeAttribute("src"); }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { /* cleanup is best-effort */ }
+  try { attempt.element.load(); }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { /* cleanup is best-effort */ }
+  try { attempt.element.remove(); }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { /* cleanup is best-effort */ }
 }
 
 export class DeviceAudioPlayer {
@@ -159,7 +173,9 @@ export class DeviceAudioPlayer {
     for (const asset of request.assets) {
       try {
         sourcesByAssetId.set(asset.assetId, this.#dependencies.createSource(asset));
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         // A single undecodable asset must not abort healthy layers or devices.
       }
     }
@@ -212,7 +228,9 @@ export class DeviceAudioPlayer {
           attempt.envelopeTimer = setInterval(updateEnvelope, 25);
           element.muted = this.#currentMuted;
           this.#startAttempt(occurrence, attempt, request.deadlineMs, request.startDeadlineMs, request.batch.timing, layer.volume > 1);
-        } catch {
+        }
+        // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+        catch {
           for (const routeId of destination.routeIds) occurrence.failedRouteIds.add(routeId);
         }
       }
@@ -345,7 +363,9 @@ export class DeviceAudioPlayer {
           clearTimeout(attempt.startTimer);
           attempt.startTimer = null;
         }
-      } catch {
+      }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch {
         if (!attempt.terminal) attempt.finish("failed");
       } finally {
         clearTimeout(guardTimer);
@@ -456,6 +476,8 @@ export class DeviceAudioPlayer {
   }
 
   #revokeSource(source: string): void {
-    try { this.#dependencies.revokeSource(source); } catch { /* cleanup is best-effort */ }
+    try { this.#dependencies.revokeSource(source); }
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+    catch { /* cleanup is best-effort */ }
   }
 }

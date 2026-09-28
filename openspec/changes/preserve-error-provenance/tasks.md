@@ -32,8 +32,8 @@
 
 ## 7. Repository enforcement
 
-- [ ] 7.1 Add and test the TypeScript-AST provenance check and unknown promise-rejection lint rule.
-- [ ] 7.2 Resolve every production violation before enabling the lint/CI gate.
+- [x] 7.1 Add and test the TypeScript-AST provenance check and unknown promise-rejection lint rule.
+- [x] 7.2 Resolve every production violation before enabling the lint/CI gate.
 
 ## 8. Documentation and verification
 

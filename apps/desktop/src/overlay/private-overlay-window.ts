@@ -46,7 +46,9 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
         if (this.#destroying) return new Response(null, { status: 404 });
         return new Response(bytes, { headers: { "Content-Type": resource.type, "Content-Security-Policy": contentSecurityPolicy,
           "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
-      } catch { return new Response(null, { status: 404 }); }
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch { return new Response(null, { status: 404 }); }
     });
     this.#session.setPermissionCheckHandler(() => false);
     this.#session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -60,7 +62,9 @@ export class PrivateOverlayWindow implements OverlayRendererPort {
     } catch (error) {
       // Setup may have registered the protocol before a later permission/IPC
       // step failed. Release it so explicit recovery can create a fresh host.
-      try { this.destroy(); } catch { /* The factory still destroys the native window. */ }
+      try { this.destroy(); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch { /* The factory still destroys the native window. */ }
       throw error;
     }
   }

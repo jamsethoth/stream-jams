@@ -404,7 +404,9 @@ function isTwitchVerificationUri(value: string): boolean {
   try {
     const uri = new URL(value);
     return uri.protocol === "https:" && uri.hostname === "www.twitch.tv";
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return false;
   }
 }

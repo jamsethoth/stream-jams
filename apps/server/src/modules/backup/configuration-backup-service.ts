@@ -563,7 +563,9 @@ export class ConfigurationBackupService {
     if (connectedTwitchAccountId !== null && this.#options.twitchCredentials !== undefined) {
       try {
         await this.#options.twitchCredentials.deleteTokenSecrets(connectedTwitchAccountId);
-      } catch {
+      }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch {
         warnings.push({
           ...warning(
             "Old Twitch credentials could not be removed",
@@ -671,7 +673,9 @@ function portableLegacySurfaceRow(row: Record<string, unknown>): Record<string, 
     return parsed.kind === "desktop"
       ? { ...row, configuration_json: JSON.stringify({ ...parsed, enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false }) }
       : row;
-  } catch { return row; }
+  }
+  // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+  catch { return row; }
 }
 
 function removeLegacyScreenEffectAnimation(value: unknown): unknown {
@@ -682,7 +686,9 @@ function removeLegacyScreenEffectAnimation(value: unknown): unknown {
     const variant = { ...parsed } as Record<string, unknown>;
     delete variant.animation;
     return JSON.stringify(variant);
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return value;
   }
 }

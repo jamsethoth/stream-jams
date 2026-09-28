@@ -514,14 +514,18 @@ export class PlaybackCoordinator {
 
       if (this.#overlayPlaybackSink === null && this.#audioPlaybackSink === null && this.#desktopVisualSink === null) {
         if (shouldDispatchRemoteTts && !snapshot.muted) {
-          void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
+          void this.#dispatchRemoteTts(snapshot.current.alerts).catch(
+          // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+          () => undefined);
         }
         return snapshot;
       }
 
       if (snapshot.current.id === this.#lastDeliveredCurrentItemId) {
         if (shouldDispatchRemoteTts && !snapshot.muted) {
-          void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
+          void this.#dispatchRemoteTts(snapshot.current.alerts).catch(
+          // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+          () => undefined);
         }
         return snapshot;
       }
@@ -614,7 +618,9 @@ export class PlaybackCoordinator {
       }
       this.#browserDispatchComplete = true;
       if (shouldDispatchRemoteTts && !snapshot.muted) {
-        void this.#dispatchRemoteTts(snapshot.current.alerts).catch(() => undefined);
+        void this.#dispatchRemoteTts(snapshot.current.alerts).catch(
+        // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+        () => undefined);
       }
 
       if (!this.#canCompleteCurrent()) {
@@ -737,7 +743,9 @@ export class PlaybackCoordinator {
       const desktopStop = desktop === null || this.#desktopVisualSink === null ? null :
         (desktop.stopping ??= this.#desktopVisualSink.stop(desktop.transportId));
       // Start both independent stops before waiting for either output.
-      void desktopStop?.catch(() => undefined);
+      void desktopStop?.catch(
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      () => undefined);
       if (state !== null && this.#audioPlaybackSink !== null) {
         state.stopping ??= this.#audioPlaybackSink.stop(state.transportId);
         try {
@@ -757,7 +765,9 @@ export class PlaybackCoordinator {
     this.#stoppingOccurrence = { id: playbackId, promise };
     void promise.finally(() => {
       if (this.#stoppingOccurrence?.promise === promise) this.#stoppingOccurrence = null;
-    }).catch(() => undefined);
+    }).catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => undefined);
     return promise;
   }
 

@@ -382,7 +382,9 @@ export class TwitchEventSubClient {
           this.#detachSocket(socket);
           try {
             await this.#onAuthorizationFailure();
-          } catch {
+          }
+          // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+          catch {
             // The persistent failure already provides the actionable diagnostic reference.
           }
           return;
@@ -574,7 +576,9 @@ export class TwitchEventSubClient {
       message,
       referenceId,
       ...(exception === undefined ? {} : { exception })
-    })).catch(() => {
+    })).catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => {
       if (this.#status.referenceId === referenceId) {
         this.#status = { ...this.#status, message: "Twitch EventSub diagnostics logging failed" };
       }

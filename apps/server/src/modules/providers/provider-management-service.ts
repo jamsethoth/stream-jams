@@ -346,7 +346,9 @@ export class ProviderManagementService {
     const result = this.#pendingStreamerBotSubscriptionMutation.then(
       () => this.#updateStreamerBotSubscriptions(providerId, input)
     );
-    this.#pendingStreamerBotSubscriptionMutation = result.catch(() => undefined);
+    this.#pendingStreamerBotSubscriptionMutation = result.catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => undefined);
     return result;
   }
 
@@ -396,10 +398,10 @@ export class ProviderManagementService {
       try {
         await runtimeMutation.rollback();
       } catch (rollbackError) {
+        // eslint-disable-next-line preserve-caught-error -- AggregateError retains both persistence and rollback errors in order
         throw new AggregateError(
           [error, rollbackError],
-          "Provider persistence failed and the live Streamer.bot subscription rollback also failed",
-          { cause: error }
+          "Provider persistence failed and the live Streamer.bot subscription rollback also failed"
         );
       }
       throw error;

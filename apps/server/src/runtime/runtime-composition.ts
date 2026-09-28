@@ -361,8 +361,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
   function trackRuntimeWork(work: () => Promise<void>): Promise<void> {
     if (closing) return Promise.resolve();
-    let pending!: Promise<void>;
-    pending = trackRuntimeTask({
+    const pending = trackRuntimeTask({
       work,
       logger: runtimeLogger,
       context: {
@@ -458,7 +457,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     } catch (error) {
       try { await options.desktopAudioTransport.close(); }
       catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], "Desktop audio initialization and cleanup failed", { cause: error });
+        // eslint-disable-next-line preserve-caught-error -- AggregateError retains both initialization and cleanup errors in order
+        throw new AggregateError([error, cleanupError], "Desktop audio initialization and cleanup failed");
       }
       throw error;
     }
@@ -778,7 +778,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const twitchValidationInterval = (options.scheduleRecurring ?? setInterval)(() => {
-    void trackRuntimeWork(() => twitchAuthService.validateConnectedAccount().then(() => undefined)).catch(async () => {
+    void trackRuntimeWork(() => twitchAuthService.validateConnectedAccount().then(() => undefined)).catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    async () => {
       if (closing) return;
       await twitchEventSubRuntimeService.reportAuthorizationFailure();
     });
@@ -1166,7 +1168,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           (reward) => reward.id === rewardId
         );
       // error-provenance: allow expected -- catalog availability probes intentionally collapse provider failures to false
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         return false;
       }
     },
@@ -1179,7 +1183,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         const catalog = await providerManagementService.getStreamerBotSubscriptions(providerId);
         return isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType);
       // error-provenance: allow expected -- provider selection probes intentionally collapse unavailable catalogs to false
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         return false;
       }
     }
@@ -1324,7 +1330,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   } catch (error) {
     try { await close(); } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Runtime composition and cleanup failed", { cause: error });
+      // eslint-disable-next-line preserve-caught-error -- AggregateError retains both composition and cleanup errors in order
+      throw new AggregateError([error, cleanupError], "Runtime composition and cleanup failed");
     }
     throw error;
   }

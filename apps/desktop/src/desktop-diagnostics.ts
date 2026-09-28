@@ -64,7 +64,9 @@ export class DesktopDiagnostics {
     });
     try {
       if (this.#send(report)) return report;
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       // Worker transport is no longer viable; use the independent local sink.
     }
     this.fallback(report);
@@ -74,7 +76,9 @@ export class DesktopDiagnostics {
   fallback(report: DesktopDiagnosticReport): void {
     try {
       this.#writeFallback?.(sanitizeReport(report));
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       // The fallback is the final local sink and must never recurse.
     }
   }
@@ -104,7 +108,9 @@ export function collectPriorCrashDumpMetadata(directory: string): Array<{ name: 
       })
       .sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt))
       .slice(0, 10);
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return [];
   }
 }
@@ -140,5 +146,6 @@ function sanitizeText(value: string): string {
   return value
     .replace(/https?:\/\/[^\s"'<>]+/giu, "[REDACTED_URL]")
     .replace(/\b(authorization|token|password|secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?[^\s,;]+/giu, "$1=[REDACTED]")
+    // eslint-disable-next-line no-control-regex -- remove unsafe control bytes from the final emergency sink
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, "");
 }

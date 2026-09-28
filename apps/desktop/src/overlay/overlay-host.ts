@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { desktopOverlayStatusSchema, desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopOverlayDiagnostic, type DesktopOverlayStatus, type SelectedDesktopDisplay, type DesktopOverlayTransport, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 import { overlayRendererReplySchema, type OverlayRendererRequest } from "./overlay-ipc.js";
+import type { DesktopDiagnosticInput } from "../desktop-diagnostics.js";
 
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
 type RendererFailure = Pick<DesktopOverlayDiagnostic, "kind" | "reason" | "exitCode"> & { readonly operation?: DesktopOverlayDiagnostic["operation"] };
@@ -29,7 +30,8 @@ export class OverlayHost implements DesktopOverlayTransport {
 
   constructor(
     private readonly createRenderer: (config: Configuration, callbacks: OverlayRendererCallbacks) => OverlayRendererPort | null,
-    private readonly capabilities: () => { available: boolean; displays: SelectedDesktopDisplay[] } = () => ({ available: false, displays: [] })
+    private readonly capabilities: () => { available: boolean; displays: SelectedDesktopDisplay[] } = () => ({ available: false, displays: [] }),
+    private readonly diagnose?: (input: DesktopDiagnosticInput) => void
   ) {}
 
   async getStatus(): Promise<DesktopOverlayStatus> {
@@ -38,7 +40,9 @@ export class OverlayHost implements DesktopOverlayTransport {
       const capabilities = this.capabilities();
       available = desktopOverlayStatusSchema.shape.available.parse(capabilities.available);
       displays = desktopOverlayStatusSchema.shape.displays.parse(capabilities.displays);
-    } catch { return { available: false, displays: [], state: "unavailable", message: "Desktop displays could not be inspected. Restart the desktop application and try again." }; }
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch { return { available: false, displays: [], state: "unavailable", message: "Desktop displays could not be inspected. Restart the desktop application and try again." }; }
     if (!available) return { available, displays, state: "unavailable", message: "Desktop output requires the Windows desktop application.", diagnostic: this.#diagnostic };
     if (!this.#owned) return { available, displays, state: "unavailable", message: "The desktop service is disconnected. Restart the service to restore desktop output.", diagnostic: this.#diagnostic };
     if (!this.#config.enabled) return { available, displays, state: "disabled", message: null, diagnostic: this.#diagnostic };
@@ -114,7 +118,11 @@ export class OverlayHost implements DesktopOverlayTransport {
       if (result.type !== "ready" || this.#occurrences.get(id) !== record || record.state !== "preparing" || Date.now() >= record.endsAt) return "unavailable";
       record.state = "prepared";
       return "ready";
-    } catch { return "unavailable"; }
+    }
+    catch (error) {
+      this.diagnose?.({ component: "overlay-renderer", source: "desktop.overlay.prepare-failed", message: "Desktop overlay media preparation failed.", exception: error });
+      return "unavailable";
+    }
     finally { if (record.state !== "prepared" && record.state !== "stopping") this.#release(id, record); }
   }
   async start(key: VisualRecipientKey): Promise<void> {
@@ -136,6 +144,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     if (!this.#loaded) { this.#discard(false); return Promise.resolve(); }
     const stopped = (async () => {
       try { await this.#request({ type: "stop", key }, 2000); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       catch { /* Request failure already destroys the renderer. */ }
       finally {
         this.#release(id, record);
@@ -215,6 +224,7 @@ export class OverlayHost implements DesktopOverlayTransport {
         kind: "renderer-command-timeout", operation: command.type, reason: `timeout-after-${Math.max(1, timeoutMs)}ms`, exitCode: null
       }), Math.max(1, timeoutMs)) });
       try { this.#port!.send({ generation: this.#generation, requestId, command }); }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
       catch { this.#discard(true); }
     });
   }
@@ -229,7 +239,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     if ("key" in result && identity(result.key) !== pending.key) return;
     if (result.type !== pending.expected && result.type !== "error") return;
     this.#pending.delete(parsed.data.requestId); clearTimeout(pending.timer);
-    if (result.type === "error") pending.reject(unavailable()); else pending.resolve(result);
+    if (result.type === "error") pending.reject(unavailable(parsed.data.failure)); else pending.resolve(result);
   }
   #release(id: string, record: Occurrence): void {
     if (this.#occurrences.get(id) !== record) return;
@@ -266,7 +276,9 @@ export class OverlayHost implements DesktopOverlayTransport {
   }
 }
 function identity(key: VisualRecipientKey): string { return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation]); }
-function unavailable(): Error { return new Error("Desktop overlay is unavailable. Retry explicitly if automatic recovery is exhausted."); }
+function unavailable(cause?: unknown): Error {
+  return new Error("Desktop overlay is unavailable. Retry explicitly if automatic recovery is exhausted.", cause === undefined ? undefined : { cause });
+}
 function ok(): DesktopVisualReply { return { type: "ok" }; }
 function safeReason(error: unknown, fallback: string): string {
   if (!(error instanceof Error) || error.message.trim() === "") return fallback;

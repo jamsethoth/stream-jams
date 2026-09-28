@@ -3,7 +3,7 @@ import { createClientErrorReporter, installManagementGlobalErrorListeners } from
 
 describe("client error reporting", () => {
   it("posts one serialized exception with its stable reference", async () => {
-    const postJson = vi.fn(async (_path: string, _body: unknown, _fallbackMessage: string) => ({ referenceId: "err_client_1" }));
+    const postJson = vi.fn(async (...args: [string, unknown, string]) => { void args; return { referenceId: "err_client_1" }; });
     const reporter = createClientErrorReporter({ client: {
       async postJson<T>(path: string, body: unknown, fallbackMessage: string) { return postJson(path, body, fallbackMessage) as Promise<T>; }
     }, consoleError: vi.fn() });
@@ -33,7 +33,7 @@ describe("client error reporting", () => {
 
   it("falls back once without recursively reporting a diagnostic request failure", async () => {
     const reportFailure = new Error("diagnostic endpoint unavailable");
-    const postJson = vi.fn(async (_path: string, _body: unknown, _fallbackMessage: string) => { throw reportFailure; });
+    const postJson = vi.fn(async (...args: [string, unknown, string]) => { void args; throw reportFailure; });
     const consoleError = vi.fn();
     const reporter = createClientErrorReporter({ client: {
       async postJson<T>(path: string, body: unknown, fallbackMessage: string) { return postJson(path, body, fallbackMessage) as Promise<T>; }

@@ -978,7 +978,9 @@ const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> 
     let verificationUri: URL;
     try {
       verificationUri = new URL(input.verificationUri);
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       throw new TypeError("Invalid Twitch authorization response");
     }
     const deviceCodes = verificationUri.searchParams.getAll("device-code");

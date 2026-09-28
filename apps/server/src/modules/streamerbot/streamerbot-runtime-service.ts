@@ -277,7 +277,9 @@ export class StreamerBotRuntimeService {
       if (removals.length > 0) await this.#client.unsubscribe(removals);
     } catch (error) {
       if (additions.length > 0) {
-        try { await this.#client.unsubscribe(additions); } catch { /* keep the original transport failure */ }
+        try { await this.#client.unsubscribe(additions); }
+        // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+        catch { /* keep the original transport failure */ }
       }
       throw error;
     }
@@ -454,7 +456,9 @@ export class StreamerBotRuntimeService {
   async #emitDiagnostic(entry: StreamerBotRuntimeDiagnostic): Promise<void> {
     try {
       await this.#onDiagnostic(entry);
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       this.#issue = {
         state: "degraded",
         message: "Streamer.bot diagnostics logging failed",

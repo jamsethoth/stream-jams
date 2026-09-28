@@ -194,7 +194,9 @@ export class TwitchEventSubRuntimeService {
     };
     try {
       await this.#onDiagnostic({ message, referenceId, ...(exception === undefined ? {} : { exception }) });
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       this.#runtimeError = {
         ...this.#runtimeError,
         message: "Twitch EventSub diagnostics logging failed"

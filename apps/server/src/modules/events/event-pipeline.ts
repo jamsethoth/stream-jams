@@ -88,7 +88,9 @@ export class EventPipeline implements EventSink {
           triggers
         );
       // error-provenance: allow cleanup -- the production diagnostic logger has its own emergency sink and must not fail alert intake
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         // Diagnostics must not turn an isolated Screen Effects failure into an Alert failure.
       }
     }

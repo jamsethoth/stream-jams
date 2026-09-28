@@ -28,7 +28,9 @@ export class ShutdownLog {
     try {
       this.#stream = createWriteStream(path, { flags: "wx", mode: 0o600 });
       this.#stream.on("error", () => { this.#closed = true; this.#stream = undefined; });
-    } catch { this.#closed = true; }
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch { this.#closed = true; }
   }
 
   record(phase: unknown): void {
@@ -53,6 +55,7 @@ export class ShutdownLog {
     this.#bytes += bytes; // Includes queued writes, not just bytes already on disk.
     this.#sequence++;
     try { this.#stream.write(line); }
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
     catch { this.#stream.destroy(); this.#closed = true; }
     if (this.#sequence === 256) this.close();
   }

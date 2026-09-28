@@ -138,7 +138,9 @@ function parseResponse(data: unknown): Record<string, unknown> | null {
   if (typeof data === "string") {
     try {
       parsed = JSON.parse(data) as unknown;
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       return null;
     }
   }

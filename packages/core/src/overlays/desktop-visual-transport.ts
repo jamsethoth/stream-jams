@@ -9,6 +9,7 @@ import {
   overlayShapeInstructionSchema, overlayPresetAnimationInstructionSchema
 } from "./schemas.js";
 import { visualRecipientKeySchema, type VisualRecipientKey } from "./visual-recipient.js";
+import { overlayPlaybackFailureSchema } from "./playback-failure.js";
 
 export const maxDesktopVisualTransferBytes = 128 * 1024 * 1024;
 const identity = z.string().min(1).refine(value => value === value.trim());
@@ -89,7 +90,7 @@ export type DesktopVisualReply = z.infer<typeof desktopVisualReplySchema>;
 
 const rendererEnvelope = { generation: z.number().int().positive().max(Number.MAX_SAFE_INTEGER), requestId: z.uuid() };
 export const desktopVisualRendererRequestSchema = z.object({ ...rendererEnvelope, command: desktopVisualCommandSchema }).strict();
-export const desktopVisualRendererReplySchema = z.object({ ...rendererEnvelope, result: desktopVisualReplySchema.nullable() }).strict();
+export const desktopVisualRendererReplySchema = z.object({ ...rendererEnvelope, result: desktopVisualReplySchema.nullable(), failure: overlayPlaybackFailureSchema.optional() }).strict();
 export type DesktopVisualRendererRequest = z.infer<typeof desktopVisualRendererRequestSchema>;
 export type DesktopVisualRendererReply = z.infer<typeof desktopVisualRendererReplySchema>;
 

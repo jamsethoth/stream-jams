@@ -192,7 +192,9 @@ export class RuntimeJsonlLogger implements Logger {
         originalException,
         loggerException
       };
-      try { this.#emergencyWriter.write(emergency); } catch { /* The default emergency writer never throws. */ }
+      try { this.#emergencyWriter.write(emergency); }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch { /* The default emergency writer never throws. */ }
     }
   }
 

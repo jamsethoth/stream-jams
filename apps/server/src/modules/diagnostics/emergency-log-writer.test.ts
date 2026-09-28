@@ -39,6 +39,7 @@ describe("EmergencyLogWriter", () => {
 
   it("prevents recursive writes and falls back to standard error", () => {
     const stderr: string[] = [];
+    // eslint-disable-next-line prefer-const -- the recursive callback closes over the subsequently constructed writer
     let writer: EmergencyLogWriter;
     const appendFile = vi.fn(() => {
       writer.write({ ...input, referenceId: "err_recursive" });

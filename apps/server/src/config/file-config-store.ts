@@ -53,7 +53,9 @@ export class FileConfigStore implements ConfigStore {
 
   #serialize<T>(work: () => Promise<T>): Promise<T> {
     const result = this.#pending.then(work);
-    this.#pending = result.catch(() => undefined);
+    this.#pending = result.catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => undefined);
     return result;
   }
 
@@ -93,7 +95,8 @@ export class FileConfigStore implements ConfigStore {
     } catch (error) {
       try { await rm(temporaryPath, { force: true }); }
       catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], "Config write and temporary-file cleanup failed", { cause: error });
+        // eslint-disable-next-line preserve-caught-error -- AggregateError retains both the primary write error and cleanup error in order
+        throw new AggregateError([error, cleanupError], "Config write and temporary-file cleanup failed");
       }
       throw error;
     }

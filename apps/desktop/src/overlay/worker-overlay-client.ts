@@ -21,6 +21,7 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
     if (!Number.isSafeInteger(generation) || generation <= 0) throw new Error("Invalid worker generation");
     this.#lease = setInterval(() => {
       try { this.send({ type: "overlay-lease", generation, requestId: null }); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       catch { this.dispose(); }
     }, 2000);
   }
@@ -67,7 +68,9 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
       }
       occurrence.phase = "ready";
       return "ready";
-    } catch { if (occurrence.phase !== "cancelled") this.#forget(id, occurrence); return "unavailable"; }
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch { if (occurrence.phase !== "cancelled") this.#forget(id, occurrence); return "unavailable"; }
   }
 
   /** Resolves on completion, not on initial renderer admission. */
@@ -136,6 +139,7 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
       const timer = setTimeout(() => { this.#pending.delete(requestId); reject(unavailable()); }, timeout);
       this.#pending.set(requestId, { key: commandKey(command), resolve, reject, timer });
       try { this.send({ type: "overlay-request", generation: this.generation, requestId, command }); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       catch { this.dispose(); }
     });
   }

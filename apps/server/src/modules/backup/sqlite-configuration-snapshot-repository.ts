@@ -391,7 +391,9 @@ function isJson(value: string): boolean {
   try {
     JSON.parse(value);
     return true;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return false;
   }
 }
@@ -399,7 +401,9 @@ function isJson(value: string): boolean {
 function findForbiddenSecretField(json: string): string | null {
   try {
     return visitJson(JSON.parse(json) as unknown, []);
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 }
@@ -457,7 +461,9 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     }
     try {
       normalizeModerationSettingsRow(row);
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       errors.push(`alert_moderation_settings[${index}] contains invalid moderation settings.`);
     }
   }
@@ -617,7 +623,9 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     let document;
     try {
       document = parseStoredAlertEditorDocument(parseJsonValue(row.document_json));
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       errors.push(`alert_editor_documents[${index}] failed domain validation.`);
       continue;
     }
@@ -841,7 +849,9 @@ function parseJsonValue(value: unknown): unknown {
   if (typeof value !== "string") return undefined;
   try {
     return JSON.parse(value) as unknown;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return undefined;
   }
 }

@@ -253,6 +253,7 @@ export class OverlayGateway {
     for (const client of this.#clients.values()) {
       if (client.scope === "unified" && client.overlayId === surface.overlayId) {
         try { sendGatewayMessage(client.socket, { type: "overlay.surface-layers", layers: surface.layers }); }
+        // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
         catch { this.unregisterClient(client.id); }
       }
     }
@@ -338,7 +339,9 @@ function parsePlaybackReport(client: RegisteredOverlayGatewayClient, rawMessage:
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawMessage) as unknown;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 

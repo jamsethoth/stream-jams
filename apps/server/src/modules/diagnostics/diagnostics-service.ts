@@ -345,7 +345,9 @@ export class DiagnosticsService {
   async #resolveAlertSetIdSafely(alertId: string): Promise<string | null> {
     try {
       return await this.#resolveAlertSetId(alertId);
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       return null;
     }
   }

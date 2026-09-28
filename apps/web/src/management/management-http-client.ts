@@ -56,7 +56,9 @@ export class ManagementHttpError extends Error {
 async function createManagementHttpError(response: Response, fallback: string): Promise<ManagementHttpError> {
   const payloadResponse = response.clone();
   const details = await readHttpErrorDetails(response, fallback);
-  const payload = await payloadResponse.json().catch(() => null) as unknown;
+  const payload = await payloadResponse.json().catch(
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  () => null) as unknown;
   const conflictSnapshot = details.code === "PLAYBACK_OPERATION_CONFLICT"
     && typeof payload === "object"
     && payload !== null

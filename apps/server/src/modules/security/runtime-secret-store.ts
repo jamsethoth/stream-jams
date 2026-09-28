@@ -112,7 +112,9 @@ async function checkSecretStoreAvailability(
     }
 
     return readyStatus();
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return degradedStatus(options.now);
   }
 }

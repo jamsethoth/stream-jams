@@ -1,4 +1,4 @@
-import { desktopVisualRendererRequestSchema, maxDesktopVisualTransferBytes, type DesktopVisualAsset, type DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopVisualRendererRequestSchema, maxDesktopVisualTransferBytes, serializeException, type DesktopVisualAsset, type DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type OverlayPlaybackFailure, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
 export interface DesktopOverlaySnapshot {
   config: Configuration;
@@ -117,7 +117,15 @@ export class DesktopOverlayController {
       record.state = "ready";
       const preparing = record.prepare; record.prepare = null;
       if (preparing !== null) this.#report(preparing, { type: "ready", key: record.view.key });
-    } catch { this.#finish(record, "error"); }
+    }
+    catch (error) {
+      this.#finish(record, "error", {
+        referenceId: `err_${crypto.randomUUID()}`,
+        stage: "source-load",
+        message: "Desktop overlay media could not be prepared.",
+        exception: serializeException(error)
+      });
+    }
     finally {
       record.loading = false;
       if (record.state === "cancelled") this.#release(record);
@@ -141,7 +149,7 @@ export class DesktopOverlayController {
     if (delay > 0) record.startTimer = setTimeout(activate, delay); else activate();
   }
 
-  #finish(record: Occurrence, result: "complete" | "error"): void {
+  #finish(record: Occurrence, result: "complete" | "error", failure?: OverlayPlaybackFailure): void {
     if (record.state === "cancelled") return;
     const wasActive = record.state === "active";
     record.state = "cancelled";
@@ -158,7 +166,7 @@ export class DesktopOverlayController {
     // In-flight preloads cannot be aborted by this interface. Keep their admission
     // and byte reservation until settled, including across retry/reconfiguration.
     if (!record.loading) this.#release(record);
-    if (preparing !== null) this.#report(preparing, { type: "error", key: record.view.key });
+    if (preparing !== null) this.#report(preparing, { type: "error", key: record.view.key }, failure);
     if (started !== null) this.#report(started, { type: result, key: record.view.key });
   }
   #release(record: Occurrence): void {
@@ -171,7 +179,11 @@ export class DesktopOverlayController {
     this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active").map(record => record.view) };
     this.dependencies.changed();
   }
-  #report(envelope: Envelope, result: DesktopVisualRendererReply["result"]): void { this.dependencies.report({ ...envelope, result }); }
+  #report(envelope: Envelope, result: DesktopVisualRendererReply["result"], failure?: OverlayPlaybackFailure): void {
+    this.dependencies.report({ ...envelope, result, ...(failure === undefined ? {} : { failure }) });
+  }
 }
 function identity(key: VisualRecipientKey): string { return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation]); }
-function releaseResource(resource: PreparedAsset): void { try { resource.dispose(); } catch { /* Continue releasing other media after an isolated cleanup failure. */ } }
+function releaseResource(resource: PreparedAsset): void { try { resource.dispose(); }
+// error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+catch { /* Continue releasing other media after an isolated cleanup failure. */ } }
