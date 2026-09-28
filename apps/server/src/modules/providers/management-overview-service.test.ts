@@ -367,9 +367,9 @@ function alertSet(starterReviewState: "pending" | "complete", enabledAlertCount:
     starter: true,
     starterReviewState,
     enabledAlertCount,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount, playableAlertCount: enabledAlertCount, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []

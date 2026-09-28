@@ -103,10 +103,102 @@ describe("AlertSetManagementService", () => {
     expect(starterDocument.targetProfiles.every((profile) => profile.layerLayouts.length === 0)).toBe(true);
   });
 
+  it("derives set profile usage and activation impact from saved alert documents", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const alert = (await fixture.service.getSet(starter!.id)).inventory[0]!;
+    await fixture.service.setAlertEnabled(alert.id, true);
+    const saved = (await fixture.documents.find(alert.id))!;
+    await fixture.documents.save({
+      ...saved,
+      targetProfiles: saved.targetProfiles.map((profile) => profile.id === "vertical"
+        ? { ...profile, enabled: true, reviewState: "ready" as const }
+        : { ...profile, enabled: false, reviewState: "needs-review" as const })
+    });
+
+    const detail = await fixture.service.getSet(starter!.id);
+    expect(detail.overview.profileUsage).toEqual([
+      { id: "landscape", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 }
+    ]);
+    await expect(fixture.service.getActivationImpact(starter!.id)).resolves.toMatchObject({
+      affectedTargetProfileIds: ["vertical"]
+    });
+  });
+
+  it("hydrates compatibility documents when legacy alerts have no persisted editor document", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const alert = (await fixture.service.getSet(starter!.id)).inventory[0]!;
+    await fixture.service.setAlertEnabled(alert.id, true);
+    await fixture.documents.delete(alert.id);
+    await fixture.metadataRepository.saveRule({
+      ruleId: alert.id,
+      providerKind: "twitch",
+      reviewState: "ready",
+      targetProfileIds: ["landscape"]
+    });
+
+    const detail = await fixture.service.getSet(starter!.id);
+
+    expect(detail.overview.profileUsage).toEqual([
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
+    ]);
+    expect(detail.inventory[0]).toMatchObject({
+      id: alert.id,
+      reviewState: "ready",
+      targetProfileIds: ["landscape"]
+    });
+    await expect(fixture.service.activateSet(starter!.id, false)).resolves.toMatchObject({
+      activeSet: { id: starter!.id }
+    });
+  });
+
+  it("reports an actionable activation blocker when enabled alerts have no playable profile", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const alert = (await fixture.service.getSet(starter!.id)).inventory[0]!;
+    await fixture.service.setAlertEnabled(alert.id, true);
+
+    const detail = await fixture.service.getSet(starter!.id);
+    const impact = await fixture.service.getActivationImpact(starter!.id);
+
+    expect(detail.overview.validationIssues).toContainEqual(expect.objectContaining({
+      code: "NO_PLAYABLE_ENABLED_ALERT_PROFILE",
+      severity: "blocker",
+      message: "No enabled alert has a reviewed target profile."
+    }));
+    expect(impact.blockers).toContainEqual(expect.objectContaining({
+      code: "NO_PLAYABLE_ENABLED_ALERT_PROFILE"
+    }));
+    await expect(fixture.service.activateSet(starter!.id, false)).rejects.toBeInstanceOf(
+      AlertSetActivationBlockedError
+    );
+  });
+
+  it("does not mark an alert for review only because a disabled profile needs review", async () => {
+    const fixture = createFixture();
+    const [starter] = await fixture.service.listSets();
+    const alert = (await fixture.service.getSet(starter!.id)).inventory[0]!;
+    await fixture.service.setAlertEnabled(alert.id, true);
+    const saved = (await fixture.documents.find(alert.id))!;
+    await fixture.documents.save({
+      ...saved,
+      targetProfiles: saved.targetProfiles.map((profile) => profile.id === "landscape"
+        ? { ...profile, enabled: true, reviewState: "ready" as const }
+        : { ...profile, enabled: false, reviewState: "needs-review" as const })
+    });
+
+    const row = (await fixture.service.getSet(starter!.id)).inventory[0]!;
+
+    expect(row.reviewState).toBe("ready");
+  });
+
   it("bulk-loads set metadata, rule metadata, and editor documents for set detail", async () => {
     const fixture = createFixture();
     const [starter] = await fixture.service.listSets();
-    const findSets = vi.spyOn(fixture.metadataRepository, "findSets");
+    const findSet = vi.spyOn(fixture.metadataRepository, "findSet");
     const findRules = vi.spyOn(fixture.metadataRepository, "findRules");
     const findDocuments = vi.spyOn(fixture.documents, "findMany");
     const findRule = vi.spyOn(fixture.metadataRepository, "findRule");
@@ -114,7 +206,7 @@ describe("AlertSetManagementService", () => {
 
     await fixture.service.getSet(starter!.id);
 
-    expect(findSets).toHaveBeenCalledOnce();
+    expect(findSet).toHaveBeenCalledOnce();
     expect(findRules).toHaveBeenCalledOnce();
     expect(findDocuments).toHaveBeenCalledOnce();
     expect(findRule).not.toHaveBeenCalled();
@@ -341,6 +433,7 @@ describe("AlertSetManagementService", () => {
     const duplicate = await fixture.service.duplicateSet(starter!.id, { name: "Winter" });
     const duplicateDetail = await fixture.service.getSet(duplicate.id);
     await fixture.service.setAlertEnabled(duplicateDetail.inventory[0]!.id, true);
+    await makeAlertProfilePlayable(fixture, duplicateDetail.inventory[0]!.id);
 
     expect((await fixture.service.getSet(duplicate.id)).overview.active).toBe(false);
     const result = await fixture.service.activateSet(duplicate.id, false);
@@ -400,6 +493,7 @@ describe("AlertSetManagementService", () => {
     const seasonal = await fixture.service.duplicateSet(starter!.id, { name: "Seasonal" });
     const seasonalDetail = await fixture.service.getSet(seasonal.id);
     await fixture.service.setAlertEnabled(seasonalDetail.inventory[0]!.id, true);
+    await makeAlertProfilePlayable(fixture, seasonalDetail.inventory[0]!.id);
 
     expect((await fixture.service.getSet(seasonal.id)).overview.validationIssues).not.toEqual(
       expect.arrayContaining([expect.objectContaining({ code: "PROVIDER_KIND_MISMATCH" })])
@@ -696,6 +790,20 @@ function createFixture() {
     ]
   });
   return { alertRepository, alertService, metadataRepository, documents, alertEditorService, mutationStore, service };
+}
+
+async function makeAlertProfilePlayable(
+  fixture: ReturnType<typeof createFixture>,
+  alertId: string,
+  profileId: "landscape" | "vertical" = "landscape"
+): Promise<void> {
+  const document = (await fixture.documents.find(alertId))!;
+  await fixture.documents.save({
+    ...document,
+    targetProfiles: document.targetProfiles.map((profile) => profile.id === profileId
+      ? { ...profile, enabled: true, reviewState: "ready" as const }
+      : profile)
+  });
 }
 
 function createInMemoryMutationStore(

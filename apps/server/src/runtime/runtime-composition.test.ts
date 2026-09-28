@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type {
   ActionableManagementError,
+  AlertEditorDocument,
   AppConfig,
   AppConfigUpdate,
   AudioPlaybackSink,
@@ -180,6 +181,33 @@ it("serves audio routes over loopback, observes global mute, and retains binding
     });
     expect(createdAlert.status).toBe(201);
     const alert = await createdAlert.json() as { readonly id: string };
+    const activationEditor = await fetch(`${address}/management/alerts/${alert.id}/editor`, { headers });
+    expect(activationEditor.status).toBe(200);
+    const activationDocument = await activationEditor.json() as AlertEditorDocument;
+    const activationLayer = {
+      id: "activation-shape",
+      name: "Activation shape",
+      type: "shape" as const,
+      visible: true,
+      order: 0,
+      animation: { mode: "preset" as const, entrance: "none", exit: "none", durationMs: 0, delayMs: 0, easing: "linear" },
+      fill: "#FFFFFFFF"
+    };
+    const savedForActivation = await fetch(`${address}/management/alerts/${alert.id}/editor`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        document: {
+          ...activationDocument,
+          layers: [activationLayer],
+          targetProfiles: activationDocument.targetProfiles.map((profile) => profile.id === "landscape"
+            ? { ...profile, enabled: true, reviewState: "ready", layerLayouts: [{ layerId: activationLayer.id, x: 0, y: 0, width: 100, height: 100, zIndex: 0 }] }
+            : { ...profile, enabled: false, reviewState: "needs-review" })
+        },
+        confirmLiveImpact: true
+      })
+    });
+    expect(savedForActivation.status, await savedForActivation.text()).toBe(200);
     const enabled = await fetch(`${address}/management/alerts/${alert.id}/enabled`, {
       method: "PATCH", headers, body: JSON.stringify({ enabled: true })
     });

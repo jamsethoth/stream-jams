@@ -633,6 +633,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 24) return [19, 20, 21, 22, 23].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 25) return [19, 20, 21, 22, 23, 24].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 26) return [19, 20, 21, 22, 23, 24, 25].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 27) return [19, 20, 21, 22, 23, 24, 25, 26].includes(archiveSchemaVersion);
   return false;
 }
 

@@ -36,18 +36,18 @@ test("management alerts reviews the starter set and safely manages its landscape
     starter: true,
     starterReviewState: reviewed ? "complete" : "pending",
     enabledAlertCount: enabled ? 1 : 0,
-    targetProfiles: [
+    profileUsage: [
       {
         id: "landscape",
-        enabled: true,
-        reviewState: "ready",
-        blockerCount: enabled ? 0 : 1,
+        enabledAlertCount: enabled ? 1 : 0,
+        playableAlertCount: enabled ? 1 : 0,
+        blockerCount: 0,
         warningCount: 0
       },
       {
         id: "vertical",
-        enabled: false,
-        reviewState: "needs-review",
+        enabledAlertCount: enabled ? 1 : 0,
+        playableAlertCount: enabled ? 1 : 0,
         blockerCount: 0,
         warningCount: 0
       }
@@ -61,7 +61,7 @@ test("management alerts reviews the starter set and safely manages its landscape
             code: "NO_ENABLED_ALERTS",
             message: "This alert set has no enabled alerts.",
             nextStep: "Review and enable at least one valid alert.",
-            targetProfileId: "landscape",
+            targetProfileId: null,
             providerKind: null,
             eventType: null,
             alertId: null,
@@ -83,7 +83,7 @@ test("management alerts reviews the starter set and safely manages its landscape
         kind: "default",
         enabled,
         reviewState: enabled ? "ready" : "needs-review",
-        targetProfileIds: ["landscape"],
+        targetProfileIds: ["landscape", "vertical"],
         previewText: "Thanks for following, {actor.displayName}!"
       }
     ],
@@ -134,15 +134,16 @@ test("management alerts reviews the starter set and safely manages its landscape
     await route.fulfill({ contentType: "application/json", json: editorDocument });
   });
   await page.route("**/management/alerts/alert-follow/editor/test", async (route) => {
-    testRequests.push(route.request().postDataJSON());
+    const request = route.request().postDataJSON() as { readonly targetProfileId: "landscape" | "vertical" | null };
+    testRequests.push(request);
     await route.fulfill({
       contentType: "application/json",
       json: {
         status: "queued",
-        targetProfileId: "landscape",
+        targetProfileId: request.targetProfileId,
         referenceId: "ref-inline-e2e",
         test: true,
-        deliveredDestinations: [{ kind: "desktop-overlay", id: "desktop:primary", name: "Desktop Overlay" }],
+        deliveredDestinations: [],
         unavailableDestinations: []
       }
     });
@@ -192,7 +193,7 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(sourceCard.getByRole("textbox", { name: "Landscape browser source" })).toHaveCount(0);
   await expect(sourceCard.locator("code")).toContainText("********");
   await expect(sourceCard.getByText("Ready")).toBeVisible();
-  await expect(sourceCard.getByText("Profile enabled")).toBeVisible();
+  await expect(sourceCard.getByText(/Profile (?:enabled|disabled)/u)).toHaveCount(0);
   await expect(sourceCard.getByText("Listening now")).toBeVisible();
   await expect(sourceCard.getByText("1920 x 1080", { exact: true })).toBeVisible();
   await expect(sourceCard.getByText(/Add a Browser source in OBS at 1920 x 1080/u)).toBeVisible();
@@ -250,15 +251,16 @@ test("management alerts reviews the starter set and safely manages its landscape
   await expect(reviewWarning).toContainText("Starter review marked complete.");
   await expect(reviewWarning).toContainText("Alerts remain disabled until you enable them.");
   await page.getByRole("button", { name: "Test saved New follower" }).click();
+  await page.getByRole("button", { name: "Send New follower saved test to Vertical" }).click();
   const successToast = page.locator(".management-toast--success");
-  await expect(successToast).toContainText("Test queued on Desktop Overlay. Reference ref-inline-e2e.");
+  await expect(successToast).toContainText("Test queued on Vertical. Reference ref-inline-e2e.");
   const toastBounds = await successToast.boundingBox();
   if (toastBounds === null) throw new Error("Expected the success toast to have visible bounds.");
   expect(toastBounds.x).toBeGreaterThanOrEqual(0);
   expect(toastBounds.x + toastBounds.width).toBeLessThanOrEqual(390);
   expect(testRequests).toHaveLength(1);
   expect(testRequests[0]).toMatchObject({
-    targetProfileId: "landscape",
+    targetProfileId: "vertical",
     samplePayload: { actor: { displayName: "James" } },
     includeAudio: true,
     includeTts: true
@@ -302,9 +304,9 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []
@@ -458,9 +460,9 @@ test("management alerts creates a Raid alert without theme controls or starter l
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []
@@ -558,9 +560,9 @@ test("management alerts creates selected and catch-all channel point reward aler
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []
@@ -703,9 +705,9 @@ test("focused alert editor preserves reward IDs and previews representative samp
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []
@@ -838,9 +840,9 @@ test("focused alert editor does not expose starter-theme re-theming", async ({ p
   const overview = {
     id: "set-default", name: "Default", active: false, starter: false,
     starterReviewState: "complete", enabledAlertCount: 1, validationIssues: [], outputs: [],
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "ready", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ]
   };
   await page.route("**/management/alert-sets/set-default", (route) => route.fulfill({
@@ -872,9 +874,9 @@ test("management alerts resets event disclosures when switching alert sets", asy
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []
@@ -934,9 +936,9 @@ test("alert variation can be created edited duplicated and selectively deleted",
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []
@@ -1258,7 +1260,7 @@ test("focused alert editor sends empty-content readiness to the layer controls",
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [{ id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 }],
+    profileUsage: [{ id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 }],
     validationIssues: [],
     outputs: []
   };
@@ -1317,9 +1319,9 @@ test("focused alert editor saves layouts and separates preview from test deliver
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "needs-review", blockerCount: 0, warningCount: 1 },
-      { id: "vertical", enabled: true, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 0, blockerCount: 0, warningCount: 1 },
+      { id: "vertical", enabledAlertCount: 1, playableAlertCount: 0, blockerCount: 0, warningCount: 1 }
     ],
     validationIssues: [],
     outputs: []
@@ -1653,9 +1655,9 @@ test("focused alert editor authors TTS against the active provider", async ({ pa
     starter: false,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []
@@ -1909,7 +1911,7 @@ function alertEditorDocument() {
     }],
     targetProfiles: [
       { id: "landscape", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "layer-text", x: 610, y: 720, width: 700, height: 160, zIndex: 0 }] },
-      { id: "vertical", enabled: false, reviewState: "needs-review", layerLayouts: [{ layerId: "layer-text", x: 190, y: 1180, width: 700, height: 160, zIndex: 0 }] }
+      { id: "vertical", enabled: true, reviewState: "ready", layerLayouts: [{ layerId: "layer-text", x: 190, y: 1180, width: 700, height: 160, zIndex: 0 }] }
     ],
     samplePayloads: [{ id: "normal", label: "Normal example", kind: "built-in", payload: { actor: { displayName: "James" } } }]
   };

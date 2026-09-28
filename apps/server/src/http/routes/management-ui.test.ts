@@ -1184,9 +1184,9 @@ function alertSetOverview() {
     starter: true,
     starterReviewState: "pending" as const,
     enabledAlertCount: 0,
-    targetProfiles: [
-      { id: "landscape" as const, enabled: true, reviewState: "ready" as const, blockerCount: 0, warningCount: 0 },
-      { id: "vertical" as const, enabled: false, reviewState: "needs-review" as const, blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape" as const, enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 },
+      { id: "vertical" as const, enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []

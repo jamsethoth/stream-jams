@@ -7,6 +7,7 @@ import { revokeUnsupportedOverlayKeysMigration } from "./migrations/012-revoke-u
 import { alertVariantAssetForeignKeysMigration } from "./migrations/015-alert-variant-asset-foreign-keys.js";
 import { overlayKeyLookupIndexesMigration } from "./migrations/016-overlay-key-lookup-indexes.js";
 import { alertTextStyleDefaultsMigration } from "./migrations/017-alert-text-style-defaults.js";
+import { removeAlertSetProfileStateMigration } from "./migrations/027-remove-alert-set-profile-state.js";
 
 const expectedMigrations = [
   "001-initial-schema",
@@ -34,7 +35,8 @@ const expectedMigrations = [
   "023-screen-effect-sets",
   "024-asset-duration-metadata",
   "025-remove-screen-effect-animations",
-  "026-automatic-output-rebinding"
+  "026-automatic-output-rebinding",
+  "027-remove-alert-set-profile-state"
 ] as const;
 
 const expectedTables = [
@@ -69,12 +71,61 @@ const expectedTables = [
 ];
 
 describe("Stream Jams SQLite database", () => {
+  it("removes redundant set profile state without rewriting alert documents", () => {
+    const connection = new DatabaseSync(":memory:", { enableForeignKeyConstraints: true });
+    try {
+      connection.exec(`
+        CREATE TABLE alert_collections (id TEXT PRIMARY KEY NOT NULL);
+        CREATE TABLE alert_set_metadata (
+          set_id TEXT PRIMARY KEY NOT NULL,
+          starter INTEGER NOT NULL CHECK (starter IN (0, 1)),
+          starter_review_state TEXT NOT NULL CHECK (starter_review_state IN ('pending', 'complete')),
+          landscape_enabled INTEGER NOT NULL CHECK (landscape_enabled IN (0, 1)),
+          landscape_review_state TEXT NOT NULL CHECK (landscape_review_state IN ('ready', 'needs-review')),
+          vertical_enabled INTEGER NOT NULL CHECK (vertical_enabled IN (0, 1)),
+          vertical_review_state TEXT NOT NULL CHECK (vertical_review_state IN ('ready', 'needs-review')),
+          FOREIGN KEY (set_id) REFERENCES alert_collections(id) ON DELETE CASCADE
+        );
+        CREATE TABLE alert_editor_documents (
+          alert_id TEXT PRIMARY KEY NOT NULL,
+          document_json TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        INSERT INTO alert_collections VALUES ('set-default');
+        INSERT INTO alert_set_metadata VALUES ('set-default', 1, 'pending', 1, 'ready', 0, 'needs-review');
+        INSERT INTO alert_editor_documents VALUES (
+          'alert-follow',
+          '{"targetProfiles":[{"id":"landscape","enabled":false,"reviewState":"needs-review"},{"id":"vertical","enabled":true,"reviewState":"ready"}]}',
+          '2026-09-27T00:00:00.000Z'
+        );
+      `);
+      const documentBefore = connection.prepare("SELECT * FROM alert_editor_documents").get();
+
+      connection.exec(removeAlertSetProfileStateMigration.sql);
+
+      expect(connection.prepare("PRAGMA table_info(alert_set_metadata)").all().map((column) => String(column.name)))
+        .toEqual(["set_id", "starter", "starter_review_state"]);
+      expect(connection.prepare("SELECT * FROM alert_set_metadata").get()).toEqual({
+        set_id: "set-default",
+        starter: 1,
+        starter_review_state: "pending"
+      });
+      expect(connection.prepare("SELECT * FROM alert_editor_documents").get()).toEqual(documentBefore);
+      expect(connection.prepare("PRAGMA foreign_key_list(alert_set_metadata)").all()).toEqual([
+        expect.objectContaining({ from: "set_id", table: "alert_collections", on_delete: "CASCADE" })
+      ]);
+    } finally {
+      connection.close();
+    }
+  });
+
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?)").run(
+    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
       "025-remove-screen-effect-animations",
-      "026-automatic-output-rebinding"
+      "026-automatic-output-rebinding",
+      "027-remove-alert-set-profile-state"
     );
     db.exec("ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name");
     db.prepare(`
@@ -208,7 +259,10 @@ describe("Stream Jams SQLite database", () => {
   it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.prepare("DELETE FROM schema_migrations WHERE id = ?").run("026-automatic-output-rebinding");
+    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?)").run(
+      "026-automatic-output-rebinding",
+      "027-remove-alert-set-profile-state"
+    );
     db.exec("ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name");
     db.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)")
       .run("legacy", "Legacy", "old", "Headphones");
@@ -506,7 +560,8 @@ describe("Stream Jams SQLite database", () => {
         '023-screen-effect-sets',
         '024-asset-duration-metadata',
         '025-remove-screen-effect-animations',
-        '026-automatic-output-rebinding'
+        '026-automatic-output-rebinding',
+        '027-remove-alert-set-profile-state'
       );
     `);
 

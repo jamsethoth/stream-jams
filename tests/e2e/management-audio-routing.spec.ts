@@ -37,7 +37,7 @@ test("audio outputs save explicitly and alert drafts retain routing through undo
   } }));
   await page.route("**/management/providers?*", (route) => route.fulfill({ json: [] }));
   const overview = { id: saved.setId, name: "Routing set", active: true, starter: false, starterReviewState: "complete", enabledAlertCount: 1,
-    targetProfiles: saved.targetProfiles.map(({ id, enabled, reviewState }) => ({ id, enabled, reviewState, blockerCount: 0, warningCount: 0 })), validationIssues: [], outputs: [] };
+    profileUsage: saved.targetProfiles.map(({ id, enabled, reviewState }) => ({ id, enabledAlertCount: enabled ? 1 : 0, playableAlertCount: enabled && reviewState === "ready" ? 1 : 0, blockerCount: 0, warningCount: 0 })), validationIssues: [], outputs: [] };
   await page.route("**/management/alert-sets/routing-set", (route) => route.fulfill({ json: { overview, inventory: [], browserSources: [] } }));
   await page.route("**/management/alerts/routing-alert/editor/variation-context", (route) => route.fulfill({ json: {
     ruleId: saved.id, eventType: saved.eventType, candidates: [{ editorId: saved.id, variantId: "default-resolver", kind: "default", name: saved.name, enabled: true, conditions: [], weight: 1, priority: null }]
