@@ -95,7 +95,7 @@ export class DesktopVisualSink {
         if (record.finished) { this.#retire(record); continue; }
         record.running = true;
         try { await this.#dispatch(record); }
-        catch { void this.#cancel(record); }
+        catch (error) { void this.#cancel(record, error); }
         finally { record.running = false; this.#retire(record); }
       }
     } finally { this.#pumping = false; }
@@ -135,7 +135,7 @@ export class DesktopVisualSink {
           clearTimeout(group.timer); group.timer = undefined;
           if (this.#ledger.pending(record.id) === 0) this.#complete(record);
         }
-      }, () => { void this.#cancel(record); }).finally(() => { record.starts--; this.#retire(record); });
+      }, (error: unknown) => { void this.#cancel(record, error); }).finally(() => { record.starts--; this.#retire(record); });
     }
   }
 
@@ -143,20 +143,28 @@ export class DesktopVisualSink {
     if (record.finished) return;
     this.#finish(record); record.resolve();
   }
-  #cancel(record: Playback): Promise<void> {
+  #cancel(record: Playback, primaryFailure?: unknown): Promise<void> {
     if (record.stopping !== null) return record.stopping;
     if (record.finished) return Promise.resolve();
     record.stopsSettled = false;
     this.#finish(record);
     const stops = record.groups.map(group => {
-      try { return this.dependencies.transport.stop(group.key).catch(() => {}); }
-      catch { return Promise.resolve(); }
+      try { return this.dependencies.transport.stop(group.key); }
+      catch (error) { return Promise.reject(error); }
     });
-    record.stopping = Promise.all(stops).then(() => {
+    record.stopping = Promise.allSettled(stops).then(results => {
+      const stopFailures = results
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map(result => result.reason);
       record.stopsSettled = true;
       if (this.#current.get(record.id) === record) this.#current.delete(record.id);
       // The caller may advance its queue only after native stop obligations settle.
-      record.reject(unavailable()); this.#retire(record);
+      const failure = primaryFailure === undefined
+        ? (stopFailures.length === 0 ? undefined : new AggregateError(stopFailures, "Desktop visual stop failed", { cause: stopFailures[0] }))
+        : (stopFailures.length === 0
+            ? primaryFailure
+            : new AggregateError([primaryFailure, ...stopFailures], "Desktop visual playback and stop failed", { cause: primaryFailure }));
+      record.reject(unavailable(failure)); this.#retire(record);
     });
     return record.stopping;
   }
@@ -175,4 +183,6 @@ export class DesktopVisualSink {
     }
   }
 }
-function unavailable(): Error { return new Error("Desktop visual playback is unavailable or was interrupted"); }
+function unavailable(cause?: unknown): Error {
+  return new Error("Desktop visual playback is unavailable or was interrupted", cause === undefined ? undefined : { cause });
+}

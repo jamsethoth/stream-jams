@@ -335,17 +335,16 @@ export class PlaybackCoordinator {
             ...(layerId === null ? {} : { layerId })
           }
         });
-      } catch {
-        await this.#recordRemoteTtsFailure(providerId, alert);
+      } catch (error) {
+        await this.#recordRemoteTtsFailure(providerId, alert, error);
       }
     }
   }
 
-  async #recordRemoteTtsFailure(providerId: string, alert: ResolvedAlert): Promise<void> {
+  async #recordRemoteTtsFailure(providerId: string, alert: ResolvedAlert, exception?: unknown): Promise<void> {
     if (this.#logger === null || this.#generateReferenceId === null) return;
     const referenceId = this.#generateReferenceId();
-    try {
-      await this.#logger.error(
+    await this.#logger.error(
         "Speaker.bot TTS playback failed. Visual and audio alert playback continued.",
         {
           module: "tts",
@@ -357,11 +356,9 @@ export class PlaybackCoordinator {
             sourceEventId: alert.sourceEventId,
             ruleId: alert.ruleId
           }
-        }
+        },
+        exception
       );
-    } catch {
-      // Playback remains available when diagnostics storage itself is unavailable.
-    }
   }
 
   enqueueResolvedTest(input: EnqueuePlaybackItemInput): PlaybackQueueSnapshot {
@@ -445,7 +442,12 @@ export class PlaybackCoordinator {
     const snapshot = this.#deliverCurrent(this.#queue.setSafetyState(state));
     try {
       this.#overlayPlaybackSink?.setPlaybackMuted?.(snapshot.muted);
-    } catch {
+    } catch (error) {
+      void this.#recordOverlayTransportFailure(
+        "Browser overlay mute state could not be updated.",
+        "overlay.playback.mute-failed",
+        error
+      );
       // A browser transport failure must not prevent device mute from being applied.
     }
     await Promise.allSettled([
@@ -598,9 +600,16 @@ export class PlaybackCoordinator {
             for (const clientId of pending.completedBeforeDispatch) pending.pendingClients.delete(clientId);
             if (pending.pendingClients.size === 0) this.#pendingClientsByInstructionId.delete(instruction.id);
           }
-        } catch {
+        } catch (error) {
           pending.dispatchComplete = true;
           this.#pendingClientsByInstructionId.delete(instruction.id);
+          void this.#recordOverlayTransportFailure(
+            "Browser overlay playback instruction could not be delivered.",
+            "overlay.playback.delivery-failed",
+            error,
+            snapshot.current.id,
+            instruction.id
+          );
         }
       }
       this.#browserDispatchComplete = true;
@@ -631,25 +640,26 @@ export class PlaybackCoordinator {
         try {
           const result = await this.#audioPlaybackSink!.play({ ...batch, timing: { startsAtEpochMs, endsAtEpochMs: startsAtEpochMs + batch.durationMs }, muted: this.#queue.getSnapshot().muted });
           if (result.failedRouteIds.length > 0) void this.#recordDeviceAudioFailure(item.id, result.failedRouteIds);
-        } catch {
+        } catch (error) {
           requiresExplicitStop = true;
-          void this.#recordDeviceAudioFailure(item.id, batch.destinations.flatMap(destination => destination.routeIds));
+          void this.#recordDeviceAudioFailure(item.id, batch.destinations.flatMap(destination => destination.routeIds), error);
         }
       }));
       if (requiresExplicitStop && active()) {
         try {
           state.stopping ??= this.#audioPlaybackSink!.stop(state.transportId);
           await state.stopping;
-        } catch {
+        } catch (error) {
           state.stopping = null;
           state.cancelled = true;
           this.#clearOccurrenceTimers();
+          void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds), error);
           return;
         }
       }
-    } catch {
+    } catch (error) {
       if (this.#devicePlayback === state) this.#clearPreparationTimer();
-      void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds));
+      void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds), error);
     } finally {
       state.settled = true;
       if (active() && this.#canCompleteCurrent()) this.completeCurrent();
@@ -665,11 +675,11 @@ export class PlaybackCoordinator {
 
   async #dispatchDesktop(instructions: readonly OverlayInstruction[], startsAt: number, state: DevicePlaybackState): Promise<void> {
     try { await this.#desktopVisualSink!.play(state.transportId, instructions, startsAt); }
-    catch {
+    catch (error) {
       if (!state.cancelled) void this.#logger?.error("Desktop visual playback unavailable. Browser and audio outputs continue independently.", {
         module: "overlay-surfaces", source: "desktop-overlay.playback.failed", correlationId: this.#generateReferenceId?.() ?? state.occurrenceId, processingId: null,
         metadata: { playbackId: state.occurrenceId, nextStep: "Check the selected display and retry the desktop overlay in Settings. Interrupted content is not replayed." }
-      }).catch(() => undefined);
+      }, error);
     } finally {
       state.settled = true;
       if (!this.#closed && !state.cancelled && this.#desktopPlayback === state && this.#queue.getSnapshot().current?.id === state.occurrenceId && this.#canCompleteCurrent()) this.completeCurrent();
@@ -684,9 +694,10 @@ export class PlaybackCoordinator {
     try {
       state.stopping ??= this.#audioPlaybackSink!.stop(state.transportId);
       await state.stopping;
-    } catch {
+    } catch (error) {
       state.stopping = null;
       this.#clearOccurrenceTimers();
+      void this.#recordDeviceAudioFailure(item.id, item.audio.flatMap(audio => audio.outputs.deviceRouteIds), error);
       return;
     }
     if (this.#closed || this.#devicePlayback !== state || this.#stoppingOccurrence !== null) return;
@@ -697,7 +708,15 @@ export class PlaybackCoordinator {
   }
 
   #handleWatchdog(playbackId: string): Promise<PlaybackQueueSnapshot> {
-    return this.#stopOccurrenceAndAdvance(playbackId, "completed").catch(() => this.#queue.getSnapshot());
+    return this.#stopOccurrenceAndAdvance(playbackId, "completed").catch(async (error: unknown) => {
+      await this.#recordOverlayTransportFailure(
+        "Timed-out alert playback could not be stopped cleanly.",
+        "overlay.playback.watchdog-stop-failed",
+        error,
+        playbackId
+      );
+      return this.#queue.getSnapshot();
+    });
   }
 
   #stopOccurrenceAndAdvance(
@@ -752,7 +771,13 @@ export class PlaybackCoordinator {
     if (instructionIds.length === 0) return;
     try {
       this.#overlayPlaybackSink?.stopPlaybackInstructions?.(instructionIds);
-    } catch {
+    } catch (error) {
+      void this.#recordOverlayTransportFailure(
+        "Browser overlay playback instructions could not be stopped.",
+        "overlay.playback.stop-failed",
+        error,
+        this.#queue.getSnapshot().current?.id
+      );
       // A disconnected browser must not prevent the independent device path from reaching silence.
     }
   }
@@ -770,13 +795,12 @@ export class PlaybackCoordinator {
     this.#completionTimer = null;
   }
 
-  async #recordDeviceAudioFailure(playbackId: string, routeIds: readonly string[]): Promise<void> {
+  async #recordDeviceAudioFailure(playbackId: string, routeIds: readonly string[], exception?: unknown): Promise<void> {
     if (this.#logger === null || this.#generateReferenceId === null) return;
-    try {
-      const routes = this.#audioOutputService?.listRoutes?.() ?? [];
-      const ids = [...new Set(routeIds)];
-      const routeNames = ids.map((id) => routes.find((route) => route.id === id)?.name ?? id);
-      await this.#logger.error(`Alert audio outputs unavailable: ${routeNames.join(", ") || "desktop player"}. No automatic fallback was used.`, {
+    const routes = this.#audioOutputService?.listRoutes?.() ?? [];
+    const ids = [...new Set(routeIds)];
+    const routeNames = ids.map((id) => routes.find((route) => route.id === id)?.name ?? id);
+    await this.#logger.error(`Alert audio outputs unavailable: ${routeNames.join(", ") || "desktop player"}. No automatic fallback was used.`, {
         module: "alerts", source: "audio.playback.failed", correlationId: this.#generateReferenceId(), processingId: null,
         metadata: {
           playbackId, routeIds: ids, routeNames,
@@ -784,10 +808,27 @@ export class PlaybackCoordinator {
           nextStep: "Check the named routes in Audio outputs. Reconnect the saved device or explicitly rebind it; recovery applies to future playback only.",
           correctionLabel: "Open audio outputs", correctionRoute: "/manage/settings#audio-outputs"
         }
-      });
-    } catch {
-      // Diagnostics failure must not prevent healthy outputs or queue completion.
-    }
+      }, exception);
+  }
+
+  async #recordOverlayTransportFailure(
+    message: string,
+    source: string,
+    exception: unknown,
+    playbackId = this.#queue.getSnapshot().current?.id,
+    instructionId?: string
+  ): Promise<void> {
+    if (this.#logger === null || this.#generateReferenceId === null) return;
+    await this.#logger.error(message, {
+      module: "alerts",
+      source,
+      correlationId: this.#generateReferenceId(),
+      processingId: null,
+      metadata: {
+        ...(playbackId === undefined ? {} : { playbackId }),
+        ...(instructionId === undefined ? {} : { instructionId })
+      }
+    }, exception);
   }
 
   async #resolveVisualAssetMediaTypes(

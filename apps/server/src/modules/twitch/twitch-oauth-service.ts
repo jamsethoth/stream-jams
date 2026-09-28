@@ -82,8 +82,8 @@ export class TwitchOAuthAuthorizationError extends Error {
 export class TwitchOAuthProviderError extends Error {
   readonly code = "TWITCH_OAUTH_PROVIDER_ERROR";
 
-  constructor(message = "Twitch OAuth provider response was invalid") {
-    super(message);
+  constructor(message = "Twitch OAuth provider response was invalid", options?: ErrorOptions) {
+    super(message, options);
     this.name = "TwitchOAuthProviderError";
   }
 }
@@ -277,8 +277,8 @@ export class TwitchOAuthService {
 
     try {
       this.#assertSecretStoreAvailable?.();
-    } catch {
-      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    } catch (cause) {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage, { cause });
     }
   }
 
@@ -359,24 +359,24 @@ export class TwitchOAuthService {
   async #writeSecret(ref: SecretRef, value: string): Promise<void> {
     try {
       await this.#secretStore.setSecret(ref, value);
-    } catch {
-      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    } catch (cause) {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage, { cause });
     }
   }
 
   async #readSecret(ref: SecretRef): Promise<string | null> {
     try {
       return await this.#secretStore.getSecret(ref);
-    } catch {
-      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    } catch (cause) {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage, { cause });
     }
   }
 
   async #deleteSecret(ref: SecretRef): Promise<void> {
     try {
       await this.#secretStore.deleteSecret(ref);
-    } catch {
-      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    } catch (cause) {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage, { cause });
     }
   }
 

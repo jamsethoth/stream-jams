@@ -153,6 +153,7 @@ import { NodePortAvailabilityChecker, type PortAvailabilityChecker } from "../se
 import { OverlayGateway } from "../websocket/overlay-gateway.js";
 import { syncEventSourceRuntimes } from "./event-source-runtime-coordinator.js";
 import { onceAsync } from "./once-async.js";
+import { trackRuntimeTask } from "./tracked-runtime-task.js";
 import { AudioOutputService } from "../modules/audio/audio-output-service.js";
 import { DesktopAudioSink } from "../modules/audio/desktop-audio-sink.js";
 import { SqliteAudioOutputRouteRepository } from "../modules/audio/sqlite-audio-output-route-repository.js";
@@ -232,13 +233,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const runtimeWork = new Set<Promise<unknown>>();
   // Last drain before SQLite closes, after intake/playback and providers stop.
   cleanups.push(async () => { await Promise.allSettled([...runtimeWork]); });
-  function trackRuntimeWork(work: () => Promise<void>): Promise<void> {
-    if (closing) return Promise.resolve();
-    const pending = Promise.resolve().then(work);
-    runtimeWork.add(pending);
-    void pending.finally(() => runtimeWork.delete(pending)).catch(() => undefined);
-    return pending;
-  }
   const close = onceAsync(async () => {
     closing = true;
     const errors: unknown[] = [];
@@ -351,6 +345,24 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     secretStore
   });
   const generateRuntimeReferenceId = () => `ref_${randomBytes(12).toString("base64url")}`;
+  function trackRuntimeWork(work: () => Promise<void>): Promise<void> {
+    if (closing) return Promise.resolve();
+    let pending!: Promise<void>;
+    pending = trackRuntimeTask({
+      work,
+      logger: runtimeLogger,
+      context: {
+        module: "runtime",
+        source: "runtime.task.failed",
+        correlationId: generateRuntimeReferenceId(),
+        processingId: null
+      },
+      message: "Tracked runtime work failed",
+      onFinally: () => runtimeWork.delete(pending)
+    });
+    runtimeWork.add(pending);
+    return pending;
+  }
   const speakerBotSocketFactory = options.speakerBotSocketFactory ?? createNodeProviderWebSocket;
   const ttsProviderRegistry = createDefaultTtsProviderRegistry({
     speakerBot: {
@@ -432,7 +444,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     } catch (error) {
       try { await options.desktopAudioTransport.close(); }
       catch (cleanupError) {
-        throw new AggregateError([error, cleanupError], "Desktop audio initialization and cleanup failed", { cause: cleanupError });
+        throw new AggregateError([error, cleanupError], "Desktop audio initialization and cleanup failed", { cause: error });
       }
       throw error;
     }
@@ -440,7 +452,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       transport: options.desktopAudioTransport,
       assetRepository,
       assetStore,
-      now: () => now().getTime()
+      now: () => now().getTime(),
+      logger: runtimeLogger,
+      generateReferenceId: generateRuntimeReferenceId
     });
   }
   const audioDeviceHost = options.audioDeviceHost ?? options.desktopAudioTransport;
@@ -458,14 +472,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   if (audioDeviceHost !== undefined) {
     try {
       await audioOutputService.reconcileBindings();
-    } catch {
+    } catch (error) {
       await runtimeLogger.error("Automatic audio output rebinding could not be saved. The previous binding remains unavailable.", {
         module: "audio-output",
         source: "audio-output.reconcile.failed",
         correlationId: generateRuntimeReferenceId(),
         processingId: null,
         metadata: { nextStep: "Open Audio outputs, choose a connected device, and save the route again." }
-      }).catch(() => undefined);
+      }, error);
     }
   }
   const playbackCooldownService = new DefaultPlaybackCooldownService();
@@ -560,7 +574,14 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         errorName: error instanceof Error ? error.name : "UnknownError",
         nextStep: "Review Diagnostics and retry Skip. The queue remains held until local outputs acknowledge stop."
       }
-    }),
+    }, error),
+    onPlaybackFailure: (error, occurrenceId, recipient) => runtimeLogger.error("Screen Effects output playback failed.", {
+      module: "screen-effects",
+      source: "screen-effects.playback-output-failed",
+      correlationId: generateRuntimeReferenceId(),
+      processingId: null,
+      metadata: { occurrenceId, recipient }
+    }, error),
     now: () => now().getTime()
   });
   const effectAdmissionService = new EffectAdmissionService({
@@ -1096,11 +1117,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   if (options.desktopOverlayTransport !== undefined) {
     try {
       await surfaceSettingsService.initializeDesktop();
-    } catch {
+    } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
         module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
         metadata: { nextStep: "Check the selected display and explicitly retry the desktop overlay in Settings." }
-      }).catch(() => undefined);
+      }, error);
     }
   }
   const effectManagementService = new EffectManagementService({
@@ -1120,6 +1141,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         return (await twitchRewardCatalogService.listCustomRewards()).rewards.some(
           (reward) => reward.id === rewardId
         );
+      // error-provenance: allow expected -- catalog availability probes intentionally collapse provider failures to false
       } catch {
         return false;
       }
@@ -1132,6 +1154,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         }
         const catalog = await providerManagementService.getStreamerBotSubscriptions(providerId);
         return isStreamerBotSubscriptionAvailable(catalog, sourceKey, eventType);
+      // error-provenance: allow expected -- provider selection probes intentionally collapse unavailable catalogs to false
       } catch {
         return false;
       }
@@ -1228,7 +1251,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           statusCode: entry.statusCode,
           message: entry.error instanceof Error ? entry.error.message : String(entry.error)
         }
-      });
+      }, entry.error);
     }
   } satisfies ProductionServerAppDependencies;
   const app = createServerApp(serverDependencies);
@@ -1261,7 +1284,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   };
   } catch (error) {
     try { await close(); } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], "Runtime composition and cleanup failed", { cause: cleanupError });
+      throw new AggregateError([error, cleanupError], "Runtime composition and cleanup failed", { cause: error });
     }
     throw error;
   }
@@ -1345,7 +1368,7 @@ async function writeStreamerBotRuntimeDiagnostic(
       await logger.warn(entry.message, context);
       return;
     case "error":
-      await logger.error(entry.message, context);
+      await logger.error(entry.message, context, entry.exception);
   }
 }
 
@@ -1368,7 +1391,7 @@ async function writeEventSourceFailureDiagnostic(
     correlationId: entry.referenceId,
     processingId: null,
     metadata: { referenceId: entry.referenceId, ...diagnosticContext }
-  });
+  }, "exception" in entry ? entry.exception : undefined);
 }
 
 interface NodeWebSocketConstructor {

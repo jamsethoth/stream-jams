@@ -41,6 +41,7 @@ export interface TwitchEventSubRuntimeStatus {
 export interface TwitchEventSubRuntimeDiagnostic {
   readonly message: string;
   readonly referenceId: string;
+  readonly exception?: unknown;
 }
 
 export interface TwitchEventSubRuntimeServiceOptions {
@@ -88,9 +89,9 @@ export class TwitchEventSubRuntimeService {
   async connectStoredAccount(): Promise<TwitchEventSubRuntimeStatus> {
     try {
       await this.#validateConnectedAccount();
-    } catch {
+    } catch (error) {
       this.#eventSubClient.disconnect();
-      await this.#recordRuntimeError("Twitch authorization could not be validated or refreshed");
+      await this.#recordRuntimeError("Twitch authorization could not be validated or refreshed", error);
       return this.getStatus();
     }
 
@@ -116,9 +117,9 @@ export class TwitchEventSubRuntimeService {
     let accessToken: string | null;
     try {
       accessToken = await this.#secretStore.getSecret(createTwitchTokenSecretRef(account.accountId, "access_token"));
-    } catch {
+    } catch (error) {
       this.#eventSubClient.disconnect();
-      await this.#recordRuntimeError(runtimeSecretStoreUnavailableMessage);
+      await this.#recordRuntimeError(runtimeSecretStoreUnavailableMessage, error);
       return this.getStatus();
     }
 
@@ -138,9 +139,9 @@ export class TwitchEventSubRuntimeService {
         clientId: this.#clientId
       });
       this.#runtimeError = null;
-    } catch {
+    } catch (error) {
       this.#eventSubClient.disconnect();
-      await this.#recordRuntimeError("Twitch EventSub WebSocket could not be started");
+      await this.#recordRuntimeError("Twitch EventSub WebSocket could not be started", error);
     }
 
     return this.getStatus();
@@ -184,7 +185,7 @@ export class TwitchEventSubRuntimeService {
     };
   }
 
-  async #recordRuntimeError(message: string): Promise<void> {
+  async #recordRuntimeError(message: string, exception?: unknown): Promise<void> {
     const referenceId = this.#generateReferenceId();
     this.#runtimeError = {
       message,
@@ -192,7 +193,7 @@ export class TwitchEventSubRuntimeService {
       referenceId
     };
     try {
-      await this.#onDiagnostic({ message, referenceId });
+      await this.#onDiagnostic({ message, referenceId, ...(exception === undefined ? {} : { exception }) });
     } catch {
       this.#runtimeError = {
         ...this.#runtimeError,

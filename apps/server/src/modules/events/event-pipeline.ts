@@ -84,9 +84,10 @@ export class EventPipeline implements EventSink {
     } catch (error) {
       try {
         await this.#onEffectError(
-          error instanceof Error ? error : new Error("Screen Effects trigger handling failed"),
+          error instanceof Error ? error : new Error("Screen Effects trigger handling failed", { cause: error }),
           triggers
         );
+      // error-provenance: allow cleanup -- the production diagnostic logger has its own emergency sink and must not fail alert intake
       } catch {
         // Diagnostics must not turn an isolated Screen Effects failure into an Alert failure.
       }

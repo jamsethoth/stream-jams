@@ -41,7 +41,12 @@ export class AudioOutputService {
     const capability = await this.getDevices();
     if (capability.available) {
       try { await this.#reconcileWithCapability(capability, routes); }
-      catch { /* Current playback remains fail-closed against its captured route snapshot. */ }
+      catch (error) {
+        await this.#log("error", "Saved audio output bindings could not be reconciled.", "audio-output.routes.reconcile-failed", {
+          ...errorMetadata(error),
+          nextStep: "Open Audio outputs and explicitly save the affected route."
+        }, error);
+      }
     }
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
     const unavailable = new Set<string>();
@@ -87,7 +92,7 @@ export class AudioOutputService {
     } catch (error) {
       const nextStep = "Reconnect the output device and retry. Restart the desktop app if device discovery remains unavailable.";
       await this.#logDeviceTransition(`enumeration-failed:${errorSummary(error)}`, "warn", "Audio output device detection failed.",
-        "audio-output.devices.enumeration-failed", { ...errorMetadata(error), nextStep });
+        "audio-output.devices.enumeration-failed", { ...errorMetadata(error), nextStep }, error);
       return audioDeviceCapabilitySchema.parse({ available: false, devices: [], reason: "enumeration-failed", nextStep: "Reconnect the output device and retry. Restart the desktop app if device discovery remains unavailable." });
     }
   }
@@ -97,7 +102,12 @@ export class AudioOutputService {
     const capability = await this.getDevices();
     if (capability.available) {
       try { await this.#reconcileWithCapability(capability, snapshots); }
-      catch { /* Preserve the saved route as authoritative when persistence fails. */ }
+      catch (error) {
+        await this.#log("error", "Saved audio output binding recovery failed.", "audio-output.routes.recovery-failed", {
+          ...errorMetadata(error),
+          nextStep: "Open Audio outputs and explicitly rebind the affected route."
+        }, error);
+      }
     }
     const availableIds = new Set(capability.devices.map(device => device.deviceId));
     const routes = this.listRoutes().map(route => {
@@ -232,7 +242,7 @@ export class AudioOutputService {
         const muted = this.dependencies.isMuted();
         if (!muted) {
           try { await this.dependencies.host!.testOutput(route.deviceId); }
-          catch { throw new AudioOutputError(503, "AUDIO_ROUTE_TEST_FAILED", "The bound output could not complete the audio test.", "Check the device connection and retry the test.", [id]); }
+          catch (cause) { throw new AudioOutputError(503, "AUDIO_ROUTE_TEST_FAILED", "The bound output could not complete the audio test.", "Check the device connection and retry the test.", [id], [], [], { cause }); }
         }
         return { routeId: id, muted };
       } finally { this.#testing = false; }
@@ -256,8 +266,8 @@ export class AudioOutputService {
       } catch (error) {
         await this.#log("error", "Desktop audio recovery failed.", "audio-output.retry.failed", {
           ...errorMetadata(error), nextStep: "Restart the desktop app if retry continues to fail."
-        });
-        throw new AudioOutputError(503, "AUDIO_RETRY_FAILED", "The desktop audio player could not be restarted.", "Restart the desktop app if retry continues to fail.");
+        }, error);
+        throw new AudioOutputError(503, "AUDIO_RETRY_FAILED", "The desktop audio player could not be restarted.", "Restart the desktop app if retry continues to fail.", [], [], [], { cause: error });
       } finally {
         this.#testing = false;
       }
@@ -323,28 +333,32 @@ export class AudioOutputService {
     level: "warn" | "error",
     message: string,
     source: string,
-    metadata: Record<string, string | number | boolean | null>
+    metadata: Record<string, string | number | boolean | null>,
+    exception?: unknown
   ): Promise<void> {
     if (this.#lastDeviceDiagnosticSignature === signature) return;
     this.#lastDeviceDiagnosticSignature = signature;
-    await this.#log(level, message, source, metadata);
+    await this.#log(level, message, source, metadata, exception);
   }
 
   async #log(
     level: "info" | "warn" | "error",
     message: string,
     source: string,
-    metadata: Record<string, string | number | boolean | null>
+    metadata: Record<string, string | number | boolean | null>,
+    exception?: unknown
   ): Promise<void> {
     const logger = this.dependencies.logger;
     if (logger === undefined) return;
-    await logger[level](message, {
+    const context = {
       module: "audio-output",
       source,
       correlationId: (this.dependencies.generateReferenceId ?? randomUUID)(),
       processingId: null,
       metadata
-    }).catch(() => undefined);
+    };
+    if (level === "error" || exception !== undefined) await logger.error(message, context, exception);
+    else await logger[level](message, context);
   }
 }
 

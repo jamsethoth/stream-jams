@@ -422,12 +422,14 @@ describe("runtime app composition smoke", () => {
       now: () => new Date("2026-07-20T01:00:00.000Z")
     });
     runtimeCompositions.push(composition);
-    const failed = await composition.app.inject({ method: "GET", url: "/manage" });
+    const routeFailure = new Error("unexpected route failure");
+    composition.app.get("/__test/unexpected", async () => { throw routeFailure; });
+    const failed = await composition.app.inject({ method: "GET", url: "/__test/unexpected?token=secret-value" });
     const errorId = (failed.json() as { readonly error: { readonly id: string } }).error.id;
     const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
     const authHeaders = managementAuthHeaders(session);
 
-    expect(failed.statusCode).toBe(503);
+    expect(failed.statusCode).toBe(500);
     await waitFor(async () => {
       const response = await composition.app.inject({
         method: "GET",
@@ -437,6 +439,21 @@ describe("runtime app composition smoke", () => {
       const workspace = response.json() as { readonly rawLogs: readonly { readonly referenceId: string | null }[] };
       return workspace.rawLogs.some((entry) => entry.referenceId === errorId);
     });
+    const workspace = (await composition.app.inject({
+      method: "GET",
+      url: "/management/diagnostics/workspace",
+      headers: authHeaders
+    })).json() as { readonly rawLogs: readonly Record<string, unknown>[] };
+    expect(workspace.rawLogs).toContainEqual(expect.objectContaining({
+      referenceId: errorId,
+      event: "server.error",
+      data: expect.objectContaining({
+        requestId: expect.any(String),
+        method: "GET",
+        url: expect.not.stringContaining("secret-value"),
+        exception: expect.objectContaining({ type: "Error", message: "unexpected route failure" })
+      })
+    }));
   });
 
   it("records a blocked alert test before returning its public error ID", async () => {

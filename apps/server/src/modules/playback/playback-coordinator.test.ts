@@ -346,14 +346,18 @@ describe("PlaybackCoordinator", () => {
 
   it("still establishes device silence when browser stop throws", async () => {
     const audio = audioFixture();
+    const browserError = new Error("browser already disconnected");
+    const logError = vi.fn(async () => {});
     const coordinator = createCoordinator({
       ...audio.dependencies,
+      logger: { error: logError },
+      generateReferenceId: () => "browser-stop-ref",
       overlayPlaybackSink: {
         deliverPlaybackInstruction() {
           return { deliveredClientIds: ["obs"] };
         },
         stopPlaybackInstructions() {
-          throw new Error("browser already disconnected");
+          throw browserError;
         }
       }
     });
@@ -366,6 +370,15 @@ describe("PlaybackCoordinator", () => {
 
     await expect(coordinator.skipCurrent()).resolves.toMatchObject({ current: null });
     expect(audio.sink.stop).toHaveBeenCalledExactlyOnceWith(alertPlaybackId("queue-item-1"));
+    expect(logError).toHaveBeenCalledWith(
+      "Browser overlay playback instructions could not be stopped.",
+      expect.objectContaining({
+        source: "overlay.playback.stop-failed",
+        correlationId: "browser-stop-ref",
+        metadata: { playbackId: "queue-item-1" }
+      }),
+      browserError
+    );
   });
 
   it("closes device playback even when browser shutdown throws", async () => {
@@ -586,7 +599,7 @@ describe("PlaybackCoordinator", () => {
     expect(audio.sink.play).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("unavailable"), expect.objectContaining({
       correlationId: "audio-ref", metadata: expect.objectContaining({ playbackId: "queue-item-2", routeIds: ["personal"], routeNames: ["Private headphones"], correctionRoute: "/manage/settings#audio-outputs" })
-    }));
+    }), undefined);
     expect(JSON.stringify(error.mock.calls)).not.toContain("private-device-id");
     expect(JSON.stringify(error.mock.calls)).not.toContain("Private device label");
   });

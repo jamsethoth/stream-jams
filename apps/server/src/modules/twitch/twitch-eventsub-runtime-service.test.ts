@@ -74,7 +74,8 @@ describe("TwitchEventSubRuntimeService", () => {
 
   it("reports an actionable authorization failure before opening EventSub", async () => {
     const eventSubClient = new RecordingEventSubClient();
-    const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
+    const diagnostics: { readonly message: string; readonly referenceId: string; readonly exception?: unknown }[] = [];
+    const authorizationError = new Error("expired access token");
     const service = new TwitchEventSubRuntimeService({
       accountRepository: new InMemoryTwitchAccountRepository(connectedAccount),
       clientId: "client-id",
@@ -86,7 +87,7 @@ describe("TwitchEventSubRuntimeService", () => {
       },
       secretStore: new InMemorySecretStore(),
       async validateConnectedAccount() {
-        throw new Error("expired access token");
+        throw authorizationError;
       }
     });
 
@@ -100,14 +101,15 @@ describe("TwitchEventSubRuntimeService", () => {
     expect(eventSubClient.disconnectCount).toBe(1);
     expect(diagnostics).toEqual([{
       message: "Twitch authorization could not be validated or refreshed",
-      referenceId: "ref-twitch-auth"
+      referenceId: "ref-twitch-auth",
+      exception: authorizationError
     }]);
   });
 
   it("blocks EventSub and records a reference-linked error when the saved grant is missing required scopes", async () => {
     const secretStore = new InMemorySecretStore();
     const eventSubClient = new RecordingEventSubClient();
-    const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
+    const diagnostics: { readonly message: string; readonly referenceId: string; readonly exception?: unknown }[] = [];
     await secretStore.setSecret(createTwitchTokenSecretRef("141981764", "access_token"), "access-token-1");
     const service = new TwitchEventSubRuntimeService({
       accountRepository: new InMemoryTwitchAccountRepository({ ...connectedAccount, scopes: ["bits:read"] }),
@@ -191,7 +193,8 @@ describe("TwitchEventSubRuntimeService", () => {
   it("reports connection startup failures without exposing token values", async () => {
     const secretStore = new InMemorySecretStore();
     await secretStore.setSecret(createTwitchTokenSecretRef("141981764", "access_token"), "access-token-secret");
-    const eventSubClient = new RecordingEventSubClient(undefined, new Error("access-token-secret leaked by runtime"));
+    const startupError = new Error("access-token-secret leaked by runtime");
+    const eventSubClient = new RecordingEventSubClient(undefined, startupError);
     const diagnostics: { readonly message: string; readonly referenceId: string }[] = [];
     const service = new TwitchEventSubRuntimeService({
       accountRepository: new InMemoryTwitchAccountRepository(connectedAccount),
@@ -217,7 +220,8 @@ describe("TwitchEventSubRuntimeService", () => {
     service.getStatus();
     expect(diagnostics).toEqual([{
       message: "Twitch EventSub WebSocket could not be started",
-      referenceId: "ref-twitch-runtime-1"
+      referenceId: "ref-twitch-runtime-1",
+      exception: startupError
     }]);
     expect(JSON.stringify(service.getStatus())).not.toContain("access-token-secret");
   });

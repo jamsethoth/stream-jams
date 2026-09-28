@@ -17,9 +17,10 @@ export class HttpResponseError extends Error {
   constructor(
     readonly statusCode: number,
     readonly code: string,
-    readonly safeMessage: string
+    readonly safeMessage: string,
+    options?: ErrorOptions
   ) {
-    super(safeMessage);
+    super(safeMessage, options);
   }
 }
 

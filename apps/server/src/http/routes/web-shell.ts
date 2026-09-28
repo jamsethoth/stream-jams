@@ -109,11 +109,13 @@ async function readManifest(webBuildDirectory: string): Promise<ViteManifest> {
   let rawManifest: string;
   try {
     rawManifest = await readFile(manifestPath, "utf8");
-  } catch {
+  } catch (error) {
+    if (!isNodeError(error) || error.code !== "ENOENT") throw error;
     throw new HttpResponseError(
       503,
       "WEB_BUILD_UNAVAILABLE",
-      "Web build assets are unavailable. Run the production web build before opening Stream Jams."
+      "Web build assets are unavailable. Run the production web build before opening Stream Jams.",
+      { cause: error }
     );
   }
 
@@ -124,8 +126,12 @@ async function readManifest(webBuildDirectory: string): Promise<ViteManifest> {
       throw error;
     }
 
-    throw new HttpResponseError(503, "WEB_BUILD_MANIFEST_INVALID", "Web build manifest is invalid.");
+    throw new HttpResponseError(503, "WEB_BUILD_MANIFEST_INVALID", "Web build manifest is invalid.", { cause: error });
   }
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && "code" in error;
 }
 
 function parseManifest(candidate: unknown): ViteManifest {

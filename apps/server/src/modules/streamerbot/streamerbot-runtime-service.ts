@@ -46,6 +46,7 @@ export interface StreamerBotRuntimeDiagnostic {
   readonly referenceId: string;
   readonly source?: string | undefined;
   readonly type?: string | undefined;
+  readonly exception?: unknown;
 }
 
 export interface StreamerBotRuntimeStatus {
@@ -316,8 +317,8 @@ export class StreamerBotRuntimeService {
     let password: string | null;
     try {
       password = await this.#secretStore.getSecret(record.secretRef);
-    } catch {
-      await this.#recordIssue("error", "Streamer.bot password could not be read from the secret store", "error");
+    } catch (error) {
+      await this.#recordIssue("error", "Streamer.bot password could not be read from the secret store", "error", undefined, error);
       return null;
     }
     if (password === null) {
@@ -405,7 +406,7 @@ export class StreamerBotRuntimeService {
       const message = error instanceof StreamerBotEventNormalizationError
         ? error.message
         : "Streamer.bot event ingestion failed";
-      await this.#recordIssue("degraded", message, "error", envelope);
+      await this.#recordIssue("degraded", message, "error", envelope, error);
     }
   }
 
@@ -413,7 +414,8 @@ export class StreamerBotRuntimeService {
     state: RuntimeIssue["state"],
     message: string,
     level: StreamerBotRuntimeDiagnostic["level"],
-    envelope?: StreamerBotEventEnvelope
+    envelope?: StreamerBotEventEnvelope,
+    exception?: unknown
   ): Promise<void> {
     const referenceId = this.#generateReferenceId();
     this.#issue = {
@@ -426,7 +428,8 @@ export class StreamerBotRuntimeService {
       level,
       message,
       referenceId,
-      ...(envelope === undefined ? {} : { source: envelope.event.source, type: envelope.event.type })
+      ...(envelope === undefined ? {} : { source: envelope.event.source, type: envelope.event.type }),
+      ...(exception === undefined ? {} : { exception })
     });
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createBaseServerApp } from "./app.js";
+import { HttpResponseError } from "./http/errors.js";
 
 describe("createBaseServerApp", () => {
   it("returns health without binding a production port", async () => {
@@ -12,6 +13,21 @@ describe("createBaseServerApp", () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ status: "ok", app: "stream-jams", version: "1.2.3" });
     expect(response.headers["content-type"]).toContain("application/json");
+  });
+
+  it("returns expected typed HTTP failures without logging them as server exceptions", async () => {
+    const serverErrorLogger = vi.fn();
+    const app = createBaseServerApp({
+      metadata: { appName: "stream-jams", version: "1.2.3" },
+      serverErrorLogger
+    });
+    app.get("/expected", async () => { throw new HttpResponseError(409, "EXPECTED_CONFLICT", "The request conflicts."); });
+
+    const response = await app.inject({ method: "GET", url: "/expected" });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: { code: "EXPECTED_CONFLICT", message: "The request conflicts." } });
+    expect(serverErrorLogger).not.toHaveBeenCalled();
   });
 
   it("keeps safe error responses and detailed server logging in the base factory", async () => {

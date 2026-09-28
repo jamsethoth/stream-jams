@@ -37,8 +37,8 @@ export class SpeakerBotClient {
     let socket: SpeakerBotSocket;
     try {
       socket = this.#socketFactory(url);
-    } catch {
-      return Promise.reject(new Error("Speaker.bot WebSocket connection failed"));
+    } catch (cause) {
+      return Promise.reject(new Error("Speaker.bot WebSocket connection failed", { cause }));
     }
 
     return new Promise((resolve, reject) => {
@@ -68,8 +68,8 @@ export class SpeakerBotClient {
     let socket: SpeakerBotSocket;
     try {
       socket = this.#socketFactory(url);
-    } catch {
-      return Promise.reject(new Error("Speaker.bot WebSocket connection failed"));
+    } catch (cause) {
+      return Promise.reject(new Error("Speaker.bot WebSocket connection failed", { cause }));
     }
 
     return new Promise((resolve, reject) => {
@@ -93,8 +93,8 @@ export class SpeakerBotClient {
       socket.addEventListener("open", () => {
         try {
           socket.send(JSON.stringify({ id, request, ...payload }));
-        } catch {
-          finish(new Error(`Speaker.bot ${request} request could not be sent`));
+        } catch (cause) {
+          finish(new Error(`Speaker.bot ${request} request could not be sent`, { cause }));
         }
       });
       socket.addEventListener("message", (event) => {

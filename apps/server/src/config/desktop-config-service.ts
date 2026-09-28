@@ -1,7 +1,7 @@
 import { desktopConfigUpdateSchema, type ConfigStore, type DesktopConfig } from "@stream-jams/core";
 
 export class DesktopConfigError extends Error {
-  constructor(readonly statusCode: number, readonly code: string, message: string) { super(message); }
+  constructor(readonly statusCode: number, readonly code: string, message: string, options?: ErrorOptions) { super(message, options); }
 }
 
 /** Configuration is owned by the server; host availability is never persisted. */
@@ -22,8 +22,8 @@ export class DesktopConfigService {
       const parsed = desktopConfigUpdateSchema.safeParse(candidate);
       if (!parsed.success) throw new DesktopConfigError(400, "INVALID_DESKTOP_CONFIG", "Close window to tray must be a boolean.");
       const config = await this.store.updateConfig({ desktop: parsed.data.closeToTray === undefined ? {} : { closeToTray: parsed.data.closeToTray } });
-      try { await this.apply(config.desktop); } catch {
-        throw new DesktopConfigError(503, "DESKTOP_CONFIG_NOT_APPLIED", "The preference was saved but the desktop host could not apply it. Restart the desktop app to use the saved setting.");
+      try { await this.apply(config.desktop); } catch (cause) {
+        throw new DesktopConfigError(503, "DESKTOP_CONFIG_NOT_APPLIED", "The preference was saved but the desktop host could not apply it. Restart the desktop app to use the saved setting.", { cause });
       }
       return { ...config.desktop, available: true };
     });

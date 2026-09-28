@@ -8,6 +8,7 @@ export class AudioOutputError extends Error {
     readonly nextStep: string,
     readonly routeIds: readonly string[] = [],
     readonly references: readonly AudioRouteReference[] = [],
-    readonly owners: readonly ModuleMediaReference[] = []
-  ) { super(message); }
+    readonly owners: readonly ModuleMediaReference[] = [],
+    options?: ErrorOptions
+  ) { super(message, options); }
 }

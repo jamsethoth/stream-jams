@@ -34,7 +34,10 @@ export class LocalConfigurationBackupStore {
       return destination;
     } catch (error) {
       if (temporaryCreated) {
-        await rm(temporary, { force: true }).catch(() => undefined);
+        try { await rm(temporary, { force: true }); }
+        catch (cleanupError) {
+          throw new AggregateError([error, cleanupError], "Backup write and temporary-file cleanup failed", { cause: error });
+        }
       }
       throw error;
     }

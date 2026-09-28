@@ -83,14 +83,14 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   };
 
   function redactUrls(value: string): string {
-    return value.replace(/https?:\/\/[^\s"'<>]+/g, (candidate) => redactUrl(candidate));
+    return value.replace(/https?:\/\/[^\s"'<>]+|\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/g, (candidate) => redactUrl(candidate));
   }
 
   function redactUrl(value: string): string {
     let url: URL;
 
     try {
-      url = new URL(value);
+      url = new URL(value, "http://stream-jams.local");
     } catch {
       return value;
     }
@@ -103,7 +103,8 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
       }
     }
 
-    return changed ? url.toString() : value;
+    if (!changed) return value;
+    return /^https?:\/\//i.test(value) ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
   }
 
   function redactOverlayKeys(value: string): string {

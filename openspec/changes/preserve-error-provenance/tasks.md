@@ -17,8 +17,8 @@
 
 ## 4. Server boundaries
 
-- [ ] 4.1 Centralize unexpected Fastify, background-task and fatal-process ownership.
-- [ ] 4.2 Audit server catch paths for propagation, cause preservation, ownership and cleanup priority.
+- [x] 4.1 Centralize unexpected Fastify, background-task and fatal-process ownership.
+- [x] 4.2 Audit server catch paths for propagation, cause preservation, ownership and cleanup priority.
 
 ## 5. Management browser boundaries
 

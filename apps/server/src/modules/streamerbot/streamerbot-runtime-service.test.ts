@@ -359,13 +359,14 @@ describe("StreamerBotRuntimeService", () => {
       message: "Streamer.bot Twitch.Raid payload was invalid",
       referenceId: "ref-1"
     });
-    expect(diagnostics).toEqual([{
+    expect(diagnostics).toEqual([expect.objectContaining({
       level: "error",
       message: "Streamer.bot Twitch.Raid payload was invalid",
       referenceId: "ref-1",
       source: "Twitch",
-      type: "Raid"
-    }]);
+      type: "Raid",
+      exception: expect.any(Error)
+    })]);
   });
 
   it("adopts an ingestion failure reference without emitting a duplicate diagnostic", async () => {

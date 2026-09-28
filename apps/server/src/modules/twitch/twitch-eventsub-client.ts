@@ -17,6 +17,7 @@ export interface TwitchEventSubStatus {
 export interface TwitchEventSubDiagnostic {
   readonly message: string;
   readonly referenceId: string;
+  readonly exception?: unknown;
 }
 
 export interface TwitchEventSubSubscriptionRequest {
@@ -270,9 +271,9 @@ export class TwitchEventSubClient {
         if (this.#isCurrentConnection(connectionGeneration, socket)) {
           await this.#handleMessage(event.data, recreateSubscriptions, connectionGeneration, socket);
         }
-      }).catch(() => {
+      }).catch((error: unknown) => {
         if (this.#isCurrentConnection(connectionGeneration, socket)) {
-          this.#recordFailure("Twitch EventSub message handling failed", this.#now().toISOString(), {}, true);
+          this.#recordFailure("Twitch EventSub message handling failed", this.#now().toISOString(), {}, true, error);
         }
       });
       this.#messageQueue = handling;
@@ -283,9 +284,9 @@ export class TwitchEventSubClient {
         this.#handleClose(event, connectionGeneration);
       }
     });
-    socket.addEventListener("error", () => {
+    socket.addEventListener("error", (error) => {
       if (this.#isCurrentConnection(connectionGeneration, socket)) {
-        this.#recordFailure("Twitch EventSub WebSocket error", this.#now().toISOString(), {}, true);
+        this.#recordFailure("Twitch EventSub WebSocket error", this.#now().toISOString(), {}, true, error);
       }
     });
   }
@@ -374,7 +375,8 @@ export class TwitchEventSubClient {
         this.#recordPersistentFailure(
           describeSubscriptionSetupFailure(error),
           occurredAt,
-          { lastMessageAt: occurredAt }
+          { lastMessageAt: occurredAt },
+          error
         );
         if (error instanceof TwitchEventSubApiError && error.status === 401) {
           this.#detachSocket(socket);
@@ -523,15 +525,17 @@ export class TwitchEventSubClient {
     message: string,
     occurredAt: string,
     status: Partial<Pick<TwitchEventSubStatus, "lastMessageAt">> = {},
-    recoverable = false
+    recoverable = false,
+    exception?: unknown
   ): void {
-    this.#recordIssue("error", message, occurredAt, status, recoverable);
+    this.#recordIssue("error", message, occurredAt, status, recoverable, exception);
   }
 
   #recordPersistentFailure(
     message: string,
     occurredAt: string,
-    status: Partial<Pick<TwitchEventSubStatus, "lastMessageAt">> = {}
+    status: Partial<Pick<TwitchEventSubStatus, "lastMessageAt">> = {},
+    exception?: unknown
   ): void {
     if (this.#persistentFailure?.message === message) {
       this.#status = {
@@ -544,7 +548,7 @@ export class TwitchEventSubClient {
       };
       return;
     }
-    const referenceId = this.#recordIssue("error", message, occurredAt, status);
+    const referenceId = this.#recordIssue("error", message, occurredAt, status, false, exception);
     this.#persistentFailure = { message, occurredAt, referenceId };
   }
 
@@ -553,7 +557,8 @@ export class TwitchEventSubClient {
     message: string,
     occurredAt: string,
     status: Partial<Pick<TwitchEventSubStatus, "lastMessageAt">> = {},
-    recoverable = false
+    recoverable = false,
+    exception?: unknown
   ): string {
     const referenceId = this.#generateReferenceId();
     this.#status = {
@@ -565,7 +570,11 @@ export class TwitchEventSubClient {
       referenceId
     };
     this.#recoverableFailureReferenceId = recoverable ? referenceId : null;
-    void Promise.resolve(this.#onDiagnostic({ message, referenceId })).catch(() => {
+    void Promise.resolve(this.#onDiagnostic({
+      message,
+      referenceId,
+      ...(exception === undefined ? {} : { exception })
+    })).catch(() => {
       if (this.#status.referenceId === referenceId) {
         this.#status = { ...this.#status, message: "Twitch EventSub diagnostics logging failed" };
       }

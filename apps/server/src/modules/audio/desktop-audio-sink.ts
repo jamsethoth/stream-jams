@@ -8,7 +8,8 @@ import {
   type AudioPlayerAsset,
   type DesktopAudioTransport,
   type DeviceAudioBatch,
-  type DeviceAudioResult
+  type DeviceAudioResult,
+  type Logger
 } from "@stream-jams/core";
 
 export interface DesktopAudioSinkDependencies {
@@ -18,6 +19,8 @@ export interface DesktopAudioSinkDependencies {
     readBounded(storagePath: string, maxBytes: number): Promise<Uint8Array>;
   };
   readonly now?: () => number;
+  readonly logger?: Logger;
+  readonly generateReferenceId?: () => string;
 }
 
 const supportedMimeTypes = new Set<AudioPlayerAsset["mimeType"]>([
@@ -36,6 +39,8 @@ export class DesktopAudioSink implements AudioPlaybackSink {
   readonly #assetRepository: Pick<AssetRepository, "findManyByIds">;
   readonly #assetStore: DesktopAudioSinkDependencies["assetStore"];
   readonly #now: () => number;
+  readonly #logger: Logger | undefined;
+  readonly #generateReferenceId: (() => string) | undefined;
   readonly #cancelled = new Set<string>();
   readonly #pendingByPlaybackId = new Map<string, number>();
   #closed = false;
@@ -45,6 +50,8 @@ export class DesktopAudioSink implements AudioPlaybackSink {
     this.#assetRepository = dependencies.assetRepository;
     this.#assetStore = dependencies.assetStore;
     this.#now = dependencies.now ?? Date.now;
+    this.#logger = dependencies.logger;
+    this.#generateReferenceId = dependencies.generateReferenceId;
   }
 
   async play(batch: DeviceAudioBatch): Promise<DeviceAudioResult> {
@@ -55,7 +62,11 @@ export class DesktopAudioSink implements AudioPlaybackSink {
     try {
       if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
       const assetIds = [...new Set(batch.layers.map(layer => layer.assetId))];
-      const records = await this.#beforeStartDeadline(this.#findAssets(assetIds), startDeadlineMs);
+      const records = await this.#beforeStartDeadline(
+        this.#assetRepository.findManyByIds(assetIds),
+        startDeadlineMs,
+        (error) => this.#recordFailure("Desktop audio asset lookup failed after its preparation deadline.", "desktop-audio.asset-lookup-late-failed", batch.playbackId, error)
+      );
       if (records === preparationTimedOut) return failedDestinations(batch);
       const assets: AudioPlayerAsset[] = [];
       let totalBytes = 0;
@@ -79,7 +90,8 @@ export class DesktopAudioSink implements AudioPlaybackSink {
               record.storagePath,
               Math.min(maxAudioTransportAssetBytes, maxAudioTransportBatchBytes - totalBytes)
             ),
-            startDeadlineMs
+            startDeadlineMs,
+            (error) => this.#recordFailure("Desktop audio asset read failed after its preparation deadline.", "desktop-audio.asset-read-late-failed", batch.playbackId, error, assetId)
           );
           if (bytes === preparationTimedOut) return failedDestinations(batch);
           if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
@@ -92,7 +104,8 @@ export class DesktopAudioSink implements AudioPlaybackSink {
           }
           assets.push({ assetId, mimeType: record.mimeType, bytes: new Uint8Array(bytes) });
           totalBytes += bytes.byteLength;
-        } catch {
+        } catch (error) {
+          await this.#recordFailure("Desktop audio asset could not be prepared.", "desktop-audio.asset-read-failed", batch.playbackId, error, assetId);
           // Missing, changed or unreadable assets are omitted. The player maps
           // the still-present batch layers to affected route failures.
         }
@@ -133,18 +146,14 @@ export class DesktopAudioSink implements AudioPlaybackSink {
     return !this.#closed && !this.#cancelled.has(playbackId);
   }
 
-  async #findAssets(assetIds: readonly string[]) {
-    try {
-      return await this.#assetRepository.findManyByIds(assetIds);
-    } catch {
-      return new Map();
-    }
-  }
-
-  async #beforeStartDeadline<T>(work: Promise<T>, startDeadlineMs: number): Promise<T | typeof preparationTimedOut> {
+  async #beforeStartDeadline<T>(
+    work: Promise<T>,
+    startDeadlineMs: number,
+    onLateFailure: (error: unknown) => void | Promise<void>
+  ): Promise<T | typeof preparationTimedOut> {
     const remainingMs = startDeadlineMs - this.#now();
     if (remainingMs <= 0) {
-      void work.catch(() => {});
+      void work.catch(onLateFailure);
       return preparationTimedOut;
     }
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -157,6 +166,18 @@ export class DesktopAudioSink implements AudioPlaybackSink {
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
+  }
+
+  async #recordFailure(message: string, source: string, playbackId: string, error: unknown, assetId?: string): Promise<void> {
+    const logger = this.#logger;
+    if (logger === undefined) return;
+    await logger.error(message, {
+      module: "audio-output",
+      source,
+      correlationId: this.#generateReferenceId?.() ?? playbackId,
+      processingId: null,
+      metadata: { playbackId, ...(assetId === undefined ? {} : { assetId }) }
+    }, error);
   }
 }
 

@@ -66,6 +66,14 @@ describe("createRedactor", () => {
     );
   });
 
+  it("redacts sensitive query values from relative request URLs", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redactText("GET /manage?token=secret-value&view=raw")).toBe(
+      "GET /manage?token=%5BREDACTED%5D&view=raw"
+    );
+  });
+
   it("normalizes control characters across nested exception text", () => {
     const redactor = createRedactor();
 

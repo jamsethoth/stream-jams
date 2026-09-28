@@ -98,8 +98,8 @@ export class TwitchApiHttpError extends Error {
 export class TwitchApiResponseError extends Error {
   readonly code = "TWITCH_API_RESPONSE_INVALID";
 
-  constructor() {
-    super("Twitch API response was invalid");
+  constructor(options?: ErrorOptions) {
+    super("Twitch API response was invalid", options);
     this.name = "TwitchApiResponseError";
   }
 }
@@ -107,8 +107,8 @@ export class TwitchApiResponseError extends Error {
 export class TwitchApiTransportError extends Error {
   readonly code = "TWITCH_API_REQUEST_FAILED";
 
-  constructor() {
-    super("Twitch API request failed");
+  constructor(options?: ErrorOptions) {
+    super("Twitch API request failed", options);
     this.name = "TwitchApiTransportError";
   }
 }
@@ -230,8 +230,8 @@ export class DefaultTwitchApiClient implements TwitchApiClient, TwitchRewardApiC
     let response: Response;
     try {
       response = await this.#fetch(url, init);
-    } catch {
-      throw new TwitchApiTransportError();
+    } catch (cause) {
+      throw new TwitchApiTransportError({ cause });
     }
     if (!response.ok) {
       throw new TwitchApiHttpError(response.status);
@@ -371,8 +371,8 @@ function parseCustomRewards(body: unknown): TwitchCustomRewardCatalog {
         };
       })
     });
-  } catch {
-    throw new TwitchApiResponseError();
+  } catch (cause) {
+    throw new TwitchApiResponseError({ cause });
   }
 }
 
@@ -412,8 +412,8 @@ function isTwitchVerificationUri(value: string): boolean {
 async function readJsonResponse(response: Response): Promise<unknown> {
   try {
     return await response.json();
-  } catch {
-    throw new TwitchApiResponseError();
+  } catch (cause) {
+    throw new TwitchApiResponseError({ cause });
   }
 }
 

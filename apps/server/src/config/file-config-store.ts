@@ -91,7 +91,10 @@ export class FileConfigStore implements ConfigStore {
       await writeFile(temporaryPath, `${JSON.stringify(parseAppConfig(config), null, 2)}\n`, "utf8");
       await rename(temporaryPath, this.#configFilePath);
     } catch (error) {
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      try { await rm(temporaryPath, { force: true }); }
+      catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "Config write and temporary-file cleanup failed", { cause: error });
+      }
       throw error;
     }
   }

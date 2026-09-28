@@ -34,6 +34,7 @@ export interface EffectPlaybackCoordinatorOptions {
   readonly validateReferences?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
   readonly validateOutputAvailability?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
   readonly onStopFailure?: ((error: unknown, occurrenceId: string) => void | Promise<void>) | undefined;
+  readonly onPlaybackFailure?: ((error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio") => void | Promise<void>) | undefined;
   readonly now?: (() => number) | undefined;
 }
 
@@ -73,6 +74,7 @@ export class EffectPlaybackCoordinator {
   readonly #validateReferences: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
   readonly #validateOutputAvailability: (content: EffectContentSnapshot) => boolean | Promise<boolean>;
   readonly #onStopFailure: (error: unknown, occurrenceId: string) => void | Promise<void>;
+  readonly #onPlaybackFailure: (error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio") => void | Promise<void>;
   readonly #now: () => number;
   #active: ActivePlayback | null = null;
   #closed = false;
@@ -90,6 +92,7 @@ export class EffectPlaybackCoordinator {
     this.#validateReferences = options.validateReferences ?? (() => true);
     this.#validateOutputAvailability = options.validateOutputAvailability ?? (() => true);
     this.#onStopFailure = options.onStopFailure ?? (() => {});
+    this.#onPlaybackFailure = options.onPlaybackFailure ?? (() => {});
     this.#now = options.now ?? Date.now;
   }
 
@@ -232,7 +235,10 @@ export class EffectPlaybackCoordinator {
       void this.#desktopVisualSink!.play(transportId, desktopInstructions, startsAtEpochMs)
         .then(
           () => this.#settleDesktop(state, false),
-          () => this.#settleDesktop(state, true)
+          (error: unknown) => {
+            this.#reportPlaybackFailure(error, state.occurrence.id, "desktop");
+            this.#settleDesktop(state, true);
+          }
         );
     }
     if (state.audioPending) {
@@ -251,7 +257,8 @@ export class EffectPlaybackCoordinator {
           state.hadRecipient = true;
           state.browser.set(instruction.id, { pendingClients: clients });
         }
-      } catch {
+      } catch (error) {
+        this.#reportPlaybackFailure(error, state.occurrence.id, "browser");
         // Other recipients remain independent.
       }
     }
@@ -285,8 +292,12 @@ export class EffectPlaybackCoordinator {
       )) {
         state.hadFailure = true;
       }
-    } catch {
+      for (const result of results) {
+        if (result.status === "rejected") this.#reportPlaybackFailure(result.reason, state.occurrence.id, "audio");
+      }
+    } catch (error) {
       state.hadFailure = true;
+      this.#reportPlaybackFailure(error, state.occurrence.id, "audio");
     } finally {
       if (this.#isActive(state)) {
         state.audioPending = false;
@@ -339,7 +350,10 @@ export class EffectPlaybackCoordinator {
       this.#overlayPlaybackSink?.stopPlaybackInstructions?.(
         state.browserInstructions.map((instruction) => instruction.id)
       );
-    } catch {
+    } catch (error) {
+      void Promise.resolve(this.#onStopFailure(error, occurrenceId)).catch(() => {
+        // error-provenance: allow cleanup -- the production logger owns its own emergency fallback
+      });
       // A disconnected browser cannot block local silence.
     }
     state.browser.clear();
@@ -364,6 +378,12 @@ export class EffectPlaybackCoordinator {
 
   #isActive(state: ActivePlayback): boolean {
     return this.#active === state && !state.finished && !this.#closed;
+  }
+
+  #reportPlaybackFailure(error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio"): void {
+    void Promise.resolve(this.#onPlaybackFailure(error, occurrenceId, recipient)).catch(() => {
+      // error-provenance: allow cleanup -- the production logger owns its own emergency fallback
+    });
   }
 
   #scheduleNext(): void {

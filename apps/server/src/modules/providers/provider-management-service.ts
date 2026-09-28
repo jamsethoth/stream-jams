@@ -399,7 +399,7 @@ export class ProviderManagementService {
         throw new AggregateError(
           [error, rollbackError],
           "Provider persistence failed and the live Streamer.bot subscription rollback also failed",
-          { cause: rollbackError }
+          { cause: error }
         );
       }
       throw error;

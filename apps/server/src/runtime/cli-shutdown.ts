@@ -4,11 +4,11 @@ import { onceAsync } from "./once-async.js";
 export function installCliShutdown(
   signals: { once(event: "SIGINT" | "SIGTERM", listener: () => void): unknown },
   runtime: Promise<{ close(): Promise<void> }>,
-  onFailure: () => void
+  onFailure: (error: unknown) => void
 ): { stop(): Promise<void>; isStopping(): boolean } {
   let stopping = false;
   const close = onceAsync(async () => {
-    try { await (await runtime).close(); } catch { onFailure(); }
+    try { await (await runtime).close(); } catch (error) { onFailure(error); }
   });
   const stop = () => { stopping = true; return close(); };
   signals.once("SIGINT", () => { void stop(); });
