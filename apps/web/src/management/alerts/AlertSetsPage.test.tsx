@@ -32,16 +32,16 @@ describe("AlertSetsPage", () => {
     expect(screen.queryByRole("textbox", { name: "Landscape browser source" })).not.toBeInTheDocument();
     const landscapeSource = screen.getByRole("article", { name: "Landscape browser source" });
     expect(within(landscapeSource).getByText("Ready")).toBeInTheDocument();
-    expect(within(landscapeSource).getByText("Profile enabled")).toBeInTheDocument();
+    expect(within(landscapeSource).queryByText(/Profile (?:enabled|disabled)/u)).not.toBeInTheDocument();
     expect(within(landscapeSource).getByText("Listening now")).toBeInTheDocument();
     expect(within(landscapeSource).getByText("1920 x 1080")).toBeInTheDocument();
     expect(within(landscapeSource).getByText(/Add a Browser source in OBS at 1920 x 1080/)).toBeInTheDocument();
     const verticalSource = screen.getByRole("article", { name: "Vertical browser source" });
     expect(within(verticalSource).getByText("Needs setup")).toBeInTheDocument();
-    expect(within(verticalSource).getByText("Profile disabled")).toBeInTheDocument();
+    expect(within(verticalSource).queryByText(/Profile (?:enabled|disabled)/u)).not.toBeInTheDocument();
     expect(within(verticalSource).getByText("Not listening. No connection recorded.")).toBeInTheDocument();
     expect(within(verticalSource).getByText("1080 x 1920")).toBeInTheDocument();
-    expect(screen.getByText("4 alerts need review")).toBeInTheDocument();
+    expect(screen.queryByText("4 alerts need review")).not.toBeInTheDocument();
   });
 
   it("reveals and hides browser-source URLs without changing keys", async () => {
@@ -119,7 +119,8 @@ describe("AlertSetsPage", () => {
     expect(within(selectedSet).getByRole("button", { name: "Delete Default" })).toBeDisabled();
     expect(within(selectedSet).getByRole("button", { name: "Edit New follower" })).toBeInTheDocument();
     expect(within(selectedSet).getByText("1 blocker")).toBeInTheDocument();
-    expect(within(selectedSet).getByText("4 alerts need review")).toBeInTheDocument();
+    expect(within(selectedSet).queryByText("4 alerts need review")).not.toBeInTheDocument();
+    expect(within(selectedSet).getAllByText("Needs review").length).toBeGreaterThan(0);
     expect(screen.queryByText("Active set")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Validation" })).not.toBeInTheDocument();
 
@@ -128,7 +129,7 @@ describe("AlertSetsPage", () => {
     expect(within(selectedSet).queryByRole("button", { name: "Edit New follower" })).not.toBeInTheDocument();
     expect(within(selectedSet).getByRole("button", { name: "Expand Default" })).toHaveAttribute("aria-expanded", "false");
     expect(within(selectedSet).getByText("1 blocker")).toBeInTheDocument();
-    expect(within(selectedSet).getByText("4 alerts need review")).toBeInTheDocument();
+    expect(within(selectedSet).queryByText("4 alerts need review")).not.toBeInTheDocument();
   });
 
   it("omits the setup warning when every browser-source URL is ready", async () => {
@@ -171,8 +172,7 @@ describe("AlertSetsPage", () => {
     source.inventory = source.inventory.map((candidate) => candidate.id === "alert-follow"
       ? { ...candidate, targetProfileIds: ["landscape", "vertical"] }
       : candidate);
-    source.browserSources = source.browserSources.map((entry) => ({ ...entry, connectionState: "connected" as const }));
-    source.overview.targetProfiles = source.overview.targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "ready" as const }));
+    source.browserSources = source.browserSources.map((entry) => ({ ...entry, connectionState: "disconnected" as const }));
     const saved = editorDocument();
     saved.targetProfiles = saved.targetProfiles.map((profile) => ({ ...profile, enabled: true, reviewState: "ready" as const }));
     const getAlertEditorDocument = vi.fn(async () => saved);
@@ -211,6 +211,9 @@ describe("AlertSetsPage", () => {
       ? { ...entry, connectionState: "disconnected" as const }
       : entry);
     const saved = editorDocument();
+    saved.targetProfiles = saved.targetProfiles.map((profile) => profile.id === "landscape"
+      ? profile
+      : { ...profile, enabled: false, reviewState: "needs-review" as const });
     const sendAlertEditorTest = vi.fn(async (_alertId, request) => ({
       status: "queued" as const,
       targetProfileId: request.targetProfileId,
@@ -288,6 +291,7 @@ describe("AlertSetsPage", () => {
     render(<AlertSetsPage managementApi={alertSetsApi({ sendAlertEditorTest })} onEditAlert={vi.fn()} />);
 
     await user.click(await screen.findByRole("button", { name: "Test saved New follower" }));
+    await user.click(await screen.findByRole("button", { name: "Send New follower saved test to Landscape" }));
 
     expect(await screen.findByText("err_inline_test_blocked")).toBeVisible();
     expect(screen.getByRole("link", { name: "Open Diagnostics" })).toHaveAttribute(
@@ -914,6 +918,47 @@ describe("AlertSetsPage", () => {
     expect(api.activateAlertSet).toHaveBeenCalledWith("set-seasonal", true);
   });
 
+  it("keeps the set review rollup stable when disabled profiles remain unreviewed", async () => {
+    const seasonal: AlertSetOverview = {
+      ...overview(),
+      id: "set-seasonal",
+      name: "Seasonal",
+      active: false,
+      starter: false,
+      starterReviewState: "complete",
+      enabledAlertCount: 1,
+      profileUsage: [
+        { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 0 },
+        { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
+      ],
+      validationIssues: []
+    };
+    const seasonalDetail: AlertSetDetail = {
+      ...detail(),
+      overview: seasonal,
+      inventory: [{
+        ...alert("alert-seasonal", "Seasonal follower", "follow"),
+        setId: seasonal.id,
+        enabled: true,
+        reviewState: "needs-review",
+        targetProfileIds: ["landscape"]
+      }]
+    };
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={alertSetsApi({
+      listAlertSets: vi.fn(async () => [overview(), seasonal]),
+      getAlertSet: vi.fn(async (setId) => setId === seasonal.id ? seasonalDetail : detail())
+    })} onEditAlert={vi.fn()} />);
+
+    const seasonalSet = await screen.findByRole("region", { name: "Seasonal alert set" });
+    expect(within(seasonalSet).getByText("Ready")).toBeInTheDocument();
+
+    await user.click(within(seasonalSet).getByRole("button", { name: "Expand Seasonal" }));
+
+    expect(within(seasonalSet).getByText("Ready")).toBeInTheDocument();
+    expect(within(seasonalSet).queryByText(/alert needs review/u)).not.toBeInTheDocument();
+  });
+
   it("opens the alert set named by route context", async () => {
     const seasonal = { ...overview(), id: "set-seasonal", name: "Seasonal", active: false, starter: false };
     const getAlertSet = vi.fn(async (setId: string) => ({
@@ -1135,9 +1180,9 @@ function overview(): AlertSetOverview {
     starter: true,
     starterReviewState: "pending",
     enabledAlertCount: 0,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [issue("no-alerts", "blocker", "NO_ENABLED_ALERTS", "Enable at least one alert before activation.")],
     outputs: []

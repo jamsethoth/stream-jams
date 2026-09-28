@@ -24,11 +24,7 @@ describe("SqliteAlertSetMetadataRepository", () => {
     await repository.saveSet({
       setId: "set-default",
       starter: true,
-      starterReviewState: "pending",
-      landscapeEnabled: true,
-      landscapeReviewState: "ready",
-      verticalEnabled: false,
-      verticalReviewState: "needs-review"
+      starterReviewState: "pending"
     });
     await repository.saveRule({
       ruleId: "alert-follow",
@@ -37,7 +33,11 @@ describe("SqliteAlertSetMetadataRepository", () => {
       targetProfileIds: ["landscape", "vertical"]
     });
 
-    expect(await repository.findSet("set-default")).toMatchObject({ starter: true, starterReviewState: "pending" });
+    expect(await repository.findSet("set-default")).toEqual({
+      setId: "set-default",
+      starter: true,
+      starterReviewState: "pending"
+    });
     expect(await repository.findRule("alert-follow")).toMatchObject({
       providerKind: "twitch",
       targetProfileIds: ["landscape", "vertical"]

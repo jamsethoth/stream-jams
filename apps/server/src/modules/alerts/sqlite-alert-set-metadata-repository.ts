@@ -11,10 +11,6 @@ interface AlertSetMetadataRow {
   readonly set_id: unknown;
   readonly starter: unknown;
   readonly starter_review_state: unknown;
-  readonly landscape_enabled: unknown;
-  readonly landscape_review_state: unknown;
-  readonly vertical_enabled: unknown;
-  readonly vertical_review_state: unknown;
 }
 
 interface AlertRuleManagementMetadataRow {
@@ -34,8 +30,7 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
   async findSet(setId: string): Promise<AlertSetMetadata | null> {
     const row = this.#connection
       .prepare(
-        `SELECT set_id, starter, starter_review_state, landscape_enabled, landscape_review_state,
-                vertical_enabled, vertical_review_state
+        `SELECT set_id, starter, starter_review_state
          FROM alert_set_metadata
          WHERE set_id = ?`
       )
@@ -49,8 +44,7 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
     const placeholders = ids.map(() => "?").join(", ");
     const rows = this.#connection
       .prepare(
-        `SELECT set_id, starter, starter_review_state, landscape_enabled, landscape_review_state,
-                vertical_enabled, vertical_review_state
+        `SELECT set_id, starter, starter_review_state
          FROM alert_set_metadata
          WHERE set_id IN (${placeholders})`
       )
@@ -69,25 +63,16 @@ export class SqliteAlertSetMetadataRepository implements AlertSetMetadataReposit
     this.#connection
       .prepare(
         `INSERT INTO alert_set_metadata (
-           set_id, starter, starter_review_state, landscape_enabled, landscape_review_state,
-           vertical_enabled, vertical_review_state
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)
+           set_id, starter, starter_review_state
+         ) VALUES (?, ?, ?)
          ON CONFLICT(set_id) DO UPDATE SET
            starter = excluded.starter,
-           starter_review_state = excluded.starter_review_state,
-           landscape_enabled = excluded.landscape_enabled,
-           landscape_review_state = excluded.landscape_review_state,
-           vertical_enabled = excluded.vertical_enabled,
-           vertical_review_state = excluded.vertical_review_state`
+           starter_review_state = excluded.starter_review_state`
       )
       .run(
         metadata.setId,
         toInteger(metadata.starter),
-        metadata.starterReviewState,
-        toInteger(metadata.landscapeEnabled),
-        metadata.landscapeReviewState,
-        toInteger(metadata.verticalEnabled),
-        metadata.verticalReviewState
+        metadata.starterReviewState
       );
     return metadata;
   }
@@ -176,11 +161,7 @@ function mapSetMetadata(row: AlertSetMetadataRow): AlertSetMetadata {
   return {
     setId: String(row.set_id),
     starter: toBoolean(row.starter),
-    starterReviewState: row.starter_review_state === "pending" ? "pending" : "complete",
-    landscapeEnabled: toBoolean(row.landscape_enabled),
-    landscapeReviewState: row.landscape_review_state === "needs-review" ? "needs-review" : "ready",
-    verticalEnabled: toBoolean(row.vertical_enabled),
-    verticalReviewState: row.vertical_review_state === "ready" ? "ready" : "needs-review"
+    starterReviewState: row.starter_review_state === "pending" ? "pending" : "complete"
   };
 }
 

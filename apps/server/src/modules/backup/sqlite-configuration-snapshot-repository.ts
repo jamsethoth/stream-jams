@@ -60,7 +60,7 @@ const tableDefinitions = [
   table("alert_rule_collections", ["rule_id", "collection_id"], ["rule_id", "collection_id"]),
   table("alert_rule_conditions", ["rule_id", "position", "field", "operator", "value_json"], ["rule_id", "position"], ["value_json"]),
   table("alert_variants", ["id", "rule_id", "name", "enabled", "weight", "visual_asset_id", "audio_asset_id", "text_template", "tts_config_json", "duration_ms", "layout_json", "conditions_json", "priority", "variant_order"], ["rule_id", "variant_order", "id"], ["tts_config_json", "layout_json", "conditions_json"]),
-  table("alert_set_metadata", ["set_id", "starter", "starter_review_state", "landscape_enabled", "landscape_review_state", "vertical_enabled", "vertical_review_state"], ["set_id"]),
+  table("alert_set_metadata", ["set_id", "starter", "starter_review_state"], ["set_id"]),
   table("alert_rule_management_metadata", ["rule_id", "provider_kind", "review_state", "target_profile_ids_json"], ["rule_id"], ["target_profile_ids_json"]),
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
   table("audio_output_routes", ["id", "name", "device_id", "device_label", "auto_follow_device_name"], ["id"], [],
@@ -91,6 +91,12 @@ const tableDefinitions = [
 
 const definitionsByName = new Map(tableDefinitions.map((definition) => [definition.name, definition]));
 const nullableJsonColumns = new Set(["tts_config_json", "tts_safety_json"]);
+const legacyAlertSetProfileColumns = new Set([
+  "landscape_enabled",
+  "landscape_review_state",
+  "vertical_enabled",
+  "vertical_review_state"
+]);
 const restorePointMarker = Symbol("configuration-restore-point");
 
 interface SqliteConfigurationRestorePoint {
@@ -190,7 +196,10 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
           !actualColumns.includes(column)
           && !(definition.name === "asset_metadata" && column === "duration_ms")
         );
-        const extra = actualColumns.filter((column) => !expectedColumns.includes(column));
+        const extra = actualColumns.filter((column) =>
+          !expectedColumns.includes(column)
+          && !(definition.name === "alert_set_metadata" && legacyAlertSetProfileColumns.has(column))
+        );
         if (missing.length > 0) errors.push(`${definition.name}[${index}] is missing columns: ${missing.join(", ")}.`);
         if (extra.length > 0) errors.push(`${definition.name}[${index}] contains unsupported columns: ${extra.join(", ")}.`);
         for (const [column, value] of Object.entries(row)) {
@@ -574,13 +583,9 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
   for (const [index, row] of (tables.alert_set_metadata ?? []).entries()) {
     if (
       typeof sqlBoolean(row.starter) !== "boolean" ||
-      typeof sqlBoolean(row.landscape_enabled) !== "boolean" ||
-      typeof sqlBoolean(row.vertical_enabled) !== "boolean" ||
-      (row.starter_review_state !== "pending" && row.starter_review_state !== "complete") ||
-      (row.landscape_review_state !== "ready" && row.landscape_review_state !== "needs-review") ||
-      (row.vertical_review_state !== "ready" && row.vertical_review_state !== "needs-review")
+      (row.starter_review_state !== "pending" && row.starter_review_state !== "complete")
     ) {
-      errors.push(`alert_set_metadata[${index}] contains an invalid review or enabled state.`);
+      errors.push(`alert_set_metadata[${index}] contains an invalid starter review state.`);
     }
   }
 

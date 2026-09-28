@@ -37,9 +37,9 @@ const configuredSummary: HomeSetupSummary = {
     starter: true,
     starterReviewState: "complete",
     enabledAlertCount: 1,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 1 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 1, playableAlertCount: 1, blockerCount: 0, warningCount: 1 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [
       {
@@ -128,6 +128,8 @@ describe("HomePanel", () => {
     expect(screen.getByText("Default")).toBeInTheDocument();
     expect(screen.getByText("1 enabled alert")).toBeInTheDocument();
     expect(screen.getByText("1 warning")).toBeInTheDocument();
+    expect(screen.getByText("Profiles in use")).toBeInTheDocument();
+    expect(screen.getByText("Landscape")).toBeInTheDocument();
     expect(screen.getByRole("alert")).toHaveTextContent("Reconnect Twitch, then test the event source.");
     expect(screen.getByText("ref-home-17")).toBeInTheDocument();
     const problems = screen.getByRole("heading", { name: "Needs attention" });
@@ -160,7 +162,7 @@ describe("HomePanel", () => {
       ...configuredSummary,
       activeAlertSet: {
         ...configuredSummary.activeAlertSet!,
-        targetProfiles: configuredSummary.activeAlertSet!.targetProfiles.map((profile) => ({ ...profile, warningCount: 0 })),
+        profileUsage: configuredSummary.activeAlertSet!.profileUsage.map((profile) => ({ ...profile, warningCount: 0 })),
         validationIssues: []
       },
       actionableProblems: []

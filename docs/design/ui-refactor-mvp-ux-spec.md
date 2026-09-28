@@ -172,7 +172,7 @@ MVP Home content:
 - Provider checklist items complete only when provider validates.
 - Starter alert review completes when the default set has at least one enabled valid alert or user marks starter review done.
 - First-run starter alerts are stored disabled and `Needs review` with empty Landscape and Vertical layouts and no layers.
-- Active alert set summary: set name, blocker/warning counts, enabled alert count, active target profiles.
+- Active alert set summary: set name, blocker/warning counts, enabled alert count, and `Profiles in use` derived from enabled alerts' enabled saved target profiles.
 - Top active actionable problems only, with links to Diagnostics or correction screens.
 
 Rules:
@@ -391,9 +391,11 @@ Status rules:
 - Badges should be actionable where practical.
 - Collapsed sets retain blocker, warning, and needs-review counts.
 - Alert rows show counts without expanding full error text into the management list.
+- Alert-set review rollups count enabled saved profiles and remain unchanged when set details expand; disabled profiles stay editable without adding review debt to the set summary.
 - Focused alert editor shows alert-specific and set-wide validation details relevant to the selected target profile, including cause, next step, and reference ID when available.
 - `Sample message` opens built-in text-only sample content and never renders the design, plays media, or sends a test.
-- Inline `Test saved` loads the saved alert document and sends through the alert delivery API; multiple available profiles require explicit profile choice.
+- Inline `Test saved` loads the saved alert document and sends through the alert delivery API; one enabled and reviewed saved profile sends immediately, while multiple enabled and reviewed saved profiles require explicit profile choice.
+- Alert-set metadata and Browser Source listener state never remove an enabled and reviewed saved profile from the `Test saved` choice.
 - The saved-test summary identifies saved input, intended browser profile names, selected device outputs when available, and included audio/TTS without exposing route keys or secret URLs.
 - Blockers prevent `Activate set`.
 - Warnings allow activation with confirmation.
@@ -411,7 +413,6 @@ Output section shows per target profile:
 - Copy action.
 - Route-key regeneration.
 - Configuration readiness: `Ready` or `Needs setup`.
-- Selected-set profile state: enabled or disabled.
 - Secondary listener telemetry: `Listening now`, `Not listening`, and last seen time.
 
 Rules:
@@ -428,6 +429,7 @@ Rules:
 - Listener telemetry refreshes every five seconds without a page reload.
 - Failed telemetry refresh retains the last known state, marks it stale, and shows an actionable error.
 - Current listeners do not determine whether saved browser-source configuration is ready.
+- Browser Source cards do not expose alert-set profile enablement or review state; they report only URL readiness and listener telemetry.
 - Browser-source controls stay in a compact horizontal band and expand only secret URL content or confirmation flows when requested.
 - Browser sources are collapsed by default and retain readiness and stale-status rollups in the collapsed row.
 - Opening a Browser sources deep link expands the section before scrolling it into view.
@@ -653,8 +655,8 @@ Rules:
 - Hard failures block enable; warnings require confirmation.
 - Newly generated vertical layouts default disabled and `Needs review`.
 - `Needs review` clears only through explicit `Mark reviewed`.
-- `Activate set` requires at least one valid target profile.
-- Disabled profiles do not block activation.
+- `Activate set` requires at least one enabled alert with an enabled, reviewed saved target profile.
+- Disabled or unused saved profiles do not block activation unless another global or in-use-profile blocker applies.
 
 Blocking validation:
 

@@ -18,9 +18,9 @@ const configuredSummary: HomeSetupSummary = {
     starter: true,
     starterReviewState: "complete",
     enabledAlertCount: 6,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: 6, playableAlertCount: 6, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 1 }
     ],
     validationIssues: [],
     outputs: []
