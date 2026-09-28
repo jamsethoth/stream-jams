@@ -70,7 +70,7 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
 
   function redactText(value: string): string {
     return redactOverlayKeys(
-      redactUrls(value.replace(authorizationValuePattern, (_match, scheme: string) => `${scheme} ${replacement}`).replace(
+      redactUrls(normalizeControlCharacters(value).replace(authorizationValuePattern, (_match, scheme: string) => `${scheme} ${replacement}`).replace(
         standaloneApiKeyPattern,
         replacement
       ))
@@ -109,6 +109,10 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   function redactOverlayKeys(value: string): string {
     return value.replace(overlayKeyPattern, replacement);
   }
+}
+
+function normalizeControlCharacters(value: string): string {
+  return value.replace(/[\u0000-\u001F\u007F]/g, " ");
 }
 
 function isSensitiveName(name: string, configuredSecretNames: ReadonlySet<string>): boolean {

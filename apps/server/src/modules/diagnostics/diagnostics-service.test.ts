@@ -304,6 +304,45 @@ describe("DiagnosticsService", () => {
     expect(runtimeLogSource.recentRequests).toEqual([{ limit: 1, sinceHours: 2 }]);
   });
 
+  it("projects structured exceptions only into raw evidence and debug exports", async () => {
+    const exception = {
+      type: "Error",
+      message: "Playback failed with Bearer oauth-secret",
+      stack: "Error: Playback failed with Bearer oauth-secret\n    at overlay.ts:1:1",
+      code: "E_PLAYBACK",
+      cause: null,
+      thrownValue: null
+    };
+    const source = new RecordingRuntimeLogSource([{
+      timestamp: "2026-09-27T23:30:00.000Z",
+      level: "ERROR",
+      event: "overlay.playback.failed",
+      component: "overlay",
+      message: "Video playback failed.",
+      correlationId: "err_playback_1",
+      processingId: null,
+      exception
+    }]);
+    const service = createService(new RecordingDiagnosticsRepository(), [], source);
+
+    const workspace = await service.getWorkspace();
+    const debugExport = await service.createDebugExport();
+
+    expect(workspace.problems[0]).toMatchObject({
+      referenceId: "err_playback_1",
+      cause: "overlay reported overlay.playback.failed."
+    });
+    expect(JSON.stringify(workspace.problems[0])).not.toContain("overlay.ts");
+    expect(workspace.rawLogs[0]?.data).toMatchObject({
+      exception: {
+        type: "Error",
+        message: "Playback failed with Bearer [REDACTED]",
+        code: "E_PLAYBACK"
+      }
+    });
+    expect(debugExport.runtimeLogEntries[0]?.exception?.message).toBe("Playback failed with Bearer [REDACTED]");
+  });
+
   it("builds a redacted diagnostics workspace with correction routes and joined event evidence", async () => {
     const repository = new RecordingDiagnosticsRepository({
       eventLogs: [
@@ -431,7 +470,7 @@ describe("DiagnosticsService", () => {
       expect.objectContaining({
         referenceId: "correlation-1",
         message: "Provider failed with Bearer [REDACTED]",
-        data: { authorization: "[REDACTED]" },
+        data: { authorization: "[REDACTED]", exception: null },
         correction: {
           label: "Open event sources",
           route: "/manage/event-sources?diagnostic=correlation-1"

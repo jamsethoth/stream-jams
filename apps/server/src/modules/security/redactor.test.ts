@@ -65,4 +65,22 @@ describe("createRedactor", () => {
       "module=http://127.0.0.1:39187/overlay/modules/alerts/live/[REDACTED] unified=http://127.0.0.1:39187/overlay/unified/test/[REDACTED]"
     );
   });
+
+  it("normalizes control characters across nested exception text", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redact({
+      exception: {
+        message: "first\r\nsecond\u0000third",
+        stack: "Error: failed\n    at file.ts:1:1",
+        cause: { message: "Bearer oauth-secret\u007fhidden" }
+      }
+    })).toEqual({
+      exception: {
+        message: "first  second third",
+        stack: "Error: failed     at file.ts:1:1",
+        cause: { message: "Bearer [REDACTED] hidden" }
+      }
+    });
+  });
 });

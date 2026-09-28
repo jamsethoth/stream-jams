@@ -442,7 +442,10 @@ export class DiagnosticsService {
       referenceId,
       processingId: entry.processingId,
       message: entry.message,
-      data: entry.details ?? {},
+      data: {
+        ...(entry.details ?? {}),
+        exception: entry.exception ?? null
+      },
       correction: correctionForEvidence(`${entry.component} ${entry.event} ${entry.message}`, referenceId)
     };
   }

@@ -7,8 +7,8 @@
 
 ## 2. Diagnostic pipeline
 
-- [ ] 2.1 Persist redacted structured exceptions while retaining historical JSONL compatibility.
-- [ ] 2.2 Add independent emergency logging and expose detail only through Raw logs and debug exports.
+- [x] 2.1 Persist redacted structured exceptions while retaining historical JSONL compatibility.
+- [x] 2.2 Add independent emergency logging and expose detail only through Raw logs and debug exports.
 
 ## 3. Overlay media provenance
 

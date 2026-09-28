@@ -825,7 +825,17 @@ describe("management asset diagnostics home and backup contracts", () => {
             referenceId: "ref-provider-1",
             processingId: null,
             message: "Provider validation failed.",
-            data: { token: "[REDACTED]" },
+            data: {
+              token: "[REDACTED]",
+              exception: {
+                type: "Error",
+                message: "Provider validation failed.",
+                stack: "Error: Provider validation failed.\n    at provider.ts:1:1",
+                code: "E_PROVIDER",
+                cause: null,
+                thrownValue: null
+              }
+            },
             correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-provider-1" }
           }
         ]
