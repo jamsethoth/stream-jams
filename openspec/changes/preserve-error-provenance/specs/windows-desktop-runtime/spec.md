@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Desktop Process Boundaries Preserve Failure Evidence Locally
-The desktop application SHALL preserve bounded structured failures across main, renderer, preload, worker and IPC boundaries and SHALL record platform termination reasons and exit codes when no JavaScript exception is available. Native crash collection SHALL remain local with automatic upload disabled.
+The desktop application SHALL preserve bounded structured failures and stable references across main, renderer, preload, worker and IPC boundaries and SHALL record platform termination reasons and exit codes when no JavaScript exception is available. A receiver SHALL treat a transported stack as originating-process data rather than inventing a replacement local stack. Native crash collection SHALL remain local with automatic upload disabled.
 
 #### Scenario: Worker command fails
 - **WHEN** the owned service worker rejects a desktop command

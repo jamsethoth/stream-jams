@@ -37,5 +37,5 @@
 
 ## 8. Documentation and verification
 
-- [ ] 8.1 Document ownership, redaction, bounds, exemptions and practical guarantees.
-- [ ] 8.2 Run focused, repository, Storybook, Playwright, packaged Electron and strict OpenSpec gates and record evidence.
+- [x] 8.1 Document ownership, redaction, bounds, exemptions and practical guarantees.
+- [x] 8.2 Run focused, repository, Storybook, Playwright, packaged Electron and strict OpenSpec gates and record evidence.

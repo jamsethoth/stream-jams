@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Unexpected Management Client Failures Produce Safe References
-The management application SHALL record unexpected bootstrap, React render, window error and unhandled rejection failures through an authenticated bounded diagnostic route. The visible recovery surface SHALL provide safe copy and a stable reference without exposing a stack or serialized exception.
+The management application SHALL record unexpected bootstrap, React render, window error and unhandled rejection failures through an authenticated bounded diagnostic route. The first owning browser boundary SHALL assign one reference which the recovery surface and Raw logs reuse. The visible recovery surface SHALL provide safe copy and that stable reference without exposing a stack or serialized exception.
 
 #### Scenario: React rendering fails
 - **WHEN** a management component throws during rendering or a supported lifecycle

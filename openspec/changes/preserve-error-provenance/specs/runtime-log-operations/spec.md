@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Raw Diagnostics Preserve Structured Exception Provenance
-The system SHALL record the available redacted type, message, stack, code, causal chain and non-Error thrown value for an operational exception in a dedicated bounded exception field at the boundary that owns the failure. Historical log records without this field SHALL remain readable.
+The system SHALL record the available redacted type, message, stack, code, causal chain and non-Error thrown value for an operational exception in a dedicated bounded exception field at the boundary that owns the failure. The owner SHALL assign one stable reference and intermediaries SHALL propagate without duplicate logging. Historical log records without this field SHALL remain readable.
 
 #### Scenario: Nested operational exception reaches its owner
 - **WHEN** an operation fails with an exception containing a code and nested causes
@@ -31,7 +31,7 @@ The system SHALL use an independent bounded synchronous fallback when the normal
 - **AND** the cleanup failure is linked as secondary evidence using the same reference
 
 ### Requirement: Production Catch Paths Preserve Or Explicitly Classify Failures
-Production code SHALL propagate, enrich with `cause`, own and log, convert a documented expected outcome, or treat a failure as secondary cleanup. Static verification SHALL reject catch paths that silently discard operational exceptions.
+Production code SHALL classify caught failures as propagate, enrich with `cause`, own and log, convert a documented expected outcome, or secondary cleanup. Cleanup failure SHALL NOT replace primary evidence. Static verification SHALL reject catch paths that silently discard operational exceptions and SHALL require reasoned expected or cleanup exemptions.
 
 #### Scenario: Context is added to a failure
 - **WHEN** a layer replaces an exception with an operation-level error message

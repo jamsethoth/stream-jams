@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Overlay Playback Failures Retain Stage And Cause Off Stream
-The browser-source overlay SHALL report a bounded structured exception, stable reference and exact playback stage through its authenticated connection while rendering no diagnostic content on stream. The server SHALL derive connection identity and target profile from the authorized registered client.
+The browser-source overlay SHALL report a bounded structured exception, stable reference and exact playback stage through its authenticated connection before failed content is removed, while rendering no diagnostic content on stream. The server SHALL derive connection identity and target profile from the authorized registered client. Structured exception detail SHALL be available only in Raw logs and debug exports.
 
 #### Scenario: Timed video preparation fails
 - **WHEN** video source loading, metadata readiness, seeking or decoding fails during timed preparation
