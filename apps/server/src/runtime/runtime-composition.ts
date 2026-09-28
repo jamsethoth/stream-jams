@@ -23,6 +23,7 @@ import {
   type AlertEditorErrorReportInput,
   type AudioDeviceHost,
   type AudioPlaybackSink,
+  type ClientExceptionReport,
   type ConfigStore,
   type DesktopConfig,
   type DesktopAudioTransport,
@@ -1066,6 +1067,16 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     });
     return { referenceId: input.error.referenceId };
   };
+  const reportClientException = async (input: ClientExceptionReport) => {
+    await runtimeLogger.error(input.message, {
+      module: "management",
+      source: "management.client.error",
+      correlationId: input.referenceId,
+      processingId: null,
+      metadata: { source: input.source }
+    }, input.exception);
+    return { referenceId: input.referenceId };
+  };
   const overlayModuleRuntimes = new Map<string, OverlayModuleRuntime>([
     ["alerts", {
       async getModuleSnapshot(request: Parameters<EffectPlaybackCoordinator["getModuleSnapshot"]>[0]) {
@@ -1210,6 +1221,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     alertEditorService,
     managementAssetLibraryService: assetLibraryService,
     reportAlertEditorError,
+    reportClientException,
     getDiagnosticsWorkspace: () =>
       diagnosticsService.getWorkspace({ limit: 200, runtimeLogLimit: 200, sinceHours: 2 }),
     getConfigurationBackupSummary: () => configurationBackupService.summary(),

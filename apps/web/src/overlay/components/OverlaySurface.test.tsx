@@ -330,11 +330,15 @@ describe("OverlaySurface", () => {
     );
 
     await waitFor(() =>
-      expect(onPlaybackEvent).toHaveBeenCalledWith({
+      expect(onPlaybackEvent).toHaveBeenCalledWith(expect.objectContaining({
         instructionId: "instruction-1",
         status: "failed",
-        message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
-      })
+        failure: expect.objectContaining({
+          stage: "play",
+          message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry.",
+          exception: expect.objectContaining({ type: "NotAllowedError", message: "Playback requires user interaction" })
+        })
+      }))
     );
   });
 
@@ -394,11 +398,11 @@ describe("OverlaySurface", () => {
 
     act(() => vi.advanceTimersByTime(30_000));
 
-    expect(onPlaybackEvent).toHaveBeenCalledWith({
+    expect(onPlaybackEvent).toHaveBeenCalledWith(expect.objectContaining({
       instructionId: "instruction-1",
       status: "failed",
-      message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry."
-    });
+      failure: expect.objectContaining({ stage: "play", message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry." })
+    }));
   });
 
   it("uses one activation action to retry every blocked test-audio layer", async () => {
@@ -600,11 +604,11 @@ describe("OverlaySurface", () => {
       />
     );
 
-    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith({
+    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith(expect.objectContaining({
       instructionId: "instruction-1",
       status: "failed",
-      message: "Alert text style could not be rendered safely."
-    }));
+      failure: expect.objectContaining({ stage: "source-load", message: "Alert text style could not be rendered safely." })
+    })));
     expect(screen.queryByText("Do not render")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overlay-visual-instruction-1")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overlay-audio-instruction-1")).not.toBeInTheDocument();
@@ -638,11 +642,11 @@ describe("OverlaySurface", () => {
       />
     );
 
-    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith({
+    await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith(expect.objectContaining({
       instructionId: "instruction-1",
       status: "failed",
-      message: "Alert shape fill could not be rendered safely."
-    }));
+      failure: expect.objectContaining({ stage: "source-load", message: "Alert shape fill could not be rendered safely." })
+    })));
     expect(screen.queryByTestId("overlay-shape-instruction-1")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overlay-visual-instruction-1")).not.toBeInTheDocument();
     expect(screen.queryByTestId("overlay-audio-instruction-1")).not.toBeInTheDocument();

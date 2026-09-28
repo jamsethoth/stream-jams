@@ -22,8 +22,8 @@
 
 ## 5. Management browser boundaries
 
-- [ ] 5.1 Add authenticated client-exception reporting, global browser listeners and a React error boundary.
-- [ ] 5.2 Audit web catch paths and verify safe reference-based presentation in Storybook and Playwright.
+- [x] 5.1 Add authenticated client-exception reporting, global browser listeners and a React error boundary.
+- [x] 5.2 Audit web catch paths and verify safe reference-based presentation in Storybook and Playwright.
 
 ## 6. Desktop boundaries
 

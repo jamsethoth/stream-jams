@@ -1,5 +1,56 @@
 import { expect, test } from "@playwright/test";
 
+test("management bootstrap failure reports once and remains inspectable only in Raw logs", async ({ page }) => {
+  let report: {
+    readonly referenceId: string;
+    readonly source: string;
+    readonly message: string;
+    readonly exception: { readonly message: string; readonly stack: string | null };
+  } | null = null;
+  await page.route("**/src/App.tsx*", (route) => route.abort("failed"));
+  await page.route("**/auth/management/sessions", (route) => route.fulfill({
+    json: { id: "mgmt_bootstrap_e2e", csrfToken: "csrf_bootstrap_e2e" }
+  }));
+  await page.route("**/management/diagnostics/client-errors", async (route) => {
+    report = route.request().postDataJSON() as typeof report;
+    await route.fulfill({ json: { referenceId: report!.referenceId } });
+  });
+
+  await page.goto("/manage");
+
+  const alert = page.getByRole("alert");
+  await expect(alert).toContainText("The management interface could not be loaded");
+  const referenceId = (await alert.locator("code").textContent())!;
+  expect(referenceId).toMatch(/^err_/u);
+  await expect(alert).not.toContainText("TypeError");
+  await expect.poll(() => report?.referenceId ?? null).toBe(referenceId);
+  expect(report).toMatchObject({ referenceId, source: "bootstrap" });
+
+  await page.unroute("**/src/App.tsx*");
+  await page.route("**/management/overlay-clients", (route) => route.fulfill({ json: [] }));
+  await page.route("**/management/diagnostics/workspace", (route) => route.fulfill({ json: {
+    problems: [],
+    events: [],
+    rawLogs: [{
+      id: "runtime-client-error",
+      timestamp: "2026-09-28T04:00:00.000Z",
+      level: "ERROR",
+      component: "management",
+      event: "management.client.error",
+      referenceId,
+      processingId: null,
+      message: "The management interface could not be loaded.",
+      data: { source: "bootstrap", exception: report!.exception },
+      correction: null
+    }]
+  } }));
+
+  await page.goto(`/manage/diagnostics?reference=${encodeURIComponent(referenceId)}`);
+  await page.getByRole("tab", { name: /Raw logs/u }).click();
+  await expect(page.getByText("management.client.error")).toBeVisible();
+  await expect(page.getByText(report!.exception.message, { exact: false })).toBeVisible();
+});
+
 test("management route loads the management application without operator or overlay modules", async ({ page }) => {
   const browserErrors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") browserErrors.push(message.text()); });

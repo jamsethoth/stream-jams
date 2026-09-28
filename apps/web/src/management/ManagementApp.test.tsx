@@ -478,6 +478,7 @@ function createManagementApi(): ManagementApi {
   };
 
   return {
+    reportClientException: vi.fn(async input => ({ referenceId: input.referenceId })),
     getHomeSetupSummary: vi.fn(async () => ({
       readiness: [
         {

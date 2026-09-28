@@ -456,6 +456,71 @@ describe("runtime app composition smoke", () => {
     }));
   });
 
+  it("records authenticated management browser exceptions in Raw logs by their client reference", async () => {
+    const testRoot = await createTemporaryDirectory();
+    const composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: { TWITCH_CLIENT_ID: "test-client" },
+      secretStore: new InMemorySecretStore(),
+      twitchApiClient: new ThrowingTwitchApiClient(),
+      twitchEventSubApiClient: new ThrowingTwitchEventSubApiClient(),
+      twitchEventSubSocketFactory: createForbiddenTwitchSocket,
+      now: () => new Date("2026-09-28T04:00:00.000Z")
+    });
+    runtimeCompositions.push(composition);
+    const session = await composition.app.inject({ method: "POST", url: "/auth/management/sessions" });
+    const authHeaders = managementAuthHeaders(session);
+    const report = await composition.app.inject({
+      method: "POST",
+      url: "/management/diagnostics/client-errors",
+      headers: authHeaders,
+      payload: {
+        referenceId: "err_management_smoke",
+        source: "react",
+        message: "The management interface stopped unexpectedly.",
+        exception: {
+          type: "TypeError",
+          message: "Management render failed",
+          stack: "TypeError: Management render failed\n    at ManagementApp.tsx:1:1",
+          code: "ERR_RENDER",
+          cause: null,
+          thrownValue: null
+        }
+      }
+    });
+
+    expect(report.statusCode).toBe(200);
+    expect(report.json()).toEqual({ referenceId: "err_management_smoke" });
+    await waitFor(async () => {
+      const response = await composition.app.inject({
+        method: "GET",
+        url: "/management/diagnostics/workspace",
+        headers: authHeaders
+      });
+      const workspace = response.json() as { readonly rawLogs: readonly { readonly referenceId: string | null }[] };
+      return workspace.rawLogs.some((entry) => entry.referenceId === "err_management_smoke");
+    });
+    const workspace = (await composition.app.inject({
+      method: "GET",
+      url: "/management/diagnostics/workspace",
+      headers: authHeaders
+    })).json() as { readonly rawLogs: readonly Record<string, unknown>[] };
+    expect(workspace.rawLogs).toContainEqual(expect.objectContaining({
+      referenceId: "err_management_smoke",
+      event: "management.client.error",
+      data: expect.objectContaining({
+        source: "react",
+        exception: expect.objectContaining({
+          type: "TypeError",
+          message: "Management render failed",
+          code: "ERR_RENDER"
+        })
+      })
+    }));
+  });
+
   it("records a blocked alert test before returning its public error ID", async () => {
     const testRoot = await createTemporaryDirectory();
     const composition = await createRuntimeAppComposition({

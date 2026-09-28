@@ -21,6 +21,7 @@ import {
 } from "../shared/schemas.js";
 import { ttsVoiceSchema } from "../tts/schemas.js";
 import { streamerBotSubscriptionSelectionSchema } from "../events/schemas.js";
+import { serializedExceptionSchema } from "../diagnostics/serialized-exception.js";
 
 export const managementErrorSeveritySchema = z.enum(["info", "warning", "error", "critical"]);
 
@@ -855,6 +856,24 @@ export const diagnosticsWorkspaceViewSchema = z.object({
   rawLogs: z.array(diagnosticsRawLogViewSchema)
 });
 
+export const clientExceptionReportSourceSchema = z.enum([
+  "bootstrap",
+  "react",
+  "window-error",
+  "unhandled-rejection"
+]);
+
+export const clientExceptionReportSchema = z.object({
+  referenceId: nonEmptyStringSchema.max(256),
+  source: clientExceptionReportSourceSchema,
+  message: nonEmptyStringSchema.max(4_096),
+  exception: serializedExceptionSchema
+}).strict();
+
+export const clientExceptionReportResultSchema = z.object({
+  referenceId: nonEmptyStringSchema.max(256)
+}).strict();
+
 export const homeReadinessItemSchema = z.object({
   id: nonEmptyStringSchema,
   label: nonEmptyStringSchema,
@@ -1201,6 +1220,9 @@ export type DiagnosticsProblemView = z.infer<typeof diagnosticsProblemViewSchema
 export type DiagnosticsEventView = z.infer<typeof diagnosticsEventViewSchema>;
 export type DiagnosticsRawLogView = z.infer<typeof diagnosticsRawLogViewSchema>;
 export type DiagnosticsWorkspaceView = z.infer<typeof diagnosticsWorkspaceViewSchema>;
+export type ClientExceptionReportSource = z.infer<typeof clientExceptionReportSourceSchema>;
+export type ClientExceptionReport = z.infer<typeof clientExceptionReportSchema>;
+export type ClientExceptionReportResult = z.infer<typeof clientExceptionReportResultSchema>;
 export type HomeSetupSummary = z.infer<typeof homeSetupSummarySchema>;
 export type ConfigurationBackupSummary = z.infer<typeof configurationBackupSummarySchema>;
 export type OpenDataFolderResult = z.infer<typeof openDataFolderResultSchema>;
