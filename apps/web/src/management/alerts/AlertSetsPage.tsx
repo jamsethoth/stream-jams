@@ -569,13 +569,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setError(null);
     setNotice(null);
     try {
-      const [saved, currentSet] = await Promise.all([
-        managementApi.getAlertEditorDocument(alert.id), managementApi.getAlertSet(alert.setId)
-      ]);
-      const profiles = saved.targetProfiles.filter((profile) => profile.enabled && profile.reviewState === "ready"
-        && currentSet.overview.targetProfiles.some((candidate) => candidate.id === profile.id && candidate.enabled && candidate.reviewState === "ready")
-        && (profile.id === "landscape"
-          || currentSet.browserSources.some((source) => source.targetProfileId === profile.id && source.connectionState === "connected")));
+      const saved = await managementApi.getAlertEditorDocument(alert.id);
+      const profiles = saved.targetProfiles.filter((profile) => profile.enabled && profile.reviewState === "ready");
       if (profiles.length <= 1) {
         await sendInlineTest(alert, profiles[0]?.id ?? null, saved);
       } else {
@@ -718,7 +713,6 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
             return next;
           })}
           onToggle={() => setBrowserSourcesExpanded((current) => !current)}
-          profiles={detail.overview.targetProfiles}
           refreshError={browserSourceRefreshError}
           revealedSourceIds={revealedSourceIds}
           sources={detail.browserSources}
@@ -767,7 +761,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
                     <div className="alert-sets-page__set-state">
                       <StatusBadge label={set.active ? "Active" : "Inactive"} tone={set.active ? "positive" : "neutral"} />
                       <span>{set.enabledAlertCount} enabled</span>
-                      <ValidationRollup detail={detail?.overview.id === set.id ? detail : null} set={set} />
+                      <ValidationRollup set={set} />
                     </div>
                     <div className="alert-sets-page__row-actions alert-sets-page__set-actions">
                       {set.starter && set.starterReviewState === "pending" && expanded ? <button disabled={busy} onClick={() => void markStarterReviewComplete()} type="button">Mark starter review done</button> : null}
@@ -853,15 +847,17 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   );
 }
 
-function ValidationRollup({ detail, set }: { readonly detail: AlertSetDetail | null; readonly set: AlertSetOverview }) {
+function ValidationRollup({ set }: { readonly set: AlertSetOverview }) {
   const blockerCount = set.validationIssues.filter((issue) => issue.severity === "blocker").length;
   const warningCount = set.validationIssues.filter((issue) => issue.severity === "warning").length;
-  const needsReviewCount = detail === null
-    ? set.targetProfiles.filter((profile) => profile.reviewState === "needs-review").length
-    : detail.inventory.filter((alert) => alert.reviewState === "needs-review").length;
-  const needsReviewLabel = detail === null
-    ? formatCount(needsReviewCount, { one: "profile needs review", other: "profiles need review" })
-    : formatCount(needsReviewCount, { one: "alert needs review", other: "alerts need review" });
+  const needsReviewCount = set.profileUsage.reduce(
+    (count, profile) => count + profile.enabledAlertCount - profile.playableAlertCount,
+    0
+  );
+  const needsReviewLabel = formatCount(
+    needsReviewCount,
+    { one: "alert profile needs review", other: "alert profiles need review" }
+  );
 
   if (blockerCount === 0 && warningCount === 0 && needsReviewCount === 0) {
     return <span className="alert-sets-page__validation-rollup alert-sets-page__validation-rollup--ready">Ready</span>;
@@ -1157,7 +1153,6 @@ function BrowserSources({
   onRegenerate,
   onToggleReveal,
   onToggle,
-  profiles,
   refreshError,
   revealedSourceIds,
   sources,
@@ -1170,7 +1165,6 @@ function BrowserSources({
   readonly onRegenerate: (source: AlertBrowserSourceView) => void;
   readonly onToggleReveal: (source: AlertBrowserSourceView) => void;
   readonly onToggle: () => void;
-  readonly profiles: AlertSetOverview["targetProfiles"];
   readonly refreshError: ActionableManagementError | null;
   readonly revealedSourceIds: ReadonlySet<string>;
   readonly sources: readonly AlertBrowserSourceView[];
@@ -1217,7 +1211,6 @@ function BrowserSources({
               const label = formatProfile(source.targetProfileId);
               const dimensions = targetProfileDimensions[source.targetProfileId];
               const revealed = revealedSourceIds.has(source.id);
-              const profileEnabled = profiles.find((profile) => profile.id === source.targetProfileId)?.enabled === true;
               const ready = source.copyableUrlStatus === "available";
               const listenerStatus = source.connectionState === "connected"
                 ? "Listening now"
@@ -1226,7 +1219,7 @@ function BrowserSources({
                   : `Not listening. Last seen ${formatDateTime(source.lastConnectedAt)}`;
               return (
                 <article aria-label={`${label} browser source`} className="alert-sets-page__source" key={source.id}>
-                  <div className="alert-sets-page__source-heading"><div><strong>{label}</strong><span>{profileEnabled ? "Profile enabled" : "Profile disabled"}</span></div><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
+                  <div className="alert-sets-page__source-heading"><strong>{label}</strong><StatusBadge label={ready ? "Ready" : "Needs setup"} tone={ready ? "positive" : "warning"} /></div>
                   <p className="alert-sets-page__source-telemetry">{listenerStatus}</p>
                   <p className="alert-sets-page__source-dimensions"><strong>{dimensions.width} x {dimensions.height}</strong></p>
                   <p className="alert-sets-page__source-guidance">Add a Browser source in OBS at {dimensions.width} x {dimensions.height}, then paste this URL.</p>

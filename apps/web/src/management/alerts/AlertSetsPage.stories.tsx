@@ -133,7 +133,11 @@ export const InactiveSelectedSet: Story = {
 export const ActivationBlocked: Story = {
   args: {
     managementApi: api([activeSet, inactiveSet], detailById(), {
-      blockers: [issue("missing-alert", "blocker", "Enable at least one alert before activation.")]
+      blockers: [issue(
+        "no-playable-enabled-alert-profile",
+        "blocker",
+        "No enabled alert has a reviewed target profile."
+      )]
     })
   },
   play: async ({ canvasElement }) => {
@@ -566,9 +570,9 @@ function overview(id: string, name: string, active: boolean): AlertSetOverview {
     starter: id === "set-default",
     starterReviewState: id === "set-default" ? "pending" : "complete",
     enabledAlertCount: id === "set-default" ? 3 : 0,
-    targetProfiles: [
-      { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-      { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 0 }
+    profileUsage: [
+      { id: "landscape", enabledAlertCount: id === "set-default" ? 3 : 0, playableAlertCount: id === "set-default" ? 3 : 0, blockerCount: 0, warningCount: 0 },
+      { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 0 }
     ],
     validationIssues: [],
     outputs: []

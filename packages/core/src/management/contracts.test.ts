@@ -56,18 +56,18 @@ const alertSet = {
   starter: true,
   starterReviewState: "pending",
   enabledAlertCount: 1,
-  targetProfiles: [
+  profileUsage: [
     {
       id: "landscape",
-      enabled: true,
-      reviewState: "ready",
+      enabledAlertCount: 1,
+      playableAlertCount: 1,
       blockerCount: 0,
       warningCount: 1
     },
     {
       id: "vertical",
-      enabled: false,
-      reviewState: "needs-review",
+      enabledAlertCount: 0,
+      playableAlertCount: 0,
       blockerCount: 0,
       warningCount: 0
     }
@@ -686,7 +686,7 @@ describe("management alert contracts and rules", () => {
     expect(streamOnline?.text).not.toContain("{streamType}");
   });
 
-  it("permits activation with warnings but blocks invalid enabled profiles", () => {
+  it("derives activation from playable alert profiles and ignores issues for unused profiles", () => {
     const evaluate = exportedFunction("evaluateAlertSetActivation");
 
     expect(evaluate(alertSet as never)).toEqual({
@@ -698,7 +698,7 @@ describe("management alert contracts and rules", () => {
 
     const blocked = {
       ...alertSet,
-      targetProfiles: alertSet.targetProfiles.map((profile) =>
+      profileUsage: alertSet.profileUsage.map((profile) =>
         profile.id === "landscape" ? { ...profile, blockerCount: 1 } : profile
       ),
       validationIssues: [{ ...validationIssue, id: "issue-blocker", severity: "blocker" }]
@@ -708,6 +708,32 @@ describe("management alert contracts and rules", () => {
       allowed: false,
       requiresConfirmation: false,
       blockerIds: ["issue-blocker"],
+      warningIds: []
+    });
+
+    expect(evaluate({
+      ...alertSet,
+      validationIssues: [{
+        ...validationIssue,
+        id: "vertical-blocker",
+        severity: "blocker",
+        targetProfileId: "vertical"
+      }]
+    } as never)).toEqual({
+      allowed: true,
+      requiresConfirmation: false,
+      blockerIds: [],
+      warningIds: []
+    });
+
+    expect(evaluate({
+      ...alertSet,
+      profileUsage: alertSet.profileUsage.map((profile) => ({ ...profile, playableAlertCount: 0 })),
+      validationIssues: []
+    } as never)).toEqual({
+      allowed: false,
+      requiresConfirmation: false,
+      blockerIds: ["no-playable-enabled-alert-profile"],
       warningIds: []
     });
   });

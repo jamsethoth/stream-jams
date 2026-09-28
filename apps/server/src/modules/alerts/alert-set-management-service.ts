@@ -42,10 +42,6 @@ export interface AlertSetMetadata {
   readonly setId: string;
   readonly starter: boolean;
   readonly starterReviewState: "pending" | "complete";
-  readonly landscapeEnabled: boolean;
-  readonly landscapeReviewState: "ready" | "needs-review";
-  readonly verticalEnabled: boolean;
-  readonly verticalReviewState: "ready" | "needs-review";
 }
 
 export interface AlertRuleManagementMetadata {
@@ -121,28 +117,27 @@ export class AlertSetManagementService {
     const rules = await this.#alertService.listRules();
     const browserSources = await this.#listBrowserSources();
     const metadata = await this.#setMetadataByIds(collections.map((collection) => collection.id));
+    const documents = await this.#documentsForRules(rules);
     return collections.map((collection) =>
-      this.#toOverview(collection, metadata.get(collection.id)!, rules, browserSources)
+      this.#toOverview(collection, metadata.get(collection.id)!, rules, documents, browserSources)
     );
   }
 
   async getSet(setId: string): Promise<AlertSetDetail> {
-    const sets = await this.listSets();
-    const overview = sets.find((set) => set.id === setId);
-    if (overview === undefined) {
+    await this.#ensureStarterSet();
+    const collection = (await this.#alertService.listCollections()).find((candidate) => candidate.id === setId);
+    if (collection === undefined) {
       throw new AlertSetNotFoundError(setId);
     }
     const rules = (await this.#alertService.listRules()).filter((rule) => rule.collectionIds.includes(setId));
     const browserSources = await this.#listBrowserSources();
-    const metadata = await this.#ruleMetadataByIds(rules.map((rule) => rule.id));
-    const documents = await this.#documents.findMany(rules.flatMap((rule) => [
-      rule.id,
-      ...rule.variants.slice(1).map((variant) => variant.id)
-    ]));
+    const setMetadata = await this.#setMetadata(setId);
+    const ruleMetadata = await this.#ruleMetadataByIds(rules.map((rule) => rule.id));
+    const documents = await this.#documentsForRules(rules);
     return alertSetDetailSchema.parse({
-      overview,
+      overview: this.#toOverview(collection, setMetadata, rules, documents, browserSources),
       inventory: rules.flatMap((rule) =>
-        this.#mapInventoryRows(setId, rule, metadata.get(rule.id)!, documents)
+        this.#mapInventoryRows(setId, rule, ruleMetadata.get(rule.id)!, documents)
       ),
       browserSources
     });
@@ -431,11 +426,7 @@ export class AlertSetManagementService {
       missingCollectionIds: [duplicate.id],
       missingRuleIds: createdRules.map((rule) => rule.id),
       saveCollections: [duplicate],
-      saveSetMetadata: [{
-        ...defaultSetMetadata(duplicate.id),
-        landscapeReviewState: "needs-review",
-        verticalReviewState: "needs-review"
-      }],
+      saveSetMetadata: [defaultSetMetadata(duplicate.id)],
       saveRules: createdRules,
       saveRuleMetadata: createdMetadata,
       saveDocuments: createdDocuments
@@ -485,8 +476,8 @@ export class AlertSetManagementService {
       currentActiveSetId: activeSet?.id ?? null,
       replacingActiveSetName: activeSet?.id === setId ? null : activeSet?.name ?? null,
       enabledAlertCount: detail.overview.enabledAlertCount,
-      affectedTargetProfileIds: detail.overview.targetProfiles
-        .filter((profile) => profile.enabled)
+      affectedTargetProfileIds: detail.overview.profileUsage
+        .filter((profile) => profile.enabledAlertCount > 0)
         .map((profile) => profile.id),
       affectedEventTypes: unique(detail.inventory.filter((row) => row.enabled).map((row) => row.eventType)),
       blockers: detail.overview.validationIssues.filter((issue) => issue.severity === "blocker"),
@@ -558,9 +549,7 @@ export class AlertSetManagementService {
     const setMetadata = {
       ...defaultSetMetadata(starter.id),
       starter: true,
-      starterReviewState: "pending",
-      landscapeReviewState: "needs-review",
-      verticalReviewState: "needs-review"
+      starterReviewState: "pending"
     } as const;
     const rules = starterAlerts.map((definition) => this.#materializeRule(starterRuleInput(starter.id, definition)));
     const ruleMetadata = rules.map((rule) => ({
@@ -584,6 +573,7 @@ export class AlertSetManagementService {
     collection: AlertCollection,
     metadata: AlertSetMetadata,
     allRules: readonly AlertRule[],
+    documents: ReadonlyMap<string, AlertEditorDocument>,
     browserSources: readonly AlertBrowserSourceView[]
   ): AlertSetOverview {
     const rules = allRules.filter((rule) => rule.collectionIds.includes(collection.id));
@@ -595,8 +585,7 @@ export class AlertSetManagementService {
         severity: "blocker",
         code: "NO_ENABLED_ALERTS",
         message: "This alert set has no enabled alerts.",
-        nextStep: "Review and enable at least one valid alert.",
-        targetProfileId: "landscape"
+        nextStep: "Review and enable at least one valid alert."
       }));
     }
 
@@ -614,9 +603,43 @@ export class AlertSetManagementService {
       }
     }
 
+    const enabledDocuments = rules.flatMap((rule) => rule.variants.flatMap((variant, index) => {
+      if (!variant.enabled) return [];
+      const document = documents.get(index === 0 ? rule.id : variant.id);
+      return document === undefined ? [] : [document];
+    }));
+    const enabledProfiles = (profileId: TargetProfileId) => enabledDocuments.flatMap((document) => {
+        const profile = document.targetProfiles.find((candidate) => candidate.id === profileId);
+        return profile?.enabled === true ? [profile] : [];
+      });
+    const landscapeProfiles = enabledProfiles("landscape");
+    const verticalProfiles = enabledProfiles("vertical");
+    if (
+      enabledRules.length > 0
+      && ![...landscapeProfiles, ...verticalProfiles].some((profile) => profile.reviewState === "ready")
+    ) {
+      issues.push(validationIssue({
+        id: `${collection.id}:no-playable-enabled-alert-profile`,
+        severity: "blocker",
+        code: "NO_PLAYABLE_ENABLED_ALERT_PROFILE",
+        message: "No enabled alert has a reviewed target profile.",
+        nextStep: "Open an enabled alert, enable the intended profile, mark it reviewed, and save."
+      }));
+    }
+
     const profileIssues = (profileId: TargetProfileId) => issues.filter(
       (issue) => issue.targetProfileId === null || issue.targetProfileId === profileId
     );
+    const profileUsage = (profileId: TargetProfileId, profiles: readonly AlertEditorDocument["targetProfiles"][number][]) => {
+      const relevantIssues = profileIssues(profileId);
+      return {
+        id: profileId,
+        enabledAlertCount: profiles.length,
+        playableAlertCount: profiles.filter((profile) => profile.reviewState === "ready").length,
+        blockerCount: relevantIssues.filter((issue) => issue.severity === "blocker").length,
+        warningCount: relevantIssues.filter((issue) => issue.severity === "warning").length
+      };
+    };
     return alertSetOverviewSchema.parse({
       id: collection.id,
       name: collection.name,
@@ -624,22 +647,7 @@ export class AlertSetManagementService {
       starter: metadata.starter,
       starterReviewState: metadata.starterReviewState,
       enabledAlertCount: enabledRules.length,
-      targetProfiles: [
-        {
-          id: "landscape",
-          enabled: metadata.landscapeEnabled,
-          reviewState: metadata.landscapeReviewState,
-          blockerCount: profileIssues("landscape").filter((issue) => issue.severity === "blocker").length,
-          warningCount: profileIssues("landscape").filter((issue) => issue.severity === "warning").length
-        },
-        {
-          id: "vertical",
-          enabled: metadata.verticalEnabled,
-          reviewState: metadata.verticalReviewState,
-          blockerCount: profileIssues("vertical").filter((issue) => issue.severity === "blocker").length,
-          warningCount: profileIssues("vertical").filter((issue) => issue.severity === "warning").length
-        }
-      ],
+      profileUsage: [profileUsage("landscape", landscapeProfiles), profileUsage("vertical", verticalProfiles)],
       validationIssues: issues,
       outputs: browserSources.map(({ targetProfileId, purpose, connectionState, lastConnectedAt, copyableUrlStatus }) => ({
         targetProfileId,
@@ -671,9 +679,13 @@ export class AlertSetManagementService {
       const document = documents.get(editorId);
       const targetProfileIds = document?.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id)
         ?? [...metadata.targetProfileIds];
-      const reviewState = document?.targetProfiles.some((profile) => profile.reviewState === "needs-review") === true
-        ? "needs-review" as const
-        : metadata.reviewState;
+      const enabledProfiles = document?.targetProfiles.filter((profile) => profile.enabled) ?? [];
+      const reviewProfiles = enabledProfiles.length > 0 ? enabledProfiles : document?.targetProfiles ?? [];
+      const reviewState = document === undefined
+        ? metadata.reviewState
+        : reviewProfiles.some((profile) => profile.reviewState === "needs-review")
+          ? "needs-review" as const
+          : "ready" as const;
       return alertInventoryRowSchema.parse({
         id: editorId,
         parentAlertId: index === 0 ? null : rule.id,
@@ -705,6 +717,18 @@ export class AlertSetManagementService {
       }
     }
     throw new AlertRuleForSetNotFoundError(editorId);
+  }
+
+  async #documentsForRules(rules: readonly AlertRule[]): Promise<ReadonlyMap<string, AlertEditorDocument>> {
+    const ids = documentIds(rules);
+    const documents = new Map(await this.#documents.findMany(ids));
+    const missing = ids.filter((id) => !documents.has(id));
+    const compatibilityDocuments = await Promise.all(missing.map(async (id) => [
+      id,
+      await this.#getEditorDocument(id)
+    ] as const));
+    for (const [id, document] of compatibilityDocuments) documents.set(id, document);
+    return documents;
   }
 
   async #requireLiveImpactConfirmation(
@@ -855,12 +879,12 @@ function defaultSetMetadata(setId: string): AlertSetMetadata {
   return {
     setId,
     starter: false,
-    starterReviewState: "complete",
-    landscapeEnabled: true,
-    landscapeReviewState: "ready",
-    verticalEnabled: false,
-    verticalReviewState: "needs-review"
+    starterReviewState: "complete"
   };
+}
+
+function documentIds(rules: readonly AlertRule[]): readonly string[] {
+  return rules.flatMap((rule) => [rule.id, ...rule.variants.slice(1).map((variant) => variant.id)]);
 }
 
 function defaultRuleMetadata(ruleId: string): AlertRuleManagementMetadata {

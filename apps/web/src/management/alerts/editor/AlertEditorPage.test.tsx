@@ -4321,9 +4321,9 @@ function alertSetDetail(active = true): AlertSetDetail {
       starter: false,
       starterReviewState: "complete",
       enabledAlertCount: 2,
-      targetProfiles: [
-        { id: "landscape", enabled: true, reviewState: "ready", blockerCount: 0, warningCount: 0 },
-        { id: "vertical", enabled: false, reviewState: "needs-review", blockerCount: 0, warningCount: 1 }
+      profileUsage: [
+        { id: "landscape", enabledAlertCount: 2, playableAlertCount: 2, blockerCount: 0, warningCount: 0 },
+        { id: "vertical", enabledAlertCount: 0, playableAlertCount: 0, blockerCount: 0, warningCount: 1 }
       ],
       validationIssues: [],
       outputs: []

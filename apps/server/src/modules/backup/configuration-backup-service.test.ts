@@ -129,7 +129,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -150,6 +150,15 @@ describe("ConfigurationBackupService", () => {
       if (schemaVersion === 19) {
         archive.manifest.configurationRecordCount -= archive.configuration.tables.overlay_surfaces?.length ?? 0;
         delete archive.configuration.tables.overlay_surfaces;
+      }
+      if (schemaVersion < 27) {
+        archive.configuration.tables.alert_set_metadata = (archive.configuration.tables.alert_set_metadata ?? []).map((row) => ({
+          ...row,
+          landscape_enabled: 1,
+          landscape_review_state: "ready",
+          vertical_enabled: 0,
+          vertical_review_state: "needs-review"
+        }));
       }
       archive.manifest.configurationChecksum = ConfigurationBackupService.configurationChecksum(archive.configuration);
       const preflight = await target.service.preflight(archive);

@@ -105,6 +105,9 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       error_json: null
     });
     expect(snapshot.tables.provider_registrations?.[0]).not.toHaveProperty("secret_ref_json");
+    expect(snapshot.tables.alert_set_metadata).toEqual([
+      { set_id: "set-default", starter: 0, starter_review_state: "complete" }
+    ]);
     expect(snapshot.tables.asset_metadata?.[0]).not.toHaveProperty("storage_path");
     expect(snapshot.tables.alert_moderation_settings).toEqual([{
       id: 1,
@@ -126,6 +129,28 @@ describe("SqliteConfigurationSnapshotRepository", () => {
         boxStyle: compatibilityAlertTextBoxStyle
       }]
     });
+  });
+
+  it("ignores legacy set profile columns while preserving authoritative alert documents", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+    const alertDocument = snapshot.tables.alert_editor_documents![0]!.document_json;
+    snapshot.tables.alert_set_metadata = snapshot.tables.alert_set_metadata!.map((row) => ({
+      ...row,
+      landscape_enabled: 1,
+      landscape_review_state: "ready",
+      vertical_enabled: 0,
+      vertical_review_state: "needs-review"
+    }));
+
+    expect(repository.validate({ appConfig: {}, ...snapshot })).toEqual([]);
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+
+    expect(repository.snapshot().tables.alert_set_metadata).toEqual([
+      { set_id: "set-default", starter: 0, starter_review_state: "complete" }
+    ]);
+    expect(JSON.parse(String(repository.snapshot().tables.alert_editor_documents![0]!.document_json)).targetProfiles)
+      .toEqual(JSON.parse(String(alertDocument)).targetProfiles);
   });
 
   it("round-trips portable Screen Effects disabled and accepts legacy snapshots without effect tables", async () => {
@@ -655,7 +680,7 @@ describe("SqliteConfigurationSnapshotRepository", () => {
     tables.alert_rule_collections = [];
     tables.alert_rule_conditions = [];
     tables.alert_variants = [];
-    tables.alert_set_metadata = [{ set_id: "set-restored", starter: 0, starter_review_state: "complete", landscape_enabled: 1, landscape_review_state: "ready", vertical_enabled: 0, vertical_review_state: "needs-review" }];
+    tables.alert_set_metadata = [{ set_id: "set-restored", starter: 0, starter_review_state: "complete" }];
     tables.alert_rule_management_metadata = [];
     tables.alert_editor_documents = [];
     tables.asset_metadata = [{ id: "asset-restored", original_file_name: "restored.png", media_type: "image", mime_type: "image/png", size_bytes: 8, checksum: `sha256:${"a".repeat(64)}` }];
@@ -739,7 +764,7 @@ function seed(database: StreamJamsDatabase): void {
   db.prepare("INSERT INTO alert_rule_conditions VALUES (?, ?, ?, ?, ?)").run("alert-follow", 0, "actor.id", "equals", '"actor-1"');
   db.prepare("INSERT INTO asset_metadata VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run("asset-follow", "follow.png", "image", "image/png", 8, `sha256:${"a".repeat(64)}`, "image/asset-follow.png", null);
   db.prepare("INSERT INTO alert_variants (id, rule_id, name, enabled, weight, visual_asset_id, audio_asset_id, text_template, tts_config_json, duration_ms, layout_json, conditions_json, priority) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)").run("variant-follow", "alert-follow", "Default", 1, 1, "asset-follow", null, "Thanks", null, 5000, '{"x":0,"y":0,"width":100,"height":100,"zIndex":0}', "[]", 0);
-  db.prepare("INSERT INTO alert_set_metadata VALUES (?, ?, ?, ?, ?, ?, ?)").run("set-default", 0, "complete", 1, "ready", 0, "needs-review");
+  db.prepare("INSERT INTO alert_set_metadata VALUES (?, ?, ?)").run("set-default", 0, "complete");
   db.prepare("INSERT INTO alert_rule_management_metadata VALUES (?, ?, ?, ?)").run("alert-follow", "twitch", "ready", '["landscape"]');
   db.prepare("INSERT INTO asset_library_metadata VALUES (?, ?, ?, ?, ?)").run("asset-follow", "Follow", '["seasonal"]', "2026-07-15T04:00:00.000Z", "2026-07-15T04:00:00.000Z");
   db.prepare("INSERT INTO alert_editor_documents VALUES (?, ?, ?)").run("alert-follow", JSON.stringify(editorDocument()), "2026-07-15T04:00:00.000Z");

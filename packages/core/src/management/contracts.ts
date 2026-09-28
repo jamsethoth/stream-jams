@@ -273,10 +273,10 @@ export const alertValidationIssueSchema = z.object({
   referenceId: nonEmptyStringSchema.nullable()
 });
 
-export const alertTargetProfileSummarySchema = z.object({
+export const alertProfileUsageSummarySchema = z.object({
   id: targetProfileIdSchema,
-  enabled: z.boolean(),
-  reviewState: z.enum(["ready", "needs-review"]),
+  enabledAlertCount: nonNegativeIntegerSchema,
+  playableAlertCount: nonNegativeIntegerSchema,
   blockerCount: nonNegativeIntegerSchema,
   warningCount: nonNegativeIntegerSchema
 });
@@ -296,7 +296,7 @@ export const alertSetOverviewSchema = z.object({
   starter: z.boolean(),
   starterReviewState: z.enum(["pending", "complete"]),
   enabledAlertCount: nonNegativeIntegerSchema,
-  targetProfiles: z.array(alertTargetProfileSummarySchema).min(1),
+  profileUsage: z.array(alertProfileUsageSummarySchema).min(1),
   validationIssues: z.array(alertValidationIssueSchema),
   outputs: z.array(alertOutputStateSchema)
 });
@@ -1092,18 +1092,16 @@ export function evaluateProviderActivation(impact: ProviderActivationImpact): {
 
 export function evaluateAlertSetActivation(alertSet: AlertSetOverview): AlertSetActivationDecision {
   const enabledProfileIds = new Set(
-    alertSet.targetProfiles.filter((profile) => profile.enabled).map((profile) => profile.id)
+    alertSet.profileUsage.filter((profile) => profile.enabledAlertCount > 0).map((profile) => profile.id)
   );
   const relevantIssues = alertSet.validationIssues.filter(
     (issue) => issue.targetProfileId === null || enabledProfileIds.has(issue.targetProfileId)
   );
   const blockerIds = relevantIssues.filter((issue) => issue.severity === "blocker").map((issue) => issue.id);
-  const hasValidEnabledProfile = alertSet.targetProfiles.some(
-    (profile) => profile.enabled && profile.blockerCount === 0
-  );
+  const hasPlayableEnabledAlertProfile = alertSet.profileUsage.some((profile) => profile.playableAlertCount > 0);
 
-  if (!hasValidEnabledProfile && blockerIds.length === 0) {
-    blockerIds.push("no-valid-enabled-profile");
+  if (!hasPlayableEnabledAlertProfile && blockerIds.length === 0) {
+    blockerIds.push("no-playable-enabled-alert-profile");
   }
 
   const allowed = blockerIds.length === 0;

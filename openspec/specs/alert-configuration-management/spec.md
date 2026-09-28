@@ -90,7 +90,7 @@ The system SHALL persist new default alerts and first-run starter alerts as disa
 
 ### Requirement: Alert Test Workflow Uses Real Matching Path
 
-The system SHALL provide separate editor Preview and Test draft workflows: Preview renders the selected draft alert locally from sample data, while Test draft sends normalized test playback through the same downstream browser and device delivery paths used after real event matching. Alert inventory SHALL provide a corresponding Test saved workflow for the saved alert document. Availability SHALL be checked per destination rather than requiring a browser connection for device-only audio.
+The system SHALL provide separate editor Preview and Test draft workflows: Preview renders the selected draft alert locally from sample data, while Test draft sends normalized test playback through the same downstream browser and device delivery paths used after real event matching. Alert inventory SHALL provide a corresponding Test saved workflow for the saved alert document. Saved visual targets SHALL come from enabled and reviewed profiles on that document; availability SHALL be checked per destination rather than by alert-set profile state or a required browser connection.
 
 #### Scenario: Preview works without provider or overlay connection
 
@@ -117,14 +117,15 @@ The system SHALL provide separate editor Preview and Test draft workflows: Previ
 
 - **WHEN** a management user chooses Test saved from an alert row
 - **THEN** the UI uses the saved alert document and its first built-in sample payload
-- **AND** one available target profile sends immediately while multiple available profiles require an explicit target choice
-- **AND** when no browser profile is available but included device audio is deliverable, device-only testing is available without selecting a fictitious connected profile
+- **AND** one enabled and reviewed saved target profile sends immediately while multiple enabled and reviewed saved profiles require an explicit target choice
+- **AND** alert-set metadata and Browser Source connection state do not remove an enabled and reviewed saved profile from that choice
+- **AND** when no visual profile is eligible but included device audio is deliverable, device-only testing is available without selecting a fictitious connected profile
 - **AND** success names the delivered profile or device destinations and reference ID
 - **AND** failure remains visible with a human-readable cause, next step, and reference ID
 
 #### Scenario: Test send is blocked without connected output
 
-- **WHEN** no browser-source client can receive the selected profile and no included audio layer has an available selected device destination
+- **WHEN** no browser or desktop visual recipient can receive the selected profile and no included audio layer has an available selected device destination
 - **THEN** Test draft or Test saved does not enqueue playback
 - **AND** the UI explains how to connect or choose an available output
 
@@ -132,7 +133,7 @@ The system SHALL provide separate editor Preview and Test draft workflows: Previ
 
 - **WHEN** included explicit audio has an available selected device destination but the selected visual profile is disconnected, disabled, or needs review
 - **THEN** Test draft or Test saved can enqueue device audio without rendering or enabling that visual profile
-- **AND** the result identifies the device delivery and any skipped browser destination
+- **AND** the result identifies the device delivery and any skipped visual destination
 
 #### Scenario: Some selected destinations are unavailable
 
@@ -403,24 +404,30 @@ Shared reward selection SHALL match only the canonical normalized `rewardId` and
 
 ### Requirement: Alert Sets Are Fully Managed
 
-The system SHALL allow authorized management users to create, rename, duplicate, save, activate, validate, and delete alert sets while enforcing exactly one active set and retaining at least one set.
+The system SHALL allow authorized management users to create, rename, duplicate, save, activate, validate, and delete alert sets while enforcing exactly one active set and retaining at least one set. Alert-set summaries and activation SHALL derive target-profile usage from saved alert documents and SHALL NOT maintain separate set-level profile enablement or review state.
 
 #### Scenario: Inactive valid set is activated
 
-- **WHEN** a management user activates an inactive set with no blockers
+- **WHEN** a management user activates an inactive set with no relevant blockers and at least one enabled alert has an enabled and reviewed target profile
 - **THEN** that set becomes the only active set
 - **AND** the previous active set remains saved but inactive
 
+#### Scenario: Set has no playable enabled alert profile
+
+- **WHEN** no enabled saved alert has an enabled and reviewed target profile
+- **THEN** activation is unavailable
+- **AND** the validation summary directs the user to enable and review a profile on an alert
+
 #### Scenario: Activation blockers prevent runtime change
 
-- **WHEN** validation finds blockers in the selected set
+- **WHEN** validation finds a global blocker or a blocker for a profile used by an enabled alert in the selected set
 - **THEN** activation is unavailable
 - **AND** the validation summary links each blocker to its target profile, event type, and alert correction context
 
 #### Scenario: Saving active-set changes reports live impact
 
 - **WHEN** a user saves changes that affect enabled live outputs in the active set
-- **THEN** the system names affected target profiles and event types before applying the save
+- **THEN** the system names affected target profiles derived from saved alerts and affected event types before applying the save
 
 #### Scenario: Active or only set cannot be deleted directly
 
@@ -440,7 +447,8 @@ The system SHALL allow authorized management users to create, rename, duplicate,
 
 - **WHEN** an alert or set has validation blockers, warnings, or review-required state
 - **THEN** the affected alert row shows the applicable severity and count
-- **AND** the alert-set row shows rolled-up counts while its alerts are collapsed
+- **AND** the alert-set row derives rolled-up counts from its alerts while they are collapsed
+- **AND** only enabled saved profiles contribute profile-review counts, with the same rollup before and after set details load
 - **AND** opening an affected alert shows the full messages and correction steps in the focused editor
 
 ### Requirement: Alert Sets Use Provider Event And Variation Hierarchy

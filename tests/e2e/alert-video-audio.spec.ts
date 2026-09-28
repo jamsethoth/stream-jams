@@ -31,7 +31,7 @@ test("legacy video stays silent until explicitly saved and soundtrack choices su
   } }));
   await page.route("**/management/alert-sets/video-set", route => route.fulfill({ json: {
     overview: { id: "video-set", name: "Video set", active: false, starter: false, starterReviewState: "complete", enabledAlertCount: 1,
-      targetProfiles: saved.targetProfiles.map(({ id, enabled, reviewState }) => ({ id, enabled, reviewState, blockerCount: 0, warningCount: 0 })), validationIssues: [], outputs: [] },
+      profileUsage: saved.targetProfiles.map(({ id, enabled, reviewState }) => ({ id, enabledAlertCount: enabled ? 1 : 0, playableAlertCount: enabled && reviewState === "ready" ? 1 : 0, blockerCount: 0, warningCount: 0 })), validationIssues: [], outputs: [] },
     inventory: [], browserSources: []
   } }));
   await page.route("**/management/alerts/video-audio/editor/variation-context", route => route.fulfill({ json: {

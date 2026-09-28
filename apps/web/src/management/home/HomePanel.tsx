@@ -71,7 +71,7 @@ export function HomePanel({ managementApi }: HomePanelProps) {
   const activeSet = summary.activeAlertSet;
   const blockers = activeSet?.validationIssues.filter((issue) => issue.severity === "blocker").length ?? 0;
   const warnings = activeSet?.validationIssues.filter((issue) => issue.severity === "warning").length ?? 0;
-  const activeProfiles = activeSet?.targetProfiles.filter((profile) => profile.enabled) ?? [];
+  const profilesInUse = activeSet?.profileUsage.filter((profile) => profile.enabledAlertCount > 0) ?? [];
   const incompleteReadiness = summary.readiness.filter((item) => item.state !== "complete");
   const completedReadiness = summary.readiness.filter((item) => item.state === "complete");
 
@@ -186,8 +186,8 @@ export function HomePanel({ managementApi }: HomePanelProps) {
               {blockers > 0 ? <div><dt>Blockers</dt><dd>{blockers}</dd></div> : null}
               {warnings > 0 ? <div><dt>Warnings</dt><dd>{formatCount(warnings, { one: "warning", other: "warnings" })}</dd></div> : null}
               <div>
-                <dt>Active profiles</dt>
-                <dd>{activeProfiles.length === 0 ? "None" : activeProfiles.map((profile) => formatState(profile.id)).join(", ")}</dd>
+                <dt>Profiles in use</dt>
+                <dd>{profilesInUse.length === 0 ? "None" : profilesInUse.map((profile) => formatState(profile.id)).join(", ")}</dd>
               </div>
             </dl>
             <a href={`/manage/modules/alerts?set=${encodeURIComponent(activeSet.id)}`}>Review active set</a>
