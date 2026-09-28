@@ -20,3 +20,25 @@ Use visible overlay diagnostics only in Storybook, local development, or explici
 For production: transparent fail-closed overlay plus operator-only diagnostics.
 
 For development: visible diagnostics are allowed only when the route, story, or mode is clearly not live.
+
+## Failure Evidence
+
+Transparent does not mean silent. Before removing failed production content, the
+overlay reports one bounded `OverlayPlaybackFailure` through its authenticated
+transport. The report carries the stable failure reference, the exact playback
+stage (`source-load`, `metadata`, `seek`, `decode`, or `play`), a safe summary,
+and the serialized cause. The server derives client and target-profile identity
+from the authorized connection; it does not trust route identity in the report.
+
+The production overlay DOM must contain no stack, serialized exception,
+reference, or diagnostic copy. Operators receive safe recovery copy and the
+stable reference in management UI; exception structure is available only in Raw
+logs and debug exports. A retry or replacement instruction is a new playback
+attempt and must not allow a stale failure callback to remove the new content.
+
+The private desktop overlay follows the same rule. Its renderer returns a
+validated failure envelope through IPC, and the desktop host records the
+failure before the native window fails transparent.
+
+See [Error provenance](../engineering/error-provenance.md) for ownership,
+redaction, bounds, and exception-transport rules.

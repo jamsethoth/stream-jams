@@ -4,7 +4,8 @@ import {
   logContextSchema,
   logLevelSchema,
   logSettingsSchema,
-  logSettingsUpdateSchema
+  logSettingsUpdateSchema,
+  type Logger
 } from "./logging.js";
 import {
   defaultLogSettings as exportedDefaultLogSettings,
@@ -61,5 +62,25 @@ describe("logging diagnostics schemas", () => {
     expect(logSettingsUpdateSchema.parse({ level: "DEBUG" })).toEqual({ level: "DEBUG" });
     expect(logSettingsUpdateSchema.parse({ retentionHours: 72 })).toEqual({ retentionHours: 72 });
     expect(logSettingsUpdateSchema.safeParse({ level: "TRACE" }).success).toBe(false);
+  });
+
+  it("exposes an optional unknown exception argument on Logger.error", async () => {
+    let received: unknown;
+    const logger: Logger = {
+      async debug() {},
+      async info() {},
+      async warn() {},
+      async error(_message, _context, exception) { received = exception; }
+    };
+    const exception = new Error("diagnostic failure");
+
+    await logger.error("Operation failed", {
+      module: "diagnostics",
+      source: "test.failure",
+      correlationId: "err_test",
+      processingId: null
+    }, exception);
+
+    expect(received).toBe(exception);
   });
 });

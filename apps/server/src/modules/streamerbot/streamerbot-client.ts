@@ -40,6 +40,7 @@ export interface StreamerBotClientDiagnostic {
   readonly level: "warn" | "error";
   readonly message: string;
   readonly referenceId: string;
+  readonly exception?: unknown;
 }
 
 export interface StreamerBotSocket {
@@ -86,8 +87,8 @@ interface HelloMessage {
 export class StreamerBotProtocolError extends Error {
   readonly code = "STREAMERBOT_PROTOCOL_ERROR";
 
-  constructor(message = "Streamer.bot protocol request failed") {
-    super(message);
+  constructor(message = "Streamer.bot protocol request failed", options?: ErrorOptions) {
+    super(message, options);
     this.name = "StreamerBotProtocolError";
   }
 }
@@ -104,8 +105,8 @@ export class StreamerBotAuthenticationError extends Error {
 export class StreamerBotConnectionError extends Error {
   readonly code = "STREAMERBOT_CONNECTION_FAILED";
 
-  constructor(message = "Streamer.bot connection failed") {
-    super(message);
+  constructor(message = "Streamer.bot connection failed", options?: ErrorOptions) {
+    super(message, options);
     this.name = "StreamerBotConnectionError";
   }
 }
@@ -212,8 +213,8 @@ export class StreamerBotClient {
     socket.addEventListener("close", () => {
       this.#handleSocketClose(socket);
     });
-    socket.addEventListener("error", () => {
-      this.#handleSocketError(socket);
+    socket.addEventListener("error", (error) => {
+      this.#handleSocketError(socket, error);
     });
   }
 
@@ -287,7 +288,9 @@ export class StreamerBotClient {
           this.#markConnected(hello.info, restoreSubscriptions);
         }
       })
-      .catch(() => {
+      .catch(
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      () => {
         if (this.#socket === socket) {
           this.#setError("Streamer.bot authentication failed");
           socket.close();
@@ -334,7 +337,7 @@ export class StreamerBotClient {
         message: null
       });
     } catch (error) {
-      this.#rejectPending(id, error instanceof Error ? error : new StreamerBotProtocolError());
+      this.#rejectPending(id, error instanceof Error ? error : new StreamerBotProtocolError(undefined, { cause: error }));
       this.#setError("Streamer.bot response was invalid");
     }
   }
@@ -352,8 +355,8 @@ export class StreamerBotClient {
         lastMessageAt: envelope.timeStamp,
         message: null
       });
-    } catch {
-      this.#setError("Streamer.bot event callback failed");
+    } catch (error) {
+      this.#setError("Streamer.bot event callback failed", error);
     }
   }
 
@@ -383,13 +386,13 @@ export class StreamerBotClient {
     }, delayMs);
   }
 
-  #handleSocketError(socket: StreamerBotSocket): void {
+  #handleSocketError(socket: StreamerBotSocket, error: unknown): void {
     if (this.#socket !== socket) {
       return;
     }
 
     this.#rejectAllPending(new StreamerBotConnectionError("Streamer.bot WebSocket error"));
-    this.#setError("Streamer.bot WebSocket error");
+    this.#setError("Streamer.bot WebSocket error", error);
   }
 
   #markConnected(instance: Record<string, unknown>, restoreSubscriptions: boolean): void {
@@ -414,8 +417,8 @@ export class StreamerBotClient {
     const selections = this.#storedSubscriptionSelections();
     try {
       await this.#sendRequest("Subscribe", { events: selectionsToEventsMap(selections) }, validateOkResponse);
-    } catch {
-      this.#setError("Streamer.bot resubscribe request failed");
+    } catch (error) {
+      this.#setError("Streamer.bot resubscribe request failed", error);
     }
   }
 
@@ -458,9 +461,10 @@ export class StreamerBotClient {
 
       try {
         socket.send(JSON.stringify(requestEnvelope));
-      } catch {
-        this.#rejectPending(id, new StreamerBotConnectionError("Streamer.bot request send failed"));
-        this.#setError("Streamer.bot request send failed");
+      } catch (cause) {
+        const error = new StreamerBotConnectionError("Streamer.bot request send failed", { cause });
+        this.#rejectPending(id, error);
+        this.#setError("Streamer.bot request send failed", error);
       }
     });
   }
@@ -537,14 +541,15 @@ export class StreamerBotClient {
     this.#recordIssue("degraded", message, "warn");
   }
 
-  #setError(message: string): void {
-    this.#recordIssue("error", message, "error");
+  #setError(message: string, exception?: unknown): void {
+    this.#recordIssue("error", message, "error", exception);
   }
 
   #recordIssue(
     state: Extract<StreamerBotConnectionState, "reconnecting" | "degraded" | "error">,
     message: string,
-    level: StreamerBotClientDiagnostic["level"]
+    level: StreamerBotClientDiagnostic["level"],
+    exception?: unknown
   ): void {
     const referenceId = this.#generateReferenceId();
     this.#updateStatus({
@@ -553,7 +558,14 @@ export class StreamerBotClient {
       lastErrorAt: this.#now().toISOString(),
       referenceId
     });
-    void Promise.resolve(this.#onDiagnostic({ level, message, referenceId })).catch(() => {
+    void Promise.resolve(this.#onDiagnostic({
+      level,
+      message,
+      referenceId,
+      ...(exception === undefined ? {} : { exception })
+    })).catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => {
       if (this.#status.referenceId === referenceId) {
         this.#updateStatus({ message: "Streamer.bot diagnostics logging failed" });
       }
@@ -630,7 +642,9 @@ function parseRawMessage(data: unknown): unknown | null {
 
   try {
     return JSON.parse(data) as unknown;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 }

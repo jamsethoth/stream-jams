@@ -95,7 +95,9 @@ export class ManagementOverviewService {
     let detail: AlertSetDetail;
     try {
       detail = await this.#options.alertSetService.getSet(activeAlertSet.id);
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       return { state: "unavailable", enabledAlertCount: activeAlertSet.enabledAlertCount, items: [] };
     }
     const enabledAlerts = detail.inventory.filter((alert) => alert.enabled);
@@ -106,7 +108,9 @@ export class ManagementOverviewService {
     const documents = await Promise.all(enabledAlerts.map(async (alert) => {
       try {
         return { alert, document: await this.#options.getAlertEditorDocument(alert.id) };
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         return { alert, document: null };
       }
     }));
@@ -139,7 +143,9 @@ export class ManagementOverviewService {
       let assessment: ReturnType<typeof assessAlertConfiguration>;
       try {
         assessment = assessAlertConfiguration(document, mediaTypes ?? {});
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         return [{ alertId: alert.id, name: alert.name, eventType: alert.eventType, state: "unavailable", message: "Saved alert audio could not be checked.", actionRoute }];
       }
       const profileIssues = detail.overview.validationIssues.filter((issue) =>

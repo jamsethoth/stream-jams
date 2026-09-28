@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { afterEach, expect, it, vi } from "vitest";
 import { ServiceSupervisor, type ServiceWorker } from "./service-supervisor.js";
 import { randomUUID } from "node:crypto";
+import { serializeException } from "@stream-jams/core";
 
 class Worker extends EventEmitter implements ServiceWorker {
   readonly messages: Array<Record<string, unknown>> = [];
@@ -10,7 +11,10 @@ class Worker extends EventEmitter implements ServiceWorker {
   kill(): boolean { this.kills += 1; this.emit("exit", 1); return true; }
   reply(type: string, fields: Record<string, unknown> = {}): void {
     const request = this.messages.at(-1)!;
-    this.emit("message", { generation: request.generation, requestId: request.requestId, type, ...fields });
+    const failure = type === "failed" || type === "command-failed"
+      ? { referenceId: "err_worker_test", exception: serializeException(new Error(String(fields.message ?? "worker failure"))) }
+      : {};
+    this.emit("message", { generation: request.generation, requestId: request.requestId, type, ...failure, ...fields });
   }
 }
 afterEach(() => vi.useRealTimers());
@@ -45,6 +49,40 @@ it("routes overlay RPC separately, ignores stale leases, and clears visuals befo
   expect(overlay.handle).toHaveBeenCalledOnce();
   worker.emit("exit", 0);
   await stop;
+});
+
+it("preserves renderer failure provenance across the main-to-worker overlay response", async () => {
+  const worker = new Worker();
+  const diagnose = vi.fn();
+  const exception = serializeException(new Error("video decode failed", { cause: new Error("invalid frame") }));
+  const failure = {
+    referenceId: "err_overlay_decode",
+    stage: "decode" as const,
+    message: "The alert video could not be decoded.",
+    exception
+  };
+  const overlay = {
+    beginOwnership: vi.fn(), refreshLease: vi.fn(), serviceLost: vi.fn(),
+    handle: vi.fn(async () => { throw new Error("Desktop overlay is unavailable.", { cause: failure }); })
+  };
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, overlay, diagnose);
+  const ready = supervisor.start();
+  const generation = worker.messages[0]!.generation;
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  const requestId = randomUUID();
+
+  worker.emit("message", { type: "overlay-request", generation, requestId, command: { type: "retry" } });
+
+  await vi.waitFor(() => expect(worker.messages.at(-1)).toEqual({
+    type: "overlay-response", generation, requestId, result: null, failure
+  }));
+  expect(diagnose).toHaveBeenCalledWith(expect.objectContaining({
+    source: "desktop.overlay.command-failed",
+    referenceId: failure.referenceId,
+    exception
+  }));
+  const stop = supervisor.stop(); worker.emit("exit", 0); await stop;
 });
 
 it("routes only owned validated audio RPC and tears audio down with service loss", async () => {
@@ -153,6 +191,83 @@ it("surfaces an occupied-port startup failure and terminates only its injected w
   expect(supervisor.state).toBe("failed");
   expect(worker.kills).toBe(1);
   expect(occupiedPortOwner.kills).toBe(0);
+});
+
+it("preserves worker startup exception provenance and reports it with the same reference", async () => {
+  const worker = new Worker();
+  const diagnose = vi.fn();
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, diagnose);
+  const start = supervisor.start();
+  const exception = serializeException(new Error("database open failed", { cause: new Error("access denied") }));
+
+  worker.reply("failed", { message: "The local service could not start.", referenceId: "err_worker_start", exception });
+
+  await expect(start).rejects.toMatchObject({ name: "ServiceWorkerError", cause: exception });
+  expect(diagnose).toHaveBeenCalledWith(expect.objectContaining({
+    referenceId: "err_worker_start",
+    source: "desktop.worker.failed",
+    exception: expect.objectContaining({ cause: exception })
+  }));
+});
+
+it("records native spawn and abnormal worker exit failures", async () => {
+  const diagnose = vi.fn();
+  const spawnError = new Error("fork denied");
+  const spawnFailure = new ServiceSupervisor(() => { throw spawnError; }, () => {}, undefined, undefined, diagnose);
+  await expect(spawnFailure.start()).rejects.toBe(spawnError);
+  expect(diagnose).toHaveBeenCalledWith(expect.objectContaining({ source: "desktop.worker.failed", exception: spawnError }));
+
+  const worker = new Worker();
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, diagnose);
+  const ready = supervisor.start();
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  worker.emit("exit", 7);
+  expect(diagnose).toHaveBeenCalledWith(expect.objectContaining({ source: "desktop.worker.exit", exitCode: 7 }));
+});
+
+it("sends validated diagnostics only while the worker is owned", async () => {
+  const { worker, supervisor } = fixture();
+  const report = {
+    referenceId: "err_desktop_test",
+    component: "desktop",
+    source: "desktop.test",
+    message: "test diagnostic",
+    exception: null,
+    reason: null,
+    exitCode: null,
+    occurredAt: "2026-09-28T00:00:00.000Z"
+  };
+
+  expect(supervisor.recordDiagnostic(report)).toBe(false);
+  const ready = supervisor.start();
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  expect(supervisor.recordDiagnostic(report)).toBe(true);
+  expect(worker.messages.at(-1)).toMatchObject({ type: "record-diagnostic", report });
+  worker.reply("diagnostic-recorded");
+});
+
+it("falls back with the original report when runtime diagnostic persistence fails", async () => {
+  const worker = new Worker();
+  const fallback = vi.fn();
+  const supervisor = new ServiceSupervisor(() => worker, () => {}, undefined, undefined, undefined, fallback);
+  const ready = supervisor.start();
+  worker.reply("ready", { url: "http://127.0.0.1:39187", closeToTray: true, muted: false });
+  await ready;
+  const report = {
+    referenceId: "err_desktop_fallback",
+    component: "renderer",
+    source: "desktop.renderer.gone",
+    message: "renderer failed",
+    exception: null,
+    reason: "crashed",
+    exitCode: 7,
+    occurredAt: "2026-09-28T00:00:00.000Z"
+  };
+  expect(supervisor.recordDiagnostic(report)).toBe(true);
+  worker.reply("command-failed", { message: "The desktop diagnostic could not be written to the runtime log.", referenceId: report.referenceId });
+  expect(fallback).toHaveBeenCalledExactlyOnceWith(report);
 });
 
 it("shares repeated shutdown requests and ignores stale messages after retry", async () => {

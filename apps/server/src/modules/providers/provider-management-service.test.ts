@@ -362,7 +362,7 @@ describe("ProviderManagementService", () => {
 
     await expect(update).rejects.toMatchObject({
       name: "AggregateError",
-      cause: expect.objectContaining({ message: "rollback failed" }),
+      cause: persistenceError,
       errors: [persistenceError, expect.objectContaining({ message: "rollback failed" })]
     });
   });

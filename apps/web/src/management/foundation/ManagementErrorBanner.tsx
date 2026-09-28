@@ -37,7 +37,9 @@ function formatCause(cause: string | null): string | null {
       return [`${path === "" ? "" : `${path}: `}${issue.message}`];
     });
     return messages.length === 0 ? null : messages.join(" ");
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return cause;
   }
 }

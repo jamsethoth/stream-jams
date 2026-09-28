@@ -94,7 +94,12 @@ describe("overlay-client", () => {
 
     reporter.reportStarted("instruction-1");
     reporter.reportCompleted("instruction-1");
-    reporter.reportFailed("instruction-2", "media failed");
+    reporter.reportFailed("instruction-2", {
+      referenceId: "err_failure",
+      stage: "play",
+      message: "media failed",
+      exception: { type: "NotSupportedError", message: "unsupported", stack: null, code: null, cause: null, thrownValue: null }
+    });
 
     expect(socket.sent).toEqual([
       {
@@ -108,7 +113,10 @@ describe("overlay-client", () => {
       {
         type: "overlay.playback.failed",
         instructionId: "instruction-2",
-        message: "media failed"
+        referenceId: "err_failure",
+        stage: "play",
+        message: "media failed",
+        exception: { type: "NotSupportedError", message: "unsupported", stack: null, code: null, cause: null, thrownValue: null }
       }
     ]);
   });

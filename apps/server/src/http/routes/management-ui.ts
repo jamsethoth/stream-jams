@@ -2,6 +2,8 @@ import type {
   AlertEditorErrorReportInput,
   AlertEditorErrorReportResult,
   ClearOldLogsResult,
+  ClientExceptionReport,
+  ClientExceptionReportResult,
   ConfigurationBackupSummary,
   DiagnosticsWorkspaceView,
   OpenDataFolderResult
@@ -68,6 +70,7 @@ export interface ManagementUiRouteDependencies {
   readonly getConfigurationBackupSummary: () => Promise<ConfigurationBackupSummary>;
   readonly openDataFolder: () => Promise<OpenDataFolderResult>;
   readonly clearOldLogs: () => Promise<ClearOldLogsResult>;
+  readonly reportClientException: (input: ClientExceptionReport) => Promise<ClientExceptionReportResult>;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
   readonly generateServerErrorId?: (() => string) | undefined;
@@ -109,6 +112,7 @@ export function registerManagementUiRoutes(
     getConfigurationBackupSummary: dependencies.getConfigurationBackupSummary,
     openDataFolder: dependencies.openDataFolder,
     clearOldLogs: dependencies.clearOldLogs,
+    reportClientException: dependencies.reportClientException,
     preHandlers
   });
 }

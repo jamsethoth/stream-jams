@@ -62,7 +62,9 @@ export function ScreenEffectPreview({ assetApi, assetDurations, variant, ref }: 
     setError(null);
     void Promise.all([load(variant.visual?.assetId), load(variant.sound?.assetId)])
       .then(([visual, sound]) => { if (active) setUrls({ visual, sound }); })
-      .catch(() => { if (active) setError("Preview media could not load. Check the selected assets, reselect them, and retry."); });
+      .catch(
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      () => { if (active) setError("Preview media could not load. Check the selected assets, reselect them, and retry."); });
     return () => {
       active = false;
       generation.current += 1;
@@ -93,7 +95,9 @@ export function ScreenEffectPreview({ assetApi, assetDurations, variant, ref }: 
         starts.push(audio.current.play());
       }
       await Promise.all(starts);
-    } catch {
+    }
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+    catch {
       if (current !== generation.current) return;
       stop();
       setError("Preview playback could not start. Check the media and browser audio permissions, then press Play preview to retry.");

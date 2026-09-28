@@ -67,7 +67,9 @@ export class PlaybackOperationsService {
 
   setSafety(patch: Partial<PlaybackSafetyState>): Promise<MergedOperationsSnapshot> {
     const result = this.#pendingSafetyMutation.then(() => this.#setSafety(patch));
-    this.#pendingSafetyMutation = result.catch(() => undefined);
+    this.#pendingSafetyMutation = result.catch(
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    () => undefined);
     return result;
   }
 
@@ -158,7 +160,9 @@ export class PlaybackOperationsService {
     } catch (error) {
       try {
         await this.#onSafetyApplyFailure?.(error);
-      } catch {
+      }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch {
         // Applying persisted safety state is best-effort; reporting must not
         // turn a durable state change into an apparent request failure.
       }

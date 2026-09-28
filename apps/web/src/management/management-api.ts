@@ -11,6 +11,7 @@ import {
   assetLibraryItemSchema,
   assetChangeImpactSchema,
   clearOldLogsResultSchema,
+  clientExceptionReportResultSchema,
   configurationBackupSummarySchema,
   configurationBackupArchiveSchema,
   configurationRestorePreflightSchema,
@@ -48,6 +49,8 @@ import {
   type AssetMediaType,
   type AssetMetadataUpdateInput,
   type ClearOldLogsResult,
+  type ClientExceptionReport,
+  type ClientExceptionReportResult,
   type ConfigurationBackupSummary,
   type ConfigurationBackupArchive,
   type ConfigurationRestorePreflight,
@@ -256,6 +259,7 @@ export type TwitchAuthPollResultView =
   | { readonly status: "failed"; readonly code: "TWITCH_OAUTH_DENIED" | "TWITCH_OAUTH_EXPIRED"; readonly message: string };
 
 export interface ManagementApi {
+  reportClientException(input: ClientExceptionReport): Promise<ClientExceptionReportResult>;
   getHomeSetupSummary(): Promise<HomeSetupSummary>;
   getTwitchStatus(): Promise<TwitchConnectionStatusView>;
   getTwitchCustomRewards(): Promise<TwitchCustomRewardCatalog>;
@@ -369,6 +373,14 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
   }
 
   return {
+    reportClientException(input) {
+      return postContract(
+        "/management/diagnostics/client-errors",
+        input,
+        clientExceptionReportResultSchema,
+        "Unable to record the management interface error."
+      );
+    },
     getHomeSetupSummary() {
       return getContract("/management/home", homeSetupSummarySchema, "Unable to load Home setup summary.");
     },
@@ -966,8 +978,9 @@ const twitchAuthStartResultContract: RuntimeContract<TwitchAuthStartResultView> 
     let verificationUri: URL;
     try {
       verificationUri = new URL(input.verificationUri);
-    } catch {
-      throw new TypeError("Invalid Twitch authorization response");
+    }
+    catch (error) {
+      throw new TypeError("Invalid Twitch authorization response", { cause: error });
     }
     const deviceCodes = verificationUri.searchParams.getAll("device-code");
     const publicFlags = verificationUri.searchParams.getAll("public");

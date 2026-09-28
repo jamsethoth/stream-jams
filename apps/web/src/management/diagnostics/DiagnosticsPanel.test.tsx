@@ -90,6 +90,7 @@ describe("DiagnosticsPanel", () => {
     const copied = String(writeText.mock.calls[0]?.[0]);
     expect(copied).toContain("[REDACTED]");
     expect(copied).not.toContain("oauth-secret");
+    expect(copied).toContain("Error: playback failed");
     expect((await screen.findByText("Sanitized event copied")).closest(".management-toast")).toHaveClass("management-toast--success");
   });
 
@@ -267,7 +268,17 @@ function workspace(): DiagnosticsWorkspaceView {
         referenceId: "ref-runtime-2",
         processingId: "processing-2",
         message: "Send test blocked because no client is connected.",
-        data: { routeKey: "[REDACTED]" },
+        data: {
+          routeKey: "[REDACTED]",
+          exception: {
+            type: "Error",
+            message: "Playback failed",
+            stack: "Error: playback failed\n    at overlay.ts:1:1",
+            code: "E_PLAYBACK",
+            cause: null,
+            thrownValue: null
+          }
+        },
         correction: { label: "Open browser sources", route: "/manage/modules/alerts?diagnostic=ref-runtime-2#browser-sources" }
       }
     ]

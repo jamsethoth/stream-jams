@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply,
-  type DesktopOverlayTransport, type DesktopOverlayStatus, type SurfaceConfiguration, type VisualRecipientKey
+  type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
 } from "@stream-jams/core";
 import { overlayWorkerResponseSchema, type OverlayWorkerMessage } from "./overlay-ipc.js";
 
@@ -21,6 +21,7 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
     if (!Number.isSafeInteger(generation) || generation <= 0) throw new Error("Invalid worker generation");
     this.#lease = setInterval(() => {
       try { this.send({ type: "overlay-lease", generation, requestId: null }); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       catch { this.dispose(); }
     }, 2000);
   }
@@ -36,7 +37,9 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
     if (result !== null && "key" in result && (expected === null || keyId(result.key) !== keyId(expected))) return;
     this.#pending.delete(parsed.data.requestId);
     clearTimeout(pending.timer);
-    if (result === null || result.type === "error") pending.reject(unavailable());
+    if (result === null || result.type === "error") {
+      pending.reject(parsed.data.failure === undefined ? unavailable() : remoteOverlayFailure(parsed.data.failure));
+    }
     else pending.resolve(result);
   }
 
@@ -67,7 +70,9 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
       }
       occurrence.phase = "ready";
       return "ready";
-    } catch { if (occurrence.phase !== "cancelled") this.#forget(id, occurrence); return "unavailable"; }
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch { if (occurrence.phase !== "cancelled") this.#forget(id, occurrence); return "unavailable"; }
   }
 
   /** Resolves on completion, not on initial renderer admission. */
@@ -136,6 +141,7 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
       const timer = setTimeout(() => { this.#pending.delete(requestId); reject(unavailable()); }, timeout);
       this.#pending.set(requestId, { key: commandKey(command), resolve, reject, timer });
       try { this.send({ type: "overlay-request", generation: this.generation, requestId, command }); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       catch { this.dispose(); }
     });
   }
@@ -146,3 +152,10 @@ function commandKey(command: DesktopVisualCommand): VisualRecipientKey | null {
 }
 function keyId(key: VisualRecipientKey): string { return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation]); }
 function unavailable(): Error { return new Error("The owned desktop overlay connection is unavailable."); }
+function remoteOverlayFailure(failure: OverlayPlaybackFailure): Error {
+  const error = new Error(failure.message, { cause: failure.exception });
+  error.name = "DesktopOverlayPlaybackError";
+  Object.defineProperty(error, "referenceId", { value: failure.referenceId, enumerable: true });
+  Object.defineProperty(error, "stage", { value: failure.stage, enumerable: true });
+  return error;
+}

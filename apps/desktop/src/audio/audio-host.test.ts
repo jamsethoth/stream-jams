@@ -1,6 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { AudioHost, type AudioRendererCallbacks } from "./audio-host.js";
-import type { AudioRendererRequest } from "./audio-ipc.js";
+import { audioRendererReplySchema, type AudioRendererRequest } from "./audio-ipc.js";
+import { serializeException } from "@stream-jams/core";
 
 afterEach(() => vi.useRealTimers());
 const payload = { batch: { playbackId: "one", documentId: "alert", durationMs: 1000, muted: false, layers: [], destinations: [] }, assets: [], startDeadlineMs: 5000, deadlineMs: 10000 };
@@ -92,6 +93,23 @@ it("rejects stale and malformed replies without allowing them to complete curren
   ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [] } });
   expect(await playing).toEqual({ failedRouteIds: [] });
   await host.close();
+});
+
+it("preserves a renderer command exception as the host rejection cause", async () => {
+  const { host, ports } = harness();
+  await host.listOutputDevices();
+  ports[0]!.reply = false;
+  const pending = host.listOutputDevices();
+  await vi.waitFor(() => expect(ports[0]!.sent).toHaveLength(3));
+  const request = ports[0]!.sent.at(-1)!;
+  const exception = serializeException(new Error("device enumeration failed", { cause: new Error("audio service unavailable") }));
+  const reply = { generation: request.generation, requestId: request.requestId, result: null, exception };
+  expect(audioRendererReplySchema.safeParse(reply).success).toBe(true);
+  ports[0]!.callbacks.onReply(reply);
+  const rejected = await pending.catch((error: unknown) => error);
+  const serialized = JSON.stringify(serializeException(rejected));
+  expect(serialized).toContain("device enumeration failed");
+  expect(serialized).toContain("audio service unavailable");
 });
 
 it("never sends a delayed play after cancellation during renderer loading", async () => {

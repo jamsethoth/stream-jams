@@ -22,8 +22,8 @@ export class AssetPathTraversalError extends Error {
 export class AssetFileNotFoundError extends Error {
   readonly storagePath: string;
 
-  constructor(storagePath: string) {
-    super(`Asset file not found: ${storagePath}`);
+  constructor(storagePath: string, options?: ErrorOptions) {
+    super(`Asset file not found: ${storagePath}`, options);
     this.name = "AssetFileNotFoundError";
     this.storagePath = storagePath;
   }
@@ -66,7 +66,7 @@ export class LocalAssetStore implements MediaAssetStore {
       return await readFile(absolutePath);
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
-        throw new AssetFileNotFoundError(storagePath);
+        throw new AssetFileNotFoundError(storagePath, { cause: error });
       }
 
       throw error;
@@ -88,7 +88,7 @@ export class LocalAssetStore implements MediaAssetStore {
       }
       return Buffer.concat(chunks, total);
     } catch (error) {
-      if (isNodeError(error) && error.code === "ENOENT") throw new AssetFileNotFoundError(storagePath);
+      if (isNodeError(error) && error.code === "ENOENT") throw new AssetFileNotFoundError(storagePath, { cause: error });
       throw error;
     }
   }

@@ -93,7 +93,9 @@ export class OutputReadinessService {
         unifiedVisualEnabled = surface?.layers.some(
           (layer) => layer.moduleId === input.moduleId && layer.visible
         ) ?? false;
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         unifiedVisualEnabled = false;
       }
     }
@@ -183,7 +185,9 @@ export class OutputReadinessService {
         metadata
       });
       return true;
-    } catch { return false; }
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch { return false; }
   }
 
   async hasReadyAudioRoute(routeIds: readonly string[]): Promise<boolean> {
@@ -192,7 +196,9 @@ export class OutputReadinessService {
       const selected = new Set(routeIds);
       const status = await this.options.getAudioStatus();
       return status.routes.some((route) => selected.has(route.route.id) && route.state === "ready");
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       return false;
     }
   }

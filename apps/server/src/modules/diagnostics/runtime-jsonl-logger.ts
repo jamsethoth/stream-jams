@@ -1,6 +1,15 @@
 import { mkdir, readdir, readFile, appendFile } from "node:fs/promises";
 import { basename, join } from "node:path";
-import type { LogContext, Logger, LogLevel, LogSettings, Redactor } from "@stream-jams/core";
+import {
+  serializeException,
+  type LogContext,
+  type Logger,
+  type LogLevel,
+  type LogSettings,
+  type Redactor,
+  type SerializedException
+} from "@stream-jams/core";
+import { EmergencyLogWriter, type EmergencyLogInput } from "./emergency-log-writer.js";
 import { LogRetentionService } from "./log-retention-service.js";
 
 export interface RuntimeLogEntry {
@@ -11,6 +20,7 @@ export interface RuntimeLogEntry {
   readonly message: string;
   readonly correlationId: string;
   readonly processingId: string | null;
+  readonly exception: SerializedException | null;
   readonly details?: Record<string, string | number | boolean | null> | undefined;
 }
 
@@ -36,6 +46,16 @@ export interface RuntimeJsonlLoggerOptions {
   readonly redactor: Redactor;
   readonly retentionService?: Pick<LogRetentionService, "cleanupExpiredLogs"> | undefined;
   readonly now?: (() => Date) | undefined;
+  readonly emergencyWriter?: Pick<EmergencyLogWriter, "write"> | undefined;
+  readonly fileSystem?: RuntimeLogFileSystem | undefined;
+  readonly serialize?: ((value: unknown) => SerializedException) | undefined;
+}
+
+export interface RuntimeLogFileSystem {
+  mkdir(path: string, options: { readonly recursive: true }): Promise<unknown>;
+  appendFile(path: string, data: string, encoding: "utf8"): Promise<unknown>;
+  readdir(path: string): Promise<readonly string[]>;
+  readFile(path: string, encoding: "utf8"): Promise<string>;
 }
 
 const levelPriority: Record<LogLevel, number> = {
@@ -53,6 +73,9 @@ export class RuntimeJsonlLogger implements Logger {
   readonly #redactor: Redactor;
   readonly #retentionService: Pick<LogRetentionService, "cleanupExpiredLogs">;
   readonly #now: () => Date;
+  readonly #emergencyWriter: Pick<EmergencyLogWriter, "write">;
+  readonly #fileSystem: RuntimeLogFileSystem;
+  readonly #serialize: (value: unknown) => SerializedException;
 
   constructor(options: RuntimeJsonlLoggerOptions) {
     this.#logDirectory = options.logDirectory;
@@ -60,6 +83,11 @@ export class RuntimeJsonlLogger implements Logger {
     this.#redactor = options.redactor;
     this.#retentionService = options.retentionService ?? new LogRetentionService();
     this.#now = options.now ?? (() => new Date());
+    this.#emergencyWriter = options.emergencyWriter ?? new EmergencyLogWriter({
+      filePath: join(this.#logDirectory, "emergency-errors.jsonl")
+    });
+    this.#fileSystem = options.fileSystem ?? { mkdir, appendFile, readdir, readFile };
+    this.#serialize = options.serialize ?? serializeException;
   }
 
   async debug(message: string, context: LogContext): Promise<void> {
@@ -74,12 +102,12 @@ export class RuntimeJsonlLogger implements Logger {
     await this.#write("WARN", message, context);
   }
 
-  async error(message: string, context: LogContext): Promise<void> {
-    await this.#write("ERROR", message, context);
+  async error(message: string, context: LogContext, exception?: unknown): Promise<void> {
+    await this.#write("ERROR", message, context, exception);
   }
 
   async getMetadata(): Promise<RuntimeLogMetadata> {
-    await mkdir(this.#logDirectory, { recursive: true });
+    await this.#fileSystem.mkdir(this.#logDirectory, { recursive: true });
     const files = await this.#listLogFiles();
     const currentLogFile = basename(this.#filePathFor(this.#now()));
     return {
@@ -101,11 +129,13 @@ export class RuntimeJsonlLogger implements Logger {
     let scanned = 0;
 
     for (const file of files) {
-      const raw = await readFile(join(this.#logDirectory, file), "utf8");
+      const raw = await this.#fileSystem.readFile(join(this.#logDirectory, file), "utf8");
       const fileEntries = raw
         .split("\n")
         .filter((line) => line.trim() !== "")
-        .map((line) => JSON.parse(line) as RuntimeLogEntry)
+        .map((line) => normalizeRuntimeLogEntry(JSON.parse(line) as Omit<RuntimeLogEntry, "exception"> & {
+          readonly exception?: SerializedException | null;
+        }))
         .reverse();
 
       for (const entry of fileEntries) {
@@ -126,34 +156,53 @@ export class RuntimeJsonlLogger implements Logger {
     };
   }
 
-  async #write(level: LogLevel, message: string, context: LogContext): Promise<void> {
+  async #write(level: LogLevel, message: string, context: LogContext, originalException?: unknown): Promise<void> {
     if (levelPriority[level] < levelPriority[this.#settings.level]) {
       return;
     }
 
     const timestamp = this.#now();
-    await mkdir(this.#logDirectory, { recursive: true });
-    const entry = this.#redactor.redact({
-      timestamp: timestamp.toISOString(),
-      level,
-      event: context.source,
-      component: context.module,
-      message,
-      correlationId: context.correlationId,
-      processingId: context.processingId,
-      ...(context.metadata === undefined ? {} : { details: sanitizeMetadata(context.metadata) })
-    }) as RuntimeLogEntry;
-    await appendFile(this.#filePathFor(timestamp), `${JSON.stringify(entry)}\n`, "utf8");
-    await this.#retentionService.cleanupExpiredLogs({
-      logDirectory: this.#logDirectory,
-      settings: this.#settings,
-      now: timestamp
-    });
+    try {
+      const exception = originalException === undefined ? null : this.#serialize(originalException);
+      await this.#fileSystem.mkdir(this.#logDirectory, { recursive: true });
+      const entry = this.#redactor.redact({
+        timestamp: timestamp.toISOString(),
+        level,
+        event: context.source,
+        component: context.module,
+        message,
+        correlationId: context.correlationId,
+        processingId: context.processingId,
+        exception,
+        ...(context.metadata === undefined ? {} : { details: sanitizeMetadata(context.metadata) })
+      }) as RuntimeLogEntry;
+      await this.#fileSystem.appendFile(this.#filePathFor(timestamp), `${JSON.stringify(entry)}\n`, "utf8");
+      await this.#retentionService.cleanupExpiredLogs({
+        logDirectory: this.#logDirectory,
+        settings: this.#settings,
+        now: timestamp
+      });
+    } catch (loggerException) {
+      const emergency: EmergencyLogInput = {
+        timestamp: timestamp.toISOString(),
+        component: context.module,
+        event: context.source,
+        referenceId: context.correlationId,
+        message,
+        originalException,
+        loggerException
+      };
+      try { this.#emergencyWriter.write(emergency); }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch { /* The default emergency writer never throws. */ }
+    }
   }
 
   async #listLogFiles(): Promise<string[]> {
     try {
-      return (await readdir(this.#logDirectory)).filter((file) => /^runtime-\d{10}\.jsonl$/.test(file)).sort();
+      return [...await this.#fileSystem.readdir(this.#logDirectory)]
+        .filter((file) => /^runtime-\d{10}\.jsonl$/.test(file))
+        .sort();
     } catch (error) {
       if (isNodeError(error) && error.code === "ENOENT") {
         return [];
@@ -166,6 +215,12 @@ export class RuntimeJsonlLogger implements Logger {
   #filePathFor(date: Date): string {
     return join(this.#logDirectory, `runtime-${date.toISOString().slice(0, 13).replaceAll("-", "").replace("T", "")}.jsonl`);
   }
+}
+
+function normalizeRuntimeLogEntry(
+  entry: Omit<RuntimeLogEntry, "exception"> & { readonly exception?: SerializedException | null }
+): RuntimeLogEntry {
+  return { ...entry, exception: entry.exception ?? null };
 }
 
 function sanitizeMetadata(metadata: Record<string, unknown>): Record<string, string | number | boolean | null> {

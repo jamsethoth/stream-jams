@@ -338,7 +338,9 @@ export class EffectAdmissionService {
   async #report<TResult extends EffectAdmissionResult>(result: TResult): Promise<TResult> {
     try {
       await this.#onOutcome(result);
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       // Diagnostics must not turn a settled admission decision into another delivery attempt.
     }
     return result;

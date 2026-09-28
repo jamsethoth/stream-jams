@@ -90,7 +90,9 @@ function parseBlockedTerms(value: unknown): unknown {
 
   try {
     return JSON.parse(value) as unknown;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return undefined;
   }
 }

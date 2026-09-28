@@ -145,13 +145,14 @@ describe("EventIngestionService", () => {
     });
     service.getStatus();
     service.getStatus();
-    expect(diagnostics).toEqual([{
+    expect(diagnostics).toEqual([expect.objectContaining({
       code: "EVENT_INGESTION_FAILED",
       message: "Twitch EventSub notification was invalid",
       referenceId: "ref-ingestion-1",
       ingestProvider: "twitch",
-      source: "EventSub"
-    }]);
+      source: "EventSub",
+      exception: expect.any(Error)
+    })]);
   });
 
   it("rejects malformed direct Twitch and Streamer.bot outputs before the sink and continues intake", async () => {

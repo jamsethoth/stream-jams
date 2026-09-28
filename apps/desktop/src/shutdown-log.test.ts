@@ -12,7 +12,7 @@ async function fixture() {
   return { root, file: join(root, "phases.jsonl") };
 }
 async function contents(file: string): Promise<string> {
-  return readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => { if (error.code === "ENOENT") return ""; throw error; });
+  return readFile(file, "utf8").catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""; throw error; });
 }
 
 describe("shutdown phase evidence", () => {
@@ -70,6 +70,20 @@ describe("shutdown phase evidence", () => {
     await new Promise(resolve => setTimeout(resolve, 50));
     expect(await readFile(file, "utf8")).toBe("existing evidence\n");
     expect(await readdir(root)).toEqual(["phases.jsonl"]);
+  });
+
+  it("retains structured shutdown exception evidence with its reference", async () => {
+    const { file } = await fixture();
+    const log = new ShutdownLog(file);
+    log.recordFailure("service-stop-failed", new Error("stop failed", { cause: new Error("worker pipe closed") }), "err_shutdown_1");
+    log.close();
+    await expect.poll(async () => (await contents(file)).trim().length).toBeGreaterThan(0);
+    const row = JSON.parse((await contents(file)).trim());
+    expect(row).toMatchObject({
+      phase: "service-stop-failed",
+      referenceId: "err_shutdown_1",
+      exception: { message: "stop failed", cause: { message: "worker pipe closed" } }
+    });
   });
 
   it("bounds accepted and queued evidence during repeated requests", async () => {

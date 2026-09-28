@@ -365,7 +365,8 @@ describe("StreamerBotClient", () => {
     const errorInfoExpectation = expect(errorInfo).rejects.toThrow("Streamer.bot WebSocket error");
     const errorEventsExpectation = expect(errorEvents).rejects.toThrow("Streamer.bot WebSocket error");
 
-    errorHarness.sockets[0]?.emitError(new Error("super-secret should not leak"));
+    const socketError = new Error("super-secret should not leak");
+    errorHarness.sockets[0]?.emitError(socketError);
 
     await errorInfoExpectation;
     await errorEventsExpectation;
@@ -379,7 +380,8 @@ describe("StreamerBotClient", () => {
     expect(errorHarness.diagnostics).toEqual([{
       level: "error",
       message: "Streamer.bot WebSocket error",
-      referenceId: "ref-1"
+      referenceId: "ref-1",
+      exception: socketError
     }]);
 
     errorHarness.sockets[0]?.emitClose();

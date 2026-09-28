@@ -17,6 +17,12 @@ export {
   logSettingsSchema,
   logSettingsUpdateSchema
 } from "./diagnostics/logging.js";
+export type { ExceptionSerializationLimits, SerializedException } from "./diagnostics/serialized-exception.js";
+export {
+  defaultExceptionSerializationLimits,
+  serializeException,
+  serializedExceptionSchema
+} from "./diagnostics/serialized-exception.js";
 export type * from "./diagnostics/repository.js";
 
 export type * from "./config/types.js";
@@ -189,6 +195,10 @@ export { visualRecipientKeySchema } from "./overlays/visual-recipient.js";
 export type { VisualRecipientKey } from "./overlays/visual-recipient.js";
 export { playbackTimingSchema } from "./overlays/playback-timing.js";
 export type { PlaybackTiming } from "./overlays/playback-timing.js";
+export { overlayPlaybackFailureSchema, overlayPlaybackFailureStageSchema } from "./overlays/playback-failure.js";
+export type { OverlayPlaybackFailure, OverlayPlaybackFailureStage } from "./overlays/playback-failure.js";
+export { prepareTimedMedia, TimedMediaPreparationError } from "./audio/prepare-timed-media.js";
+export type { TimedMediaElement } from "./audio/prepare-timed-media.js";
 export { desktopVisualInstructionSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema, desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, maxDesktopVisualTransferBytes, visualMediaType } from "./overlays/desktop-visual-transport.js";
 export type { DesktopVisualBatch, DesktopVisualAsset, DesktopVisualCommand, DesktopVisualReply, DesktopOverlayTransport, DesktopVisualRendererRequest, DesktopVisualRendererReply } from "./overlays/desktop-visual-transport.js";
 export { VisualRecipientLedger } from "./overlays/visual-recipient-ledger.js";

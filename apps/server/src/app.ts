@@ -141,6 +141,12 @@ function registerServerErrorHandler(app: FastifyInstance, dependencies: BaseServ
       } });
     }
     const response = toServerErrorResponse(error);
+    if ((error instanceof HttpResponseError && error.cause === undefined) || isInvalidMediaTypeError(error)) {
+      return reply.status(response.statusCode).send({ error: {
+        code: response.code,
+        message: response.message
+      } });
+    }
     const errorId = generateServerErrorId();
     const requestId = String(request.id);
 
@@ -173,7 +179,7 @@ function toServerErrorResponse(error: unknown): { readonly statusCode: number; r
     };
   }
 
-  if (error instanceof Error && "code" in error && error.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE") {
+  if (isInvalidMediaTypeError(error)) {
     return {
       statusCode: 415,
       code: "UNSUPPORTED_MEDIA_TYPE",
@@ -186,6 +192,10 @@ function toServerErrorResponse(error: unknown): { readonly statusCode: number; r
     code: "INTERNAL_SERVER_ERROR",
     message: "A server error occurred. Use the error ID to find details in backend logs."
   };
+}
+
+function isInvalidMediaTypeError(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "FST_ERR_CTP_INVALID_MEDIA_TYPE";
 }
 
 function defaultServerErrorLogger(entry: ServerErrorLogEntry): void {

@@ -740,6 +740,40 @@ describe("management alert contracts and rules", () => {
 });
 
 describe("management asset diagnostics home and backup contracts", () => {
+  it("validates bounded strict management client exception reports", () => {
+    const report = schema("clientExceptionReportSchema");
+    const result = schema("clientExceptionReportResultSchema");
+    const exception = {
+      type: "TypeError",
+      message: "Management render failed",
+      stack: "TypeError: Management render failed\n    at App.tsx:1:1",
+      code: null,
+      cause: null,
+      thrownValue: null
+    };
+
+    expect(report.safeParse({
+      referenceId: "err_management_1",
+      source: "react",
+      message: "The management interface stopped unexpectedly.",
+      exception
+    }).success).toBe(true);
+    expect(report.safeParse({
+      referenceId: "err_management_1",
+      source: "react",
+      message: "The management interface stopped unexpectedly.",
+      exception,
+      extra: true
+    }).success).toBe(false);
+    expect(report.safeParse({
+      referenceId: "err_management_1",
+      source: "unknown",
+      message: "The management interface stopped unexpectedly.",
+      exception
+    }).success).toBe(false);
+    expect(result.parse({ referenceId: "err_management_1" })).toEqual({ referenceId: "err_management_1" });
+  });
+
   it("normalizes freeform asset tags case-insensitively", () => {
     const normalize = exportedFunction("normalizeAssetTags");
 
@@ -851,7 +885,17 @@ describe("management asset diagnostics home and backup contracts", () => {
             referenceId: "ref-provider-1",
             processingId: null,
             message: "Provider validation failed.",
-            data: { token: "[REDACTED]" },
+            data: {
+              token: "[REDACTED]",
+              exception: {
+                type: "Error",
+                message: "Provider validation failed.",
+                stack: "Error: Provider validation failed.\n    at provider.ts:1:1",
+                code: "E_PROVIDER",
+                cause: null,
+                thrownValue: null
+              }
+            },
             correction: { label: "Open event sources", route: "/event-sources?diagnostic=ref-provider-1" }
           }
         ]

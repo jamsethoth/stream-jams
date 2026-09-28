@@ -736,6 +736,33 @@ a:focus-visible {
   font-weight: 700;
 }
 
+.management-error-boundary {
+  margin: 0 auto;
+  max-width: 960px;
+  padding: var(--space-page);
+}
+
+.management-error-boundary__reference {
+  overflow-wrap: anywhere;
+}
+
+.management-error-boundary__reference span {
+  font-weight: 700;
+}
+
+.management-error-boundary__actions {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: max-content;
+}
+
+.management-error-boundary__actions a {
+  color: var(--color-info);
+  font-weight: 700;
+}
+
 .management-toast {
   align-items: flex-start;
   bottom: 24px;

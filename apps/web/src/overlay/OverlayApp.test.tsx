@@ -136,7 +136,12 @@ describe("OverlaySurface", () => {
     expect(onPlaybackEvent).toHaveBeenCalledWith({
       instructionId: "missing-image",
       status: "failed",
-      message: "Image playback failed"
+      failure: expect.objectContaining({
+        referenceId: expect.stringMatching(/^err_/),
+        stage: "source-load",
+        message: "Image playback failed",
+        exception: expect.objectContaining({ type: expect.any(String) })
+      })
     });
   });
 });

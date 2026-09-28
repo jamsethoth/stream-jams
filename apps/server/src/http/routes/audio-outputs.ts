@@ -45,7 +45,7 @@ function isEmptyBody(candidate: unknown): boolean {
 async function mutation<T>(work: () => T | Promise<T>): Promise<T> {
   try { return await work(); }
   catch (error) {
-    if (error instanceof RuntimeMaintenanceUnavailableError) throw new AudioOutputError(409, "AUDIO_MAINTENANCE_ACTIVE", "Audio changes and tests are temporarily unavailable during maintenance or shutdown.", "Wait for maintenance to finish or restart the app, then retry.");
+    if (error instanceof RuntimeMaintenanceUnavailableError) throw new AudioOutputError(409, "AUDIO_MAINTENANCE_ACTIVE", "Audio changes and tests are temporarily unavailable during maintenance or shutdown.", "Wait for maintenance to finish or restart the app, then retry.", [], [], [], { cause: error });
     throw error;
   }
 }

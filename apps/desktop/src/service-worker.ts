@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import type {} from "electron";
 import { resolve } from "node:path";
@@ -5,6 +6,7 @@ import { LocalRuntimeStartupError, startLocalRuntime, type StartedLocalRuntime }
 import { workerRequestSchema, type WorkerMessage } from "./desktop-ipc.js";
 import { WorkerAudioClient } from "./audio/worker-audio-client.js";
 import { WorkerOverlayClient } from "./overlay/worker-overlay-client.js";
+import { serializeException } from "@stream-jams/core";
 
 const parent = process.parentPort;
 if (parent == null) throw new Error("The service worker requires an owned utility process.");
@@ -43,7 +45,7 @@ parent.on("message", ({ data }: { data: unknown }) => {
     }).catch((error: unknown) => {
       audio?.dispose();
       overlay?.dispose();
-      send({ type: "failed", generation: request.generation, requestId: request.requestId, message: error instanceof LocalRuntimeStartupError ? error.message : "The local service could not start. Check the configured data paths and runtime dependencies, then retry." });
+      send({ type: "failed", generation: request.generation, requestId: request.requestId, referenceId: `err_${randomUUID()}`, exception: serializeException(error), message: error instanceof LocalRuntimeStartupError ? error.message : "The local service could not start. Check the configured data paths and runtime dependencies, then retry." });
     });
     return;
   }
@@ -56,12 +58,25 @@ parent.on("message", ({ data }: { data: unknown }) => {
       overlay?.dispose();
       send({ type: "stopped", generation: request.generation, requestId: request.requestId });
       process.exit(0);
-    }).catch(() => { audio?.dispose(); overlay?.dispose(); process.exit(1); });
+    }).catch((error: unknown) => {
+      audio?.dispose();
+      overlay?.dispose();
+      send({ type: "command-failed", generation: request.generation, requestId: request.requestId, referenceId: `err_${randomUUID()}`, exception: serializeException(error), message: "The local service could not stop cleanly." });
+      process.exit(1);
+    });
     return;
   }
   if (stopping) return;
+  if (request.type === "record-diagnostic") {
+    void runtime.then(({ composition }) => composition.recordDesktopDiagnostic(request.report)).then(() => {
+      send({ type: "diagnostic-recorded", generation: request.generation, requestId: request.requestId });
+    }).catch((error: unknown) => {
+      send({ type: "command-failed", generation: request.generation, requestId: request.requestId, referenceId: request.report.referenceId, exception: serializeException(error), message: "The desktop diagnostic could not be written to the runtime log." });
+    });
+    return;
+  }
   void runtime.then(async ({ composition }) => {
     const result = await composition.playbackOperationsService.setSafety({ muted: request.muted });
     send({ type: "playback-state-changed", generation: request.generation, requestId: request.requestId, muted: result.muted });
-  }).catch(() => send({ type: "command-failed", generation: request.generation, requestId: request.requestId, message: "Mute could not be saved. Check the operator controls and data-directory permissions." }));
+  }).catch((error: unknown) => send({ type: "command-failed", generation: request.generation, requestId: request.requestId, referenceId: `err_${randomUUID()}`, exception: serializeException(error), message: "Mute could not be saved. Check the operator controls and data-directory permissions." }));
 });

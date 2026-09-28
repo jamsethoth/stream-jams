@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { isAbsolute } from "node:path";
 import { performance } from "node:perf_hooks";
+import { serializeException } from "@stream-jams/core";
 
 const phases = new Set([
   "app-ready", "quit-requested", "decision-accepted", "decision-cancelled",
@@ -27,22 +28,34 @@ export class ShutdownLog {
     try {
       this.#stream = createWriteStream(path, { flags: "wx", mode: 0o600 });
       this.#stream.on("error", () => { this.#closed = true; this.#stream = undefined; });
-    } catch { this.#closed = true; }
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch { this.#closed = true; }
   }
 
   record(phase: unknown): void {
+    this.#write(phase);
+  }
+
+  recordFailure(phase: unknown, error: unknown, referenceId: string): void {
+    this.#write(phase, { referenceId, exception: serializeException(error) });
+  }
+
+  #write(phase: unknown, failure?: { readonly referenceId: string; readonly exception: ReturnType<typeof serializeException> }): void {
     if (this.#stream === undefined || this.#closed || typeof phase !== "string" || !phases.has(phase)) return;
     if (phase === "quit-requested") this.#attempt++;
     const line = JSON.stringify({
       version: 1, launchId: this.#launchId, pid: process.pid, attempt: this.#attempt,
       sequence: this.#sequence + 1, utc: new Date().toISOString(),
-      elapsedMs: Math.round((performance.now() - this.#started) * 1000) / 1000, phase
+      elapsedMs: Math.round((performance.now() - this.#started) * 1000) / 1000, phase,
+      ...(failure === undefined ? {} : failure)
     }) + "\n";
     const bytes = Buffer.byteLength(line);
     if (this.#sequence >= 256 || this.#bytes + bytes > 64 * 1024) { this.close(); return; }
     this.#bytes += bytes; // Includes queued writes, not just bytes already on disk.
     this.#sequence++;
     try { this.#stream.write(line); }
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
     catch { this.#stream.destroy(); this.#closed = true; }
     if (this.#sequence === 256) this.close();
   }

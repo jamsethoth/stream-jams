@@ -8,6 +8,7 @@ import type {
   OverlayScope,
   OverlayTargetProfileId
 } from "@stream-jams/core";
+import { overlayPlaybackFailureSchema, type OverlayPlaybackFailure, type SerializedException } from "@stream-jams/core";
 
 export interface OverlayGatewaySocket {
   send(data: string): void;
@@ -57,6 +58,10 @@ export interface OverlayGatewayPlaybackReport {
   readonly instructionId: string;
   readonly status: "started" | "completed" | "failed";
   readonly message: string | null;
+  readonly referenceId: string | null;
+  readonly stage: OverlayPlaybackFailure["stage"] | null;
+  readonly exception: SerializedException | null;
+  readonly targetProfileId: OverlayTargetProfileId | null;
 }
 
 export interface OverlayGatewayDependencies {
@@ -248,6 +253,7 @@ export class OverlayGateway {
     for (const client of this.#clients.values()) {
       if (client.scope === "unified" && client.overlayId === surface.overlayId) {
         try { sendGatewayMessage(client.socket, { type: "overlay.surface-layers", layers: surface.layers }); }
+        // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
         catch { this.unregisterClient(client.id); }
       }
     }
@@ -278,7 +284,7 @@ export class OverlayGateway {
       lastSeenAt: this.#clock().toISOString()
     });
 
-    const report = parsePlaybackReport(clientId, rawMessage);
+    const report = parsePlaybackReport(client, rawMessage);
     if (report !== null) {
       this.#onPlaybackReport(report);
     }
@@ -328,11 +334,14 @@ function outputStateKey(client: OverlayGatewayClient): string {
   ].join(":");
 }
 
-function parsePlaybackReport(clientId: string, rawMessage: string): OverlayGatewayPlaybackReport | null {
+function parsePlaybackReport(client: RegisteredOverlayGatewayClient, rawMessage: string): OverlayGatewayPlaybackReport | null {
+  if (new TextEncoder().encode(rawMessage).byteLength > 70_000) return null;
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawMessage) as unknown;
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return null;
   }
 
@@ -344,6 +353,9 @@ function parsePlaybackReport(clientId: string, rawMessage: string): OverlayGatew
     readonly type?: unknown;
     readonly instructionId?: unknown;
     readonly message?: unknown;
+    readonly referenceId?: unknown;
+    readonly stage?: unknown;
+    readonly exception?: unknown;
   };
   if (typeof candidate.type !== "string" || typeof candidate.instructionId !== "string") {
     return null;
@@ -357,11 +369,25 @@ function parsePlaybackReport(clientId: string, rawMessage: string): OverlayGatew
     return null;
   }
 
+  const failure = candidate.type === "overlay.playback.failed"
+    ? overlayPlaybackFailureSchema.safeParse({
+        referenceId: candidate.referenceId,
+        stage: candidate.stage,
+        message: candidate.message,
+        exception: candidate.exception
+      })
+    : null;
+  if (candidate.type === "overlay.playback.failed" && (failure === null || !failure.success)) return null;
+
   return {
-    clientId,
+    clientId: client.id,
     instructionId: candidate.instructionId,
     status: candidate.type.replace("overlay.playback.", "") as OverlayGatewayPlaybackReport["status"],
-    message: typeof candidate.message === "string" && candidate.message.trim() !== "" ? candidate.message : null
+    message: failure?.success === true ? failure.data.message : null,
+    referenceId: failure?.success === true ? failure.data.referenceId : null,
+    stage: failure?.success === true ? failure.data.stage : null,
+    exception: failure?.success === true ? failure.data.exception : null,
+    targetProfileId: client.targetProfileId ?? null
   };
 }
 

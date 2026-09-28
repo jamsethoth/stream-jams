@@ -23,11 +23,12 @@ it("logs desktop display detection and retry failures with their native causes",
   const { service, surfaces, host, logger, value } = fixture();
   await surfaces.save({ ...(value() as Extract<SurfaceConfiguration, { kind: "desktop" }>), enabled: true,
     displayId: "monitor", displayLabel: "Monitor" });
-  host.getStatus.mockRejectedValue(new Error("screen API unavailable"));
+  const detectionError = new Error("screen API unavailable");
+  host.getStatus.mockRejectedValue(detectionError);
 
   await expect(service.load()).resolves.toMatchObject({ desktop: { available: false, state: "unavailable" } });
 
-  expect(logger.warn).toHaveBeenCalledWith("Desktop display detection failed.", {
+  expect(logger.error).toHaveBeenCalledWith("Desktop display detection failed.", {
     module: "overlay-surfaces",
     source: "desktop-overlay.displays.detection-failed",
     correlationId: "ref-desktop-displays",
@@ -37,11 +38,12 @@ it("logs desktop display detection and retry failures with their native causes",
       errorMessage: "screen API unavailable",
       nextStep: "Restart the Windows desktop app and retry display detection."
     }
-  });
+  }, detectionError);
 
   host.getStatus.mockResolvedValue({ available: true, displays: [{ id: "monitor", label: "Monitor",
     bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }], state: "failed", message: "renderer unavailable" });
-  host.retry.mockRejectedValueOnce(new Error("renderer window creation failed"));
+  const retryError = new Error("renderer window creation failed");
+  host.retry.mockRejectedValueOnce(retryError);
   await service.retry();
 
   expect(logger.error).toHaveBeenCalledWith("Desktop overlay recovery failed.", {
@@ -56,7 +58,7 @@ it("logs desktop display detection and retry failures with their native causes",
       selectedDisplayAvailable: true,
       nextStep: "Check the selected display and retry. Interrupted content will not replay."
     }
-  });
+  }, retryError);
 });
 
 it("logs an unavailable display-detection state once while settings polling remains unchanged", async () => {

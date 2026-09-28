@@ -33,13 +33,15 @@ function fixture(available = true) {
 
 it("logs the native cause when audio device detection and explicit recovery fail", async () => {
   using f = fixture();
-  f.host.listOutputDevices.mockRejectedValueOnce(new Error("renderer channel closed"));
-  f.host.retry.mockRejectedValueOnce(new Error("audio renderer did not initialize"));
+  const detectionError = new Error("renderer channel closed");
+  const retryError = new Error("audio renderer did not initialize");
+  f.host.listOutputDevices.mockRejectedValueOnce(detectionError);
+  f.host.retry.mockRejectedValueOnce(retryError);
 
   await expect(f.service.getDevices()).resolves.toMatchObject({ available: false, reason: "enumeration-failed" });
   await expect(f.service.retry()).rejects.toMatchObject({ code: "AUDIO_RETRY_FAILED" });
 
-  expect(f.logger.warn).toHaveBeenCalledWith("Audio output device detection failed.", {
+  expect(f.logger.error).toHaveBeenCalledWith("Audio output device detection failed.", {
     module: "audio-output",
     source: "audio-output.devices.enumeration-failed",
     correlationId: "ref-audio-devices",
@@ -49,7 +51,7 @@ it("logs the native cause when audio device detection and explicit recovery fail
       errorMessage: "renderer channel closed",
       nextStep: "Reconnect the output device and retry. Restart the desktop app if device discovery remains unavailable."
     }
-  });
+  }, detectionError);
   expect(f.logger.error).toHaveBeenCalledWith("Desktop audio recovery failed.", {
     module: "audio-output",
     source: "audio-output.retry.failed",
@@ -60,7 +62,7 @@ it("logs the native cause when audio device detection and explicit recovery fail
       errorMessage: "audio renderer did not initialize",
       nextStep: "Restart the desktop app if retry continues to fail."
     }
-  });
+  }, retryError);
 });
 
 it("logs a transition to zero detected audio outputs without repeating it on status polling", async () => {

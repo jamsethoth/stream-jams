@@ -28,6 +28,7 @@ describe("App", () => {
 
 function createManagementApi(): ManagementApi {
   return {
+    async reportClientException(input) { return { referenceId: input.referenceId }; },
     async getHomeSetupSummary() {
       return { readiness: [], activeAlertSet: null, alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] }, actionableProblems: [] };
     },

@@ -78,6 +78,27 @@ it("releases the listener and database when provider synchronization fails after
   expect(() => composition.database.connection.prepare("SELECT 1")).toThrow();
 });
 
+it("keeps startup failure primary when cleanup also fails", async () => {
+  const reservation = await listener();
+  await reservation.close();
+  const options = await fixture(reservation.port);
+  const composition = await compositionModule.createRuntimeAppComposition(options);
+  const startupError = new Error("provider synchronization failed");
+  const cleanupError = new Error("cleanup failed");
+  vi.spyOn(compositionModule, "createRuntimeAppComposition").mockResolvedValue(composition);
+  vi.spyOn(composition, "syncEventSourceRuntime").mockRejectedValue(startupError);
+  const close = composition.close;
+  vi.spyOn(composition, "close").mockImplementation(async () => {
+    await close();
+    throw cleanupError;
+  });
+
+  const failure = await startLocalRuntime(options).catch((error: unknown) => error);
+
+  expect(failure).toBeInstanceOf(AggregateError);
+  expect(failure).toMatchObject({ cause: startupError, errors: [startupError, cleanupError] });
+});
+
 it("closes SQLite when composition fails after opening it but before returning a runtime", async () => {
   const options = await fixture(39187);
   const config = await options.configStore.readConfig();

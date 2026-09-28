@@ -7,7 +7,9 @@ export function isManagementNavigation(candidate: string, origin: string): boole
     const url = new URL(candidate);
     return url.origin === origin && !url.username && !url.password &&
       (url.pathname === "/manage" || url.pathname.startsWith("/manage/") || url.pathname === "/operator");
-  } catch { return false; }
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch { return false; }
 }
 
 export function isTrustedManagementSender(input: {

@@ -264,7 +264,9 @@ function CanvasAsset({ assetApi, assetId, kind, loop }: { readonly assetApi: Ass
       if (!active) return;
       objectUrl = URL.createObjectURL(blob);
       setUrl(objectUrl);
-    }).catch(() => {
+    }).catch(
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+    () => {
       if (active) setUrl(null);
     });
     return () => {

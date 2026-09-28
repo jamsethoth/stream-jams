@@ -102,8 +102,8 @@ export class TwitchRewardCatalogService {
       accessToken = await this.#secretStore.getSecret(
         createTwitchTokenSecretRef(account.accountId, "access_token")
       );
-    } catch {
-      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage);
+    } catch (cause) {
+      throw new TwitchOAuthProviderError(runtimeSecretStoreUnavailableMessage, { cause });
     }
     if (accessToken === null) {
       throw new TwitchRewardCatalogError(

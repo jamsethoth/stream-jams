@@ -3,6 +3,26 @@ import { alertEditorDocumentSchema, type TwitchCustomReward } from "@stream-jams
 import { createHttpManagementApi } from "./management-api.js";
 
 describe("createHttpManagementApi", () => {
+  it("reports management client exceptions through the protected diagnostics endpoint", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/auth/management/sessions") {
+        return jsonResponse({ id: "mgmt_session", csrfToken: "csrf_session" });
+      }
+      expect(String(input)).toBe("/management/diagnostics/client-errors");
+      expect(new Headers(init?.headers).get("x-stream-jams-csrf")).toBe("csrf_session");
+      const body = JSON.parse(String(init?.body)) as { readonly referenceId: string };
+      return jsonResponse({ referenceId: body.referenceId });
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.reportClientException({
+      referenceId: "err_api_1",
+      source: "window-error",
+      message: "The management interface encountered an unexpected browser error.",
+      exception: { type: "Error", message: "failed", stack: null, code: null, cause: null, thrownValue: null }
+    })).resolves.toEqual({ referenceId: "err_api_1" });
+  });
+
   it("loads and validates encoded variation sibling context URLs", async () => {
     const context = variationAuthoringContext();
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

@@ -9,6 +9,7 @@ export class WorkerAudioClient implements DesktopAudioTransport {
   constructor(private readonly generation: number, private readonly send: (message: WorkerMessage) => void) {
     this.#lease = setInterval(() => {
       try { send({ type: "audio-lease", generation, requestId: null }); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       catch { this.dispose(); }
     }, 2000);
   }
@@ -56,6 +57,7 @@ export class WorkerAudioClient implements DesktopAudioTransport {
       const timer = setTimeout(() => { this.#pending.delete(requestId); reject(unavailable()); }, timeout);
       this.#pending.set(requestId, { resolve, reject, timer });
       try { this.send({ type: "audio-request", generation: this.generation, requestId, command }); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
       catch { this.dispose(); }
     });
   }

@@ -228,7 +228,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       .then(({ rewards }) => {
         if (!cancelled) setRewardTitleContext({ setId: rewardSetId, key: rewardIdsKey, titles: new Map(rewards.map((reward) => [reward.id, reward.title])) });
       })
-      .catch(() => { if (!cancelled) setRewardTitleContext({ setId: rewardSetId, key: rewardIdsKey, titles: new Map() }); });
+      .catch(
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      () => { if (!cancelled) setRewardTitleContext({ setId: rewardSetId, key: rewardIdsKey, titles: new Map() }); });
     return () => { cancelled = true; };
   }, [managementApi, rewardIdsKey, rewardSetId]);
 

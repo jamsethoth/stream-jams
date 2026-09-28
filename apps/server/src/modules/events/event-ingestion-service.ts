@@ -42,6 +42,7 @@ export interface EventIngestionDiagnostic {
   readonly source?: string | undefined;
   readonly subscriptionType?: string | undefined;
   readonly upstreamType?: string | undefined;
+  readonly exception?: unknown;
 }
 
 export interface EventSink {
@@ -127,11 +128,12 @@ export class EventIngestionService {
       this.#rememberMessageId(eventId);
       this.#markAccepted();
       return { status: "accepted", eventId };
-    } catch {
+    } catch (error) {
       return this.#reject({
         code: "EVENT_INGESTION_FAILED",
         message: "Streamer.bot effect trigger ingestion failed",
-        ingestProvider: "streamerbot"
+        ingestProvider: "streamerbot",
+        exception: error
       });
     } finally {
       this.#inFlightMessageIds.delete(eventId);
@@ -165,6 +167,7 @@ export class EventIngestionService {
       return this.#reject({
         code: "EVENT_INGESTION_FAILED",
         message: messageText,
+        exception: error,
         ...getTwitchEventSubDiagnosticContext(message)
       });
     }
@@ -212,8 +215,13 @@ export class EventIngestionService {
       this.#rememberMessageId(normalizedEvent.id);
       this.#markAccepted();
       return { status: "accepted", event: normalizedEvent };
-    } catch {
-      return this.#reject({ code: "EVENT_INGESTION_FAILED", message: messages.failureMessage, ...diagnosticContext });
+    } catch (error) {
+      return this.#reject({
+        code: "EVENT_INGESTION_FAILED",
+        message: messages.failureMessage,
+        exception: error,
+        ...diagnosticContext
+      });
     } finally {
       this.#inFlightMessageIds.delete(normalizedEvent.id);
     }
@@ -249,8 +257,14 @@ export class EventIngestionService {
     };
     try {
       await this.#onDiagnostic({ ...diagnostic, referenceId });
-    } catch {
+    } catch (loggingError) {
       this.#status = { ...this.#status, message: "Event ingestion diagnostics logging failed" };
+      throw new AggregateError(
+        diagnostic.exception === undefined ? [loggingError] : [diagnostic.exception, loggingError],
+        "Event ingestion and diagnostic logging failed",
+        // eslint-disable-next-line preserve-caught-error -- the original diagnostic exception stays primary when present; logger failure remains secondary
+        { cause: diagnostic.exception ?? loggingError }
+      );
     }
     return { status: "rejected", message, referenceId };
   }

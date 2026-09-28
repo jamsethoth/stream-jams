@@ -384,10 +384,11 @@ describe("TwitchEventSubClient", () => {
       message: "Twitch EventSub WebSocket error",
       referenceId: "ref-1"
     });
-    expect(harness.diagnostics).toEqual([{
+    expect(harness.diagnostics).toEqual([expect.objectContaining({
       message: "Twitch EventSub WebSocket error",
-      referenceId: "ref-1"
-    }]);
+      referenceId: "ref-1",
+      exception: expect.any(Error)
+    })]);
   });
 
   it("keeps subscription setup failures active across otherwise healthy messages", async () => {
@@ -424,7 +425,8 @@ describe("TwitchEventSubClient", () => {
         authorizationFailures += 1;
       }
     });
-    harness.apiClient.subscriptionFailure = new TwitchEventSubApiError(401);
+    const authorizationError = new TwitchEventSubApiError(401);
+    harness.apiClient.subscriptionFailure = authorizationError;
     harness.apiClient.failSubscriptionType = "channel.subscribe";
     harness.client.connect(connectionInput());
 
@@ -445,7 +447,8 @@ describe("TwitchEventSubClient", () => {
     expect(harness.scheduled).toEqual([]);
     expect(harness.diagnostics).toEqual([{
       message: "Twitch EventSub subscription setup failed (Twitch API returned HTTP 401)",
-      referenceId: "ref-1"
+      referenceId: "ref-1",
+      exception: authorizationError
     }]);
   });
 

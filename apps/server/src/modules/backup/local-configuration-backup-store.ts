@@ -34,7 +34,15 @@ export class LocalConfigurationBackupStore {
       return destination;
     } catch (error) {
       if (temporaryCreated) {
-        await rm(temporary, { force: true }).catch(() => undefined);
+        try { await rm(temporary, { force: true }); }
+        catch (cleanupError) {
+          throw new AggregateError(
+            [error, cleanupError],
+            "Backup write and temporary-file cleanup failed",
+            // eslint-disable-next-line preserve-caught-error -- the outer write failure stays primary; cleanup remains secondary in errors
+            { cause: error }
+          );
+        }
       }
       throw error;
     }

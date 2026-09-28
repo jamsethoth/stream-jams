@@ -33,9 +33,9 @@ export class StartupPortInUseError extends Error {
     readonly host: "127.0.0.1",
     readonly port: number,
     readonly suggestedPorts: readonly number[],
-    readonly cause: unknown
+    options?: ErrorOptions
   ) {
-    super(`Port ${port} is already in use on ${host}`);
+    super(`Port ${port} is already in use on ${host}`, options);
   }
 }
 
@@ -63,7 +63,7 @@ export async function startServer(options: StartServerOptions): Promise<StartSer
         config.server.host,
         config.server.port,
         await options.suggestPorts(config.server.host, config.server.port),
-        error
+        { cause: error }
       )
     };
   }

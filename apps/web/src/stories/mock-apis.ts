@@ -16,6 +16,7 @@ import {
 
 export function createStoryManagementApi(overrides: Partial<ManagementApi> = {}): ManagementApi {
   const api = {
+    async reportClientException(input) { return { referenceId: input.referenceId }; },
     async getHomeSetupSummary() {
       return { readiness: [], activeAlertSet: null, alertConfiguration: { state: "no-active-set", enabledAlertCount: 0, items: [] }, actionableProblems: [] };
     },

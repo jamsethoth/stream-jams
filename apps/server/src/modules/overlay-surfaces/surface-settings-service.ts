@@ -4,7 +4,7 @@ import { desktopOverlayStatusSchema, findExactUniqueLabelMatch, surfaceConfigura
   type DesktopOverlayTransport, type Logger, type SurfaceConfiguration, type SurfaceRepository, type SurfaceSettingsView } from "@stream-jams/core";
 
 export class SurfaceSettingsError extends Error {
-  constructor(readonly statusCode: number, readonly code: string, message: string) { super(message); }
+  constructor(readonly statusCode: number, readonly code: string, message: string, options?: ErrorOptions) { super(message, options); }
 }
 
 export interface SurfaceSettingsServiceDependencies {
@@ -27,7 +27,12 @@ export class SurfaceSettingsService {
   async load(): Promise<SurfaceSettingsView> {
     if (!this.#saving) {
       try { await this.#mutate(() => this.#reconcileDesktopBinding(true)); }
-      catch { /* A settings refresh remains read-only when recovery cannot be persisted or applied. */ }
+      catch (error) {
+        await this.#log("warn", "Desktop overlay automatic binding refresh failed.", "desktop-overlay.binding.refresh-failed", {
+          ...errorMetadata(error),
+          nextStep: "Open Settings and explicitly retry the desktop overlay."
+        }, error);
+      }
     }
     return this.#view();
   }
@@ -51,9 +56,15 @@ export class SurfaceSettingsService {
       const config = parsed.data.kind === "desktop"
         ? await this.#trustedDesktopConfiguration(parsed.data, current)
         : surfaceConfigurationSchema.parse(parsed.data);
-      try { validateSurfaceOrder(config.layers, this.dependencies.moduleIds()); } catch { throw invalid(); }
+      try { validateSurfaceOrder(config.layers, this.dependencies.moduleIds()); } catch (cause) { throw invalid(cause); }
       try { await this.dependencies.surfaces.save(config); }
-      catch { throw new SurfaceSettingsError(500, "SURFACE_SAVE_FAILED", "Overlay settings could not be saved. Check data-folder permissions and retry; the running overlay was not changed."); }
+      catch (cause) {
+        await this.#log("error", "Overlay settings could not be saved.", "overlay-surfaces.save.failed", {
+          ...errorMetadata(cause),
+          surfaceId
+        }, cause);
+        throw new SurfaceSettingsError(500, "SURFACE_SAVE_FAILED", "Overlay settings could not be saved. Check data-folder permissions and retry; the running overlay was not changed.", { cause });
+      }
       try {
         if (config.kind === "desktop") await this.dependencies.host?.configure(config);
         await this.dependencies.changed(config);
@@ -61,8 +72,12 @@ export class SurfaceSettingsService {
           this.#applicationFailure = null;
           this.#desktopBindingState = "not-needed";
         }
-      } catch {
-        if (config.kind === "unified-browser") throw new SurfaceSettingsError(503, "SURFACE_APPLY_FAILED", "Settings were saved, but browser outputs could not be updated. Refresh the browser source or save the layer settings again.");
+      } catch (cause) {
+        await this.#log("error", "Saved overlay settings could not be applied.", "overlay-surfaces.apply.failed", {
+          ...errorMetadata(cause),
+          surfaceId
+        }, cause);
+        if (config.kind === "unified-browser") throw new SurfaceSettingsError(503, "SURFACE_APPLY_FAILED", "Settings were saved, but browser outputs could not be updated. Refresh the browser source or save the layer settings again.", { cause });
         this.#applicationFailure = "Settings were saved, but the overlay could not apply them. Check the display and explicitly retry the desktop overlay.";
       }
       return this.#view();
@@ -106,7 +121,7 @@ export class SurfaceSettingsService {
           ...errorMetadata(error),
           selectedDisplayAvailable: status.displays.some(display => display.id === config.displayId),
           nextStep: "Check the selected display and retry. Interrupted content will not replay."
-        });
+        }, error);
       }
       return this.#view();
     });
@@ -140,7 +155,7 @@ export class SurfaceSettingsService {
         "desktop-overlay.displays.detection-failed", {
           ...errorMetadata(error),
           nextStep: "Restart the Windows desktop app and retry display detection."
-        });
+        }, error);
       return { available: false, displays: [], state: "unavailable", message: "The desktop host is unavailable. Restart the Windows app and retry." };
     }
   }
@@ -207,28 +222,32 @@ export class SurfaceSettingsService {
     signature: string,
     message: string,
     source: string,
-    metadata: Record<string, string | number | boolean | null>
+    metadata: Record<string, string | number | boolean | null>,
+    exception?: unknown
   ): Promise<void> {
     if (this.#lastDesktopDiagnosticSignature === signature) return;
     this.#lastDesktopDiagnosticSignature = signature;
-    await this.#log("warn", message, source, metadata);
+    await this.#log("warn", message, source, metadata, exception);
   }
 
   async #log(
     level: "info" | "warn" | "error",
     message: string,
     source: string,
-    metadata: Record<string, string | number | boolean | null>
+    metadata: Record<string, string | number | boolean | null>,
+    exception?: unknown
   ): Promise<void> {
     const logger = this.dependencies.logger;
     if (logger === undefined) return;
-    await logger[level](message, {
+    const context = {
       module: "overlay-surfaces",
       source,
       correlationId: (this.dependencies.generateReferenceId ?? randomUUID)(),
       processingId: null,
       metadata
-    }).catch(() => undefined);
+    };
+    if (level === "error" || exception !== undefined) await logger.error(message, context, exception);
+    else await logger[level](message, context);
   }
 }
 
@@ -242,4 +261,11 @@ function errorSummary(error: unknown): string {
   const details = errorMetadata(error);
   return `${details.errorName}:${details.errorMessage}`;
 }
-function invalid(): SurfaceSettingsError { return new SurfaceSettingsError(400, "INVALID_SURFACE_SETTINGS", "Overlay settings are invalid. Refresh the registered module list and select a valid display, opacity and complete layer order."); }
+function invalid(cause?: unknown): SurfaceSettingsError {
+  return new SurfaceSettingsError(
+    400,
+    "INVALID_SURFACE_SETTINGS",
+    "Overlay settings are invalid. Refresh the registered module list and select a valid display, opacity and complete layer order.",
+    cause === undefined ? undefined : { cause }
+  );
+}

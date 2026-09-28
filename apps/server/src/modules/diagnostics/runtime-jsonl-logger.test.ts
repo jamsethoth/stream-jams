@@ -1,8 +1,8 @@
 import { mkdtemp, readdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { defaultLogSettings, type LogContext } from "@stream-jams/core";
-import { afterEach, describe, expect, it } from "vitest";
+import { defaultLogSettings, type LogContext, type Redactor } from "@stream-jams/core";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRedactor } from "../security/redactor.js";
 import { RuntimeJsonlLogger } from "./runtime-jsonl-logger.js";
 
@@ -59,6 +59,7 @@ describe("RuntimeJsonlLogger", () => {
       message: "Provider failed with Authorization: Bearer [REDACTED] for [REDACTED]",
       correlationId: "corr_123",
       processingId: "proc_456",
+      exception: null,
       details: {
         outcome: "failed",
         statusCode: 502,
@@ -72,6 +73,130 @@ describe("RuntimeJsonlLogger", () => {
     expect(JSON.stringify(entries)).not.toContain("nested");
     expect(metadata).toEqual(metadataBeforeLogging);
   });
+
+  it("writes a redacted structured exception with code and nested cause", async () => {
+    const logDirectory = await createTemporaryDirectory();
+    const logger = new RuntimeJsonlLogger({
+      logDirectory,
+      settings: defaultLogSettings,
+      redactor: createRedactor(),
+      now: () => new Date("2026-05-31T02:15:30.000Z")
+    });
+    const cause = new Error("Inner failed with Bearer oauth-secret");
+    const failure = Object.assign(new Error("Overlay ovl_secretKey failed", { cause }), { code: "E_PLAYBACK" });
+
+    await logger.error("Playback failed", baseContext, failure);
+
+    const entries = await readJsonl(join(logDirectory, "runtime-2026053102.jsonl"));
+    expect(entries[0]).toMatchObject({
+      level: "ERROR",
+      correlationId: "corr_123",
+      exception: {
+        type: "Error",
+        message: "Overlay [REDACTED] failed",
+        code: "E_PLAYBACK",
+        thrownValue: null,
+        cause: {
+          type: "Error",
+          message: "Inner failed with Bearer [REDACTED]",
+          cause: null
+        }
+      }
+    });
+    expect(JSON.stringify(entries)).not.toContain("oauth-secret");
+    expect(JSON.stringify(entries)).not.toContain("ovl_secretKey");
+  });
+
+  it("persists the primary cause and bounded secondary failures from AggregateError", async () => {
+    const logDirectory = await createTemporaryDirectory();
+    const logger = new RuntimeJsonlLogger({
+      logDirectory,
+      settings: defaultLogSettings,
+      redactor: createRedactor(),
+      now: () => new Date("2026-05-31T02:15:30.000Z")
+    });
+    const primary = new Error("Import failed for token=oauth-secret");
+    const cleanup = new Error("Rollback failed for password=hunter2");
+
+    await logger.error(
+      "Import and rollback failed",
+      baseContext,
+      new AggregateError([cleanup], "Import and rollback failed", { cause: primary })
+    );
+
+    const entries = await readJsonl(join(logDirectory, "runtime-2026053102.jsonl"));
+    expect(entries[0]).toMatchObject({
+      exception: {
+        type: "AggregateError",
+        cause: { message: "Import failed for token=[REDACTED]" },
+        secondary: [{ message: "Rollback failed for password=[REDACTED]" }]
+      }
+    });
+    expect(JSON.stringify(entries)).not.toContain("oauth-secret");
+    expect(JSON.stringify(entries)).not.toContain("hunter2");
+  });
+
+  it("normalizes historical JSONL entries without an exception field", async () => {
+    const logDirectory = await createTemporaryDirectory();
+    await writeFile(join(logDirectory, "runtime-2026053102.jsonl"), `${JSON.stringify({
+      timestamp: "2026-05-31T02:15:30.000Z",
+      level: "ERROR",
+      event: "legacy.failure",
+      component: "runtime",
+      message: "Legacy failure",
+      correlationId: "err_legacy",
+      processingId: null
+    })}\n`, "utf8");
+    const logger = new RuntimeJsonlLogger({
+      logDirectory,
+      settings: defaultLogSettings,
+      redactor: createRedactor(),
+      now: () => new Date("2026-05-31T02:15:30.000Z")
+    });
+
+    const result = await logger.listRecent({ limit: 1 });
+
+    expect(result.entries[0]).toMatchObject({ message: "Legacy failure", exception: null });
+  });
+
+  it.each(["serialize", "redact", "mkdir", "append", "retention"] as const)(
+    "uses emergency logging when %s fails without rejecting the logger call",
+    async (failureStage) => {
+      const emergencyWriter = { write: vi.fn() };
+      const stageFailure = new Error(`${failureStage} failed`);
+      const fileSystem = {
+        mkdir: vi.fn(async () => { if (failureStage === "mkdir") throw stageFailure; }),
+        appendFile: vi.fn(async () => { if (failureStage === "append") throw stageFailure; }),
+        readdir: vi.fn(async () => [] as string[]),
+        readFile: vi.fn(async () => "")
+      };
+      const redactor = failureStage === "redact"
+        ? { redact() { throw stageFailure; }, redactText(value: string) { return value; } } satisfies Redactor
+        : createRedactor();
+      const logger = new RuntimeJsonlLogger({
+        logDirectory: "C:/logs",
+        settings: defaultLogSettings,
+        redactor,
+        emergencyWriter,
+        fileSystem,
+        retentionService: { async cleanupExpiredLogs() {
+          if (failureStage === "retention") throw stageFailure;
+          return { deletedFilePaths: [], retainedFilePaths: [] };
+        } },
+        serialize: failureStage === "serialize" ? () => { throw stageFailure; } : undefined,
+        now: () => new Date("2026-05-31T02:15:30.000Z")
+      });
+      const original = new Error("original operation failed");
+
+      await expect(logger.error("Operation failed", baseContext, original)).resolves.toBeUndefined();
+
+      expect(emergencyWriter.write).toHaveBeenCalledWith(expect.objectContaining({
+        referenceId: "corr_123",
+        originalException: original,
+        loggerException: stageFailure
+      }));
+    }
+  );
 
   it("rolls over hourly, exposes metadata, reads bounded recent entries, and applies default retention", async () => {
     const logDirectory = await createTemporaryDirectory();
@@ -108,6 +233,7 @@ describe("RuntimeJsonlLogger", () => {
     });
     expect(recent.entries).toHaveLength(1);
     expect(recent.entries[0]?.message).toBe("after rollover");
+    expect(recent.entries[0]?.exception).toBeNull();
     expect(recent.truncated).toBe(true);
   });
 });

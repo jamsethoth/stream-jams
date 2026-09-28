@@ -4,6 +4,8 @@ const defaultReplacement = "[REDACTED]";
 const overlayKeyPattern = /ovl_[A-Za-z0-9_-]+/g;
 const authorizationValuePattern = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const standaloneApiKeyPattern = /\bsk-[A-Za-z0-9_-]+\b/g;
+const authorizationAssignmentPattern = /\b(authorization)\s*([:=])\s*(?!(?:Bearer|Basic)\b)[^\s,;&]+/gi;
+const credentialAssignmentPattern = /\b(credentials?|password|passwd|token|access[-_ ]?token|refresh[-_ ]?token|secret|client[-_ ]?secret|api[-_ ]?key)\s*[:=]\s*(?:bearer\s+)?[^\s,;&]+/gi;
 const sensitiveNamePatterns = [
   /authorization/i,
   /proxy[-_]?authorization/i,
@@ -70,10 +72,12 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
 
   function redactText(value: string): string {
     return redactOverlayKeys(
-      redactUrls(value.replace(authorizationValuePattern, (_match, scheme: string) => `${scheme} ${replacement}`).replace(
+      redactUrls(normalizeControlCharacters(value).replace(authorizationValuePattern, (_match, scheme: string) => `${scheme} ${replacement}`).replace(
         standaloneApiKeyPattern,
         replacement
-      ))
+      )
+        .replace(authorizationAssignmentPattern, (_match, name: string, separator: string) => `${name}${separator}${replacement}`)
+        .replace(credentialAssignmentPattern, (_match, name: string) => `${name}=${replacement}`))
     );
   }
 
@@ -83,15 +87,17 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   };
 
   function redactUrls(value: string): string {
-    return value.replace(/https?:\/\/[^\s"'<>]+/g, (candidate) => redactUrl(candidate));
+    return value.replace(/https?:\/\/[^\s"'<>]+|\/(?:[^\s"'<>?]*)(?:\?[^\s"'<>]*)/g, (candidate) => redactUrl(candidate));
   }
 
   function redactUrl(value: string): string {
     let url: URL;
 
     try {
-      url = new URL(value);
-    } catch {
+      url = new URL(value, "http://stream-jams.local");
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       return value;
     }
 
@@ -103,12 +109,18 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
       }
     }
 
-    return changed ? url.toString() : value;
+    if (!changed) return value;
+    return /^https?:\/\//i.test(value) ? url.toString() : `${url.pathname}${url.search}${url.hash}`;
   }
 
   function redactOverlayKeys(value: string): string {
     return value.replace(overlayKeyPattern, replacement);
   }
+}
+
+function normalizeControlCharacters(value: string): string {
+  // eslint-disable-next-line no-control-regex -- logs must not retain control bytes
+  return value.replace(/[\u0000-\u001F\u007F]/g, " ");
 }
 
 function isSensitiveName(name: string, configuredSecretNames: ReadonlySet<string>): boolean {

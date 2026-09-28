@@ -100,7 +100,9 @@ export class DefaultMediaImportPipeline implements MediaImportPipeline {
           sizeBytes: accepted.bytes.byteLength,
           bytes: accepted.bytes
         })).durationMs;
-      } catch {
+      }
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      catch {
         durationMs = null;
       }
     }

@@ -16,7 +16,10 @@ export default tseslint.config(
     }
   },
   {
-    files: ["**/*.{ts,tsx}"],
+    files: ["**/*.{ts,tsx,cts}"],
+    rules: {
+      "@typescript-eslint/use-unknown-in-catch-callback-variable": "error"
+    },
     languageOptions: {
       parserOptions: {
         projectService: {

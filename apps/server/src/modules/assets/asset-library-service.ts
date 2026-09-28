@@ -64,8 +64,8 @@ export class AssetLibraryNotFoundError extends Error {
 }
 
 export class AssetLibraryInUseError extends Error {
-  constructor(readonly impact: AssetChangeImpact) {
-    super(`Asset "${impact.assetId}" is used by ${impact.owners.length} saved playback contexts`);
+  constructor(readonly impact: AssetChangeImpact, options?: ErrorOptions) {
+    super(`Asset "${impact.assetId}" is used by ${impact.owners.length} saved playback contexts`, options);
     this.name = "AssetLibraryInUseError";
   }
 }
@@ -184,7 +184,7 @@ export class AssetLibraryService {
       }
       if (isForeignKeyConstraintError(error)) {
         const currentImpact = await this.getChangeImpact(assetId);
-        if (!currentImpact.canDelete) throw new AssetLibraryInUseError(currentImpact);
+        if (!currentImpact.canDelete) throw new AssetLibraryInUseError(currentImpact, { cause: error });
       }
       throw error;
     }
@@ -223,7 +223,9 @@ export class AssetLibraryService {
         const updated = await this.#options.assetRepository.save({ ...record, durationMs: result.durationMs });
         this.#options.durationCatalog?.store(updated);
       }
-    } catch {
+    }
+    // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+    catch {
       // A valid legacy asset remains usable; automatic timing displays its documented fallback.
     }
     return this.getItem(assetId);

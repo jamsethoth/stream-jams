@@ -1,4 +1,5 @@
 import { isExplicitAudioOutputDeviceId } from "./audio-player-policy.js";
+import { serializeException } from "@stream-jams/core";
 import { DeviceAudioPlayer, type PlayerMediaElement } from "./device-audio-player.js";
 import { audioRendererRequestSchema, type AudioRendererReply, type AudioRendererRequest } from "./audio-ipc.js";
 
@@ -40,9 +41,15 @@ const player = new DeviceAudioPlayer({
     return {
       setGain(value: number) { gain.gain.value = Math.max(0, Math.min(2, value)); },
       dispose() {
-        try { source.disconnect(); } catch { /* Continue releasing the graph. */ }
-        try { gain.disconnect(); } catch { /* Continue releasing the graph. */ }
-        void context.close().catch(() => {});
+        try { source.disconnect(); }
+        // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+        catch { /* Continue releasing the graph. */ }
+        try { gain.disconnect(); }
+        // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+        catch { /* Continue releasing the graph. */ }
+        void context.close().catch(
+        // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+        () => {});
       }
     };
   },
@@ -61,7 +68,7 @@ bridge?.onCommand(candidate => {
     generation = request.generation;
     player.initialize(generation, request.command.muted);
   } else if (request.generation !== generation) return;
-  const reply = (result: AudioRendererReply["result"]) => bridge.report({ generation: request.generation, requestId: request.requestId, result });
+  const reply = (result: AudioRendererReply["result"], exception?: AudioRendererReply["exception"]) => bridge.report({ generation: request.generation, requestId: request.requestId, result, ...(exception === undefined ? {} : { exception }) });
   void (async () => {
     switch (request.command.type) {
       case "enumerate": reply({ type: "devices", devices: await listOutputDevices() }); break;
@@ -70,7 +77,7 @@ bridge?.onCommand(candidate => {
       case "set-muted": player.setMuted(request.command.muted); reply({ type: "ok" }); break;
       case "initialize": reply({ type: "ok" }); break;
     }
-  })().catch(() => { player.close(); reply(null); });
+  })().catch((error: unknown) => { player.close(); reply(null, serializeException(error)); });
 });
 navigator.mediaDevices.addEventListener("devicechange", () => { void player.reconcileDevices(); });
 window.addEventListener("pagehide", () => player.close());

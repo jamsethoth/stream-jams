@@ -64,7 +64,7 @@ test("packaged native overlay policy and neutral 1080p/1440p media probe", async
   const launchLogPath = testInfo.outputPath("overlay-launch.log");
   env.STREAM_JAMS_PROBE_LAUNCH_LOG = launchLogPath;
   const attachLaunchLog = async () => {
-    const body = await readFile(launchLogPath, "utf8").catch(error => `Launch log unavailable: ${String(error)}`);
+    const body = await readFile(launchLogPath, "utf8").catch((error: unknown) => `Launch log unavailable: ${String(error)}`);
     await testInfo.attach("overlay-launch", { body, contentType: "text/plain" });
     return body;
   };

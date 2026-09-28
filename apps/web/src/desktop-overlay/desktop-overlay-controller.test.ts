@@ -93,10 +93,17 @@ it("bounds preparation to five seconds and retains canceled reservations until t
   send({ type: "retry" }); send({ type: "prepare", batch: long("overflow") }); expect(prepareAsset).toHaveBeenCalledTimes(64);
   expect(report.mock.lastCall?.[0].result.type).toBe("error"); controller.dispose(); expect(vi.getTimerCount()).toBe(0);
 });
-it("isolates a failed preparation while other modules continue", async () => {
-  const { controller, send, configure, prepareAsset } = harness(); configure();
+it("isolates a failed preparation while preserving its exception transport", async () => {
+  const { controller, send, configure, prepareAsset, report } = harness(); configure();
   send({ type: "prepare", batch: batch() }); await vi.advanceTimersByTimeAsync(1000); send({ type: "start", key: batch().key });
-  prepareAsset.mockRejectedValueOnce(new Error("broken media")); send({ type: "prepare", batch: batch("other", true) }); await vi.advanceTimersByTimeAsync(0);
+  prepareAsset.mockRejectedValueOnce(new Error("broken media", { cause: new Error("decode failed") }));
+  const failed = send({ type: "prepare", batch: batch("other", true) });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(report).toHaveBeenCalledWith(expect.objectContaining({
+    requestId: failed.requestId,
+    result: { type: "error", key: batch("other").key },
+    failure: expect.objectContaining({ stage: "source-load", exception: expect.objectContaining({ message: "broken media", cause: expect.objectContaining({ message: "decode failed" }) }) })
+  }));
   expect(controller.getSnapshot().occurrences.map(occurrence => occurrence.key.moduleId)).toEqual(["alerts"]); controller.dispose();
 });
 it("reports rendering failure through the original start and disposes only the affected occurrence", async () => {

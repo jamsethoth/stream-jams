@@ -65,7 +65,9 @@ export async function readHttpErrorDetails(response: Response, fallback: string)
         })
       : [];
     return { message, code, referenceId, nextStep, owners, references };
-  } catch {
+  }
+  // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+  catch {
     return { message: fallback, code: null, referenceId: null, nextStep: null, owners: [], references: [] };
   }
 }

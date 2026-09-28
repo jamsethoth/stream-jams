@@ -27,12 +27,22 @@ export function createMediaGainController(element: HTMLMediaElement, createConte
       source = nextSource;
       gainNode = nextGainNode;
       element.volume = 1;
-      void context.resume().catch(() => {});
-    } catch {
+      void context.resume().catch(
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      () => {});
+    }
+    // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+    catch {
       amplificationUnavailable = true;
-      try { nextSource?.disconnect(); } catch { /* Continue releasing the partial graph. */ }
-      try { nextGainNode?.disconnect(); } catch { /* Continue releasing the partial graph. */ }
-      void nextContext?.close().catch(() => {});
+      try { nextSource?.disconnect(); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch { /* Continue releasing the partial graph. */ }
+      try { nextGainNode?.disconnect(); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch { /* Continue releasing the partial graph. */ }
+      void nextContext?.close().catch(
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      () => {});
     }
   };
 
@@ -46,9 +56,15 @@ export function createMediaGainController(element: HTMLMediaElement, createConte
     dispose() {
       if (disposed) return;
       disposed = true;
-      try { source?.disconnect(); } catch { /* Continue releasing the graph. */ }
-      try { gainNode?.disconnect(); } catch { /* Continue releasing the graph. */ }
-      void context?.close().catch(() => {});
+      try { source?.disconnect(); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch { /* Continue releasing the graph. */ }
+      try { gainNode?.disconnect(); }
+      // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
+      catch { /* Continue releasing the graph. */ }
+      void context?.close().catch(
+      // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
+      () => {});
       source = null; gainNode = null; context = null;
     }
   };

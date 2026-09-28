@@ -52,6 +52,10 @@ describe("createRedactor", () => {
         "Authorization: Bearer oauth-token-value; overlay=http://127.0.0.1:39187/overlay/unified/test/ovl_testSecretValue"
       )
     ).toBe("Authorization: Bearer [REDACTED]; overlay=http://127.0.0.1:39187/overlay/unified/test/[REDACTED]");
+    expect(redactor.redactText("password=hunter2 token: oauth-secret client_secret=value"))
+      .toBe("password=[REDACTED] token=[REDACTED] client_secret=[REDACTED]");
+    expect(redactor.redactText("authorization=opaque-secret credential: first credentials=second"))
+      .toBe("authorization=[REDACTED] credential=[REDACTED] credentials=[REDACTED]");
   });
 
   it("redacts generated-style overlay route keys from module and unified URLs", () => {
@@ -64,5 +68,31 @@ describe("createRedactor", () => {
     ).toBe(
       "module=http://127.0.0.1:39187/overlay/modules/alerts/live/[REDACTED] unified=http://127.0.0.1:39187/overlay/unified/test/[REDACTED]"
     );
+  });
+
+  it("redacts sensitive query values from relative request URLs", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redactText("GET /manage?token=secret-value&view=raw")).toBe(
+      "GET /manage?token=%5BREDACTED%5D&view=raw"
+    );
+  });
+
+  it("normalizes control characters across nested exception text", () => {
+    const redactor = createRedactor();
+
+    expect(redactor.redact({
+      exception: {
+        message: "first\r\nsecond\u0000third",
+        stack: "Error: failed\n    at file.ts:1:1",
+        cause: { message: "Bearer oauth-secret\u007fhidden" }
+      }
+    })).toEqual({
+      exception: {
+        message: "first  second third",
+        stack: "Error: failed     at file.ts:1:1",
+        cause: { message: "Bearer [REDACTED] hidden" }
+      }
+    });
   });
 });

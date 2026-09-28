@@ -23,8 +23,8 @@ export function registerSurfaceSettingsRoutes(app: FastifyInstance, dependencies
 async function request<T>(work: () => Promise<T>): Promise<T> {
   try { return await work(); }
   catch (error) {
-    if (error instanceof SurfaceSettingsError) throw new HttpResponseError(error.statusCode, error.code, error.message);
-    if (error instanceof RuntimeMaintenanceUnavailableError) throw new HttpResponseError(409, "SURFACE_MAINTENANCE_ACTIVE", "Overlay changes are unavailable during maintenance or shutdown. Wait for maintenance to finish or restart the app.");
+    if (error instanceof SurfaceSettingsError) throw new HttpResponseError(error.statusCode, error.code, error.message, { cause: error });
+    if (error instanceof RuntimeMaintenanceUnavailableError) throw new HttpResponseError(409, "SURFACE_MAINTENANCE_ACTIVE", "Overlay changes are unavailable during maintenance or shutdown. Wait for maintenance to finish or restart the app.", { cause: error });
     throw error;
   }
 }
