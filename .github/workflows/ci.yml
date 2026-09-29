@@ -155,13 +155,12 @@ jobs:
             test-results/
           retention-days: 7
 
-  desktop:
-    name: windows-desktop
-    # Manual-only until the hosted Windows shutdown flake is understood.
-    # Preserve packaging, desktop tests, and verified artifacts for explicit runs.
-    if: github.event_name == 'workflow_dispatch'
+  desktop-package:
+    name: windows-desktop-package
     runs-on: windows-2025
     timeout-minutes: 30
+    outputs:
+      artifact-name: ${{ steps.portable-desktop-metadata.outputs.artifact-name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -177,16 +176,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Package unsigned Windows folder
         run: pnpm desktop:package
-      - name: Verify isolated packaged runtime
-        run: pnpm test:desktop
-        env:
-          CI: true
       - name: Prepare portable desktop artifact
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         id: portable-desktop-metadata
         run: node scripts/portable-desktop-artifact.mjs prepare
-      - name: Upload verified portable desktop artifact
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      - name: Upload built portable desktop artifact (not desktop-test-verified)
         id: portable-desktop-artifact
         uses: actions/upload-artifact@v7
         with:
@@ -196,12 +189,43 @@ jobs:
           retention-days: 30
           include-hidden-files: false
       - name: Record portable desktop artifact
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           STREAM_JAMS_PORTABLE_ARTIFACT_NAME: ${{ steps.portable-desktop-metadata.outputs.artifact-name }}
           STREAM_JAMS_PORTABLE_ARTIFACT_URL: ${{ steps.portable-desktop-artifact.outputs.artifact-url }}
           STREAM_JAMS_PORTABLE_ARTIFACT_DIGEST: ${{ steps.portable-desktop-artifact.outputs.artifact-digest }}
         run: node scripts/portable-desktop-artifact.mjs summarize
+
+  desktop:
+    name: windows-desktop
+    # Tests remain manual-only; their result cannot prevent package publication.
+    if: github.event_name == 'workflow_dispatch'
+    needs: desktop-package
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.2.2 --activate
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build test dependencies
+        run: pnpm build
+      - name: Download the published package
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.desktop-package.outputs.artifact-name }}
+          path: apps/desktop/out/Stream Jams-win32-x64/
+      - name: Verify isolated packaged runtime
+        run: pnpm test:desktop
+        env:
+          CI: true
       - name: Upload desktop failure evidence
         if: failure()
         uses: actions/upload-artifact@v7

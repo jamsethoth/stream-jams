@@ -17,12 +17,12 @@ For fast frontend iteration, use `corepack pnpm dev`. That path may run Vite for
 
 The approved desktop follow-on adds a Windows x64 Electron host around the same local runtime. Build its unsigned runnable folder with `corepack pnpm desktop:package`, then launch `apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe`. Keep the entire folder together; the executable depends on its sibling resources. This is not an installer or a signed release. Windows may warn about an unsigned application.
 
-### Download a verified portable CI artifact
+### Download a portable CI build
 
-The `windows-desktop` job is currently manual-only while hosted Windows shutdown flakiness is investigated: automatic PR and `main` push CI skip it. Explicitly dispatched successful CI runs publish the exact Windows x64 folder exercised by `pnpm test:desktop`; failed or cancelled desktop jobs never publish runnable artifacts. The tests and local `pnpm test:desktop` command remain available. The artifact is an authenticated, short-lived convenience build rather than an installer or permanent release.
+The automatic `windows-desktop-package` job publishes a Windows x64 folder after successful packaging for pull requests, `main` pushes, and manual CI runs. Artifacts include `untested` in their names and a `BUILD-STATUS.txt` notice: they are built but not desktop-test-verified. Failed or cancelled packaging jobs do not publish runnable artifacts. The separate `windows-desktop` test job remains manual-only while shutdown flakiness is investigated; it downloads and tests the exact published package without gating artifact availability. Local `pnpm test:desktop` remains available. The artifact is an authenticated, short-lived convenience build rather than an installer or permanent release.
 
-1. In GitHub, open **Actions → CI → Run workflow**, select the intended ref, and wait for a successful run. Only an artifact whose ref is `main` represents current `main`; a manually dispatched run can target another ref.
-2. Open the `windows-desktop` job summary. Confirm the artifact name contains `stream-jams-windows-x64`, the intended ref, and the full commit SHA.
+1. In GitHub, open **Actions → CI** and select the intended run with a successful `windows-desktop-package` job. Only a build whose ref is `main` represents `main`; PR builds use GitHub's synthetic merge ref and commit. To request desktop tests as well, use **Run workflow** on the intended ref.
+2. Open the `windows-desktop-package` job summary. Confirm the artifact name contains `stream-jams-windows-x64-untested`, the intended ref, and the full commit SHA. Check the separate `windows-desktop` result if you need runtime-test evidence; the artifact alone is not proof of passing desktop tests.
 3. Download the linked authenticated artifact before its 30-day retention expires. Compare the downloaded ZIP's SHA-256 from `Get-FileHash -Algorithm SHA256 <downloaded-zip>` with the digest in the job summary.
 4. Quit any running Stream Jams instance through the tray and wait for it to exit. Extract every file into a new application folder; do not launch `Stream Jams.exe` from inside the ZIP or copy the executable without its sibling files.
 5. Launch `Stream Jams.exe` from the extracted folder. After confirming the new build opens, replace or remove the previous application folder as desired.
