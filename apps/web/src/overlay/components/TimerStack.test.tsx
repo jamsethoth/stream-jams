@@ -52,6 +52,7 @@ describe("TimerStack", () => {
       "title", "Paused timer with a very long label that must truncate"
     );
     expect(screen.getByText("+2 more")).toHaveClass("timer-stack__overflow");
+    expect(screen.getByText("+2 more")).toHaveStyle({ left: "100px", top: "420px" });
     expect(cards).toHaveLength(3);
   });
 
@@ -70,6 +71,7 @@ describe("TimerStack", () => {
     render(<TimerStack stack={horizontal} resolveAssetUrl={() => ""} />);
     expect(screen.getByTestId("timer-value-hours")).toHaveTextContent("1:01:01");
     expect(screen.getByRole("list")).toHaveAttribute("data-orientation", "horizontal");
+    expect(screen.queryByText(/more$/u)).toBeNull();
   });
 
   it("hides only an icon that fails to load", () => {

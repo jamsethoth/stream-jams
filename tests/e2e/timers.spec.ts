@@ -83,6 +83,21 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await expect(timerPreview.getByRole("img", { name: "Default timer icon" }).first()).toBeVisible();
   await expect(timerPreview.getByText("+2 more")).toBeVisible();
   expect(await timerPreview.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(420);
+  const previewCards = timerPreview.getByRole("listitem");
+  const iconWidths = await timerPreview.getByRole("img").evaluateAll(elements => elements.map(element => element.getBoundingClientRect().width));
+  expect(iconWidths.every(width => width > 10)).toBe(true);
+  const verticalPlacement = await Promise.all([
+    previewCards.last().evaluate(element => element.getBoundingClientRect().bottom),
+    timerPreview.getByText("+2 more").evaluate(element => element.getBoundingClientRect().top)
+  ]);
+  expect(verticalPlacement[1]).toBeGreaterThanOrEqual(verticalPlacement[0]);
+  const centerOffset = await previewCards.first().evaluate(element => {
+    const card = element.getBoundingClientRect();
+    const label = element.querySelector(".timer-stack__label")!.getBoundingClientRect();
+    return Math.abs((card.top + card.height / 2) - (label.top + label.height / 2));
+  });
+  expect(centerOffset).toBeLessThanOrEqual(1);
+  await expect(previewCards.first().locator(".timer-stack__label")).not.toHaveCSS("line-height", "normal");
   const browserSources = page.getByRole("region", { name: "Browser sources" });
   await expect(browserSources.getByText("1 ready")).toBeVisible();
   await browserSources.getByRole("button", { name: "Expand browser sources" }).click();

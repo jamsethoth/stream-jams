@@ -87,9 +87,10 @@ body.overlay-shell {
 }
 
 .timer-stack__icon {
-  height: min(64px, 70%);
+  height: 64px;
+  max-height: 70%;
   object-fit: contain;
-  width: min(64px, 18%);
+  width: 64px;
 }
 
 .timer-stack__icon--default {
@@ -100,6 +101,7 @@ body.overlay-shell {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-size: clamp(22px, 3.2cqh, 42px);
   font-weight: 700;
+  line-height: 1;
   min-width: 0;
   overflow: hidden;
   text-align: left;
@@ -113,6 +115,7 @@ body.overlay-shell {
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   justify-self: end;
+  line-height: 1;
   text-align: right;
   white-space: nowrap;
 }
@@ -127,6 +130,11 @@ body.overlay-shell {
   padding: 8px 12px;
   position: absolute;
   white-space: nowrap;
+}
+
+.timer-stack__overflow--vertical {
+  margin-left: 0;
+  margin-top: 10px;
 }
 
 @keyframes overlay-enter-fade {

@@ -21,6 +21,9 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
   }, [hasRunning, now, stack.cards]);
 
   const region = stack.region.layout;
+  const overflowPosition = stack.region.orientation === "vertical"
+    ? { left: region.x, top: region.y + region.height }
+    : { left: region.x + region.width, top: region.y };
   return (
     <div className="timer-stack">
       <div aria-label="Active timers" className="timer-stack__items" data-orientation={stack.region.orientation} role="list">
@@ -36,8 +39,8 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
       {stack.overflowCount === 0 ? null : (
         <div
           aria-label={`${stack.overflowCount} more active timers`}
-          className="timer-stack__overflow"
-          style={{ left: `${region.x + region.width}px`, top: `${region.y}px`, zIndex: region.zIndex + 1 }}
+          className={`timer-stack__overflow timer-stack__overflow--${stack.region.orientation}`}
+          style={{ left: `${overflowPosition.left}px`, top: `${overflowPosition.top}px`, zIndex: region.zIndex + 1 }}
         >
           +{stack.overflowCount} more
         </div>
