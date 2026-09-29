@@ -1,9 +1,9 @@
-import { appendFile, stat } from "node:fs/promises";
+import { appendFile, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import process from "node:process";
 import { URL } from "node:url";
 
-const eligibleEvents = new Set(["push", "workflow_dispatch"]);
+const eligibleEvents = new Set(["pull_request", "push", "workflow_dispatch"]);
 const defaultPackageDirectory = resolve("apps/desktop/out/Stream Jams-win32-x64");
 
 function requireEnvironment(name) {
@@ -65,7 +65,9 @@ async function prepare() {
   await requireFile(packageDirectory, "Stream Jams.exe");
   await requireFile(packageDirectory, "resources/app.asar");
 
-  const artifactName = `stream-jams-windows-x64-${slugRef(refName)}-${sha}`;
+  const artifactName = `stream-jams-windows-x64-untested-${slugRef(refName)}-${sha}`;
+  await writeFile(join(packageDirectory, "BUILD-STATUS.txt"),
+    `Built, not desktop-test-verified.\nCommit: ${sha}\nCheck the separate manual windows-desktop job for runtime test results.\nThis unsigned application folder is not a certified release.\n`, "utf8");
   await appendFile(githubOutput, `artifact-name=${artifactName}\n`, "utf8");
   process.stdout.write(`Prepared portable desktop artifact metadata for ${artifactName}.\n`);
 }
@@ -95,6 +97,7 @@ async function summarize() {
     "",
     `- Artifact: \`${markdownCode(artifactName)}\``,
     "- Platform: `windows-x64`",
+    "- Validation: built, not desktop-test-verified; see the separate manual windows-desktop job",
     `- Ref: \`${markdownCode(refName)}\``,
     `- Commit: \`${sha}\``,
     `- SHA-256: \`${artifactDigest}\``,

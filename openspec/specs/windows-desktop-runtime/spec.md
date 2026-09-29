@@ -115,15 +115,21 @@ The desktop shell SHALL use sandboxed, context-isolated renderers without Node i
 - **THEN** the shell blocks it or opens an explicitly permitted external HTTP(S) destination in the system browser without carrying desktop privileges
 
 ### Requirement: Desktop Scope Remains A Runnable Folder
-The desktop delivery SHALL remain a runnable Windows application folder. CI SHALL be permitted to publish that existing folder as a short-lived authenticated workflow artifact only after packaged verification succeeds. The desktop delivery SHALL NOT introduce an installer, code signing, durable release publication, automatic updates, startup-at-login, a Windows service, portable user state, or secret-store migration.
+The desktop delivery SHALL remain a runnable Windows application folder. CI SHALL publish that existing folder as a short-lived authenticated workflow artifact after successful packaging, independently of desktop runtime tests. Such artifacts SHALL be labelled built but not desktop-test-verified in their names, download summaries, and an included build-status notice. The desktop delivery SHALL NOT introduce an installer, code signing, durable release publication, automatic updates, startup-at-login, a Windows service, portable user state, or secret-store migration.
 
 #### Scenario: Desktop build is completed
 - **WHEN** the packaging command succeeds
 - **THEN** it produces a runnable Windows x64 folder and does not install, sign, create a durable release, configure an update feed, move user state beside the executable, or alter login startup behavior
 
-#### Scenario: Verified CI artifact is published
-- **WHEN** an eligible CI run packages and verifies the runnable Windows x64 folder successfully
-- **THEN** CI may expose that exact folder as a bounded authenticated workflow artifact without changing its runtime behavior, user-data paths, or credential storage
+#### Scenario: Built CI artifact is published independently of runtime tests
+- **WHEN** a pull-request, main-push, or manually dispatched CI run packages the runnable Windows x64 folder successfully
+- **THEN** CI exposes that exact folder as a bounded authenticated untested workflow artifact without changing its runtime behavior, user-data paths, or credential storage
+- **AND** absent or failing desktop runtime tests do not suppress its publication
+
+#### Scenario: Manual desktop tests consume the published build
+- **WHEN** CI is manually dispatched and packaging succeeds
+- **THEN** the separate desktop test job downloads and tests the exact artifact from that run without repackaging it
+- **AND** test failures remain visible independently of the successful packaging result
 
 ### Requirement: Shutdown Diagnostics Preserve Runtime Policy
 Opt-in instrumentation SHALL preserve persistent management/audio sessions, Save/Discard/Cancel decisions, close-to-tray behavior and the ten-second owned-worker timeout. It SHALL NOT add automatic native termination, restart, migration, a public control API or security overrides.

@@ -50,8 +50,9 @@ test("prepare validates the package and emits a ref-safe traceable artifact name
     assert.equal(result.status, 0, result.stderr);
     assert.equal(
       await readFile(githubOutput, "utf8"),
-      `artifact-name=stream-jams-windows-x64-codex-feature-test-${sha}\n`
+      `artifact-name=stream-jams-windows-x64-untested-codex-feature-test-${sha}\n`
     );
+    assert.match(await readFile(join(packageDirectory, "BUILD-STATUS.txt"), "utf8"), /not desktop-test-verified/i);
   });
 });
 
@@ -68,15 +69,26 @@ test("prepare accepts a successful main push", async () => {
     assert.equal(result.status, 0, result.stderr);
     assert.equal(
       await readFile(githubOutput, "utf8"),
-      `artifact-name=stream-jams-windows-x64-main-${sha}\n`
+      `artifact-name=stream-jams-windows-x64-untested-main-${sha}\n`
     );
   });
 });
 
-test("prepare rejects an ineligible pull-request event", async () => {
+test("prepare publishes a traceable untested pull-request artifact", async () => {
   await withFixture(async ({ packageDirectory, githubOutput }) => {
     const result = runScript("prepare", {
-      GITHUB_EVENT_NAME: "pull_request",
+      GITHUB_EVENT_NAME: "pull_request", GITHUB_REF_NAME: "135/merge", GITHUB_SHA: sha,
+      GITHUB_OUTPUT: githubOutput, STREAM_JAMS_PORTABLE_PACKAGE_PATH: packageDirectory
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(await readFile(githubOutput, "utf8"), `artifact-name=stream-jams-windows-x64-untested-135-merge-${sha}\n`);
+  });
+});
+
+test("prepare rejects an ineligible event", async () => {
+  await withFixture(async ({ packageDirectory, githubOutput }) => {
+    const result = runScript("prepare", {
+      GITHUB_EVENT_NAME: "schedule",
       GITHUB_REF_NAME: "feature",
       GITHUB_SHA: sha,
       GITHUB_OUTPUT: githubOutput,
@@ -126,6 +138,7 @@ test("summarize records the authenticated artifact identity and operating limits
         "",
         `- Artifact: \`${artifactName}\``,
         "- Platform: `windows-x64`",
+        "- Validation: built, not desktop-test-verified; see the separate manual windows-desktop job",
         "- Ref: `main`",
         `- Commit: \`${sha}\``,
         `- SHA-256: \`${digest}\``,
