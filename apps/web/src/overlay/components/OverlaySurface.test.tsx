@@ -653,6 +653,32 @@ describe("OverlaySurface", () => {
     expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "started" }));
     expect(onPlaybackEvent).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
   });
+
+  it("renders timer presentation inside a visible module layer without playback completion events", () => {
+    const onPlaybackEvent = vi.fn();
+    const timerComposition: OverlayComposition = {
+      overlayId: "overlay-1", purpose: "live", scope: "unified", targetProfileId: "landscape",
+      modules: [{
+        moduleId: "timers", enabled: true, surfaceLayer: { visible: true, zIndex: 3 }, instructions: [],
+        presentation: { kind: "timer-stack", stack: {
+          targetProfileId: "landscape",
+          region: { layout: { x: 10, y: 20, width: 400, height: 100, zIndex: 2 }, orientation: "vertical", maxVisible: 1 },
+          cards: [{ definitionId: "cat-paws", generation: "g1", label: "Cat paws", iconAssetId: null,
+            status: "paused", remainingMs: 30_000, slot: { x: 10, y: 20, width: 400, height: 100, zIndex: 2 } }],
+          overflowCount: 0
+        } }
+      }]
+    };
+    const { rerender } = render(<OverlaySurface composition={timerComposition} onPlaybackEvent={onPlaybackEvent} resolveAssetUrl={() => "/asset"} />);
+    expect(screen.getByRole("list", { name: "Active timers" })).toBeVisible();
+    expect(screen.getByText("Cat paws")).toBeVisible();
+    expect(onPlaybackEvent).not.toHaveBeenCalled();
+
+    rerender(<OverlaySurface composition={{ ...timerComposition, modules: timerComposition.modules.map(module => ({
+      ...module, surfaceLayer: { visible: false, zIndex: 3 }
+    })) }} onPlaybackEvent={onPlaybackEvent} resolveAssetUrl={() => "/asset"} />);
+    expect(screen.queryByRole("list", { name: "Active timers" })).toBeNull();
+  });
 });
 
 function setViewport(width: number, height: number): void {
