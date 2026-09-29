@@ -12,6 +12,7 @@ const landscapeRegion = {
 const meta = {
   title: "Overlay/TimerStack",
   component: TimerStack,
+  tags: ["timer-stack"],
   args: { resolveAssetUrl: () => "/storybook-assets/tiny-alert.svg" },
   decorators: [(Story) => <div style={{ background: "#243140", height: 1080, position: "relative", width: 1920 }}><Story /></div>],
   parameters: { layout: "fullscreen" }
@@ -35,7 +36,10 @@ export const ConcurrentStatesAndOverflow: Story = {
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("list", { name: "Active timers" })).toBeVisible();
-    await expect(canvas.getByText("+2 more")).toBeVisible();
+    const overflowBadge = canvas.getByText("+2 more");
+    await expect(overflowBadge).toBeVisible();
+    const timerLabel = canvas.getByTitle("Oven mitt challenge complete");
+    await expect(getComputedStyle(overflowBadge).fontSize).toBe(getComputedStyle(timerLabel).fontSize);
     await expect(canvas.getByText("0:00")).toBeVisible();
     await expect(canvas.getAllByRole("img", { name: "Default timer icon" })).toHaveLength(3);
     await expect(canvas.getByRole("img", { name: "Cat paws reward icon" })).toBeVisible();

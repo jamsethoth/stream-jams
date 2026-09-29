@@ -103,11 +103,17 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   });
   expect(centerOffset).toBeLessThanOrEqual(1);
   await expect(previewCards.first().locator(".timer-stack__label")).not.toHaveCSS("line-height", "normal");
+  const overflowBadge = timerPreview.getByText("+2 more");
   await page.getByLabel("HEIGHT").fill("180");
   const compactFontSize = await previewCards.first().locator(".timer-stack__label").evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
+  const compactOverflowFontSize = await overflowBadge.evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
   await page.getByLabel("HEIGHT").fill("480");
   const roomyFontSize = await previewCards.first().locator(".timer-stack__label").evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
+  const roomyOverflowFontSize = await overflowBadge.evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
   expect(roomyFontSize).toBeGreaterThan(compactFontSize);
+  expect(roomyOverflowFontSize).toBeGreaterThan(compactOverflowFontSize);
+  expect(compactOverflowFontSize).toBe(compactFontSize);
+  expect(roomyOverflowFontSize).toBe(roomyFontSize);
   await page.getByLabel("WIDTH").fill("360");
   expect(await longExample.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
   await page.getByLabel("WIDTH").fill("1600");

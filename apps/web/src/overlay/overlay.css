@@ -124,16 +124,16 @@ body.overlay-shell {
   border: 1px solid rgba(255, 255, 255, 0.72);
   border-radius: 999px;
   color: #ffffff;
-  font: 700 20px/1 Inter, ui-sans-serif, system-ui, sans-serif;
-  margin-left: 10px;
-  padding: 8px 12px;
+  font: 700 var(--timer-overflow-font-size, 20px)/1 Inter, ui-sans-serif, system-ui, sans-serif;
+  margin-left: var(--timer-overflow-offset, 10px);
+  padding: var(--timer-overflow-block-padding, 8px) var(--timer-overflow-inline-padding, 12px);
   position: absolute;
   white-space: nowrap;
 }
 
 .timer-stack__overflow--vertical {
   margin-left: 0;
-  margin-top: 10px;
+  margin-top: var(--timer-overflow-offset, 10px);
 }
 
 @keyframes overlay-enter-fade {

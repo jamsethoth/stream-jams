@@ -24,6 +24,18 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
   const overflowPosition = stack.region.orientation === "vertical"
     ? { left: region.x, top: region.y + region.height }
     : { left: region.x + region.width, top: region.y };
+  const overflowSlot = stack.cards[0]?.slot;
+  const overflowStyle = {
+    ...(overflowSlot === undefined ? {} : {
+      "--timer-overflow-block-padding": `${scaleMeasurement(overflowSlot, 0.06, 0.018, 3, 10)}px`,
+      "--timer-overflow-font-size": `${scaleMeasurement(overflowSlot, 0.24, 0.08, 10, 42)}px`,
+      "--timer-overflow-inline-padding": `${scaleMeasurement(overflowSlot, 0.1, 0.03, 5, 16)}px`,
+      "--timer-overflow-offset": `${scaleMeasurement(overflowSlot, 0.08, 0.025, 4, 14)}px`
+    }),
+    left: `${overflowPosition.left}px`,
+    top: `${overflowPosition.top}px`,
+    zIndex: region.zIndex + 1
+  } as CSSProperties;
   return (
     <div className="timer-stack">
       <div aria-label="Active timers" className="timer-stack__items" data-orientation={stack.region.orientation} role="list">
@@ -40,7 +52,7 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
         <div
           aria-label={`${stack.overflowCount} more active timers`}
           className={`timer-stack__overflow timer-stack__overflow--${stack.region.orientation}`}
-          style={{ left: `${overflowPosition.left}px`, top: `${overflowPosition.top}px`, zIndex: region.zIndex + 1 }}
+          style={overflowStyle}
         >
           +{stack.overflowCount} more
         </div>
