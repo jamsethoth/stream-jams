@@ -81,16 +81,32 @@ describe("TimerRuntimeCoordinator", () => {
     const unsubscribe = coordinator.subscribe(revision => revisions.push(revision));
 
     const first = await coordinator.start("a");
-    records.set("a", { ...records.get("a")!, label: "Edited", durationMs: 1_000 });
+    records.set("a", {
+      ...records.get("a")!,
+      label: "Edited",
+      durationMs: 1_000,
+      outputs: { browserSource: true, deviceRouteIds: ["route-edited"] }
+    });
     const second = await coordinator.start("b");
 
     expect(first).toMatchObject({ changed: true, state: { status: "running", definitionId: "a", generation: "generation-1", endsAtEpochMs: 11_000 } });
     expect(second).toMatchObject({ changed: true, state: { status: "running", definitionId: "b", generation: "generation-2", endsAtEpochMs: 6_000 } });
     expect(coordinator.getState("a")?.snapshot.label).toBe("Timer a");
+    expect(coordinator.getState("a")?.snapshot.outputs).toEqual({ browserSource: false, deviceRouteIds: [] });
     expect(coordinator.listStates().map(state => state.definitionId)).toEqual(["b", "a"]);
     expect(revisions).toEqual([1, 2]);
     expect(cueSink.play).toHaveBeenCalledTimes(2);
     unsubscribe();
+  });
+
+  it("uses edited output routes only for the next run generation", async () => {
+    const { coordinator, records } = setup();
+    await coordinator.start("a");
+    records.set("a", { ...records.get("a")!, outputs: { browserSource: false, deviceRouteIds: ["route-new"] } });
+    expect(coordinator.getState("a")?.snapshot.outputs.deviceRouteIds).toEqual([]);
+
+    await coordinator.restart("a");
+    expect(coordinator.getState("a")?.snapshot.outputs.deviceRouteIds).toEqual(["route-new"]);
   });
 
   it("orders active state for Operator by completed, running deadline, then paused remaining", async () => {

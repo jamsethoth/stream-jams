@@ -105,7 +105,7 @@ export class ConfigurationBackupService {
       assetDirectory: appConfig.storage.assetDirectory,
       logLevel: appConfig.logging.level,
       logRetentionHours: appConfig.logging.retentionHours,
-      secretExclusions: ["Provider credentials and tokens", "Overlay route keys and hashes", "Local audio device IDs and labels", "Runtime logs and sessions"]
+      secretExclusions: ["Provider credentials and tokens", "Overlay route keys and hashes", "Timer automation credentials and active timer runs", "Local audio device IDs and labels", "Runtime logs and sessions"]
     };
     try {
       const archive = await this.exportArchive();
@@ -294,6 +294,13 @@ export class ConfigurationBackupService {
       for (const tableName of ["screen_effect_sets", "screen_effect_set_memberships"]) {
         if (archive.configuration.tables[tableName] === undefined) {
           blockers.push(blocker("Backup Screen Effect sets are missing", `Schema 23 and later require ${tableName}.`, "Export a new backup from the source installation."));
+        }
+      }
+    }
+    if (archive.manifest.schemaVersion >= 28) {
+      for (const tableName of ["timer_definitions", "timer_audio_routes"]) {
+        if (archive.configuration.tables[tableName] === undefined) {
+          blockers.push(blocker("Backup Timer configuration is missing", `Schema 28 and later require ${tableName}.`, "Export a new backup from the source installation."));
         }
       }
     }
@@ -636,6 +643,7 @@ function isSupportedLegacySchema(currentSchemaVersion: number, archiveSchemaVers
   if (currentSchemaVersion === 25) return [19, 20, 21, 22, 23, 24].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 26) return [19, 20, 21, 22, 23, 24, 25].includes(archiveSchemaVersion);
   if (currentSchemaVersion === 27) return [19, 20, 21, 22, 23, 24, 25, 26].includes(archiveSchemaVersion);
+  if (currentSchemaVersion === 28) return [19, 20, 21, 22, 23, 24, 25, 26, 27].includes(archiveSchemaVersion);
   return false;
 }
 
@@ -662,6 +670,13 @@ function upgradeLegacyConfiguration(
       ...(tables.overlay_surfaces === undefined ? {} : {
         overlay_surfaces: tables.overlay_surfaces.map(row => portableLegacySurfaceRow(row))
       })
+    };
+  }
+  if (schemaVersion < 28) {
+    tables = {
+      ...tables,
+      timer_definitions: [],
+      timer_audio_routes: []
     };
   }
   return tables === configuration.tables ? configuration : { ...configuration, tables };

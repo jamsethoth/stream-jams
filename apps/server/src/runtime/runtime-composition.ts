@@ -1016,6 +1016,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetStore,
     alertRepository,
     effectRepository,
+    timerRepository: timerDefinitionRepository,
     ruleMetadataRepository: alertSetMetadataRepository,
     deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
       () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))

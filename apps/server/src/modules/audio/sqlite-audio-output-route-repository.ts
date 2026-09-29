@@ -63,7 +63,21 @@ export class SqliteAudioOutputRouteRepository implements AudioOutputRouteReposit
       ownerName: String(row.owner_name),
       variantId: String(row.variant_id)
     }));
-    return [...alerts, ...effects];
+    const timers = this.connection.prepare(`
+      SELECT DISTINCT
+        definitions.id AS owner_id,
+        definitions.label AS owner_name
+      FROM timer_audio_routes AS routes
+      JOIN timer_definitions AS definitions ON definitions.id = routes.timer_id
+      WHERE routes.route_id = ?
+      ORDER BY definitions.label COLLATE NOCASE, definitions.id
+    `).all(id).map(row => ({
+      moduleId: "timers",
+      ownerId: String(row.owner_id),
+      ownerName: String(row.owner_name),
+      variantId: null
+    }));
+    return [...alerts, ...effects, ...timers];
   }
 
   save(candidate: AudioOutputRoute): void {
@@ -91,7 +105,7 @@ export class SqliteAudioOutputRouteRepository implements AudioOutputRouteReposit
           409,
           "AUDIO_ROUTE_REFERENCED",
           "This route is still referenced by saved playback items.",
-          "Remove the route from the listed Alerts and Screen Effects before deleting it.",
+          "Remove the route from the listed Alerts, Screen Effects, and Timers before deleting it.",
           [id],
           references,
           owners

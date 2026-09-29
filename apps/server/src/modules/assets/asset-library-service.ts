@@ -13,6 +13,7 @@ import {
   type AssetRepository,
   type ModuleMediaReference,
   type ScreenEffectRepository,
+  type TimerDefinitionRepository,
   type TargetProfileId
 } from "@stream-jams/core";
 import type { AlertSetMetadataRepository } from "../alerts/alert-set-management-service.js";
@@ -50,6 +51,7 @@ export interface AssetLibraryServiceOptions {
   readonly alertRepository: Pick<AlertRepository, "listCollections" | "listRules">;
   readonly ruleMetadataRepository: Pick<AlertSetMetadataRepository, "findRule">;
   readonly effectRepository?: Pick<ScreenEffectRepository, "list"> | undefined;
+  readonly timerRepository?: Pick<TimerDefinitionRepository, "list"> | undefined;
   readonly deletePersistedAsset?: ((assetId: string) => void) | undefined;
   readonly clock?: () => Date;
   readonly durationCatalog?: AssetDurationCatalog | undefined;
@@ -85,8 +87,15 @@ export class AssetLibraryService {
       this.#options.alertRepository.listCollections(),
       this.#options.alertRepository.listRules()
     ]);
-    const usages = await this.#deriveUsage(collections, rules);
-    return Promise.all(records.map((record) => this.#toItem(record, usages.get(record.id) ?? [])));
+    const [usages, moduleUsages] = await Promise.all([
+      this.#deriveUsage(collections, rules),
+      this.#deriveModuleUsages()
+    ]);
+    return Promise.all(records.map((record) => this.#toItem(
+      record,
+      usages.get(record.id) ?? [],
+      moduleUsages.get(record.id) ?? []
+    )));
   }
 
   async getItem(assetId: string): Promise<AssetLibraryItem> {
@@ -123,20 +132,25 @@ export class AssetLibraryService {
 
   async getChangeImpact(assetId: string, candidateMediaType?: AssetMediaType): Promise<AssetChangeImpact> {
     const item = await this.getItem(assetId);
-    const effectOwners = await this.#effectOwners(assetId);
     const alertOwners = item.usage.usages.map((usage): ModuleMediaReference => ({
       moduleId: "alerts",
       ownerId: usage.alertId,
       ownerName: usage.alertName,
       variantId: null
     }));
-    const owners = uniqueOwners([...alertOwners, ...effectOwners]);
+    const moduleOwners = item.moduleUsages ?? [];
+    const owners = uniqueOwners([...alertOwners, ...moduleOwners]);
     const warnings: string[] = [];
     if (item.usage.totalUsageCount > 0) {
       warnings.push(`${item.usage.totalUsageCount} alert usage${item.usage.totalUsageCount === 1 ? "" : "s"} will update everywhere.`);
     }
+    const effectOwners = moduleOwners.filter((owner) => owner.moduleId === "screen-effects");
     if (effectOwners.length > 0) {
       warnings.push(`${effectOwners.length} Screen Effect usage${effectOwners.length === 1 ? "" : "s"} will update everywhere.`);
+    }
+    const timerOwners = moduleOwners.filter((owner) => owner.moduleId === "timers");
+    if (timerOwners.length > 0) {
+      warnings.push(`${timerOwners.length} Timer usage${timerOwners.length === 1 ? "" : "s"} will update everywhere.`);
     }
     if (candidateMediaType !== undefined && candidateMediaType !== item.mediaType) {
       warnings.push(`Media type changes from ${item.mediaType} to ${candidateMediaType}; review every affected layer.`);
@@ -250,7 +264,11 @@ export class AssetLibraryService {
     };
   }
 
-  async #toItem(record: AssetRecord, usages: AssetLibraryItem["usage"]["usages"]): Promise<AssetLibraryItem> {
+  async #toItem(
+    record: AssetRecord,
+    usages: AssetLibraryItem["usage"]["usages"],
+    moduleUsages: readonly ModuleMediaReference[]
+  ): Promise<AssetLibraryItem> {
     const [metadata, health] = await Promise.all([
       this.#metadata(record),
       this.#options.assetStore.inspect(record.storagePath, record.sizeBytes)
@@ -269,7 +287,8 @@ export class AssetLibraryService {
       tags: metadata.tags,
       createdAt: metadata.createdAt,
       updatedAt: metadata.updatedAt,
-      usage: { assetId: record.id, totalUsageCount: usages.length, usages }
+      usage: { assetId: record.id, totalUsageCount: usages.length, usages },
+      moduleUsages
     });
   }
 
@@ -300,23 +319,41 @@ export class AssetLibraryService {
     return usage;
   }
 
-  async #effectOwners(assetId: string): Promise<readonly ModuleMediaReference[]> {
-    const effects = await this.#options.effectRepository?.list() ?? [];
-    return effects.flatMap((effect) => effect.variants.flatMap((variant) => {
-      const referenced = variant.visual?.assetId === assetId || variant.sound?.assetId === assetId;
-      return referenced ? [{
-        moduleId: "screen-effects",
-        ownerId: effect.id,
-        ownerName: effect.name,
-        variantId: variant.id
-      }] : [];
-    }));
+  async #deriveModuleUsages(): Promise<ReadonlyMap<string, readonly ModuleMediaReference[]>> {
+    const [effects, timers] = await Promise.all([
+      this.#options.effectRepository?.list() ?? [],
+      this.#options.timerRepository?.list() ?? []
+    ]);
+    const usages = new Map<string, ModuleMediaReference[]>();
+    const add = (assetId: string | null, usage: ModuleMediaReference) => {
+      if (assetId === null) return;
+      usages.set(assetId, [...(usages.get(assetId) ?? []), usage]);
+    };
+    for (const effect of effects) {
+      for (const variant of effect.variants) {
+        const usage = {
+          moduleId: "screen-effects",
+          ownerId: effect.id,
+          ownerName: effect.name,
+          variantId: variant.id
+        } satisfies ModuleMediaReference;
+        add(variant.visual?.assetId ?? null, usage);
+        add(variant.sound?.assetId ?? null, usage);
+      }
+    }
+    for (const timer of timers) {
+      const base = { moduleId: "timers", ownerId: timer.id, ownerName: timer.label, variantId: null } as const;
+      add(timer.iconAssetId, { ...base, usageRole: "icon" });
+      add(timer.startAudioAssetId, { ...base, usageRole: "start-audio" });
+      add(timer.endAudioAssetId, { ...base, usageRole: "end-audio" });
+    }
+    return usages;
   }
 }
 
 function uniqueOwners(owners: readonly ModuleMediaReference[]): ModuleMediaReference[] {
   return [...new Map(owners.map((owner) => [
-    `${owner.moduleId}:${owner.ownerId}:${owner.variantId ?? ""}`,
+    `${owner.moduleId}:${owner.ownerId}:${owner.variantId ?? ""}:${owner.usageRole ?? ""}`,
     owner
   ])).values()];
 }

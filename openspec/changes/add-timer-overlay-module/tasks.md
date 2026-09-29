@@ -23,7 +23,7 @@
 
 - [x] 4.1 Add failing tests for start/restart/end cue admission, no cue on pause/resume/stop/idempotent start, physical-route deduplication, and independent recipient failures.
 - [x] 4.2 Integrate timer cues with normalized Browser Source and named-device audio routing before visual-profile expansion, preserving generation-scoped cancellation and existing mute/unavailable-device behavior.
-- [ ] 4.3 Extend audio-route usage/impact transactions and tests so timer references block deletion, rebind safely, and keep active-run binding snapshots while future runs use saved changes.
+- [x] 4.3 Extend audio-route usage/impact transactions and tests so timer references block deletion, rebind safely, and keep active-run binding snapshots while future runs use saved changes.
 
 ## 5. Management And Automation HTTP Boundaries
 
@@ -55,9 +55,9 @@
 
 ## 9. Asset Usage And Portable Configuration
 
-- [ ] 9.1 Extend asset usage discovery/filter/navigation and impact tests for timer icon, start-cue, and end-cue references with compatible replacement and guarded deletion.
-- [ ] 9.2 Extend versioned configuration snapshot/export/preflight/restore schemas and schema-drift checks for timer definitions, profile presentation, route IDs, and referenced assets.
-- [ ] 9.3 Add backup tests proving active runs and automation credential/verifier material are excluded, restored timers start idle, automation requires a new credential, invalid references block preflight, and rollback restores prior destination credential state.
+- [x] 9.1 Extend asset usage discovery/filter/navigation and impact tests for timer icon, start-cue, and end-cue references with compatible replacement and guarded deletion.
+- [x] 9.2 Extend versioned configuration snapshot/export/preflight/restore schemas and schema-drift checks for timer definitions, profile presentation, route IDs, and referenced assets.
+- [x] 9.3 Add backup tests proving active runs and automation credential/verifier material are excluded, restored timers start idle, automation requires a new credential, invalid references block preflight, and rollback restores prior destination credential state.
 
 ## 10. Integrated Browser And Desktop Acceptance
 
