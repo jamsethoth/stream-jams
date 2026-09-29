@@ -359,6 +359,11 @@ test("diagnostics workspace preserves correction context and copies sanitized ev
   await page.route("**/management/alert-sets", async (route) => {
     await route.fulfill({ contentType: "application/json", json: [alertSet] });
   });
+  await page.route("**/overlay-modules/alerts/config", async (route) => {
+    await route.fulfill({ contentType: "application/json", json: {
+      moduleId: "alerts", enabled: true, config: {}, updatedAt: "2026-07-15T22:41:18.000Z"
+    } });
+  });
   await page.route("**/management/alert-sets/set-diagnostics", async (route) => {
     await route.fulfill({
       contentType: "application/json",

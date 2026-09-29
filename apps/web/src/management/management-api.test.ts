@@ -3,6 +3,24 @@ import { alertEditorDocumentSchema, type TwitchCustomReward } from "@stream-jams
 import { createHttpManagementApi } from "./management-api.js";
 
 describe("createHttpManagementApi", () => {
+  it("loads and updates overlay module enablement", async () => {
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/auth/management/sessions") return jsonResponse(managementSession());
+      if (init?.method === "PATCH") {
+        expect(url).toBe("/overlay-modules/alerts/enabled");
+        expect(init.body).toBe(JSON.stringify({ enabled: false }));
+        return jsonResponse({ moduleId: "alerts", enabled: false });
+      }
+      expect(url).toBe("/overlay-modules/alerts/config");
+      return jsonResponse({ moduleId: "alerts", enabled: true, config: {}, updatedAt: "2026-09-29T00:00:00.000Z" });
+    });
+    const api = createHttpManagementApi({ fetch: fetcher });
+
+    await expect(api.getOverlayModuleEnabled("alerts")).resolves.toBe(true);
+    await expect(api.setOverlayModuleEnabled("alerts", false)).resolves.toBe(false);
+  });
+
   it("reports management client exceptions through the protected diagnostics endpoint", async () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/auth/management/sessions") {

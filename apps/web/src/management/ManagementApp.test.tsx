@@ -633,6 +633,8 @@ function createManagementApi(): ManagementApi {
     setManagedAlertEnabled: vi.fn(async () => {
       throw new Error("not called");
     }),
+    getOverlayModuleEnabled: vi.fn(async () => true),
+    setOverlayModuleEnabled: vi.fn(async (_moduleId, enabled) => enabled),
     deleteAlertSet: vi.fn(async () => undefined),
     getAlertEditorDocument: vi.fn(async () => {
       throw new Error("not called");

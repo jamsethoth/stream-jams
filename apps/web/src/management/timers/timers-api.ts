@@ -48,6 +48,7 @@ export interface TimersApi {
   remove(id: string): Promise<void>;
   command(id: string, command: TimerCommand): Promise<TimerCommandResult>;
   getModuleConfig(): Promise<OverlayModuleConfig<TimersOverlayModuleConfig>>;
+  setModuleEnabled(enabled: boolean): Promise<boolean>;
   saveModuleConfig(enabled: boolean, config: TimersOverlayModuleConfig): Promise<OverlayModuleConfig<TimersOverlayModuleConfig>>;
   getAutomationCredential(): Promise<TimerAutomationCredentialStatus>;
   rotateAutomationCredential(): Promise<TimerAutomationCredentialIssue>;
@@ -85,6 +86,9 @@ export function createHttpTimersApi(options: HttpManagementClientOptions = {}): 
     async remove(id) { await client.deleteRequest(timerPath(id), "Unable to delete the timer."); },
     async command(id, command) { return timerCommandResultSchema.parse(await client.postJson(`${timerPath(id)}/${command}`, undefined, `Unable to ${command} the timer.`)); },
     async getModuleConfig() { return parseModuleConfig(await client.getJson("/overlay-modules/timers/config", "Unable to load timer layout.")); },
+    async setModuleEnabled(enabled) { return parseModuleConfig(await client.patchJson(
+      "/overlay-modules/timers/enabled", { enabled }, "Unable to update the Timers module."
+    )).enabled; },
     async saveModuleConfig(enabled, config) { return parseModuleConfig(await client.putJson("/overlay-modules/timers/config", {
       enabled, config: timersOverlayModuleConfigSchema.parse(config)
     }, "Unable to save timer layout.")); },

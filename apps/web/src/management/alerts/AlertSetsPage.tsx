@@ -51,6 +51,8 @@ export type AlertSetsPageApi = Pick<
   | "activateAlertSet"
   | "markStarterAlertSetReviewComplete"
   | "setManagedAlertEnabled"
+  | "getOverlayModuleEnabled"
+  | "setOverlayModuleEnabled"
   | "deleteAlertSet"
   | "getAlertEditorDocument"
   | "sendAlertEditorTest"
@@ -126,6 +128,8 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
   const [browserSourceStatusUpdatedAt, setBrowserSourceStatusUpdatedAt] = useState<string | null>(null);
   const [browserSourceRefreshError, setBrowserSourceRefreshError] = useState<ActionableManagementError | null>(null);
   const [browserSourcesExpanded, setBrowserSourcesExpanded] = useState(false);
+  const [moduleEnabled, setModuleEnabled] = useState<boolean | null>(null);
+  const [moduleConfirmation, setModuleConfirmation] = useState<boolean | null>(null);
   const [manualExpandedEventKeys, setManualExpandedEventKeys] = useState<ReadonlySet<string>>(() => new Set());
   const [rewardTitleContext, setRewardTitleContext] = useState<{ readonly setId: string; readonly key: string; readonly titles: ReadonlyMap<string, string> } | null>(null);
   const browserSourceRefreshFailed = useRef(false);
@@ -296,7 +300,10 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
     setError(null);
     setNotice(null);
     try {
-      const loadedSets = await managementApi.listAlertSets();
+      const [loadedSets, loadedModuleEnabled] = await Promise.all([
+        managementApi.listAlertSets(),
+        managementApi.getOverlayModuleEnabled("alerts")
+      ]);
       const selected = loadedSets.find((candidate) => candidate.id === preferredSetId)
         ?? loadedSets.find((candidate) => candidate.active)
         ?? loadedSets[0]
@@ -304,6 +311,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       const loadedDetail = selected === null ? null : await managementApi.getAlertSet(selected.id);
       if (isStale()) return;
       setSets(loadedSets);
+      setModuleEnabled(loadedModuleEnabled);
       setSelectedSetId(selected?.id ?? null);
       setExpandedSetId(selected?.id ?? null);
       setDetail(loadedDetail);
@@ -323,6 +331,22 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
 
   async function refresh(preferredSetId = selectedSetId) {
     await loadAlertSets(preferredSetId);
+  }
+
+  async function confirmModuleEnablement() {
+    if (moduleConfirmation === null) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const nextEnabled = await managementApi.setOverlayModuleEnabled("alerts", moduleConfirmation);
+      setModuleEnabled(nextEnabled);
+      setNotice({ tone: "success", message: `Alerts module is now ${nextEnabled ? "enabled" : "disabled"}.` });
+      setModuleConfirmation(null);
+    } catch (cause) {
+      setError(toActionableError("Alerts module could not be updated", cause, "Try again or open Diagnostics for the server reference."));
+    } finally {
+      setBusy(false);
+    }
   }
 
   function openNameDialog(action: NameAction, set: AlertSetOverview | null) {
@@ -725,8 +749,9 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
           <div>
             <h2 id="alert-sets-heading">Alert sets</h2>
             <p>Prepare collections of alerts, validate their profiles, and choose the one used for live events.</p>
+            {moduleEnabled === null ? null : <StatusBadge label={moduleEnabled ? "Module enabled" : "Module disabled"} tone={moduleEnabled ? "positive" : "neutral"} />}
           </div>
-          <button onClick={() => openNameDialog("create", null)} type="button">Create set</button>
+          <div className="alert-sets-page__toolbar-actions"><button className="button button--secondary" disabled={busy || moduleEnabled === null} onClick={() => setModuleConfirmation(!moduleEnabled)} type="button">{moduleEnabled ? "Disable Alerts module" : "Enable Alerts module"}</button><button onClick={() => openNameDialog("create", null)} type="button">Create set</button></div>
         </div>
 
       {sets.length === 0 ? (
@@ -843,6 +868,7 @@ export function AlertSetsPage({ initialSetId, managementApi, onEditAlert }: Aler
       <RegenerateDialog busy={busy} confirmation={regenerateConfirmation} onCancel={() => setRegenerateDialog(null)} onChange={setRegenerateConfirmation} onConfirm={() => void regenerateBrowserSource()} state={regenerateDialog} />
       <DeleteDialog busy={busy} onCancel={() => setDeleteSet(null)} onConfirm={() => void confirmDelete()} set={deleteSet} />
       <AlertMutationDialog busy={busy} onCancel={() => setAlertMutation(null)} onConfirm={() => void confirmAlertMutation()} state={alertMutation} />
+      <ModalSurface labelledBy="alert-module-confirm-title" onCancel={() => setModuleConfirmation(null)} open={moduleConfirmation !== null}>{moduleConfirmation === null ? null : <div className="alert-sets-page__modal"><div><h2 id="alert-module-confirm-title">{moduleConfirmation ? "Enable" : "Disable"} Alerts module?</h2><p>{moduleConfirmation ? "Enabled alerts in the active set may render for new live events." : "Saved alert sets and individual alert settings remain unchanged, but Alerts stop rendering until the module is enabled again."}</p></div><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void confirmModuleEnablement()} type="button">Confirm change</button></div></div>}</ModalSurface>
     </div>
   );
 }

@@ -24,6 +24,8 @@ describe("createHttpTimersApi", () => {
       ]);
       if (url === "/overlay-modules/timers/config") return json({ moduleId: "timers", enabled: true,
         config: timersOverlayModuleDefinition.defaultConfig, updatedAt: definition.updatedAt });
+      if (url === "/overlay-modules/timers/enabled") return json({ moduleId: "timers", enabled: false,
+        config: timersOverlayModuleDefinition.defaultConfig, updatedAt: definition.updatedAt });
       if (url === "/timers/automation-credential" && init?.method === undefined) return json({ configured: false, createdAt: null, rotatedAt: null });
       if (url.endsWith("/rotate")) return json({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"a".repeat(32)}` }, 201);
       if (init?.method === "DELETE") return new Response(null, { status: 204 });
@@ -39,6 +41,7 @@ describe("createHttpTimersApi", () => {
       expect.objectContaining({ moduleId: "timers", targetProfileId: "landscape", status: "available" })
     ]);
     await expect(api.getModuleConfig()).resolves.toMatchObject({ moduleId: "timers", enabled: true });
+    await expect(api.setModuleEnabled(false)).resolves.toBe(false);
     await expect(api.rotateAutomationCredential()).resolves.toMatchObject({ configured: true, token: expect.stringMatching(/^tmr_/) });
     await expect(api.revokeAutomationCredential()).resolves.toBeUndefined(); await expect(api.remove("mitts")).resolves.toBeUndefined();
     expect(fetcher.mock.calls.map(call => String(call[0]))).toContain("/timers/mitts%2Fid");

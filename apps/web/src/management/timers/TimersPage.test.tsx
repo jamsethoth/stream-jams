@@ -14,6 +14,7 @@ const definition: TimerDefinition = { id: "mitts", label: "Wear oven mitts", dur
   createdAt: "2026-09-29T00:00:00.000Z", updatedAt: "2026-09-29T00:00:00.000Z" };
 function harness(state: TimerRunState | null = null) {
   let definitions: readonly TimerDefinition[] = [definition]; let states: readonly TimerRunState[] = state === null ? [] : [state];
+  const setModuleEnabled = vi.fn(async (enabled: boolean) => enabled);
   const api: TimersApi = {
     list: vi.fn(async () => definitions), listStates: vi.fn(async () => states),
     create: vi.fn(async input => { const created = { ...definition, ...input, id: "created" }; definitions = [...definitions, created]; return created; }),
@@ -21,6 +22,7 @@ function harness(state: TimerRunState | null = null) {
     command: vi.fn(async (_id, command) => { if (command === "start") states = [{ status: "running", definitionId: definition.id, generation: "g1", snapshot: definition,
       startedAtEpochMs: 1000, endsAtEpochMs: 61_000 }]; return { changed: true, state: states[0] ?? null }; }),
     getModuleConfig: vi.fn(async () => ({ moduleId: "timers", enabled: true, config: structuredClone(timersOverlayModuleDefinition.defaultConfig), updatedAt: definition.updatedAt })),
+    setModuleEnabled,
     saveModuleConfig: vi.fn(async (enabled, config) => ({ moduleId: "timers", enabled, config, updatedAt: definition.updatedAt })),
     getAutomationCredential: vi.fn(async () => ({ configured: false, createdAt: null, rotatedAt: null })),
     rotateAutomationCredential: vi.fn(async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"x".repeat(32)}` })),
@@ -39,7 +41,7 @@ function harness(state: TimerRunState | null = null) {
   } as unknown as TimersApi;
   const audioApi = { getStatus: vi.fn(async () => ({ capability: { available: true, devices: [], reason: null, nextStep: null }, muted: false,
     routes: [{ route: { id: "speakers", name: "Speakers", deviceId: "device", deviceLabel: "Speakers", autoFollowDeviceName: false }, state: "ready", automaticBindingState: "not-needed" }] })) } as unknown as AudioApi;
-  return { api, audioApi };
+  return { api, audioApi, setModuleEnabled };
 }
 function renderPage(state: TimerRunState | null = null) {
   const values = harness(state); render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />); return values;
@@ -95,4 +97,19 @@ it("edits both profile layouts and reveals a one-time automation credential", as
   await user.click(screen.getByRole("button", { name: "Save overlay layout" })); await waitFor(() => expect(api.saveModuleConfig).toHaveBeenCalled());
   await user.click(screen.getByRole("button", { name: "Create credential" }));
   expect(await screen.findByDisplayValue(/^tmr_/)).toBeInTheDocument(); expect(screen.getByText(/will not be shown again/i)).toBeInTheDocument();
+});
+
+it("shows explicit timer module enablement and confirms disabling it", async () => {
+  const user = userEvent.setup();
+  const { setModuleEnabled } = renderPage();
+
+  expect(await screen.findByText("Module enabled")).toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: "Show Timers module" })).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Disable Timers module" }));
+  const dialog = screen.getByRole("dialog", { name: "Disable Timers module?" });
+  await user.click(within(dialog).getByRole("button", { name: "Confirm change" }));
+
+  await waitFor(() => expect(setModuleEnabled).toHaveBeenCalledWith(false));
+  expect(screen.getByText("Module disabled")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Enable Timers module" })).toBeInTheDocument();
 });

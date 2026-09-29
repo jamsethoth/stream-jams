@@ -46,6 +46,7 @@
 - [x] 7.3 Add the draggable/resizable per-profile stack editor and exact preview for orientation, capacity, equal sizing, truncation, ordering, overflow badge, and legibility warnings.
 - [x] 7.4 Add focused Testing Library coverage for loading, empty, validation, save success/failure, missing assets, active-delete conflict, keyboard controls, stable focus, and semantic announcements.
 - [x] 7.5 Add production-component Storybook stories with tiny checked-in assets for idle inventory, running, paused, completed, horizontal/vertical layouts, overflow, long labels, missing icon, loading, and error states; pass accessibility and interaction checks.
+- [x] 7.6 Present explicit Timers module enabled/disabled status and a confirmed module action independently from overlay-layout saving.
 
 ## 8. Operator Active-Timer Controls
 

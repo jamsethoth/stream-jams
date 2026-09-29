@@ -12,7 +12,7 @@ const definition: TimerDefinition = { id: "mitts", label: "Wear oven mitts for t
   createdAt: "2026-09-29T00:00:00.000Z", updatedAt: "2026-09-29T00:00:00.000Z" };
 const audioApi = { getStatus: async () => ({ capability: { available: true, devices: [], reason: null, nextStep: null }, muted: false, routes: [] }) } as unknown as AudioApi;
 const assetApi = { getAssetFile: async () => new Blob(["<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6'/></svg>"], { type: "image/svg+xml" }) } as unknown as AssetApi;
-const buildApi = (states: readonly TimerRunState[]): TimersApi => ({
+const buildApi = (states: readonly TimerRunState[], enabled = true): TimersApi => ({
   list: async () => [definition], listStates: async () => states, create: async input => ({ ...definition, ...input }), update: async (_id, input) => ({ ...definition, ...input }),
   listBrowserSources: async () => [
     { id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "landscape-key", url: "http://127.0.0.1:39187/overlay/modules/timers/live/story-key?profile=landscape", status: "available", connectionState: "connected", lastConnectedAt: definition.updatedAt },
@@ -20,7 +20,8 @@ const buildApi = (states: readonly TimerRunState[]): TimersApi => ({
   ],
   createBrowserSource: async source => source, regenerateBrowserSource: async source => source,
   remove: async () => {}, command: async () => ({ changed: false, state: states[0] ?? null }),
-  getModuleConfig: async () => ({ moduleId: "timers", enabled: true, config: structuredClone(timersOverlayModuleDefinition.defaultConfig), updatedAt: definition.updatedAt }),
+  getModuleConfig: async () => ({ moduleId: "timers", enabled, config: structuredClone(timersOverlayModuleDefinition.defaultConfig), updatedAt: definition.updatedAt }),
+  setModuleEnabled: async enabled => enabled,
   saveModuleConfig: async (enabled, config) => ({ moduleId: "timers", enabled, config, updatedAt: definition.updatedAt }),
   getAutomationCredential: async () => ({ configured: false, createdAt: null, rotatedAt: null }),
   rotateAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"placeholder".repeat(4)}` }), revokeAutomationCredential: async () => {}
@@ -68,5 +69,10 @@ export const BrowserSourceSetup: Story = { play: async ({ canvasElement }) => {
   await expect(within(landscape).getByRole("button", { name: "Hide Landscape URL" })).toBeVisible();
 } };
 export const Running: Story = { args: { api: buildApi([{ status: "running", definitionId: definition.id, generation: "run", snapshot: definition, startedAtEpochMs: Date.now(), endsAtEpochMs: Date.now() + 60_000 }]) } };
+export const ModuleDisabled: Story = { args: { api: buildApi([], false) }, play: async ({ canvasElement }) => {
+  const canvas = within(canvasElement);
+  await expect(await canvas.findByText("Module disabled")).toBeVisible();
+  await expect(canvas.getByRole("button", { name: "Enable Timers module" })).toBeVisible();
+} };
 export const Paused: Story = { args: { api: buildApi([{ status: "paused", definitionId: definition.id, generation: "pause", snapshot: definition, remainingMs: 30_000 }]) } };
 export const Completed: Story = { args: { api: buildApi([{ status: "completed", definitionId: definition.id, generation: "done", snapshot: definition, completedAtEpochMs: Date.now(), expiresAtEpochMs: Date.now() + 3000 }]) } };

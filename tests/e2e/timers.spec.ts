@@ -14,6 +14,7 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   let definition: Record<string, unknown> | null = null;
   let state: Record<string, unknown> | null = null;
   let layout = structuredClone(defaultLayout);
+  let moduleEnabled = true;
   const commands: string[] = [];
   const assets = [
     asset("icon-paws", "Cat paws", "image", "image/png"),
@@ -36,7 +37,11 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
       const body = route.request().postDataJSON() as { config: typeof defaultLayout };
       layout = body.config;
     }
-    await route.fulfill({ json: { moduleId: "timers", enabled: true, config: layout, updatedAt: timestamp } });
+    await route.fulfill({ json: { moduleId: "timers", enabled: moduleEnabled, config: layout, updatedAt: timestamp } });
+  });
+  await page.route("**/overlay-modules/timers/enabled", async route => {
+    moduleEnabled = (route.request().postDataJSON() as { readonly enabled: boolean }).enabled;
+    await route.fulfill({ json: { moduleId: "timers", enabled: moduleEnabled, config: layout, updatedAt: timestamp } });
   });
   await page.route(/^https?:\/\/[^/]+\/timers(?:\/[^?]*)?(?:\?.*)?$/u, async route => {
     const request = route.request();
@@ -78,6 +83,13 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   });
 
   await page.goto("/manage/modules/timers");
+  await expect(page.getByText("Module enabled")).toBeVisible();
+  await page.getByRole("button", { name: "Disable Timers module" }).click();
+  await page.getByRole("dialog", { name: "Disable Timers module?" }).getByRole("button", { name: "Confirm change" }).click();
+  await expect(page.getByText("Module disabled")).toBeVisible();
+  await page.getByRole("button", { name: "Enable Timers module" }).click();
+  await page.getByRole("dialog", { name: "Enable Timers module?" }).getByRole("button", { name: "Confirm change" }).click();
+  await expect(page.getByText("Module enabled")).toBeVisible();
   await expect(page.getByRole("heading", { name: "No timers yet" })).toBeVisible();
   await expect(page.getByText("Create one for a recurring stream activity.")).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);

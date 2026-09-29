@@ -294,6 +294,8 @@ export interface ManagementApi {
   activateAlertSet(setId: string, confirmWarnings?: boolean): Promise<AlertSetActivationResult>;
   markStarterAlertSetReviewComplete(setId: string): Promise<AlertSetOverview>;
   setManagedAlertEnabled(alertId: string, enabled: boolean): Promise<AlertSetDetail>;
+  getOverlayModuleEnabled(moduleId: "alerts" | "timers"): Promise<boolean>;
+  setOverlayModuleEnabled(moduleId: "alerts" | "timers", enabled: boolean): Promise<boolean>;
   deleteAlertSet(setId: string): Promise<void>;
   getAlertEditorDocument(alertId: string): Promise<AlertEditorDocument>;
   getAlertVariationAuthoringContext(alertId: string): Promise<AlertVariationAuthoringContext>;
@@ -832,6 +834,20 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       return postOverlayOutputKey("/management/overlay-outputs/keys/regenerate", input);
     },
 
+    async getOverlayModuleEnabled(moduleId) {
+      return parseOverlayModuleEnabled(
+        await client.getJson(`/overlay-modules/${encodeURIComponent(moduleId)}/config`, "Unable to load overlay module status."),
+        moduleId
+      );
+    },
+
+    async setOverlayModuleEnabled(moduleId, enabled) {
+      return parseOverlayModuleEnabled(
+        await client.patchJson(`/overlay-modules/${encodeURIComponent(moduleId)}/enabled`, { enabled }, "Unable to update overlay module status."),
+        moduleId
+      );
+    },
+
     async exportDiagnostics(input: DiagnosticsRequestView = {}) {
       return client.getJson<DiagnosticsExportView>(
         withLimit("/diagnostics/export", input),
@@ -847,6 +863,13 @@ export function createHttpManagementApi(options: HttpManagementApiOptions = {}):
       );
     }
   };
+}
+
+function parseOverlayModuleEnabled(candidate: unknown, moduleId: "alerts" | "timers"): boolean {
+  if (typeof candidate !== "object" || candidate === null) throw new TypeError("Invalid overlay module status response");
+  const value = candidate as Record<string, unknown>;
+  if (value.moduleId !== moduleId || typeof value.enabled !== "boolean") throw new TypeError("Invalid overlay module status response");
+  return value.enabled;
 }
 
 interface RuntimeContract<T> {

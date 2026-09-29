@@ -92,6 +92,11 @@ The Timers module SHALL produce normalized visual snapshots for module-specific 
 - **THEN** that surface renders no timer cards
 - **AND** active timers, other surfaces, and selected cue outputs remain unchanged
 
+#### Scenario: Management disables the Timers module
+- **WHEN** an authorized user confirms Disable Timers module from the Timers inventory header
+- **THEN** management shows the module as disabled and offers Enable Timers module
+- **AND** timer definitions, active runs, cue routing, and unsaved overlay-layout edits remain unchanged
+
 ### Requirement: Timer Stack Presentation Is Configurable And Deterministic
 Each target profile SHALL store one bounded draggable/resizable timer region, vertical or horizontal orientation, and a bounded positive visible maximum. The system SHALL render equal-sized timer boxes inside that region, scale card typography and spacing from the box width and height within bounded legibility limits, show a legible default clock icon when no user icon is configured, vertically center the card contents, left-align and dynamically truncate long labels with a single-line ellipsis according to their available width, right-align the countdown, and use a small `+N more` badge outside the timer-slot count when additional active timers are hidden. For a vertical stack, the badge SHALL appear below the timer boxes.
 
