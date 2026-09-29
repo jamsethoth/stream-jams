@@ -1,5 +1,5 @@
 import { projectTimerStack, timerProfileDimensions, type OverlayTargetProfileId, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
-import { useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
 
 export function TimerStackEditor({ value, onChange }: {
@@ -7,10 +7,21 @@ export function TimerStackEditor({ value, onChange }: {
   readonly onChange: (value: TimersOverlayModuleConfig) => void;
 }) {
   const [profile, setProfile] = useState<OverlayTargetProfileId>("landscape");
+  const [availableWidth, setAvailableWidth] = useState(840);
+  const previewShell = useRef<HTMLDivElement>(null);
   const region = value.profiles[profile]; const bounds = timerProfileDimensions[profile];
-  const previewScale = Math.min(1, 420 / bounds.width);
+  const previewScale = Math.min(1, availableWidth / bounds.width, 620 / bounds.height);
   const gesture = useRef<{ mode: "move" | "resize"; clientX: number; clientY: number; layout: typeof region.layout } | null>(null);
   const stack = useMemo(() => projectTimerStack({ nowEpochMs: 0, targetProfileId: profile, region, runs: sampleRuns(region.maxVisible + 2) }), [profile, region]);
+  useEffect(() => {
+    const shell = previewShell.current;
+    if (shell === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry !== undefined) setAvailableWidth(Math.min(960, Math.max(1, entry.contentRect.width)));
+    });
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
   const update = (patch: Partial<typeof region>) => onChange({ profiles: { ...value.profiles, [profile]: { ...region, ...patch } } });
   const updateLayout = (field: "x" | "y" | "width" | "height", next: number) => {
     const layout = { ...region.layout, [field]: next };
@@ -43,16 +54,33 @@ export function TimerStackEditor({ value, onChange }: {
       {(["x", "y", "width", "height"] as const).map(field => <label key={field}>{field.toUpperCase()}<input min={field === "width" || field === "height" ? 1 : 0} max={field === "x" || field === "width" ? bounds.width : bounds.height} type="number" value={region.layout[field]} onChange={event => updateLayout(field, Number(event.currentTarget.value))} /></label>)}
     </div>
     {slotWidth < 180 || slotHeight < 56 ? <p className="timer-layout__warning" role="status">Timer cards may be difficult to read at this size.</p> : null}
-    <div aria-label={`${profile} timer preview`} className="timer-layout__preview" style={{ width: bounds.width * previewScale, height: bounds.height * previewScale }}>
-      <div style={{ transform: `scale(${previewScale})`, transformOrigin: "top left", width: bounds.width, height: bounds.height }}><TimerStack stack={stack} resolveAssetUrl={() => ""} now={() => 0} /></div>
-      <button aria-label="Move timer region" className="timer-layout__region-handle" onKeyDown={event => keyAdjust("move", event)} onPointerDown={event => beginGesture("move", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: region.layout.x * previewScale, top: region.layout.y * previewScale, width: region.layout.width * previewScale, height: region.layout.height * previewScale }} type="button" />
-      <button aria-label="Resize timer region" className="timer-layout__resize-handle" onKeyDown={event => keyAdjust("resize", event)} onPointerDown={event => beginGesture("resize", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: (region.layout.x + region.layout.width) * previewScale - 16, top: (region.layout.y + region.layout.height) * previewScale - 16 }} type="button" />
+    <div className="timer-layout__preview-shell" ref={previewShell}>
+      <div aria-label={`${profile} timer preview`} className="timer-layout__preview" style={{ width: bounds.width * previewScale, height: bounds.height * previewScale }}>
+        <div style={{ transform: `scale(${previewScale})`, transformOrigin: "top left", width: bounds.width, height: bounds.height }}><TimerStack stack={stack} resolveAssetUrl={resolvePreviewAssetUrl} now={() => 0} /></div>
+        <button aria-label="Move timer region" className="timer-layout__region-handle" onKeyDown={event => keyAdjust("move", event)} onPointerDown={event => beginGesture("move", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: region.layout.x * previewScale, top: region.layout.y * previewScale, width: region.layout.width * previewScale, height: region.layout.height * previewScale }} type="button" />
+        <button aria-label="Resize timer region" className="timer-layout__resize-handle" onKeyDown={event => keyAdjust("resize", event)} onPointerDown={event => beginGesture("resize", event)} onPointerMove={moveGesture} onPointerUp={() => { gesture.current = null; }} style={{ left: (region.layout.x + region.layout.width) * previewScale - 16, top: (region.layout.y + region.layout.height) * previewScale - 16 }} type="button" />
+      </div>
     </div>
   </section>;
 }
 
 function sampleRuns(count: number): TimerRunState[] {
-  return Array.from({ length: count }, (_, index) => ({ status: "paused", definitionId: `preview-${index}`, generation: `preview-${index}`,
-    snapshot: { id: `preview-${index}`, label: index === 0 ? "A very long timer name that will truncate" : `Timer ${index + 1}`, durationMs: 60_000,
-      iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] } }, remainingMs: (index + 1) * 15_000 }));
+  const labels = ["Cat paws reward", "Wear oven mitts", "Tea steeping", "A very long timer name that will truncate", "Stretch break", "Hydration reminder"];
+  return Array.from({ length: count }, (_, index): TimerRunState => {
+    const definitionId = `preview-${index}`;
+    const snapshot = { id: definitionId, label: labels[index] ?? `Timer ${index + 1}`, durationMs: 60_000,
+      iconAssetId: index === 0 ? "preview-paw" : index === 1 ? "preview-mitts" : null,
+      startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] } };
+    if (index < 2) return { status: "running", definitionId, generation: definitionId, snapshot, startedAtEpochMs: 0, endsAtEpochMs: (index + 1) * 15_000 };
+    return { status: "paused", definitionId, generation: definitionId, snapshot, remainingMs: (index + 1) * 15_000 };
+  });
+}
+
+const previewIcons: Readonly<Record<string, string>> = {
+  "preview-paw": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='%235eead4'%3E%3Ccircle cx='18' cy='18' r='7'/%3E%3Ccircle cx='32' cy='12' r='7'/%3E%3Ccircle cx='46' cy='18' r='7'/%3E%3Cpath d='M32 25c-13 0-22 11-18 21 4 9 13 4 18 4s14 5 18-4c4-10-5-21-18-21z'/%3E%3C/g%3E%3C/svg%3E",
+  "preview-mitts": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23fbbf24' d='M17 8c5 0 7 5 7 10V9c0-5 8-5 8 0v9V8c0-5 8-5 8 0v12-8c0-5 8-5 8 0v22c0 15-8 22-21 22-11 0-18-7-18-18V20c0-5 8-5 8 0V8z'/%3E%3C/svg%3E"
+};
+
+function resolvePreviewAssetUrl(assetId: string): string {
+  return previewIcons[assetId] ?? "";
 }

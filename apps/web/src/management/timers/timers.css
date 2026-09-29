@@ -259,12 +259,21 @@
   position: relative;
 }
 
+.timer-layout__preview-shell {
+  max-width: 960px;
+  width: 100%;
+}
+
 .timer-layout__region-handle {
   background: transparent;
-  border: 2px dashed var(--color-accent);
+  border: 2px dashed color-mix(in srgb, var(--color-accent) 64%, transparent);
   cursor: move;
   padding: 0;
   position: absolute;
+}
+
+.timer-layout__region-handle:is(:hover, :focus-visible) {
+  border-color: var(--color-accent);
 }
 
 .timer-layout__resize-handle {

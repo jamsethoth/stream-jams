@@ -37,6 +37,8 @@ export const ConcurrentStatesAndOverflow: Story = {
     await expect(canvas.getByRole("list", { name: "Active timers" })).toBeVisible();
     await expect(canvas.getByText("+2 more")).toBeVisible();
     await expect(canvas.getByText("0:00")).toBeVisible();
+    await expect(canvas.getAllByRole("img", { name: "Default timer icon" })).toHaveLength(3);
+    await expect(canvas.getByRole("img", { name: "Cat paws reward icon" })).toBeVisible();
   }
 };
 

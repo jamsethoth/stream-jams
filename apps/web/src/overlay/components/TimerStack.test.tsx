@@ -80,6 +80,12 @@ describe("TimerStack", () => {
     expect(screen.getByText("Oven mitt challenge")).toBeVisible();
   });
 
+  it("uses a clock icon when a timer has no configured icon", () => {
+    render(<TimerStack stack={stack()} resolveAssetUrl={id => `/assets/${id}`} />);
+    expect(screen.getAllByRole("img", { name: "Default timer icon" })).toHaveLength(2);
+    expect(screen.getByRole("img", { name: "Oven mitt challenge icon" })).toHaveAttribute("src", "/assets/mitts");
+  });
+
   it("clears its shared ticker when running cards disappear", () => {
     vi.useFakeTimers();
     const clearIntervalSpy = vi.spyOn(window, "clearInterval");

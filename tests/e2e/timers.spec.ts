@@ -78,6 +78,11 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await expect(page.getByRole("heading", { name: "No timers yet" })).toBeVisible();
   await expect(page.getByText("Create one for a recurring stream activity.")).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);
+  const timerPreview = page.getByLabel("landscape timer preview");
+  await expect(timerPreview.getByRole("img", { name: "Cat paws reward icon" })).toBeVisible();
+  await expect(timerPreview.getByRole("img", { name: "Default timer icon" }).first()).toBeVisible();
+  await expect(timerPreview.getByText("+2 more")).toBeVisible();
+  expect(await timerPreview.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(420);
   const browserSources = page.getByRole("region", { name: "Browser sources" });
   await expect(browserSources.getByText("1 ready")).toBeVisible();
   await browserSources.getByRole("button", { name: "Expand browser sources" }).click();
@@ -140,10 +145,13 @@ test("renders late-joined Timer stacks in authoritative order with overflow and 
   await expect(cards.nth(1)).toContainText("Soon running timer with a deliberately long label");
   await expect(cards.nth(2)).toContainText("Paused reward");
   await expect(page.getByText("+2 more")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Default timer icon" })).toHaveCount(3);
   await expect(page.getByRole("list", { name: "Active timers" })).toHaveAttribute("data-orientation", "horizontal");
   const widths = await cards.evaluateAll(elements => elements.map(element => Math.round(element.getBoundingClientRect().width)));
   expect(new Set(widths).size).toBe(1);
   await expect(cards.nth(1).locator(".timer-stack__label")).toHaveCSS("text-overflow", "ellipsis");
+  await expect(cards.nth(1).locator(".timer-stack__label")).toHaveCSS("text-align", "left");
+  await expect(cards.nth(1).locator(".timer-stack__value")).toHaveCSS("text-align", "right");
 
   await page.evaluate(() => {
     const sockets = (window as Window & { __overlaySockets?: EventTarget[] }).__overlaySockets ?? [];

@@ -93,7 +93,7 @@ The Timers module SHALL produce normalized visual snapshots for module-specific 
 - **AND** active timers, other surfaces, and selected cue outputs remain unchanged
 
 ### Requirement: Timer Stack Presentation Is Configurable And Deterministic
-Each target profile SHALL store one bounded draggable/resizable timer region, vertical or horizontal orientation, and a bounded positive visible maximum. The system SHALL render equal-sized timer boxes inside that region, truncate long labels with a single-line ellipsis, and use a small `+N more` badge outside the timer-slot count when additional active timers are hidden.
+Each target profile SHALL store one bounded draggable/resizable timer region, vertical or horizontal orientation, and a bounded positive visible maximum. The system SHALL render equal-sized timer boxes inside that region, show a default clock icon when no user icon is configured, left-align and truncate long labels with a single-line ellipsis, right-align the countdown, and use a small `+N more` badge outside the timer-slot count when additional active timers are hidden.
 
 #### Scenario: Running and paused timers share a region
 - **WHEN** several timers are active

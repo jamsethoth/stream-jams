@@ -74,12 +74,21 @@ function TimerCard({
       role="listitem"
       style={style}
     >
-      {card.iconAssetId === null ? null : (
-        <TimerIcon assetId={card.iconAssetId} label={card.label} resolveAssetUrl={resolveAssetUrl} />
-      )}
+      {card.iconAssetId === null
+        ? <DefaultTimerIcon />
+        : <TimerIcon assetId={card.iconAssetId} label={card.label} resolveAssetUrl={resolveAssetUrl} />}
       <span className="timer-stack__label" title={card.label}>{card.label}</span>
       <time className="timer-stack__value" data-testid={`timer-value-${card.definitionId}`}>{value}</time>
     </div>
+  );
+}
+
+function DefaultTimerIcon() {
+  return (
+    <svg aria-label="Default timer icon" className="timer-stack__icon timer-stack__icon--default" role="img" viewBox="0 0 64 64">
+      <circle cx="32" cy="34" fill="none" r="23" stroke="currentColor" strokeWidth="6" />
+      <path d="M24 5h16M32 11v7M49 17l5 5M32 34V22M32 34l10 6" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="6" />
+    </svg>
   );
 }
 
