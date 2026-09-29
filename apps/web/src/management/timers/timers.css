@@ -214,6 +214,19 @@
   gap: 6px;
 }
 
+.timer-editor label.timer-output-option {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.timer-output-option input[type="checkbox"] {
+  flex: 0 0 16px;
+  height: 16px;
+  margin: 0;
+  width: 16px;
+}
+
 .timer-editor fieldset {
   display: grid;
   gap: 8px;

@@ -118,6 +118,17 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await expect(browserSources.getByRole("article", { name: "Landscape browser source" })).toContainText("Listening now");
   await page.getByRole("button", { name: "New timer" }).click();
   const editor = page.getByRole("dialog", { name: "Create timer" });
+  const outputLabels = editor.getByRole("group", { name: "Audio outputs" }).locator("label");
+  const outputAlignment = await outputLabels.evaluateAll(labels => labels.map(label => {
+    const labelBounds = label.getBoundingClientRect();
+    const checkboxBounds = label.querySelector("input")!.getBoundingClientRect();
+    return {
+      centerOffset: Math.abs((labelBounds.top + labelBounds.height / 2) - (checkboxBounds.top + checkboxBounds.height / 2)),
+      checkboxLeft: checkboxBounds.left
+    };
+  }));
+  expect(outputAlignment.every(({ centerOffset }) => centerOffset <= 1)).toBe(true);
+  expect(new Set(outputAlignment.map(({ checkboxLeft }) => Math.round(checkboxLeft))).size).toBe(1);
   await page.getByLabel("Name", { exact: true }).fill("Cat paws reward");
   await page.getByLabel("Duration (seconds)").fill("30");
   const assetRows = page.locator(".timer-asset-row");

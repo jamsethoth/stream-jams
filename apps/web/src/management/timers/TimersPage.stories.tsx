@@ -41,7 +41,16 @@ export const IdleInventory: Story = { play: async ({ canvasElement }) => {
 export const CreatingTimer: Story = { play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
   await userEvent.click(await canvas.findByRole("button", { name: "New timer" }));
-  await expect(canvas.getByRole("dialog", { name: "Create timer" })).toBeVisible();
+  const dialog = canvas.getByRole("dialog", { name: "Create timer" });
+  await expect(dialog).toBeVisible();
+  const outputLabels = within(dialog).getByRole("group", { name: "Audio outputs" }).querySelectorAll("label");
+  for (const label of outputLabels) {
+    const checkbox = label.querySelector("input");
+    const labelBounds = label.getBoundingClientRect();
+    const checkboxBounds = checkbox?.getBoundingClientRect();
+    await expect(checkboxBounds).toBeDefined();
+    await expect(Math.abs((labelBounds.top + labelBounds.height / 2) - (checkboxBounds!.top + checkboxBounds!.height / 2))).toBeLessThanOrEqual(1);
+  }
 } };
 export const BrowserSourceSetup: Story = { play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
