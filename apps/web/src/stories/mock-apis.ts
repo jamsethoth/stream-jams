@@ -161,6 +161,8 @@ export function createStoryManagementApi(overrides: Partial<ManagementApi> = {})
     async setManagedAlertEnabled() {
       throw new Error("No managed alert configured for this story.");
     },
+    async getOverlayModuleEnabled() { return true; },
+    async setOverlayModuleEnabled(_moduleId, enabled) { return enabled; },
     async deleteAlertSet() {
       return undefined;
     },

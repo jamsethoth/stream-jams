@@ -23,6 +23,47 @@ function createService(clock: () => Date = () => now) {
 }
 
 describe("overlay module config service", () => {
+  it("returns disabled bounded Landscape and Vertical defaults for Timers", async () => {
+    const { service } = createService();
+
+    await expect(service.getModuleConfig("timers")).resolves.toMatchObject({
+      moduleId: "timers",
+      enabled: false,
+      config: {
+        profiles: {
+          landscape: { orientation: "vertical", maxVisible: 4 },
+          vertical: { orientation: "vertical", maxVisible: 4 }
+        }
+      }
+    });
+  });
+
+  it("rejects out-of-bounds and unknown Timer stack configuration without replacing saved state", async () => {
+    const { service } = createService(() => later);
+    const saved = await service.saveModuleConfig({
+      moduleId: "timers",
+      enabled: true,
+      config: {
+        profiles: {
+          landscape: { layout: { x: 0, y: 0, width: 400, height: 200, zIndex: 1 }, orientation: "horizontal", maxVisible: 3 },
+          vertical: { layout: { x: 0, y: 0, width: 300, height: 600, zIndex: 1 }, orientation: "vertical", maxVisible: 5 }
+        }
+      }
+    });
+
+    await expect(service.saveModuleConfig({
+      moduleId: "timers",
+      enabled: true,
+      config: {
+        profiles: {
+          landscape: { layout: { x: 1800, y: 0, width: 400, height: 200, zIndex: 1 }, orientation: "horizontal", maxVisible: 3 },
+          vertical: { layout: { x: 0, y: 0, width: 300, height: 600, zIndex: 1 }, orientation: "vertical", maxVisible: 13, unknown: true }
+        }
+      }
+    })).rejects.toBeInstanceOf(InvalidOverlayModuleConfigError);
+    await expect(service.getModuleConfig("timers")).resolves.toEqual(saved);
+  });
+
   it("returns default module config when no config has been saved", async () => {
     const { service } = createService();
 

@@ -6,6 +6,9 @@ import type { DesktopOverlayController } from "./desktop-overlay-controller.js";
 function scopedId(key: VisualRecipientKey, id: string): string {
   return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation, id]);
 }
+function scopedModuleAssetId(moduleId: string, revision: number, id: string): string {
+  return JSON.stringify(["module", moduleId, revision, id]);
+}
 
 export function DesktopOverlayApp({ controller, subscribe }: {
   readonly controller: DesktopOverlayController;
@@ -15,19 +18,30 @@ export function DesktopOverlayApp({ controller, subscribe }: {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot);
   const composition = useMemo<OverlayComposition>(() => ({
     overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape",
-    modules: snapshot.config.layers.map((layer, index) => ({
-      moduleId: layer.moduleId, enabled: true,
-      surfaceLayer: { visible: layer.visible, zIndex: snapshot.config.layers.length - index },
-      instructions: snapshot.occurrences.filter(occurrence => occurrence.key.moduleId === layer.moduleId).flatMap(occurrence =>
-        occurrence.instructions.map((instruction): OverlayInstruction => ({ ...instruction,
-          id: scopedId(occurrence.key, instruction.id), timing: occurrence.timing,
-          visual: instruction.visual === null ? null : { ...instruction.visual, assetId: scopedId(occurrence.key, instruction.visual.assetId) }
-        })))
-    }))
+    modules: snapshot.config.layers.map((layer, index) => {
+      const persistent = snapshot.modules.find(module => module.moduleId === layer.moduleId);
+      return {
+        moduleId: layer.moduleId, enabled: true,
+        surfaceLayer: { visible: layer.visible, zIndex: snapshot.config.layers.length - index },
+        instructions: snapshot.occurrences.filter(occurrence => occurrence.key.moduleId === layer.moduleId).flatMap(occurrence =>
+          occurrence.instructions.map((instruction): OverlayInstruction => ({ ...instruction,
+            id: scopedId(occurrence.key, instruction.id), timing: occurrence.timing,
+            visual: instruction.visual === null ? null : { ...instruction.visual, assetId: scopedId(occurrence.key, instruction.visual.assetId) }
+          }))),
+        ...(persistent === undefined ? {} : { presentation: { ...persistent.presentation, stack: {
+          ...persistent.presentation.stack,
+          cards: persistent.presentation.stack.cards.map(card => ({ ...card, iconAssetId: card.iconAssetId === null ? null :
+            scopedModuleAssetId(persistent.moduleId, persistent.revision, card.iconAssetId) }))
+        } } })
+      };
+    })
   }), [snapshot]);
   const resolveAssetUrl = useCallback((id: string) => {
     for (const occurrence of controller.getSnapshot().occurrences) {
       for (const [assetId, url] of occurrence.assetUrls) if (scopedId(occurrence.key, assetId) === id) return url;
+    }
+    for (const module of controller.getSnapshot().modules) {
+      for (const [assetId, url] of module.assetUrls) if (scopedModuleAssetId(module.moduleId, module.revision, assetId) === id) return url;
     }
     return "";
   }, [controller]);

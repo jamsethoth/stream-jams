@@ -1,5 +1,6 @@
 import {
   InvalidMediaImportError,
+  DefaultAssetValidator,
   defaultAssetValidationPolicy,
   type AssetRepository,
   type MediaImportPipeline,
@@ -15,6 +16,7 @@ import {
 } from "../middleware/overlay-auth.js";
 import { sendHttpError } from "../errors.js";
 import { readModuleOverlayParams, readUnifiedOverlayParams } from "./overlay-route-params.js";
+import { isTimerAssetCompatible } from "../../modules/timers/timer-asset-role.js";
 
 export interface AssetRouteDependencies {
   readonly assetRepository: Pick<AssetRepository, "list" | "findById">;
@@ -96,6 +98,14 @@ export function registerAssetRoutes(app: FastifyInstance, dependencies: AssetRou
         });
       }
       try {
+        const validation = new DefaultAssetValidator().validate({ ...importRequest, sizeBytes: importRequest.bytes.byteLength });
+        if (!validation.accepted || validation.mediaType === null) {
+          throw new InvalidMediaImportError(validation.reason ?? "Invalid media import");
+        }
+        const mediaType = validation.mediaType;
+        if (impact.owners.some(owner => owner.moduleId === "timers" && !isTimerAssetCompatible(owner.usageRole ?? "", mediaType))) {
+          throw new InvalidMediaImportError("Replacement media is incompatible with an existing timer icon or audio cue.");
+        }
         const replacement = await dependencies.mediaImportPipeline.importMedia({ ...importRequest, assetId });
         await assetLibraryService.completeReplacement(existing, replacement);
         return replacement;

@@ -137,6 +137,8 @@ function createManagementApi(): ManagementApi {
     async setManagedAlertEnabled() {
       throw new Error("not called");
     },
+    async getOverlayModuleEnabled() { return true; },
+    async setOverlayModuleEnabled(_moduleId, enabled) { return enabled; },
     async deleteAlertSet() {
       return undefined;
     },

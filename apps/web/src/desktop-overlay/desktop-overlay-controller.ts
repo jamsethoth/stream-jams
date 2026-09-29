@@ -1,8 +1,9 @@
-import { desktopVisualRendererRequestSchema, maxDesktopVisualTransferBytes, serializeException, type DesktopVisualAsset, type DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type OverlayPlaybackFailure, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopVisualRendererRequestSchema, maxDesktopVisualTransferBytes, serializeException, type DesktopModuleSync, type DesktopVisualAsset, type DesktopVisualBatch, type DesktopVisualRendererReply, type DesktopVisualRendererRequest, type OverlayModulePresentation, type OverlayPlaybackFailure, type PlaybackTiming, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 type Configuration = Extract<SurfaceConfiguration, { kind: "desktop" }>;
 export interface DesktopOverlaySnapshot {
   config: Configuration;
   occurrences: readonly { key: VisualRecipientKey; timing: PlaybackTiming; instructions: DesktopVisualBatch["instructions"]; assetUrls: ReadonlyMap<string, string> }[];
+  modules: readonly { moduleId: DesktopModuleSync["moduleId"]; revision: number; presentation: OverlayModulePresentation; assetUrls: ReadonlyMap<string, string> }[];
 }
 export interface DesktopOverlayControllerDependencies {
   report(reply: DesktopVisualRendererReply): void;
@@ -27,13 +28,18 @@ type Occurrence = {
   startTimer: ReturnType<typeof setTimeout> | undefined;
   endTimer: ReturnType<typeof setTimeout> | undefined;
 };
+type ModuleRecord = DesktopOverlaySnapshot["modules"][number] & { resources: PreparedAsset[]; bytes: number };
+type ModuleLoad = { envelope: Envelope; revision: number; cancelled: boolean; resources: PreparedAsset[]; bytes: number };
 
 /** Browser-only media lifetime owner. Native transport owns the final watchdog. */
 export class DesktopOverlayController {
-  #snapshot: DesktopOverlaySnapshot = { config: { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] }, occurrences: [] };
+  #snapshot: DesktopOverlaySnapshot = { config: { id: "desktop:primary", kind: "desktop", enabled: false, displayId: null, displayLabel: null, autoFollowDisplayName: false, opacity: 1, layers: [] }, occurrences: [], modules: [] };
   #generation: number | null = null;
   #disposed = false;
   #records = new Map<string, Occurrence>();
+  #modules = new Map<string, ModuleRecord>();
+  #moduleLoads = new Map<string, ModuleLoad>();
+  #moduleRevisions = new Map<string, number>();
   #recent = new Set<string>();
   #bytes = 0;
   readonly #now: () => number;
@@ -63,6 +69,7 @@ export class DesktopOverlayController {
         break;
       }
       case "prepare": this.#prepare(envelope, command.batch); break;
+      case "sync-module": void this.#syncModule(envelope, command); break;
       case "start": this.#start(envelope, command.key); break;
       case "stop": {
         const record = this.#records.get(identity(command.key));
@@ -102,6 +109,42 @@ export class DesktopOverlayController {
     record.prepareTimer = setTimeout(() => this.#finish(record, "error"), 5000);
     record.endTimer = setTimeout(() => this.#finish(record, "complete"), Math.max(0, batch.timing.endsAtEpochMs - this.#now()));
     void this.#load(record);
+  }
+
+  async #syncModule(envelope: Envelope, sync: DesktopModuleSync): Promise<void> {
+    const latest = this.#moduleRevisions.get(sync.moduleId) ?? -1;
+    if (sync.revision <= latest) { this.#report(envelope, { type: "ok" }); return; }
+    this.#moduleRevisions.set(sync.moduleId, sync.revision);
+    const previousLoad = this.#moduleLoads.get(sync.moduleId);
+    if (previousLoad !== undefined) this.#cancelModuleLoad(sync.moduleId, previousLoad);
+    if (sync.presentation === null) {
+      this.#removeModule(sync.moduleId); this.#publish(); this.#report(envelope, { type: "ok" }); return;
+    }
+    const bytes = sync.assets.reduce((sum, asset) => sum + asset.bytes.byteLength, 0);
+    if (!this.#snapshot.config.enabled || this.#snapshot.config.displayId === null || this.#bytes + bytes > maxDesktopVisualTransferBytes) {
+      this.#report(envelope, null, failure("Desktop timer snapshot could not be admitted.")); return;
+    }
+    const load: ModuleLoad = { envelope, revision: sync.revision, cancelled: false, resources: [], bytes };
+    this.#moduleLoads.set(sync.moduleId, load); this.#bytes += bytes;
+    const urls = new Map<string, string>();
+    try {
+      for (const asset of sync.assets) {
+        const resource = await this.dependencies.prepareAsset(asset);
+        if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) { releaseResource(resource); return; }
+        load.resources.push(resource); urls.set(asset.assetId, resource.url);
+      }
+      if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) return;
+      this.#moduleLoads.delete(sync.moduleId);
+      this.#removeModule(sync.moduleId);
+      this.#modules.set(sync.moduleId, { moduleId: sync.moduleId, revision: sync.revision, presentation: sync.presentation,
+        assetUrls: urls, resources: load.resources, bytes });
+      this.#publish(); this.#report(envelope, { type: "ok" });
+    } catch (error) {
+      if (load.cancelled || this.#disposed || this.#moduleLoads.get(sync.moduleId) !== load) return;
+      if (this.#moduleLoads.get(sync.moduleId) === load) this.#moduleLoads.delete(sync.moduleId);
+      this.#releaseModuleLoad(load);
+      this.#report(envelope, null, failure("Desktop timer icons could not be prepared.", error));
+    }
   }
 
   async #load(record: Occurrence): Promise<void> {
@@ -174,9 +217,33 @@ export class DesktopOverlayController {
     if (this.#records.get(id) !== record) return;
     this.#records.delete(id); this.#bytes -= record.bytes;
   }
-  #clear(): void { for (const record of this.#records.values()) this.#finish(record, "error"); }
+  #clear(): void {
+    for (const record of this.#records.values()) this.#finish(record, "error");
+    for (const [moduleId, load] of this.#moduleLoads) this.#cancelModuleLoad(moduleId, load);
+    for (const moduleId of this.#modules.keys()) this.#removeModule(moduleId);
+    this.#moduleRevisions.clear();
+    this.#publish();
+  }
+  #cancelModuleLoad(moduleId: string, load: ModuleLoad): void {
+    if (this.#moduleLoads.get(moduleId) === load) this.#moduleLoads.delete(moduleId);
+    load.cancelled = true; this.#releaseModuleLoad(load);
+    this.#report(load.envelope, { type: "ok" });
+  }
+  #releaseModuleLoad(load: ModuleLoad): void {
+    for (const resource of load.resources) releaseResource(resource);
+    load.resources.length = 0;
+    if (load.bytes > 0) { this.#bytes -= load.bytes; load.bytes = 0; }
+  }
+  #removeModule(moduleId: string): void {
+    const record = this.#modules.get(moduleId); if (record === undefined) return;
+    this.#modules.delete(moduleId);
+    for (const resource of record.resources) releaseResource(resource);
+    this.#bytes -= record.bytes;
+  }
   #publish(config = this.#snapshot.config): void {
-    this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active").map(record => record.view) };
+    this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active").map(record => record.view),
+      modules: [...this.#modules.values()].map(record => ({ moduleId: record.moduleId, revision: record.revision,
+        presentation: record.presentation, assetUrls: record.assetUrls })) };
     this.dependencies.changed();
   }
   #report(envelope: Envelope, result: DesktopVisualRendererReply["result"], failure?: OverlayPlaybackFailure): void {
@@ -187,3 +254,7 @@ function identity(key: VisualRecipientKey): string { return JSON.stringify([key.
 function releaseResource(resource: PreparedAsset): void { try { resource.dispose(); }
 // error-provenance: allow cleanup -- teardown must continue after this best-effort cleanup step
 catch { /* Continue releasing other media after an isolated cleanup failure. */ } }
+function failure(message: string, error?: unknown): OverlayPlaybackFailure {
+  return { referenceId: `err_${crypto.randomUUID()}`, stage: "source-load", message,
+    exception: serializeException(error ?? new Error(message)) };
+}

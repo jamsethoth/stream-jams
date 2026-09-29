@@ -44,6 +44,21 @@ describe("AlertSetsPage", () => {
     expect(screen.queryByText("4 alerts need review")).not.toBeInTheDocument();
   });
 
+  it("shows explicit alert module enablement and confirms disabling it", async () => {
+    const api = alertSetsApi();
+    const user = userEvent.setup();
+    render(<AlertSetsPage managementApi={api} onEditAlert={vi.fn()} />);
+
+    expect(await screen.findByText("Module enabled")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Disable Alerts module" }));
+    const dialog = screen.getByRole("dialog", { name: "Disable Alerts module?" });
+    await user.click(within(dialog).getByRole("button", { name: "Confirm change" }));
+
+    await waitFor(() => expect(api.setOverlayModuleEnabled).toHaveBeenCalledWith("alerts", false));
+    expect(screen.getByText("Module disabled")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enable Alerts module" })).toBeInTheDocument();
+  });
+
   it("reveals and hides browser-source URLs without changing keys", async () => {
     const api = alertSetsApi();
     const user = userEvent.setup();
@@ -1097,7 +1112,10 @@ type AlertSetsApi = Pick<
   | "sendAlertEditorTest"
   | "createOverlayOutputKey"
   | "regenerateOverlayOutputKey"
->;
+> & {
+  getOverlayModuleEnabled(moduleId: "alerts" | "timers"): Promise<boolean>;
+  setOverlayModuleEnabled(moduleId: "alerts" | "timers", enabled: boolean): Promise<boolean>;
+};
 
 function alertSetsApi(overrides: Partial<AlertSetsApi> = {}): AlertSetsApi {
   const source = detail();
@@ -1134,6 +1152,8 @@ function alertSetsApi(overrides: Partial<AlertSetsApi> = {}): AlertSetsApi {
       url: "http://127.0.0.1:39187/overlay/modules/alerts/live/ovl_regenerated?profile=landscape",
       output: output("landscape", "live")
     })),
+    getOverlayModuleEnabled: vi.fn(async () => true),
+    setOverlayModuleEnabled: vi.fn(async (_moduleId, enabled) => enabled),
     ...overrides
   };
 }

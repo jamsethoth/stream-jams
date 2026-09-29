@@ -86,6 +86,8 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       "alert_rule_management_metadata",
       "asset_library_metadata",
       "audio_output_routes",
+      "timer_definitions",
+      "timer_audio_routes",
       "screen_effect_sets",
       "screen_effects",
       "screen_effect_set_memberships",
@@ -409,6 +411,12 @@ describe("SqliteConfigurationSnapshotRepository", () => {
   it("keeps portable table mappings aligned with migrated columns", async () => {
     database.connection.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)")
       .run("route-a", "Private", "local-endpoint", "Local headset");
+    database.connection.prepare(`INSERT INTO timer_definitions
+      (id, label, duration_ms, icon_asset_id, start_audio_asset_id, end_audio_asset_id, browser_source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run("timer-mapping", "Mapping timer", 60_000, "asset-follow", null, null, 1, "2026-07-15T04:00:00.000Z", "2026-07-15T04:00:00.000Z");
+    database.connection.prepare("INSERT INTO timer_audio_routes (timer_id, route_id, position) VALUES (?, ?, ?)")
+      .run("timer-mapping", "route-a", 0);
     const effectDraft = createScreenEffectDocument({
       id: "effect-mapping",
       name: "Mapping effect",
@@ -712,6 +720,63 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       key_hash: "route-hash",
       route_key_secret_ref_json: '{"namespace":"overlay-route-key","name":"key-live"}'
     });
+  });
+
+  it("excludes Timer automation credentials, clears them on restore, and preserves them on rollback", () => {
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    database.connection.prepare(`INSERT INTO timer_automation_credential
+      (singleton_id, verifier, created_at, rotated_at, revoked_at) VALUES (1, ?, ?, NULL, NULL)`)
+      .run("secret-verifier-value-123", "2026-07-15T04:00:00.000Z");
+    const snapshot = repository.snapshot();
+    expect(snapshot.tables).not.toHaveProperty("timer_automation_credential");
+
+    const restorePoint = repository.captureRestorePoint();
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(database.connection.prepare("SELECT COUNT(*) AS count FROM timer_automation_credential").get()).toEqual({ count: 0 });
+
+    repository.restoreRestorePoint(restorePoint);
+    expect(database.connection.prepare("SELECT verifier FROM timer_automation_credential").get()).toEqual({ verifier: "secret-verifier-value-123" });
+  });
+
+  it("round-trips portable Timer definitions and rejects missing Timer assets or routes", () => {
+    database.connection.prepare("INSERT INTO audio_output_routes (id, name) VALUES (?, ?)").run("timer-route", "Timer speaker");
+    database.connection.prepare(`INSERT INTO timer_definitions
+      (id, label, duration_ms, icon_asset_id, start_audio_asset_id, end_audio_asset_id, browser_source, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run("timer-backup", "Backup timer", 30_000, "asset-follow", null, null, 1, "2026-07-15T04:00:00.000Z", "2026-07-15T04:00:00.000Z");
+    database.connection.prepare("INSERT INTO timer_audio_routes (timer_id, route_id, position) VALUES (?, ?, ?)")
+      .run("timer-backup", "timer-route", 0);
+    const repository = new SqliteConfigurationSnapshotRepository(database.connection);
+    const snapshot = repository.snapshot();
+
+    repository.replace({ tables: snapshot.tables, assets: [seededAsset()] });
+    expect(database.connection.prepare("SELECT label, browser_source FROM timer_definitions WHERE id = ?").get("timer-backup"))
+      .toEqual({ label: "Backup timer", browser_source: 1 });
+    expect(database.connection.prepare("SELECT route_id, position FROM timer_audio_routes WHERE timer_id = ?").all("timer-backup"))
+      .toEqual([{ route_id: "timer-route", position: 0 }]);
+
+    const missingAsset = structuredClone(snapshot.tables);
+    for (const column of ["start_audio_asset_id", "end_audio_asset_id"] as const) {
+      const incompatible = structuredClone(snapshot.tables);
+      incompatible.timer_definitions![0]![column] = "asset-follow";
+      expect(repository.validate({ appConfig: {}, ...snapshot, tables: incompatible })).toContain(
+        `timer_definitions[0].${column} references incompatible asset_metadata "asset-follow".`
+      );
+    }
+    const incompatibleIcon = structuredClone(snapshot.tables);
+    incompatibleIcon.asset_metadata![0]!.media_type = "audio";
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: incompatibleIcon })).toContain(
+      'timer_definitions[0].icon_asset_id references incompatible asset_metadata "asset-follow".'
+    );
+    missingAsset.timer_definitions![0] = { ...missingAsset.timer_definitions![0]!, icon_asset_id: "missing-asset" };
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: missingAsset })).toContain(
+      'timer_definitions[0].icon_asset_id references missing asset_metadata "missing-asset".'
+    );
+    const missingRoute = structuredClone(snapshot.tables);
+    missingRoute.timer_audio_routes![0] = { ...missingRoute.timer_audio_routes![0]!, route_id: "missing-route" };
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: missingRoute })).toContain(
+      'audio_output_routes does not contain route_id "missing-route" referenced by row 0.'
+    );
   });
 
   it("replaces moderation policy with configuration rows and restores its prior row from a rollback point", () => {

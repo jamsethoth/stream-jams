@@ -4,6 +4,7 @@ export type ManagementRouteId =
   | "tts-providers"
   | "modules-alerts"
   | "modules-screen-effects"
+  | "modules-timers"
   | "alert-safety"
   | "alert-editor"
   | "screen-effect-editor"
@@ -15,6 +16,7 @@ export interface ManagementRoute {
   readonly id: ManagementRouteId;
   readonly alertId?: string;
   readonly effectId?: string;
+  readonly ownerId?: string;
   readonly variantId?: string;
   readonly create?: true;
   readonly setId?: string;
@@ -68,6 +70,14 @@ const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
     "Author trusted local visual and audio effects without merging them into Alerts.",
     ["Modules", "Screen Effects"]
   ),
+  "modules-timers": route(
+    "modules-timers",
+    "Timers",
+    "/manage/modules/timers",
+    "Timers",
+    "Create reusable timers, control active runs, and configure timer overlays.",
+    ["Modules", "Timers"]
+  ),
   "alert-safety": route(
     "alert-safety",
     "Safety",
@@ -118,6 +128,7 @@ routeDefinitions["modules-alerts"] = {
       childRoutes: []
     },
     routeDefinitions["modules-screen-effects"],
+    routeDefinitions["modules-timers"],
     routeDefinitions["alert-safety"]
   ]
 };
@@ -195,6 +206,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
   const setup = search.get("setup") === "add" ? "add" as const : undefined;
   return {
     id,
+    ...(id === "modules-timers" && search.get("ownerId") ? { ownerId: search.get("ownerId")! } : {}),
     ...(id === "event-sources" || id === "tts-providers" ? {
       ...(providerId === undefined ? {} : { providerId }),
       ...(setup === undefined ? {} : { setup })
@@ -210,6 +222,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
 
 export function formatManagementRoute(routeValue: ManagementRoute): string {
   const search = new URLSearchParams();
+  if (routeValue.ownerId !== undefined) search.set("ownerId", routeValue.ownerId);
   if (routeValue.variantId !== undefined) search.set("variant", routeValue.variantId);
   if (routeValue.setId !== undefined) search.set("set", routeValue.setId);
   if (routeValue.eventType !== undefined) search.set("event", routeValue.eventType);

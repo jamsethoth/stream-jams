@@ -407,6 +407,11 @@ test("management alerts creates and tests a disabled community-gift alert", asyn
   });
 
   await page.goto("/manage/modules/alerts");
+  await expect(page.getByText("Module enabled")).toBeVisible();
+  await page.getByRole("button", { name: "Disable Alerts module" }).click();
+  await page.getByRole("dialog", { name: "Disable Alerts module?" }).getByRole("button", { name: "Confirm change" }).click();
+  await expect(page.getByText("Module disabled")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Enable Alerts module" })).toBeVisible();
   const selectedSet = page.getByRole("region", { name: "Default alert set" });
   await selectedSet.getByRole("checkbox", { name: "Show unused event types" }).check();
   await selectedSet.getByRole("button", { name: "Add alert for Community gift received" }).click();

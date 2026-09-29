@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply,
-  type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
+  type DesktopModuleSync, type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
 } from "@stream-jams/core";
 import { overlayWorkerResponseSchema, type OverlayWorkerMessage } from "./overlay-ipc.js";
 
@@ -45,6 +45,10 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
 
   async configure(config: Extract<SurfaceConfiguration, { kind: "desktop" }>): Promise<void> {
     await this.#ok({ type: "configure", config });
+  }
+
+  async syncModule(sync: DesktopModuleSync): Promise<void> {
+    await this.#ok({ type: "sync-module", ...sync });
   }
 
   async getStatus(): Promise<DesktopOverlayStatus> {

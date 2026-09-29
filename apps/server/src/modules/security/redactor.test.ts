@@ -70,6 +70,16 @@ describe("createRedactor", () => {
     );
   });
 
+  it("redacts timer automation bearer material even outside an authorization header", () => {
+    const redactor = createRedactor();
+    const token = "tmr_generatedTimerAutomationSecret_1234567890";
+
+    expect(redactor.redactText(`Timer automation failed for ${token}`)).toBe(
+      "Timer automation failed for [REDACTED]"
+    );
+    expect(redactor.redact({ timerAutomationToken: token })).toEqual({ timerAutomationToken: "[REDACTED]" });
+  });
+
   it("redacts sensitive query values from relative request URLs", () => {
     const redactor = createRedactor();
 

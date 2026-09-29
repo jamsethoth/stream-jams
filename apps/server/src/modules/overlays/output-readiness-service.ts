@@ -70,6 +70,27 @@ export class OutputReadinessService {
       });
   }
 
+  async listTimerBrowserSources(origin: string) {
+    const outputs = await this.options.listOutputs(origin);
+    return outputs
+      .filter((output) => output.scope === "module"
+        && output.moduleId === "timers"
+        && output.purpose === "live"
+        && (output.targetProfileId === "landscape" || output.targetProfileId === "vertical"))
+      .map((output) => {
+        const states = this.options.getClientStates()
+          .filter((client) => sameOutput(client, output))
+          .sort((left, right) => right.connectedAt.localeCompare(left.connectedAt));
+        const connected = states.some((client) => client.connectionState === "connected");
+        const latest = states[0] ?? null;
+        return {
+          ...output,
+          connectionState: connected ? "connected" as const : latest === null ? "never-connected" as const : "disconnected" as const,
+          lastConnectedAt: latest?.connectedAt ?? null
+        };
+      });
+  }
+
   async hasConfiguredAlertBrowserOutput(origin: string): Promise<boolean> {
     return (await this.options.listOutputs(origin)).some(
       (output) => isAlertLiveBrowserOutput(output) && output.copyableUrlStatus === "available"

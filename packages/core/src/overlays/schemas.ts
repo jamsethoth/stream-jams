@@ -9,6 +9,7 @@ import {
 } from "../alerts/text-style.js";
 import { ttsPlaybackInstructionSchema } from "../tts/schemas.js";
 import { mediaVolumeSchema } from "../audio/schemas.js";
+import { overlayModulePresentationSchema } from "../timers/schemas.js";
 import {
   nonEmptyStringSchema,
   nonNegativeIntegerSchema,
@@ -91,8 +92,9 @@ export const overlayModuleSnapshotSchema = z.object({
   surfaceLayer: z.object({ visible: z.boolean(), zIndex: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER) }).strict().optional(),
   moduleId: nonEmptyStringSchema,
   enabled: z.boolean(),
-  instructions: z.array(overlayInstructionSchema)
-});
+  instructions: z.array(overlayInstructionSchema),
+  presentation: overlayModulePresentationSchema.optional()
+}).strict();
 
 export const overlayCompositionSchema = z.object({
   overlayId: nonEmptyStringSchema,

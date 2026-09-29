@@ -34,3 +34,22 @@ it("renders only active private occurrences and preserves their nodes on configu
   expect(report).toHaveBeenCalledWith(expect.objectContaining({ result: { type: "error", key } }));
   controller.dispose();
 });
+
+it("renders persistent timer module presentations and their prepared icons", async () => {
+  const listeners = new Set<() => void>();
+  const controller = new DesktopOverlayController({ report: vi.fn(), changed: () => { for (const listener of listeners) listener(); },
+    prepareAsset: vi.fn(async () => ({ url: "blob:timer-icon", dispose() {} })) });
+  const receive = (command: unknown) => controller.receive({ generation: 1, requestId: crypto.randomUUID(), command });
+  const subscribe = (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; };
+  render(<DesktopOverlayApp controller={controller} subscribe={subscribe} />);
+  receive({ type: "configure", config: { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "monitor", opacity: 1,
+    layers: [{ moduleId: "timers", visible: true }] } });
+  await act(async () => receive({ type: "sync-module", moduleId: "timers", revision: 1, presentation: { kind: "timer-stack", stack: {
+    targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 }, orientation: "vertical", maxVisible: 1 },
+    cards: [{ definitionId: "mitts", generation: "g1", label: "Wear oven mitts", iconAssetId: "icon", status: "paused", remainingMs: 5000,
+      slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 } }], overflowCount: 0
+  } }, assets: [{ assetId: "icon", mimeType: "image/png", bytes: new Uint8Array([1]) }] }));
+  expect(screen.getByText("Wear oven mitts")).toBeVisible();
+  expect(screen.getByRole("img", { name: "Wear oven mitts icon" })).toHaveAttribute("src", "blob:timer-icon");
+  controller.dispose();
+});

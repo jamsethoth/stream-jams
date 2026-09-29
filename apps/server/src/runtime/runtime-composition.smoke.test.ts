@@ -1300,6 +1300,14 @@ describe("runtime app composition smoke", () => {
         renderer: expect.objectContaining({
           supportedOutputs: ["module", "unified"]
         })
+      }),
+      expect.objectContaining({
+        id: "timers",
+        displayName: "Timers",
+        defaultEnabled: false,
+        renderer: expect.objectContaining({
+          supportedOutputs: ["module", "unified"]
+        })
       })
     ]);
     expect(overlayModuleConfig.statusCode).toBe(200);

@@ -1,14 +1,16 @@
-import type { MergedOperationsSnapshot, OperationRow } from "@stream-jams/core";
+import type { MergedOperationsSnapshot, OperationRow, TimerRunState } from "@stream-jams/core";
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { expect, userEvent, within } from "storybook/test";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
+import type { OperatorTimersApi } from "./timers-api.js";
 
 const meta = {
   title: "Operator/Playback Console",
   component: OperatorApp,
-  parameters: { layout: "fullscreen" }
+  parameters: { layout: "fullscreen" },
+  args: { timersApi: createTimersApi([]) }
 } satisfies Meta<typeof OperatorApp>;
 
 export default meta;
@@ -30,6 +32,21 @@ export const SimultaneousCurrentInterleavedQueues: Story = {
     await expect(nowPlaying.compareDocumentPosition(canvas.getByRole("heading", { name: "Module queues" })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await expect(canvas.getByText("Flash sweep")).toBeVisible();
     await expect(canvas.getByText("Cheer burst").closest("article")).toHaveTextContent("#2");
+  }
+};
+
+export const ActiveTimers: Story = {
+  args: { api: createApi(emptySnapshot()), timersApi: createTimersApi(timerStates()) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement); await expect(await canvas.findByRole("heading", { name: "Active timers (3)" })).toBeVisible();
+    await expect(canvas.getByText("Wear oven mitts")).toBeVisible(); await expect(canvas.getByText("Tea break")).toBeVisible();
+  }
+};
+
+export const TimerRefreshFailure: Story = {
+  args: { api: createApi(emptySnapshot()), timersApi: { ...createTimersApi([]), listStates: async () => { throw new Error("Timer service unavailable. Check the local service."); } } },
+  play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByText("Timer state may be stale")).toBeVisible();
   }
 };
 
@@ -120,6 +137,16 @@ function createApi(value: MergedOperationsSnapshot, overrides: Partial<PlaybackA
     setModulePaused: async (moduleId, paused) => ({ ...value, owners: value.owners.map((owner) => owner.moduleId === moduleId ? { ...owner, paused } : owner) }),
     ...overrides
   };
+}
+function createTimersApi(states: readonly TimerRunState[]): OperatorTimersApi { return { listStates: async () => states, command: async () => ({ changed: false, state: null }) }; }
+function timerStates(): readonly TimerRunState[] {
+  const snapshot = (id: string, label: string) => ({ id, label, durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
+    outputs: { browserSource: true, deviceRouteIds: [] } });
+  return [
+    { status: "completed", definitionId: "mitts", generation: "g1", snapshot: snapshot("mitts", "Wear oven mitts"), completedAtEpochMs: Date.now(), expiresAtEpochMs: Date.now() + 3000 },
+    { status: "running", definitionId: "stretch", generation: "g2", snapshot: snapshot("stretch", "Stretch break"), startedAtEpochMs: Date.now(), endsAtEpochMs: Date.now() + 45_000 },
+    { status: "paused", definitionId: "tea", generation: "g3", snapshot: snapshot("tea", "Tea break"), remainingMs: 90_000 }
+  ];
 }
 
 function createStaleApi(): PlaybackApi {

@@ -1,4 +1,4 @@
-import type { MergedOperationsSnapshot, OperationRow } from "@stream-jams/core";
+import { formatTimerRemaining, type MergedOperationsSnapshot, type OperationRow, type TimerRunState } from "@stream-jams/core";
 import { useEffect, useRef, useState } from "react";
 import "../App.css";
 import { getDesktopBridge } from "../management/desktop/desktop-bridge.js";
@@ -11,6 +11,7 @@ import {
   PlaybackOperationsConflictError,
   type PlaybackApi
 } from "./playback-api.js";
+import { defaultOperatorTimersApi, type OperatorTimersApi } from "./timers-api.js";
 
 const normalPollDelayMs = 2_000;
 const maximumPollDelayMs = 15_000;
@@ -28,16 +29,19 @@ interface ClearRequest {
 
 export interface OperatorAppProps {
   readonly api?: PlaybackApi;
+  readonly timersApi?: OperatorTimersApi;
 }
 
-export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
+export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOperatorTimersApi }: OperatorAppProps) {
   useEffect(() => {
     const bridge = getDesktopBridge();
     return bridge?.onQuitRequested((requestId) => bridge.resolveQuit(requestId, true));
   }, []);
   const [snapshot, setSnapshot] = useState<MergedOperationsSnapshot | null>(null);
+  const [timers, setTimers] = useState<readonly TimerRunState[]>([]);
   const [initialError, setInitialError] = useState<OperatorError | null>(null);
   const [refreshError, setRefreshError] = useState<OperatorError | null>(null);
+  const [timerRefreshError, setTimerRefreshError] = useState<OperatorError | null>(null);
   const [commandError, setCommandError] = useState<OperatorError | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [pending, setPending] = useState<string | null>(null);
@@ -77,7 +81,12 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
       }
       const revision = requestRevisionRef.current;
       try {
-        const next = await api.getSnapshot();
+        const [playbackResult, timersResult] = await Promise.allSettled([api.getSnapshot(), timersApi.listStates()]);
+        if (disposed || revision !== requestRevisionRef.current) return;
+        if (timersResult.status === "fulfilled") { setTimers(timersResult.value); setTimerRefreshError(null); }
+        else setTimerRefreshError(toOperatorError(timersResult.reason, "Unable to refresh timer state."));
+        if (playbackResult.status === "rejected") throw playbackResult.reason;
+        const next = playbackResult.value;
         if (disposed || revision !== requestRevisionRef.current) return;
         applySnapshot(next);
         setInitialError(null);
@@ -116,7 +125,7 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
       schedulePollRef.current = null;
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [api]);
+  }, [api, timersApi]);
 
   useEffect(() => {
     if (pending !== null || restoreFocusRef.current === null) return;
@@ -158,6 +167,17 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
       setClearRequest(null);
       schedulePollRef.current?.(normalPollDelayMs);
     }
+  }
+
+  async function runTimerCommand(command: "pause" | "resume" | "stop" | "restart", timer: TimerRunState, focusTarget: HTMLButtonElement) {
+    if (pendingRef.current) return;
+    pendingRef.current = true; restoreFocusRef.current = focusTarget; setPending(`timer:${timer.definitionId}:${command}`); setCommandError(null); setAnnouncement("");
+    requestRevisionRef.current += 1;
+    try {
+      await timersApi.command(timer.definitionId, command); const next = await timersApi.listStates(); setTimers(next); setTimerRefreshError(null);
+      setAnnouncement(`${timer.snapshot.label} ${command === "pause" ? "paused" : command === "resume" ? "resumed" : command === "stop" ? "stopped" : "restarted"}.`);
+    } catch (error) { setCommandError(toOperatorError(error, "The timer command failed.")); }
+    finally { pendingRef.current = false; setPending(null); schedulePollRef.current?.(normalPollDelayMs); }
   }
 
   const retry = () => {
@@ -217,6 +237,14 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
       {snapshot.muted ? <p className="operator-boundary-note">Browser and device audio are muted. Visuals continue.</p> : null}
       {announcement === "" ? null : <p aria-live="polite" className="operator-announcement" role="status">{announcement}</p>}
       {commandError !== null ? <OperatorErrorBanner error={commandError} title="Playback command failed" /> : refreshError === null ? null : <OperatorErrorBanner error={refreshError} title="Playback state may be stale" />}
+
+      <section className="operator-section" aria-labelledby="operator-active-timers">
+        <h2 id="operator-active-timers">Active timers ({timers.length})</h2>
+        {timerRefreshError === null ? null : <OperatorErrorBanner error={timerRefreshError} title="Timer state may be stale"><p>Showing the last known timers. Check the local service; timer refresh will retry automatically.</p></OperatorErrorBanner>}
+        {timers.length === 0 ? <p className="management-empty">No timers are active.</p> : <ol className="operator-list operator-timer-list">
+          {timers.map(timer => <li key={`${timer.definitionId}:${timer.generation}`}><OperatorTimerCard disabled={disabled} onCommand={(command, button) => void runTimerCommand(command, timer, button)} timer={timer} /></li>)}
+        </ol>}
+      </section>
 
       <section className="operator-section" aria-labelledby="operator-now-playing">
         <h2 id="operator-now-playing" ref={nowPlayingHeadingRef} tabIndex={-1}>Now playing ({snapshot.current.length})</h2>
@@ -300,6 +328,18 @@ export function OperatorApp({ api = defaultPlaybackApi }: OperatorAppProps) {
       )} />
     </main>
   );
+}
+
+function OperatorTimerCard({ disabled, onCommand, timer }: { readonly disabled: boolean; readonly timer: TimerRunState;
+  readonly onCommand: (command: "pause" | "resume" | "stop" | "restart", button: HTMLButtonElement) => void }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { if (timer.status !== "running") return; const handle = window.setInterval(() => setNow(Date.now()), 250); return () => window.clearInterval(handle); }, [timer.status]);
+  const remaining = timer.status === "running" ? Math.max(0, timer.endsAtEpochMs - now) : timer.status === "paused" ? timer.remainingMs : 0;
+  return <article className="operator-item operator-timer-item"><div className="operator-item__summary"><div><strong>{timer.snapshot.label}</strong><span>{formatTimerRemaining(remaining)} · {timer.status}</span></div><div className="operator-controls">
+    {timer.status === "running" ? <button disabled={disabled} onClick={event => onCommand("pause", event.currentTarget)} type="button">Pause</button> : timer.status === "paused" ? <button disabled={disabled} onClick={event => onCommand("resume", event.currentTarget)} type="button">Resume</button> : null}
+    <button disabled={disabled} onClick={event => onCommand("restart", event.currentTarget)} type="button">Restart</button>
+    <button disabled={disabled} onClick={event => onCommand("stop", event.currentTarget)} type="button">Stop</button>
+  </div></div></article>;
 }
 
 function OperatorHeader() {

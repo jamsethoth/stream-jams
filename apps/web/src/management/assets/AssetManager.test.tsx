@@ -43,6 +43,27 @@ describe("AssetManager", () => {
     expect(screen.getByRole("option", { name: "Channel point redemption" })).toHaveValue("channel_point_redemption");
   });
 
+  it("shows and filters Timer asset roles as saved module usages", async () => {
+    const timerItem: AssetLibraryItem = {
+      ...audioItem,
+      moduleUsages: [
+        { moduleId: "timers", ownerId: "timer-mitts", ownerName: "Wear oven mitts", variantId: null, usageRole: "start-audio" },
+        { moduleId: "timers", ownerId: "timer-mitts", ownerName: "Wear oven mitts", variantId: null, usageRole: "end-audio" }
+      ]
+    };
+    const fixture = createFixture({ listAssetLibraryItems: vi.fn(async () => [imageItem, timerItem]) });
+    render(<AssetManager assetApi={fixture.assetApi} managementApi={fixture.managementApi} />);
+
+    await screen.findByRole("button", { name: "Follower burst" });
+    await userEvent.click(screen.getByText("More filters", { selector: "summary" }));
+    await userEvent.selectOptions(screen.getByLabelText("Module"), "timers");
+    expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("row", { name: /Raid chime/ }));
+    expect(screen.getAllByRole("link", { name: "Wear oven mitts" })).toHaveLength(2);
+    expect(screen.getAllByRole("link", { name: "Wear oven mitts" })[0]).toHaveAttribute("href", "/manage/modules/timers?ownerId=timer-mitts");
+    expect(screen.getByText("Remove 2 saved uses before deleting this asset.")).toBeVisible();
+  });
+
   it("shows only retry when the initial asset-library load fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const user = userEvent.setup();
@@ -199,8 +220,8 @@ describe("AssetManager", () => {
     await screen.findByRole("button", { name: "Follower burst" });
     const blockedDelete = screen.getByRole("button", { name: "Delete asset" });
     expect(blockedDelete).toBeDisabled();
-    expect(blockedDelete).toHaveAccessibleDescription("Remove 1 alert use before deleting this asset.");
-    expect(screen.getByText("Remove 1 alert use before deleting this asset.")).toBeVisible();
+    expect(blockedDelete).toHaveAccessibleDescription("Remove 1 saved use before deleting this asset.");
+    expect(screen.getByText("Remove 1 saved use before deleting this asset.")).toBeVisible();
 
     await userEvent.click(screen.getByRole("row", { name: /Raid chime/ }));
     await userEvent.click(screen.getByRole("button", { name: "Delete asset" }));

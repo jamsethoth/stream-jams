@@ -21,11 +21,13 @@ import {
   screenEffectDocumentSchema,
   screenEffectSetSchema,
   targetProfileIdSchema,
+  timerDefinitionSchema,
   type ConfigurationBackupArchive,
   type ConfigurationBackupOutput,
   type ModerationSettings
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
+import { isTimerAssetCompatible } from "../timers/timer-asset-role.js";
 import type { ConfigurationSnapshotRepository } from "./configuration-backup-service.js";
 
 type BackupConfiguration = ConfigurationBackupArchive["configuration"];
@@ -65,6 +67,8 @@ const tableDefinitions = [
   table("asset_library_metadata", ["asset_id", "display_name", "tags_json", "created_at", "updated_at"], ["asset_id"], ["tags_json"]),
   table("audio_output_routes", ["id", "name", "device_id", "device_label", "auto_follow_device_name"], ["id"], [],
     "SELECT id, name, NULL AS device_id, NULL AS device_label, 0 AS auto_follow_device_name FROM audio_output_routes"),
+  table("timer_definitions", ["id", "label", "duration_ms", "icon_asset_id", "start_audio_asset_id", "end_audio_asset_id", "browser_source", "created_at", "updated_at"], ["id"]),
+  table("timer_audio_routes", ["timer_id", "route_id", "position"], ["timer_id", "position", "route_id"]),
   table("screen_effect_sets", ["id", "name", "active"], ["id"]),
   table("screen_effects", ["id", "schema_version", "name", "enabled", "description", "category", "priority", "cooldown_seconds", "updated_at"], ["id"]),
   table("screen_effect_set_memberships", ["effect_id", "set_id"], ["effect_id"]),
@@ -143,7 +147,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     return {
       marker: restorePointMarker,
       tables: Object.fromEntries(
-        [...tableDefinitions.map((definition) => definition.name), "overlay_keys", "twitch_accounts"].map((name) => [
+        [...tableDefinitions.map((definition) => definition.name), "overlay_keys", "twitch_accounts", "timer_automation_credential"].map((name) => [
           name,
           this.connection.prepare(`SELECT * FROM ${name}`).all().map(toPlainRecord)
         ])
@@ -159,6 +163,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     runInTransaction(this.connection, () => {
       this.connection.prepare("DELETE FROM overlay_keys").run();
       this.connection.prepare("DELETE FROM twitch_accounts").run();
+      this.connection.prepare("DELETE FROM timer_automation_credential").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
@@ -167,6 +172,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
       }
       insertCapturedRows(this.connection, "overlay_keys", restorePoint.tables.overlay_keys ?? []);
       insertCapturedRows(this.connection, "twitch_accounts", restorePoint.tables.twitch_accounts ?? []);
+      insertCapturedRows(this.connection, "timer_automation_credential", restorePoint.tables.timer_automation_credential ?? []);
     });
   }
 
@@ -242,6 +248,7 @@ export class SqliteConfigurationSnapshotRepository implements ConfigurationSnaps
     runInTransaction(this.connection, () => {
       this.connection.prepare("DELETE FROM overlay_keys").run();
       this.connection.prepare("DELETE FROM twitch_accounts").run();
+      this.connection.prepare("DELETE FROM timer_automation_credential").run();
       for (const definition of [...tableDefinitions].reverse()) {
         this.connection.prepare(`DELETE FROM ${definition.name}`).run();
       }
@@ -622,6 +629,23 @@ function validateDomainRows(tables: BackupConfiguration["tables"]): readonly str
     if (row.device_id !== null || row.device_label !== null || row.auto_follow_device_name !== 0) errors.push(`audio_output_routes[${index}] must be unbound in a portable backup.`);
     if (typeof row.name === "string" && row.name !== row.name.trim()) errors.push(`audio_output_routes[${index}].name must be trimmed.`);
   }
+  for (const [index, row] of (tables.timer_definitions ?? []).entries()) {
+    const deviceRouteIds = (tables.timer_audio_routes ?? [])
+      .filter((route) => route.timer_id === row.id)
+      .sort((left, right) => Number(left.position) - Number(right.position))
+      .map((route) => String(route.route_id));
+    pushSchemaError(errors, `timer_definitions[${index}]`, timerDefinitionSchema.safeParse({
+      id: row.id,
+      label: row.label,
+      durationMs: row.duration_ms,
+      iconAssetId: row.icon_asset_id,
+      startAudioAssetId: row.start_audio_asset_id,
+      endAudioAssetId: row.end_audio_asset_id,
+      outputs: { browserSource: sqlBoolean(row.browser_source), deviceRouteIds },
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    }));
+  }
   errors.push(...validateScreenEffects(tables));
   const audioRouteIds = new Set((tables.audio_output_routes ?? []).map(row => row.id));
   for (const [index, row] of (tables.alert_editor_documents ?? []).entries()) {
@@ -790,6 +814,9 @@ function validateUniqueConstraints(tables: BackupConfiguration["tables"]): reado
     ["alert_rule_management_metadata", ["rule_id"]],
     ["asset_library_metadata", ["asset_id"]],
     ["audio_output_routes", ["id"]],
+    ["timer_definitions", ["id"]],
+    ["timer_audio_routes", ["timer_id", "route_id"]],
+    ["timer_audio_routes", ["timer_id", "position"]],
     ["screen_effects", ["id"]],
     ["screen_effect_variants", ["id"]],
     ["screen_effect_variants", ["effect_id", "position"]],
@@ -885,9 +912,11 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   const variantIds = ids("alert_variants", "id");
   const alertEditorDocumentIds = new Set([...ruleIds, ...variantIds]);
   const assetIds = ids("asset_metadata", "id");
+  const assetMediaTypes = new Map((tables.asset_metadata ?? []).map(row => [String(row.id), String(row.media_type)]));
   const audioRouteIds = ids("audio_output_routes", "id");
   const effectIds = ids("screen_effects", "id");
   const effectVariantIds = ids("screen_effect_variants", "id");
+  const timerIds = ids("timer_definitions", "id");
   checkReferences(errors, tables.alert_rule_collections, "rule_id", ruleIds, "alert_rules");
   checkReferences(errors, tables.alert_rule_collections, "collection_id", collectionIds, "alert_collections");
   checkReferences(errors, tables.alert_rule_conditions, "rule_id", ruleIds, "alert_rules");
@@ -900,6 +929,8 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   checkReferences(errors, tables.screen_effect_bindings, "effect_id", effectIds, "screen_effects");
   checkReferences(errors, tables.screen_effect_audio_routes, "variant_id", effectVariantIds, "screen_effect_variants");
   checkReferences(errors, tables.screen_effect_audio_routes, "route_id", audioRouteIds, "audio_output_routes");
+  checkReferences(errors, tables.timer_audio_routes, "timer_id", timerIds, "timer_definitions");
+  checkReferences(errors, tables.timer_audio_routes, "route_id", audioRouteIds, "audio_output_routes");
   for (const [index, row] of (tables.alert_variants ?? []).entries()) {
     for (const column of ["visual_asset_id", "audio_asset_id"] as const) {
       const value = row[column];
@@ -913,6 +944,19 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
       const value = row[column];
       if (value !== null && value !== undefined && !assetIds.has(String(value))) {
         errors.push(`screen_effect_variants[${index}].${column} references missing asset_metadata "${String(value)}".`);
+      }
+    }
+  }
+  for (const [index, row] of (tables.timer_definitions ?? []).entries()) {
+    for (const column of ["icon_asset_id", "start_audio_asset_id", "end_audio_asset_id"] as const) {
+      const value = row[column];
+      if (value !== null && value !== undefined && !assetIds.has(String(value))) {
+        errors.push(`timer_definitions[${index}].${column} references missing asset_metadata "${String(value)}".`);
+      } else if (value !== null && value !== undefined && !isTimerAssetCompatible(
+        column === "icon_asset_id" ? "icon" : column === "start_audio_asset_id" ? "start-audio" : "end-audio",
+        assetMediaTypes.get(String(value)) ?? ""
+      )) {
+        errors.push(`timer_definitions[${index}].${column} references incompatible asset_metadata "${String(value)}".`);
       }
     }
   }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import "../overlay.css";
-import { prepareTimedMedia, rgbaColorSchema, serializeException, targetProfileDefinitions, TimedMediaPreparationError } from "@stream-jams/core";
+import { prepareTimedMedia, rgbaColorSchema, serializeException, targetProfileDefinitions, timerStackProjectionSchema, TimedMediaPreparationError } from "@stream-jams/core";
 import type {
   OverlayComposition,
   OverlayElementLayout,
@@ -11,6 +11,7 @@ import type {
 } from "@stream-jams/core";
 import { alertTextLayerStyle } from "./alert-text-style.js";
 import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
+import { TimerStack } from "./TimerStack.js";
 
 export type OverlayPlaybackEvent =
   | { readonly instructionId: string; readonly status: "started" }
@@ -98,6 +99,12 @@ export function OverlaySurface({ composition, muted = false, onPlaybackEvent, re
           resolveAssetUrl={resolveAssetUrl}
         />
       ))}
+      {moduleSnapshot.surfaceLayer?.visible === false ? null : (
+        <TimerPresentation
+          presentation={moduleSnapshot.presentation}
+          resolveAssetUrl={resolveAssetUrl}
+        />
+      )}
       </div>
     ));
 
@@ -122,6 +129,18 @@ export function OverlaySurface({ composition, muted = false, onPlaybackEvent, re
       {blockedTestAudioIds.size === 0 ? null : <AudioActivationPrompt onEnable={enableTestAudio} />}
     </div>
   );
+}
+
+function TimerPresentation({
+  presentation,
+  resolveAssetUrl
+}: {
+  readonly presentation: OverlayComposition["modules"][number]["presentation"];
+  readonly resolveAssetUrl: (assetId: string) => string;
+}) {
+  if (presentation?.kind !== "timer-stack") return null;
+  const stack = timerStackProjectionSchema.safeParse(presentation.stack);
+  return stack.success ? <TimerStack stack={stack.data} resolveAssetUrl={resolveAssetUrl} /> : null;
 }
 
 function OverlayInstructionLayer({

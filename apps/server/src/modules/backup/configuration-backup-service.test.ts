@@ -129,7 +129,7 @@ describe("ConfigurationBackupService", () => {
     }
   });
 
-  it.each([19, 20, 21, 22, 23, 24, 25, 26])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
+  it.each([19, 20, 21, 22, 23, 24, 25, 26, 27])("accepts a schema-%i backup and upgrades supported legacy configuration", async (schemaVersion) => {
     const target = createRealService();
     try {
       const archive = await target.service.exportArchive();
@@ -142,7 +142,8 @@ describe("ConfigurationBackupService", () => {
         "screen_effect_bindings",
         "screen_effect_audio_routes",
         "module_playback_settings"
-        ] : [])
+        ] : []),
+        ...(schemaVersion < 28 ? ["timer_definitions", "timer_audio_routes"] : [])
       ]) {
         archive.manifest.configurationRecordCount -= archive.configuration.tables[tableName]?.length ?? 0;
         delete archive.configuration.tables[tableName];

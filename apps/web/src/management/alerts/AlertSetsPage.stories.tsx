@@ -39,6 +39,20 @@ export const ActiveSet: Story = {
   }
 };
 
+export const ModuleDisabled: Story = {
+  args: {
+    managementApi: {
+      ...api([activeSet], detail(activeSet)),
+      getOverlayModuleEnabled: async () => false
+    }
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Module disabled")).toBeVisible();
+    await expect(canvas.getByRole("button", { name: "Enable Alerts module" })).toBeVisible();
+  }
+};
+
 export const AllBrowserSourcesReady: Story = {
   args: {
     managementApi: (() => {

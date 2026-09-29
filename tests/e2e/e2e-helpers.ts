@@ -53,6 +53,17 @@ interface OverlayInstruction {
 }
 
 export async function mockManagementShell(page: Page): Promise<void> {
+  let alertsModuleEnabled = true;
+  await page.route("**/overlay-modules/alerts/config", route => route.fulfill({ json: {
+    moduleId: "alerts", enabled: alertsModuleEnabled, config: {}, updatedAt: "2026-09-29T00:00:00.000Z"
+  } }));
+  await page.route("**/overlay-modules/alerts/enabled", route => {
+    const body = route.request().postDataJSON() as { readonly enabled: boolean };
+    alertsModuleEnabled = body.enabled;
+    return route.fulfill({ json: {
+      moduleId: "alerts", enabled: alertsModuleEnabled, config: {}, updatedAt: "2026-09-29T00:00:00.000Z"
+    } });
+  });
   await page.route("**/overlay-surfaces", route => route.fulfill({ json: {
     surfaces: [], desktop: { available: false, displays: [], state: "unavailable", message: null }
   } }));

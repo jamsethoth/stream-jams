@@ -154,7 +154,7 @@ export class ServiceSupervisor {
     if (message.type === "overlay-request") {
       const worker = this.#worker;
       const permitted = this.state === "running" || this.state === "starting" ||
-        (this.state === "stopping" && ["stop", "close"].includes(message.command.type));
+        (this.state === "stopping" && ["stop", "sync-module", "close"].includes(message.command.type));
       const result = permitted && this.overlay !== undefined ? this.overlay.handle(message.command) : Promise.reject(new Error("Overlay unavailable"));
       void result.then(reply => ({ result: reply })).catch((error: unknown) => {
         const failure = findOverlayFailure(error);

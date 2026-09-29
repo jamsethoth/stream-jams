@@ -29,6 +29,7 @@ export interface ModuleMediaReference {
   readonly ownerId: string;
   readonly ownerName: string;
   readonly variantId: string | null;
+  readonly usageRole?: "icon" | "start-audio" | "end-audio" | undefined;
 }
 
 export interface AudioDestination {

@@ -33,6 +33,26 @@ describe("OverlayOutputManagementService", () => {
     ]);
   });
 
+  it("lists independent Timers outputs for both target profiles and purposes", async () => {
+    const { service } = createService([]);
+
+    const outputs = await service.listOutputs("http://127.0.0.1:39187");
+
+    expect(
+      outputs
+        .filter(
+          (output) =>
+            output.scope === "module" && output.moduleId === "timers" && output.targetProfileId !== null
+        )
+        .map((output) => ({ id: output.id, targetProfileId: output.targetProfileId, purpose: output.purpose }))
+    ).toEqual([
+      { id: "module:timers:landscape:live", targetProfileId: "landscape", purpose: "live" },
+      { id: "module:timers:landscape:test", targetProfileId: "landscape", purpose: "test" },
+      { id: "module:timers:vertical:live", targetProfileId: "vertical", purpose: "live" },
+      { id: "module:timers:vertical:test", targetProfileId: "vertical", purpose: "test" }
+    ]);
+  });
+
   it("creates profile-scoped URLs while preserving profile-less legacy URLs", async () => {
     const { service } = createService(["ovl_profile", "ovl_legacy"]);
 

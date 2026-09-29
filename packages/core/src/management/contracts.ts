@@ -789,7 +789,14 @@ export const assetLibraryItemSchema = z.object({
   tags: z.array(nonEmptyStringSchema).transform(normalizeAssetTags),
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
-  usage: assetUsageSummarySchema
+  usage: assetUsageSummarySchema,
+  moduleUsages: z.array(z.object({
+    moduleId: nonEmptyStringSchema,
+    ownerId: nonEmptyStringSchema,
+    ownerName: nonEmptyStringSchema,
+    variantId: nonEmptyStringSchema.nullable(),
+    usageRole: z.enum(["icon", "start-audio", "end-audio"]).optional()
+  }).strict()).optional()
 });
 
 export const assetMetadataUpdateInputSchema = z.object({
@@ -804,7 +811,8 @@ export const assetChangeImpactSchema = z.object({
     moduleId: nonEmptyStringSchema,
     ownerId: nonEmptyStringSchema,
     ownerName: nonEmptyStringSchema,
-    variantId: nonEmptyStringSchema.nullable()
+    variantId: nonEmptyStringSchema.nullable(),
+    usageRole: z.enum(["icon", "start-audio", "end-audio"]).optional()
   }).strict()).default([]),
   canDelete: z.boolean(),
   requiresConfirmation: z.boolean(),

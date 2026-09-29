@@ -9,6 +9,7 @@ import type {
   AppConfigUpdate,
   AudioPlaybackSink,
   ConfigStore,
+  ConfigurationBackupArchive,
   DesktopAudioTransport,
   DesktopOverlayTransport,
   SecretRef,
@@ -361,7 +362,7 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-desktop-visual-runtime-"));
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
   const transport: DesktopOverlayTransport = {
-    configure: vi.fn(async () => { if (fails) throw new Error("desktop unavailable"); }), prepare: vi.fn(async () => "ready" as const),
+    configure: vi.fn(async () => { if (fails) throw new Error("desktop unavailable"); }), syncModule: vi.fn(async () => {}), prepare: vi.fn(async () => "ready" as const),
     start: vi.fn(async () => {}), stop: vi.fn(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {}),
     getStatus: vi.fn(async () => ({
       available: true as const,
@@ -389,7 +390,8 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
       displayId: "replacement-monitor",
       layers: [
         { moduleId: "alerts", visible: false },
-        { moduleId: "screen-effects", visible: false }
+        { moduleId: "screen-effects", visible: false },
+        { moduleId: "timers", visible: false }
       ]
     });
     expect(transport.prepare).not.toHaveBeenCalled();
@@ -399,6 +401,140 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
     await rm(testRoot, { recursive: true, force: true });
   }
   expect(transport.close).toHaveBeenCalledTimes(2);
+});
+
+it("clears the desktop timer snapshot before closing its shared transport", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-desktop-timer-shutdown-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  let closed = false;
+  const calls: string[] = [];
+  const transport: DesktopOverlayTransport = {
+    configure: vi.fn(async () => {}),
+    syncModule: vi.fn(async input => {
+      calls.push(input.presentation === null ? "sync:clear" : "sync:timer");
+      if (closed) throw new Error("overlay transport is closed");
+    }),
+    prepare: vi.fn(async () => "ready" as const),
+    start: vi.fn(async () => {}),
+    stop: vi.fn(async () => {}),
+    retry: vi.fn(async () => {}),
+    close: vi.fn(async () => {
+      calls.push("close");
+      closed = true;
+    }),
+    getStatus: vi.fn(async () => ({
+      available: true as const,
+      displays: [{ id: "monitor", label: "Test monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }],
+      state: "ready" as const,
+      message: null
+    }))
+  };
+  try {
+    composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: {},
+      secretStore: new TestSecretStore(),
+      scheduleRecurring: () => ({ scheduled: true }),
+      cancelRecurring: () => {},
+      desktopOverlayTransport: transport
+    });
+    const saved = composition.timerManagementService.createDefinition({
+      label: "Cat paws",
+      durationMs: 300_000,
+      iconAssetId: null,
+      startAudioAssetId: null,
+      endAudioAssetId: null,
+      outputs: { browserSource: false, deviceRouteIds: [] }
+    });
+    await composition.timerRuntimeCoordinator.start(saved.id);
+    await vi.waitFor(() => expect(transport.syncModule).toHaveBeenCalled());
+
+    await expect(composition.close()).resolves.toBeUndefined();
+    composition = undefined;
+    expect(calls.at(-2)).toBe("sync:clear");
+    expect(calls.at(-1)).toBe("close");
+  } finally {
+    await composition?.close().catch(() => undefined);
+    await rm(testRoot, { recursive: true, force: true });
+  }
+});
+
+it("blocks backup restore while timers are running or paused, then permits restore after Stop", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-timer-restore-"));
+  const composition = await createRuntimeAppComposition({
+    homeDirectory: testRoot,
+    webBuildDirectory: await createWebBuildFixture(testRoot),
+    configStore: new StaticConfigStore(createConfig(testRoot)),
+    environment: {}, secretStore: new TestSecretStore(),
+    scheduleRecurring: () => ({ scheduled: true }), cancelRecurring: () => {}
+  });
+  try {
+    composition.database.connection.prepare("INSERT INTO alert_collections (id, name, enabled) VALUES (?, ?, ?)").run("restore-set", "Restore test", 1);
+    const saved = composition.timerManagementService.createDefinition({ label: "Timer", durationMs: 300_000, iconAssetId: null,
+      startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } });
+    const headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    const exported = await composition.app.inject({ method: "GET", url: "/management/settings/backup", headers });
+    const summary = await composition.app.inject({ method: "GET", url: "/management/settings/backup-summary", headers });
+    expect(exported.statusCode, summary.body).toBe(200);
+    const archive = exported.json() as ConfigurationBackupArchive;
+    const preflight = async () => composition.app.inject({ method: "POST", url: "/management/settings/backup/preflight", headers, payload: archive });
+    const initial = (await preflight()).json() as { archiveId: string; state: string };
+    expect(initial.state).toBe("valid");
+    await composition.timerRuntimeCoordinator.start(saved.id);
+    expect((await preflight()).json()).toMatchObject({ state: "blocked-live", runtime: { playbackActive: true } });
+    await composition.timerRuntimeCoordinator.pause(saved.id);
+    expect((await preflight()).json()).toMatchObject({ state: "blocked-live", runtime: { playbackActive: true } });
+    const restore = () => composition.app.inject({ method: "POST", url: "/management/settings/backup/restore", headers,
+      payload: { archive, archiveId: initial.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true } });
+    const blocked = await restore();
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(composition.timerRuntimeCoordinator.getState(saved.id)?.status).toBe("paused");
+    await composition.timerRuntimeCoordinator.stop(saved.id);
+    expect((await preflight()).json()).toMatchObject({ state: "valid", runtime: { playbackActive: false } });
+    const restored = await restore();
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(composition.timerRuntimeCoordinator.listStates()).toEqual([]);
+  } finally {
+    await composition.close();
+    await rm(testRoot, { recursive: true, force: true });
+  }
+});
+
+it("restores timer definitions but not active timer runs after a runtime restart", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-timer-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const options = {
+    homeDirectory: testRoot,
+    webBuildDirectory: await createWebBuildFixture(testRoot),
+    configStore: new StaticConfigStore(createConfig(testRoot)),
+    environment: {},
+    secretStore: new TestSecretStore(),
+    scheduleRecurring: () => ({ scheduled: true }),
+    cancelRecurring: () => {}
+  };
+  try {
+    composition = await createRuntimeAppComposition(options);
+    const saved = composition.timerManagementService.createDefinition({
+      label: "Cat paws",
+      durationMs: 300_000,
+      iconAssetId: null,
+      startAudioAssetId: null,
+      endAudioAssetId: null,
+      outputs: { browserSource: false, deviceRouteIds: [] }
+    });
+    await composition.timerRuntimeCoordinator.start(saved.id);
+    expect(composition.timerRuntimeCoordinator.getState(saved.id)?.status).toBe("running");
+
+    await composition.close();
+    composition = await createRuntimeAppComposition(options);
+    expect(composition.timerManagementService.getDefinition(saved.id)).toMatchObject({ label: "Cat paws", durationMs: 300_000 });
+    expect(composition.timerRuntimeCoordinator.listStates()).toEqual([]);
+  } finally {
+    await composition?.close();
+    await rm(testRoot, { recursive: true, force: true });
+  }
 });
 
 it("applies persisted mute before wiring the desktop transport for device playback", async () => {

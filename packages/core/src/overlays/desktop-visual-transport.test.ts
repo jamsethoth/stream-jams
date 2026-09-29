@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema } from "./desktop-visual-transport.js";
+import { desktopModuleSyncSchema, desktopVisualBatchSchema, desktopVisualCommandSchema, desktopVisualReplySchema } from "./desktop-visual-transport.js";
 
 const key = { surfaceId: "desktop:primary", moduleId: "alerts", occurrenceId: "one", generation: 1 };
 const instruction = { id: "layer", overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module",
@@ -59,4 +59,22 @@ it("validates discriminated commands and keyed acknowledgements without extra au
   }
   expect(desktopVisualCommandSchema.safeParse({ type: "start", key, url: "https://example.com" }).success).toBe(false);
   expect(desktopVisualCommandSchema.safeParse({ type: "configure", config: { id: "unified-browser:one", kind: "unified-browser", overlayId: "one", layers: [] } }).success).toBe(false);
+});
+
+it("accepts bounded timer module snapshots with exactly their referenced icon assets", () => {
+  const presentation = { kind: "timer-stack", stack: {
+    targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 270, zIndex: 1 }, orientation: "vertical", maxVisible: 3 },
+    cards: [{ definitionId: "mitts", generation: "g1", label: "Wear oven mitts", iconAssetId: "icon", status: "paused", remainingMs: 5000,
+      slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 0 } }], overflowCount: 0
+  } } as const;
+  const sync = { moduleId: "timers", revision: 1, presentation,
+    assets: [{ assetId: "icon", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] };
+  expect(desktopModuleSyncSchema.parse(sync)).toEqual(sync);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], mimeType: "image/gif" }] }).success).toBe(true);
+  expect(desktopVisualCommandSchema.parse({ type: "sync-module", ...sync })).toEqual({ type: "sync-module", ...sync });
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], assetId: "other" }] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], mimeType: "video/webm" }] }).success).toBe(false);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, moduleId: "alerts" }).success).toBe(false);
+  expect(desktopModuleSyncSchema.parse({ moduleId: "timers", revision: 2, presentation: null, assets: [] }).presentation).toBeNull();
 });

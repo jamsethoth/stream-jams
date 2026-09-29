@@ -1,4 +1,4 @@
-import { surfaceConfigurationSchema, type SurfaceLayer } from "@stream-jams/core";
+import { overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayAccessDenialReason,
   OverlayAccessService,
@@ -79,6 +79,7 @@ interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
 
 type OverlayGatewayMessage =
   | { readonly type: "overlay.surface-layers"; readonly layers: readonly SurfaceLayer[] }
+  | { readonly type: "overlay.composition"; readonly composition: OverlayComposition }
   | {
       readonly type: "overlay.connected";
       readonly clientId: string;
@@ -237,6 +238,18 @@ export class OverlayGateway {
       deliveredClientIds,
       skippedClientIds
     };
+  }
+
+  deliverComposition(clientId: string, candidate: unknown): boolean {
+    const client = this.#clients.get(clientId);
+    if (client === undefined) return false;
+    const composition = overlayCompositionSchema.parse(candidate) as OverlayComposition;
+    if (composition.overlayId !== client.overlayId || composition.purpose !== client.purpose || composition.scope !== client.scope ||
+      (composition.targetProfileId ?? null) !== (client.targetProfileId ?? null) ||
+      (client.scope === "module" && composition.modules.some(module => module.moduleId !== client.moduleId))) return false;
+    try { sendGatewayMessage(client.socket, { type: "overlay.composition", composition }); return true; }
+    // error-provenance: allow expected -- a failed current-client send is converted to disconnect and a false delivery result
+    catch { this.unregisterClient(clientId); return false; }
   }
 
   setPlaybackMuted(muted: boolean): void {

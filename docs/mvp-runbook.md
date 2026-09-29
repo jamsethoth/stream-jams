@@ -1,6 +1,6 @@
 # Stream Jams MVP Runbook
 
-This runbook covers the local application and its implemented post-MVP Windows and Screen Effects additions. See the [documentation map](README.md) for current specifications and historical verification boundaries.
+This runbook covers the local application and its implemented post-MVP Windows, Screen Effects, and Timers additions. See the [documentation map](README.md) for current specifications and historical verification boundaries.
 
 ## Startup
 
@@ -19,9 +19,9 @@ The approved desktop follow-on adds a Windows x64 Electron host around the same 
 
 ### Download a verified portable CI artifact
 
-Successful CI runs for pushes to `main` and explicitly dispatched refs publish the exact Windows x64 folder exercised by `pnpm test:desktop`. Pull-request jobs and failed or cancelled desktop jobs do not publish runnable artifacts. The artifact is an authenticated, short-lived convenience build rather than an installer or permanent release.
+The `windows-desktop` job is currently manual-only while hosted Windows shutdown flakiness is investigated: automatic PR and `main` push CI skip it. Explicitly dispatched successful CI runs publish the exact Windows x64 folder exercised by `pnpm test:desktop`; failed or cancelled desktop jobs never publish runnable artifacts. The tests and local `pnpm test:desktop` command remain available. The artifact is an authenticated, short-lived convenience build rather than an installer or permanent release.
 
-1. In GitHub, open **Actions → CI** and choose a successful run for the intended ref and commit. Only an artifact whose ref is `main` represents current `main`; a manually dispatched run can target another ref.
+1. In GitHub, open **Actions → CI → Run workflow**, select the intended ref, and wait for a successful run. Only an artifact whose ref is `main` represents current `main`; a manually dispatched run can target another ref.
 2. Open the `windows-desktop` job summary. Confirm the artifact name contains `stream-jams-windows-x64`, the intended ref, and the full commit SHA.
 3. Download the linked authenticated artifact before its 30-day retention expires. Compare the downloaded ZIP's SHA-256 from `Get-FileHash -Algorithm SHA256 <downloaded-zip>` with the digest in the job summary.
 4. Quit any running Stream Jams instance through the tray and wait for it to exit. Extract every file into a new application folder; do not launch `Stream Jams.exe` from inside the ZIP or copy the executable without its sibling files.
@@ -84,6 +84,12 @@ In the Windows app, open **Settings → Overlay surfaces**. Select an explicit d
 Each surface has independent drafts, visibility and topmost-first ordering. Use Up/Down and explicitly save that surface; module-specific browser sources keep their existing behavior. Hiding visuals does not change independently selected audio. Desktop content uniformly fits its Landscape canvas without stretching. Exclusive fullscreen may cover the overlay; use borderless/windowed mode. No graphics injection or driver is used.
 
 Disconnecting the selected display clears its desktop content without moving it elsewhere or replaying on reconnection. Choose and save another display explicitly to rebind. **Retry desktop output** uses saved settings and restores future playback only. Closing management to the tray does not stop the surface; normal Quit clears it. CLI operation cannot provide a native desktop surface, but unified-browser layer settings remain editable. Portable backups preserve layers/opacity while resetting desktop enablement and display binding.
+
+## Timers
+
+Open **Modules → Timers** to create reusable countdowns, select optional icon/start/end assets, choose Browser Source and named-device cue outputs, and configure the Landscape and Vertical stack regions. Use the page or `/operator` to start, pause, resume, stop, or restart a definition. Only one run per definition is active; saved edits apply to the next start or restart. Current runs do not survive an application restart.
+
+For a Stream Deck or another local HTTP client, create a one-time-visible Timer automation credential on that page and configure the allowlisted loopback routes. Rotation invalidates the previous bearer and revocation disables it. Never expose the raw value in a URL, screenshot, log, backup, or shared profile. Portable backups include definitions/layout/routes but exclude active runs and automation access, so create a new credential after restore. See [Timers](timers.md) for exact routes, security rules, audio-duplication guidance, and current non-goals.
 
 ## Screen Effects
 

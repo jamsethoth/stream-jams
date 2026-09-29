@@ -59,6 +59,14 @@
   gap: 8px;
 }
 
+.screen-effects-list__actions {
+  align-items: center;
+}
+
+.screen-effects-list__actions > .management-status-badge {
+  align-self: center;
+}
+
 .screen-effect-set > div > .screen-effects-section-header {
   align-items: center;
   margin-top: 16px;

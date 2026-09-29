@@ -45,6 +45,7 @@ async function setup(withMedia = false) {
   };
   const transport = {
     configure: vi.fn<DesktopOverlayTransport["configure"]>(async () => {}),
+    syncModule: vi.fn<DesktopOverlayTransport["syncModule"]>(async () => {}),
     prepare: vi.fn<DesktopOverlayTransport["prepare"]>(async () => "ready"),
     start: vi.fn<DesktopOverlayTransport["start"]>(async () => {}),
     stop: vi.fn<DesktopOverlayTransport["stop"]>(async () => {}),

@@ -4,7 +4,8 @@ import {
   type AlertCollection,
   type AlertRule,
   type AssetRecord,
-  type ScreenEffectDocument
+  type ScreenEffectDocument,
+  type TimerDefinition
 } from "@stream-jams/core";
 import { describe, expect, it, vi } from "vitest";
 import { AssetLibraryInUseError, AssetLibraryService, type AssetLibraryMetadata } from "./asset-library-service.js";
@@ -82,6 +83,22 @@ describe("AssetLibraryService", () => {
         owners: [expect.objectContaining({ moduleId: "screen-effects", ownerId: effect.id })]
       }
     });
+  });
+
+  it("reports every Timer asset role separately and blocks deletion", async () => {
+    const timer = timerDefinition();
+    const fixture = createFixture({ rules: [], timers: [timer] });
+
+    await expect(fixture.service.getChangeImpact("asset-image-1")).resolves.toMatchObject({
+      canDelete: false,
+      owners: [
+        { moduleId: "timers", ownerId: timer.id, ownerName: timer.label, variantId: null, usageRole: "icon" },
+        { moduleId: "timers", ownerId: timer.id, ownerName: timer.label, variantId: null, usageRole: "start-audio" },
+        { moduleId: "timers", ownerId: timer.id, ownerName: timer.label, variantId: null, usageRole: "end-audio" }
+      ],
+      warnings: ["3 Timer usages will update everywhere."]
+    });
+    await expect(fixture.service.deleteAsset("asset-image-1")).rejects.toBeInstanceOf(AssetLibraryInUseError);
   });
 
   it("keeps unassigned rules with no target profiles visible to deletion guards", async () => {
@@ -166,6 +183,7 @@ function createFixture(options: {
   readonly deleteError?: Error;
   readonly rulesAfterDeleteError?: readonly AlertRule[];
   readonly effects?: readonly ScreenEffectDocument[];
+  readonly timers?: readonly TimerDefinition[];
 } = {}) {
   const assets = new MemoryAssetRepository([asset], options.deleteError);
   const metadata = new MemoryMetadataRepository();
@@ -194,6 +212,9 @@ function createFixture(options: {
     },
     effectRepository: {
       async list() { return options.effects ?? []; }
+    },
+    timerRepository: {
+      list() { return options.timers ?? []; }
     },
     clock: () => new Date("2026-07-15T08:00:00.000Z")
   });
@@ -292,4 +313,18 @@ function imageEffect(): ScreenEffectDocument {
       visualOutputs: { browserSource: true, desktop: false }
     }]
   });
+}
+
+function timerDefinition(): TimerDefinition {
+  return {
+    id: "timer-mitts",
+    label: "Wear oven mitts",
+    durationMs: 60_000,
+    iconAssetId: asset.id,
+    startAudioAssetId: asset.id,
+    endAudioAssetId: asset.id,
+    outputs: { browserSource: true, deviceRouteIds: [] },
+    createdAt: "2026-07-15T08:00:00.000Z",
+    updatedAt: "2026-07-15T08:00:00.000Z"
+  };
 }

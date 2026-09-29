@@ -13,6 +13,7 @@ describe("management route model", () => {
     ["/manage/tts-providers", "tts-providers"],
     ["/manage/modules/alerts", "modules-alerts"],
     ["/manage/modules/screen-effects", "modules-screen-effects"],
+    ["/manage/modules/timers", "modules-timers"],
     ["/manage/modules/alerts/safety", "alert-safety"],
     ["/manage/assets", "assets"],
     ["/manage/diagnostics", "diagnostics"],
@@ -59,6 +60,7 @@ describe("management route model", () => {
     expect(managementPrimaryRoutes.find((route) => route.id === "modules-alerts")?.childRoutes.map((route) => route.id)).toEqual([
       "modules-alerts",
       "modules-screen-effects",
+      "modules-timers",
       "alert-safety"
     ]);
   });
@@ -146,4 +148,9 @@ describe("management route model", () => {
     expect(managementPrimaryRoutes.map((route) => route.id)).not.toContain("alert-editor");
     expect(managementPrimaryRoutes.map((route) => route.id)).not.toContain("screen-effect-editor");
   });
+});
+it("round-trips the timer owner from asset usage links", () => {
+  const route = parseManagementRoute("/manage/modules/timers?ownerId=timer%20mitts");
+  expect(route).toEqual({ id: "modules-timers", ownerId: "timer mitts" });
+  expect(parseManagementRoute(formatManagementRoute(route))).toEqual(route);
 });

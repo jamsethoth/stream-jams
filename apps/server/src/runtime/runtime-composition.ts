@@ -163,6 +163,13 @@ import { SqliteSurfaceRepository } from "../modules/overlay-surfaces/sqlite-surf
 import { DesktopVisualSink } from "../modules/overlay-surfaces/desktop-visual-sink.js";
 import { SurfaceSettingsService } from "../modules/overlay-surfaces/surface-settings-service.js";
 import { DesktopVisualAssetResolver } from "../modules/overlay-surfaces/desktop-visual-asset-resolver.js";
+import { DesktopModuleSnapshotSink } from "../modules/overlay-surfaces/desktop-module-snapshot-sink.js";
+import { SqliteTimerDefinitionRepository } from "../modules/timers/sqlite-timer-definition-repository.js";
+import { TimerManagementService } from "../modules/timers/timer-management-service.js";
+import { TimerRuntimeCoordinator } from "../modules/timers/timer-runtime-coordinator.js";
+import { TimerCueService } from "../modules/timers/timer-cue-service.js";
+import { TimerAutomationCredentialService } from "../modules/timers/timer-automation-credential-service.js";
+import { createTimerAutomationSecurityPreHandler } from "../http/middleware/timer-automation-security.js";
 
 export interface RuntimeAppCompositionOptions {
   readonly audioDeviceHost?: AudioDeviceHost;
@@ -200,6 +207,8 @@ export interface RuntimeAppComposition {
   readonly desktopConfigService: DesktopConfigService;
   readonly playbackCoordinator: PlaybackCoordinator;
   readonly effectPlaybackCoordinator: EffectPlaybackCoordinator;
+  readonly timerManagementService: TimerManagementService;
+  readonly timerRuntimeCoordinator: TimerRuntimeCoordinator;
   readonly playbackOperationsService: PlaybackOperationsService;
   readonly app: FastifyInstance;
   readonly configStore: ConfigStore;
@@ -307,9 +316,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const managementOriginPreHandler = createManagementOriginPreHandler(managementOriginPolicy);
   const overlayModuleRegistry = createDefaultOverlayModuleRegistry();
   const surfaceRepository = new SqliteSurfaceRepository(database.connection, overlayModuleRegistry);
+  const desktopVisualAssetResolver = new DesktopVisualAssetResolver({ assetRepository, assetStore });
   const desktopVisualSink = options.desktopOverlayTransport === undefined ? undefined : new DesktopVisualSink({
-    transport: options.desktopOverlayTransport, surfaces: surfaceRepository,
-    assets: new DesktopVisualAssetResolver({ assetRepository, assetStore })
+    transport: options.desktopOverlayTransport, surfaces: surfaceRepository, assets: desktopVisualAssetResolver
   });
   if (desktopVisualSink !== undefined) cleanups.push(() => desktopVisualSink.close());
   const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
@@ -486,6 +495,61 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     runTest: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
+  });
+  const timerDefinitionRepository = new SqliteTimerDefinitionRepository(database.connection);
+  const timerCueService = new TimerCueService({
+    assets: assetRepository,
+    browser: {
+      play(instruction) {
+        const targets = new Map(overlayGateway.clients
+          .filter(client => client.purpose === "live" && (client.scope === "unified" || client.moduleId === "timers"))
+          .map(client => [
+            [client.overlayId, client.purpose, client.scope, client.targetProfileId ?? ""].join(":"),
+            client
+          ]));
+        for (const client of targets.values()) {
+          overlayGateway.deliverPlaybackInstruction({
+            ...instruction,
+            overlayId: client.overlayId,
+            purpose: client.purpose,
+            scope: client.scope,
+            ...(client.scope === "module" ? { targetProfileId: client.targetProfileId ?? null } : {})
+          });
+        }
+      },
+      stop: instructionIds => overlayGateway.stopPlaybackInstructions(instructionIds)
+    },
+    audioOutputService,
+    ...(audioPlaybackSink === undefined ? {} : { audioPlaybackSink }),
+    logger: runtimeLogger,
+    generateReferenceId: generateRuntimeReferenceId
+  });
+  const timerRuntimeCoordinator = new TimerRuntimeCoordinator({
+    assertCommandAvailable: () => maintenanceGate.runConfigurationMutation(() => undefined),
+    definitions: timerDefinitionRepository,
+    config: overlayModuleConfigService,
+    clock: { now: () => now().getTime() },
+    scheduler: {
+      schedule(delayMs, callback) {
+        const handle = setTimeout(callback, delayMs);
+        return { cancel: () => clearTimeout(handle) };
+      }
+    },
+    cueSink: timerCueService
+  });
+  const timerManagementService = new TimerManagementService({
+    repository: timerDefinitionRepository,
+    activity: timerRuntimeCoordinator,
+    now
+  });
+  const timerAutomationCredentialService = new TimerAutomationCredentialService({
+    connection: database.connection,
+    now
+  });
+  const timerAutomationAuthPreHandler = createTimerAutomationSecurityPreHandler({
+    credentials: timerAutomationCredentialService,
+    limiter: new LocalManagementRateLimiter({ maxRequests: 120, windowMs: 60_000 }),
+    logger: runtimeLogger
   });
   if (audioDeviceHost !== undefined) {
     try {
@@ -953,6 +1017,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     assetStore,
     alertRepository,
     effectRepository,
+    timerRepository: timerDefinitionRepository,
     ruleMetadataRepository: alertSetMetadataRepository,
     deletePersistedAsset: assetId => maintenanceGate.runConfigurationMutation(
       () => runInTransaction(database.connection, () => assetRepository.deleteSync(assetId))
@@ -984,7 +1049,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           streamerBotState === "connecting" ||
           streamerBotState === "connected" ||
           streamerBotState === "reconnecting",
-        playbackActive: playback.current.length > 0,
+        playbackActive: playback.current.length > 0 || timerRuntimeCoordinator.listStates().length > 0,
         queuedPlaybackCount: playback.queued.length
       };
     },
@@ -1115,7 +1180,8 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
         return { moduleId: "alerts", enabled: true, instructions };
       }
     }],
-    ["screen-effects", effectPlaybackCoordinator]
+    ["screen-effects", effectPlaybackCoordinator],
+    ["timers", timerRuntimeCoordinator]
   ]);
   const overlayCompositionService = new DefaultOverlayCompositionService({
     surfaceRepository,
@@ -1128,6 +1194,39 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }
   });
+  const desktopModuleSnapshotSink = options.desktopOverlayTransport === undefined ? undefined : new DesktopModuleSnapshotSink({
+    transport: options.desktopOverlayTransport,
+    surfaces: surfaceRepository,
+    runtime: timerRuntimeCoordinator,
+    assets: desktopVisualAssetResolver,
+    logger: runtimeLogger,
+    generateReferenceId: generateRuntimeReferenceId
+  });
+  const syncBrowserTimerCompositions = async () => {
+    const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
+    await Promise.all(overlayGateway.clients
+      .filter(client => client.purpose === "live" && (client.scope === "unified" || client.moduleId === "timers"))
+      .map(async client => {
+        const composition = client.scope === "module"
+          ? await overlayCompositionService.resolveModuleOutput({ moduleId: "timers", overlayId: client.overlayId, purpose: client.purpose,
+              ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
+          : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds });
+        overlayGateway.deliverComposition(client.id, composition);
+      }));
+  };
+  const syncTimerOutputs = async () => {
+    await Promise.all([syncBrowserTimerCompositions(), desktopModuleSnapshotSink?.sync()]);
+  };
+  let timerOutputSyncTail = Promise.resolve();
+  const queueTimerOutputSync = () => {
+    const pending = timerOutputSyncTail.then(syncTimerOutputs);
+    timerOutputSyncTail = pending.catch(
+      // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs live
+      () => undefined
+    );
+    return pending;
+  };
+  const unsubscribeTimerOutputs = timerRuntimeCoordinator.subscribe(() => { void trackRuntimeWork(queueTimerOutputSync); });
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }
@@ -1139,7 +1238,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       ...(options.desktopOverlayTransport.getStatus === undefined ? {} : { getStatus: () => options.desktopOverlayTransport!.getStatus!() })
     } }),
     moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
-    changed: async surface => { if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface); },
+    changed: async surface => {
+      if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
+      if (surface.kind === "desktop") await queueTimerOutputSync();
+    },
     runMutation: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
@@ -1147,6 +1249,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   if (options.desktopOverlayTransport !== undefined) {
     try {
       await surfaceSettingsService.initializeDesktop();
+      await queueTimerOutputSync();
     } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
         module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
@@ -1203,6 +1306,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "timers") await queueTimerOutputSync();
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1212,6 +1316,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "timers") await queueTimerOutputSync();
       return config;
     }
   };
@@ -1264,6 +1369,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     legacyPlaybackOperationsService: playbackOperationsService,
     playbackOperationsService,
     effectManagementService,
+    timerManagementService,
+    timerRuntimeCoordinator,
+    timerAutomationCredentialService,
+    outputReadinessService,
+    timerAutomationAuthPreHandler,
     effectSets: effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,
@@ -1313,12 +1423,20 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(() => maintenanceGate.stop());
   cleanups.push(() => playbackCoordinator.close());
   cleanups.push(() => effectPlaybackCoordinator.close());
+  cleanups.push(() => timerRuntimeCoordinator.close());
+  cleanups.push(async () => {
+    unsubscribeTimerOutputs();
+    await timerOutputSyncTail;
+    await desktopModuleSnapshotSink?.close();
+  });
 
   return {
     app,
     desktopConfigService,
     playbackCoordinator,
     effectPlaybackCoordinator,
+    timerManagementService,
+    timerRuntimeCoordinator,
     playbackOperationsService,
     configStore,
     database,

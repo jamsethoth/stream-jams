@@ -4,7 +4,7 @@ Stream Jams is a local-first streaming overlay application for streamers who wan
 
 The initial product scope is Twitch alerting: listen for stream events, resolve matching alert rules, and display configured visual and audio elements on a fullscreen transparent overlay canvas.
 
-The MVP sections below retain the original delivery boundary. Current `main` also includes the approved Windows desktop/tray runtime, named-device audio, shared desktop overlays, Screen Effects and sets, media-synchronized duration, and local-media fades and gain. See the [documentation map](README.md) for implemented requirements and the [backlog](backlog.md) for work still pending.
+The MVP sections below retain the original delivery boundary. The current implemented product also includes the approved Windows desktop/tray runtime, named-device audio, shared desktop overlays, Screen Effects and sets, Timers, media-synchronized duration, and local-media fades and gain. See the [documentation map](README.md) for implemented requirements and the [backlog](backlog.md) for work still pending.
 
 ## Goals
 
@@ -143,6 +143,8 @@ MVP module scope:
 - Support exactly one configurable canvas per module in the MVP. The module canvas controls placement for that module's overlay elements, and the configured canvas can be exposed through live and test browser-source variants.
 
 The approved post-MVP Screen Effects follow-on implements the second usable overlay module. Operators can author disabled-by-default local media effects with trusted Twitch reward or configured Streamer.bot bindings, queue priority, unified weighted variants, and independent browser, desktop and named-device destinations. Triggering event configuration owns per-effect rate limiting; Screen Effects retains module-level safety controls. Screen Effects owns a sequential bounded queue that can run concurrently with Alerts; the Operator surface merges their state for display and module-qualified controls without merging their schedulers. Definitions and safety settings persist, while active, pending and recent occurrences never replay automatically after restart. See the [Screen Effects specification](../openspec/specs/screen-effects/spec.md), [multi-module operations specification](../openspec/specs/multi-module-playback-operations/spec.md), and [runbook](mvp-runbook.md#screen-effects).
+
+The approved Timers follow-on implements reusable server-authoritative countdown definitions with optional icon and start/end cues, one active generation per definition, pause/resume/stop/restart controls, independent Landscape and Vertical stack presentation, browser/unified/desktop visuals, explicit browser and named-device audio, Operator controls, and a dedicated loopback bearer API for generic Stream Deck actions. Definitions and layout persist; active runs and automation access do not survive backup restore, and active runs do not survive process restart. See the [Timers guide](timers.md) and the active [Timers change](../openspec/changes/add-timer-overlay-module).
 
 ## Twitch MVP Scope
 

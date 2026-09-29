@@ -11,6 +11,7 @@ import { createInMemoryStreamJamsDatabase, openStreamJamsDatabase, runInTransact
 import { SqliteAlertEditorDocumentRepository } from "../alerts/sqlite-alert-editor-document-repository.js";
 import { SqliteAssetRepository } from "../assets/sqlite-asset-repository.js";
 import { SqliteEffectRepository } from "../screen-effects/sqlite-effect-repository.js";
+import { SqliteTimerDefinitionRepository } from "../timers/sqlite-timer-definition-repository.js";
 import { SqliteAudioOutputRouteRepository } from "./sqlite-audio-output-route-repository.js";
 
 const route = { id: "route-a", name: "Headphones", deviceId: "device-a", deviceLabel: "XLR headphones", autoFollowDeviceName: true };
@@ -120,6 +121,36 @@ it("reports module-qualified effect owners and serializes effect saves against r
   })).toThrow();
   await expect(effects.find(raced.id)).resolves.toBeNull();
   expect(routes.findById(route.id)).toBeNull();
+});
+
+it("reports Timer owners and blocks deleting their saved audio route", async () => {
+  using db = createInMemoryStreamJamsDatabase();
+  const routes = new SqliteAudioOutputRouteRepository(db.connection);
+  const timers = new SqliteTimerDefinitionRepository(db.connection);
+  routes.save(route);
+  const timer = {
+    id: "timer-mitts",
+    label: "Wear oven mitts",
+    durationMs: 60_000,
+    iconAssetId: null,
+    startAudioAssetId: null,
+    endAudioAssetId: null,
+    outputs: { browserSource: false, deviceRouteIds: [route.id] },
+    createdAt: "2026-07-15T08:00:00.000Z",
+    updatedAt: "2026-07-15T08:00:00.000Z"
+  };
+  timers.save(timer);
+
+  expect(routes.findModuleReferences(route.id)).toContainEqual({
+    moduleId: "timers",
+    ownerId: timer.id,
+    ownerName: timer.label,
+    variantId: null
+  });
+  expect(() => routes.delete(route.id)).toThrow(expect.objectContaining({
+    code: "AUDIO_ROUTE_REFERENCED",
+    nextStep: "Remove the route from the listed Alerts, Screen Effects, and Timers before deleting it."
+  }));
 });
 
 function audioEffect(effectId: string, variantId: string) {

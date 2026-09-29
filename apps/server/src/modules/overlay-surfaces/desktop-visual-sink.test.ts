@@ -10,7 +10,7 @@ function harness() {
   const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayId: "one", displayLabel: "Main monitor", autoFollowDisplayName: false, opacity: 1, layers: [{ moduleId: "alerts", visible: true }] } as const;
   const list = vi.fn<SurfaceRepository["list"]>(async () => [{ ...config, layers: [...config.layers] }]);
   const resolve = vi.fn<(input: Omit<DesktopVisualBatch, "assets">) => Promise<DesktopVisualBatch>>(async input => ({ ...input, assets: [] }));
-  const transport = { configure: vi.fn<DesktopOverlayTransport["configure"]>(async () => {}), prepare: vi.fn<DesktopOverlayTransport["prepare"]>(async () => "ready"),
+  const transport = { configure: vi.fn<DesktopOverlayTransport["configure"]>(async () => {}), syncModule: vi.fn<DesktopOverlayTransport["syncModule"]>(async () => {}), prepare: vi.fn<DesktopOverlayTransport["prepare"]>(async () => "ready"),
     start: vi.fn<DesktopOverlayTransport["start"]>(async () => {}), stop: vi.fn<DesktopOverlayTransport["stop"]>(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {}) };
   const sink = new DesktopVisualSink({ transport, surfaces: { list }, assets: { resolve } });
   return { sink, transport, resolve, list, config };

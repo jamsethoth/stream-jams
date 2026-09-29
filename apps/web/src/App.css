@@ -354,6 +354,8 @@ a:focus-visible {
   margin: 12px 0 0;
   padding: 0;
 }
+.operator-timer-list { grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+.operator-timer-item .operator-controls { justify-content: flex-end; }
 
 .operator-item {
   background: var(--color-surface);

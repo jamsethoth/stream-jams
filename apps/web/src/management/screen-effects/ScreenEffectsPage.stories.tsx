@@ -55,6 +55,9 @@ export const ActiveAndInactiveSets: Story = {
     const canvas = within(canvasElement);
     const live = await canvas.findByRole("region", { name: "Live show Screen Effect set" });
     await expect(within(live).getByRole("button", { name: "Delete set" })).toBeDisabled();
+    const liveSetBounds = within(live).getByText("Live set", { exact: true }).getBoundingClientRect();
+    const renameBounds = within(live).getByRole("button", { name: "Rename set" }).getBoundingClientRect();
+    await expect(Math.abs((liveSetBounds.top + liveSetBounds.height / 2) - (renameBounds.top + renameBounds.height / 2))).toBeLessThanOrEqual(1);
     await userEvent.click(within(live).getByText("Neutral burst"));
     await expect(within(live).getByRole("button", { name: "Default variant" })).toBeVisible();
     await expect(within(canvas.getByRole("region", { name: "Gaming Screen Effect set" })).getByRole("button", { name: "Activate set" })).toBeVisible();

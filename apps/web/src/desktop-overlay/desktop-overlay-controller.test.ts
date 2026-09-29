@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DesktopVisualBatch, DesktopVisualCommand, DesktopVisualRendererRequest } from "@stream-jams/core";
+import type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualCommand, DesktopVisualRendererRequest } from "@stream-jams/core";
 import { DesktopOverlayController } from "./desktop-overlay-controller.js";
 import type { DesktopOverlayControllerDependencies } from "./desktop-overlay-controller.js";
 
@@ -12,6 +12,13 @@ function batch(moduleId = "alerts", media = false): DesktopVisualBatch {
       visual: media ? { assetId: "asset", mediaType: "image", layout: { x: 0, y: 0, width: 100, height: 100, zIndex: 0 } } : null }],
     assets: media ? [{ assetId: "asset", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] : [] };
 }
+function moduleSync(revision: number, icon = true): DesktopModuleSync {
+  return { moduleId: "timers", revision, presentation: { kind: "timer-stack", stack: {
+    targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 }, orientation: "vertical", maxVisible: 1 },
+    cards: [{ definitionId: "mitts", generation: `g${revision}`, label: "Wear oven mitts", iconAssetId: icon ? "icon" : null,
+      status: "paused", remainingMs: 5000, slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 } }], overflowCount: 0
+  } }, assets: icon ? [{ assetId: "icon", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] : [] };
+}
 function harness() {
   const report = vi.fn(); const changed = vi.fn(); const asset = { url: "blob:asset", dispose: vi.fn() };
   const prepareAsset = vi.fn<DesktopOverlayControllerDependencies["prepareAsset"]>(async () => asset);
@@ -22,6 +29,22 @@ function harness() {
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
+it.each(["clear", "replace", "reconfigure"])("acknowledges superseded module icon loads immediately on %s", async action => {
+  const { controller, report, send, configure, prepareAsset, asset } = harness(); configure();
+  let finish!: (value: typeof asset) => void;
+  prepareAsset.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const old = send({ type: "sync-module", ...moduleSync(1) });
+  if (action === "reconfigure") send({ type: "configure", config: { ...config, enabled: false, layers: [] } });
+  else send({ type: "sync-module", ...moduleSync(2, false), ...(action === "clear" ? { presentation: null } : {}) });
+  expect(report.mock.calls.filter(call => call[0].requestId === old.requestId)).toEqual([
+    [{ generation: 1, requestId: old.requestId, result: { type: "ok" } }]
+  ]);
+  finish(asset); await vi.advanceTimersByTimeAsync(6000);
+  expect(report.mock.calls.filter(call => call[0].requestId === old.requestId)).toHaveLength(1);
+  expect(asset.dispose).toHaveBeenCalledOnce();
+  expect(controller.getSnapshot().modules.map(module => module.revision)).toEqual(action === "replace" ? [2] : []);
+  controller.dispose();
+});
 it("prepares assets, waits for shared start, then completes exactly at the shared end", async () => {
   const { controller, report, send, configure, asset } = harness(); configure();
   const prepared = send({ type: "prepare", batch: batch("alerts", true) }); await vi.advanceTimersByTimeAsync(0);
@@ -139,4 +162,30 @@ it("allows concurrent duration groups in one module while rejecting duplicate fu
   await vi.advanceTimersByTimeAsync(1000); send({ type: "start", key: batch().key }); send({ type: "start", key: second.key });
   expect(controller.getSnapshot().occurrences).toHaveLength(2); await vi.advanceTimersByTimeAsync(2000);
   expect(controller.getSnapshot().occurrences.map(occurrence => occurrence.key.occurrenceId)).toEqual(["second"]); controller.dispose();
+});
+
+it("publishes only complete newer module snapshots and clears their owned URLs", async () => {
+  const { controller, send, configure, report, asset, prepareAsset } = harness(); configure();
+  const first = send({ type: "sync-module", ...moduleSync(1) }); await vi.advanceTimersByTimeAsync(0);
+  expect(controller.getSnapshot().modules[0]).toMatchObject({ moduleId: "timers", revision: 1, presentation: moduleSync(1).presentation });
+  expect(controller.getSnapshot().modules[0]!.assetUrls.get("icon")).toBe("blob:asset");
+  expect(report).toHaveBeenCalledWith({ generation: 1, requestId: first.requestId, result: { type: "ok" } });
+  send({ type: "sync-module", ...moduleSync(0, false) }); await vi.advanceTimersByTimeAsync(0);
+  expect(controller.getSnapshot().modules[0]!.revision).toBe(1); expect(asset.dispose).not.toHaveBeenCalled();
+  const replacement = { url: "blob:new", dispose: vi.fn() }; prepareAsset.mockResolvedValueOnce(replacement);
+  send({ type: "sync-module", ...moduleSync(2) }); await vi.advanceTimersByTimeAsync(0);
+  expect(controller.getSnapshot().modules[0]!.revision).toBe(2); expect(asset.dispose).toHaveBeenCalledOnce();
+  send({ type: "sync-module", ...{ ...moduleSync(3, false), presentation: null } }); await vi.advanceTimersByTimeAsync(0);
+  expect(controller.getSnapshot().modules).toEqual([]); expect(replacement.dispose).toHaveBeenCalledOnce(); controller.dispose();
+});
+
+it("does not replace a module snapshot when its next icon fails to load", async () => {
+  const { controller, send, configure, prepareAsset, report } = harness(); configure();
+  send({ type: "sync-module", ...moduleSync(1, false) }); await vi.advanceTimersByTimeAsync(0);
+  prepareAsset.mockRejectedValueOnce(new Error("bad icon")); const failed = send({ type: "sync-module", ...moduleSync(2) });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(controller.getSnapshot().modules[0]!.revision).toBe(1);
+  expect(report).toHaveBeenCalledWith(expect.objectContaining({ requestId: failed.requestId, result: null,
+    failure: expect.objectContaining({ stage: "source-load", message: "Desktop timer icons could not be prepared." }) }));
+  controller.dispose();
 });

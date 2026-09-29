@@ -34,15 +34,21 @@ const customModule: OverlayModuleDefinition = {
 };
 
 describe("overlay module registry", () => {
-  it("registers Alerts and disabled Screen Effects in stable built-in order", () => {
+  it("registers Alerts, disabled Screen Effects, and disabled Timers in stable built-in order", () => {
     const registry = createDefaultOverlayModuleRegistry();
 
     expect(registry.listModules()).toEqual([
       alertsOverlayModuleDefinition,
-      screenEffectsOverlayModuleDefinition
+      screenEffectsOverlayModuleDefinition,
+      registry.getModule("timers")
     ]);
     expect(registry.getModule("alerts")).toEqual(alertsOverlayModuleDefinition);
     expect(registry.getModule("screen-effects")).toEqual(screenEffectsOverlayModuleDefinition);
+    expect(registry.getModule("timers")).toMatchObject({
+      id: "timers",
+      defaultEnabled: false,
+      renderer: { supportedOutputs: ["module", "unified"] }
+    });
     expect(alertsOverlayModuleDefinition.wizard.steps.map((step) => step.id)).toEqual(["alerts-canvas"]);
     expect(screenEffectsOverlayModuleDefinition).toMatchObject({
       defaultEnabled: false,
