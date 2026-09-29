@@ -189,6 +189,21 @@ export {
 } from "./events/schemas.js";
 
 export type * from "./overlay-modules/types.js";
+export type * from "./timers/types.js";
+export {
+  overlayModulePresentationSchema,
+  timerCommandResultSchema,
+  timerDefinitionSchema,
+  timerDefinitionSnapshotSchema,
+  timerOverlayCardSchema,
+  timerProfileDimensions,
+  timerRunStateSchema,
+  timerStackProjectionSchema,
+  timerStackRegionSchema,
+  timersOverlayModuleConfigSchema
+} from "./timers/schemas.js";
+export { formatTimerRemaining, projectTimerStack } from "./timers/projection.js";
+export { timersOverlayModuleDefinition } from "./timers/module-definition.js";
 export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
 export type { SurfaceLayer, SurfaceConfiguration, SurfaceConfigurationUpdate, SurfaceRepository } from "./overlay-modules/surface-configuration.js";
 export { visualRecipientKeySchema } from "./overlays/visual-recipient.js";

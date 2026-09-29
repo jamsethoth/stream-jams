@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { OverlayInstruction } from "../overlays/types.js";
+import type { OverlayModulePresentation } from "../timers/types.js";
 
 export interface OverlayModuleWizardField {
   readonly id: string;
@@ -47,4 +48,5 @@ export interface OverlayModuleSnapshot {
   readonly moduleId: string;
   readonly enabled: boolean;
   readonly instructions: readonly OverlayInstruction[];
+  readonly presentation?: OverlayModulePresentation | undefined;
 }

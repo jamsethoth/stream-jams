@@ -1,9 +1,9 @@
 ## 1. Core Timer Contracts And Pure Behavior
 
-- [ ] 1.1 Add failing core tests for timer definition validation, runtime-state schemas, command results, duration formatting, generation identity, and normalized timer overlay payloads.
-- [ ] 1.2 Implement exported core timer types/schemas and register a schema-backed `timers` overlay module definition without adding a dependency.
-- [ ] 1.3 Add failing pure projection tests for completed/running/paused ordering, stable tie-breaks, vertical/horizontal equal slots, configured visible capacity, ellipsized-label metadata, and `+N more` counts.
-- [ ] 1.4 Implement pure timer ordering and per-profile stack projection with bounded region/orientation/capacity validation.
+- [x] 1.1 Add failing core tests for timer definition validation, runtime-state schemas, command results, duration formatting, generation identity, and normalized timer overlay payloads.
+- [x] 1.2 Implement exported core timer types/schemas and register a schema-backed `timers` overlay module definition without adding a dependency.
+- [x] 1.3 Add failing pure projection tests for completed/running/paused ordering, stable tie-breaks, vertical/horizontal equal slots, configured visible capacity, ellipsized-label metadata, and `+N more` counts.
+- [x] 1.4 Implement pure timer ordering and per-profile stack projection with bounded region/orientation/capacity validation.
 
 ## 2. Durable Definitions And Module Configuration
 
