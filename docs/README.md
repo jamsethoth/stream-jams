@@ -7,6 +7,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 | Question | Source |
 | --- | --- |
 | How do I run or operate the application? | [Runbook](mvp-runbook.md) |
+| How do I configure Timers or Stream Deck HTTP actions? | [Timers](timers.md); [implementation verification and remaining manual acceptance](verification/timers.md) |
 | What product boundaries are intentional? | [Product plan](product-plan.md); its MVP sections describe the first delivery boundary, and later sections describe approved additions |
 | What is still pending? | [Canonical backlog](backlog.md), including links to planned OpenSpec changes |
 | What implemented behavior is required? | [Canonical OpenSpec capabilities](../openspec/specs); source and tests establish what actually runs when a discrepancy is found |
@@ -21,7 +22,7 @@ Use this map to distinguish current behavior, pending work, and historical evide
 - `apps/server` owns Fastify, SQLite repositories and migrations, secrets, providers, assets, diagnostics, and runtime composition.
 - `apps/web` serves route-based management, `/operator`, browser-source overlays, and the private desktop-overlay renderer.
 - `apps/desktop` owns the Electron service process, management window, tray, private audio player, and private desktop overlay. Windows x64 runnable-folder packaging and short-lived verified CI artifacts are implemented.
-- Alerts and Screen Effects are registered modules with independent playback queues. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
+- Alerts, Screen Effects, and Timers are registered modules. Alerts and Screen Effects retain independent playback queues; Timers use an independent server-authoritative lifecycle. Shared surfaces and global safety controls coordinate their outputs without combining their schedulers.
 - Screen Effects supports one active set, unified weighted variants, draft variant removal, media-based duration, fades, and percentage media gain. Per-effect cooldown, default/weighted authoring kinds, and Screen Effect animation controls are no longer current authoring features.
 
 Installers, signing, automatic updates, non-Windows desktop delivery, LAN mode, Docker product delivery, and cloud hosting remain outside current delivery. Playwright's Docker test infrastructure is separate from product delivery.

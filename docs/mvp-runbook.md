@@ -1,6 +1,6 @@
 # Stream Jams MVP Runbook
 
-This runbook covers the local application and its implemented post-MVP Windows and Screen Effects additions. See the [documentation map](README.md) for current specifications and historical verification boundaries.
+This runbook covers the local application and its implemented post-MVP Windows, Screen Effects, and Timers additions. See the [documentation map](README.md) for current specifications and historical verification boundaries.
 
 ## Startup
 
@@ -84,6 +84,12 @@ In the Windows app, open **Settings → Overlay surfaces**. Select an explicit d
 Each surface has independent drafts, visibility and topmost-first ordering. Use Up/Down and explicitly save that surface; module-specific browser sources keep their existing behavior. Hiding visuals does not change independently selected audio. Desktop content uniformly fits its Landscape canvas without stretching. Exclusive fullscreen may cover the overlay; use borderless/windowed mode. No graphics injection or driver is used.
 
 Disconnecting the selected display clears its desktop content without moving it elsewhere or replaying on reconnection. Choose and save another display explicitly to rebind. **Retry desktop output** uses saved settings and restores future playback only. Closing management to the tray does not stop the surface; normal Quit clears it. CLI operation cannot provide a native desktop surface, but unified-browser layer settings remain editable. Portable backups preserve layers/opacity while resetting desktop enablement and display binding.
+
+## Timers
+
+Open **Modules → Timers** to create reusable countdowns, select optional icon/start/end assets, choose Browser Source and named-device cue outputs, and configure the Landscape and Vertical stack regions. Use the page or `/operator` to start, pause, resume, stop, or restart a definition. Only one run per definition is active; saved edits apply to the next start or restart. Current runs do not survive an application restart.
+
+For a Stream Deck or another local HTTP client, create a one-time-visible Timer automation credential on that page and configure the allowlisted loopback routes. Rotation invalidates the previous bearer and revocation disables it. Never expose the raw value in a URL, screenshot, log, backup, or shared profile. Portable backups include definitions/layout/routes but exclude active runs and automation access, so create a new credential after restore. See [Timers](timers.md) for exact routes, security rules, audio-duplication guidance, and current non-goals.
 
 ## Screen Effects
 

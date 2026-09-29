@@ -243,11 +243,13 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   async #settleCuePlay(cue: "start" | "end", run: TimerRunState): Promise<void> {
     try { await this.#cueSink?.play({ cue, run: structuredClone(run) }); }
+    // error-provenance: allow expected -- cue failures cannot roll back an authoritative timer transition
     catch { /* Cue failure must not alter the authoritative timer transition. */ }
   }
 
   async #settleCueStop(generation: string): Promise<void> {
     try { await this.#cueSink?.stop(generation); }
+    // error-provenance: allow cleanup -- cue cleanup failure cannot block the authoritative timer transition
     catch { /* Stopping a failed cue must not block the timer transition. */ }
   }
 

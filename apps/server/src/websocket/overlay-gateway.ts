@@ -248,6 +248,7 @@ export class OverlayGateway {
       (composition.targetProfileId ?? null) !== (client.targetProfileId ?? null) ||
       (client.scope === "module" && composition.modules.some(module => module.moduleId !== client.moduleId))) return false;
     try { sendGatewayMessage(client.socket, { type: "overlay.composition", composition }); return true; }
+    // error-provenance: allow expected -- a failed current-client send is converted to disconnect and a false delivery result
     catch { this.unregisterClient(clientId); return false; }
   }
 

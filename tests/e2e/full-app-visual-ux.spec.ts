@@ -256,7 +256,7 @@ test.describe.serial("full application visual UX acceptance", () => {
     await captureEvidence(page, "reward-label-desktop-light.png");
 
     await page.goto(`${runtime.url}/manage/assets`);
-    await expect(page.getByText("Default / Channel point redemption / Landscape, Vertical", { exact: true })).toBeVisible();
+    await expect(page.getByText("Alerts / Default / Channel point redemption / Landscape, Vertical", { exact: true })).toBeVisible();
     await captureEvidence(page, "asset-labels-desktop-light.png");
 
     await page.goto(`${runtime.url}/manage/tts-providers`);

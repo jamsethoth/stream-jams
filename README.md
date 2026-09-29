@@ -1,6 +1,6 @@
 # Stream Jams
 
-Stream Jams is a local-first streaming overlay application for configurable Alerts and Screen Effects. It runs on a streamer's machine and exposes module-specific and unified browser-source URLs for OBS, Streamlabs Desktop, XSplit, vMix, or similar streaming software.
+Stream Jams is a local-first streaming overlay application for configurable Alerts, Screen Effects, and Timers. It runs on a streamer's machine and exposes module-specific and unified browser-source URLs for OBS, Streamlabs Desktop, XSplit, vMix, or similar streaming software.
 
 The application includes Twitch and Streamer.bot event intake, alert sets, visual media, routed audio, text, TTS, and independent Alert and Screen Effect playback. The Windows Electron host adds tray operation, explicit audio-device output, and an opt-in desktop overlay; CLI startup serves the local web application.
 

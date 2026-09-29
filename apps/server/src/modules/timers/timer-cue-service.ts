@@ -72,7 +72,7 @@ export class TimerCueService implements TimerCueSink {
       };
       work.push(Promise.resolve().then(() => this.options.browser!.play(instruction)).then(
         () => undefined,
-        error => this.#diagnose("Timer Browser Source cue playback failed.", input, { assetId, instructionId }, error)
+        (error: unknown) => this.#diagnose("Timer Browser Source cue playback failed.", input, { assetId, instructionId }, error)
       ));
     }
 
@@ -149,7 +149,9 @@ export class TimerCueService implements TimerCueSink {
       };
       if (exception === undefined) await this.options.logger.error(message, context);
       else await this.options.logger.error(message, context, exception);
-    } catch { /* Diagnostics are best-effort and cannot affect timer state. */ }
+    }
+    // error-provenance: allow cleanup -- diagnostic persistence cannot affect the authoritative timer transition
+    catch { /* Diagnostics are best-effort and cannot affect timer state. */ }
   }
 }
 

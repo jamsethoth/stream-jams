@@ -61,15 +61,15 @@
 
 ## 10. Integrated Browser And Desktop Acceptance
 
-- [ ] 10.1 Add Playwright management coverage that creates a timer, selects icon/cues/routes, configures both profile regions/orientations/capacities, saves, reloads, edits, and exercises every manual command.
-- [ ] 10.2 Add Playwright overlay coverage for concurrent sorting, paused-below-running order, late connection, equal dynamic sizing, ellipsis, `+N more`, module/unified visibility, natural completion, and reconnect continuity.
-- [ ] 10.3 Add an end-to-end HTTP scenario that creates/rotates/revokes a timer bearer and invokes every command as a generic Stream Deck-style loopback client without exposing the token in output artifacts.
+- [x] 10.1 Add Playwright management coverage that creates a timer, selects icon/cues/routes, configures both profile regions/orientations/capacities, saves, reloads, edits, and exercises every manual command.
+- [x] 10.2 Add Playwright overlay coverage for concurrent sorting, paused-below-running order, late connection, equal dynamic sizing, ellipsis, `+N more`, module/unified visibility, natural completion, and reconnect continuity.
+- [x] 10.3 Add an end-to-end HTTP scenario that creates/rotates/revokes a timer bearer and invokes every command as a generic Stream Deck-style loopback client without exposing the token in output artifacts.
 - [ ] 10.4 Extend packaged desktop tests for simultaneous browser/desktop countdown agreement, management hidden, explicit cue destinations, mute, missing output, renderer recovery, and bounded Quit.
 - [ ] 10.5 Rebuild and restart the affected local service/desktop package, wait for health, reload management and overlays, and manually verify one real generic Stream Deck HTTP button for start plus pause/resume/stop/restart actions.
 
 ## 11. Documentation And Release Gates
 
-- [ ] 11.1 Update current product/runbook/API documentation for the implemented Timers module, Stream Deck HTTP setup, token rotation/revocation, Browser Source/device-audio duplication guidance, and explicit non-goals without exposing a real credential.
-- [ ] 11.2 Record exact automated and live verification evidence, including test counts, target profiles, timer IDs, output routes, packaged artifact identity, manual limitations, and any environment-only failures.
-- [ ] 11.3 Run focused timer/core/server/web suites, then `corepack.cmd pnpm lint`, `corepack.cmd pnpm typecheck`, `corepack.cmd pnpm test`, `corepack.cmd pnpm build`, Storybook build/CI, browser Playwright, desktop Playwright, `git diff --check`, and `openspec.cmd validate add-timer-overlay-module --strict`; resolve every relevant failure without weakening tests.
-- [ ] 11.4 Reconcile every proposal/spec requirement against code and evidence, check only completed tasks, and leave the change ready for user review before any publication or merge action.
+- [x] 11.1 Update current product/runbook/API documentation for the implemented Timers module, Stream Deck HTTP setup, token rotation/revocation, Browser Source/device-audio duplication guidance, and explicit non-goals without exposing a real credential.
+- [x] 11.2 Record exact automated and live verification evidence, including test counts, target profiles, timer IDs, output routes, packaged artifact identity, manual limitations, and any environment-only failures.
+- [x] 11.3 Run focused timer/core/server/web suites, then `corepack.cmd pnpm lint`, `corepack.cmd pnpm typecheck`, `corepack.cmd pnpm test`, `corepack.cmd pnpm build`, Storybook build/CI, browser Playwright, desktop Playwright, `git diff --check`, and `openspec.cmd validate add-timer-overlay-module --strict`; resolve every relevant failure without weakening tests.
+- [x] 11.4 Reconcile every proposal/spec requirement against code and evidence, check only completed tasks, and leave the change ready for user review before any publication or merge action.

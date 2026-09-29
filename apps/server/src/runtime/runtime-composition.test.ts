@@ -402,6 +402,64 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
   expect(transport.close).toHaveBeenCalledTimes(2);
 });
 
+it("clears the desktop timer snapshot before closing its shared transport", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-desktop-timer-shutdown-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  let closed = false;
+  const calls: string[] = [];
+  const transport: DesktopOverlayTransport = {
+    configure: vi.fn(async () => {}),
+    syncModule: vi.fn(async input => {
+      calls.push(input.presentation === null ? "sync:clear" : "sync:timer");
+      if (closed) throw new Error("overlay transport is closed");
+    }),
+    prepare: vi.fn(async () => "ready" as const),
+    start: vi.fn(async () => {}),
+    stop: vi.fn(async () => {}),
+    retry: vi.fn(async () => {}),
+    close: vi.fn(async () => {
+      calls.push("close");
+      closed = true;
+    }),
+    getStatus: vi.fn(async () => ({
+      available: true as const,
+      displays: [{ id: "monitor", label: "Test monitor", bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }],
+      state: "ready" as const,
+      message: null
+    }))
+  };
+  try {
+    composition = await createRuntimeAppComposition({
+      homeDirectory: testRoot,
+      webBuildDirectory: await createWebBuildFixture(testRoot),
+      configStore: new StaticConfigStore(createConfig(testRoot)),
+      environment: {},
+      secretStore: new TestSecretStore(),
+      scheduleRecurring: () => ({ scheduled: true }),
+      cancelRecurring: () => {},
+      desktopOverlayTransport: transport
+    });
+    const saved = composition.timerManagementService.createDefinition({
+      label: "Cat paws",
+      durationMs: 300_000,
+      iconAssetId: null,
+      startAudioAssetId: null,
+      endAudioAssetId: null,
+      outputs: { browserSource: false, deviceRouteIds: [] }
+    });
+    await composition.timerRuntimeCoordinator.start(saved.id);
+    await vi.waitFor(() => expect(transport.syncModule).toHaveBeenCalled());
+
+    await expect(composition.close()).resolves.toBeUndefined();
+    composition = undefined;
+    expect(calls.at(-2)).toBe("sync:clear");
+    expect(calls.at(-1)).toBe("close");
+  } finally {
+    await composition?.close().catch(() => undefined);
+    await rm(testRoot, { recursive: true, force: true });
+  }
+});
+
 it("restores timer definitions but not active timer runs after a runtime restart", async () => {
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-timer-runtime-"));
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;

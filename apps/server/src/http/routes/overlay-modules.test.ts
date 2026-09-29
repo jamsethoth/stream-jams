@@ -38,6 +38,15 @@ describe("overlay module routes", () => {
           entryPoint: "overlay/modules/screen-effects",
           supportedOutputs: ["module", "unified"]
         }
+      }),
+      expect.objectContaining({
+        id: "timers",
+        displayName: "Timers",
+        defaultEnabled: false,
+        renderer: {
+          entryPoint: "overlay/modules/timers",
+          supportedOutputs: ["module", "unified"]
+        }
       })
     ]);
     expect(response.json()).toEqual(

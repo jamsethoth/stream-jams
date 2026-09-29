@@ -47,6 +47,13 @@ it("routes overlay RPC separately, ignores stale leases, and clears visuals befo
   worker.emit("message", { type: "overlay-request", generation, requestId, command: { type: "retry" } });
   await vi.waitFor(() => expect(worker.messages.at(-1)).toMatchObject({ type: "overlay-response", result: null }));
   expect(overlay.handle).toHaveBeenCalledOnce();
+  const clearRequestId = randomUUID();
+  const clearCommand = { type: "sync-module" as const, moduleId: "timers", revision: 1, presentation: null, assets: [] };
+  worker.emit("message", { type: "overlay-request", generation, requestId: clearRequestId, command: clearCommand });
+  await vi.waitFor(() => expect(worker.messages.at(-1)).toEqual({
+    type: "overlay-response", generation, requestId: clearRequestId, result: { type: "ok" }
+  }));
+  expect(overlay.handle).toHaveBeenLastCalledWith(clearCommand);
   worker.emit("exit", 0);
   await stop;
 });

@@ -1201,7 +1201,6 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
   });
-  if (desktopModuleSnapshotSink !== undefined) cleanups.push(() => desktopModuleSnapshotSink.close());
   const syncBrowserTimerCompositions = async () => {
     const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
     await Promise.all(overlayGateway.clients
@@ -1220,11 +1219,13 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   let timerOutputSyncTail = Promise.resolve();
   const queueTimerOutputSync = () => {
     const pending = timerOutputSyncTail.then(syncTimerOutputs);
-    timerOutputSyncTail = pending.catch(() => undefined);
+    timerOutputSyncTail = pending.catch(
+      // error-provenance: allow expected -- pending preserves the rejection for tracked diagnostics; the tail only keeps later syncs live
+      () => undefined
+    );
     return pending;
   };
   const unsubscribeTimerOutputs = timerRuntimeCoordinator.subscribe(() => { void trackRuntimeWork(queueTimerOutputSync); });
-  cleanups.push(unsubscribeTimerOutputs);
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }
@@ -1421,6 +1422,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   cleanups.push(() => playbackCoordinator.close());
   cleanups.push(() => effectPlaybackCoordinator.close());
   cleanups.push(() => timerRuntimeCoordinator.close());
+  cleanups.push(async () => {
+    unsubscribeTimerOutputs();
+    await timerOutputSyncTail;
+    await desktopModuleSnapshotSink?.close();
+  });
 
   return {
     app,

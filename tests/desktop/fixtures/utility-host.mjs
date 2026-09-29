@@ -25,6 +25,13 @@ app.whenReady().then(() => {
         requestId: message.requestId, result: lifecycle ? { type: "ok" } : null
       });
     }
+    if (message.type === "overlay-request") {
+      const lifecycle = ["configure", "sync-module", "close"].includes(message.command.type);
+      worker.postMessage({
+        type: "overlay-response", generation: message.generation,
+        requestId: message.requestId, result: lifecycle ? { type: "ok" } : null
+      });
+    }
   });
   worker.on("exit", (code) => { globalThis.workerObservation.exited = true; globalThis.workerObservation.exitCode = code; });
   worker.postMessage({ type: "start", generation: 1, requestId: randomUUID() });

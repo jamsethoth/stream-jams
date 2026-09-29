@@ -77,7 +77,9 @@ export class DesktopVisualAssetResolver {
         const checksum = record.checksum.replace(/^sha256:/i, "").toLowerCase();
         if (bytes.byteLength !== record.sizeBytes || createHash("sha256").update(bytes).digest("hex") !== checksum) { missing.add(assetId); continue; }
         assets.push({ assetId, mimeType: mime.data, bytes: new Uint8Array(bytes) }); totalBytes += record.sizeBytes;
-      } catch { missing.add(assetId); }
+      }
+      // error-provenance: allow expected -- unavailable icon bytes are represented by the missing-asset fallback
+      catch { missing.add(assetId); }
     }
     const normalized: OverlayModulePresentation = { ...presentation, stack: { ...presentation.stack,
       cards: presentation.stack.cards.map(card => card.iconAssetId !== null && missing.has(card.iconAssetId) ? { ...card, iconAssetId: null } : card) } };

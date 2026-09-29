@@ -241,7 +241,8 @@ export class DesktopOverlayController {
   }
   #publish(config = this.#snapshot.config): void {
     this.#snapshot = { config, occurrences: [...this.#records.values()].filter(record => record.state === "active").map(record => record.view),
-      modules: [...this.#modules.values()].map(({ resources: _resources, bytes: _bytes, ...view }) => view) };
+      modules: [...this.#modules.values()].map(record => ({ moduleId: record.moduleId, revision: record.revision,
+        presentation: record.presentation, assetUrls: record.assetUrls })) };
     this.dependencies.changed();
   }
   #report(envelope: Envelope, result: DesktopVisualRendererReply["result"], failure?: OverlayPlaybackFailure): void {
