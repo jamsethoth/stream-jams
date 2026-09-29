@@ -47,6 +47,7 @@
 - [x] 7.4 Add focused Testing Library coverage for loading, empty, validation, save success/failure, missing assets, active-delete conflict, keyboard controls, stable focus, and semantic announcements.
 - [x] 7.5 Add production-component Storybook stories with tiny checked-in assets for idle inventory, running, paused, completed, horizontal/vertical layouts, overflow, long labels, missing icon, loading, and error states; pass accessibility and interaction checks.
 - [x] 7.6 Present explicit Timers module enabled/disabled status and a confirmed module action independently from overlay-layout saving.
+- [x] 7.7 Keep timer card dimensions fixed to the configured visible-capacity slots when fewer timers are active, across vertical and horizontal stacks.
 
 ## 8. Operator Active-Timer Controls
 

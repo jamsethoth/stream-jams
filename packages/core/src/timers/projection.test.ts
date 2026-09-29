@@ -107,4 +107,26 @@ describe("timer projection", () => {
     ]);
     expect(projection.cards[1]?.label).toBe(longLabel);
   });
+
+  it.each([
+    {
+      orientation: "vertical" as const,
+      expected: { x: 10, y: 20, width: 300, height: 120, zIndex: 4 }
+    },
+    {
+      orientation: "horizontal" as const,
+      expected: { x: 10, y: 20, width: 100, height: 360, zIndex: 4 }
+    }
+  ])("keeps one $orientation card at the configured maximum slot size", ({ orientation, expected }) => {
+    const { projectTimerStack } = api();
+    const projection = projectTimerStack({
+      nowEpochMs: 0,
+      targetProfileId: "vertical",
+      region: { layout: { x: 10, y: 20, width: 300, height: 360, zIndex: 4 }, orientation, maxVisible: 3 },
+      runs: [running("a", 1_000)]
+    });
+
+    expect(projection.cards).toHaveLength(1);
+    expect(projection.cards[0]?.slot).toEqual(expected);
+  });
 });

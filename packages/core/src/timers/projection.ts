@@ -24,7 +24,7 @@ export function projectTimerStack(input: {
     .filter(run => run.status !== "completed" || run.expiresAtEpochMs > input.nowEpochMs)
     .sort(compareRuns);
   const visible = runs.slice(0, region.maxVisible);
-  const slots = createSlots(region.layout, region.orientation, visible.length);
+  const slots = createSlots(region.layout, region.orientation, region.maxVisible);
   return {
     targetProfileId,
     region,
@@ -53,12 +53,11 @@ function urgencyValue(run: TimerRunState): number {
 function createSlots(
   layout: OverlayElementLayout,
   orientation: TimerStackRegion["orientation"],
-  count: number
+  capacity: number
 ): OverlayElementLayout[] {
-  if (count === 0) return [];
-  return Array.from({ length: count }, (_, index) => orientation === "vertical"
-    ? { ...layout, y: layout.y + layout.height * index / count, height: layout.height / count }
-    : { ...layout, x: layout.x + layout.width * index / count, width: layout.width / count });
+  return Array.from({ length: capacity }, (_, index) => orientation === "vertical"
+    ? { ...layout, y: layout.y + layout.height * index / capacity, height: layout.height / capacity }
+    : { ...layout, x: layout.x + layout.width * index / capacity, width: layout.width / capacity });
 }
 
 function toCard(run: TimerRunState, slot: OverlayElementLayout): TimerOverlayCard {
