@@ -39,6 +39,12 @@ These endpoints are loopback-only, reject browser-origin requests, and accept on
 
 Portable configuration backups include Timer definitions, profile layout, referenced asset IDs, and named audio-route IDs. They exclude active runs and the automation credential/verifier. Restored timers start idle, named device routes require the same explicit rebinding rules as other routed audio, and a new automation credential must be created. If restore fails and rolls back, the destination's prior operational credential state is restored.
 
+Stop active timers before restoring a backup, including paused timers; a completed timer also blocks restore during its three-second hold. New timer commands are rejected while configuration replacement is underway.
+
+The Timers page refreshes runtime state and Browser Source connectivity every five seconds while visible, without replacing unsaved definition or layout edits. A failed refresh keeps the last known state and shows a stale-state warning. The Operator Console reports timer refresh failures independently from alert playback.
+
+Timer icons accept still images and GIFs on browser and desktop outputs. Replacing an asset or restoring a backup cannot substitute audio/video for an icon or a non-audio asset for a cue. When a configured stack reaches a profile edge, its entire rendered footprint scales down just enough to retain the overflow badge below vertical stacks or beside horizontal stacks. Space is reserved even without overflow so the capacity-sized cards do not jump when the badge appears.
+
 ## Initial boundaries
 
 Timers count down only. Temporary one-off definitions, count-up/overtime, scheduled starts, automatic Twitch/Streamer.bot event bindings, custom target profiles, overlapping runs of the same definition, LAN access, and a custom Stream Deck plugin are not included. Streamer.bot or Stream Deck can call the generic loopback HTTP API when their own trigger logic should start a timer.

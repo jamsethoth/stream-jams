@@ -103,16 +103,18 @@ export class OverlayHost implements DesktopOverlayTransport {
   async syncModule(candidate: DesktopModuleSync): Promise<void> {
     const command = desktopVisualCommandSchema.parse({ type: "sync-module", ...candidate });
     if (command.type !== "sync-module") throw unavailable();
+    const current = this.#moduleSyncs.get(command.moduleId);
+    if (current !== undefined && command.revision <= current.revision) return;
+    if (command.presentation !== null && (!this.#owned || !this.#config.enabled || this.#config.displayId === null)) throw unavailable();
+    // Cache desired state before any acknowledgement can race with a newer clear.
+    this.#moduleSyncs.set(command.moduleId, command);
     if (command.presentation === null) {
-      this.#moduleSyncs.delete(command.moduleId);
       if (this.#loaded) await this.#request(command, 5000);
       return;
     }
-    if (!this.#owned || !this.#config.enabled || this.#config.displayId === null) throw unavailable();
-    await this.#ensure();
+    await this.#ensure(command);
+    if (this.#moduleSyncs.get(command.moduleId) !== command) return;
     await this.#request(command, 5000);
-    const current = this.#moduleSyncs.get(command.moduleId);
-    if (current === undefined || command.revision > current.revision) this.#moduleSyncs.set(command.moduleId, command);
   }
   async prepare(candidate: DesktopVisualBatch): Promise<"ready" | "unavailable"> {
     const command = desktopVisualCommandSchema.parse({ type: "prepare", batch: candidate });
@@ -192,7 +194,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     }, 1000);
   }
 
-  async #ensure(): Promise<void> {
+  async #ensure(pendingSync?: DesktopModuleSync): Promise<void> {
     if (!this.#owned || !this.#config.enabled || this.#config.displayId === null || this.#failures > 1) throw unavailable();
     if (this.#ready !== null) return this.#ready;
     const generation = ++this.#generation;
@@ -220,7 +222,9 @@ export class OverlayHost implements DesktopOverlayTransport {
         if (generation !== this.#generation || port !== this.#port) throw unavailable();
         this.#loaded = true;
         await this.#request({ type: "configure", config: this.#config }, 2000);
-        for (const sync of this.#moduleSyncs.values()) await this.#request({ type: "sync-module", ...sync }, 5000);
+        for (const sync of this.#moduleSyncs.values()) {
+          if (sync !== pendingSync && sync.presentation !== null) await this.#request({ type: "sync-module", ...sync }, 5000);
+        }
       } catch (error) {
         if (generation === this.#generation) this.#discard(true, {
           kind: loadTimedOut ? "renderer-load-timeout" : "renderer-load-failed",

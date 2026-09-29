@@ -59,6 +59,44 @@ export const HorizontalLandscape: Story = {
   } }
 };
 
+export const BottomRightOverflow: Story = {
+  args: { stack: {
+    targetProfileId: "landscape",
+    region: { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 4 }, orientation: "vertical", maxVisible: 3 },
+    cards: [0, 1, 2].map(index => card(`edge-${index}`, `Timer ${index + 1}`, "paused", {
+      x: 1320, y: 780 + index * 100, width: 600, height: 100, zIndex: 4
+    })), overflowCount: 2
+  } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const last = canvas.getAllByRole("listitem").at(-1)!.getBoundingClientRect();
+    const badge = canvas.getByText("+2 more").getBoundingClientRect();
+    const root = canvasElement.querySelector(".timer-stack")!.parentElement!.getBoundingClientRect();
+    await expect(badge.top).toBeGreaterThanOrEqual(last.bottom);
+    await expect(badge.bottom).toBeLessThanOrEqual(root.bottom + 1);
+    await expect(badge.right).toBeLessThanOrEqual(root.right + 1);
+  }
+};
+
+export const RightEdgeHorizontalOverflow: Story = {
+  args: { stack: {
+    targetProfileId: "landscape",
+    region: { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 4 }, orientation: "horizontal", maxVisible: 3 },
+    cards: [0, 1, 2].map(index => card(`edge-${index}`, `Timer ${index + 1}`, "paused", {
+      x: 1320 + index * 200, y: 780, width: 200, height: 300, zIndex: 4
+    })), overflowCount: 2
+  } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const last = canvas.getAllByRole("listitem").at(-1)!.getBoundingClientRect();
+    const badge = canvas.getByText("+2 more").getBoundingClientRect();
+    const root = canvasElement.querySelector(".timer-stack")!.parentElement!.getBoundingClientRect();
+    await expect(badge.left).toBeGreaterThanOrEqual(last.right);
+    await expect(badge.bottom).toBeLessThanOrEqual(root.bottom + 1);
+    await expect(badge.right).toBeLessThanOrEqual(root.right + 1);
+  }
+};
+
 export const VerticalProfile: Story = {
   args: { stack: {
     targetProfileId: "vertical",

@@ -76,3 +76,13 @@ export const ModuleDisabled: Story = { args: { api: buildApi([], false) }, play:
 } };
 export const Paused: Story = { args: { api: buildApi([{ status: "paused", definitionId: definition.id, generation: "pause", snapshot: definition, remainingMs: 30_000 }]) } };
 export const Completed: Story = { args: { api: buildApi([{ status: "completed", definitionId: definition.id, generation: "done", snapshot: definition, completedAtEpochMs: Date.now(), expiresAtEpochMs: Date.now() + 3000 }]) } };
+export const ConfirmCredentialRotation: Story = {
+  args: { api: { ...buildApi([]), getAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null }) } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(await canvas.findByRole("button", { name: "Rotate credential" }));
+    const dialog = canvas.getByRole("dialog", { name: "Rotate timer automation credential?" });
+    await expect(within(dialog).getByText(/Existing Stream Deck actions will stop working/)).toBeVisible();
+    await expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeVisible();
+  }
+};

@@ -39,6 +39,34 @@ function reply(port: { callbacks: OverlayRendererCallbacks }, request: OverlayRe
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
 
+it("retains a clear tombstone across late acknowledgements and renderer recovery", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [] }); await host.retry();
+  const port = ports[0]!; port.auto = false;
+  const old = host.syncModule(moduleSync(1)); await vi.advanceTimersByTimeAsync(0);
+  const oldRequest = port.sent.at(-1)!;
+  const cleared = host.syncModule(moduleSync(2, null));
+  reply(port, port.sent.at(-1)!, { type: "ok" }); await cleared;
+  reply(port, oldRequest, { type: "ok" }); await old;
+  await host.syncModule(moduleSync(1));
+  await host.retry();
+  expect(ports[1]!.sent.map(request => request.command.type)).toEqual(["configure"]);
+  await host.syncModule(moduleSync(3));
+  await host.syncModule(moduleSync(2, null));
+  await host.retry();
+  expect(ports[2]!.sent.at(-1)!.command).toMatchObject({ type: "sync-module", revision: 3 });
+  await host.close();
+});
+
+it("does not revive a snapshot cleared while the renderer is loading", async () => {
+  let loaded!: () => void;
+  const { host, ports } = harness(() => new Promise<void>(resolve => { loaded = resolve; }));
+  await host.configure({ ...config, layers: [] });
+  const old = host.syncModule(moduleSync(1)); await vi.advanceTimersByTimeAsync(0);
+  await host.syncModule(moduleSync(2, null)); loaded(); await old;
+  expect(ports[0]!.sent.map(request => request.command.type)).toEqual(["configure"]);
+  await host.close();
+});
+
 it("requires explicit configuration and completes start only for its matching key", async () => {
   const { host, ports } = harness();
   expect(await host.prepare(batch())).toBe("unavailable");

@@ -6,6 +6,7 @@ import {
   type TimerCueSink,
   type TimerScheduler
 } from "./timer-runtime-coordinator.js";
+import { RuntimeMaintenanceGate } from "../backup/runtime-maintenance-gate.js";
 
 function definition(id: string, durationMs = 10_000): TimerDefinition {
   return {
@@ -47,7 +48,7 @@ class FakeTime implements TimerClock, TimerScheduler {
   }
 }
 
-function setup(definitions = [definition("a"), definition("b", 5_000)]) {
+function setup(definitions = [definition("a"), definition("b", 5_000)], gate?: RuntimeMaintenanceGate) {
   const time = new FakeTime();
   const records = new Map(definitions.map(item => [item.id, item]));
   const cueSink: TimerCueSink = { play: vi.fn().mockResolvedValue(undefined), stop: vi.fn().mockResolvedValue(undefined) };
@@ -64,6 +65,7 @@ function setup(definitions = [definition("a"), definition("b", 5_000)]) {
     }
   };
   const coordinator = new TimerRuntimeCoordinator({
+    ...(gate === undefined ? {} : { assertCommandAvailable: () => gate.runConfigurationMutation(() => undefined) }),
     definitions: { findById: id => records.get(id) ?? null },
     config: { getModuleConfig: vi.fn().mockResolvedValue(config) },
     clock: time,
@@ -75,6 +77,45 @@ function setup(definitions = [definition("a"), definition("b", 5_000)]) {
 }
 
 describe("TimerRuntimeCoordinator", () => {
+  it("rejects new commands during configuration replacement without changing timer state", async () => {
+    const gate = new RuntimeMaintenanceGate();
+    const { coordinator } = setup(undefined, gate);
+    await gate.runMaintenance(async () => {
+      await expect(coordinator.start("a")).rejects.toThrow("maintenance");
+      await expect(coordinator.restart("a")).rejects.toThrow("maintenance");
+      expect(coordinator.listStates()).toEqual([]);
+    });
+    await expect(coordinator.start("a")).resolves.toMatchObject({ changed: true });
+  });
+  it("commits restart before asynchronous cue cleanup so Start, Stop and close cannot resurrect it", async () => {
+    const { coordinator, cueSink } = setup();
+    await coordinator.start("a");
+    let release!: () => void;
+    vi.mocked(cueSink.stop).mockReturnValue(new Promise<void>(resolve => { release = resolve; }));
+    const restarting = coordinator.restart("a");
+    expect(coordinator.getState("a")?.generation).toBe("generation-2");
+    expect(await coordinator.start("a")).toMatchObject({ changed: false, state: { generation: "generation-2" } });
+    const stopping = coordinator.stop("a");
+    expect(coordinator.getState("a")).toBeNull();
+    await coordinator.close();
+    release();
+    await Promise.all([restarting, stopping]);
+    expect(coordinator.getState("a")).toBeNull();
+    expect(cueSink.play).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses identical ID tie breaks for API state and overlay projection, including completed holds", async () => {
+    const { coordinator, time } = setup([
+      { ...definition("a", 2_000), label: "Zulu" },
+      { ...definition("b", 1_000), label: "Alpha" }
+    ]);
+    await coordinator.start("a");
+    await coordinator.start("b");
+    await time.advance(2_000);
+    expect(coordinator.listStates().map(state => state.definitionId)).toEqual(["a", "b"]);
+    const snapshot = await coordinator.getModuleSnapshot({ moduleId: "timers", overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape" });
+    expect(snapshot.presentation?.stack.cards.map(card => card.definitionId)).toEqual(["a", "b"]);
+  });
   it("starts independent timers with immutable definition snapshots and publishes revisions", async () => {
     const { coordinator, cueSink, records } = setup();
     const revisions: number[] = [];

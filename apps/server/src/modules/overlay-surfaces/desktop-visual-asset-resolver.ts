@@ -67,8 +67,8 @@ export class DesktopVisualAssetResolver {
     for (const assetId of referenced) {
       const record = records.get(assetId);
       const mime = desktopVisualAssetSchema.shape.mimeType.safeParse(record?.mimeType);
-      if (record === undefined || record.id !== assetId || record.mediaType !== "image" || !mime.success || visualMediaType(mime.data) !== "image" ||
-        !Number.isSafeInteger(record.sizeBytes) || record.sizeBytes <= 0 || record.sizeBytes > defaultAssetValidationPolicy.image.maxSizeBytes ||
+      if (record === undefined || record.id !== assetId || (record.mediaType !== "image" && record.mediaType !== "gif") || !mime.success || visualMediaType(mime.data) !== record.mediaType ||
+        !Number.isSafeInteger(record.sizeBytes) || record.sizeBytes <= 0 || record.sizeBytes > defaultAssetValidationPolicy[record.mediaType].maxSizeBytes ||
         !/^(?:sha256:)?[a-f0-9]{64}$/i.test(record.checksum) || totalBytes + record.sizeBytes > maxDesktopVisualTransferBytes) {
         missing.add(assetId); continue;
       }

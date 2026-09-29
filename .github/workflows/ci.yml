@@ -157,6 +157,9 @@ jobs:
 
   desktop:
     name: windows-desktop
+    # Manual-only until the hosted Windows shutdown flake is understood.
+    # Preserve packaging, desktop tests, and verified artifacts for explicit runs.
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-2025
     timeout-minutes: 30
     steps:

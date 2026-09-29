@@ -27,6 +27,7 @@ import {
   type ModerationSettings
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
+import { isTimerAssetCompatible } from "../timers/timer-asset-role.js";
 import type { ConfigurationSnapshotRepository } from "./configuration-backup-service.js";
 
 type BackupConfiguration = ConfigurationBackupArchive["configuration"];
@@ -911,6 +912,7 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
   const variantIds = ids("alert_variants", "id");
   const alertEditorDocumentIds = new Set([...ruleIds, ...variantIds]);
   const assetIds = ids("asset_metadata", "id");
+  const assetMediaTypes = new Map((tables.asset_metadata ?? []).map(row => [String(row.id), String(row.media_type)]));
   const audioRouteIds = ids("audio_output_routes", "id");
   const effectIds = ids("screen_effects", "id");
   const effectVariantIds = ids("screen_effect_variants", "id");
@@ -950,6 +952,11 @@ function validateReferences(tables: BackupConfiguration["tables"]): readonly str
       const value = row[column];
       if (value !== null && value !== undefined && !assetIds.has(String(value))) {
         errors.push(`timer_definitions[${index}].${column} references missing asset_metadata "${String(value)}".`);
+      } else if (value !== null && value !== undefined && !isTimerAssetCompatible(
+        column === "icon_asset_id" ? "icon" : column === "start_audio_asset_id" ? "start-audio" : "end-audio",
+        assetMediaTypes.get(String(value)) ?? ""
+      )) {
+        errors.push(`timer_definitions[${index}].${column} references incompatible asset_metadata "${String(value)}".`);
       }
     }
   }

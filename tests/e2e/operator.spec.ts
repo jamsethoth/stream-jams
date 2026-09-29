@@ -101,6 +101,7 @@ test("a failed later refresh retains the safe snapshot and links Diagnostics", a
 
 async function installManagementSession(context: BrowserContext): Promise<void> {
   await context.route("**/auth/management/sessions", (route) => route.fulfill({ contentType: "application/json", json: { id: "mgmt_operator_e2e", csrfToken: "csrf_operator_e2e" } }));
+  await context.route("**/timers/state", (route) => route.fulfill({ contentType: "application/json", json: [] }));
 }
 
 function activeSnapshot() {

@@ -29,7 +29,7 @@ type Occurrence = {
   endTimer: ReturnType<typeof setTimeout> | undefined;
 };
 type ModuleRecord = DesktopOverlaySnapshot["modules"][number] & { resources: PreparedAsset[]; bytes: number };
-type ModuleLoad = { revision: number; cancelled: boolean; resources: PreparedAsset[]; bytes: number };
+type ModuleLoad = { envelope: Envelope; revision: number; cancelled: boolean; resources: PreparedAsset[]; bytes: number };
 
 /** Browser-only media lifetime owner. Native transport owns the final watchdog. */
 export class DesktopOverlayController {
@@ -124,7 +124,7 @@ export class DesktopOverlayController {
     if (!this.#snapshot.config.enabled || this.#snapshot.config.displayId === null || this.#bytes + bytes > maxDesktopVisualTransferBytes) {
       this.#report(envelope, null, failure("Desktop timer snapshot could not be admitted.")); return;
     }
-    const load: ModuleLoad = { revision: sync.revision, cancelled: false, resources: [], bytes };
+    const load: ModuleLoad = { envelope, revision: sync.revision, cancelled: false, resources: [], bytes };
     this.#moduleLoads.set(sync.moduleId, load); this.#bytes += bytes;
     const urls = new Map<string, string>();
     try {
@@ -227,6 +227,7 @@ export class DesktopOverlayController {
   #cancelModuleLoad(moduleId: string, load: ModuleLoad): void {
     if (this.#moduleLoads.get(moduleId) === load) this.#moduleLoads.delete(moduleId);
     load.cancelled = true; this.#releaseModuleLoad(load);
+    this.#report(load.envelope, { type: "ok" });
   }
   #releaseModuleLoad(load: ModuleLoad): void {
     for (const resource of load.resources) releaseResource(resource);

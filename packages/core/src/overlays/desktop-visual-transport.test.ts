@@ -70,6 +70,7 @@ it("accepts bounded timer module snapshots with exactly their referenced icon as
   const sync = { moduleId: "timers", revision: 1, presentation,
     assets: [{ assetId: "icon", mimeType: "image/png", bytes: new Uint8Array([1, 2, 3]) }] };
   expect(desktopModuleSyncSchema.parse(sync)).toEqual(sync);
+  expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], mimeType: "image/gif" }] }).success).toBe(true);
   expect(desktopVisualCommandSchema.parse({ type: "sync-module", ...sync })).toEqual({ type: "sync-module", ...sync });
   expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [] }).success).toBe(false);
   expect(desktopModuleSyncSchema.safeParse({ ...sync, assets: [{ ...sync.assets[0], assetId: "other" }] }).success).toBe(false);

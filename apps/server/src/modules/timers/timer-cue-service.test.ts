@@ -45,6 +45,29 @@ function setup(asset: AssetRecord | null = audioAsset) {
 }
 
 describe("TimerCueService", () => {
+  it("does not admit cues whose asset lookup completes after Stop", async () => {
+    let release!: (asset: AssetRecord) => void;
+    const browser = { play: vi.fn(), stop: vi.fn() };
+    const service = new TimerCueService({ assets: { findById: () => new Promise<AssetRecord>(resolve => { release = resolve; }) }, browser });
+    const playing = service.play({ cue: "start", run: run() });
+    await service.stop("run-1");
+    release(audioAsset);
+    await playing;
+    expect(browser.play).not.toHaveBeenCalled();
+  });
+
+  it("does not admit device cues whose preparation completes after Stop", async () => {
+    const { service, audioOutputService, audioPlaybackSink } = setup();
+    let release!: (value: { batches: DeviceAudioBatch[]; unavailableRouteIds: string[] }) => void;
+    const prepared = await audioOutputService.preparePlayback();
+    audioOutputService.preparePlayback.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const playing = service.play({ cue: "start", run: run() });
+    await vi.waitFor(() => expect(release).toBeDefined());
+    await service.stop("run-1");
+    release(prepared);
+    await playing;
+    expect(audioPlaybackSink.play).not.toHaveBeenCalled();
+  });
   it("normalizes one browser cue and one routed device admission from the run snapshot", async () => {
     const { service, browser, audioOutputService, audioPlaybackSink, logger } = setup();
     await service.play({ cue: "start", run: run() });

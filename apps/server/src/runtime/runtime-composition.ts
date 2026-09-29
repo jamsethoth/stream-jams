@@ -525,6 +525,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateReferenceId: generateRuntimeReferenceId
   });
   const timerRuntimeCoordinator = new TimerRuntimeCoordinator({
+    assertCommandAvailable: () => maintenanceGate.runConfigurationMutation(() => undefined),
     definitions: timerDefinitionRepository,
     config: overlayModuleConfigService,
     clock: { now: () => now().getTime() },
@@ -1048,7 +1049,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
           streamerBotState === "connecting" ||
           streamerBotState === "connected" ||
           streamerBotState === "reconnecting",
-        playbackActive: playback.current.length > 0,
+        playbackActive: playback.current.length > 0 || timerRuntimeCoordinator.listStates().length > 0,
         queuedPlaybackCount: playback.queued.length
       };
     },
@@ -1239,7 +1240,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
     changed: async surface => {
       if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
-      if (surface.kind === "desktop") await desktopModuleSnapshotSink?.sync();
+      if (surface.kind === "desktop") await queueTimerOutputSync();
     },
     runMutation: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
@@ -1248,7 +1249,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   if (options.desktopOverlayTransport !== undefined) {
     try {
       await surfaceSettingsService.initializeDesktop();
-      await desktopModuleSnapshotSink?.sync();
+      await queueTimerOutputSync();
     } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
         module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,

@@ -756,6 +756,18 @@ describe("SqliteConfigurationSnapshotRepository", () => {
       .toEqual([{ route_id: "timer-route", position: 0 }]);
 
     const missingAsset = structuredClone(snapshot.tables);
+    for (const column of ["start_audio_asset_id", "end_audio_asset_id"] as const) {
+      const incompatible = structuredClone(snapshot.tables);
+      incompatible.timer_definitions![0]![column] = "asset-follow";
+      expect(repository.validate({ appConfig: {}, ...snapshot, tables: incompatible })).toContain(
+        `timer_definitions[0].${column} references incompatible asset_metadata "asset-follow".`
+      );
+    }
+    const incompatibleIcon = structuredClone(snapshot.tables);
+    incompatibleIcon.asset_metadata![0]!.media_type = "audio";
+    expect(repository.validate({ appConfig: {}, ...snapshot, tables: incompatibleIcon })).toContain(
+      'timer_definitions[0].icon_asset_id references incompatible asset_metadata "asset-follow".'
+    );
     missingAsset.timer_definitions![0] = { ...missingAsset.timer_definitions![0]!, icon_asset_id: "missing-asset" };
     expect(repository.validate({ appConfig: {}, ...snapshot, tables: missingAsset })).toContain(
       'timer_definitions[0].icon_asset_id references missing asset_metadata "missing-asset".'

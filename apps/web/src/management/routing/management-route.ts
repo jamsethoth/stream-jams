@@ -16,6 +16,7 @@ export interface ManagementRoute {
   readonly id: ManagementRouteId;
   readonly alertId?: string;
   readonly effectId?: string;
+  readonly ownerId?: string;
   readonly variantId?: string;
   readonly create?: true;
   readonly setId?: string;
@@ -205,6 +206,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
   const setup = search.get("setup") === "add" ? "add" as const : undefined;
   return {
     id,
+    ...(id === "modules-timers" && search.get("ownerId") ? { ownerId: search.get("ownerId")! } : {}),
     ...(id === "event-sources" || id === "tts-providers" ? {
       ...(providerId === undefined ? {} : { providerId }),
       ...(setup === undefined ? {} : { setup })
@@ -220,6 +222,7 @@ export function parseManagementRoute(pathname: string): ManagementRoute {
 
 export function formatManagementRoute(routeValue: ManagementRoute): string {
   const search = new URLSearchParams();
+  if (routeValue.ownerId !== undefined) search.set("ownerId", routeValue.ownerId);
   if (routeValue.variantId !== undefined) search.set("variant", routeValue.variantId);
   if (routeValue.setId !== undefined) search.set("set", routeValue.setId);
   if (routeValue.eventType !== undefined) search.set("event", routeValue.eventType);

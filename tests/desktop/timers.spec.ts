@@ -8,7 +8,7 @@ import type { SurfaceSettingsView, TimerDefinition, TimerRunState } from "../../
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
 import { windowByUrl } from "./audio-harness.js";
 
-const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
+const executablePath = resolve(process.env.STREAM_JAMS_TEST_EXECUTABLE ?? "apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 const overlayUrl = "stream-jams-overlay://surface/";
 test.use({ trace: "off", screenshot: "off", video: "off" });
 

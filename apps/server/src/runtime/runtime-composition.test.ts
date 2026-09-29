@@ -9,6 +9,7 @@ import type {
   AppConfigUpdate,
   AudioPlaybackSink,
   ConfigStore,
+  ConfigurationBackupArchive,
   DesktopAudioTransport,
   DesktopOverlayTransport,
   SecretRef,
@@ -456,6 +457,47 @@ it("clears the desktop timer snapshot before closing its shared transport", asyn
     expect(calls.at(-1)).toBe("close");
   } finally {
     await composition?.close().catch(() => undefined);
+    await rm(testRoot, { recursive: true, force: true });
+  }
+});
+
+it("blocks backup restore while timers are running or paused, then permits restore after Stop", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-timer-restore-"));
+  const composition = await createRuntimeAppComposition({
+    homeDirectory: testRoot,
+    webBuildDirectory: await createWebBuildFixture(testRoot),
+    configStore: new StaticConfigStore(createConfig(testRoot)),
+    environment: {}, secretStore: new TestSecretStore(),
+    scheduleRecurring: () => ({ scheduled: true }), cancelRecurring: () => {}
+  });
+  try {
+    composition.database.connection.prepare("INSERT INTO alert_collections (id, name, enabled) VALUES (?, ?, ?)").run("restore-set", "Restore test", 1);
+    const saved = composition.timerManagementService.createDefinition({ label: "Timer", durationMs: 300_000, iconAssetId: null,
+      startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } });
+    const headers = managementAuthHeaders(await composition.app.inject({ method: "POST", url: "/auth/management/sessions" }));
+    const exported = await composition.app.inject({ method: "GET", url: "/management/settings/backup", headers });
+    const summary = await composition.app.inject({ method: "GET", url: "/management/settings/backup-summary", headers });
+    expect(exported.statusCode, summary.body).toBe(200);
+    const archive = exported.json() as ConfigurationBackupArchive;
+    const preflight = async () => composition.app.inject({ method: "POST", url: "/management/settings/backup/preflight", headers, payload: archive });
+    const initial = (await preflight()).json() as { archiveId: string; state: string };
+    expect(initial.state).toBe("valid");
+    await composition.timerRuntimeCoordinator.start(saved.id);
+    expect((await preflight()).json()).toMatchObject({ state: "blocked-live", runtime: { playbackActive: true } });
+    await composition.timerRuntimeCoordinator.pause(saved.id);
+    expect((await preflight()).json()).toMatchObject({ state: "blocked-live", runtime: { playbackActive: true } });
+    const restore = () => composition.app.inject({ method: "POST", url: "/management/settings/backup/restore", headers,
+      payload: { archive, archiveId: initial.archiveId, confirmation: "RESTORE", regenerateRouteKeys: true } });
+    const blocked = await restore();
+    expect(blocked.statusCode, blocked.body).toBe(409);
+    expect(composition.timerRuntimeCoordinator.getState(saved.id)?.status).toBe("paused");
+    await composition.timerRuntimeCoordinator.stop(saved.id);
+    expect((await preflight()).json()).toMatchObject({ state: "valid", runtime: { playbackActive: false } });
+    const restored = await restore();
+    expect(restored.statusCode, restored.body).toBe(200);
+    expect(composition.timerRuntimeCoordinator.listStates()).toEqual([]);
+  } finally {
+    await composition.close();
     await rm(testRoot, { recursive: true, force: true });
   }
 });

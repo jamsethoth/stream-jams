@@ -5,6 +5,7 @@ import {
   type TimerDefinitionRepository
 } from "@stream-jams/core";
 import { runInTransaction } from "../db/database.js";
+import { isTimerAssetCompatible } from "./timer-asset-role.js";
 
 interface TimerRow extends Record<string, unknown> {
   readonly id: unknown;
@@ -128,12 +129,11 @@ export class SqliteTimerDefinitionRepository implements TimerDefinitionRepositor
     const validateAsset = (
       id: string | null,
       kind: "icon" | "start-audio" | "end-audio",
-      allowed: readonly string[],
       label: string
     ) => {
       if (id === null) return;
       const row = findAsset.get(id);
-      if (row === undefined || !allowed.includes(String(row.media_type))) {
+      if (row === undefined || !isTimerAssetCompatible(kind, String(row.media_type))) {
         throw new TimerDefinitionReferenceError(
           definition.id,
           kind,
@@ -142,9 +142,9 @@ export class SqliteTimerDefinitionRepository implements TimerDefinitionRepositor
         );
       }
     };
-    validateAsset(definition.iconAssetId, "icon", ["image", "gif"], "icon");
-    validateAsset(definition.startAudioAssetId, "start-audio", ["audio"], "start cue");
-    validateAsset(definition.endAudioAssetId, "end-audio", ["audio"], "end cue");
+    validateAsset(definition.iconAssetId, "icon", "icon");
+    validateAsset(definition.startAudioAssetId, "start-audio", "start cue");
+    validateAsset(definition.endAudioAssetId, "end-audio", "end cue");
 
     const findRoute = this.connection.prepare("SELECT id FROM audio_output_routes WHERE id = ?");
     for (const routeId of definition.outputs.deviceRouteIds) {

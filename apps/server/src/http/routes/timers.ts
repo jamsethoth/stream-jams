@@ -10,6 +10,7 @@ import type { TimerAutomationCredentialService } from "../../modules/timers/time
 import type { OutputReadinessService } from "../../modules/overlays/output-readiness-service.js";
 import { TimerDefinitionReferenceError } from "../../modules/timers/sqlite-timer-definition-repository.js";
 import { sendHttpError } from "../errors.js";
+import { RuntimeMaintenanceUnavailableError } from "../../modules/backup/runtime-maintenance-gate.js";
 
 export interface TimerRouteDependencies {
   readonly timerManagementService: Pick<TimerManagementService,
@@ -91,6 +92,9 @@ export function readEmptyBody(body: unknown): void {
 }
 
 export function sendTimerError(reply: Parameters<typeof sendHttpError>[0], error: unknown) {
+  if (error instanceof RuntimeMaintenanceUnavailableError) {
+    return sendHttpError(reply, 409, { code: "TIMER_MAINTENANCE_ACTIVE", message: "Timer commands are unavailable during maintenance or shutdown. Wait for maintenance to finish or restart the app." });
+  }
   if (error instanceof TimerDefinitionNotFoundError) {
     return sendHttpError(reply, 404, { code: "TIMER_NOT_FOUND", message: error.message });
   }

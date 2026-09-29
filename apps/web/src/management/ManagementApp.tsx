@@ -149,7 +149,7 @@ function RouteContent({
     case "modules-screen-effects":
       return <ScreenEffectsPage api={screenEffectsApi} initialSetId={route.setId} onEdit={(effectId, create, setId, variantId) => onNavigate({ id: "screen-effect-editor", effectId, ...(setId === undefined ? {} : { setId }), ...(variantId === undefined ? {} : { variantId }), ...(create ? { create: true as const } : {}) })} />;
     case "modules-timers":
-      return <TimersPage api={timersApi} assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} />;
+      return <TimersPage api={timersApi} assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} ownerId={route.ownerId} />;
     case "alert-safety":
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":

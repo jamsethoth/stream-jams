@@ -22,8 +22,39 @@ const invalidBytes = Buffer.from("not a png", "utf8");
 const replacementPngBytes = Buffer.concat([pngSignature, Buffer.from([9, 8, 7])]);
 
 describe("asset routes", () => {
+  it.each(["icon", "start-audio", "end-audio"] as const)("rejects incompatible confirmed timer %s replacements without changing the original", async role => {
+    const { app, authHeaders, repository } = await createAppWithAssets({ timerRole: role });
+    const originalBytes = role === "icon" ? pngBytes : Buffer.from("ID3original");
+    const original = await app.inject({ method: "POST", url: "/assets/import", headers: {
+      ...authHeaders, "content-type": "application/octet-stream",
+      "x-stream-jams-file-name": role === "icon" ? "Original.PNG" : "original.mp3",
+      "x-stream-jams-mime-type": role === "icon" ? "image/png" : "audio/mpeg"
+    }, payload: originalBytes });
+    expect(original.statusCode).toBe(201);
+    const record = original.json();
+    const response = await app.inject({ method: "POST", url: "/assets/asset_1/replace", headers: {
+      ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-confirm-impact": "true",
+      "x-stream-jams-file-name": role === "icon" ? "cue.mp3" : "Replacement.PNG",
+      "x-stream-jams-mime-type": role === "icon" ? "audio/mpeg" : "image/png"
+    }, payload: role === "icon" ? Buffer.from("ID3audio") : replacementPngBytes });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: { code: "INVALID_ASSET_REPLACEMENT", message: expect.stringContaining("incompatible") } });
+    expect(await repository.findById("asset_1")).toEqual(record);
+    expect((await app.inject({ method: "GET", url: "/assets/asset_1/file", headers: authHeaders })).rawPayload).toEqual(originalBytes);
+  });
   afterEach(async () => {
     await Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { force: true, recursive: true })));
+  });
+
+  it("allows a compatible GIF replacement for a timer icon", async () => {
+    const { app, authHeaders, repository } = await createAppWithAssets({ timerRole: "icon" });
+    await repository.save(createAssetRecord("asset_1", "image/asset_1.png"));
+    const response = await app.inject({ method: "POST", url: "/assets/asset_1/replace", headers: {
+      ...authHeaders, "content-type": "application/octet-stream", "x-stream-jams-confirm-impact": "true",
+      "x-stream-jams-file-name": "icon.gif", "x-stream-jams-mime-type": "image/gif"
+    }, payload: Buffer.from("GIF89aexample") });
+    expect(response.statusCode).toBe(200);
+    expect(await repository.findById("asset_1")).toMatchObject({ mediaType: "gif", mimeType: "image/gif" });
   });
 
   it("lists imported assets for authenticated management clients", async () => {
@@ -370,6 +401,7 @@ describe("asset routes", () => {
 async function createAppWithAssets(options: {
   readonly overlayAccessService?: LocalOverlayAccessService;
   readonly replacementRequiresConfirmation?: boolean;
+  readonly timerRole?: "icon" | "start-audio" | "end-audio";
 } = {}) {
   const assetDirectory = await createTemporaryAssetDirectory();
   const repository = new InMemoryAssetRepository();
@@ -423,7 +455,7 @@ async function createAppWithAssets(options: {
                 }]
               : []
           },
-          owners: [],
+          owners: options.timerRole === undefined ? [] : [{ moduleId: "timers" as const, ownerId: "timer", ownerName: "Timer", variantId: null, usageRole: options.timerRole }],
           canDelete: !requiresConfirmation,
           requiresConfirmation,
           warnings: requiresConfirmation ? ["1 alert usage will update everywhere."] : []

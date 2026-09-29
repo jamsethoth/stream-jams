@@ -356,7 +356,7 @@ function totalUsageCount(item: AssetLibraryItem): number {
 
 function moduleUsageHref(moduleId: string, ownerId: string): string {
   if (moduleId === "screen-effects") return `/manage/modules/screen-effects/editor/${encodeURIComponent(ownerId)}`;
-  if (moduleId === "timers") return "/manage/modules/timers";
+  if (moduleId === "timers") return `/manage/modules/timers?ownerId=${encodeURIComponent(ownerId)}`;
   return "/manage/modules";
 }
 

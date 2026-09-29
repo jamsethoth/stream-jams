@@ -19,6 +19,7 @@ export class DesktopModuleSnapshotSink {
     if (this.#closed) return;
     const revision = ++this.#revision;
     const surface = (await this.dependencies.surfaces.list()).find(candidate => candidate.kind === "desktop");
+    if (this.#closed || revision !== this.#revision) return;
     const visible = surface?.kind === "desktop" && surface.enabled && surface.displayId !== null &&
       surface.layers.some(layer => layer.moduleId === "timers" && layer.visible);
     if (!visible) {
@@ -28,11 +29,13 @@ export class DesktopModuleSnapshotSink {
     const snapshot = await this.dependencies.runtime.getModuleSnapshot({
       moduleId: "timers", overlayId: "desktop:primary", purpose: "live", scope: "unified", targetProfileId: "landscape"
     });
+    if (this.#closed || revision !== this.#revision) return;
     if (!snapshot.enabled || snapshot.presentation === undefined || snapshot.presentation.stack.cards.length === 0) {
       await this.dependencies.transport.syncModule({ moduleId: "timers", revision, presentation: null, assets: [] });
       return;
     }
     const resolved = await this.dependencies.assets.resolveTimerModule(snapshot.presentation);
+    if (this.#closed || revision !== this.#revision) return;
     if (resolved.missingAssetIds.length > 0) {
       await this.dependencies.logger?.warn("Timer icons were omitted from the desktop overlay because their assets were unavailable.", {
         module: "timers", source: "desktop-overlay.timer-icons.unavailable",
@@ -40,7 +43,7 @@ export class DesktopModuleSnapshotSink {
         metadata: { assetIds: resolved.missingAssetIds }
       });
     }
-    if (this.#closed) return;
+    if (this.#closed || revision !== this.#revision) return;
     await this.dependencies.transport.syncModule({ moduleId: "timers", revision, presentation: resolved.presentation, assets: [...resolved.assets] });
   }
 

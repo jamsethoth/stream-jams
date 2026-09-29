@@ -30,6 +30,25 @@ function stack(overrides: Partial<TimerStackProjection> = {}): TimerStackProject
 }
 
 describe("TimerStack", () => {
+  it.each(["vertical", "horizontal"] as const)("reserves stable %s overflow clearance at the profile edge", orientation => {
+    const region = { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 4 }, orientation, maxVisible: 3 };
+    const edge = stack({ region, cards: stack().cards.map((card, index) => ({ ...card, slot: {
+      x: 1320 + (orientation === "horizontal" ? index * 200 : 0),
+      y: 780 + (orientation === "vertical" ? index * 100 : 0),
+      width: orientation === "vertical" ? 600 : 200,
+      height: orientation === "vertical" ? 100 : 300, zIndex: 4
+    } })) });
+    const { container, rerender } = render(<TimerStack stack={edge} resolveAssetUrl={() => null} />);
+    const wrapper = container.querySelector<HTMLElement>(".timer-stack")!;
+    const scale = Number(wrapper.style.transform.slice(6, -1));
+    expect(scale).toBeGreaterThan(0);
+    expect(scale).toBeLessThan(1);
+    const transform = wrapper.style.transform;
+    const firstSlotStyle = screen.getAllByRole("listitem")[0]!.getAttribute("style");
+    rerender(<TimerStack stack={{ ...edge, cards: edge.cards.slice(0, 1), overflowCount: 0 }} resolveAssetUrl={() => null} />);
+    expect(wrapper.style.transform).toBe(transform);
+    expect(screen.getByRole("listitem").getAttribute("style")).toBe(firstSlotStyle);
+  });
   it("derives running countdowns locally while paused and completed values stay frozen", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(2_000);

@@ -55,3 +55,31 @@ Fresh final results:
 - No physical Stream Deck button/profile was configured or pressed. The generic-client test exercised the same loopback HTTP contract against a real built local runtime without writing bearer values to artifacts, but physical Stream Deck UI acceptance remains outstanding.
 - Browser and native desktop Timer rendering were verified in separate real renderers, not observed side-by-side in one packaged run. Packaged named-device audio, mute, missing-output, renderer recovery, and Timer cue routing have combined automated coverage, but a single integrated packaged Timer cue matrix remains outstanding.
 - No audible physical-device, OBS mixer, or live-stream output was used. The desktop suite used silent media and isolated disposable profiles.
+
+## PR #135 review corrections (September 29, 2026)
+
+The follow-up addresses all ten independent-review findings:
+
+- Asset replacement validates timer icon/audio roles before import mutation; backup reference preflight uses the same role validation.
+- Restart commits its new generation before asynchronous cue cleanup. Stop cancels pending asset lookup and device preparation before they can admit late cues.
+- Backup restore treats running, paused, and completion-hold timers as live playback; timer commands are blocked during maintenance.
+- GIF icons are selectable and supported by the desktop asset resolver/transport.
+- Management refreshes runtime state without replacing drafts; Operator reports timer-only refresh failures independently.
+- API state and overlay projection share one comparator, including stable definition-ID ties.
+- Desktop snapshots discard superseded asynchronous work, preserve revision tombstones, and acknowledge cancelled renderer loads. Surface-triggered refreshes use the serialized output queue.
+- Asset usage links open the owning timer editor.
+- Badge clearance is included in bounded rendering at profile edges, with identical card sizing before and after overflow appears.
+- Rotating an existing automation credential requires explicit confirmation.
+
+Focused regressions cover deferred interleavings, original asset preservation, GIF selection/resolution, blocked restore followed by a successful stopped restore, stale UI warnings, deep links, credential confirmation, and real browser edge geometry. The broader gate results above describe the earlier implementation checkpoint, not this follow-up run.
+
+Follow-up validation:
+
+- Final repository lint/typecheck, production build (including route budgets), Storybook build, OpenSpec strict validation, and whitespace checks passed.
+- Focused lifecycle/restore regressions: 27 passed. Asset/GIF regressions: 85 passed. Desktop synchronization regressions: 54 passed. Management/Operator/routing/asset UI regressions: 51 passed. TimerStack unit tests: 9 passed; all four Timer browser tests passed.
+- Full browser run: 57/60 passed. Two Operator fixtures omitted the timer-state endpoint and therefore unintentionally rendered the newly required stale-state warning; the healthy fixture now explicitly returns an empty timer list. Those three Operator tests plus the unchanged video/audio test that timed out on initial navigation all passed on a focused rerun (4/4). The original full run remains recorded as failed.
+- Full Storybook run: 261/262 passed; the Assets replacement story timed out. Its six-story suite passed unchanged on a focused rerun. The original full run remains recorded as failed.
+- The default full unit run encountered widespread Windows fork-worker teardown timeouts, including pure schema tests, and the Docker-helper child-process test timed out. The stalled run was stopped, not counted as green. A narrow thread-pool comparison passed the schema/helper tests (9/9).
+- A separate rebuilt package preserved the user's open app. Native Timer lifecycle assertions passed, but the acceptance test failed its process-exit deadline after logging `electron-quit`. Evidence: `C:\Users\James\AppData\Local\Temp\stream-jams-desktop-timers-mrClgR`; packaged archive SHA-256 `8fa6045f2982e652c29d78e51abfd21522a515210956954710991a90246ad67f`. This is not a passing desktop acceptance run.
+
+At the user's request, `windows-desktop` is now manual-only (`workflow_dispatch`), not an automatic PR/push CI job. Desktop tests, deadlines, and success-only artifact publishing remain intact. The CI YAML was parsed and its manual-only condition verified; the runbook documents the temporary change.

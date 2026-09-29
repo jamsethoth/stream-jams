@@ -6,6 +6,7 @@ import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
 import type { OperatorTimersApi } from "./timers-api.js";
+const idleTimersApi: OperatorTimersApi = { listStates: async () => [], command: async () => ({ changed: false, state: null }) };
 
 afterEach(() => {
   cleanup();
@@ -15,12 +16,22 @@ afterEach(() => {
 });
 
 describe("OperatorApp", () => {
+  it("reports timer-only refresh failure independently and clears it on recovery", async () => {
+    vi.useFakeTimers();
+    const timersApi: OperatorTimersApi = { listStates: vi.fn().mockRejectedValueOnce(new Error("Timer service unavailable")).mockResolvedValue([]), command: vi.fn() };
+    render(<OperatorApp api={api()} timersApi={timersApi} />);
+    await act(async () => {});
+    expect(screen.getByText("Timer state may be stale")).toBeVisible();
+    expect(screen.getByText("Large raid")).toBeVisible();
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(screen.queryByText("Timer state may be stale")).not.toBeInTheDocument();
+  });
   it("permits desktop quit from the draft-free operator console", () => {
     let request: ((id: string) => void) | undefined;
     const unsubscribe = vi.fn();
     const resolveQuit = vi.fn();
     window.streamJamsDesktop = { onQuitRequested: (listener) => { request = listener; return unsubscribe; }, resolveQuit };
-    const { unmount } = render(<OperatorApp api={api({ getSnapshot: () => new Promise(() => {}) })} />);
+    const { unmount } = render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot: () => new Promise(() => {}) })} />);
     request?.("quit-1");
     expect(resolveQuit).toHaveBeenCalledWith("quit-1", true);
     unmount();
@@ -28,7 +39,7 @@ describe("OperatorApp", () => {
   });
 
   it("shows simultaneous current items and real per-module pending positions", async () => {
-    render(<OperatorApp api={api()} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={api()} />);
 
     const nowPlaying = await screen.findByRole("heading", { name: "Now playing (2)" });
     const moduleQueues = screen.getByRole("heading", { name: "Module queues" });
@@ -56,7 +67,7 @@ describe("OperatorApp", () => {
   it("sends module-qualified skip, remove and replay commands", async () => {
     const user = userEvent.setup();
     const playbackApi = api();
-    render(<OperatorApp api={playbackApi} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Large raid");
 
     await user.click(screen.getByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
@@ -83,7 +94,7 @@ describe("OperatorApp", () => {
         );
       })
     });
-    render(<OperatorApp api={playbackApi} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Flash sweep");
 
     await user.click(screen.getByRole("button", { name: "Skip Flash sweep in Screen Effects" }));
@@ -98,7 +109,7 @@ describe("OperatorApp", () => {
   it("pauses one module and confirms a scoped clear with count and revision", async () => {
     const user = userEvent.setup();
     const playbackApi = api();
-    render(<OperatorApp api={playbackApi} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Large raid");
 
     await user.click(screen.getAllByRole("button", { name: "Pause module" })[1]!);
@@ -114,7 +125,7 @@ describe("OperatorApp", () => {
   it("contains clear confirmation focus and restores its keyboard trigger on dismissal", async () => {
     const user = userEvent.setup();
     const playbackApi = api();
-    render(<OperatorApp api={playbackApi} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
     await screen.findByText("Large raid");
     const trigger = screen.getAllByRole("button", { name: "Clear pending" })[1]!;
 
@@ -144,7 +155,7 @@ describe("OperatorApp", () => {
     vi.useFakeTimers();
     const refreshed = { ...snapshot(), revision: 8, queued: snapshot().queued.filter((item) => item.moduleId !== "screen-effects") };
     const getSnapshot = vi.fn().mockResolvedValueOnce(snapshot()).mockResolvedValue(refreshed);
-    render(<OperatorApp api={api({ getSnapshot })} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot })} />);
     await act(async () => { await Promise.resolve(); });
     const trigger = screen.getAllByRole("button", { name: "Clear pending" })[1]!;
     trigger.focus();
@@ -162,7 +173,7 @@ describe("OperatorApp", () => {
     const user = userEvent.setup();
     const response = deferred<MergedOperationsSnapshot>();
     const playbackApi = api({ pause: () => response.promise });
-    render(<OperatorApp api={playbackApi} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={playbackApi} />);
     const button = await screen.findByRole("button", { name: "Pause all queues" });
 
     await user.click(button);
@@ -176,7 +187,7 @@ describe("OperatorApp", () => {
   it("retains last-known state and labels refresh failures as stale", async () => {
     vi.useFakeTimers();
     const getSnapshot = vi.fn().mockResolvedValueOnce(snapshot()).mockRejectedValueOnce(new Error("offline"));
-    render(<OperatorApp api={api({ getSnapshot })} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot })} />);
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByText("Large raid")).toBeVisible();
 
@@ -187,7 +198,7 @@ describe("OperatorApp", () => {
   });
 
   it("shows an actionable initial error without inventing playback state", async () => {
-    render(<OperatorApp api={api({ getSnapshot: async () => { throw new ManagementHttpError("Session failed", "SESSION", "ref-1"); } })} />);
+    render(<OperatorApp timersApi={idleTimersApi} api={api({ getSnapshot: async () => { throw new ManagementHttpError("Session failed", "SESSION", "ref-1"); } })} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Session failed");
     expect(screen.getByRole("link", { name: "Open diagnostics" })).toHaveAttribute("href", "/manage/diagnostics?reference=ref-1");
   });

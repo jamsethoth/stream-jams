@@ -60,7 +60,7 @@ describe("AssetManager", () => {
     expect(screen.queryByRole("button", { name: "Follower burst" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("row", { name: /Raid chime/ }));
     expect(screen.getAllByRole("link", { name: "Wear oven mitts" })).toHaveLength(2);
-    expect(screen.getAllByRole("link", { name: "Wear oven mitts" })[0]).toHaveAttribute("href", "/manage/modules/timers");
+    expect(screen.getAllByRole("link", { name: "Wear oven mitts" })[0]).toHaveAttribute("href", "/manage/modules/timers?ownerId=timer-mitts");
     expect(screen.getByText("Remove 2 saved uses before deleting this asset.")).toBeVisible();
   });
 

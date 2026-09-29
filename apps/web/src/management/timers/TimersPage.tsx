@@ -1,5 +1,5 @@
 import { formatTimerRemaining, timerDefinitionInputSchema, timersOverlayModuleConfigSchema, type TimerDefinition, type TimerDefinitionInput, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { AudioApi } from "../audio/audio-api.js";
 import type { AssetApi } from "../assets/asset-api.js";
 import { AssetPicker } from "../assets/AssetPicker.js";
@@ -16,7 +16,8 @@ const emptyDraft: TimerDefinitionInput = { label: "", durationMs: 60_000, iconAs
   outputs: { browserSource: true, deviceRouteIds: [] } };
 const profileDimensions = { landscape: { width: 1920, height: 1080 }, vertical: { width: 1080, height: 1920 } } as const;
 
-export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTimersApi }: {
+export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTimersApi, ownerId }: {
+  readonly ownerId?: string | undefined;
   readonly assetApi: AssetApi; readonly audioApi: AudioApi; readonly managementApi: AssetLibraryManagementApi; readonly api?: TimersApi;
 }) {
   const [definitions, setDefinitions] = useState<readonly TimerDefinition[]>([]); const [states, setStates] = useState<readonly TimerRunState[]>([]);
@@ -28,6 +29,10 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
   const [sourcesExpanded, setSourcesExpanded] = useState(false); const [revealedSourceIds, setRevealedSourceIds] = useState<ReadonlySet<string>>(new Set());
   const [regenerateSource, setRegenerateSource] = useState<TimerBrowserSource | null>(null);
   const [moduleConfirmation, setModuleConfirmation] = useState<boolean | null>(null);
+  const [rotateConfirmation, setRotateConfirmation] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
+  const openedOwnerRef = useRef<string | undefined>(undefined);
+  const stateRevisionRef = useRef(0);
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [error, setError] = useState("");
   const selected = definitions.find(item => item.id === selectedId) ?? null; const active = states.find(state => state.definitionId === selectedId) ?? null;
   const load = useCallback(async () => {
@@ -41,11 +46,31 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     } catch (reason) { setError(messageFor(reason)); } finally { setLoading(false); }
   }, [api, audioApi]);
   useEffect(() => { void load(); return () => setIssuedToken(null); }, [load]);
-  useEffect(() => { if (editorOpen) setDraft(selected === null ? emptyDraft : toInput(selected)); }, [editorOpen, selected]);
+  useEffect(() => {
+    let disposed = false;
+    let pending = false;
+    const interval = setInterval(() => {
+      if (pending || document.hidden) return;
+      pending = true;
+      const revision = stateRevisionRef.current;
+      void Promise.all([api.listStates(), api.listBrowserSources()]).then(([nextStates, nextSources]) => {
+        if (!disposed && revision === stateRevisionRef.current) { setStates(nextStates); setBrowserSources(nextSources); setRefreshError(""); }
+      }).catch((reason: unknown) => {
+        if (!disposed && revision === stateRevisionRef.current) setRefreshError(messageFor(reason));
+      }).finally(() => { pending = false; });
+    }, 5_000);
+    return () => { disposed = true; clearInterval(interval); };
+  }, [api]);
+  useEffect(() => {
+    if (ownerId !== openedOwnerRef.current && ownerId !== undefined && definitions.some(item => item.id === ownerId)) {
+      openedOwnerRef.current = ownerId;
+      setSelectedId(ownerId); setDraft(toInput(definitions.find(item => item.id === ownerId)!)); setEditorOpen(true);
+    }
+  }, [ownerId, definitions]);
   const stateById = useMemo(() => new Map(states.map(state => [state.definitionId, state])), [states]);
 
   function openCreate() { setSelectedId(null); setDraft(emptyDraft); setEditorOpen(true); }
-  function openEdit(id: string) { setSelectedId(id); setEditorOpen(true); }
+  function openEdit(id: string) { const item = definitions.find(item => item.id === id); if (item === undefined) return; setSelectedId(id); setDraft(toInput(item)); setEditorOpen(true); }
   function closeEditor() { setEditorOpen(false); setPickerRole(null); }
   async function save(event: FormEvent) {
     event.preventDefault(); setBusy(true);
@@ -57,7 +82,8 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
   }
   async function command(commandName: TimerCommand, id = selectedId) {
     if (id === null) return; setBusy(true);
-    try { const result = await api.command(id, commandName); await load(); setMessage(result.changed ? `Timer ${commandName}ed.` : "Timer state did not change."); }
+    stateRevisionRef.current += 1;
+    try { const result = await api.command(id, commandName); const nextStates = await api.listStates(); stateRevisionRef.current += 1; setStates(nextStates); setRefreshError(""); setMessage(result.changed ? `Timer ${commandName}ed.` : "Timer state did not change."); }
     catch (reason) { setError(messageFor(reason)); } finally { setBusy(false); }
   }
   async function remove() {
@@ -95,7 +121,7 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     catch (reason) { setError(messageFor(reason)); }
   }
   async function rotateCredential() {
-    setBusy(true); try { const issued = await api.rotateAutomationCredential(); setCredential(issued); setIssuedToken(issued.token); setMessage("Automation credential created. Copy it now; it will not be shown again."); }
+    setBusy(true); try { const issued = await api.rotateAutomationCredential(); setCredential(issued); setIssuedToken(issued.token); setRotateConfirmation(false); setMessage("Automation credential created. Copy it now; it will not be shown again."); }
     catch (reason) { setError(messageFor(reason)); } finally { setBusy(false); }
   }
   async function revokeCredential() {
@@ -106,6 +132,7 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
 
   if (loading && layout === null) return <p className="management-empty" role="status">Loading timers…</p>;
   return <div className="timers-page">
+    {refreshError === "" ? null : <div className="management-error-banner" role="alert"><strong>Timer status is stale</strong><p>{refreshError}</p><p>Showing the last known timer and browser-source state. Check the local service; refresh retries every five seconds.</p></div>}
     <div aria-live="polite" className="sr-only">{message}</div>{error === "" ? null : <div className="management-error-banner" role="alert"><strong>Timer action failed</strong><p>{error}</p></div>}
     <BrowserSources busy={busy} expanded={sourcesExpanded} onCopy={source => void copyBrowserSource(source)} onCreate={source => void createBrowserSource(source)}
       onRegenerate={setRegenerateSource} onToggle={() => setSourcesExpanded(value => !value)} onToggleReveal={source => setRevealedSourceIds(current => {
@@ -115,7 +142,8 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
       {definitions.length === 0 ? <div className="timers-empty"><h3>No timers yet</h3><p>Create one for a recurring stream activity.</p><button onClick={openCreate} type="button">Create timer</button></div> : <div className="timers-list">{definitions.map(item => { const state = stateById.get(item.id); return <article aria-label={`${item.label} timer`} className="timer-row" key={item.id}><button className="timer-row__identity" onClick={() => openEdit(item.id)} type="button"><strong>{item.label}</strong><span>{formatTimerRemaining(item.durationMs)}</span></button><StatusBadge label={state?.status ?? "Idle"} tone={state?.status === "running" ? "positive" : state?.status === "completed" ? "warning" : "neutral"} /><div className="timer-row__actions"><button className="button button--secondary button--compact" onClick={() => openEdit(item.id)} type="button">Edit</button><button className="button button--compact" disabled={busy} onClick={() => void command(state?.status === "paused" ? "resume" : "start", item.id)} type="button">{state?.status === "paused" ? "Resume" : "Start"}</button></div></article>; })}</div>}
     </section>
     {layout === null ? null : <section className="timer-presentation" aria-labelledby="timer-presentation-heading"><div className="timer-section-heading"><div><h2 id="timer-presentation-heading">Overlay layout</h2><p>Position the timer stack independently for each output profile.</p></div></div><TimerStackEditor assetApi={assetApi} definitions={definitions} value={layout} onChange={setLayout} /><div className="timer-layout-save"><button disabled={busy} onClick={() => void saveLayout()} type="button">Save overlay layout</button></div></section>}
-    <section className="timer-credential" aria-labelledby="timer-credential-heading"><div><p className="management-eyebrow">Stream Deck HTTP</p><h2 id="timer-credential-heading">Automation credential</h2><p>{credential?.configured ? "Configured. Rotating invalidates the previous credential immediately." : "Not configured."}</p></div>{issuedToken === null ? null : <div className="timer-token"><label>Copy this credential now<input readOnly value={issuedToken} /></label><button onClick={() => void navigator.clipboard?.writeText(issuedToken)} type="button">Copy</button><button className="button button--secondary" onClick={() => setIssuedToken(null)} type="button">Dismiss</button></div>}<div className="timer-credential__actions"><button disabled={busy} onClick={() => void rotateCredential()} type="button">{credential?.configured ? "Rotate credential" : "Create credential"}</button><button className="button button--danger-quiet" disabled={busy || !credential?.configured} onClick={() => void revokeCredential()} type="button">Revoke</button></div></section>
+    <section className="timer-credential" aria-labelledby="timer-credential-heading"><div><p className="management-eyebrow">Stream Deck HTTP</p><h2 id="timer-credential-heading">Automation credential</h2><p>{credential?.configured ? "Configured. Rotating invalidates the previous credential immediately." : "Not configured."}</p></div>{issuedToken === null ? null : <div className="timer-token"><label>Copy this credential now<input readOnly value={issuedToken} /></label><button onClick={() => void navigator.clipboard?.writeText(issuedToken)} type="button">Copy</button><button className="button button--secondary" onClick={() => setIssuedToken(null)} type="button">Dismiss</button></div>}<div className="timer-credential__actions"><button disabled={busy} onClick={() => credential?.configured ? setRotateConfirmation(true) : void rotateCredential()} type="button">{credential?.configured ? "Rotate credential" : "Create credential"}</button><button className="button button--danger-quiet" disabled={busy || !credential?.configured} onClick={() => void revokeCredential()} type="button">Revoke</button></div></section>
+    <ModalSurface labelledBy="timer-rotate-title" onCancel={() => setRotateConfirmation(false)} open={rotateConfirmation}><div className="timer-confirmation"><h2 id="timer-rotate-title">Rotate timer automation credential?</h2><p>The current credential stops working immediately. Existing Stream Deck actions will stop working until you update them with the new credential. The old credential cannot be recovered.</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setRotateConfirmation(false)} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={() => void rotateCredential()} type="button">Confirm rotation</button></div></div></ModalSurface>
     <ModalSurface labelledBy="timer-editor-title" onCancel={closeEditor} open={editorOpen}><form className="timer-editor" onSubmit={save}><div className="timer-section-heading"><div><p className="management-eyebrow">Definition</p><h2 id="timer-editor-title">{selected === null ? "Create timer" : `Edit ${selected.label}`}</h2></div>{active === null ? null : <StatusBadge label={active.status} tone={active.status === "running" ? "positive" : "warning"} />}</div>
       {active === null ? null : <p className="timer-editor__notice">This run keeps its current name, duration, assets, and outputs. Saved edits apply next time.</p>}
       <label>Name<input required maxLength={120} value={draft.label} onChange={event => setDraft({ ...draft, label: event.currentTarget.value })} /></label>
@@ -126,7 +154,7 @@ export function TimersPage({ assetApi, audioApi, managementApi, api = defaultTim
     </form></ModalSurface>
     <ModalSurface labelledBy="timer-regenerate-title" onCancel={() => setRegenerateSource(null)} open={regenerateSource !== null}><div className="timer-confirmation"><h2 id="timer-regenerate-title">Regenerate {regenerateSource === null ? "" : profileLabel(regenerateSource.targetProfileId)} URL?</h2><p>The current URL will stop working immediately. Update the Browser Source in OBS after regeneration.</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setRegenerateSource(null)} type="button">Cancel</button><button className="button button--danger" disabled={busy} onClick={() => void confirmRegenerateSource()} type="button">Regenerate URL</button></div></div></ModalSurface>
     <ModalSurface labelledBy="timer-module-confirm-title" onCancel={() => setModuleConfirmation(null)} open={moduleConfirmation !== null}>{moduleConfirmation === null ? null : <div className="timer-confirmation"><h2 id="timer-module-confirm-title">{moduleConfirmation ? "Enable" : "Disable"} Timers module?</h2><p>{moduleConfirmation ? "Timer runs can appear in enabled browser and desktop overlay surfaces." : "Timer definitions and active runs remain available, but Timers stop rendering until the module is enabled again."}</p><div className="management-modal__actions"><button className="button button--secondary" disabled={busy} onClick={() => setModuleConfirmation(null)} type="button">Cancel</button><button className="button button--primary" disabled={busy} onClick={() => void confirmModuleEnablement()} type="button">Confirm change</button></div></div>}</ModalSurface>
-    <AssetPicker assetApi={assetApi} compatibleMediaTypes={pickerRole === "iconAssetId" ? ["image"] : ["audio"]} managementApi={managementApi} onCancel={() => setPickerRole(null)} onSelect={assetId => { if (pickerRole !== null) setDraft(current => ({ ...current, [pickerRole]: assetId })); setPickerRole(null); }} open={pickerRole !== null} selectedAssetId={pickerRole === null ? null : draft[pickerRole]} />
+    <AssetPicker assetApi={assetApi} compatibleMediaTypes={pickerRole === "iconAssetId" ? ["image", "gif"] : ["audio"]} managementApi={managementApi} onCancel={() => setPickerRole(null)} onSelect={assetId => { if (pickerRole !== null) setDraft(current => ({ ...current, [pickerRole]: assetId })); setPickerRole(null); }} open={pickerRole !== null} selectedAssetId={pickerRole === null ? null : draft[pickerRole]} />
   </div>;
 }
 
@@ -143,7 +171,10 @@ function BrowserSources({ busy, expanded, onCopy, onCreate, onRegenerate, onTogg
 
 function toInput(definition: TimerDefinition): TimerDefinitionInput { return { label: definition.label, durationMs: definition.durationMs, iconAssetId: definition.iconAssetId,
   startAudioAssetId: definition.startAudioAssetId, endAudioAssetId: definition.endAudioAssetId, outputs: definition.outputs }; }
-function messageFor(reason: unknown): string { return reason instanceof ManagementHttpError || reason instanceof Error ? reason.message : "The timer request failed."; }
+function messageFor(reason: unknown): string {
+  if (reason instanceof ManagementHttpError) return [reason.message, reason.nextStep, reason.referenceId === null ? null : `Reference: ${reason.referenceId}`].filter(Boolean).join(" ");
+  return reason instanceof Error ? reason.message : "The timer request failed.";
+}
 function profileLabel(profile: "landscape" | "vertical") { return profile === "landscape" ? "Landscape" : "Vertical"; }
 function maskRouteKey(url: string) { return url.replace(/(\/live\/)[^?]+/u, "$1********"); }
 function formatDateTime(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)); }

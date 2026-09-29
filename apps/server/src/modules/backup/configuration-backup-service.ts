@@ -774,5 +774,5 @@ function warning(summary: string, cause: string, nextStep: string): ActionableMa
 
 function liveBlocker(runtime: { readonly intakeActive: boolean; readonly playbackActive: boolean; readonly queuedPlaybackCount: number }): ActionableManagementError {
   const active = [runtime.intakeActive ? "event intake" : null, runtime.playbackActive ? "current playback" : null, runtime.queuedPlaybackCount > 0 ? `${runtime.queuedPlaybackCount} queued playback item${runtime.queuedPlaybackCount === 1 ? "" : "s"}` : null].filter((item): item is string => item !== null);
-  return blocker("Restore is blocked while Stream Jams is live", `Active runtime state: ${active.join(", ")}.`, "Stop live event intake and wait for current and queued playback to finish, then validate again.");
+  return blocker("Restore is blocked while Stream Jams is live", `Active runtime state: ${active.join(", ")}.`, "Stop live event intake and active timers (including paused timers), and wait for current and queued playback to finish, then validate again.");
 }

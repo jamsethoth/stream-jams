@@ -29,6 +29,22 @@ function harness() {
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
+it.each(["clear", "replace", "reconfigure"])("acknowledges superseded module icon loads immediately on %s", async action => {
+  const { controller, report, send, configure, prepareAsset, asset } = harness(); configure();
+  let finish!: (value: typeof asset) => void;
+  prepareAsset.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  const old = send({ type: "sync-module", ...moduleSync(1) });
+  if (action === "reconfigure") send({ type: "configure", config: { ...config, enabled: false, layers: [] } });
+  else send({ type: "sync-module", ...moduleSync(2, false), ...(action === "clear" ? { presentation: null } : {}) });
+  expect(report.mock.calls.filter(call => call[0].requestId === old.requestId)).toEqual([
+    [{ generation: 1, requestId: old.requestId, result: { type: "ok" } }]
+  ]);
+  finish(asset); await vi.advanceTimersByTimeAsync(6000);
+  expect(report.mock.calls.filter(call => call[0].requestId === old.requestId)).toHaveLength(1);
+  expect(asset.dispose).toHaveBeenCalledOnce();
+  expect(controller.getSnapshot().modules.map(module => module.revision)).toEqual(action === "replace" ? [2] : []);
+  controller.dispose();
+});
 it("prepares assets, waits for shared start, then completes exactly at the shared end", async () => {
   const { controller, report, send, configure, asset } = harness(); configure();
   const prepared = send({ type: "prepare", batch: batch("alerts", true) }); await vi.advanceTimersByTimeAsync(0);

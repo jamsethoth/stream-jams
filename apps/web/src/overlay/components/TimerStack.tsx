@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { formatTimerRemaining, type TimerOverlayCard, type TimerStackProjection } from "@stream-jams/core";
+import { formatTimerRemaining, timerProfileDimensions, type TimerOverlayCard, type TimerStackProjection } from "@stream-jams/core";
 import "../overlay.css";
 
 export interface TimerStackProps {
@@ -24,20 +24,35 @@ export function TimerStack({ stack, resolveAssetUrl, now = systemNow }: TimerSta
   const overflowPosition = stack.region.orientation === "vertical"
     ? { left: region.x, top: region.y + region.height }
     : { left: region.x + region.width, top: region.y };
-  const overflowSlot = stack.cards[0]?.slot;
+  const vertical = stack.region.orientation === "vertical";
+  const overflowSlot = { ...region,
+    width: vertical ? region.width : region.width / stack.region.maxVisible,
+    height: vertical ? region.height / stack.region.maxVisible : region.height };
+  const overflowFontSize = scaleMeasurement(overflowSlot, 0.24, 0.08, 10, 42);
+  const overflowBlockPadding = scaleMeasurement(overflowSlot, 0.06, 0.018, 3, 10);
+  const overflowInlinePadding = scaleMeasurement(overflowSlot, 0.1, 0.03, 5, 16);
+  const overflowOffset = scaleMeasurement(overflowSlot, 0.08, 0.025, 4, 14);
+  const overflowWidth = overflowFontSize * 8 + overflowInlinePadding * 2 + 2;
+  const overflowHeight = overflowFontSize + overflowBlockPadding * 2 + 2;
+  const bounds = timerProfileDimensions[stack.targetProfileId];
+  // Reserve the same badge footprint even without overflow, so starting another
+  // timer never resizes the fixed-capacity slots. Scale only at profile edges.
+  const scale = Math.min(1,
+    (bounds.width - region.x) / (vertical ? Math.max(region.width, overflowWidth) : region.width + overflowOffset + overflowWidth),
+    (bounds.height - region.y) / (vertical ? region.height + overflowOffset + overflowHeight : Math.max(region.height, overflowHeight)));
   const overflowStyle = {
-    ...(overflowSlot === undefined ? {} : {
-      "--timer-overflow-block-padding": `${scaleMeasurement(overflowSlot, 0.06, 0.018, 3, 10)}px`,
-      "--timer-overflow-font-size": `${scaleMeasurement(overflowSlot, 0.24, 0.08, 10, 42)}px`,
-      "--timer-overflow-inline-padding": `${scaleMeasurement(overflowSlot, 0.1, 0.03, 5, 16)}px`,
-      "--timer-overflow-offset": `${scaleMeasurement(overflowSlot, 0.08, 0.025, 4, 14)}px`
-    }),
+    "--timer-overflow-block-padding": `${overflowBlockPadding}px`,
+    "--timer-overflow-font-size": `${overflowFontSize}px`,
+    "--timer-overflow-inline-padding": `${overflowInlinePadding}px`,
+    "--timer-overflow-offset": `${overflowOffset}px`,
+    maxWidth: `${overflowWidth}px`,
+    height: `${overflowHeight}px`,
     left: `${overflowPosition.left}px`,
     top: `${overflowPosition.top}px`,
     zIndex: region.zIndex + 1
   } as CSSProperties;
   return (
-    <div className="timer-stack">
+    <div className="timer-stack" style={{ transform: `scale(${scale})`, transformOrigin: `${region.x}px ${region.y}px` }}>
       <div aria-label="Active timers" className="timer-stack__items" data-orientation={stack.region.orientation} role="list">
         {stack.cards.map(card => (
           <TimerCard

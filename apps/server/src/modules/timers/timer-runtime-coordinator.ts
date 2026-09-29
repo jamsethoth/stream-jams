@@ -1,4 +1,5 @@
 import {
+  compareTimerRuns,
   projectTimerStack,
   timersOverlayModuleConfigSchema,
   type OverlayModuleConfig,
@@ -32,6 +33,7 @@ interface TimerRuntimeCoordinatorOptions {
   readonly scheduler: TimerScheduler;
   readonly cueSink?: TimerCueSink;
   readonly generateGeneration?: () => string;
+  readonly assertCommandAvailable?: () => void;
 }
 
 interface RuntimeEntry {
@@ -48,6 +50,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   readonly #scheduler: TimerScheduler;
   readonly #cueSink: TimerCueSink | undefined;
   readonly #generateGeneration: () => string;
+  readonly #assertCommandAvailable: (() => void) | undefined;
   #nextGeneration = 0;
   #revision = 0;
   #closed = false;
@@ -58,13 +61,14 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
     this.#clock = options.clock;
     this.#scheduler = options.scheduler;
     this.#cueSink = options.cueSink;
+    this.#assertCommandAvailable = options.assertCommandAvailable;
     this.#generateGeneration = options.generateGeneration ?? (() => `timer-run-${++this.#nextGeneration}`);
   }
 
   isActive(definitionId: string): boolean { return this.#entries.has(definitionId); }
 
   listStates(): readonly TimerRunState[] {
-    return structuredClone([...this.#entries.values()].map(entry => entry.state).sort(compareTimerStates));
+    return structuredClone([...this.#entries.values()].map(entry => entry.state).sort(compareTimerRuns));
   }
 
   getState(definitionId: string): TimerRunState | null {
@@ -133,12 +137,16 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   async restart(definitionId: string): Promise<TimerCommandResult> {
     this.#assertOpen();
     const existing = this.#entries.get(definitionId);
+    let cleanup: Promise<void> | undefined;
     if (existing !== undefined) {
       existing.scheduled?.cancel();
       this.#entries.delete(definitionId);
-      await this.#settleCueStop(existing.state.generation);
+      cleanup = this.#settleCueStop(existing.state.generation);
     }
-    return this.#startFresh(definitionId);
+    // Commit the replacement before yielding: cleanup must never reopen a stopped or closed timer.
+    const started = this.#startFresh(definitionId);
+    const [result] = await Promise.all([started, cleanup]);
+    return result;
   }
 
   subscribe(listener: (revision: number) => void): () => void {
@@ -255,12 +263,6 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
 
   #assertOpen(): void {
     if (this.#closed) throw new Error("Timer runtime is closed");
+    this.#assertCommandAvailable?.();
   }
-}
-
-function compareTimerStates(left: TimerRunState, right: TimerRunState): number {
-  const rank = (state: TimerRunState) => state.status === "completed" ? 0 : state.status === "running" ? 1 : 2;
-  const rankDifference = rank(left) - rank(right); if (rankDifference !== 0) return rankDifference;
-  const deadline = (state: TimerRunState) => state.status === "completed" ? state.expiresAtEpochMs : state.status === "running" ? state.endsAtEpochMs : state.remainingMs;
-  return deadline(left) - deadline(right) || left.snapshot.label.localeCompare(right.snapshot.label) || left.definitionId.localeCompare(right.definitionId);
 }

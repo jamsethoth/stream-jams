@@ -96,8 +96,11 @@ it("reads sequentially and stops after a failed asset without reading later file
   await expect(resolver.resolve(batch)).rejects.toThrow(); expect(readBounded).toHaveBeenCalledTimes(1);
 });
 
-it("resolves timer icons while omitting unavailable icons from the normalized presentation", async () => {
-  const { resolver, records, findManyByIds } = harness();
+it.each([
+  { mediaType: "image" as const, mimeType: "image/png" },
+  { mediaType: "gif" as const, mimeType: "image/gif" }
+])("resolves timer icons while omitting unavailable icons: %j", async media => {
+  const { resolver, records, findManyByIds } = harness(media);
   const presentation = { kind: "timer-stack", stack: {
     targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }, orientation: "vertical", maxVisible: 2 },
     cards: [
@@ -111,6 +114,7 @@ it("resolves timer icons while omitting unavailable icons from the normalized pr
   const result = await resolver.resolveTimerModule(presentation);
   expect(findManyByIds).toHaveBeenCalledWith(["asset", "missing"]);
   expect(result.assets.map(asset => asset.assetId)).toEqual(["asset"]);
+  expect(result.assets[0]?.mimeType).toBe(media.mimeType);
   expect(result.missingAssetIds).toEqual(["missing"]);
   expect(result.presentation.stack.cards.map(card => card.iconAssetId)).toEqual(["asset", null]);
 });

@@ -43,6 +43,13 @@ export const ActiveTimers: Story = {
   }
 };
 
+export const TimerRefreshFailure: Story = {
+  args: { api: createApi(emptySnapshot()), timersApi: { ...createTimersApi([]), listStates: async () => { throw new Error("Timer service unavailable. Check the local service."); } } },
+  play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByText("Timer state may be stale")).toBeVisible();
+  }
+};
+
 export const ScreenEffectsPausedGlobalActive: Story = {
   args: { api: createApi({ ...activeSnapshot(), owners: [{ moduleId: "alerts", paused: false }, { moduleId: "screen-effects", paused: true }] }) }
 };

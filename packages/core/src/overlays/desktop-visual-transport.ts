@@ -84,7 +84,7 @@ export const desktopModuleSyncSchema = z.object({
   if (assets.size !== sync.assets.length) fail("Asset IDs must be unique");
   for (const assetId of referenced) {
     const asset = assets.get(assetId);
-    if (asset === undefined || visualMediaType(asset.mimeType) !== "image") fail("Timer icon asset is missing or has the wrong media kind");
+    if (asset === undefined || visualMediaType(asset.mimeType) === "video") fail("Timer icon asset is missing or has the wrong media kind");
   }
   if (sync.assets.some(asset => !referenced.has(asset.assetId))) fail("Unreferenced assets are not authorized");
   if (sync.assets.reduce((total, asset) => total + asset.bytes.byteLength, 0) > maxDesktopVisualTransferBytes) fail("Desktop transfer budget exceeded");

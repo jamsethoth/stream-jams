@@ -22,7 +22,7 @@ export function projectTimerStack(input: {
   const region = timerStackRegionSchema.parse(input.region);
   const runs = input.runs.map(run => timerRunStateSchema.parse(run))
     .filter(run => run.status !== "completed" || run.expiresAtEpochMs > input.nowEpochMs)
-    .sort(compareRuns);
+    .sort(compareTimerRuns);
   const visible = runs.slice(0, region.maxVisible);
   const slots = createSlots(region.layout, region.orientation, region.maxVisible);
   return {
@@ -33,7 +33,7 @@ export function projectTimerStack(input: {
   };
 }
 
-function compareRuns(left: TimerRunState, right: TimerRunState): number {
+export function compareTimerRuns(left: TimerRunState, right: TimerRunState): number {
   const group = stateRank(left) - stateRank(right);
   if (group !== 0) return group;
   const urgency = urgencyValue(left) - urgencyValue(right);

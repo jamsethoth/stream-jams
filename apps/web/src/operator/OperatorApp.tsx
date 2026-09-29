@@ -41,6 +41,7 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
   const [timers, setTimers] = useState<readonly TimerRunState[]>([]);
   const [initialError, setInitialError] = useState<OperatorError | null>(null);
   const [refreshError, setRefreshError] = useState<OperatorError | null>(null);
+  const [timerRefreshError, setTimerRefreshError] = useState<OperatorError | null>(null);
   const [commandError, setCommandError] = useState<OperatorError | null>(null);
   const [announcement, setAnnouncement] = useState("");
   const [pending, setPending] = useState<string | null>(null);
@@ -81,11 +82,13 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
       const revision = requestRevisionRef.current;
       try {
         const [playbackResult, timersResult] = await Promise.allSettled([api.getSnapshot(), timersApi.listStates()]);
+        if (disposed || revision !== requestRevisionRef.current) return;
+        if (timersResult.status === "fulfilled") { setTimers(timersResult.value); setTimerRefreshError(null); }
+        else setTimerRefreshError(toOperatorError(timersResult.reason, "Unable to refresh timer state."));
         if (playbackResult.status === "rejected") throw playbackResult.reason;
         const next = playbackResult.value;
         if (disposed || revision !== requestRevisionRef.current) return;
         applySnapshot(next);
-        if (timersResult.status === "fulfilled") setTimers(timersResult.value);
         setInitialError(null);
         setRefreshError(null);
         delay = normalPollDelayMs;
@@ -169,8 +172,9 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
   async function runTimerCommand(command: "pause" | "resume" | "stop" | "restart", timer: TimerRunState, focusTarget: HTMLButtonElement) {
     if (pendingRef.current) return;
     pendingRef.current = true; restoreFocusRef.current = focusTarget; setPending(`timer:${timer.definitionId}:${command}`); setCommandError(null); setAnnouncement("");
+    requestRevisionRef.current += 1;
     try {
-      await timersApi.command(timer.definitionId, command); const next = await timersApi.listStates(); setTimers(next);
+      await timersApi.command(timer.definitionId, command); const next = await timersApi.listStates(); setTimers(next); setTimerRefreshError(null);
       setAnnouncement(`${timer.snapshot.label} ${command === "pause" ? "paused" : command === "resume" ? "resumed" : command === "stop" ? "stopped" : "restarted"}.`);
     } catch (error) { setCommandError(toOperatorError(error, "The timer command failed.")); }
     finally { pendingRef.current = false; setPending(null); schedulePollRef.current?.(normalPollDelayMs); }
@@ -236,6 +240,7 @@ export function OperatorApp({ api = defaultPlaybackApi, timersApi = defaultOpera
 
       <section className="operator-section" aria-labelledby="operator-active-timers">
         <h2 id="operator-active-timers">Active timers ({timers.length})</h2>
+        {timerRefreshError === null ? null : <OperatorErrorBanner error={timerRefreshError} title="Timer state may be stale"><p>Showing the last known timers. Check the local service; timer refresh will retry automatically.</p></OperatorErrorBanner>}
         {timers.length === 0 ? <p className="management-empty">No timers are active.</p> : <ol className="operator-list operator-timer-list">
           {timers.map(timer => <li key={`${timer.definitionId}:${timer.generation}`}><OperatorTimerCard disabled={disabled} onCommand={(command, button) => void runTimerCommand(command, timer, button)} timer={timer} /></li>)}
         </ol>}

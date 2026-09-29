@@ -1,5 +1,5 @@
-import { timersOverlayModuleDefinition, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { timersOverlayModuleDefinition, type AssetLibraryItem, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AudioApi } from "../audio/audio-api.js";
@@ -8,7 +8,7 @@ import type { AssetLibraryManagementApi } from "../assets/asset-library-utils.js
 import { TimersPage } from "./TimersPage.js";
 import type { TimersApi } from "./timers-api.js";
 
-afterEach(cleanup);
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 const definition: TimerDefinition = { id: "mitts", label: "Wear oven mitts", durationMs: 60_000, iconAssetId: null,
   startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] },
   createdAt: "2026-09-29T00:00:00.000Z", updatedAt: "2026-09-29T00:00:00.000Z" };
@@ -61,6 +61,63 @@ it("keeps the timer editor closed until New timer opens the creation dialog", as
   await user.click(within(dialog).getByRole("button", { name: "Create timer" }));
   await waitFor(() => expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ label: "Cat paws", durationMs: 30_000 })));
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Create timer" })).not.toBeInTheDocument());
+});
+
+it("opens the owning timer after definitions load from an asset usage link", async () => {
+  const values = harness();
+  render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} ownerId="mitts" />);
+  expect(await screen.findByRole("dialog", { name: "Edit Wear oven mitts" })).toBeVisible();
+  expect(screen.getByLabelText("Name")).toHaveValue("Wear oven mitts");
+});
+
+it("selects a GIF icon from compatible assets and saves its stable ID", async () => {
+  const user = userEvent.setup(); const values = harness();
+  const gif: AssetLibraryItem = { id: "paws-gif", displayName: "Animated paws", originalFileName: "paws.gif", mediaType: "gif", mimeType: "image/gif", sizeBytes: 12,
+    width: null, height: null, durationMs: null, health: "missing", tags: [], createdAt: definition.createdAt, updatedAt: definition.updatedAt,
+    usage: { assetId: "paws-gif", totalUsageCount: 0, usages: [] } };
+  const managementApi = { listAssetLibraryItems: async () => [gif] } as unknown as AssetLibraryManagementApi;
+  const assetApi = { getAssetFile: async () => { throw new Error("Preview unavailable"); } } as unknown as AssetApi;
+  render(<TimersPage api={values.api} assetApi={assetApi} audioApi={values.audioApi} managementApi={managementApi} />);
+  await user.click(await screen.findByRole("button", { name: /Wear oven mitts/ }));
+  await user.click(screen.getAllByRole("button", { name: "Choose" })[0]!);
+  expect(await screen.findByRole("button", { name: "Animated paws, gif, 0 uses" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Use selected asset" }));
+  await user.click(screen.getByRole("button", { name: "Save timer" }));
+  await waitFor(() => expect(values.api.update).toHaveBeenCalledWith("mitts", expect.objectContaining({ iconAssetId: "paws-gif" })));
+});
+
+it("requires confirmation before rotating an existing automation credential", async () => {
+  const user = userEvent.setup(); const { api } = renderPage();
+  await user.click(await screen.findByRole("button", { name: "Create credential" }));
+  await user.click(await screen.findByRole("button", { name: "Rotate credential" }));
+  let dialog = screen.getByRole("dialog", { name: "Rotate timer automation credential?" });
+  expect(within(dialog).getByText(/Existing Stream Deck actions will stop working/)).toBeVisible();
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(api.rotateAutomationCredential).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole("button", { name: "Rotate credential" }));
+  dialog = screen.getByRole("dialog", { name: "Rotate timer automation credential?" });
+  await user.click(within(dialog).getByRole("button", { name: "Confirm rotation" }));
+  await waitFor(() => expect(api.rotateAutomationCredential).toHaveBeenCalledTimes(2));
+});
+
+it("polls runtime state without overwriting edits and retains stale state until recovery", async () => {
+  vi.useFakeTimers();
+  const { api } = renderPage();
+  await act(async () => {});
+  fireEvent.click(screen.getByRole("button", { name: /Wear oven mitts/ }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Unsaved name" } });
+  const running: TimerRunState = { status: "running", definitionId: definition.id, generation: "external", snapshot: definition, startedAtEpochMs: 1000, endsAtEpochMs: 61_000 };
+  vi.mocked(api.listStates).mockResolvedValueOnce([running]).mockRejectedValueOnce(new Error("Service unavailable")).mockResolvedValueOnce([]);
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+  expect(screen.getByRole("button", { name: "Pause" })).toBeEnabled();
+  expect(screen.getByLabelText("Name")).toHaveValue("Unsaved name");
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+  expect(screen.getByText("Timer status is stale")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Pause" })).toBeEnabled();
+  await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+  expect(screen.queryByText("Timer status is stale")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeEnabled();
+  expect(api.list).toHaveBeenCalledTimes(1);
 });
 
 it("presents profile-aware browser source setup in a collapsed output band", async () => {

@@ -204,7 +204,7 @@ export {
   timerStackRegionSchema,
   timersOverlayModuleConfigSchema
 } from "./timers/schemas.js";
-export { formatTimerRemaining, projectTimerStack } from "./timers/projection.js";
+export { compareTimerRuns, formatTimerRemaining, projectTimerStack } from "./timers/projection.js";
 export { timersOverlayModuleDefinition } from "./timers/module-definition.js";
 export { surfaceLayerSchema, surfaceLayersSchema, surfaceConfigurationSchema, surfaceConfigurationUpdateSchema, reconcileSurfaceLayers, validateSurfaceOrder } from "./overlay-modules/surface-configuration.js";
 export type { SurfaceLayer, SurfaceConfiguration, SurfaceConfigurationUpdate, SurfaceRepository } from "./overlay-modules/surface-configuration.js";

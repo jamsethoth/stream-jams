@@ -235,6 +235,39 @@ test("renders late-joined Timer stacks in authoritative order with overflow and 
   await expect(cards).toHaveCount(0);
 });
 
+for (const orientation of ["vertical", "horizontal"] as const) {
+  test(`keeps ${orientation} timer overflow inside the bottom-right profile edge without resizing on overflow`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await installOverlayWebSocketMock(page);
+    const payload = composition(Date.now());
+    const stack = payload.modules[0]!.presentation.stack;
+    stack.region = { layout: { x: 1320, y: 780, width: 600, height: 300, zIndex: 20 }, orientation, maxVisible: 3 };
+    stack.cards = stack.cards.map((card, index) => ({ ...card, slot: {
+      x: 1320 + (orientation === "horizontal" ? index * 200 : 0),
+      y: 780 + (orientation === "vertical" ? index * 100 : 0),
+      width: orientation === "vertical" ? 600 : 200,
+      height: orientation === "vertical" ? 100 : 300, zIndex: 20
+    } }));
+    await page.route("**/overlay/modules/timers/live/ovl_timers/composition*", route => route.fulfill({ json: payload }));
+    await page.goto("/overlay/modules/timers/live/ovl_timers?profile=landscape");
+    const cards = page.getByRole("listitem");
+    await expect(cards).toHaveCount(3);
+    const first = await cards.first().boundingBox();
+    const last = (await cards.last().boundingBox())!;
+    const badge = (await page.getByText("+2 more").boundingBox())!;
+    expect(badge.x + badge.width).toBeLessThanOrEqual(1921);
+    expect(badge.y + badge.height).toBeLessThanOrEqual(1081);
+    if (orientation === "vertical") expect(badge.y).toBeGreaterThanOrEqual(last.y + last.height);
+    else expect(badge.x).toBeGreaterThanOrEqual(last.x + last.width);
+    await page.evaluate(payload => {
+      const sockets = (window as Window & { __overlaySockets?: EventTarget[] }).__overlaySockets ?? [];
+      sockets.at(-1)?.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "overlay.composition", composition: payload }) }));
+    }, { ...payload, modules: [{ ...payload.modules[0]!, presentation: { kind: "timer-stack", stack: { ...stack, cards: stack.cards.slice(0, 1), overflowCount: 0 } } }] });
+    await expect(cards).toHaveCount(1);
+    expect(await cards.first().boundingBox()).toEqual(first);
+  });
+}
+
 function asset(id: string, displayName: string, mediaType: "image" | "audio", mimeType: string) {
   return { id, displayName, originalFileName: `${id}.${mediaType === "image" ? "png" : "wav"}`, mediaType, mimeType, sizeBytes: 8,
     width: mediaType === "image" ? 32 : null, height: mediaType === "image" ? 32 : null, durationMs: mediaType === "audio" ? 250 : null,
