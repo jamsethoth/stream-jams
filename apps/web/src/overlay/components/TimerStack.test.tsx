@@ -56,6 +56,29 @@ describe("TimerStack", () => {
     expect(cards).toHaveLength(3);
   });
 
+  it("derives responsive card measurements from both slot width and height", () => {
+    const responsive = stack({
+      cards: [{
+        definitionId: "responsive",
+        generation: "g-responsive",
+        label: "Responsive timer",
+        iconAssetId: null,
+        status: "paused",
+        remainingMs: 30_000,
+        slot: { x: 0, y: 0, width: 240, height: 60, zIndex: 1 }
+      }],
+      overflowCount: 0
+    });
+    const { rerender } = render(<TimerStack stack={responsive} resolveAssetUrl={() => ""} />);
+    const card = screen.getByRole("listitem");
+    expect(card.style.getPropertyValue("--timer-label-size")).toBe("14px");
+    expect(card.style.getPropertyValue("--timer-value-size")).toBe("17px");
+
+    rerender(<TimerStack stack={{ ...responsive, cards: [{ ...responsive.cards[0]!, slot: { x: 0, y: 0, width: 800, height: 160, zIndex: 1 } }] }} resolveAssetUrl={() => ""} />);
+    expect(screen.getByRole("listitem").style.getPropertyValue("--timer-label-size")).toBe("38px");
+    expect(screen.getByRole("listitem").style.getPropertyValue("--timer-value-size")).toBe("46px");
+  });
+
   it("supports horizontal equal slots and hour formatting", () => {
     const horizontal = stack({
       region: { layout: { x: 0, y: 0, width: 600, height: 120, zIndex: 2 }, orientation: "horizontal", maxVisible: 2 },

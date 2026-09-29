@@ -67,14 +67,14 @@ body.overlay-shell {
   align-items: center;
   background: #0d141f;
   border: 2px solid rgba(255, 255, 255, 0.78);
-  border-radius: 16px;
+  border-radius: var(--timer-card-radius);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
   box-sizing: border-box;
   color: #ffffff;
-  column-gap: 16px;
+  column-gap: var(--timer-card-gap);
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  padding: 14px 20px;
+  padding: var(--timer-card-block-padding) var(--timer-card-inline-padding);
   position: absolute;
 }
 
@@ -87,10 +87,9 @@ body.overlay-shell {
 }
 
 .timer-stack__icon {
-  height: 64px;
-  max-height: 70%;
+  height: var(--timer-icon-size);
   object-fit: contain;
-  width: 64px;
+  width: var(--timer-icon-size);
 }
 
 .timer-stack__icon--default {
@@ -99,7 +98,7 @@ body.overlay-shell {
 
 .timer-stack__label {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
-  font-size: clamp(22px, 3.2cqh, 42px);
+  font-size: var(--timer-label-size);
   font-weight: 700;
   line-height: 1;
   min-width: 0;
@@ -111,7 +110,7 @@ body.overlay-shell {
 
 .timer-stack__value {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-  font-size: clamp(28px, 4.5cqh, 56px);
+  font-size: var(--timer-value-size);
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   justify-self: end;

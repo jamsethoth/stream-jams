@@ -22,7 +22,10 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   ];
 
   await page.route("**/management/assets/library", route => route.fulfill({ json: assets }));
-  await page.route("**/assets/*/file", route => route.fulfill({ body: "asset", contentType: "application/octet-stream" }));
+  await page.route("**/assets/*/file", route => route.fulfill({
+    body: "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6'/></svg>",
+    contentType: "image/svg+xml"
+  }));
   await page.route("**/audio/status", route => route.fulfill({ json: {
     capability: { available: true, devices: [], reason: null, nextStep: null }, muted: false,
     routes: [{ route: { id: "speakers", name: "Speakers", deviceId: "device-a", deviceLabel: "Speakers", autoFollowDeviceName: false }, state: "ready", automaticBindingState: "not-needed" }]
@@ -79,8 +82,10 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await expect(page.getByText("Create one for a recurring stream activity.")).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);
   const timerPreview = page.getByLabel("landscape timer preview");
-  await expect(timerPreview.getByRole("img", { name: "Cat paws reward icon" })).toBeVisible();
-  await expect(timerPreview.getByRole("img", { name: "Default timer icon" }).first()).toBeVisible();
+  await expect(timerPreview.getByText("Timer 1", { exact: true })).toBeVisible();
+  const longExample = timerPreview.getByText(/deliberately long name/u);
+  await expect(longExample).toBeVisible();
+  await expect(timerPreview.getByRole("img", { name: "Default timer icon" })).toHaveCount(3);
   await expect(timerPreview.getByText("+2 more")).toBeVisible();
   expect(await timerPreview.evaluate(element => element.getBoundingClientRect().width)).toBeGreaterThan(420);
   const previewCards = timerPreview.getByRole("listitem");
@@ -98,6 +103,15 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   });
   expect(centerOffset).toBeLessThanOrEqual(1);
   await expect(previewCards.first().locator(".timer-stack__label")).not.toHaveCSS("line-height", "normal");
+  await page.getByLabel("HEIGHT").fill("180");
+  const compactFontSize = await previewCards.first().locator(".timer-stack__label").evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
+  await page.getByLabel("HEIGHT").fill("480");
+  const roomyFontSize = await previewCards.first().locator(".timer-stack__label").evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
+  expect(roomyFontSize).toBeGreaterThan(compactFontSize);
+  await page.getByLabel("WIDTH").fill("360");
+  expect(await longExample.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true);
+  await page.getByLabel("WIDTH").fill("1600");
+  expect(await longExample.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(false);
   const browserSources = page.getByRole("region", { name: "Browser sources" });
   await expect(browserSources.getByText("1 ready")).toBeVisible();
   await browserSources.getByRole("button", { name: "Expand browser sources" }).click();
@@ -117,6 +131,8 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await editor.getByRole("button", { name: "Create timer" }).click();
   await expect(page.getByRole("dialog", { name: "Create timer" })).toHaveCount(0);
   await expect(page.getByRole("article", { name: "Cat paws reward timer" })).toBeVisible();
+  await expect(timerPreview.getByRole("listitem").first()).toContainText("Cat paws reward");
+  await expect(timerPreview.getByRole("img", { name: "Cat paws reward icon" })).toBeVisible();
   expect(definition).toMatchObject({
     label: "Cat paws reward", durationMs: 30_000, iconAssetId: "icon-paws",
     startAudioAssetId: "audio-start", endAudioAssetId: "audio-end",
@@ -134,10 +150,11 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
 
   await page.getByRole("button", { name: "Start", exact: true }).first().click();
   await page.getByRole("button", { name: /Cat paws reward/u }).first().click();
-  await page.getByRole("button", { name: "Pause" }).click();
-  await page.getByRole("button", { name: "Resume" }).click();
-  await page.getByRole("button", { name: "Restart" }).click();
-  await page.getByRole("button", { name: "Stop" }).click();
+  const controlDialog = page.getByRole("dialog");
+  await controlDialog.getByRole("button", { name: "Pause" }).click();
+  await controlDialog.getByRole("button", { name: "Resume" }).click();
+  await controlDialog.getByRole("button", { name: "Restart" }).click();
+  await controlDialog.getByRole("button", { name: "Stop" }).click();
   expect(commands).toEqual(["start", "pause", "resume", "restart", "stop"]);
   await page.reload();
   await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);

@@ -1,8 +1,9 @@
-import { projectTimerStack, timerProfileDimensions, type OverlayTargetProfileId, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
+import { projectTimerStack, timerProfileDimensions, type OverlayTargetProfileId, type TimerDefinition, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
 
-export function TimerStackEditor({ value, onChange }: {
+export function TimerStackEditor({ definitions, value, onChange }: {
+  readonly definitions?: readonly TimerDefinition[];
   readonly value: TimersOverlayModuleConfig;
   readonly onChange: (value: TimersOverlayModuleConfig) => void;
 }) {
@@ -12,7 +13,12 @@ export function TimerStackEditor({ value, onChange }: {
   const region = value.profiles[profile]; const bounds = timerProfileDimensions[profile];
   const previewScale = Math.min(1, availableWidth / bounds.width, 620 / bounds.height);
   const gesture = useRef<{ mode: "move" | "resize"; clientX: number; clientY: number; layout: typeof region.layout } | null>(null);
-  const stack = useMemo(() => projectTimerStack({ nowEpochMs: 0, targetProfileId: profile, region, runs: sampleRuns(region.maxVisible + 2) }), [profile, region]);
+  const stack = useMemo(() => projectTimerStack({
+    nowEpochMs: 0,
+    targetProfileId: profile,
+    region,
+    runs: sampleRuns(definitions ?? [], region.maxVisible)
+  }), [definitions, profile, region]);
   useEffect(() => {
     const shell = previewShell.current;
     if (shell === null || typeof ResizeObserver === "undefined") return;
@@ -64,23 +70,44 @@ export function TimerStackEditor({ value, onChange }: {
   </section>;
 }
 
-function sampleRuns(count: number): TimerRunState[] {
-  const labels = ["Cat paws reward", "Wear oven mitts", "Tea steeping", "A very long timer name that will truncate", "Stretch break", "Hydration reminder"];
-  return Array.from({ length: count }, (_, index): TimerRunState => {
-    const definitionId = `preview-${index}`;
-    const snapshot = { id: definitionId, label: labels[index] ?? `Timer ${index + 1}`, durationMs: 60_000,
-      iconAssetId: index === 0 ? "preview-paw" : index === 1 ? "preview-mitts" : null,
-      startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] } };
-    if (index < 2) return { status: "running", definitionId, generation: definitionId, snapshot, startedAtEpochMs: 0, endsAtEpochMs: (index + 1) * 15_000 };
-    return { status: "paused", definitionId, generation: definitionId, snapshot, remainingMs: (index + 1) * 15_000 };
-  });
+function sampleRuns(definitions: readonly TimerDefinition[], maxVisible: number): TimerRunState[] {
+  const totalCount = Math.max(maxVisible + 2, definitions.length);
+  const visibleExampleCount = Math.max(0, maxVisible - definitions.length);
+  const exampleCount = totalCount - definitions.length;
+  const snapshots = [
+    ...definitions.map(definition => ({
+      id: definition.id,
+      label: definition.label,
+      durationMs: definition.durationMs,
+      iconAssetId: definition.iconAssetId,
+      startAudioAssetId: definition.startAudioAssetId,
+      endAudioAssetId: definition.endAudioAssetId,
+      outputs: definition.outputs
+    })),
+    ...Array.from({ length: exampleCount }, (_, index) => {
+      const number = index + 1;
+      const isLongVisibleExample = visibleExampleCount > 0 && index === visibleExampleCount - 1;
+      return {
+        id: `preview-${number}`,
+        label: isLongVisibleExample ? `Timer ${number} with a deliberately long name that will be truncated` : `Timer ${number}`,
+        durationMs: number * 15_000,
+        iconAssetId: null,
+        startAudioAssetId: null,
+        endAudioAssetId: null,
+        outputs: { browserSource: true, deviceRouteIds: [] }
+      };
+    })
+  ];
+  return snapshots.map((snapshot, index): TimerRunState => ({
+    status: "running",
+    definitionId: snapshot.id,
+    generation: `preview-${snapshot.id}`,
+    snapshot,
+    startedAtEpochMs: 0,
+    endsAtEpochMs: (index + 1) * 15_000
+  }));
 }
 
-const previewIcons: Readonly<Record<string, string>> = {
-  "preview-paw": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='%235eead4'%3E%3Ccircle cx='18' cy='18' r='7'/%3E%3Ccircle cx='32' cy='12' r='7'/%3E%3Ccircle cx='46' cy='18' r='7'/%3E%3Cpath d='M32 25c-13 0-22 11-18 21 4 9 13 4 18 4s14 5 18-4c4-10-5-21-18-21z'/%3E%3C/g%3E%3C/svg%3E",
-  "preview-mitts": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath fill='%23fbbf24' d='M17 8c5 0 7 5 7 10V9c0-5 8-5 8 0v9V8c0-5 8-5 8 0v12-8c0-5 8-5 8 0v22c0 15-8 22-21 22-11 0-18-7-18-18V20c0-5 8-5 8 0V8z'/%3E%3C/svg%3E"
-};
-
 function resolvePreviewAssetUrl(assetId: string): string {
-  return previewIcons[assetId] ?? "";
+  return `/assets/${encodeURIComponent(assetId)}/file`;
 }

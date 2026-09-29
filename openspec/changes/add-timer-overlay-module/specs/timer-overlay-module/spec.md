@@ -93,7 +93,7 @@ The Timers module SHALL produce normalized visual snapshots for module-specific 
 - **AND** active timers, other surfaces, and selected cue outputs remain unchanged
 
 ### Requirement: Timer Stack Presentation Is Configurable And Deterministic
-Each target profile SHALL store one bounded draggable/resizable timer region, vertical or horizontal orientation, and a bounded positive visible maximum. The system SHALL render equal-sized timer boxes inside that region, show a legible default clock icon when no user icon is configured, vertically center the card contents, left-align and truncate long labels with a single-line ellipsis, right-align the countdown, and use a small `+N more` badge outside the timer-slot count when additional active timers are hidden. For a vertical stack, the badge SHALL appear below the timer boxes.
+Each target profile SHALL store one bounded draggable/resizable timer region, vertical or horizontal orientation, and a bounded positive visible maximum. The system SHALL render equal-sized timer boxes inside that region, scale card typography and spacing from the box width and height within bounded legibility limits, show a legible default clock icon when no user icon is configured, vertically center the card contents, left-align and dynamically truncate long labels with a single-line ellipsis according to their available width, right-align the countdown, and use a small `+N more` badge outside the timer-slot count when additional active timers are hidden. For a vertical stack, the badge SHALL appear below the timer boxes.
 
 #### Scenario: Running and paused timers share a region
 - **WHEN** several timers are active
@@ -109,6 +109,11 @@ Each target profile SHALL store one bounded draggable/resizable timer region, ve
 - **WHEN** six timers are active in a region configured to show four
 - **THEN** the four highest-priority timers remain visible
 - **AND** a small `+2 more` badge appears without consuming one of the four timer slots
+
+#### Scenario: Management previews saved and example timers
+- **WHEN** the management preview has fewer saved definitions than its configured visible maximum
+- **THEN** saved definitions appear before synthetic examples with their saved labels and configured icons
+- **AND** synthetic examples use the default clock icon, include numbered timer names and one visible deliberately long name, and include two additional items represented by the overflow badge
 
 ### Requirement: Timer Cues Follow Explicit Audio Outputs
 Each timer definition SHALL apply one Browser Source flag and zero or more named local-device routes to both its start and end cues. Cue admission SHALL occur once per applicable run transition before visual profile expansion, and cue failure SHALL NOT block, cancel, or extend timer state.

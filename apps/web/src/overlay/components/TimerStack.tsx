@@ -62,13 +62,23 @@ function TimerCard({
     ? Math.max(0, card.endsAtEpochMs - nowEpochMs)
     : card.status === "paused" ? card.remainingMs : 0;
   const value = formatTimerRemaining(remainingMs);
-  const style: CSSProperties = {
+  const labelSize = scaleMeasurement(card.slot, 0.24, 0.08, 10, 42);
+  const valueSize = scaleMeasurement(card.slot, 0.29, 0.12, 12, 56);
+  const iconSize = scaleMeasurement(card.slot, 0.48, 0.16, 16, 64);
+  const style = {
+    "--timer-card-block-padding": `${scaleMeasurement(card.slot, 0.1, 0.025, 4, 16)}px`,
+    "--timer-card-gap": `${scaleMeasurement(card.slot, 0.12, 0.025, 4, 18)}px`,
+    "--timer-card-inline-padding": `${scaleMeasurement(card.slot, 0.14, 0.04, 6, 24)}px`,
+    "--timer-card-radius": `${scaleMeasurement(card.slot, 0.12, 0.03, 4, 16)}px`,
+    "--timer-icon-size": `${iconSize}px`,
+    "--timer-label-size": `${labelSize}px`,
+    "--timer-value-size": `${valueSize}px`,
     height: `${card.slot.height}px`,
     left: `${card.slot.x}px`,
     top: `${card.slot.y}px`,
     width: `${card.slot.width}px`,
     zIndex: card.slot.zIndex
-  };
+  } as CSSProperties;
   return (
     <div
       aria-label={`${card.label}, ${card.status}, ${value}`}
@@ -84,6 +94,16 @@ function TimerCard({
       <time className="timer-stack__value" data-testid={`timer-value-${card.definitionId}`}>{value}</time>
     </div>
   );
+}
+
+function scaleMeasurement(
+  slot: TimerOverlayCard["slot"],
+  heightRatio: number,
+  widthRatio: number,
+  minimum: number,
+  maximum: number
+): number {
+  return Math.max(minimum, Math.min(maximum, Math.round(Math.min(slot.height * heightRatio, slot.width * widthRatio))));
 }
 
 function DefaultTimerIcon() {

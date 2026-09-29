@@ -31,6 +31,9 @@ export default meta; type Story = StoryObj<typeof meta>;
 export const IdleInventory: Story = { play: async ({ canvasElement }) => {
   const canvas = within(canvasElement);
   await canvas.findByRole("button", { name: /Wear oven mitts/u });
+  const preview = canvas.getByLabelText("landscape timer preview");
+  await expect(within(preview).getByText(definition.label)).toBeVisible();
+  await expect(within(preview).getAllByRole("img", { name: "Default timer icon" }).length).toBeGreaterThan(0);
   await expect(canvas.queryByRole("dialog", { name: "Create timer" })).not.toBeInTheDocument();
   const browserSources = canvas.getByRole("region", { name: "Browser sources" });
   await expect(within(browserSources).getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");

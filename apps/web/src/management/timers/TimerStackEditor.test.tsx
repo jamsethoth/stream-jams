@@ -1,4 +1,4 @@
-import { timersOverlayModuleDefinition } from "@stream-jams/core";
+import { timersOverlayModuleDefinition, type TimerDefinition } from "@stream-jams/core";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { TimerStackEditor } from "./TimerStackEditor.js";
@@ -32,11 +32,27 @@ describe("TimerStackEditor", () => {
     expect(preview.firstElementChild).toHaveStyle({ transform: "scale(0.46875)" });
   });
 
-  it("shows representative custom and default icons plus the overflow badge", () => {
-    render(<TimerStackEditor value={structuredClone(timersOverlayModuleDefinition.defaultConfig)} onChange={() => {}} />);
+  it("prioritizes saved timers, then fills the preview with default-clock examples and a long label", () => {
+    const saved: TimerDefinition = {
+      id: "saved-mitts",
+      label: "Saved oven mitt timer",
+      durationMs: 45_000,
+      iconAssetId: "saved-icon",
+      startAudioAssetId: null,
+      endAudioAssetId: null,
+      outputs: { browserSource: true, deviceRouteIds: [] },
+      createdAt: "2026-09-29T00:00:00.000Z",
+      updatedAt: "2026-09-29T00:00:00.000Z"
+    };
+    const definitionProps = { definitions: [saved] };
+    render(<TimerStackEditor {...definitionProps} value={structuredClone(timersOverlayModuleDefinition.defaultConfig)} onChange={() => {}} />);
 
-    expect(screen.getByRole("img", { name: "Cat paws reward icon" })).toBeVisible();
-    expect(screen.getAllByRole("img", { name: "Default timer icon" }).length).toBeGreaterThan(0);
+    const cards = screen.getAllByRole("listitem");
+    expect(cards[0]).toHaveTextContent("Saved oven mitt timer");
+    expect(screen.getByRole("img", { name: "Saved oven mitt timer icon" })).toHaveAttribute("src", "/assets/saved-icon/file");
+    expect(cards.some(card => card.textContent?.includes("Timer 1"))).toBe(true);
+    expect(cards.some(card => card.textContent?.includes("deliberately long"))).toBe(true);
+    expect(screen.getAllByRole("img", { name: "Default timer icon" })).toHaveLength(cards.length - 1);
     expect(screen.getByText("+2 more")).toBeVisible();
   });
 });
