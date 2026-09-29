@@ -64,7 +64,7 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   isActive(definitionId: string): boolean { return this.#entries.has(definitionId); }
 
   listStates(): readonly TimerRunState[] {
-    return structuredClone([...this.#entries.values()].map(entry => entry.state));
+    return structuredClone([...this.#entries.values()].map(entry => entry.state).sort(compareTimerStates));
   }
 
   getState(definitionId: string): TimerRunState | null {
@@ -254,4 +254,11 @@ export class TimerRuntimeCoordinator implements TimerActivityProbe, OverlayModul
   #assertOpen(): void {
     if (this.#closed) throw new Error("Timer runtime is closed");
   }
+}
+
+function compareTimerStates(left: TimerRunState, right: TimerRunState): number {
+  const rank = (state: TimerRunState) => state.status === "completed" ? 0 : state.status === "running" ? 1 : 2;
+  const rankDifference = rank(left) - rank(right); if (rankDifference !== 0) return rankDifference;
+  const deadline = (state: TimerRunState) => state.status === "completed" ? state.expiresAtEpochMs : state.status === "running" ? state.endsAtEpochMs : state.remainingMs;
+  return deadline(left) - deadline(right) || left.snapshot.label.localeCompare(right.snapshot.label) || left.definitionId.localeCompare(right.definitionId);
 }

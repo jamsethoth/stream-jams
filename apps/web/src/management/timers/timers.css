@@ -1,0 +1,23 @@
+.timers-page { display: grid; gap: 1rem; grid-template-columns: minmax(15rem, .75fr) minmax(22rem, 1.4fr); }
+.timers-page > section, .timer-editor { background: var(--color-surface, #151b24); border: 1px solid var(--color-border, #344052); border-radius: .75rem; padding: 1rem; }
+.timer-section-heading { align-items: center; display: flex; justify-content: space-between; gap: 1rem; }
+.timer-section-heading h2, .timer-section-heading h3, .timer-credential h2 { margin: 0; }
+.timers-inventory ul { display: grid; gap: .5rem; list-style: none; margin: 1rem 0 0; padding: 0; }
+.timers-inventory li { align-items: center; display: grid; gap: .5rem; grid-template-columns: 1fr auto; }
+.timers-inventory li > button:first-child { align-items: flex-start; display: flex; flex-direction: column; min-width: 0; text-align: left; }
+.timers-inventory li > button:first-child span { font-size: .8rem; opacity: .75; }
+.timer-editor { display: grid; gap: 1rem; }
+.timer-editor label, .timer-layout__controls label, .timer-token label { display: grid; gap: .35rem; }
+.timer-editor fieldset { display: grid; gap: .5rem; }
+.timer-editor__notice, .timer-layout__warning { border-left: .25rem solid #f0b429; margin: 0; padding: .65rem .8rem; }
+.timer-asset-row { align-items: center; display: grid; gap: .5rem; grid-template-columns: 7rem minmax(0, 1fr) auto auto; }
+.timer-asset-row code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.timer-editor__actions, .timer-credential > div, .timer-layout-save { display: flex; flex-wrap: wrap; gap: .5rem; }
+.timer-layout { grid-column: 1 / -1; overflow: hidden; }
+.timer-layout__controls { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr)); margin: 1rem 0; }
+.timer-layout__preview { background: #080b10; border: 1px solid #344052; max-width: 100%; overflow: hidden; position: relative; }
+.timer-layout__region-handle { background: transparent; border: 2px dashed #7dd3fc; cursor: move; padding: 0; position: absolute; }
+.timer-layout__resize-handle { background: #7dd3fc; border: 2px solid #082f49; cursor: nwse-resize; height: 16px; padding: 0; position: absolute; width: 16px; }
+.timer-layout-save, .timer-credential { align-items: center; grid-column: 1 / -1; justify-content: space-between; }
+.timer-token { align-items: end; display: grid !important; grid-template-columns: minmax(15rem, 1fr) auto auto; margin: 1rem 0; }
+@media (max-width: 850px) { .timers-page { grid-template-columns: 1fr; } .timer-layout, .timer-layout-save, .timer-credential { grid-column: auto; } }

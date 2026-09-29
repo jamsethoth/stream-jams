@@ -87,10 +87,16 @@ describe("TimerRuntimeCoordinator", () => {
     expect(first).toMatchObject({ changed: true, state: { status: "running", definitionId: "a", generation: "generation-1", endsAtEpochMs: 11_000 } });
     expect(second).toMatchObject({ changed: true, state: { status: "running", definitionId: "b", generation: "generation-2", endsAtEpochMs: 6_000 } });
     expect(coordinator.getState("a")?.snapshot.label).toBe("Timer a");
-    expect(coordinator.listStates()).toHaveLength(2);
+    expect(coordinator.listStates().map(state => state.definitionId)).toEqual(["b", "a"]);
     expect(revisions).toEqual([1, 2]);
     expect(cueSink.play).toHaveBeenCalledTimes(2);
     unsubscribe();
+  });
+
+  it("orders active state for Operator by completed, running deadline, then paused remaining", async () => {
+    const { coordinator, time } = setup(); await coordinator.start("a"); await coordinator.start("b");
+    await coordinator.pause("b"); expect(coordinator.listStates().map(state => state.definitionId)).toEqual(["a", "b"]);
+    await time.advance(10_000); expect(coordinator.listStates().map(state => state.definitionId)).toEqual(["a", "b"]);
   });
 
   it("makes lifecycle commands idempotent and only cues start and completion", async () => {

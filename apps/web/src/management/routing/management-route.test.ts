@@ -13,6 +13,7 @@ describe("management route model", () => {
     ["/manage/tts-providers", "tts-providers"],
     ["/manage/modules/alerts", "modules-alerts"],
     ["/manage/modules/screen-effects", "modules-screen-effects"],
+    ["/manage/modules/timers", "modules-timers"],
     ["/manage/modules/alerts/safety", "alert-safety"],
     ["/manage/assets", "assets"],
     ["/manage/diagnostics", "diagnostics"],
@@ -59,6 +60,7 @@ describe("management route model", () => {
     expect(managementPrimaryRoutes.find((route) => route.id === "modules-alerts")?.childRoutes.map((route) => route.id)).toEqual([
       "modules-alerts",
       "modules-screen-effects",
+      "modules-timers",
       "alert-safety"
     ]);
   });

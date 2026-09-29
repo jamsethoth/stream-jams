@@ -41,17 +41,17 @@
 
 ## 7. Timers Management Experience
 
-- [ ] 7.1 Add typed web API client tests for timer inventory, CRUD, module presentation, state-aware controls, and credential create/rotate/revoke responses without persisting raw bearer material.
-- [ ] 7.2 Build the Timers page using established management patterns for list/create/edit/delete, asset pickers, explicit audio outputs, state-aware controls, and active-snapshot editing disclosure.
-- [ ] 7.3 Add the draggable/resizable per-profile stack editor and exact preview for orientation, capacity, equal sizing, truncation, ordering, overflow badge, and legibility warnings.
-- [ ] 7.4 Add focused Testing Library coverage for loading, empty, validation, save success/failure, missing assets, active-delete conflict, keyboard controls, stable focus, and semantic announcements.
-- [ ] 7.5 Add production-component Storybook stories with tiny checked-in assets for idle inventory, running, paused, completed, horizontal/vertical layouts, overflow, long labels, missing icon, loading, and error states; pass accessibility and interaction checks.
+- [x] 7.1 Add typed web API client tests for timer inventory, CRUD, module presentation, state-aware controls, and credential create/rotate/revoke responses without persisting raw bearer material.
+- [x] 7.2 Build the Timers page using established management patterns for list/create/edit/delete, asset pickers, explicit audio outputs, state-aware controls, and active-snapshot editing disclosure.
+- [x] 7.3 Add the draggable/resizable per-profile stack editor and exact preview for orientation, capacity, equal sizing, truncation, ordering, overflow badge, and legibility warnings.
+- [x] 7.4 Add focused Testing Library coverage for loading, empty, validation, save success/failure, missing assets, active-delete conflict, keyboard controls, stable focus, and semantic announcements.
+- [x] 7.5 Add production-component Storybook stories with tiny checked-in assets for idle inventory, running, paused, completed, horizontal/vertical layouts, overflow, long labels, missing icon, loading, and error states; pass accessibility and interaction checks.
 
 ## 8. Operator Active-Timer Controls
 
-- [ ] 8.1 Extend the Operator typed snapshot/client contract with a separate active-timers section and timer-specific pause/resume, stop, and restart commands rather than queue-owner operations.
-- [ ] 8.2 Implement running/completed timers first and paused timers second using authoritative urgency order, with idle definitions omitted and accessible module-qualified actions.
-- [ ] 8.3 Add Operator tests and stories for concurrent timers, paused ordering, completed hold, command conflicts/failures, refresh/reconnect, stable focus, and live-region announcements.
+- [x] 8.1 Extend the Operator typed snapshot/client contract with a separate active-timers section and timer-specific pause/resume, stop, and restart commands rather than queue-owner operations.
+- [x] 8.2 Implement running/completed timers first and paused timers second using authoritative urgency order, with idle definitions omitted and accessible module-qualified actions.
+- [x] 8.3 Add Operator tests and stories for concurrent timers, paused ordering, completed hold, command conflicts/failures, refresh/reconnect, stable focus, and live-region announcements.
 
 ## 9. Asset Usage And Portable Configuration
 

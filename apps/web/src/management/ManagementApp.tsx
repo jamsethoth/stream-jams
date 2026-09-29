@@ -23,12 +23,15 @@ import { SettingsPanel } from "./settings/SettingsPanel.js";
 import { ScreenEffectEditor } from "./screen-effects/ScreenEffectEditor.js";
 import { ScreenEffectsPage } from "./screen-effects/ScreenEffectsPage.js";
 import { defaultScreenEffectsApi, type ScreenEffectsApi } from "./screen-effects/screen-effects-api.js";
+import { TimersPage } from "./timers/TimersPage.js";
+import { defaultTimersApi, type TimersApi } from "./timers/timers-api.js";
 
 export interface ManagementAppProps {
   readonly audioApi?: AudioApi;
   readonly assetApi: AssetApi;
   readonly managementApi?: ManagementApi | undefined;
   readonly screenEffectsApi?: ScreenEffectsApi | undefined;
+  readonly timersApi?: TimersApi | undefined;
 }
 
 interface ResolvedManagementAppProps {
@@ -36,6 +39,7 @@ interface ResolvedManagementAppProps {
   readonly assetApi: AssetApi;
   readonly managementApi: ManagementApi;
   readonly screenEffectsApi: ScreenEffectsApi;
+  readonly timersApi: TimersApi;
 }
 
 export function ManagementApp(props: ManagementAppProps) {
@@ -47,12 +51,13 @@ export function ManagementApp(props: ManagementAppProps) {
         audioApi={props.audioApi ?? defaultAudioApi}
         managementApi={resolvedManagementApi}
         screenEffectsApi={props.screenEffectsApi ?? defaultScreenEffectsApi}
+        timersApi={props.timersApi ?? defaultTimersApi}
       />
     </DirtyNavigationProvider>
   );
 }
 
-function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffectsApi }: ResolvedManagementAppProps) {
+function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffectsApi, timersApi }: ResolvedManagementAppProps) {
   const navigation = useManagementNavigation();
   const definition = getManagementRouteDefinition(navigation.route);
 
@@ -115,7 +120,7 @@ function ManagementAppContent({ assetApi, audioApi, managementApi, screenEffects
           aria-label={`${definition.title} content`}
           className={isFocusedEditor(navigation.route) ? "management-route-content management-route-content--focused" : "management-route-content"}
         >
-          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} screenEffectsApi={screenEffectsApi} />
+          <RouteContent assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} onNavigate={navigation.requestNavigation} route={navigation.route} screenEffectsApi={screenEffectsApi} timersApi={timersApi} />
         </section>
       </main>
       {navigation.guard}
@@ -129,7 +134,8 @@ function RouteContent({
   managementApi,
   onNavigate,
   route,
-  screenEffectsApi
+  screenEffectsApi,
+  timersApi
 }: ResolvedManagementAppProps & { readonly onNavigate: (route: ManagementRoute) => void; readonly route: ManagementRoute }) {
   switch (route.id) {
     case "home":
@@ -142,6 +148,8 @@ function RouteContent({
       return <AlertSetsPage initialSetId={route.setId} managementApi={managementApi} onEditAlert={(alert) => onNavigate({ id: "alert-editor", alertId: alert.id, setId: alert.setId, eventType: alert.eventType, targetProfileId: alert.targetProfileIds[0] ?? "landscape" })} />;
     case "modules-screen-effects":
       return <ScreenEffectsPage api={screenEffectsApi} initialSetId={route.setId} onEdit={(effectId, create, setId, variantId) => onNavigate({ id: "screen-effect-editor", effectId, ...(setId === undefined ? {} : { setId }), ...(variantId === undefined ? {} : { variantId }), ...(create ? { create: true as const } : {}) })} />;
+    case "modules-timers":
+      return <TimersPage api={timersApi} assetApi={assetApi} audioApi={audioApi} managementApi={managementApi} />;
     case "alert-safety":
       return <AlertSafetyPage managementApi={managementApi} />;
     case "alert-editor":

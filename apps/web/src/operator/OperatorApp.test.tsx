@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ManagementHttpError } from "../management/management-http-client.js";
 import { OperatorApp } from "./OperatorApp.js";
 import { PlaybackOperationsConflictError, type PlaybackApi } from "./playback-api.js";
+import type { OperatorTimersApi } from "./timers-api.js";
 
 afterEach(() => {
   cleanup();
@@ -38,6 +39,18 @@ describe("OperatorApp", () => {
     expect(screen.getByText("Cheer burst").closest("article")).toHaveTextContent("#2");
     expect(screen.getByText("Follow alert").closest("article")).toHaveTextContent("#1");
     expect(screen.queryByText("occ-alert")).not.toBeInTheDocument();
+  });
+
+  it("shows only active timers and refreshes authoritative state after timer controls", async () => {
+    const user = userEvent.setup();
+    const running = { status: "running", definitionId: "mitts", generation: "g1", startedAtEpochMs: Date.now(), endsAtEpochMs: Date.now() + 60_000,
+      snapshot: { id: "mitts", label: "Wear oven mitts", durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
+        outputs: { browserSource: true, deviceRouteIds: [] } } } as const;
+    const timersApi: OperatorTimersApi = { listStates: vi.fn().mockResolvedValueOnce([running]).mockResolvedValueOnce([]), command: vi.fn(async () => ({ changed: true, state: null })) };
+    render(<OperatorApp api={api()} timersApi={timersApi} />);
+    expect(await screen.findByRole("heading", { name: "Active timers (1)" })).toBeVisible(); expect(screen.getByText("Wear oven mitts")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Stop" }));
+    expect(timersApi.command).toHaveBeenCalledWith("mitts", "stop"); expect(await screen.findByRole("heading", { name: "Active timers (0)" })).toBeVisible();
   });
 
   it("sends module-qualified skip, remove and replay commands", async () => {

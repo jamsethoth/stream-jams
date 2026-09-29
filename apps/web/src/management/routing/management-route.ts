@@ -4,6 +4,7 @@ export type ManagementRouteId =
   | "tts-providers"
   | "modules-alerts"
   | "modules-screen-effects"
+  | "modules-timers"
   | "alert-safety"
   | "alert-editor"
   | "screen-effect-editor"
@@ -68,6 +69,14 @@ const routeDefinitions: Record<ManagementRouteId, ManagementRouteDefinition> = {
     "Author trusted local visual and audio effects without merging them into Alerts.",
     ["Modules", "Screen Effects"]
   ),
+  "modules-timers": route(
+    "modules-timers",
+    "Timers",
+    "/manage/modules/timers",
+    "Timers",
+    "Create reusable timers, control active runs, and configure timer overlays.",
+    ["Modules", "Timers"]
+  ),
   "alert-safety": route(
     "alert-safety",
     "Safety",
@@ -118,6 +127,7 @@ routeDefinitions["modules-alerts"] = {
       childRoutes: []
     },
     routeDefinitions["modules-screen-effects"],
+    routeDefinitions["modules-timers"],
     routeDefinitions["alert-safety"]
   ]
 };
