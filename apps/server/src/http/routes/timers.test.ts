@@ -24,6 +24,9 @@ describe("timer management routes", () => {
     expect((await app.inject({ method: "GET", url: "/timers", headers: { authorization: "Bearer tmr_valid-generated-token_123456789012" } })).statusCode).toBe(401);
     expect((await app.inject({ method: "GET", url: "/timers", headers })).json()).toEqual([definition]);
     expect((await app.inject({ method: "GET", url: "/timers/state", headers })).json()).toEqual([running]);
+    expect((await app.inject({ method: "GET", url: "/timers/browser-sources", headers })).json()).toEqual([
+      expect.objectContaining({ moduleId: "timers", targetProfileId: "landscape", connectionState: "connected" })
+    ]);
     expect((await app.inject({ method: "GET", url: "/timers/cat-paws", headers })).json()).toEqual(definition);
 
     const input = { label: "Oven mitts", durationMs: 60_000, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: false, deviceRouteIds: [] } };
@@ -76,6 +79,14 @@ async function fixture() {
     createOrRotate: vi.fn(() => ({ configured: true, createdAt: "2026-09-29T01:00:00.000Z", rotatedAt: null, token: "tmr_returned-once_12345678901234567890" })),
     revoke: vi.fn()
   };
+  const browserSources = {
+    listTimerBrowserSources: vi.fn(async () => [{
+      id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default",
+      scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "key-1",
+      url: "http://127.0.0.1/overlay/modules/timers/live/secret?profile=landscape", copyableUrlStatus: "available",
+      connectionState: "connected", lastConnectedAt: "2026-09-29T01:05:00.000Z"
+    } as const])
+  };
   const sessions = new LocalManagementSessionService({ generateId: () => "mgmt-timers", sessionTtlMs: 60_000 });
   const session = await sessions.createSession();
   const app = createServerApp({
@@ -83,8 +94,9 @@ async function fixture() {
     timerManagementService: definitions,
     timerRuntimeCoordinator: runtime,
     timerAutomationCredentialService: credentials,
+    outputReadinessService: browserSources,
     managementAuthPreHandler: createTestManagementSecurity(sessions),
     managementRateLimitPreHandler: createLocalManagementRateLimitPreHandler({ limiter: new LocalManagementRateLimiter({ maxRequests: 100, windowMs: 60_000 }) })
   });
-  return { app, headers: managementTestHeaders(session, "POST"), definitions, runtime, credentials };
+  return { app, headers: managementTestHeaders(session, "POST"), definitions, runtime, credentials, browserSources };
 }

@@ -14,6 +14,14 @@ describe("createHttpTimersApi", () => {
       if (init?.method !== undefined) expect(headers.get("x-stream-jams-csrf")).toBe("csrf");
       if (url === "/timers" && init?.method === undefined) return json([definition]);
       if (url === "/timers/state") return json([]);
+      if (url === "/timers/browser-sources") return json([
+        {
+          id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default",
+          scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "key-1",
+          url: "http://127.0.0.1/overlay/modules/timers/live/secret?profile=landscape", copyableUrlStatus: "available",
+          connectionState: "connected", lastConnectedAt: "2026-09-29T01:05:00.000Z"
+        }
+      ]);
       if (url === "/overlay-modules/timers/config") return json({ moduleId: "timers", enabled: true,
         config: timersOverlayModuleDefinition.defaultConfig, updatedAt: definition.updatedAt });
       if (url === "/timers/automation-credential" && init?.method === undefined) return json({ configured: false, createdAt: null, rotatedAt: null });
@@ -27,6 +35,9 @@ describe("createHttpTimersApi", () => {
     const input = { label: definition.label, durationMs: definition.durationMs, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null, outputs: definition.outputs };
     await expect(api.create(input)).resolves.toEqual(definition); await expect(api.update("mitts/id", input)).resolves.toEqual(definition);
     await expect(api.command("mitts", "restart")).resolves.toEqual({ changed: true, state: null });
+    await expect(api.listBrowserSources()).resolves.toEqual([
+      expect.objectContaining({ moduleId: "timers", targetProfileId: "landscape", status: "available" })
+    ]);
     await expect(api.getModuleConfig()).resolves.toMatchObject({ moduleId: "timers", enabled: true });
     await expect(api.rotateAutomationCredential()).resolves.toMatchObject({ configured: true, token: expect.stringMatching(/^tmr_/) });
     await expect(api.revokeAutomationCredential()).resolves.toBeUndefined(); await expect(api.remove("mitts")).resolves.toBeUndefined();

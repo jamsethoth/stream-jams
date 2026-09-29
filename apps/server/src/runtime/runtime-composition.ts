@@ -1371,6 +1371,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     timerManagementService,
     timerRuntimeCoordinator,
     timerAutomationCredentialService,
+    outputReadinessService,
     timerAutomationAuthPreHandler,
     effectSets: effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({

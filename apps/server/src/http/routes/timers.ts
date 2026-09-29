@@ -7,6 +7,7 @@ import {
 } from "../../modules/timers/timer-management-service.js";
 import type { TimerRuntimeCoordinator } from "../../modules/timers/timer-runtime-coordinator.js";
 import type { TimerAutomationCredentialService } from "../../modules/timers/timer-automation-credential-service.js";
+import type { OutputReadinessService } from "../../modules/overlays/output-readiness-service.js";
 import { TimerDefinitionReferenceError } from "../../modules/timers/sqlite-timer-definition-repository.js";
 import { sendHttpError } from "../errors.js";
 
@@ -17,6 +18,7 @@ export interface TimerRouteDependencies {
     "listStates" | "start" | "pause" | "resume" | "stop" | "restart">;
   readonly timerAutomationCredentialService: Pick<TimerAutomationCredentialService,
     "status" | "createOrRotate" | "revoke">;
+  readonly outputReadinessService: Pick<OutputReadinessService, "listTimerBrowserSources">;
   readonly managementAuthPreHandler: preHandlerHookHandler;
   readonly managementRateLimitPreHandler: preHandlerHookHandler;
 }
@@ -27,6 +29,8 @@ export function registerTimerRoutes(app: FastifyInstance, dependencies: TimerRou
   const preHandler = [dependencies.managementRateLimitPreHandler, dependencies.managementAuthPreHandler];
   app.get("/timers", { preHandler }, async () => dependencies.timerManagementService.listDefinitions());
   app.get("/timers/state", { preHandler }, async () => dependencies.timerRuntimeCoordinator.listStates());
+  app.get("/timers/browser-sources", { preHandler }, async (request) =>
+    dependencies.outputReadinessService.listTimerBrowserSources(`http://${request.headers.host ?? "127.0.0.1"}`));
   app.get("/timers/automation-credential", { preHandler }, async () => dependencies.timerAutomationCredentialService.status());
   app.post("/timers/automation-credential/rotate", { preHandler }, async (request, reply) => {
     try {

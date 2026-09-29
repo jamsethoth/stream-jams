@@ -1,5 +1,5 @@
 import { timersOverlayModuleDefinition, type TimerDefinition, type TimerRunState } from "@stream-jams/core";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { AudioApi } from "../audio/audio-api.js";
@@ -24,8 +24,19 @@ function harness(state: TimerRunState | null = null) {
     saveModuleConfig: vi.fn(async (enabled, config) => ({ moduleId: "timers", enabled, config, updatedAt: definition.updatedAt })),
     getAutomationCredential: vi.fn(async () => ({ configured: false, createdAt: null, rotatedAt: null })),
     rotateAutomationCredential: vi.fn(async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"x".repeat(32)}` })),
-    revokeAutomationCredential: vi.fn(async () => {})
-  };
+    revokeAutomationCredential: vi.fn(async () => {}),
+    listBrowserSources: vi.fn(async () => [
+      { id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live" as const, overlayId: "default", scope: "module" as const,
+        moduleId: "timers" as const, targetProfileId: "landscape" as const, enabled: true, keyId: "key-landscape",
+        url: "http://127.0.0.1/overlay/modules/timers/live/secret?profile=landscape", status: "available" as const,
+        connectionState: "connected" as const, lastConnectedAt: "2026-09-29T01:05:00.000Z" },
+      { id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live" as const, overlayId: "default", scope: "module" as const,
+        moduleId: "timers" as const, targetProfileId: "vertical" as const, enabled: true, keyId: null, url: null, status: "create-required" as const,
+        connectionState: "never-connected" as const, lastConnectedAt: null }
+    ]),
+    createBrowserSource: vi.fn(async (source: unknown) => source),
+    regenerateBrowserSource: vi.fn(async (source: unknown) => source)
+  } as unknown as TimersApi;
   const audioApi = { getStatus: vi.fn(async () => ({ capability: { available: true, devices: [], reason: null, nextStep: null }, muted: false,
     routes: [{ route: { id: "speakers", name: "Speakers", deviceId: "device", deviceLabel: "Speakers", autoFollowDeviceName: false }, state: "ready", automaticBindingState: "not-needed" }] })) } as unknown as AudioApi;
   return { api, audioApi };
@@ -34,19 +45,44 @@ function renderPage(state: TimerRunState | null = null) {
   const values = harness(state); render(<TimersPage api={values.api} assetApi={{} as AssetApi} audioApi={values.audioApi} managementApi={{} as AssetLibraryManagementApi} />); return values;
 }
 
-it("loads reusable definitions, creates a timer, and exposes explicit audio destinations", async () => {
+it("keeps the timer editor closed until New timer opens the creation dialog", async () => {
   const user = userEvent.setup(); const { api } = renderPage();
   expect(await screen.findByRole("button", { name: /Wear oven mitts/ })).toBeInTheDocument();
-  expect(screen.getByLabelText("Browser Source")).toBeChecked(); expect(screen.getByLabelText("Speakers")).not.toBeChecked();
-  await user.click(screen.getByRole("button", { name: "New timer" })); await user.type(screen.getByLabelText("Name"), "Cat paws");
-  await user.clear(screen.getByLabelText("Duration (seconds)")); await user.type(screen.getByLabelText("Duration (seconds)"), "30");
-  await user.click(screen.getByRole("button", { name: "Create timer" }));
+  expect(screen.queryByRole("dialog", { name: "Create timer" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "New timer" }));
+  const dialog = screen.getByRole("dialog", { name: "Create timer" });
+  expect(within(dialog).getByLabelText("Browser Source")).toBeChecked();
+  expect(within(dialog).getByLabelText("Speakers")).not.toBeChecked();
+  await user.type(within(dialog).getByLabelText("Name"), "Cat paws");
+  await user.clear(within(dialog).getByLabelText("Duration (seconds)")); await user.type(within(dialog).getByLabelText("Duration (seconds)"), "30");
+  await user.click(within(dialog).getByRole("button", { name: "Create timer" }));
   await waitFor(() => expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ label: "Cat paws", durationMs: 30_000 })));
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Create timer" })).not.toBeInTheDocument());
+});
+
+it("presents profile-aware browser source setup in a collapsed output band", async () => {
+  const user = userEvent.setup(); const { api } = renderPage();
+  const sources = await screen.findByRole("region", { name: "Browser sources" });
+  expect(within(sources).getByText("1 ready")).toBeInTheDocument();
+  expect(within(sources).getByText("1 needs setup")).toBeInTheDocument();
+  expect(within(sources).queryByRole("article", { name: "Landscape browser source" })).not.toBeInTheDocument();
+  await user.click(within(sources).getByRole("button", { name: "Expand browser sources" }));
+  expect(within(sources).getByRole("article", { name: "Landscape browser source" })).toBeInTheDocument();
+  expect(within(sources).getByRole("article", { name: "Vertical browser source" })).toBeInTheDocument();
+  expect(within(sources).getByText("Listening now")).toBeInTheDocument();
+  await user.click(within(sources).getByRole("button", { name: "Create Vertical URL" }));
+  await waitFor(() => expect(api.createBrowserSource).toHaveBeenCalledWith(expect.objectContaining({ targetProfileId: "vertical" })));
+  await user.click(within(sources).getByRole("button", { name: "Regenerate Landscape URL" }));
+  const confirmation = screen.getByRole("dialog", { name: "Regenerate Landscape URL?" });
+  await user.click(within(confirmation).getByRole("button", { name: "Regenerate URL" }));
+  await waitFor(() => expect(api.regenerateBrowserSource).toHaveBeenCalledWith(expect.objectContaining({ targetProfileId: "landscape" })));
 });
 
 it("discloses active snapshots, applies state-aware controls, and blocks active deletion", async () => {
   const running: TimerRunState = { status: "running", definitionId: definition.id, generation: "g1", snapshot: definition, startedAtEpochMs: 1000, endsAtEpochMs: 61_000 };
   const user = userEvent.setup(); const { api } = renderPage(running);
+  await user.click(await screen.findByRole("button", { name: /Wear oven mitts/ }));
   expect(await screen.findByText(/Saved edits apply next time/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Pause" })); await waitFor(() => expect(api.command).toHaveBeenCalledWith("mitts", "pause"));

@@ -40,6 +40,10 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
     const path = new URL(request.url()).pathname;
     if (path === "/timers/automation-credential") return route.fulfill({ json: { configured: false, createdAt: null, rotatedAt: null } });
     if (path === "/timers/state") return route.fulfill({ json: state === null ? [] : [state] });
+    if (path === "/timers/browser-sources") return route.fulfill({ json: [
+      { id: "module:timers:landscape:live", label: "Timers Landscape Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "landscape", enabled: true, keyId: "key-landscape", url: "http://127.0.0.1/overlay/modules/timers/live/key?profile=landscape", copyableUrlStatus: "available", connectionState: "connected", lastConnectedAt: timestamp },
+      { id: "module:timers:vertical:live", label: "Timers Vertical Live", purpose: "live", overlayId: "default", scope: "module", moduleId: "timers", targetProfileId: "vertical", enabled: true, keyId: null, url: null, copyableUrlStatus: "create-required", connectionState: "never-connected", lastConnectedAt: null }
+    ] });
     if (path === "/timers") {
       if (request.method() === "GET") return route.fulfill({ json: definition === null ? [] : [definition] });
       const input = request.postDataJSON() as Record<string, unknown>;
@@ -71,7 +75,15 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   });
 
   await page.goto("/manage/modules/timers");
-  await expect(page.getByText("No timers yet. Create one for a recurring stream activity.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "No timers yet" })).toBeVisible();
+  await expect(page.getByText("Create one for a recurring stream activity.")).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);
+  const browserSources = page.getByRole("region", { name: "Browser sources" });
+  await expect(browserSources.getByText("1 ready")).toBeVisible();
+  await browserSources.getByRole("button", { name: "Expand browser sources" }).click();
+  await expect(browserSources.getByRole("article", { name: "Landscape browser source" })).toContainText("Listening now");
+  await page.getByRole("button", { name: "New timer" }).click();
+  const editor = page.getByRole("dialog", { name: "Create timer" });
   await page.getByLabel("Name", { exact: true }).fill("Cat paws reward");
   await page.getByLabel("Duration (seconds)").fill("30");
   const assetRows = page.locator(".timer-asset-row");
@@ -80,10 +92,11 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
     await page.getByRole("button", { name: new RegExp(`^${name},`) }).click();
     await page.getByRole("button", { name: "Use selected asset" }).click();
   }
-  await page.getByLabel("Browser Source").check();
-  await page.getByLabel("Speakers").check();
-  await page.getByRole("button", { name: "Create timer" }).click();
-  await expect(page.getByRole("heading", { name: "Edit Cat paws reward" })).toBeVisible();
+  await editor.getByRole("checkbox", { name: "Browser Source" }).check();
+  await editor.getByRole("checkbox", { name: "Speakers" }).check();
+  await editor.getByRole("button", { name: "Create timer" }).click();
+  await expect(page.getByRole("dialog", { name: "Create timer" })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: "Cat paws reward timer" })).toBeVisible();
   expect(definition).toMatchObject({
     label: "Cat paws reward", durationMs: 30_000, iconAssetId: "icon-paws",
     startAudioAssetId: "audio-start", endAudioAssetId: "audio-end",
@@ -100,16 +113,19 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   expect(layout.profiles.vertical).toMatchObject({ maxVisible: 2 });
 
   await page.getByRole("button", { name: "Start", exact: true }).first().click();
+  await page.getByRole("button", { name: /Cat paws reward/u }).first().click();
   await page.getByRole("button", { name: "Pause" }).click();
   await page.getByRole("button", { name: "Resume" }).click();
   await page.getByRole("button", { name: "Restart" }).click();
   await page.getByRole("button", { name: "Stop" }).click();
   expect(commands).toEqual(["start", "pause", "resume", "restart", "stop"]);
   await page.reload();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: /Cat paws reward/u }).first().click();
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Cat paws reward");
   await page.getByLabel("Name", { exact: true }).fill("Cat paws mitts");
   await page.getByRole("button", { name: "Save timer" }).click();
-  await expect(page.getByRole("heading", { name: "Edit Cat paws mitts" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Cat paws mitts timer" })).toBeVisible();
 });
 
 test("renders late-joined Timer stacks in authoritative order with overflow and reconnect updates", async ({ page }) => {
