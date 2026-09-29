@@ -14,15 +14,15 @@
 
 ## 3. Server-Authoritative Timer Runtime
 
-- [ ] 3.1 Add fake-clock/fake-scheduler tests for independent concurrent definitions and the full idle/running/paused/completed lifecycle, including idempotent commands and explicit restart.
-- [ ] 3.2 Implement `TimerRuntimeCoordinator` with injected clock/scheduler, immutable admitted definition snapshots, generation guards, bounded long-delay scheduling, and three-second completion hold.
-- [ ] 3.3 Test and implement runtime subscription/snapshot APIs so management, Operator, late browser clients, and desktop recipients observe the same state without per-second server broadcasts.
-- [ ] 3.4 Prove shutdown cancels coordinator timers/cue work and a fresh runtime restores definitions but no running, paused, or completed generations.
+- [x] 3.1 Add fake-clock/fake-scheduler tests for independent concurrent definitions and the full idle/running/paused/completed lifecycle, including idempotent commands and explicit restart.
+- [x] 3.2 Implement `TimerRuntimeCoordinator` with injected clock/scheduler, immutable admitted definition snapshots, generation guards, bounded long-delay scheduling, and three-second completion hold.
+- [x] 3.3 Test and implement runtime subscription/snapshot APIs so management, Operator, late browser clients, and desktop recipients observe the same state without per-second server broadcasts.
+- [x] 3.4 Prove shutdown cancels coordinator timers/cue work and a fresh runtime restores definitions but no running, paused, or completed generations.
 
 ## 4. Cue Admission And Explicit Audio Routing
 
-- [ ] 4.1 Add failing tests for start/restart/end cue admission, no cue on pause/resume/stop/idempotent start, physical-route deduplication, and independent recipient failures.
-- [ ] 4.2 Integrate timer cues with normalized Browser Source and named-device audio routing before visual-profile expansion, preserving generation-scoped cancellation and existing mute/unavailable-device behavior.
+- [x] 4.1 Add failing tests for start/restart/end cue admission, no cue on pause/resume/stop/idempotent start, physical-route deduplication, and independent recipient failures.
+- [x] 4.2 Integrate timer cues with normalized Browser Source and named-device audio routing before visual-profile expansion, preserving generation-scoped cancellation and existing mute/unavailable-device behavior.
 - [ ] 4.3 Extend audio-route usage/impact transactions and tests so timer references block deletion, rebind safely, and keep active-run binding snapshots while future runs use saved changes.
 
 ## 5. Management And Automation HTTP Boundaries

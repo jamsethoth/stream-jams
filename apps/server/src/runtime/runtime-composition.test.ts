@@ -389,7 +389,8 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
       displayId: "replacement-monitor",
       layers: [
         { moduleId: "alerts", visible: false },
-        { moduleId: "screen-effects", visible: false }
+        { moduleId: "screen-effects", visible: false },
+        { moduleId: "timers", visible: false }
       ]
     });
     expect(transport.prepare).not.toHaveBeenCalled();
@@ -399,6 +400,41 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
     await rm(testRoot, { recursive: true, force: true });
   }
   expect(transport.close).toHaveBeenCalledTimes(2);
+});
+
+it("restores timer definitions but not active timer runs after a runtime restart", async () => {
+  const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-timer-runtime-"));
+  let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
+  const options = {
+    homeDirectory: testRoot,
+    webBuildDirectory: await createWebBuildFixture(testRoot),
+    configStore: new StaticConfigStore(createConfig(testRoot)),
+    environment: {},
+    secretStore: new TestSecretStore(),
+    scheduleRecurring: () => ({ scheduled: true }),
+    cancelRecurring: () => {}
+  };
+  try {
+    composition = await createRuntimeAppComposition(options);
+    const saved = composition.timerManagementService.createDefinition({
+      label: "Cat paws",
+      durationMs: 300_000,
+      iconAssetId: null,
+      startAudioAssetId: null,
+      endAudioAssetId: null,
+      outputs: { browserSource: false, deviceRouteIds: [] }
+    });
+    await composition.timerRuntimeCoordinator.start(saved.id);
+    expect(composition.timerRuntimeCoordinator.getState(saved.id)?.status).toBe("running");
+
+    await composition.close();
+    composition = await createRuntimeAppComposition(options);
+    expect(composition.timerManagementService.getDefinition(saved.id)).toMatchObject({ label: "Cat paws", durationMs: 300_000 });
+    expect(composition.timerRuntimeCoordinator.listStates()).toEqual([]);
+  } finally {
+    await composition?.close();
+    await rm(testRoot, { recursive: true, force: true });
+  }
 });
 
 it("applies persisted mute before wiring the desktop transport for device playback", async () => {
