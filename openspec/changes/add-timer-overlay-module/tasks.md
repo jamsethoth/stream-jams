@@ -7,10 +7,10 @@
 
 ## 2. Durable Definitions And Module Configuration
 
-- [ ] 2.1 Add the next additive SQLite migration for timer definitions and timer automation verifier metadata, including foreign-key/index/check constraints and migration-from-prior-schema coverage.
-- [ ] 2.2 Add repository contract tests and implement a typed SQLite timer-definition repository that round-trips stable IDs, assets, outputs, timestamps, and explicit transactions.
-- [ ] 2.3 Extend module config defaults and persistence tests for Landscape and Vertical timer stack regions, orientation, and visible capacity, including rejection of unknown/out-of-bounds fields.
-- [ ] 2.4 Add a timer management service with atomic asset/media compatibility and named-route validation, active-delete rejection, definition snapshotting, and positive/negative/failure tests.
+- [x] 2.1 Add the next additive SQLite migration for timer definitions and timer automation verifier metadata, including foreign-key/index/check constraints and migration-from-prior-schema coverage.
+- [x] 2.2 Add repository contract tests and implement a typed SQLite timer-definition repository that round-trips stable IDs, assets, outputs, timestamps, and explicit transactions.
+- [x] 2.3 Extend module config defaults and persistence tests for Landscape and Vertical timer stack regions, orientation, and visible capacity, including rejection of unknown/out-of-bounds fields.
+- [x] 2.4 Add a timer management service with atomic asset/media compatibility and named-route validation, active-delete rejection, definition snapshotting, and positive/negative/failure tests.
 
 ## 3. Server-Authoritative Timer Runtime
 

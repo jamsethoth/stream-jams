@@ -190,10 +190,12 @@ export {
 
 export type * from "./overlay-modules/types.js";
 export type * from "./timers/types.js";
+export type * from "./timers/repository.js";
 export {
   overlayModulePresentationSchema,
   timerCommandResultSchema,
   timerDefinitionSchema,
+  timerDefinitionInputSchema,
   timerDefinitionSnapshotSchema,
   timerOverlayCardSchema,
   timerProfileDimensions,

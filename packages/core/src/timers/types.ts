@@ -16,6 +16,8 @@ export interface TimerDefinition extends TimerDefinitionSnapshot {
   readonly updatedAt: string;
 }
 
+export type TimerDefinitionInput = Omit<TimerDefinitionSnapshot, "id">;
+
 export type TimerRunState =
   | {
       readonly status: "running";

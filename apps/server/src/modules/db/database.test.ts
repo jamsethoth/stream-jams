@@ -36,7 +36,8 @@ const expectedMigrations = [
   "024-asset-duration-metadata",
   "025-remove-screen-effect-animations",
   "026-automatic-output-rebinding",
-  "027-remove-alert-set-profile-state"
+  "027-remove-alert-set-profile-state",
+  "028-timer-overlay-module"
 ] as const;
 
 const expectedTables = [
@@ -67,10 +68,35 @@ const expectedTables = [
   "screen_effect_sets",
   "screen_effect_variants",
   "screen_effects",
+  "timer_audio_routes",
+  "timer_automation_credential",
+  "timer_definitions",
   "twitch_accounts"
 ];
 
 describe("Stream Jams SQLite database", () => {
+  it("adds constrained timer definitions, routes, and hash-only automation metadata after schema 27", () => {
+    using database = createInMemoryStreamJamsDatabase();
+    const db = database.connection;
+
+    expect(db.prepare("PRAGMA table_info(timer_definitions)").all().map(column => String(column.name))).toEqual([
+      "id", "label", "duration_ms", "icon_asset_id", "start_audio_asset_id", "end_audio_asset_id",
+      "browser_source", "created_at", "updated_at"
+    ]);
+    expect(db.prepare("PRAGMA table_info(timer_automation_credential)").all().map(column => String(column.name))).toEqual([
+      "singleton_id", "verifier", "created_at", "rotated_at", "revoked_at"
+    ]);
+    expect(() => db.prepare(`INSERT INTO timer_definitions
+      (id, label, duration_ms, browser_source, created_at, updated_at)
+      VALUES ('invalid', 'Invalid', 0, 0, '2026-09-28T00:00:00.000Z', '2026-09-28T00:00:00.000Z')`).run())
+      .toThrow(/check constraint/i);
+    expect(() => db.prepare(`INSERT INTO timer_automation_credential
+      (singleton_id, verifier, created_at) VALUES (2, 'sha256:not-raw', '2026-09-28T00:00:00.000Z')`).run())
+      .toThrow(/check constraint/i);
+    expect(() => db.prepare(`INSERT INTO timer_audio_routes (timer_id, route_id, position)
+      VALUES ('missing-timer', 'missing-route', 0)`).run()).toThrow(/foreign key/i);
+  });
+
   it("removes redundant set profile state without rewriting alert documents", () => {
     const connection = new DatabaseSync(":memory:", { enableForeignKeyConstraints: true });
     try {
@@ -122,10 +148,12 @@ describe("Stream Jams SQLite database", () => {
   it("removes stored Screen Effect animations when upgrading schema 24", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
+    db.exec("DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?, ?)").run(
       "025-remove-screen-effect-animations",
       "026-automatic-output-rebinding",
-      "027-remove-alert-set-profile-state"
+      "027-remove-alert-set-profile-state",
+      "028-timer-overlay-module"
     );
     db.exec("ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name");
     db.prepare(`
@@ -259,9 +287,11 @@ describe("Stream Jams SQLite database", () => {
   it("defaults existing audio routes to automatic following disabled when migrating schema 25", () => {
     using database = createInMemoryStreamJamsDatabase();
     const db = database.connection;
-    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?)").run(
+    db.exec("DROP TABLE timer_audio_routes; DROP TABLE timer_definitions; DROP TABLE timer_automation_credential;");
+    db.prepare("DELETE FROM schema_migrations WHERE id IN (?, ?, ?)").run(
       "026-automatic-output-rebinding",
-      "027-remove-alert-set-profile-state"
+      "027-remove-alert-set-profile-state",
+      "028-timer-overlay-module"
     );
     db.exec("ALTER TABLE audio_output_routes DROP COLUMN auto_follow_device_name");
     db.prepare("INSERT INTO audio_output_routes (id, name, device_id, device_label) VALUES (?, ?, ?, ?)")
@@ -547,6 +577,9 @@ describe("Stream Jams SQLite database", () => {
       DROP TABLE screen_effect_variants;
       DROP TABLE screen_effects;
       DROP TABLE module_playback_settings;
+      DROP TABLE timer_audio_routes;
+      DROP TABLE timer_definitions;
+      DROP TABLE timer_automation_credential;
       ALTER TABLE asset_metadata DROP COLUMN duration_ms;
       DROP TABLE alert_moderation_settings;
       DROP TABLE audio_output_routes;
@@ -561,7 +594,8 @@ describe("Stream Jams SQLite database", () => {
         '024-asset-duration-metadata',
         '025-remove-screen-effect-animations',
         '026-automatic-output-rebinding',
-        '027-remove-alert-set-profile-state'
+        '027-remove-alert-set-profile-state',
+        '028-timer-overlay-module'
       );
     `);
 

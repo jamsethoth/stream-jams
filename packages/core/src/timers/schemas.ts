@@ -12,6 +12,7 @@ import type {
   OverlayModulePresentation,
   TimerCommandResult,
   TimerDefinition,
+  TimerDefinitionInput,
   TimerDefinitionSnapshot,
   TimerOverlayCard,
   TimerRunState,
@@ -38,6 +39,9 @@ export const timerDefinitionSchema = timerDefinitionSnapshotSchema.extend({
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema
 }).strict() satisfies z.ZodType<TimerDefinition>;
+
+export const timerDefinitionInputSchema = timerDefinitionSnapshotSchema.omit({ id: true })
+  .strict() satisfies z.ZodType<TimerDefinitionInput>;
 
 const runIdentityFields = {
   definitionId: timerIdSchema,
