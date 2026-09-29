@@ -167,6 +167,10 @@
   padding: 10px 12px;
 }
 
+.timer-row > .management-status-badge {
+  align-self: center;
+}
+
 .timer-row__identity {
   align-items: flex-start;
   background: transparent;

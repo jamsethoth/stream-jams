@@ -23,7 +23,7 @@ afterEach(() => {
 describe("TimerStackEditor", () => {
   it("fills the available preview width while preserving the output profile scale", () => {
     vi.stubGlobal("ResizeObserver", PreviewResizeObserver);
-    render(<TimerStackEditor value={structuredClone(timersOverlayModuleDefinition.defaultConfig)} onChange={() => {}} />);
+    render(<TimerStackEditor assetApi={{ getAssetFile: vi.fn(async () => new Blob()) }} value={structuredClone(timersOverlayModuleDefinition.defaultConfig)} onChange={() => {}} />);
 
     const preview = screen.getByLabelText("landscape timer preview");
     act(() => resizeCallback?.([{ contentRect: { width: 900 } } as ResizeObserverEntry], {} as ResizeObserver));
@@ -32,7 +32,10 @@ describe("TimerStackEditor", () => {
     expect(preview.firstElementChild).toHaveStyle({ transform: "scale(0.46875)" });
   });
 
-  it("prioritizes saved timers, then fills the preview with default-clock examples and a long label", () => {
+  it("loads saved timer icons through the authenticated asset API, then uses clocks only for examples", async () => {
+    const getAssetFile = vi.fn(async () => new Blob(["saved-icon"], { type: "image/png" }));
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:saved-icon"), revokeObjectURL });
     const saved: TimerDefinition = {
       id: "saved-mitts",
       label: "Saved oven mitt timer",
@@ -45,14 +48,17 @@ describe("TimerStackEditor", () => {
       updatedAt: "2026-09-29T00:00:00.000Z"
     };
     const definitionProps = { definitions: [saved] };
-    render(<TimerStackEditor {...definitionProps} value={structuredClone(timersOverlayModuleDefinition.defaultConfig)} onChange={() => {}} />);
+    const view = render(<TimerStackEditor assetApi={{ getAssetFile }} {...definitionProps} value={structuredClone(timersOverlayModuleDefinition.defaultConfig)} onChange={() => {}} />);
 
     const cards = screen.getAllByRole("listitem");
     expect(cards[0]).toHaveTextContent("Saved oven mitt timer");
-    expect(screen.getByRole("img", { name: "Saved oven mitt timer icon" })).toHaveAttribute("src", "/assets/saved-icon/file");
+    expect(await screen.findByRole("img", { name: "Saved oven mitt timer icon" })).toHaveAttribute("src", "blob:saved-icon");
+    expect(getAssetFile).toHaveBeenCalledWith("saved-icon");
     expect(cards.some(card => card.textContent?.includes("Timer 1"))).toBe(true);
     expect(cards.some(card => card.textContent?.includes("deliberately long"))).toBe(true);
     expect(screen.getAllByRole("img", { name: "Default timer icon" })).toHaveLength(cards.length - 1);
     expect(screen.getByText("+2 more")).toBeVisible();
+    view.unmount();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:saved-icon");
   });
 });

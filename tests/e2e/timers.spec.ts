@@ -147,9 +147,18 @@ test("authors, lays out, reloads, and controls a reusable Timer", async ({ page 
   await editor.getByRole("checkbox", { name: "Speakers" }).check();
   await editor.getByRole("button", { name: "Create timer" }).click();
   await expect(page.getByRole("dialog", { name: "Create timer" })).toHaveCount(0);
-  await expect(page.getByRole("article", { name: "Cat paws reward timer" })).toBeVisible();
+  const timerRow = page.getByRole("article", { name: "Cat paws reward timer" });
+  await expect(timerRow).toBeVisible();
+  const rowAlignment = await Promise.all([
+    timerRow.getByText("Idle", { exact: true }).evaluate(element => element.getBoundingClientRect()),
+    timerRow.getByRole("button", { name: "Edit" }).evaluate(element => element.getBoundingClientRect())
+  ]);
+  expect(Math.abs((rowAlignment[0].top + rowAlignment[0].height / 2) - (rowAlignment[1].top + rowAlignment[1].height / 2))).toBeLessThanOrEqual(1);
   await expect(timerPreview.getByRole("listitem").first()).toContainText("Cat paws reward");
-  await expect(timerPreview.getByRole("img", { name: "Cat paws reward icon" })).toBeVisible();
+  const savedTimerIcon = timerPreview.getByRole("img", { name: "Cat paws reward icon" });
+  await expect(savedTimerIcon).toBeVisible();
+  await expect(savedTimerIcon).toHaveAttribute("src", /^blob:/u);
+  await expect.poll(() => savedTimerIcon.evaluate(element => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
   expect(definition).toMatchObject({
     label: "Cat paws reward", durationMs: 30_000, iconAssetId: "icon-paws",
     startAudioAssetId: "audio-start", endAudioAssetId: "audio-end",

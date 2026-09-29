@@ -4,7 +4,7 @@ import "../overlay.css";
 
 export interface TimerStackProps {
   readonly stack: TimerStackProjection;
-  readonly resolveAssetUrl: (assetId: string) => string;
+  readonly resolveAssetUrl: (assetId: string) => string | null;
   readonly now?: () => number;
 }
 
@@ -68,7 +68,7 @@ function TimerCard({
 }: {
   readonly card: TimerOverlayCard;
   readonly nowEpochMs: number;
-  readonly resolveAssetUrl: (assetId: string) => string;
+  readonly resolveAssetUrl: (assetId: string) => string | null;
 }) {
   const remainingMs = card.status === "running"
     ? Math.max(0, card.endsAtEpochMs - nowEpochMs)
@@ -134,16 +134,18 @@ function TimerIcon({
 }: {
   readonly assetId: string;
   readonly label: string;
-  readonly resolveAssetUrl: (assetId: string) => string;
+  readonly resolveAssetUrl: (assetId: string) => string | null;
 }) {
   const [failed, setFailed] = useState(false);
-  if (failed) return null;
+  const src = resolveAssetUrl(assetId);
+  useEffect(() => setFailed(false), [assetId, src]);
+  if (failed || src === null) return null;
   return (
     <img
       alt={`${label} icon`}
       className="timer-stack__icon"
       onError={() => setFailed(true)}
-      src={resolveAssetUrl(assetId)}
+      src={src}
     />
   );
 }

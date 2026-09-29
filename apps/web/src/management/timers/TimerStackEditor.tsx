@@ -1,14 +1,18 @@
 import { projectTimerStack, timerProfileDimensions, type OverlayTargetProfileId, type TimerDefinition, type TimerRunState, type TimersOverlayModuleConfig } from "@stream-jams/core";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { TimerStack } from "../../overlay/components/TimerStack.js";
+import type { AssetApi } from "../assets/asset-api.js";
 
-export function TimerStackEditor({ definitions, value, onChange }: {
+export function TimerStackEditor({ assetApi, definitions, value, onChange }: {
+  readonly assetApi: Pick<AssetApi, "getAssetFile">;
   readonly definitions?: readonly TimerDefinition[];
   readonly value: TimersOverlayModuleConfig;
   readonly onChange: (value: TimersOverlayModuleConfig) => void;
 }) {
   const [profile, setProfile] = useState<OverlayTargetProfileId>("landscape");
   const [availableWidth, setAvailableWidth] = useState(840);
+  const previewAssetUrls = usePreviewAssetUrls(assetApi, definitions ?? []);
+  const resolvePreviewAssetUrl = useCallback((assetId: string) => previewAssetUrls.get(assetId) ?? null, [previewAssetUrls]);
   const previewShell = useRef<HTMLDivElement>(null);
   const region = value.profiles[profile]; const bounds = timerProfileDimensions[profile];
   const previewScale = Math.min(1, availableWidth / bounds.width, 620 / bounds.height);
@@ -108,6 +112,32 @@ function sampleRuns(definitions: readonly TimerDefinition[], maxVisible: number)
   }));
 }
 
-function resolvePreviewAssetUrl(assetId: string): string {
-  return `/assets/${encodeURIComponent(assetId)}/file`;
+function usePreviewAssetUrls(assetApi: Pick<AssetApi, "getAssetFile">, definitions: readonly TimerDefinition[]): ReadonlyMap<string, string> {
+  const assetIdsKey = [...new Set(definitions.flatMap(definition => definition.iconAssetId === null ? [] : [definition.iconAssetId]))].sort().join("\u0000");
+  const [urls, setUrls] = useState<ReadonlyMap<string, string>>(new Map());
+  useEffect(() => {
+    let active = true;
+    const created: string[] = [];
+    const assetIds = assetIdsKey === "" ? [] : assetIdsKey.split("\u0000");
+    setUrls(new Map());
+    void Promise.all(assetIds.map(async assetId => {
+      try {
+        const blob = await assetApi.getAssetFile(assetId);
+        if (!active) return null;
+        const url = URL.createObjectURL(blob);
+        created.push(url);
+        return [assetId, url] as const;
+      } catch (error) {
+        if (active) console.error(`[timer-preview-icon-${assetId}] Timer preview icon failed`, error);
+        return null;
+      }
+    })).then(entries => {
+      if (active) setUrls(new Map(entries.filter(entry => entry !== null)));
+    });
+    return () => {
+      active = false;
+      created.forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [assetApi, assetIdsKey]);
+  return urls;
 }

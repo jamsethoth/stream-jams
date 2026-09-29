@@ -68,19 +68,19 @@ test("packaged desktop keeps Timer generations synchronized and quits with a lon
       label, durationMs, iconAssetId: null, startAudioAssetId: null, endAudioAssetId: null,
       outputs: { browserSource: false, deviceRouteIds: [] }
     });
-    const [longTimer, shortTimer] = await Promise.all([define("Long mitts timer", 120_000), define("Short reward timer", 1_000)]);
+    const [longTimer, shortTimer] = await Promise.all([define("Long mitts timer", 120_000), define("Short reward timer", 3_000)]);
     await api(`/timers/${longTimer.id}/start`, "POST");
     await api(`/timers/${shortTimer.id}/start`, "POST");
+    const running = await api<readonly TimerRunState[]>("/timers/state");
+    expect(running.filter(state => state.status === "running")).toHaveLength(2);
     const overlay = await windowByUrl(desktop, overlayUrl);
     await expect(overlay.getByText("Long mitts timer", { exact: true })).toBeVisible();
     await expect(overlay.getByText("Short reward timer", { exact: true })).toBeVisible();
-    const running = await api<readonly TimerRunState[]>("/timers/state");
-    expect(running.filter(state => state.status === "running")).toHaveLength(2);
 
     await api(`/timers/${longTimer.id}/pause`, "POST");
     await expect(overlay.getByRole("listitem", { name: /Long mitts timer, paused/u })).toBeVisible();
-    await expect(overlay.getByTestId(`timer-value-${shortTimer.id}`)).toHaveText("0:00", { timeout: 2_000 });
-    await expect(overlay.getByText("Short reward timer", { exact: true })).toHaveCount(0, { timeout: 4_500 });
+    await expect(overlay.getByTestId(`timer-value-${shortTimer.id}`)).toHaveText("0:00", { timeout: 4_000 });
+    await expect(overlay.getByText("Short reward timer", { exact: true })).toHaveCount(0, { timeout: 6_500 });
     await api(`/timers/${longTimer.id}/resume`, "POST");
     const restarted = await api<{ state: TimerRunState }>(`/timers/${longTimer.id}/restart`, "POST");
     expect(restarted.state.status).toBe("running");

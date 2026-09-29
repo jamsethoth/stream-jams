@@ -7,10 +7,11 @@ import type { AssetLibraryManagementApi } from "../assets/asset-library-utils.js
 import { TimersPage } from "./TimersPage.js";
 import type { TimersApi } from "./timers-api.js";
 
-const definition: TimerDefinition = { id: "mitts", label: "Wear oven mitts for the cat paws reward", durationMs: 60_000, iconAssetId: null,
+const definition: TimerDefinition = { id: "mitts", label: "Wear oven mitts for the cat paws reward", durationMs: 60_000, iconAssetId: "story-paws",
   startAudioAssetId: null, endAudioAssetId: null, outputs: { browserSource: true, deviceRouteIds: [] },
   createdAt: "2026-09-29T00:00:00.000Z", updatedAt: "2026-09-29T00:00:00.000Z" };
 const audioApi = { getStatus: async () => ({ capability: { available: true, devices: [], reason: null, nextStep: null }, muted: false, routes: [] }) } as unknown as AudioApi;
+const assetApi = { getAssetFile: async () => new Blob(["<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6'/></svg>"], { type: "image/svg+xml" }) } as unknown as AssetApi;
 const buildApi = (states: readonly TimerRunState[]): TimersApi => ({
   list: async () => [definition], listStates: async () => states, create: async input => ({ ...definition, ...input }), update: async (_id, input) => ({ ...definition, ...input }),
   listBrowserSources: async () => [
@@ -25,7 +26,7 @@ const buildApi = (states: readonly TimerRunState[]): TimersApi => ({
   rotateAutomationCredential: async () => ({ configured: true, createdAt: definition.createdAt, rotatedAt: null, token: `tmr_${"placeholder".repeat(4)}` }), revokeAutomationCredential: async () => {}
 });
 const meta = { title: "Management/Timers", component: TimersPage, parameters: { layout: "fullscreen" }, args: {
-  assetApi: {} as AssetApi, audioApi, managementApi: {} as AssetLibraryManagementApi, api: buildApi([])
+  assetApi, audioApi, managementApi: {} as AssetLibraryManagementApi, api: buildApi([])
 } } satisfies Meta<typeof TimersPage>;
 export default meta; type Story = StoryObj<typeof meta>;
 export const IdleInventory: Story = { play: async ({ canvasElement }) => {
@@ -33,7 +34,12 @@ export const IdleInventory: Story = { play: async ({ canvasElement }) => {
   await canvas.findByRole("button", { name: /Wear oven mitts/u });
   const preview = canvas.getByLabelText("landscape timer preview");
   await expect(within(preview).getByText(definition.label)).toBeVisible();
+  await expect(await within(preview).findByRole("img", { name: `${definition.label} icon` })).toBeVisible();
   await expect(within(preview).getAllByRole("img", { name: "Default timer icon" }).length).toBeGreaterThan(0);
+  const timerRow = canvas.getByRole("article", { name: `${definition.label} timer` });
+  const idleBounds = within(timerRow).getByText("Idle", { exact: true }).getBoundingClientRect();
+  const editBounds = within(timerRow).getByRole("button", { name: "Edit" }).getBoundingClientRect();
+  await expect(Math.abs((idleBounds.top + idleBounds.height / 2) - (editBounds.top + editBounds.height / 2))).toBeLessThanOrEqual(1);
   await expect(canvas.queryByRole("dialog", { name: "Create timer" })).not.toBeInTheDocument();
   const browserSources = canvas.getByRole("region", { name: "Browser sources" });
   await expect(within(browserSources).getByRole("button", { name: "Expand browser sources" })).toHaveAttribute("aria-expanded", "false");

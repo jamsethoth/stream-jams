@@ -304,6 +304,11 @@ test("switches the single live set and navigates collapsible variants without lo
   await page.getByRole("button", { name: "Confirm change" }).click();
   await expect(gaming).toContainText("Live set");
   await expect(gaming.getByRole("button", { name: "Delete set" })).toBeDisabled();
+  const actionAlignment = await Promise.all([
+    gaming.getByText("Live set", { exact: true }).evaluate(element => element.getBoundingClientRect()),
+    gaming.getByRole("button", { name: "Rename set" }).evaluate(element => element.getBoundingClientRect())
+  ]);
+  expect(Math.abs((actionAlignment[0].top + actionAlignment[0].height / 2) - (actionAlignment[1].top + actionAlignment[1].height / 2))).toBeLessThanOrEqual(1);
   expect(sets.filter((set) => set.active).map((set) => set.name)).toEqual(["Gaming"]);
   await page.reload();
   const original = page.getByRole("region", { name: "Default Screen Effect set" });
