@@ -27,10 +27,10 @@
 
 ## 5. Management And Automation HTTP Boundaries
 
-- [ ] 5.1 Add protected management CRUD/config/control routes for timer definitions, stack settings, runtime state, and credential lifecycle with session, CSRF, origin, rate-limit, and structured-error tests.
-- [ ] 5.2 Add credential-service tests and implement create/rotate/revoke with one active protected verifier, raw bearer returned only on create/rotate, constant-time verification, and complete redaction.
-- [ ] 5.3 Add automation route tests for loopback-only bearer access, browser-Origin rejection, management/overlay credential separation, dedicated rate limits, allowlisted discovery responses, and malformed/unknown requests.
-- [ ] 5.4 Implement `GET /automation/timers` and POST start/pause/resume/stop/restart endpoints with exact approved paths, retry-safe `changed` responses, and rejection of authoring/duration override fields.
+- [x] 5.1 Add protected management CRUD/config/control routes for timer definitions, stack settings, runtime state, and credential lifecycle with session, CSRF, origin, rate-limit, and structured-error tests.
+- [x] 5.2 Add credential-service tests and implement create/rotate/revoke with one active protected verifier, raw bearer returned only on create/rotate, constant-time verification, and complete redaction.
+- [x] 5.3 Add automation route tests for loopback-only bearer access, browser-Origin rejection, management/overlay credential separation, dedicated rate limits, allowlisted discovery responses, and malformed/unknown requests.
+- [x] 5.4 Implement `GET /automation/timers` and POST start/pause/resume/stop/restart endpoints with exact approved paths, retry-safe `changed` responses, and rejection of authoring/duration override fields.
 
 ## 6. Overlay Composition And Rendering
 

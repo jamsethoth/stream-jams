@@ -2,6 +2,7 @@ import type { Redactor } from "@stream-jams/core";
 
 const defaultReplacement = "[REDACTED]";
 const overlayKeyPattern = /ovl_[A-Za-z0-9_-]+/g;
+const timerAutomationTokenPattern = /tmr_[A-Za-z0-9_-]+/g;
 const authorizationValuePattern = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
 const standaloneApiKeyPattern = /\bsk-[A-Za-z0-9_-]+\b/g;
 const authorizationAssignmentPattern = /\b(authorization)\s*([:=])\s*(?!(?:Bearer|Basic)\b)[^\s,;&]+/gi;
@@ -71,13 +72,13 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
   }
 
   function redactText(value: string): string {
-    return redactOverlayKeys(
+    return redactTimerAutomationTokens(redactOverlayKeys(
       redactUrls(normalizeControlCharacters(value).replace(authorizationValuePattern, (_match, scheme: string) => `${scheme} ${replacement}`).replace(
         standaloneApiKeyPattern,
         replacement
       )
         .replace(authorizationAssignmentPattern, (_match, name: string, separator: string) => `${name}${separator}${replacement}`)
-        .replace(credentialAssignmentPattern, (_match, name: string) => `${name}=${replacement}`))
+        .replace(credentialAssignmentPattern, (_match, name: string) => `${name}=${replacement}`)))
     );
   }
 
@@ -115,6 +116,10 @@ export function createRedactor(options: RedactorOptions = {}): Redactor {
 
   function redactOverlayKeys(value: string): string {
     return value.replace(overlayKeyPattern, replacement);
+  }
+
+  function redactTimerAutomationTokens(value: string): string {
+    return value.replace(timerAutomationTokenPattern, replacement);
   }
 }
 

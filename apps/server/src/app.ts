@@ -49,6 +49,8 @@ import {
 } from "./http/routes/screen-effects.js";
 import { registerWebShellRoutes, type WebShellRouteDependencies } from "./http/routes/web-shell.js";
 import { createRedactor } from "./modules/security/redactor.js";
+import { registerTimerRoutes, type TimerRouteDependencies } from "./http/routes/timers.js";
+import { registerTimerAutomationRoutes, type TimerAutomationRouteDependencies } from "./http/routes/timer-automation.js";
 
 export interface ServerErrorLogEntry {
   readonly errorId: string;
@@ -90,6 +92,8 @@ export type ProductionServerAppDependencies = BaseServerAppOptions
   & TwitchRewardCatalogRouteDependencies
   & StreamerBotSubscriptionRouteDependencies
   & ScreenEffectRouteDependencies
+  & TimerRouteDependencies
+  & TimerAutomationRouteDependencies
   & WebShellRouteDependencies;
 
 export function createBaseServerApp(options: BaseServerAppOptions): FastifyInstance {
@@ -120,6 +124,8 @@ export function createServerApp(dependencies: ProductionServerAppDependencies): 
   registerPlaybackRoutes(app, dependencies);
   registerPlaybackOperationsRoutes(app, dependencies);
   registerScreenEffectRoutes(app, dependencies);
+  registerTimerRoutes(app, dependencies);
+  registerTimerAutomationRoutes(app, dependencies);
   registerTtsRoutes(app, dependencies);
   registerTwitchAuthRoutes(app, dependencies);
   registerTwitchEventSubRoutes(app, dependencies);

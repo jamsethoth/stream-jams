@@ -25,6 +25,7 @@ import { registerTwitchAuthRoutes } from "../twitch-auth.js";
 import { registerTwitchEventSubRoutes } from "../twitch-eventsub.js";
 import { registerTwitchRewardCatalogRoutes } from "../twitch-reward-catalog.js";
 import { registerWebShellRoutes } from "../web-shell.js";
+import { registerTimerRoutes } from "../timers.js";
 import type { WebShellRouteDependencies } from "../web-shell.js";
 
 type RouteRegistrar<TDependencies> = (
@@ -86,6 +87,7 @@ export const createTtsRouteTestApp = createRouteTestApp(registerTtsRoutes);
 export const createTwitchAuthRouteTestApp = createRouteTestApp(registerTwitchAuthRoutes);
 export const createTwitchEventSubRouteTestApp = createRouteTestApp(registerTwitchEventSubRoutes);
 export const createTwitchRewardCatalogRouteTestApp = createRouteTestApp(registerTwitchRewardCatalogRoutes);
+export const createTimerRouteTestApp = createRouteTestApp(registerTimerRoutes);
 export const createWebShellRouteTestApp = createRouteTestApp(registerWebShellRoutes);
 export const createWebShellAssetRouteTestApp = createRouteTestApp(registerWebShellRoutes, registerAssetRoutes);
 export function createWebShellOverlayRouteTestApp(

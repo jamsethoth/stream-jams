@@ -167,6 +167,8 @@ import { SqliteTimerDefinitionRepository } from "../modules/timers/sqlite-timer-
 import { TimerManagementService } from "../modules/timers/timer-management-service.js";
 import { TimerRuntimeCoordinator } from "../modules/timers/timer-runtime-coordinator.js";
 import { TimerCueService } from "../modules/timers/timer-cue-service.js";
+import { TimerAutomationCredentialService } from "../modules/timers/timer-automation-credential-service.js";
+import { createTimerAutomationSecurityPreHandler } from "../http/middleware/timer-automation-security.js";
 
 export interface RuntimeAppCompositionOptions {
   readonly audioDeviceHost?: AudioDeviceHost;
@@ -537,6 +539,15 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     repository: timerDefinitionRepository,
     activity: timerRuntimeCoordinator,
     now
+  });
+  const timerAutomationCredentialService = new TimerAutomationCredentialService({
+    connection: database.connection,
+    now
+  });
+  const timerAutomationAuthPreHandler = createTimerAutomationSecurityPreHandler({
+    credentials: timerAutomationCredentialService,
+    limiter: new LocalManagementRateLimiter({ maxRequests: 120, windowMs: 60_000 }),
+    logger: runtimeLogger
   });
   if (audioDeviceHost !== undefined) {
     try {
@@ -1316,6 +1327,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     legacyPlaybackOperationsService: playbackOperationsService,
     playbackOperationsService,
     effectManagementService,
+    timerManagementService,
+    timerRuntimeCoordinator,
+    timerAutomationCredentialService,
+    timerAutomationAuthPreHandler,
     effectSets: effectManagementService,
     managementAuthPreHandler: createManagementSecurityPreHandler({
       sessionService: managementSessionService,
