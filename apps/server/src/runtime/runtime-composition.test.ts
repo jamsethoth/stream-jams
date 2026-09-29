@@ -361,7 +361,7 @@ it.each([false, true])("configures desktop visuals without playback, preserving 
   const testRoot = await mkdtemp(join(tmpdir(), "stream-jams-desktop-visual-runtime-"));
   let composition: Awaited<ReturnType<typeof createRuntimeAppComposition>> | undefined;
   const transport: DesktopOverlayTransport = {
-    configure: vi.fn(async () => { if (fails) throw new Error("desktop unavailable"); }), prepare: vi.fn(async () => "ready" as const),
+    configure: vi.fn(async () => { if (fails) throw new Error("desktop unavailable"); }), syncModule: vi.fn(async () => {}), prepare: vi.fn(async () => "ready" as const),
     start: vi.fn(async () => {}), stop: vi.fn(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {}),
     getStatus: vi.fn(async () => ({
       available: true as const,

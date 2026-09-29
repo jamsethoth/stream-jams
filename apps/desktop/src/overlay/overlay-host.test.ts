@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { DesktopVisualBatch, DesktopVisualReply } from "@stream-jams/core";
+import type { DesktopModuleSync, DesktopVisualBatch, DesktopVisualReply } from "@stream-jams/core";
 import { OverlayHost, type OverlayRendererCallbacks } from "./overlay-host.js";
 import type { OverlayRendererRequest } from "./overlay-ipc.js";
 import { enumerateDesktopDisplays } from "./overlay-window.js";
@@ -13,6 +13,10 @@ const config = { id: "desktop:primary", kind: "desktop", enabled: true, displayI
 function batch(id = "one"): DesktopVisualBatch {
   return { key: { surfaceId: "desktop:primary", moduleId: id, occurrenceId: id, generation: 1 }, timing: { startsAtEpochMs: 0, endsAtEpochMs: 1000 }, instructions: [], assets: [] };
 }
+const moduleSync = (revision: number, presentation: DesktopModuleSync["presentation"] = { kind: "timer-stack", stack: {
+  targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 }, orientation: "vertical", maxVisible: 1 },
+  cards: [], overflowCount: 0
+} }): DesktopModuleSync => ({ moduleId: "timers", revision, presentation, assets: [] });
 function harness(load = async () => {}, missing = false) {
   const ports: { callbacks: OverlayRendererCallbacks; sent: OverlayRendererRequest[]; destroy: ReturnType<typeof vi.fn>; auto: boolean }[] = [];
   const host = new OverlayHost((_config, callbacks) => {
@@ -47,6 +51,17 @@ it("requires explicit configuration and completes start only for its matching ke
   await vi.advanceTimersByTimeAsync(0); expect(done).not.toHaveBeenCalled();
   reply(ports[0]!, request, { type: "complete", key: batch().key });
   await playing; expect(done).toHaveBeenCalledOnce(); await host.close();
+});
+it("syncs persistent timer modules and replays only the latest snapshot after renderer recovery", async () => {
+  const { host, ports } = harness(); await host.configure({ ...config, layers: [{ moduleId: "timers", visible: true }] });
+  await host.syncModule(moduleSync(1)); await host.syncModule(moduleSync(2));
+  expect(ports[0]!.sent.map(request => request.command.type)).toEqual(["configure", "sync-module", "sync-module"]);
+  ports[0]!.callbacks.onDestroyed(); await host.retry();
+  expect(ports[1]!.sent.map(request => request.command.type)).toEqual(["configure", "sync-module"]);
+  expect(ports[1]!.sent.at(-1)!.command).toMatchObject({ type: "sync-module", revision: 2 });
+  await host.syncModule(moduleSync(3, null)); await host.retry();
+  expect(ports[2]!.sent.map(request => request.command.type)).toEqual(["configure"]);
+  await host.close();
 });
 it("settles loading immediately on cancellation and ignores a late load", async () => {
   let loaded!: () => void;

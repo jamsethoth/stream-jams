@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desktopOverlayStatusSchema, desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopOverlayDiagnostic, type DesktopOverlayStatus, type SelectedDesktopDisplay, type DesktopOverlayTransport, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopOverlayStatusSchema, desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopModuleSync, type DesktopOverlayDiagnostic, type DesktopOverlayStatus, type SelectedDesktopDisplay, type DesktopOverlayTransport, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 import { overlayRendererReplySchema, type OverlayRendererRequest } from "./overlay-ipc.js";
 import type { DesktopDiagnosticInput } from "../desktop-diagnostics.js";
 
@@ -26,6 +26,7 @@ export class OverlayHost implements DesktopOverlayTransport {
   #pending = new Map<string, Pending>();
   #occurrences = new Map<string, Occurrence>();
   #stops = new Map<string, Promise<void>>();
+  #moduleSyncs = new Map<string, DesktopModuleSync>();
   #bytes = 0;
 
   constructor(
@@ -70,6 +71,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     this.#owned = false;
     clearInterval(this.#leaseTimer);
     this.#discard(false);
+    this.#moduleSyncs.clear();
   }
   async handle(candidate: DesktopVisualCommand): Promise<DesktopVisualReply> {
     const command = desktopVisualCommandSchema.parse(candidate);
@@ -80,6 +82,7 @@ export class OverlayHost implements DesktopOverlayTransport {
         const key = command.batch.key;
         return this.prepare(command.batch).then(result => ({ type: result === "ready" ? "ready" : "error", key }));
       }
+      case "sync-module": return this.syncModule(command).then(ok);
       case "start": return this.start(command.key).then(() => ({ type: "complete", key: command.key }));
       case "stop": return this.stop(command.key).then(ok);
       case "retry": return this.retry().then(ok);
@@ -91,11 +94,25 @@ export class OverlayHost implements DesktopOverlayTransport {
     if (command.type !== "configure" || command.config.kind !== "desktop") throw unavailable();
     const previous = this.#config;
     this.#config = command.config;
-    if (!this.#config.enabled || this.#config.displayId !== previous.displayId) { this.#discard(false); return; }
+    if (!this.#config.enabled || this.#config.displayId !== previous.displayId) { this.#discard(false); this.#moduleSyncs.clear(); return; }
     if (this.#port !== null) {
       await this.#ensure();
       await this.#request({ type: "configure", config: this.#config }, 2000);
     }
+  }
+  async syncModule(candidate: DesktopModuleSync): Promise<void> {
+    const command = desktopVisualCommandSchema.parse({ type: "sync-module", ...candidate });
+    if (command.type !== "sync-module") throw unavailable();
+    if (command.presentation === null) {
+      this.#moduleSyncs.delete(command.moduleId);
+      if (this.#loaded) await this.#request(command, 5000);
+      return;
+    }
+    if (!this.#owned || !this.#config.enabled || this.#config.displayId === null) throw unavailable();
+    await this.#ensure();
+    await this.#request(command, 5000);
+    const current = this.#moduleSyncs.get(command.moduleId);
+    if (current === undefined || command.revision > current.revision) this.#moduleSyncs.set(command.moduleId, command);
   }
   async prepare(candidate: DesktopVisualBatch): Promise<"ready" | "unavailable"> {
     const command = desktopVisualCommandSchema.parse({ type: "prepare", batch: candidate });
@@ -203,6 +220,7 @@ export class OverlayHost implements DesktopOverlayTransport {
         if (generation !== this.#generation || port !== this.#port) throw unavailable();
         this.#loaded = true;
         await this.#request({ type: "configure", config: this.#config }, 2000);
+        for (const sync of this.#moduleSyncs.values()) await this.#request({ type: "sync-module", ...sync }, 5000);
       } catch (error) {
         if (generation === this.#generation) this.#discard(true, {
           kind: loadTimedOut ? "renderer-load-timeout" : "renderer-load-failed",

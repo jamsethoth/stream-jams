@@ -95,3 +95,22 @@ it("reads sequentially and stops after a failed asset without reading later file
   readBounded.mockClear(); readBounded.mockRejectedValueOnce(new Error("read failed"));
   await expect(resolver.resolve(batch)).rejects.toThrow(); expect(readBounded).toHaveBeenCalledTimes(1);
 });
+
+it("resolves timer icons while omitting unavailable icons from the normalized presentation", async () => {
+  const { resolver, records, findManyByIds } = harness();
+  const presentation = { kind: "timer-stack", stack: {
+    targetProfileId: "landscape", region: { layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }, orientation: "vertical", maxVisible: 2 },
+    cards: [
+      { definitionId: "one", generation: "g1", label: "One", iconAssetId: "asset", status: "paused", remainingMs: 5000,
+        slot: { x: 0, y: 0, width: 320, height: 90, zIndex: 1 } },
+      { definitionId: "two", generation: "g2", label: "Two", iconAssetId: "missing", status: "paused", remainingMs: 6000,
+        slot: { x: 0, y: 90, width: 320, height: 90, zIndex: 1 } }
+    ], overflowCount: 0
+  } } as const;
+  records.delete("missing");
+  const result = await resolver.resolveTimerModule(presentation);
+  expect(findManyByIds).toHaveBeenCalledWith(["asset", "missing"]);
+  expect(result.assets.map(asset => asset.assetId)).toEqual(["asset"]);
+  expect(result.missingAssetIds).toEqual(["missing"]);
+  expect(result.presentation.stack.cards.map(card => card.iconAssetId)).toEqual(["asset", null]);
+});

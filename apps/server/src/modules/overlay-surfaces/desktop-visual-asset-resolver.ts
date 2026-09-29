@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { defaultAssetValidationPolicy, desktopVisualAssetSchema, desktopVisualBatchSchema, maxDesktopVisualTransferBytes, visualMediaType, type AssetRepository, type DesktopVisualBatch } from "@stream-jams/core";
+import { defaultAssetValidationPolicy, desktopModuleSyncSchema, desktopVisualAssetSchema, desktopVisualBatchSchema, maxDesktopVisualTransferBytes, overlayModulePresentationSchema, visualMediaType, type AssetRepository, type DesktopModuleSync, type DesktopVisualBatch, type OverlayModulePresentation } from "@stream-jams/core";
 export interface DesktopVisualAssetResolverDependencies {
   readonly assetRepository: Pick<AssetRepository, "findManyByIds">;
   readonly assetStore: { readBounded(storagePath: string, maxBytes: number): Promise<Uint8Array> };
@@ -49,6 +49,40 @@ export class DesktopVisualAssetResolver {
       assets.push({ assetId: record.id, mimeType: record.mimeType, bytes: new Uint8Array(bytes) });
     }
     return desktopVisualBatchSchema.parse({ ...input, assets });
+  }
+
+  async resolveTimerModule(candidate: OverlayModulePresentation): Promise<{
+    presentation: OverlayModulePresentation;
+    assets: DesktopModuleSync["assets"];
+    missingAssetIds: readonly string[];
+  }> {
+    const presentation = overlayModulePresentationSchema.parse(candidate);
+    if (presentation.stack.targetProfileId !== "landscape") throw unavailable();
+    const referenced = [...new Set(presentation.stack.cards.flatMap(card => card.iconAssetId === null ? [] : [card.iconAssetId]))];
+    if (referenced.length === 0) return { presentation, assets: [], missingAssetIds: [] };
+    const records = await this.dependencies.assetRepository.findManyByIds(referenced);
+    const assets: DesktopModuleSync["assets"][number][] = [];
+    const missing = new Set<string>();
+    let totalBytes = 0;
+    for (const assetId of referenced) {
+      const record = records.get(assetId);
+      const mime = desktopVisualAssetSchema.shape.mimeType.safeParse(record?.mimeType);
+      if (record === undefined || record.id !== assetId || record.mediaType !== "image" || !mime.success || visualMediaType(mime.data) !== "image" ||
+        !Number.isSafeInteger(record.sizeBytes) || record.sizeBytes <= 0 || record.sizeBytes > defaultAssetValidationPolicy.image.maxSizeBytes ||
+        !/^(?:sha256:)?[a-f0-9]{64}$/i.test(record.checksum) || totalBytes + record.sizeBytes > maxDesktopVisualTransferBytes) {
+        missing.add(assetId); continue;
+      }
+      try {
+        const bytes = await this.dependencies.assetStore.readBounded(record.storagePath, record.sizeBytes);
+        const checksum = record.checksum.replace(/^sha256:/i, "").toLowerCase();
+        if (bytes.byteLength !== record.sizeBytes || createHash("sha256").update(bytes).digest("hex") !== checksum) { missing.add(assetId); continue; }
+        assets.push({ assetId, mimeType: mime.data, bytes: new Uint8Array(bytes) }); totalBytes += record.sizeBytes;
+      } catch { missing.add(assetId); }
+    }
+    const normalized: OverlayModulePresentation = { ...presentation, stack: { ...presentation.stack,
+      cards: presentation.stack.cards.map(card => card.iconAssetId !== null && missing.has(card.iconAssetId) ? { ...card, iconAssetId: null } : card) } };
+    desktopModuleSyncSchema.parse({ moduleId: "timers", revision: 0, presentation: normalized, assets });
+    return { presentation: normalized, assets, missingAssetIds: [...missing] };
   }
 }
 function unavailable(): Error { return new Error("Desktop visual asset is unavailable or invalid"); }

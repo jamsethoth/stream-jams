@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { desktopVisualCommandSchema, desktopVisualReplySchema,
-  desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, overlayPlaybackFailureSchema } from "@stream-jams/core";
+  desktopVisualRendererRequestSchema, desktopVisualRendererReplySchema, overlayPlaybackFailureSchema,
+  type DesktopVisualRendererRequest } from "@stream-jams/core";
 
 export const OVERLAY_COMMAND_CHANNEL = "stream-jams:overlay-command";
 export const OVERLAY_REPLY_CHANNEL = "stream-jams:overlay-reply";
@@ -17,7 +18,7 @@ export const overlayWorkerResponseSchema = z.object({
   result: desktopVisualReplySchema.nullable(),
   failure: overlayPlaybackFailureSchema.optional()
 }).strict();
-export type OverlayRendererRequest = z.infer<typeof overlayRendererRequestSchema>;
+export type OverlayRendererRequest = DesktopVisualRendererRequest;
 export type OverlayRendererReply = z.infer<typeof overlayRendererReplySchema>;
 export type OverlayWorkerMessage = z.infer<typeof overlayWorkerMessageSchema>;
 export type OverlayWorkerResponse = z.infer<typeof overlayWorkerResponseSchema>;

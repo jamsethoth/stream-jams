@@ -34,10 +34,10 @@
 
 ## 6. Overlay Composition And Rendering
 
-- [ ] 6.1 Extend composition/WebSocket tests and runtime wiring so the registered Timers module contributes current normalized snapshots to module-specific and unified outputs and respects module/surface visual visibility independently of timer/audio state.
+- [x] 6.1 Extend composition/WebSocket tests and runtime wiring so the registered Timers module contributes current normalized snapshots to module-specific and unified outputs and respects module/surface visual visibility independently of timer/audio state.
 - [x] 6.2 Add browser overlay component tests for absolute-deadline countdowns, frozen paused values, three-second zero hold, late join, missing icon fallback, label truncation, equal boxes, both orientations, and overflow badge.
 - [x] 6.3 Implement timer rendering in the shared browser overlay using client-local display ticks derived from authoritative snapshots, with complete timer/listener cleanup and production-transparent failures.
-- [ ] 6.4 Extend desktop visual transport/controller/renderer tests and implementation so desktop output validates and renders the same timer payload, ordering, layout, and remaining time without management credentials.
+- [x] 6.4 Extend desktop visual transport/controller/renderer tests and implementation so desktop output validates and renders the same timer payload, ordering, layout, and remaining time without management credentials.
 
 ## 7. Timers Management Experience
 

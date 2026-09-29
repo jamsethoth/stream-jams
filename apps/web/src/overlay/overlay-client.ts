@@ -1,4 +1,4 @@
-import { surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
+import { overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayPlaybackFailure,
   OverlayComposition,
@@ -168,6 +168,8 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
   let reconnectDelayMs = 1_000;
   let reconnectTimer: number | null = null;
   let socket: WebSocket | null = null;
+  let initialCompositionSettled = false;
+  let pendingSocketComposition: Extract<OverlayClientMessage, { type: "composition" }> | null = null;
   const reporter = createOverlayPlaybackReporter({
     get readyState() {
       return socket?.readyState ?? WebSocket.CLOSED;
@@ -189,7 +191,8 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
     });
     nextSocket.addEventListener("message", (event) => {
       const message = parseOverlaySocketMessage(event.data);
-      if (message !== null) options.onMessage(message);
+      if (message?.type === "composition" && !initialCompositionSettled) pendingSocketComposition = message;
+      else if (message !== null) options.onMessage(message);
     });
     nextSocket.addEventListener("error", () =>
       options.onMessage({
@@ -230,18 +233,23 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
 
       return (await response.json()) as OverlayComposition;
     })
-    .then((composition) =>
+    .then((composition) => {
       options.onMessage({
         type: "composition",
         composition
-      })
-    )
+      });
+    })
     .catch((error: unknown) =>
       options.onMessage({
         type: "error",
         message: error instanceof Error ? error.message : "Overlay composition request failed"
       })
-    );
+    )
+    .finally(() => {
+      initialCompositionSettled = true;
+      if (pendingSocketComposition !== null) options.onMessage(pendingSocketComposition);
+      pendingSocketComposition = null;
+    });
 
   return {
     reporter,
@@ -282,10 +290,15 @@ function parseOverlaySocketMessage(data: unknown): OverlayClientMessage | null {
     readonly instructionIds?: unknown;
     readonly message?: unknown;
     readonly layers?: unknown;
+    readonly composition?: unknown;
   };
   if (candidate.type === "overlay.surface-layers") {
     const layers = surfaceLayersSchema.safeParse(candidate.layers);
     return layers.success ? { type: "surface-layers", layers: layers.data } : null;
+  }
+  if (candidate.type === "overlay.composition") {
+    const composition = overlayCompositionSchema.safeParse(candidate.composition);
+    return composition.success ? { type: "composition", composition: composition.data as OverlayComposition } : null;
   }
   if (candidate.type === "overlay.playback" && typeof candidate.instruction === "object" && candidate.instruction !== null) {
     return {

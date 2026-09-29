@@ -10,6 +10,18 @@ import { describe, expect, it } from "vitest";
 import { OverlayGateway, type OverlayGatewaySocket } from "./overlay-gateway.js";
 
 describe("OverlayGateway", () => {
+  it("delivers validated live compositions only to their registered output", async () => {
+    const registration = { overlayId: "default", moduleId: "timers", purpose: "live", scope: "module", targetProfileId: "landscape", rawKey: "timer-key" } as const;
+    const gateway = createGateway({ allowed: [registration] }); const socket = new RecordingSocket();
+    const result = await gateway.registerClient(socket, registration); expect(result.authorized).toBe(true);
+    const composition = { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: [
+      { moduleId: "timers", enabled: true, instructions: [] }
+    ] } as const;
+    expect(gateway.deliverComposition(result.authorized ? result.clientId : "", composition)).toBe(true);
+    expect(socket.messages.at(-1)).toEqual({ type: "overlay.composition", composition });
+    expect(gateway.deliverComposition(result.authorized ? result.clientId : "", { ...composition, overlayId: "other" })).toBe(false);
+  });
+
   it("sends saved layers only to matching unified outputs, including reconnects", async () => {
     const unified = { overlayId: "default", moduleId: null, purpose: "live", scope: "unified", rawKey: "test-unified" } as const;
     const module = { ...unified, moduleId: "alerts", scope: "module", rawKey: "test-module" } as const;

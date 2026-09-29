@@ -163,6 +163,7 @@ import { SqliteSurfaceRepository } from "../modules/overlay-surfaces/sqlite-surf
 import { DesktopVisualSink } from "../modules/overlay-surfaces/desktop-visual-sink.js";
 import { SurfaceSettingsService } from "../modules/overlay-surfaces/surface-settings-service.js";
 import { DesktopVisualAssetResolver } from "../modules/overlay-surfaces/desktop-visual-asset-resolver.js";
+import { DesktopModuleSnapshotSink } from "../modules/overlay-surfaces/desktop-module-snapshot-sink.js";
 import { SqliteTimerDefinitionRepository } from "../modules/timers/sqlite-timer-definition-repository.js";
 import { TimerManagementService } from "../modules/timers/timer-management-service.js";
 import { TimerRuntimeCoordinator } from "../modules/timers/timer-runtime-coordinator.js";
@@ -315,9 +316,9 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const managementOriginPreHandler = createManagementOriginPreHandler(managementOriginPolicy);
   const overlayModuleRegistry = createDefaultOverlayModuleRegistry();
   const surfaceRepository = new SqliteSurfaceRepository(database.connection, overlayModuleRegistry);
+  const desktopVisualAssetResolver = new DesktopVisualAssetResolver({ assetRepository, assetStore });
   const desktopVisualSink = options.desktopOverlayTransport === undefined ? undefined : new DesktopVisualSink({
-    transport: options.desktopOverlayTransport, surfaces: surfaceRepository,
-    assets: new DesktopVisualAssetResolver({ assetRepository, assetStore })
+    transport: options.desktopOverlayTransport, surfaces: surfaceRepository, assets: desktopVisualAssetResolver
   });
   if (desktopVisualSink !== undefined) cleanups.push(() => desktopVisualSink.close());
   const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
@@ -1191,6 +1192,38 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       }
     }
   });
+  const desktopModuleSnapshotSink = options.desktopOverlayTransport === undefined ? undefined : new DesktopModuleSnapshotSink({
+    transport: options.desktopOverlayTransport,
+    surfaces: surfaceRepository,
+    runtime: timerRuntimeCoordinator,
+    assets: desktopVisualAssetResolver,
+    logger: runtimeLogger,
+    generateReferenceId: generateRuntimeReferenceId
+  });
+  if (desktopModuleSnapshotSink !== undefined) cleanups.push(() => desktopModuleSnapshotSink.close());
+  const syncBrowserTimerCompositions = async () => {
+    const moduleIds = overlayModuleRegistry.listModules().map(module => module.id);
+    await Promise.all(overlayGateway.clients
+      .filter(client => client.purpose === "live" && (client.scope === "unified" || client.moduleId === "timers"))
+      .map(async client => {
+        const composition = client.scope === "module"
+          ? await overlayCompositionService.resolveModuleOutput({ moduleId: "timers", overlayId: client.overlayId, purpose: client.purpose,
+              ...(client.targetProfileId == null ? {} : { targetProfileId: client.targetProfileId }) })
+          : await overlayCompositionService.resolveUnifiedOutput({ overlayId: client.overlayId, purpose: client.purpose, enabledModuleIds: moduleIds });
+        overlayGateway.deliverComposition(client.id, composition);
+      }));
+  };
+  const syncTimerOutputs = async () => {
+    await Promise.all([syncBrowserTimerCompositions(), desktopModuleSnapshotSink?.sync()]);
+  };
+  let timerOutputSyncTail = Promise.resolve();
+  const queueTimerOutputSync = () => {
+    const pending = timerOutputSyncTail.then(syncTimerOutputs);
+    timerOutputSyncTail = pending.catch(() => undefined);
+    return pending;
+  };
+  const unsubscribeTimerOutputs = timerRuntimeCoordinator.subscribe(() => { void trackRuntimeWork(queueTimerOutputSync); });
+  cleanups.push(unsubscribeTimerOutputs);
   for (const surface of await surfaceRepository.list()) {
     if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
   }
@@ -1202,7 +1235,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       ...(options.desktopOverlayTransport.getStatus === undefined ? {} : { getStatus: () => options.desktopOverlayTransport!.getStatus!() })
     } }),
     moduleIds: () => overlayModuleRegistry.listModules().map(module => module.id),
-    changed: async surface => { if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface); },
+    changed: async surface => {
+      if (surface.kind === "unified-browser") overlayGateway.setSurfaceLayers(surface);
+      if (surface.kind === "desktop") await desktopModuleSnapshotSink?.sync();
+    },
     runMutation: work => maintenanceGate.runIntake(work),
     logger: runtimeLogger,
     generateReferenceId: generateRuntimeReferenceId
@@ -1210,6 +1246,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   if (options.desktopOverlayTransport !== undefined) {
     try {
       await surfaceSettingsService.initializeDesktop();
+      await desktopModuleSnapshotSink?.sync();
     } catch (error) {
       await runtimeLogger.error("Desktop overlay could not be reconciled or configured. Other outputs remain available.", {
         module: "overlay-surfaces", source: "desktop-overlay.configure.failed", correlationId: generateRuntimeReferenceId(), processingId: null,
@@ -1266,6 +1303,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "timers") await queueTimerOutputSync();
       return config;
     },
     async setModuleEnabled(moduleId, enabled) {
@@ -1275,6 +1313,7 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       if (config.moduleId === "screen-effects" && !config.enabled) {
         await effectPlaybackCoordinator.disable();
       }
+      if (config.moduleId === "timers") await queueTimerOutputSync();
       return config;
     }
   };

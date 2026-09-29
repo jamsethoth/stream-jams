@@ -15,6 +15,15 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("overlay-client", () => {
+  it("parses validated composition updates from the live socket", async () => {
+    const onMessage = vi.fn(); connectClient(onMessage); await vi.advanceTimersByTimeAsync(0); onMessage.mockClear();
+    const composition = { overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape",
+      modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] };
+    FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.composition", composition }));
+    FakeWebSocket.instances[0]!.emitMessage(JSON.stringify({ type: "overlay.composition", composition: { ...composition, modules: "bad" } }));
+    expect(onMessage).toHaveBeenCalledExactlyOnceWith({ type: "composition", composition });
+  });
+
   it("validates complete layer control payloads and rejects duplicate or malformed rows", () => {
     const onMessage = vi.fn();
     connectClient(onMessage);

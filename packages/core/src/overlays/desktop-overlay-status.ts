@@ -20,7 +20,7 @@ export const desktopOverlayDiagnosticSchema = z.object({
     "display-unavailable",
     "service-lease-expired"
   ]),
-  operation: z.enum(["status", "configure", "prepare", "start", "stop", "retry", "close"]).nullable(),
+  operation: z.enum(["status", "configure", "prepare", "sync-module", "start", "stop", "retry", "close"]).nullable(),
   reason: z.string().trim().min(1).max(256),
   exitCode: z.number().int().nullable(),
   occurredAt: isoDateTimeSchema,
