@@ -304,8 +304,28 @@ describe("DiagnosticsService", () => {
     expect(debugExport.debugExport).toBe(true);
     expect(debugExport.runtimeLogEntries).toHaveLength(1);
     expect(debugExport.runtimeLogTruncated).toBe(true);
+    expect(debugExport.runtimeLogSkippedCorruptRecords).toBe(0);
     expect(JSON.stringify(debugExport)).not.toContain("oauth-secret");
     expect(runtimeLogSource.recentRequests).toEqual([{ limit: 1, sinceHours: 2 }]);
+  });
+
+  it("preserves incomplete-coverage evidence in raw logs and debug exports", async () => {
+    const source = new RecordingRuntimeLogSource();
+    const warning: RuntimeLogEntry = {
+      timestamp: "2026-05-31T02:05:00.000Z", level: "WARN", component: "diagnostics",
+      event: "diagnostics.runtime-log.corrupt-records", message: "Runtime log coverage is incomplete: 3 damaged records were skipped.",
+      correlationId: "runtime-log-corrupt-records", processingId: null, exception: null,
+      details: { skippedCorruptRecords: 3, coverageIncomplete: true }
+    };
+    const service = createService(new RecordingDiagnosticsRepository(), [], {
+      getMetadata: () => source.getMetadata(),
+      listRecent: async () => ({ entries: [warning], truncated: false, skippedCorruptRecords: 3 })
+    });
+    const exported = await service.createDebugExport();
+    expect(exported.runtimeLogSkippedCorruptRecords).toBe(3);
+    expect(exported.runtimeLogTruncated).toBe(false);
+    expect(exported.runtimeLogEntries).toEqual([warning]);
+    expect((await service.getWorkspace()).rawLogs).toContainEqual(expect.objectContaining({ referenceId: "runtime-log-corrupt-records" }));
   });
 
   it("projects structured exceptions only into raw evidence and debug exports", async () => {

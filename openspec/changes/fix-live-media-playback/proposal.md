@@ -22,6 +22,7 @@ None.
 - `routed-video-audio`: bounded preparation and actionable selected-output failures.
 - `alert-audio-routing`: bounded automatic renderer recovery without rerouting or replay.
 - `shared-overlay-surfaces`: automatic desktop renderer recovery for subsequent work.
+- `runtime-log-operations`: truthful watchdog/stall outcomes, per-output timing, transport cause retention, and corrupt-record recovery.
 
 ## Impact
 

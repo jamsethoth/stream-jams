@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import "../overlay.css";
-import { prepareMediaAtStart, rgbaColorSchema, serializeException, targetProfileDefinitions, timerStackProjectionSchema, TimedMediaPreparationError } from "@stream-jams/core";
+import { monitorMediaProgress, prepareMediaAtStart, rgbaColorSchema, serializeException, targetProfileDefinitions, timerStackProjectionSchema, TimedMediaPreparationError } from "@stream-jams/core";
 import type {
+  PlaybackTimingDiagnostics,
   OverlayComposition,
   OverlayElementLayout,
   OverlayInstruction,
@@ -13,11 +14,11 @@ import { alertTextLayerStyle } from "./alert-text-style.js";
 import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
 import { TimerStack } from "./TimerStack.js";
 
-export type OverlayPlaybackEvent =
+export type OverlayPlaybackEvent = { readonly diagnostics?: PlaybackTimingDiagnostics } & (
   | { readonly instructionId: string; readonly status: "ready" }
   | { readonly instructionId: string; readonly status: "started" }
   | { readonly instructionId: string; readonly status: "completed" }
-  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure };
+  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure });
 
 export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;
@@ -177,6 +178,9 @@ function OverlayInstructionLayer({
     ? "Alert text style could not be rendered safely."
     : "Alert shape fill could not be rendered safely.";
   const completionReportedRef = useRef(false);
+  const progressRef = useRef(new Map<HTMLMediaElement, ReturnType<typeof monitorMediaProgress>>());
+  const diagnosticsRef = useRef<{ -readonly [K in keyof PlaybackTimingDiagnostics]?: PlaybackTimingDiagnostics[K] }>({});
+  const naturalEndsRef = useRef(new Set<HTMLMediaElement>());
   const imageElementRef = useRef<HTMLImageElement | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const [videoStartedAt, setVideoStartedAt] = useState<number | null>(null);
@@ -211,9 +215,13 @@ function OverlayInstructionLayer({
     }
 
     completionReportedRef.current = true;
+    for (const [media, monitor] of progressRef.current) { monitor.stop(); media.pause(); }
+    progressRef.current.clear();
+    setTimingActive(false);
     onPlaybackEvent?.({
       instructionId: instruction.id,
       status: "failed",
+      diagnostics: { ...diagnosticsRef.current, terminalOutcome: "failed", ...(stage === "stall" ? { completionReason: "stalled" } : {}) },
       failure: {
         referenceId: `err_${crypto.randomUUID()}`,
         stage,
@@ -223,8 +231,36 @@ function OverlayInstructionLayer({
     });
   }, [instruction.id, onPlaybackEvent]);
 
+  const observeMedia = useCallback((element: HTMLMediaElement) => {
+    diagnosticsRef.current.actualStartEpochMs ??= Date.now();
+    progressRef.current.get(element)?.stop();
+    naturalEndsRef.current.delete(element);
+    progressRef.current.set(element, monitorMediaProgress(element, error => reportFailure("stall", "Media stopped advancing. Check the media file and retry.", element.error ?? error)));
+  }, [reportFailure]);
+  const finishMedia = useCallback((element: HTMLMediaElement | null) => {
+    if (element === null) return true;
+    const monitor = progressRef.current.get(element);
+    if (monitor === undefined) return true;
+    const healthy = monitor.finish();
+    progressRef.current.delete(element);
+    return healthy;
+  }, []);
+  const naturalEnd = useCallback((element: HTMLMediaElement) => {
+    naturalEndsRef.current.add(element);
+    progressRef.current.get(element)?.stop();
+    progressRef.current.delete(element);
+  }, []);
+  useEffect(() => () => {
+    for (const monitor of progressRef.current.values()) monitor.stop();
+    progressRef.current.clear();
+  }, []);
+  useEffect(() => {
+    if (startsAt !== undefined) diagnosticsRef.current.scheduledStartEpochMs = startsAt;
+  }, [startsAt]);
+
   useEffect(() => {
     if (!preparing || presentationInvalid) return;
+    const preparationStartedAt = Date.now();
     const controller = new AbortController();
     const media = [videoElementRef.current, audioElementRef.current].filter((element): element is HTMLMediaElement => element !== null);
     const image = imageElementRef.current;
@@ -237,7 +273,7 @@ function OverlayInstructionLayer({
       image.addEventListener("load", loaded); image.addEventListener("error", failed); controller.signal.addEventListener("abort", aborted, { once: true });
     });
     void Promise.all([imageReady, ...media.map(element => prepareMediaAtStart(element, { signal: controller.signal, deadlineMs: Date.now() + 5000 }))])
-      .then(() => { if (!controller.signal.aborted && !completionReportedRef.current) onPlaybackEvent?.({ instructionId: instruction.id, status: "ready" }); })
+      .then(() => { if (!controller.signal.aborted && !completionReportedRef.current) { diagnosticsRef.current.preparationDurationMs = Math.min(300000, Date.now() - preparationStartedAt); onPlaybackEvent?.({ instructionId: instruction.id, status: "ready" }); } })
       .catch((error: unknown) => { if (!controller.signal.aborted) reportFailure(error instanceof TimedMediaPreparationError ? error.stage : "decode", "Media could not prepare for playback.", error); });
     return () => controller.abort();
   }, [preparing, instruction.id, presentationInvalid, onPlaybackEvent, reportFailure]);
@@ -268,15 +304,15 @@ function OverlayInstructionLayer({
     }, Math.max(0, deadline - Date.now()));
     void prepareMediaAtStart(video, { signal: preparation.signal, deadlineMs: deadline })
       .then(() => { if (!preparation.signal.aborted) return video.play(); })
-      .then(() => { if (!preparation.signal.aborted) { setVideoStartedAt(current => current ?? Date.now()); setVideoReady(true); } })
+      .then(() => { if (!preparation.signal.aborted) { observeMedia(video); setVideoStartedAt(current => current ?? Date.now()); setVideoReady(true); } })
       .catch((error: unknown) => { if (!preparation.signal.aborted) { video.pause(); reportFailure(
         error instanceof TimedMediaPreparationError ? error.stage : "play",
         "Video playback could not start from the beginning.",
         error
       ); } })
       .finally(() => window.clearTimeout(startTimer));
-    return () => { preparation.abort(); window.clearTimeout(startTimer); video.pause(); };
-  }, [startsAt, endsAt, visualVisible, timingActive, preparing, playbackActive, reportFailure]);
+    return () => { preparation.abort(); window.clearTimeout(startTimer); progressRef.current.get(video)?.stop(); progressRef.current.delete(video); video.pause(); };
+  }, [startsAt, endsAt, visualVisible, timingActive, preparing, playbackActive, reportFailure, observeMedia]);
 
   useEffect(() => {
     if (!playbackActive || !audioStarted || presentationInvalid || (hasTimedMedia && !mediaStarted)) {
@@ -285,6 +321,7 @@ function OverlayInstructionLayer({
 
     if (!startedReportedRef.current) {
       startedReportedRef.current = true;
+      diagnosticsRef.current.actualStartEpochMs ??= Date.now();
       onPlaybackEvent?.({ instructionId: instruction.id, status: "started" });
     }
     const timeoutId = window.setTimeout(() => {
@@ -292,30 +329,32 @@ function OverlayInstructionLayer({
         return;
       }
 
+      if (!finishMedia(audioElementRef.current) || !finishMedia(videoElementRef.current) || completionReportedRef.current) return;
       completionReportedRef.current = true;
       if (hasTimedMedia) setTimingActive(false);
       onPlaybackEvent?.({
         instructionId: instruction.id,
-        status: "completed"
+        status: "completed",
+        diagnostics: { ...diagnosticsRef.current, terminalOutcome: "completed", completionReason: [audioElementRef.current, videoElementRef.current].filter(element => element !== null).length > 0 && [audioElementRef.current, videoElementRef.current].every(element => element === null || naturalEndsRef.current.has(element)) ? "natural-end" : "configured-duration" }
       });
     }, completionAt === undefined ? instruction.durationMs : Math.max(0, completionAt - Date.now()));
 
     return () => window.clearTimeout(timeoutId);
-  }, [audioStarted, instruction.durationMs, instruction.id, onPlaybackEvent, presentationInvalid, endsAt, preparing, timingActive, playbackActive, hasTimedMedia, mediaStarted, completionAt]);
+  }, [audioStarted, instruction.durationMs, instruction.id, onPlaybackEvent, presentationInvalid, endsAt, preparing, timingActive, playbackActive, hasTimedMedia, mediaStarted, completionAt, finishMedia]);
 
   useEffect(() => {
     if (!hasTimedMedia || audioStartedAt === null) return;
     const element = audioElementRef.current;
-    const timer = window.setTimeout(() => element?.pause(), Math.max(0, audioStartedAt + audioDurationMs - Date.now()));
+    const timer = window.setTimeout(() => { finishMedia(element); element?.pause(); }, Math.max(0, audioStartedAt + audioDurationMs - Date.now()));
     return () => window.clearTimeout(timer);
-  }, [hasTimedMedia, audioStartedAt, audioDurationMs]);
+  }, [hasTimedMedia, audioStartedAt, audioDurationMs, finishMedia]);
 
   useEffect(() => {
     if (!hasTimedMedia || videoStartedAt === null) return;
     const element = videoElementRef.current;
-    const timer = window.setTimeout(() => { element?.pause(); setVideoEnded(true); }, Math.max(0, videoStartedAt + instruction.durationMs - Date.now()));
+    const timer = window.setTimeout(() => { finishMedia(element); element?.pause(); setVideoEnded(true); }, Math.max(0, videoStartedAt + instruction.durationMs - Date.now()));
     return () => window.clearTimeout(timer);
-  }, [hasTimedMedia, videoStartedAt, instruction.durationMs]);
+  }, [hasTimedMedia, videoStartedAt, instruction.durationMs, finishMedia]);
 
   useEffect(() => {
     if (!presentationInvalid) return;
@@ -378,6 +417,7 @@ function OverlayInstructionLayer({
       if (!active()) return;
       onTestAudioBlockedChange(instruction.id, false);
       setAudioBlocked(false);
+      observeMedia(element);
       setAudioStartedAt(current => current ?? Date.now());
       setAudioStarted(true);
     }).catch((error: unknown) => {
@@ -403,13 +443,14 @@ function OverlayInstructionLayer({
     instruction.operatorTest,
     onTestAudioBlockedChange,
     presentationInvalid,
-    reportFailure
+    reportFailure,
+    observeMedia
   ]);
 
   useEffect(() => {
     startAudio();
     const element = audioElementRef.current;
-    return () => { audioPreparationRef.current?.abort(); element?.pause(); };
+    return () => { audioPreparationRef.current?.abort(); if (element !== null) { progressRef.current.get(element)?.stop(); progressRef.current.delete(element); element.pause(); } };
   }, [startAudio]);
 
   useEffect(() => {
@@ -448,7 +489,8 @@ function OverlayInstructionLayer({
           ref={videoElementRef}
           data-testid={`overlay-video-${instruction.id}`}
           muted={preparing || instruction.moduleId === "alerts" || muted}
-          onEnded={() => { if (!visualLoop) setVideoEnded(true); }}
+          onPlay={(event) => { if (startsAt === undefined && !preparing) observeMedia(event.currentTarget); }}
+          onEnded={(event) => { if (!visualLoop) { naturalEnd(event.currentTarget); setVideoEnded(true); } }}
           onError={(event) => reportFailure("source-load", "Video playback failed", event.currentTarget.error ?? event.nativeEvent)}
           src={resolveAssetUrl(instruction.visual.assetId)}
           style={{ ...elementStyle(instruction.visual.layout, !playbackActive || !videoReady ? null : instruction.animation, instruction.durationMs, initialOffset.current), objectFit: "contain",
@@ -490,6 +532,7 @@ function OverlayInstructionLayer({
       {instruction.audio === null ? null : instruction.audio.sourceKind === "video-soundtrack" ? (
         <video
           data-testid={`overlay-audio-${instruction.id}`}
+          onEnded={(event) => naturalEnd(event.currentTarget)}
           muted={preparing || muted}
           onError={(event) => {
             onTestAudioBlockedChange(instruction.id, false);
@@ -503,6 +546,7 @@ function OverlayInstructionLayer({
       ) : (
         <audio
           data-testid={`overlay-audio-${instruction.id}`}
+          onEnded={(event) => naturalEnd(event.currentTarget)}
           muted={preparing || muted}
           onError={(event) => {
             onTestAudioBlockedChange(instruction.id, false);

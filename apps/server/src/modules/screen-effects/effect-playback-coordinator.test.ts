@@ -492,3 +492,19 @@ describe("EffectPlaybackCoordinator", () => {
     });
   });
 });
+
+it("reports outstanding recipients when the watchdog stops cleanly", async () => {
+  vi.useFakeTimers();
+  try {
+    const queue = new DefaultEffectQueue(); queue.enqueue(occurrence("timeout", "visual"));
+    const expired = vi.fn();
+    const coordinator = new EffectPlaybackCoordinator({ queue, getSafety: () => ({ paused: false, muted: false, doNotDisturb: false }),
+      overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() },
+      onWatchdogExpired: expired });
+    await coordinator.startNext();
+    await vi.advanceTimersByTimeAsync(15100);
+    expect(expired).toHaveBeenCalledWith("timeout", expect.objectContaining({ browserInstructions: 2, browserClients: 2, desktopPending: false, audioPending: false }));
+    expect(queue.snapshot().recent[0]?.status).toBe("failed");
+    await coordinator.close();
+  } finally { vi.useRealTimers(); }
+});

@@ -141,7 +141,8 @@ describe("OverlaySurface", () => {
         stage: "source-load",
         message: "Image playback failed",
         exception: expect.objectContaining({ type: expect.any(String) })
-      })
+      }),
+      diagnostics: { terminalOutcome: "failed", actualStartEpochMs: expect.any(Number) }
     });
   });
 });

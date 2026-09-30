@@ -1,10 +1,11 @@
-import { desktopVisualBatchSchema, desktopVisualInstructionSchema, overlayInstructionSchema, VisualRecipientLedger, type DesktopOverlayTransport, type DesktopVisualBatch, type OverlayInstruction, type SurfaceRepository, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopVisualBatchSchema, desktopVisualInstructionSchema, overlayInstructionSchema, playbackTimingDiagnosticsSchema, VisualRecipientLedger, type PlaybackTimingDiagnostics, type DesktopOverlayTransport, type DesktopVisualBatch, type OverlayInstruction, type SurfaceRepository, type VisualRecipientKey } from "@stream-jams/core";
 import type { DesktopVisualAssetResolver } from "./desktop-visual-asset-resolver.js";
 export interface DesktopVisualSinkDependencies {
   transport: DesktopOverlayTransport;
   surfaces: Pick<SurfaceRepository, "list">;
   assets: Pick<DesktopVisualAssetResolver, "resolve">;
   now?: () => number;
+  onPlaybackDiagnostics?: (occurrenceId: string, diagnostics: PlaybackTimingDiagnostics) => void;
 }
 type Group = { key: VisualRecipientKey; input: Omit<DesktopVisualBatch, "assets"> | null; durationMs: number; endsAt: number; timer: ReturnType<typeof setTimeout> | undefined };
 type Preparation = { ready(): void; start: Promise<number>; release(): void };
@@ -159,17 +160,22 @@ export class DesktopVisualSink {
       clearTimeout(group.timer);
       group.timer = setTimeout(() => { void this.#cancel(record); }, Math.max(0, group.endsAt + 5000 - this.#now()));
       record.starts++;
-      let completed: Promise<void>;
+      let completed: Promise<void | PlaybackTimingDiagnostics>;
       try { completed = timing === undefined ? this.dependencies.transport.start(group.key) : this.dependencies.transport.start(group.key, timing); }
       catch (error) { record.starts--; throw error; }
       // Start each ready group immediately; its completion never blocks preparing
       // the next duration group on the one serialized resolver path.
-      void completed.then(() => {
+      void completed.then(diagnostics => {
+        if (diagnostics !== undefined) this.dependencies.onPlaybackDiagnostics?.(record.id, diagnostics);
         if (!record.finished && this.#ledger.settle(group.key)) {
           clearTimeout(group.timer); group.timer = undefined;
           if (this.#ledger.pending(record.id) === 0) this.#complete(record);
         }
-      }, (error: unknown) => { void this.#cancel(record, error); }).finally(() => { record.starts--; this.#retire(record); });
+      }, (error: unknown) => {
+        const parsed = playbackTimingDiagnosticsSchema.safeParse(error instanceof Error && "diagnostics" in error ? error.diagnostics : undefined);
+        if (parsed.success) this.dependencies.onPlaybackDiagnostics?.(record.id, parsed.data);
+        void this.#cancel(record, error);
+      }).finally(() => { record.starts--; this.#retire(record); });
   }
 
   #complete(record: Playback): void {

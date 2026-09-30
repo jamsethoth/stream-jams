@@ -26,7 +26,7 @@ For development: visible diagnostics are allowed only when the route, story, or 
 Transparent does not mean silent. Before removing failed production content, the
 overlay reports one bounded `OverlayPlaybackFailure` through its authenticated
 transport. The report carries the stable failure reference, the exact playback
-stage (`source-load`, `metadata`, `seek`, `decode`, or `play`), a safe summary,
+stage (`source-load`, `metadata`, `seek`, `decode`, `play`, or `stall`), a safe summary,
 and the serialized cause. The server derives client and target-profile identity
 from the authorized connection; it does not trust route identity in the report.
 

@@ -1,3 +1,4 @@
+import type { PlaybackTimingDiagnostics } from "../diagnostics/playback-timing-diagnostics.js";
 import type { MediaAudioKind } from "./media-audio.js";
 import type { PlaybackTiming } from "../overlays/playback-timing.js";
 import type { SerializedException } from "../diagnostics/serialized-exception.js";
@@ -78,7 +79,16 @@ export interface DeviceAudioBatch {
   readonly destinations: readonly AudioDestination[];
 }
 
+export interface DeviceAudioOutputDiagnostics {
+  readonly routeIds: readonly string[];
+  readonly layerId: string;
+  readonly assetId: string;
+  readonly diagnostics: PlaybackTimingDiagnostics;
+}
+
 export interface DeviceAudioResult {
+  readonly outputDiagnostics?: readonly DeviceAudioOutputDiagnostics[] | undefined;
+  readonly diagnostics?: PlaybackTimingDiagnostics | undefined;
   readonly failedRouteIds: readonly string[];
   readonly failures?: readonly DeviceAudioFailure[] | undefined;
 }
@@ -87,7 +97,7 @@ export interface DeviceAudioFailure {
   readonly routeIds: readonly string[];
   readonly layerId: string;
   readonly assetId: string;
-  readonly stage: "source-load" | "device-bind" | "metadata" | "seek" | "decode" | "play" | "device-lost";
+  readonly stage: "source-load" | "device-bind" | "metadata" | "seek" | "decode" | "play" | "device-lost" | "stall";
   readonly exception: SerializedException;
 }
 

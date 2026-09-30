@@ -99,6 +99,7 @@ export interface DiagnosticsDebugExport extends DiagnosticsView {
   readonly rawEventLogs: readonly EventLogRecord[];
   readonly runtimeLogEntries: readonly RuntimeLogEntry[];
   readonly runtimeLogTruncated: boolean;
+  readonly runtimeLogSkippedCorruptRecords: number;
 }
 
 export class DiagnosticsService {
@@ -158,7 +159,8 @@ export class DiagnosticsService {
       ...diagnostics,
       rawEventLogs: eventLogs,
       runtimeLogEntries: runtimeLogResult.entries,
-      runtimeLogTruncated: runtimeLogResult.truncated
+      runtimeLogTruncated: runtimeLogResult.truncated,
+      runtimeLogSkippedCorruptRecords: runtimeLogResult.skippedCorruptRecords ?? 0
     });
   }
 

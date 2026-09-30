@@ -18,6 +18,14 @@ const legacyDocument = { schemaVersion: 1,
   samplePayloads: [{ id: "normal", label: "Normal", kind: "built-in", payload: { userName: "Viewer" } }]
 };
 
+it("bounds per-output timing diagnostics and rejects identifying or malformed fields", () => {
+  const output = { routeIds: ["selected"], layerId: "intro", assetId: "clip", diagnostics: { actualStartEpochMs: 100, terminalOutcome: "completed" } };
+  expect(core.deviceAudioResultSchema.safeParse({ failedRouteIds: [], outputDiagnostics: [output] }).success).toBe(true);
+  for (const outputDiagnostics of [Array.from({ length: 65 }, () => output), [{ ...output, routeIds: [] }], [{ ...output, deviceName: "private" }], [{ ...output, diagnostics: { ...output.diagnostics, actualStartEpochMs: Infinity } }]]) {
+    expect(core.deviceAudioResultSchema.safeParse({ failedRouteIds: [], outputDiagnostics }).success).toBe(false);
+  }
+});
+
 describe("alert-wide audio outputs", () => {
   it("defaults legacy documents to browser audio while retaining explicit silence", () => {
     expect(core.alertEditorDocumentSchema.parse(legacyDocument)).toMatchObject({

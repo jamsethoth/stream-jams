@@ -32,3 +32,11 @@ No storage migration or settings change. Build all packages together because the
 ## Open Questions
 
 The historical initiating causes of the nine desktop failures and missing local audio were not retained. Regressions cover demonstrated preparation defects and all identified failure-result paths; new diagnostics allow future incidents to be attributed without changing selected destinations.
+
+## Diagnostic completeness follow-up
+
+Watchdog expiry records pending recipient counts and bounded identities before cleanup mutates them; Alerts uses the existing skipped history state rather than claiming successful completion. Browser and selected-device media observe currentTime progress with a two-second sustained-stall window. Loop wrap counts as progress; normal end, configured duration, cancellation and stall remain distinct. This observer never seeks, reroutes, or changes playback speed.
+
+Terminal playback reports carry bounded preparation duration and scheduled/observed onset. Selected-device audio records each layer/destination separately (maximum 64 entries); desktop groups report the latest observed layer onset on that physical output. Unknown onset remains absent. Runtime logs retain scalar route identity and validated timings, without per-frame logging or raw device names.
+
+Transport sends retain sanitized exceptions, close events retain bounded code/reason, and reconnection is recorded; retirement deduplicates failure reports. Log reading isolates malformed JSON/record shapes, exposes skipped-record count and a synthetic coverage warning without reproducing corrupt content, and distinguishes corruption from requested-limit truncation.

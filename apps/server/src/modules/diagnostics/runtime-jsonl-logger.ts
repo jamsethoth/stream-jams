@@ -2,6 +2,7 @@ import { mkdir, readdir, readFile, appendFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import {
   serializeException,
+  serializedExceptionSchema,
   type LogContext,
   type Logger,
   type LogLevel,
@@ -38,6 +39,7 @@ export interface RuntimeLogMetadata {
 export interface RuntimeLogReadResult {
   readonly entries: readonly RuntimeLogEntry[];
   readonly truncated: boolean;
+  readonly skippedCorruptRecords?: number;
 }
 
 export interface RuntimeJsonlLoggerOptions {
@@ -127,18 +129,17 @@ export class RuntimeJsonlLogger implements Logger {
     const files = (await this.#listLogFiles()).reverse();
     const entries: RuntimeLogEntry[] = [];
     let scanned = 0;
+    let skippedCorruptRecords = 0;
 
     for (const file of files) {
       const raw = await this.#fileSystem.readFile(join(this.#logDirectory, file), "utf8");
-      const fileEntries = raw
-        .split("\n")
-        .filter((line) => line.trim() !== "")
-        .map((line) => normalizeRuntimeLogEntry(JSON.parse(line) as Omit<RuntimeLogEntry, "exception"> & {
-          readonly exception?: SerializedException | null;
-        }))
-        .reverse();
-
-      for (const entry of fileEntries) {
+      for (const line of raw.split("\n").reverse()) {
+        if (line.trim() === "") continue;
+        let entry: RuntimeLogEntry | null = null;
+        try { entry = normalizeRuntimeLogEntry(JSON.parse(line) as unknown); }
+        // error-provenance: allow expected -- corrupt-record count is exposed without leaking damaged raw text
+        catch { /* A partial JSONL write must not hide other valid evidence. */ }
+        if (entry === null) { skippedCorruptRecords += 1; continue; }
         if (cutoff !== null && Date.parse(entry.timestamp) < cutoff) {
           continue;
         }
@@ -150,10 +151,15 @@ export class RuntimeJsonlLogger implements Logger {
       }
     }
 
-    return {
-      entries,
-      truncated: scanned > entries.length
-    };
+    if (skippedCorruptRecords > 0) {
+      entries.unshift({
+        timestamp: this.#now().toISOString(), level: "WARN", event: "diagnostics.runtime-log.corrupt-records",
+        component: "diagnostics", correlationId: "runtime-log-corrupt-records", processingId: null, exception: null,
+        message: `Runtime log coverage is incomplete: ${skippedCorruptRecords} damaged records were skipped.`,
+        details: { skippedCorruptRecords, coverageIncomplete: true }
+      });
+    }
+    return { entries: entries.slice(0, options.limit), truncated: scanned + (skippedCorruptRecords > 0 ? 1 : 0) > options.limit, skippedCorruptRecords };
   }
 
   async #write(level: LogLevel, message: string, context: LogContext, originalException?: unknown): Promise<void> {
@@ -217,10 +223,22 @@ export class RuntimeJsonlLogger implements Logger {
   }
 }
 
-function normalizeRuntimeLogEntry(
-  entry: Omit<RuntimeLogEntry, "exception"> & { readonly exception?: SerializedException | null }
-): RuntimeLogEntry {
-  return { ...entry, exception: entry.exception ?? null };
+function normalizeRuntimeLogEntry(value: unknown): RuntimeLogEntry | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const entry = value as Record<string, unknown>;
+  if (typeof entry.timestamp !== "string" || !Number.isFinite(Date.parse(entry.timestamp)) ||
+    typeof entry.level !== "string" || !Object.hasOwn(levelPriority, entry.level) ||
+    typeof entry.event !== "string" || typeof entry.component !== "string" || typeof entry.message !== "string" ||
+    typeof entry.correlationId !== "string" || (entry.processingId !== null && typeof entry.processingId !== "string")) return null;
+  const exception = entry.exception == null ? null : serializedExceptionSchema.safeParse(entry.exception);
+  if (exception !== null && !exception.success) return null;
+  if (entry.details !== undefined && (entry.details === null || typeof entry.details !== "object" || Array.isArray(entry.details))) return null;
+  return {
+    timestamp: entry.timestamp, level: entry.level as LogLevel, event: entry.event, component: entry.component,
+    message: entry.message, correlationId: entry.correlationId, processingId: entry.processingId,
+    exception: exception?.data ?? null,
+    ...(entry.details === undefined ? {} : { details: sanitizeMetadata(entry.details as Record<string, unknown>) })
+  };
 }
 
 function sanitizeMetadata(metadata: Record<string, unknown>): Record<string, string | number | boolean | null> {

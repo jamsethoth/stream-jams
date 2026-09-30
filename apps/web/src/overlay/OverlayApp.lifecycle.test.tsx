@@ -84,7 +84,7 @@ describe("OverlayApp playback lifecycle", () => {
     expect(element).toBeVisible();
     expect(clientHarness.reportStarted).toHaveBeenCalledTimes(1);
     act(() => vi.advanceTimersByTime(500));
-    expect(clientHarness.reportCompleted).toHaveBeenCalledWith("layer-test");
+    expect(clientHarness.reportCompleted).toHaveBeenCalledWith("layer-test", expect.objectContaining({ terminalOutcome: "completed" }));
   });
 
   beforeEach(() => {
@@ -141,7 +141,7 @@ describe("OverlayApp playback lifecycle", () => {
 
     act(() => vi.advanceTimersByTime(250));
 
-    expect(clientHarness.reportCompleted).toHaveBeenCalledWith("instruction-test");
+    expect(clientHarness.reportCompleted).toHaveBeenCalledWith("instruction-test", expect.objectContaining({ terminalOutcome: "completed" }));
     expect(screen.queryByText("Temporary test alert")).not.toBeInTheDocument();
   });
 
@@ -189,7 +189,7 @@ describe("OverlayApp playback lifecycle", () => {
       stage: "source-load",
       message: "Image playback failed",
       exception: expect.objectContaining({ type: expect.any(String) })
-    }));
+    }), expect.objectContaining({ terminalOutcome: "failed" }));
     expect(screen.queryByTestId("overlay-visual-instruction-failed")).not.toBeInTheDocument();
   });
 

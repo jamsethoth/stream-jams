@@ -629,6 +629,7 @@ describe("runtime app composition smoke", () => {
     socket.send(JSON.stringify({
       type: "overlay.playback.failed",
       instructionId: "instruction-audio-blocked",
+      diagnostics: { preparationDurationMs: 45, scheduledStartEpochMs: 100, terminalOutcome: "failed" },
       referenceId: "err_audio_blocked",
       stage: "play",
       message: "Audio playback was blocked by the browser. Enable autoplay for this browser source, then retry.",
@@ -681,6 +682,10 @@ describe("runtime app composition smoke", () => {
         })
       })
     ]));
+    expect(workspace.rawLogs).toEqual(expect.arrayContaining([expect.objectContaining({
+      event: "overlay.playback.timing",
+      data: expect.objectContaining({ preparationDurationMs: 45, scheduledStartEpochMs: 100, terminalOutcome: "failed" })
+    })]));
     socket.close();
   });
 

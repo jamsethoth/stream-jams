@@ -21,6 +21,53 @@ afterEach(() => {
 });
 
 describe("OverlaySurface", () => {
+  it("fails stalled media and never reports timer completion", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const events = vi.fn();
+    const value = { ...instruction(), durationMs: 1000, audio: { assetId: "clip", volume: 1 } };
+    render(<OverlaySurface composition={composition(value)} resolveAssetUrl={() => "/clip.wav"} onPlaybackEvent={events} />);
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", failure: expect.objectContaining({ stage: "stall" }) }));
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
+  });
+  it("detects a sustained post-start stall and the next instruction recovers", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const events = vi.fn(); const value = { ...instruction(), audio: { assetId: "clip", volume: 1 } };
+    const props = { resolveAssetUrl: () => "/clip.wav", onPlaybackEvent: events };
+    const { rerender, unmount } = render(<OverlaySurface composition={composition(value)} {...props} />);
+    await act(async () => {});
+    const media = screen.getByTestId("overlay-audio-instruction-1") as HTMLMediaElement;
+    media.currentTime = 0.5;
+    await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    fireEvent.waiting(media);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ status: "failed", diagnostics: expect.objectContaining({ completionReason: "stalled" }) }));
+    const next = { ...value, id: "next" };
+    rerender(<OverlaySurface composition={composition(next)} {...props} />);
+    await act(async () => {});
+    const nextMedia = screen.getByTestId("overlay-audio-next") as HTMLMediaElement;
+    fireEvent.ended(nextMedia);
+    await act(async () => { await vi.advanceTimersByTimeAsync(next.durationMs); });
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ instructionId: "next", status: "completed", diagnostics: expect.objectContaining({ completionReason: "natural-end" }) }));
+    unmount(); expect(vi.getTimerCount()).toBe(0);
+  });
+  it("allows muted progressing playback after transient waiting and loop wrap", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(1000);
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const events = vi.fn(); const value = { ...instruction(), durationMs: 3000, audio: { assetId: "clip", volume: 1 } };
+    render(<OverlaySurface muted composition={composition(value)} resolveAssetUrl={() => "/clip.wav"} onPlaybackEvent={events} />);
+    await act(async () => {});
+    const media = screen.getByTestId("overlay-audio-instruction-1") as HTMLMediaElement;
+    fireEvent.waiting(media);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1250); });
+    media.currentTime = 1; await act(async () => { await vi.advanceTimersByTimeAsync(250); });
+    media.currentTime = 0; await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    expect(events).toHaveBeenCalledWith(expect.objectContaining({ status: "completed", diagnostics: expect.objectContaining({ completionReason: "configured-duration" }) }));
+  });
   it("classifies metadata-only startup timeout as decode failure", async () => {
     vi.useFakeTimers(); vi.setSystemTime(1000); const events = vi.fn();
     const value: OverlayInstruction = { ...instruction(), timing: { startsAtEpochMs: 1000, endsAtEpochMs: 6000 },
@@ -44,13 +91,14 @@ describe("OverlaySurface", () => {
     for (const element of [audio, video]) { Object.defineProperty(element, "readyState", { configurable: true, value: 2 }); fireEvent.loadedData(element); }
     await act(async () => { await vi.advanceTimersByTimeAsync(170); starts.get(audio)!(); });
     await act(async () => { await vi.advanceTimersByTimeAsync(130); starts.get(video)!(); });
+    simulateProgress(audio); simulateProgress(video);
     pause.mockClear();
     await act(async () => { await vi.advanceTimersByTimeAsync(870); });
     expect(pause.mock.contexts).toContain(audio); expect(pause.mock.contexts).not.toContain(video);
     expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
     expect(video).toBeVisible();
     await act(async () => { await vi.advanceTimersByTimeAsync(130); });
-    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed", diagnostics: expect.objectContaining({ terminalOutcome: "completed" }) });
     expect(starts.size).toBe(2);
   });
   it.each(["audio", "video"])("preserves the full %s interval when play starts 170ms late", async kind => {
@@ -64,6 +112,7 @@ describe("OverlaySurface", () => {
     const element = screen.getByTestId(`overlay-${kind}-instruction-1`) as HTMLMediaElement;
     Object.defineProperty(element, "readyState", { configurable: true, value: 2 }); fireEvent.loadedData(element);
     await act(async () => { await vi.advanceTimersByTimeAsync(170); started(); });
+    simulateProgress(element);
     await act(async () => { await vi.advanceTimersByTimeAsync(830); });
     expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
     expect(element).toBeVisible();
@@ -71,8 +120,8 @@ describe("OverlaySurface", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(169); });
     expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
-    expect(element.currentTime).toBe(0); expect(element.playbackRate).toBe(1);
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed", diagnostics: expect.objectContaining({ terminalOutcome: "completed" }) });
+    expect(element.currentTime).toBeGreaterThan(0); expect(element.playbackRate).toBe(1);
   });
   it("waits for prepared images to load before acknowledging readiness", async () => {
     const events = vi.fn();
@@ -186,10 +235,11 @@ describe("OverlaySurface", () => {
     await act(async () => {});
     expect(audio.currentTime).toBe(0);
     expect(play).toHaveBeenCalledOnce();
+    simulateProgress(audio);
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
     expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(2500); });
-    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed", diagnostics: expect.objectContaining({ terminalOutcome: "completed" }) });
   });
   it("starts timed video at zero before reveal and preserves its full duration", async () => {
     vi.useFakeTimers(); vi.setSystemTime(4000);
@@ -219,10 +269,11 @@ describe("OverlaySurface", () => {
     fireEvent.seeked(video);
     await act(async () => {});
     expect(video).toBeVisible();
+    simulateProgress(video);
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ status: "completed" }));
     await act(async () => { await vi.advanceTimersByTimeAsync(3000); });
-    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed" });
+    expect(events).toHaveBeenCalledWith({ instructionId: value.id, status: "completed", diagnostics: expect.objectContaining({ terminalOutcome: "completed" }) });
     expect(video).not.toBeVisible();
   });
 
@@ -809,4 +860,9 @@ function compositionFromInstructions(
     targetProfileId,
     modules: [{ moduleId: "alerts", enabled: true, instructions }]
   };
+}
+
+function simulateProgress(element: HTMLMediaElement): void {
+  const start = Date.now();
+  Object.defineProperty(element, "currentTime", { configurable: true, get: () => (Date.now() - start) / 1000 });
 }

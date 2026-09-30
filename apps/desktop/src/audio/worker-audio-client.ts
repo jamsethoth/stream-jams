@@ -34,13 +34,13 @@ export class WorkerAudioClient implements DesktopAudioTransport {
     return { start: async (startsAtEpochMs: number) => {
       const result = await this.#request({ type: "start", token, startsAtEpochMs, durationMs: payload.batch.durationMs });
       if (result.type !== "played") throw unavailable();
-      return { failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
+      return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
     } };
   }
   async play(payload: AudioPlaybackPayload) {
     const result = await this.#request({ type: "play", payload });
     if (result.type !== "played") throw unavailable();
-    return { failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
+    return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
   }
   async stop(playbackId: string): Promise<void> { await this.#ok({ type: "stop", playbackId }); }
   async setMuted(muted: boolean): Promise<void> { await this.#ok({ type: "set-muted", muted }); }

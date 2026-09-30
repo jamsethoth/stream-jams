@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { playbackTimingDiagnosticsSchema, type PlaybackTimingDiagnostics } from "../diagnostics/playback-timing-diagnostics.js";
 import { desktopOverlayStatusSchema, type DesktopOverlayStatus } from "./desktop-overlay-status.js";
 import { defaultAssetValidationPolicy } from "../assets/asset-validator.js";
 import { surfaceConfigurationSchema, type SurfaceConfiguration } from "../overlay-modules/surface-configuration.js";
@@ -109,7 +110,7 @@ export const desktopVisualCommandSchema = z.discriminatedUnion("type", [
 export const desktopVisualReplySchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("status"), status: desktopOverlayStatusSchema }).strict(),
   z.object({ type: z.literal("ready"), key: visualRecipientKeySchema }).strict(),
-  z.object({ type: z.literal("complete"), key: visualRecipientKeySchema }).strict(),
+  z.object({ type: z.literal("complete"), key: visualRecipientKeySchema, diagnostics: playbackTimingDiagnosticsSchema.optional() }).strict(),
   z.object({ type: z.literal("error"), key: visualRecipientKeySchema }).strict(),
   z.object({ type: z.literal("ok") }).strict()
 ]);
@@ -139,7 +140,7 @@ export interface DesktopOverlayTransport {
   configure(config: Extract<SurfaceConfiguration, { kind: "desktop" }>): Promise<void>;
   syncModule(sync: DesktopModuleSync): Promise<void>;
   prepare(batch: DesktopVisualBatch): Promise<"ready" | "unavailable">;
-  start(key: VisualRecipientKey, timing?: PlaybackTiming): Promise<void>;
+  start(key: VisualRecipientKey, timing?: PlaybackTiming): Promise<void | PlaybackTimingDiagnostics>;
   stop(key: VisualRecipientKey): Promise<void>;
   retry(): Promise<void>;
   close(): Promise<void>;

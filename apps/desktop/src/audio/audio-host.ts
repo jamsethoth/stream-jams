@@ -73,7 +73,7 @@ export class AudioHost implements DesktopAudioTransport {
     return { start: async (startsAtEpochMs: number) => {
       const result = await this.#start(token, startsAtEpochMs);
       if (result.type !== "played") throw unavailable();
-      return { failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
+      return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
     } };
   }
   async #prepare(token: string, candidate: AudioPlaybackPayload): Promise<AudioTransportResult> {
@@ -110,7 +110,7 @@ export class AudioHost implements DesktopAudioTransport {
       if (start.cancelled || Date.now() >= Math.min(payload.startDeadlineMs, payload.deadlineMs)) throw unavailable();
       const result = await this.#request({ type: "play", payload }, Math.max(1, payload.deadlineMs + 5000 - Date.now()));
       if (result.type !== "played") { this.#discard(true); throw unavailable(); }
-      return { failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
+      return { ...(result.outputDiagnostics === undefined ? {} : { outputDiagnostics: result.outputDiagnostics }), ...(result.diagnostics === undefined ? {} : { diagnostics: result.diagnostics }), failedRouteIds: result.failedRouteIds, ...(result.failures === undefined ? {} : { failures: result.failures }) };
     } finally { this.#starts.delete(start); }
   }
   async stop(playbackId: string): Promise<void> {

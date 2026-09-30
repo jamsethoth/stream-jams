@@ -26,7 +26,7 @@ it("preserves selected route failures across the worker response boundary", asyn
   try {
     const pending = client.play({ batch: { playbackId: "one", documentId: "alert", durationMs: 1000, muted: false, layers: [], destinations: [] }, assets: [], startDeadlineMs: 5000, deadlineMs: 10000 });
     const request = send.mock.calls.at(-1)![0];
-    const result = { failedRouteIds: ["selected"], failures: [{ routeIds: ["selected"], layerId: "video", assetId: "clip", stage: "seek", exception: { type: "Error", message: "Seek failed", stack: null, code: null, cause: null, thrownValue: null } }] };
+    const result = { outputDiagnostics: [{ routeIds: ["selected"], layerId: "video", assetId: "clip", diagnostics: { actualStartEpochMs: 102, terminalOutcome: "failed" } }], diagnostics: { preparationDurationMs: 5, scheduledStartEpochMs: 100, actualStartEpochMs: 102, terminalOutcome: "failed" }, failedRouteIds: ["selected"], failures: [{ routeIds: ["selected"], layerId: "video", assetId: "clip", stage: "seek", exception: { type: "Error", message: "Seek failed", stack: null, code: null, cause: null, thrownValue: null } }] };
     client.receive({ type: "audio-response", generation: 3, requestId: request.requestId, result: { type: "played", ...result } });
     expect(await pending).toEqual(result);
   } finally { client.dispose(); vi.useRealTimers(); }

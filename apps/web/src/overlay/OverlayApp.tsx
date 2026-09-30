@@ -126,9 +126,9 @@ export function OverlayApp() {
     } else if (event.status === "started") {
       reporter.reportStarted(event.instructionId);
     } else if (event.status === "completed") {
-      reporter.reportCompleted(event.instructionId);
+      reporter.reportCompleted(event.instructionId, event.diagnostics);
     } else {
-      reporter.reportFailed(event.instructionId, event.failure);
+      reporter.reportFailed(event.instructionId, event.failure, event.diagnostics);
     }
   }, []);
   const resolveOverlayAssetUrl = useCallback(

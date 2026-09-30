@@ -11,6 +11,36 @@ import { OverlayGateway, type OverlayGatewaySocket } from "./overlay-gateway.js"
 
 describe("OverlayGateway", () => {
   afterEach(() => vi.useRealTimers());
+  it("records a bounded sanitized send failure once and reports recovery", async () => {
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "secret-key" } as const;
+    const onTransportDiagnostic = vi.fn();
+    const gateway = createGateway({ allowed: [route], onTransportDiagnostic });
+    const socket = new RecordingSocket();
+    await gateway.registerClient(socket, route);
+    socket.send = () => { throw new Error("closed wss://localhost/overlay/secret-key " + "x".repeat(2000)); };
+    expect((await gateway.preparePlaybackInstruction(createInstruction(route))).deliveredClientIds).toEqual([]);
+    gateway.unregisterClient("client-1", { code: 1006, reason: "secret-key" });
+    expect(onTransportDiagnostic).toHaveBeenCalledTimes(1);
+    const diagnostic = onTransportDiagnostic.mock.calls[0]![0];
+    expect(diagnostic).toMatchObject({ clientId: "client-1", operation: "send", outcome: "disconnected", exception: { type: "Error" } });
+    expect(JSON.stringify(diagnostic)).not.toContain("secret-key");
+    expect(diagnostic.exception.message.length).toBeLessThanOrEqual(512);
+    await gateway.registerClient(new RecordingSocket(), route);
+    expect(onTransportDiagnostic).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: "reconnected" }));
+  });
+
+  it("records close code and bounded reason once without leaking the route key", async () => {
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "private-key" } as const;
+    const onTransportDiagnostic = vi.fn();
+    const gateway = createGateway({ allowed: [route], onTransportDiagnostic });
+    await gateway.registerClient(new RecordingSocket(), route);
+    gateway.unregisterClient("client-1", { code: 1008, reason: "private-key " + "x".repeat(1000) });
+    gateway.unregisterClient("client-1", { code: 1006, reason: "duplicate" });
+    expect(onTransportDiagnostic).toHaveBeenCalledTimes(1);
+    expect(onTransportDiagnostic.mock.calls[0]![0]).toMatchObject({ operation: "close", closeCode: 1008, outcome: "disconnected" });
+    expect(onTransportDiagnostic.mock.calls[0]![0].closeReason).toHaveLength(512);
+    expect(JSON.stringify(onTransportDiagnostic.mock.calls)).not.toContain("private-key");
+  });
   it("prepares healthy recipients when an earlier socket send fails", async () => {
     const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
     const gateway = createGateway({ allowed: [route] }); const failed = new RecordingSocket(); const healthy = new RecordingSocket();
@@ -451,6 +481,20 @@ describe("OverlayGateway", () => {
     expect(secondSocket.messages).toContainEqual(expect.objectContaining({ type: "overlay.playback" }));
   });
 
+  it("accepts bounded timing diagnostics and rejects invalid diagnostics", async () => {
+    const route = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", rawKey: "key" } as const;
+    const onPlaybackReport = vi.fn();
+    const gateway = createGateway({ allowed: [route], onPlaybackReport });
+    await gateway.registerClient(new RecordingSocket(), route);
+    const diagnostics = { preparationDurationMs: 35, scheduledStartEpochMs: 1000, actualStartEpochMs: 1010, terminalOutcome: "completed" };
+    gateway.handleClientMessage("client-1", JSON.stringify({ type: "overlay.playback.completed", instructionId: "one", diagnostics }));
+    expect(onPlaybackReport).toHaveBeenCalledWith(expect.objectContaining({ diagnostics }));
+    for (const invalid of [{ ...diagnostics, actualStartEpochMs: -1 }, { ...diagnostics, preparationDurationMs: "35" }, { ...diagnostics, terminalOutcome: "unknown" }]) {
+      gateway.handleClientMessage("client-1", JSON.stringify({ type: "overlay.playback.completed", instructionId: "one", diagnostics: invalid }));
+    }
+    expect(onPlaybackReport).toHaveBeenCalledTimes(1);
+  });
+
   it("records playback lifecycle reports from registered clients", async () => {
     const reports: unknown[] = [];
     const gateway = createGateway({
@@ -543,6 +587,7 @@ interface AllowedRoute {
 
 function createGateway(options: {
   readonly allowed: readonly AllowedRoute[];
+  readonly onTransportDiagnostic?: ConstructorParameters<typeof OverlayGateway>[0]["onTransportDiagnostic"];
   readonly onClientDisconnected?: ConstructorParameters<typeof OverlayGateway>[0]["onClientDisconnected"];
   readonly onPlaybackReport?: ConstructorParameters<typeof OverlayGateway>[0]["onPlaybackReport"];
   readonly clock?: () => Date;
@@ -551,6 +596,7 @@ function createGateway(options: {
   let clientNumber = 0;
   return new OverlayGateway({
     overlayAccessService: new StubOverlayAccessService(options.allowed),
+    ...(options.onTransportDiagnostic === undefined ? {} : { onTransportDiagnostic: options.onTransportDiagnostic }),
     generateClientId: () => {
       clientNumber += 1;
       return `client-${clientNumber}`;

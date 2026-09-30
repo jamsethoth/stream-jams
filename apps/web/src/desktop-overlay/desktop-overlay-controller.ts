@@ -12,12 +12,14 @@ export interface DesktopOverlayControllerDependencies {
   now?: () => number;
 }
 type Envelope = Pick<DesktopVisualRendererRequest, "generation" | "requestId">;
+type TimingDiagnostics = import("@stream-jams/core").PlaybackTimingDiagnostics;
 type PreparedAsset = Awaited<ReturnType<DesktopOverlayControllerDependencies["prepareAsset"]>>;
 type Occurrence = {
   view: DesktopOverlaySnapshot["occurrences"][number];
   state: "preparing" | "decoding" | "ready" | "scheduled" | "active" | "cancelled";
   pendingReady: Set<string>;
   pendingCompletion: Set<string>;
+  diagnostics?: TimingDiagnostics;
   prepare: Envelope | null;
   start: Envelope | null;
   requestIds: Set<string>;
@@ -83,9 +85,9 @@ export class DesktopOverlayController {
     }
   }
 
-  fail(key: VisualRecipientKey, failure?: OverlayPlaybackFailure): void {
+  fail(key: VisualRecipientKey, failure?: OverlayPlaybackFailure, diagnostics?: TimingDiagnostics): void {
     const record = this.#records.get(identity(key));
-    if (record !== undefined) this.#finish(record, "error", failure);
+    if (record !== undefined) this.#finish(record, "error", failure === undefined ? undefined : { ...failure, ...(diagnostics === undefined ? {} : { diagnostics }) });
   }
   ready(key: VisualRecipientKey, instructionId: string): void {
     const record = this.#records.get(identity(key));
@@ -93,10 +95,11 @@ export class DesktopOverlayController {
     record.pendingReady.delete(instructionId);
     if (record.pendingReady.size === 0) this.#prepared(record);
   }
-  complete(key: VisualRecipientKey, instructionId: string): void {
+  complete(key: VisualRecipientKey, instructionId: string, diagnostics?: TimingDiagnostics): void {
     const record = this.#records.get(identity(key));
     if (record?.state !== "active" || record.view.preparing !== false) return;
-    record.pendingCompletion.delete(instructionId);
+    if (!record.pendingCompletion.delete(instructionId)) return;
+    if (diagnostics !== undefined) record.diagnostics = mergeDiagnostics(record.diagnostics, diagnostics);
     if (record.pendingCompletion.size === 0) this.#finish(record, "complete");
   }
   dispose(): void {
@@ -244,7 +247,7 @@ export class DesktopOverlayController {
     // and byte reservation until settled, including across retry/reconfiguration.
     if (!record.loading) this.#release(record);
     if (preparing !== null) this.#report(preparing, { type: "error", key: record.view.key }, failure);
-    if (started !== null) this.#report(started, { type: result, key: record.view.key }, failure);
+    if (started !== null) this.#report(started, result === "complete" ? { type: result, key: record.view.key, ...(record.diagnostics === undefined ? {} : { diagnostics: record.diagnostics }) } : { type: result, key: record.view.key }, failure);
   }
   #release(record: Occurrence): void {
     const id = identity(record.view.key);
@@ -283,6 +286,17 @@ export class DesktopOverlayController {
   #report(envelope: Envelope, result: DesktopVisualRendererReply["result"], failure?: OverlayPlaybackFailure): void {
     this.dependencies.report({ ...envelope, result, ...(failure === undefined ? {} : { failure }) });
   }
+}
+function mergeDiagnostics(previous: TimingDiagnostics | undefined, next: TimingDiagnostics): TimingDiagnostics {
+  if (previous === undefined) return next;
+  const maximum = (a: number | undefined, b: number | undefined) => a === undefined ? b : b === undefined ? a : Math.max(a, b);
+  const preparationDurationMs = maximum(previous.preparationDurationMs, next.preparationDurationMs);
+  const actualStartEpochMs = maximum(previous.actualStartEpochMs, next.actualStartEpochMs);
+  return { ...next,
+    ...(preparationDurationMs === undefined ? {} : { preparationDurationMs }),
+    ...(actualStartEpochMs === undefined ? {} : { actualStartEpochMs }),
+    completionReason: previous.completionReason === "natural-end" && next.completionReason === "natural-end" ? "natural-end" : "configured-duration"
+  };
 }
 function identity(key: VisualRecipientKey): string { return JSON.stringify([key.surfaceId, key.moduleId, key.occurrenceId, key.generation]); }
 function releaseResource(resource: PreparedAsset): void { try { resource.dispose(); }

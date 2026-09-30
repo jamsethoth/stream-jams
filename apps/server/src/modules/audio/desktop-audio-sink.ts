@@ -144,6 +144,19 @@ export class DesktopAudioSink implements AudioPlaybackSink {
       if (!this.#isCurrent(batch.playbackId)) return { failedRouteIds: [] };
       if (this.#now() >= startDeadlineMs) return failedDestinations(batch);
       const result = await (prepare ?? (payload => this.#transport.play(payload)))(audioPlaybackPayloadSchema.parse({ batch, assets, deadlineMs, startDeadlineMs }));
+      for (const output of result.outputDiagnostics ?? []) await this.#logger?.info("Selected device audio playback timing.", {
+        module: "audio-output", source: "desktop-audio.playback-timing",
+        correlationId: batch.playbackId, processingId: null,
+        metadata: { playbackId: batch.playbackId, documentId: batch.documentId,
+          routeIds: JSON.stringify(output.routeIds), layerId: output.layerId, assetId: output.assetId, ...output.diagnostics }
+      });
+      if (result.outputDiagnostics === undefined && result.diagnostics !== undefined) await this.#logger?.info("Selected device audio playback timing.", {
+        module: "audio-output", source: "desktop-audio.playback-timing",
+        correlationId: batch.playbackId, processingId: null,
+        metadata: { playbackId: batch.playbackId, documentId: batch.documentId,
+          routeCount: batch.destinations.reduce((sum, destination) => sum + destination.routeIds.length, 0),
+          ...result.diagnostics }
+      });
       for (const failure of result.failures ?? []) {
         await this.#logger?.error("Selected device audio playback failed.", {
           module: "audio-output",

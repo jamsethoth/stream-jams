@@ -12,11 +12,24 @@ function harness() {
   const resolve = vi.fn<(input: Omit<DesktopVisualBatch, "assets">) => Promise<DesktopVisualBatch>>(async input => ({ ...input, assets: [] }));
   const transport = { configure: vi.fn<DesktopOverlayTransport["configure"]>(async () => {}), syncModule: vi.fn<DesktopOverlayTransport["syncModule"]>(async () => {}), prepare: vi.fn<DesktopOverlayTransport["prepare"]>(async () => "ready"),
     start: vi.fn<DesktopOverlayTransport["start"]>(async () => {}), stop: vi.fn<DesktopOverlayTransport["stop"]>(async () => {}), retry: vi.fn(async () => {}), close: vi.fn(async () => {}) };
-  const sink = new DesktopVisualSink({ transport, surfaces: { list }, assets: { resolve } });
-  return { sink, transport, resolve, list, config };
+  const onPlaybackDiagnostics = vi.fn();
+  const sink = new DesktopVisualSink({ transport, surfaces: { list }, assets: { resolve }, onPlaybackDiagnostics });
+  return { sink, transport, resolve, list, config, onPlaybackDiagnostics };
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(0); });
 afterEach(() => vi.useRealTimers());
+it("reports renderer-observed timing on both successful and failed desktop playback", async () => {
+  const { sink, transport, onPlaybackDiagnostics } = harness();
+  const diagnostics = { preparationDurationMs: 40, scheduledStartEpochMs: 100, actualStartEpochMs: 115, terminalOutcome: "completed" as const };
+  transport.start.mockResolvedValueOnce(diagnostics);
+  await sink.play("success", [instruction()], 100);
+  expect(onPlaybackDiagnostics).toHaveBeenCalledWith("success", diagnostics);
+  const failed = { ...diagnostics, terminalOutcome: "failed" as const, completionReason: "stalled" as const };
+  transport.start.mockRejectedValueOnce(Object.assign(new Error("stalled"), { diagnostics: failed }));
+  await expect(sink.play("failure", [instruction()], 100)).rejects.toThrow();
+  expect(onPlaybackDiagnostics).toHaveBeenCalledWith("failure", failed);
+  await sink.close();
+});
 it("prepares every duration group before accepting a shared start without consuming clip duration", async () => {
   const { sink, transport } = harness();
   let ready!: (value: "ready") => void;

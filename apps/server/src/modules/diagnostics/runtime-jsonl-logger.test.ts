@@ -19,6 +19,43 @@ afterEach(async () => {
 });
 
 describe("RuntimeJsonlLogger", () => {
+  it("retains valid evidence around malformed records and reports corruption without exposing damaged text", async () => {
+    const logDirectory = await createTemporaryDirectory();
+    const now = new Date("2026-05-31T02:15:30.000Z");
+    const logger = new RuntimeJsonlLogger({ logDirectory, settings: defaultLogSettings, redactor: createRedactor(), now: () => now });
+    await logger.info("valid record", baseContext);
+    const path = join(logDirectory, "runtime-2026053102.jsonl");
+    await writeFile(path, (await readFile(path, "utf8")) + '\nnull\n{}\n{"secret":"oauth-secret"\n', "utf8");
+    await logger.info("later valid record", baseContext);
+
+    const result = await logger.listRecent({ limit: 10 });
+
+    expect(result.entries.map(entry => entry.message)).toEqual([
+      "Runtime log coverage is incomplete: 3 damaged records were skipped.", "later valid record", "valid record"
+    ]);
+    expect(result.skippedCorruptRecords).toBe(3);
+    expect(result.truncated).toBe(false);
+    expect(result.entries[0]).toMatchObject({ event: "diagnostics.runtime-log.corrupt-records", level: "WARN", details: { skippedCorruptRecords: 3, coverageIncomplete: true } });
+    expect(JSON.stringify(result)).not.toContain("oauth-secret");
+    const bounded = await logger.listRecent({ limit: 1 });
+    expect(bounded.entries).toHaveLength(1);
+    expect(bounded.truncated).toBe(true);
+    expect(bounded.skippedCorruptRecords).toBe(3);
+  });
+
+  it("rejects invalid record shapes but preserves legacy records and limit semantics", async () => {
+    const logDirectory = await createTemporaryDirectory();
+    const logger = new RuntimeJsonlLogger({ logDirectory, settings: defaultLogSettings, redactor: createRedactor(), now: () => new Date("2026-05-31T02:15:30.000Z") });
+    await logger.info("valid", baseContext);
+    const path = join(logDirectory, "runtime-2026053102.jsonl");
+    const valid = JSON.parse((await readFile(path, "utf8")).trim()) as Record<string, unknown>;
+    await writeFile(path, [valid, { ...valid, timestamp: "invalid" }, { ...valid, level: "BOGUS" }, { ...valid, exception: {} }].map(value => JSON.stringify(value)).join("\n"), "utf8");
+    const result = await logger.listRecent({ limit: 5, sinceHours: 1 });
+    expect(result.skippedCorruptRecords).toBe(3);
+    expect(result.entries).toHaveLength(2);
+    expect(result.truncated).toBe(false);
+  });
+
   it("filters by level and writes allowlisted redacted JSONL fields", async () => {
     const logDirectory = await createTemporaryDirectory();
     const logger = new RuntimeJsonlLogger({

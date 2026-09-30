@@ -43,3 +43,17 @@ The previously failing snowball.webm completed naturally on both elements at med
 The initiating causes of the nine historical desktop occurrences and missing local sound cannot be reconstructed because the former implementation discarded their original failures. The changes repair that evidence loss and demonstrated execution defects; historical crashes or hardware faults are not asserted as proven.
 
 Physical selected-device listening and packaged Electron/OBS simultaneous-output acceptance were not performed. The real-asset replay verifies the built helper, HTTP transport and Chromium media engine. UI/protocol behavior is covered separately by integration, browser and Storybook tests. Installed-app deployment remains a separate action.
+
+## Diagnostic completeness follow-up
+
+Five additional gaps were repaired after the initial PR:
+
+- Watchdog expiry now records a timed-out outcome, pending browser counts and bounded identities, plus desktop/audio pending state before cleanup. Alert queue history uses skipped rather than completed; Screen Effects records failed.
+- Started media is observed for sustained lack of currentTime progress. A two-second stall produces one failure; configured-duration completion checks progress. Natural end, configured duration, stall and intentional cancellation remain distinct. Loop wrap and short buffering are covered, with no seeking or rate adjustment.
+- Bounded terminal timing evidence crosses browser and desktop IPC into logs. Selected-device audio retains separate per-layer/destination timing, including a regression with one device starting 170 ms later. Route identity uses scalar metadata so it survives log allowlisting. Desktop duration groups report the latest observed layer onset on that output.
+- WebSocket send causes, bounded sanitized close details, and subsequent reconnection are retained without duplicate failure reports or overlay credentials.
+- Corrupt JSONL records no longer block valid records. Raw logs include a coverage warning; debug exports include skippedCorruptRecords separately from limit truncation. Corrupt raw text is never copied.
+
+The real-browser regression starts and decodes a real video, pauses progress, verifies one transparent stall failure with timing evidence, then verifies successful subsequent playback. No new visible overlay or management controls were added; existing Storybook overlay states and the new browser workflow cover the behavior. Physical device/OBS timing limits above still apply.
+
+Follow-up gates: 2,462 unit tests across 278 files plus 23 script tests; 64 rebuilt browser tests; 263 Storybook checks across 26 suites; typecheck, lint, error-provenance check, production/Storybook builds, and strict change/all-36-spec validation passed. The initial broad unit run found an obsolete exact-event expectation, which was updated to assert the new diagnostics and passed in the full rerun. The new browser fixture now waits for the loaded module before sending playback, avoiding a bootstrap race.

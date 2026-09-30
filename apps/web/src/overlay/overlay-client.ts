@@ -1,6 +1,7 @@
 import { serializeException, overlayInstructionSchema, overlayCompositionSchema, surfaceLayersSchema, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayPlaybackFailure,
+  PlaybackTimingDiagnostics,
   OverlayComposition,
   OverlayInstruction,
   OverlayPurpose,
@@ -21,9 +22,9 @@ export interface ParsedOverlayRoute {
 
 export interface OverlayPlaybackReporter {
   reportReady(instructionId: string): void;
-  reportStarted(instructionId: string): void;
-  reportCompleted(instructionId: string): void;
-  reportFailed(instructionId: string, failure: OverlayPlaybackFailure): void;
+  reportStarted(instructionId: string, diagnostics?: PlaybackTimingDiagnostics): void;
+  reportCompleted(instructionId: string, diagnostics?: PlaybackTimingDiagnostics): void;
+  reportFailed(instructionId: string, failure: OverlayPlaybackFailure, diagnostics?: PlaybackTimingDiagnostics): void;
 }
 
 export interface OverlaySocketLike {
@@ -142,23 +143,26 @@ export function createOverlayAssetUrl(route: ParsedOverlayRoute, assetId: string
 export function createOverlayPlaybackReporter(socket: OverlaySocketLike): OverlayPlaybackReporter {
   return {
     reportReady(instructionId: string) { sendIfOpen(socket, { type: "overlay.playback.ready", instructionId }); },
-    reportStarted(instructionId: string) {
+    reportStarted(instructionId: string, diagnostics?: PlaybackTimingDiagnostics) {
       sendIfOpen(socket, {
         type: "overlay.playback.started",
-        instructionId
+        instructionId,
+        ...(diagnostics === undefined ? {} : { diagnostics })
       });
     },
-    reportCompleted(instructionId: string) {
+    reportCompleted(instructionId: string, diagnostics?: PlaybackTimingDiagnostics) {
       sendIfOpen(socket, {
         type: "overlay.playback.completed",
-        instructionId
+        instructionId,
+        ...(diagnostics === undefined ? {} : { diagnostics })
       });
     },
-    reportFailed(instructionId: string, failure: OverlayPlaybackFailure) {
+    reportFailed(instructionId: string, failure: OverlayPlaybackFailure, diagnostics?: PlaybackTimingDiagnostics) {
       sendIfOpen(socket, {
         type: "overlay.playback.failed",
         instructionId,
-        ...failure
+        ...failure,
+        ...(diagnostics === undefined ? {} : { diagnostics })
       });
     }
   };
@@ -198,21 +202,21 @@ export function connectOverlayClient(options: OverlayClientOptions): OverlayClie
       if (message?.type === "composition" && !initialCompositionSettled) pendingSocketComposition = message;
       else if (message !== null) options.onMessage(message);
     });
-    nextSocket.addEventListener("error", () =>
-      options.onMessage({
-        type: "error",
-        message: "Overlay transport connection failed"
-      })
-    );
+    // Browsers expose no cause on WebSocket error; close carries the diagnostic
+    // and follows a failed connection, so report that boundary once.
+    nextSocket.addEventListener("error", () => undefined);
     nextSocket.addEventListener("close", (event) => {
       if (disposed || socket !== nextSocket) {
         return;
       }
 
       socket = null;
+      const closeCode = Number.isInteger(event.code) ? event.code : 1006;
+      const closeReason = (event.reason ?? "").replaceAll(options.route.rawKey, "[redacted]")
+        .replace(/(?:https?|wss?):\/\/[^\s]+/giu, "[redacted-url]").slice(0, 512);
       options.onMessage({
         type: "error",
-        message: "Overlay transport connection closed"
+        message: `Overlay transport connection closed (${closeCode})${closeReason === "" ? "" : `: ${closeReason}`}. ${closeCode === 1008 ? "Reconnection stopped." : `Reconnecting in ${reconnectDelayMs}ms.`}`
       });
       if (event.code === 1008) {
         return;

@@ -15,8 +15,9 @@ it("sends committed timing for prepared content and retains its full interval", 
   const timing = { startsAtEpochMs: 2200, endsAtEpochMs: 3200 };
   const playing = client.start(key, timing);
   expect(messages[1]).toMatchObject({ command: { type: "start", key, timing } });
-  client.receive({ type: "overlay-response", generation: 3, requestId: messages[1]!.requestId, result: { type: "complete", key } });
-  await playing; client.dispose(); expect(vi.getTimerCount()).toBe(0);
+  const diagnostics = { preparationDurationMs: 80, scheduledStartEpochMs: 2200, actualStartEpochMs: 2212, terminalOutcome: "completed" as const };
+  client.receive({ type: "overlay-response", generation: 3, requestId: messages[1]!.requestId, result: { type: "complete", key, diagnostics } });
+  expect(await playing).toEqual(diagnostics); client.dispose(); expect(vi.getTimerCount()).toBe(0);
 });
 it("requests status and rejects wrong result types or a lost host safely", async () => {
   vi.useFakeTimers(); const messages: OverlayWorkerMessage[] = []; const client = new WorkerOverlayClient(3, message => messages.push(message));

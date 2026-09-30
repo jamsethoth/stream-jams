@@ -49,7 +49,8 @@ it("forwards committed timing and resets the completion watchdog after deferred 
   await vi.advanceTimersByTimeAsync(0);
   const request = ports[0]!.sent.at(-1)!;
   expect(request.command).toEqual({ type: "start", key: value.key, timing });
-  reply(ports[0]!, request, { type: "complete", key: value.key }); await playing;
+  const diagnostics = { preparationDurationMs: 110, scheduledStartEpochMs: 2400, actualStartEpochMs: 2420, terminalOutcome: "completed" as const, completionReason: "configured-duration" as const };
+  reply(ports[0]!, request, { type: "complete", key: value.key, diagnostics }); expect(await playing).toEqual(diagnostics);
   await host.close(); expect(vi.getTimerCount()).toBe(0);
 });
 

@@ -48,11 +48,11 @@ export function DesktopOverlayApp({ controller, subscribe }: {
   const onPlaybackEvent = useCallback((event: OverlayPlaybackEvent) => {
     const occurrence = controller.getSnapshot().occurrences.find(value => value.instructions.some(instruction => scopedId(value.key, instruction.id) === event.instructionId));
     if (occurrence === undefined) return;
-    if (event.status === "failed") controller.fail(occurrence.key, event.failure);
+    if (event.status === "failed") controller.fail(occurrence.key, event.failure, event.diagnostics);
     if (event.status === "ready" || event.status === "completed") {
       const instruction = occurrence.instructions.find(value => scopedId(occurrence.key, value.id) === event.instructionId)!;
       if (event.status === "ready") controller.ready(occurrence.key, instruction.id);
-      else controller.complete(occurrence.key, instruction.id);
+      else controller.complete(occurrence.key, instruction.id, event.diagnostics);
     }
   }, [controller]);
   const preparingInstructionIds = useMemo(() => new Set(snapshot.occurrences.filter(occurrence => occurrence.preparing === true)

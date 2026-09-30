@@ -1,5 +1,7 @@
 import {
   audioPlayerAssetSchema,
+  monitorMediaProgress,
+  type PlaybackTimingDiagnostics,
   deviceAudioBatchSchema,
   maxAudioTransportAssetBytes,
   maxAudioTransportBatchBytes,
@@ -66,10 +68,17 @@ interface ElementAttempt {
   readonly element: PlayerMediaElement;
   readonly deviceId: string;
   readonly routeIds: readonly string[];
+  readonly layerId: string;
+  readonly assetId: string;
   readonly completion: Promise<AttemptOutcome>;
   startGuard: Promise<void>;
   started: boolean;
+  progress: ReturnType<typeof monitorMediaProgress> | null;
+  preparationDurationMs: number;
+  completionReason: PlaybackTimingDiagnostics["completionReason"];
+  completeConfigured(): void;
   startsAtEpochMs: number | null;
+  scheduledStartEpochMs: number | null;
   playbackTimer: ReturnType<typeof setTimeout> | null;
   updateEnvelope(): void;
   terminal: boolean;
@@ -113,6 +122,7 @@ function occurrenceKey(generation: number, batch: DeviceAudioBatch): string {
 }
 
 function cleanupElement(attempt: ElementAttempt, ended: EventListener, error: EventListener): void {
+  attempt.progress?.stop();
   attempt.preparation.abort();
   if (attempt.startTimer !== null) {
     clearTimeout(attempt.startTimer);
@@ -245,7 +255,7 @@ export class DeviceAudioPlayer {
     const deadlineDelay = Math.max(0, request.deadlineMs - this.#now());
     occurrence.deadlineTimer = setTimeout(() => {
       for (const attempt of occurrence.attempts) {
-        attempt.finish(attempt.started ? "complete" : "failed");
+        if (attempt.started) attempt.completeConfigured(); else attempt.finish("failed");
       }
     }, deadlineDelay);
 
@@ -296,6 +306,23 @@ export class DeviceAudioPlayer {
         for (const routeId of occurrence.attempts[index]!.routeIds) occurrence.failedRouteIds.add(routeId);
       }
       return {
+        outputDiagnostics: occurrence.attempts.slice(0, 64).map((attempt, index) => ({
+          routeIds: [...attempt.routeIds], layerId: attempt.layerId, assetId: attempt.assetId,
+          diagnostics: {
+            preparationDurationMs: attempt.preparationDurationMs,
+            ...(attempt.scheduledStartEpochMs === null ? {} : { scheduledStartEpochMs: attempt.scheduledStartEpochMs }),
+            ...(attempt.startsAtEpochMs === null ? {} : { actualStartEpochMs: attempt.startsAtEpochMs }),
+            terminalOutcome: outcomes[index] === "cancelled" ? "stopped" as const : outcomes[index] === "failed" ? "failed" as const : "completed" as const,
+            ...(attempt.completionReason === undefined ? {} : { completionReason: attempt.completionReason })
+          }
+        })),
+        diagnostics: {
+          ...(request.batch.timing === undefined && occurrence.attempts[0]?.scheduledStartEpochMs == null ? {} : { scheduledStartEpochMs: request.batch.timing?.startsAtEpochMs ?? occurrence.attempts[0]!.scheduledStartEpochMs! }),
+          ...(occurrence.attempts.some(attempt => attempt.startsAtEpochMs !== null) ? { actualStartEpochMs: Math.min(...occurrence.attempts.flatMap(attempt => attempt.startsAtEpochMs === null ? [] : [attempt.startsAtEpochMs])) } : {}),
+          preparationDurationMs: Math.max(0, ...occurrence.attempts.map(attempt => attempt.preparationDurationMs)),
+          terminalOutcome: occurrence.cancelled ? "stopped" : occurrence.failedRouteIds.size > 0 ? "failed" : "completed",
+          ...(occurrence.attempts.some(attempt => attempt.completionReason === "stalled") ? { completionReason: "stalled" as const } : occurrence.cancelled || occurrence.failedRouteIds.size > 0 ? {} : { completionReason: occurrence.attempts.some(attempt => attempt.completionReason === "configured-duration") ? "configured-duration" as const : "natural-end" as const })
+        },
         failedRouteIds: failedRouteIds.filter((routeId) => occurrence.failedRouteIds.has(routeId)),
         ...(occurrence.failures.length === 0 ? {} : { failures: occurrence.failures })
       };
@@ -373,10 +400,17 @@ export class DeviceAudioPlayer {
       element,
       deviceId,
       routeIds,
+      layerId,
+      assetId,
       completion,
       startGuard: Promise.resolve(),
       started: false,
+      progress: null,
+      preparationDurationMs: 0,
+      completionReason: undefined,
+      completeConfigured: () => undefined,
       startsAtEpochMs: null,
+      scheduledStartEpochMs: null,
       playbackTimer: null,
       updateEnvelope: () => undefined,
       terminal: false,
@@ -387,7 +421,12 @@ export class DeviceAudioPlayer {
       stage: "device-bind",
       finish: () => undefined
     };
-    const ended: EventListener = () => attempt.finish("complete");
+    const ended: EventListener = () => { attempt.completionReason = "natural-end"; attempt.finish("complete"); };
+    attempt.completeConfigured = () => {
+      if (attempt.terminal || attempt.progress?.finish() === false) return;
+      attempt.completionReason = "configured-duration";
+      attempt.finish("complete");
+    };
     const error: EventListener = () => {
       attempt.stage = "decode";
       attempt.finish("failed", element.error ?? new Error("Audio decoding failed."));
@@ -406,6 +445,7 @@ export class DeviceAudioPlayer {
   }
 
   #startAttempt(occurrence: ActiveOccurrence, attempt: ElementAttempt, deadlineMs: number, upstreamStartDeadlineMs?: number, timing?: PlaybackTiming, amplified = false, gate?: PreparedStart, playbackDurationMs = 0): void {
+    const preparationStartedAt = this.#now();
     let markReady!: () => void;
     if (gate !== undefined) gate.ready.push(new Promise(resolve => { markReady = resolve; }));
     const startDeadlineMs = Math.min(deadlineMs, this.#now() + START_TIMEOUT_MS, upstreamStartDeadlineMs ?? Infinity);
@@ -434,8 +474,10 @@ export class DeviceAudioPlayer {
           attempt.stage = "metadata";
           await prepareMediaAtStart(attempt.element, { signal: attempt.preparation.signal, deadlineMs: startDeadlineMs, now: this.#now });
           if (attempt.startTimer !== null) { clearTimeout(attempt.startTimer); attempt.startTimer = null; }
+          attempt.preparationDurationMs = Math.min(300000, Math.max(0, this.#now() - preparationStartedAt));
           markReady();
           const startsAtEpochMs = await gate.start;
+          attempt.scheduledStartEpochMs = startsAtEpochMs;
           if (!this.#isCurrent(occurrence, attempt)) return;
           await new Promise<void>(resolve => {
             const finish = () => { clearTimeout(timer); attempt.preparation.signal.removeEventListener("abort", finish); resolve(); };
@@ -449,6 +491,7 @@ export class DeviceAudioPlayer {
           if (!this.#isCurrent(occurrence, attempt)) return;
           if (this.#now() >= Math.min(startDeadlineMs, timing.endsAtEpochMs)) { attempt.finish("failed"); return; }
         }
+        if (gate === undefined) attempt.preparationDurationMs = Math.min(300000, Math.max(0, this.#now() - preparationStartedAt));
         attempt.element.muted = this.#currentMuted;
         attempt.stage = "play";
         if (gate !== undefined) attempt.startTimer = setTimeout(() => attempt.finish("failed", new Error("Audio play deadline exceeded.")), START_TIMEOUT_MS);
@@ -457,10 +500,16 @@ export class DeviceAudioPlayer {
         await Promise.race([playPromise, attempt.completion]);
         if (!this.#isCurrent(occurrence, attempt)) return;
         attempt.started = true;
+        attempt.startsAtEpochMs = this.#now();
+        attempt.progress = monitorMediaProgress(attempt.element, error => {
+          attempt.stage = "stall";
+          attempt.completionReason = "stalled";
+          attempt.finish("failed", attempt.element.error ?? error);
+        }, this.#now);
         if (gate !== undefined) {
           attempt.startsAtEpochMs = this.#now();
           attempt.updateEnvelope();
-          attempt.playbackTimer = setTimeout(() => attempt.finish("complete"), playbackDurationMs);
+          attempt.playbackTimer = setTimeout(() => attempt.completeConfigured(), playbackDurationMs);
         }
         if (attempt.startTimer !== null) {
           clearTimeout(attempt.startTimer);

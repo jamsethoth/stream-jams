@@ -350,3 +350,29 @@ it("prepares short clips without consuming their playback duration and holds unt
   await handle.start(9000);
   expect(start).toHaveBeenCalledExactlyOnceWith(9000);
 });
+
+it("logs renderer-observed audio timing without device identifiers", async () => {
+  const diagnostics = { preparationDurationMs: 12, scheduledStartEpochMs: 100, actualStartEpochMs: 103, terminalOutcome: "completed" as const, completionReason: "natural-end" as const };
+  const transport = transportFixture(); transport.play.mockResolvedValue({ failedRouteIds: [], diagnostics });
+  const logger = { debug: vi.fn(async () => {}), info: vi.fn(async () => {}), warn: vi.fn(async () => {}), error: vi.fn(async () => {}) };
+  const sink = new DesktopAudioSink({ transport, assetRepository: { findManyByIds: async () => new Map() }, assetStore: { readBounded: async () => new Uint8Array() }, logger });
+  expect(await sink.play(batchFixture())).toMatchObject({ diagnostics });
+  expect(logger.info).toHaveBeenCalledExactlyOnceWith("Selected device audio playback timing.", expect.objectContaining({
+    source: "desktop-audio.playback-timing", metadata: { playbackId: "playback", documentId: "document", routeCount: 2, ...diagnostics }
+  }));
+});
+
+it("logs each selected output's timing with scalar route identity that survives JSONL allowlisting", async () => {
+  const transport = transportFixture();
+  const timing = { preparationDurationMs: 12, scheduledStartEpochMs: 100, actualStartEpochMs: 103, terminalOutcome: "completed" as const };
+  transport.play.mockResolvedValue({ failedRouteIds: [], outputDiagnostics: [
+    { routeIds: ["personal"], layerId: "intro", assetId: "tone", diagnostics: timing },
+    { routeIds: ["broadcast"], layerId: "intro", assetId: "tone", diagnostics: { ...timing, actualStartEpochMs: 273 } }
+  ] });
+  const logger = { debug: vi.fn(async () => {}), info: vi.fn(async () => {}), warn: vi.fn(async () => {}), error: vi.fn(async () => {}) };
+  const sink = new DesktopAudioSink({ transport, assetRepository: { findManyByIds: async () => new Map() }, assetStore: { readBounded: async () => new Uint8Array() }, logger });
+  await sink.play(batchFixture());
+  expect(logger.info).toHaveBeenCalledTimes(2);
+  expect(logger.info).toHaveBeenCalledWith("Selected device audio playback timing.", expect.objectContaining({ metadata: expect.objectContaining({ routeIds: '["personal"]', actualStartEpochMs: 103 }) }));
+  expect(logger.info).toHaveBeenCalledWith("Selected device audio playback timing.", expect.objectContaining({ metadata: expect.objectContaining({ routeIds: '["broadcast"]', actualStartEpochMs: 273 }) }));
+});

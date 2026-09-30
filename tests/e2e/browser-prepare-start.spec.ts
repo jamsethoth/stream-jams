@@ -15,7 +15,7 @@ test("browser prepares real media silently, retains it at start, and recovers af
     send({ type: "overlay.playback.audio-state", muted: false });
   });
   await page.goto("/overlay/modules/alerts/live/fixture?profile=landscape");
-  await expect(page.getByTestId("overlay-root")).toBeAttached();
+  await expect(page.getByTestId("overlay-module-alerts")).toBeAttached();
   send({ type: "overlay.playback.prepare", instruction });
   await expect.poll(() => reports.some(report => report.type === "overlay.playback.ready" && report.instructionId === instruction.id)).toBe(true);
   const video = page.getByTestId(`overlay-video-${instruction.id}`);
@@ -35,4 +35,43 @@ test("browser prepares real media silently, retains it at start, and recovers af
   send({ type: "overlay.playback.start", instructionId: "next-video", startsAtEpochMs: Date.now() + 100 });
   await expect(page.getByTestId("overlay-video-next-video")).toBeVisible();
   await expect(page.getByTestId("overlay-video-failed-video")).toHaveCount(0);
+});
+
+
+test("post-start media stall fails transparent with timing evidence and permits the next occurrence", async ({ page }) => {
+  const base = { overlayId: "default", moduleId: "alerts", purpose: "live", scope: "module", targetProfileId: "landscape" };
+  const instruction = { ...base, id: "stalled-video", visual: { assetId: "clip", mediaType: "video", layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 } }, audio: null, text: null, tts: null, durationMs: 10000 };
+  const reports: Array<{ type: string; instructionId: string; diagnostics?: { preparationDurationMs?: number; scheduledStartEpochMs?: number; actualStartEpochMs?: number; terminalOutcome: string; completionReason?: string } }> = [];
+  let send: (message: object) => void = () => { throw new Error("Socket not connected"); };
+  await page.route("**/composition**", route => route.fulfill({ json: { ...base, modules: [{ moduleId: "alerts", enabled: true, instructions: [] }] } }));
+  await page.route("**/assets/clip**", route => route.fulfill({ path: resolve("tests/fixtures/media/neutral-trackless.webm"), contentType: "video/webm" }));
+  await page.routeWebSocket("**/overlay/ws/**", socket => {
+    send = message => socket.send(JSON.stringify(message));
+    socket.onMessage(message => reports.push(JSON.parse(String(message)) as (typeof reports)[number]));
+    send({ type: "overlay.playback.audio-state", muted: false });
+  });
+  await page.goto("/overlay/modules/alerts/live/fixture?profile=landscape");
+  await expect(page.getByTestId("overlay-module-alerts")).toBeAttached();
+  send({ type: "overlay.playback.prepare", instruction });
+  await expect.poll(() => reports.some(report => report.type === "overlay.playback.ready" && report.instructionId === instruction.id)).toBe(true);
+  const scheduledStartEpochMs = Date.now() + 100;
+  send({ type: "overlay.playback.start", instructionId: instruction.id, startsAtEpochMs: scheduledStartEpochMs });
+  const video = page.getByTestId(`overlay-video-${instruction.id}`);
+  await expect(video).toBeVisible();
+  await expect.poll(() => video.evaluate(element => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
+  // Stop progress only after the real browser decoded and began playback.
+  await video.evaluate(element => (element as HTMLVideoElement).pause());
+  await expect.poll(() => reports.find(report => report.type === "overlay.playback.failed" && report.instructionId === instruction.id)).toMatchObject({
+    diagnostics: { preparationDurationMs: expect.any(Number), scheduledStartEpochMs, actualStartEpochMs: expect.any(Number), terminalOutcome: "failed", completionReason: "stalled" }
+  });
+  await expect(video).toHaveCount(0);
+  await expect(page.getByTestId("overlay-root")).toHaveText("");
+  expect(reports.filter(report => report.type === "overlay.playback.failed" && report.instructionId === instruction.id)).toHaveLength(1);
+  send({ type: "overlay.playback.prepare", instruction: { ...instruction, id: "recovered-video", durationMs: 1200 } });
+  await expect.poll(() => reports.some(report => report.type === "overlay.playback.ready" && report.instructionId === "recovered-video")).toBe(true);
+  send({ type: "overlay.playback.start", instructionId: "recovered-video", startsAtEpochMs: Date.now() + 100 });
+  const recovered = page.getByTestId("overlay-video-recovered-video");
+  await expect(recovered).toBeVisible();
+  await expect.poll(() => recovered.evaluate(element => (element as HTMLVideoElement).currentTime)).toBeGreaterThan(0);
+  await expect.poll(() => reports.find(report => report.type === "overlay.playback.completed" && report.instructionId === "recovered-video")).toMatchObject({ diagnostics: { terminalOutcome: "completed" } });
 });

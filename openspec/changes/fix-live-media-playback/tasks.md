@@ -29,9 +29,9 @@
 
 ## 6. Diagnostic completeness follow-up
 
-- [ ] 6.1 Log watchdog expiry with outstanding recipient evidence even after successful cleanup.
-- [ ] 6.2 Detect sustained post-start stalls without treating them as successful completion; test loop, transient buffering and cleanup.
-- [ ] 6.3 Preserve bounded preparation, scheduled/observed start and terminal outcome evidence across output boundaries.
-- [ ] 6.4 Preserve and deduplicate transport send/close/reconnect diagnostics with redaction.
-- [ ] 6.5 Recover valid runtime records around corrupt lines and expose incomplete coverage without raw damaged data.
-- [ ] 6.6 Run affected and repository gates, reconcile specs and publish the follow-up to PR 137.
+- [x] 6.1 Log watchdog expiry with outstanding recipient evidence even after successful cleanup.
+- [x] 6.2 Detect sustained post-start stalls without treating them as successful completion; test loop, transient buffering and cleanup.
+- [x] 6.3 Preserve bounded preparation, scheduled/observed start and terminal outcome evidence across output boundaries.
+- [x] 6.4 Preserve and deduplicate transport send/close/reconnect diagnostics with redaction.
+- [x] 6.5 Recover valid runtime records around corrupt lines and expose incomplete coverage without raw damaged data.
+- [x] 6.6 Run affected and repository gates, reconcile specs and publish the follow-up to PR 137.

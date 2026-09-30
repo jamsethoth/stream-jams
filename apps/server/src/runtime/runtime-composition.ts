@@ -318,7 +318,11 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
   const surfaceRepository = new SqliteSurfaceRepository(database.connection, overlayModuleRegistry);
   const desktopVisualAssetResolver = new DesktopVisualAssetResolver({ assetRepository, assetStore });
   const desktopVisualSink = options.desktopOverlayTransport === undefined ? undefined : new DesktopVisualSink({
-    transport: options.desktopOverlayTransport, surfaces: surfaceRepository, assets: desktopVisualAssetResolver
+    transport: options.desktopOverlayTransport, surfaces: surfaceRepository, assets: desktopVisualAssetResolver,
+    onPlaybackDiagnostics: (occurrenceId, diagnostics) => runtimeLogger.info("Desktop overlay playback timing.", {
+      module: "overlay", source: "desktop-overlay.playback-timing", correlationId: occurrenceId, processingId: null,
+      metadata: { occurrenceId, ...diagnostics }
+    })
   });
   if (desktopVisualSink !== undefined) cleanups.push(() => desktopVisualSink.close());
   const overlayModuleConfigService = new DefaultOverlayModuleConfigService({
@@ -417,11 +421,23 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     generateClientId: options.generateOverlayClientId ?? generateOverlayClientId,
     clock: now,
     initialPlaybackMuted: initialConfig.playback.muted,
+    onTransportDiagnostic(diagnostic) {
+      const { exception, ...metadata } = diagnostic;
+      void (exception === null
+        ? runtimeLogger.info("Overlay transport connection changed.", { module: "overlay", source: "overlay.transport.connection", correlationId: diagnostic.clientId, processingId: null, metadata })
+        : runtimeLogger.error("Overlay transport failed.", { module: "overlay", source: "overlay.transport.failed", correlationId: diagnostic.clientId, processingId: null, metadata }, exception));
+    },
     onClientDisconnected(clientId) {
       playbackCoordinator.reportClientDisconnected(clientId);
       effectPlaybackCoordinator.reportClientDisconnected(clientId);
     },
     onPlaybackReport(report) {
+      if (report.diagnostics !== undefined && (report.status === "completed" || report.status === "failed")) {
+        void runtimeLogger.info("Browser overlay playback timing.", {
+          module: "overlay", source: "overlay.playback.timing", correlationId: report.instructionId, processingId: null,
+          metadata: { clientId: report.clientId, instructionId: report.instructionId, targetProfileId: report.targetProfileId, ...report.diagnostics }
+        });
+      }
       if (report.status === "failed") {
         void runtimeLogger.error(
           `Overlay playback failed: ${report.message ?? "No failure reason was reported."}`,
@@ -646,6 +662,10 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
     isModuleEnabled: isEffectModuleEnabled,
     validateReferences: (content) => effectPlaybackEligibilityService.referencesExist(content),
     validateOutputAvailability: (content) => effectPlaybackEligibilityService.hasAvailableOutput(content),
+    onWatchdogExpired: (occurrenceId, outstanding) => runtimeLogger.error("Screen Effects playback completion watchdog expired.", {
+      module: "screen-effects", source: "screen-effects.playback-watchdog-expired", correlationId: generateRuntimeReferenceId(), processingId: null,
+      metadata: { occurrenceId, terminalOutcome: "timed-out", ...outstanding }
+    }),
     onStopFailure: (error, occurrenceId) => runtimeLogger.error("Screen Effects local outputs did not acknowledge stop.", {
       module: "screen-effects",
       source: "screen-effects.playback-stop-failed",

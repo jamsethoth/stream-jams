@@ -220,6 +220,22 @@ describe("overlay-client", () => {
     expect(onMessage).toHaveBeenCalledTimes(2);
   });
 
+  it("preserves safe close evidence once and reconnects", () => {
+    const onMessage = vi.fn();
+    connectClient(onMessage);
+    const socket = FakeWebSocket.instances[0]!;
+    socket.emitClose(1006, "Lost wss://localhost/overlay/ovl_reconnect ovl_reconnect");
+    socket.emitClose(1006, "duplicate");
+    expect(onMessage).toHaveBeenCalledTimes(1);
+    expect(onMessage.mock.calls[0]![0].message).toContain("1006");
+    expect(JSON.stringify(onMessage.mock.calls)).not.toContain("ovl_reconnect");
+    vi.advanceTimersByTime(1000);
+    FakeWebSocket.instances[1]!.emit("open");
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(onMessage.mock.calls[0]![0].message).toContain("Lost [redacted-url] [redacted]");
+    expect(onMessage.mock.calls[0]![0].message).toContain("Reconnecting in 1000ms");
+  });
+
   it("treats a policy close as a terminal transport failure", () => {
     const onMessage = vi.fn();
     connectClient(onMessage);
@@ -227,7 +243,7 @@ describe("overlay-client", () => {
     FakeWebSocket.instances[0]!.emitClose(1008);
     expect(onMessage).toHaveBeenCalledWith({
       type: "error",
-      message: "Overlay transport connection closed"
+      message: "Overlay transport connection closed (1008). Reconnection stopped."
     });
     vi.advanceTimersByTime(30_000);
     expect(FakeWebSocket.instances).toHaveLength(1);
@@ -274,9 +290,9 @@ class FakeWebSocket {
     for (const listener of this.#listeners.get(type) ?? []) listener(new Event(type));
   }
 
-  emitClose(code: number): void {
+  emitClose(code: number, reason = ""): void {
     this.readyState = WebSocket.CLOSED;
-    for (const listener of this.#listeners.get("close") ?? []) listener({ code } as CloseEvent);
+    for (const listener of this.#listeners.get("close") ?? []) listener({ code, reason } as CloseEvent);
   }
 
   emitMessage(data: string): void {

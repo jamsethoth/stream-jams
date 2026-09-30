@@ -763,7 +763,24 @@ export class PlaybackCoordinator {
   }
 
   #handleWatchdog(playbackId: string): Promise<PlaybackQueueSnapshot> {
-    return this.#stopOccurrenceAndAdvance(playbackId, "completed").catch(async (error: unknown) => {
+    if (this.#closed || this.#queue.getSnapshot().current?.id !== playbackId) return Promise.resolve(this.#queue.getSnapshot());
+    // Counts keep this diagnostic bounded even with many browser recipients.
+    const metadata = {
+      playbackId, terminalOutcome: "timed-out",
+      pendingBrowserInstructionCount: this.#pendingClientsByInstructionId.size,
+      pendingBrowserClientCount: [...this.#pendingClientsByInstructionId.values()].reduce((sum, value) => sum + (value.pendingClients?.size ?? 0), 0),
+      pendingBrowserRecipients: JSON.stringify([...this.#pendingClientsByInstructionId].slice(0, 16).map(([instructionId, value]) => ({ instructionId: instructionId.slice(0, 256), clientIds: [...value.pendingClients ?? []].slice(0, 16).map(id => id.slice(0, 256)) }))),
+      desktopPending: this.#desktopPlayback !== null && !this.#desktopPlayback.settled,
+      audioPending: this.#devicePlayback !== null && !this.#devicePlayback.settled
+    };
+    void Promise.resolve().then(() => this.#logger?.error("Alert playback completion watchdog expired.", {
+      module: "alerts", source: "overlay.playback.watchdog-expired",
+      correlationId: this.#generateReferenceId?.() ?? playbackId, processingId: null, metadata
+    })).catch(
+      // error-provenance: allow cleanup -- the logger owns persistence fallback; expiry must still stop outputs
+      () => undefined);
+    // The legacy queue has no timeout state; skipped accurately avoids claiming completion.
+    return this.#stopOccurrenceAndAdvance(playbackId, "skipped").catch(async (error: unknown) => {
       await this.#recordOverlayTransportFailure(
         "Timed-out alert playback could not be stopped cleanly.",
         "overlay.playback.watchdog-stop-failed",

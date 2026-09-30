@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { desktopOverlayStatusSchema, desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopModuleSync, type DesktopOverlayDiagnostic, type DesktopOverlayStatus, type SelectedDesktopDisplay, type DesktopOverlayTransport, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
+import { desktopOverlayStatusSchema, desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopModuleSync, type DesktopOverlayDiagnostic, type DesktopOverlayStatus, type SelectedDesktopDisplay, type DesktopOverlayTransport, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply, type PlaybackTimingDiagnostics, type SurfaceConfiguration, type VisualRecipientKey } from "@stream-jams/core";
 import { overlayRendererReplySchema, type OverlayRendererRequest } from "./overlay-ipc.js";
 import type { DesktopDiagnosticInput } from "../desktop-diagnostics.js";
 
@@ -86,7 +86,7 @@ export class OverlayHost implements DesktopOverlayTransport {
         return this.prepare(command.batch).then(result => ({ type: result === "ready" ? "ready" : "error", key }));
       }
       case "sync-module": return this.syncModule(command).then(ok);
-      case "start": return this.start(command.key, command.timing).then(() => ({ type: "complete", key: command.key }));
+      case "start": return this.start(command.key, command.timing).then(diagnostics => ({ type: "complete", key: command.key, ...(diagnostics === undefined ? {} : { diagnostics }) }));
       case "stop": return this.stop(command.key).then(ok);
       case "retry": return this.retry().then(ok);
       case "close": return this.close().then(ok);
@@ -147,7 +147,7 @@ export class OverlayHost implements DesktopOverlayTransport {
     }
     finally { if (record.state !== "prepared" && record.state !== "stopping") this.#release(id, record); }
   }
-  async start(key: VisualRecipientKey, timing?: DesktopVisualBatch["timing"]): Promise<void> {
+  async start(key: VisualRecipientKey, timing?: DesktopVisualBatch["timing"]): Promise<void | PlaybackTimingDiagnostics> {
     const command = desktopVisualCommandSchema.parse({ type: "start", key, ...(timing === undefined ? {} : { timing }) });
     const id = identity(key); const record = this.#occurrences.get(id);
     if (record === undefined || record.state !== "prepared") throw unavailable();
@@ -159,7 +159,7 @@ export class OverlayHost implements DesktopOverlayTransport {
       record.timer = setTimeout(() => this.#expireOccurrence(id, record), Math.max(1, record.endsAt + 5000 - Date.now()));
     } else if (timing !== undefined) throw unavailable();
     record.state = "started";
-    try { await this.#request(command, Math.max(1, record.endsAt + 5000 - Date.now())); }
+    try { const reply = await this.#request(command, Math.max(1, record.endsAt + 5000 - Date.now())); return reply.type === "complete" ? reply.diagnostics : undefined; }
     finally { if (this.#occurrences.get(id)?.state !== "stopping") this.#release(id, record); }
   }
   stop(key: VisualRecipientKey): Promise<void> {

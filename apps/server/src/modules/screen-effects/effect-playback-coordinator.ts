@@ -33,6 +33,7 @@ export interface EffectPlaybackCoordinatorOptions {
   readonly isModuleEnabled?: (() => boolean | Promise<boolean>) | undefined;
   readonly validateReferences?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
   readonly validateOutputAvailability?: ((content: EffectContentSnapshot) => boolean | Promise<boolean>) | undefined;
+  readonly onWatchdogExpired?: ((occurrenceId: string, outstanding: { browserInstructions: number; browserClients: number; browserRecipients: string; desktopPending: boolean; audioPending: boolean }) => void | Promise<void>) | undefined;
   readonly onStopFailure?: ((error: unknown, occurrenceId: string) => void | Promise<void>) | undefined;
   readonly onPlaybackFailure?: ((error: unknown, occurrenceId: string, recipient: "browser" | "desktop" | "audio") => void | Promise<void>) | undefined;
   readonly now?: (() => number) | undefined;
@@ -67,6 +68,7 @@ export function effectOccurrenceKey(moduleId: string, occurrenceId: string): str
 }
 
 export class EffectPlaybackCoordinator {
+  readonly #onWatchdogExpired: EffectPlaybackCoordinatorOptions["onWatchdogExpired"];
   readonly #queue: EffectQueue;
   readonly #getSafety: () => PlaybackSafetyState;
   readonly #overlayPlaybackSink: OverlayPlaybackInstructionSink | null;
@@ -85,6 +87,7 @@ export class EffectPlaybackCoordinator {
   #closePromise: Promise<void> | null = null;
 
   constructor(options: EffectPlaybackCoordinatorOptions) {
+    this.#onWatchdogExpired = options.onWatchdogExpired;
     this.#queue = options.queue;
     this.#getSafety = options.getSafety;
     this.#overlayPlaybackSink = options.overlayPlaybackSink ?? null;
@@ -285,6 +288,13 @@ export class EffectPlaybackCoordinator {
     const startsAt = this.#now() + START_DELAY_MS;
     if (state.timer !== null) clearTimeout(state.timer);
     state.timer = this.#scheduleTimer(() => {
+      const outstanding = {
+        browserInstructions: state.browser.size,
+        browserClients: [...state.browser.values()].reduce((sum, value) => sum + value.pendingClients.size, 0),
+        browserRecipients: JSON.stringify([...state.browser].slice(0, 16).map(([instructionId, value]) => ({ instructionId: instructionId.slice(0, 256), clientIds: [...value.pendingClients].slice(0, 16).map(id => id.slice(0, 256)) }))),
+        desktopPending: state.desktopPending, audioPending: state.audioPending
+      };
+      void Promise.resolve().then(() => this.#onWatchdogExpired?.(state.occurrence.id, outstanding)).catch((error: unknown) => this.#reportStopFailure(error, state.occurrence.id));
       void this.#stopAndComplete(state.occurrence.id, "failed").catch((error: unknown) => this.#reportStopFailure(error, state.occurrence.id));
     }, START_DELAY_MS + state.occurrence.content.variant.durationMs + COMPLETION_GRACE_MS);
     for (const start of prepared) {

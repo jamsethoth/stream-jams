@@ -32,6 +32,27 @@ import { effectOccurrenceKey } from "../screen-effects/effect-playback-coordinat
 const alertPlaybackId = (occurrenceId: string) => effectOccurrenceKey("alerts", occurrenceId);
 
 describe("PlaybackCoordinator", () => {
+  it("records a watchdog expiry even when every stop succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      const error = vi.fn(async () => {});
+      const coordinator = createCoordinator({ logger: { error }, generateReferenceId: () => "ref",
+        overlayPlaybackSink: { deliverPlaybackInstruction: () => ({ deliveredClientIds: ["obs"] }), stopPlaybackInstructions: vi.fn() } });
+      const event = createCheerEvent();
+      coordinator.enqueueResolvedTest({ sourceEvent: event, alerts: [createResolvedAlert(event.id, "alert", "instruction")] });
+      await vi.advanceTimersByTimeAsync(8100);
+      expect(error).toHaveBeenCalledWith("Alert playback completion watchdog expired.", expect.objectContaining({
+        source: "overlay.playback.watchdog-expired", metadata: expect.objectContaining({
+          playbackId: "queue-item-1", terminalOutcome: "timed-out", pendingBrowserInstructionCount: 1,
+          pendingBrowserClientCount: 1, desktopPending: false, audioPending: false
+        })
+      }));
+      expect(coordinator.getSnapshot().current).toBeNull();
+      expect(coordinator.getSnapshot().recent[0]?.status).toBe("skipped");
+      await coordinator.close();
+    } finally { vi.useRealTimers(); }
+  });
+
   it("prepares every recipient before committing a shared full-duration start", async () => {
     vi.useFakeTimers(); vi.setSystemTime(0);
     try {

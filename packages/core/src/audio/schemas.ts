@@ -1,3 +1,4 @@
+import { playbackTimingDiagnosticsSchema } from "../diagnostics/playback-timing-diagnostics.js";
 import { z } from "zod";
 import { playbackTimingSchema } from "../overlays/playback-timing.js";
 import { serializedExceptionSchema } from "../diagnostics/serialized-exception.js";
@@ -86,12 +87,19 @@ export const deviceAudioBatchSchema = z.object({
   }, "Each device and route must occur once")
 }).strict() satisfies z.ZodType<DeviceAudioBatch>;
 export const deviceAudioResultSchema = z.object({
+  outputDiagnostics: z.array(z.object({
+    routeIds: z.array(audioRouteIdSchema.max(256)).min(1).max(64).refine(ids => new Set(ids).size === ids.length),
+    layerId: audioRouteIdSchema.max(256),
+    assetId: audioRouteIdSchema.max(256),
+    diagnostics: playbackTimingDiagnosticsSchema
+  }).strict()).max(64).optional(),
+  diagnostics: playbackTimingDiagnosticsSchema.optional(),
   failedRouteIds: uniqueIds,
   failures: z.array(z.object({
     routeIds: uniqueIds,
     layerId: audioRouteIdSchema,
     assetId: audioRouteIdSchema,
-    stage: z.enum(["source-load", "device-bind", "metadata", "seek", "decode", "play", "device-lost"]),
+    stage: z.enum(["source-load", "device-bind", "metadata", "seek", "decode", "play", "device-lost", "stall"]),
     exception: serializedExceptionSchema
   }).strict()).max(64).optional()
 }).strict() satisfies z.ZodType<DeviceAudioResult>;

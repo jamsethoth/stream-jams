@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   desktopVisualCommandSchema, maxDesktopVisualTransferBytes, type DesktopVisualBatch, type DesktopVisualCommand, type DesktopVisualReply,
-  type DesktopModuleSync, type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
+  type PlaybackTimingDiagnostics, type DesktopModuleSync, type DesktopOverlayTransport, type DesktopOverlayStatus, type OverlayPlaybackFailure, type SurfaceConfiguration, type VisualRecipientKey
 } from "@stream-jams/core";
 import { overlayWorkerResponseSchema, type OverlayWorkerMessage } from "./overlay-ipc.js";
 
@@ -80,7 +80,7 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
   }
 
   /** Resolves on completion, not on initial renderer admission. */
-  async start(key: VisualRecipientKey, timing?: DesktopVisualBatch["timing"]): Promise<void> {
+  async start(key: VisualRecipientKey, timing?: DesktopVisualBatch["timing"]): Promise<void | PlaybackTimingDiagnostics> {
     const id = keyId(key);
     const occurrence = this.#occurrences.get(id);
     if (occurrence === undefined || occurrence.phase !== "ready") throw unavailable();
@@ -95,6 +95,7 @@ export class WorkerOverlayClient implements DesktopOverlayTransport {
     try {
       const result = await this.#request({ type: "start", key, ...(timing === undefined ? {} : { timing }) }, Math.max(1, occurrence.deadline - Date.now()));
       if (result.type !== "complete") throw unavailable();
+      return result.diagnostics;
     } finally { if (this.#occurrences.get(id)?.phase !== "cancelled") this.#forget(id, occurrence); }
   }
 
@@ -167,5 +168,6 @@ function remoteOverlayFailure(failure: OverlayPlaybackFailure): Error {
   error.name = "DesktopOverlayPlaybackError";
   Object.defineProperty(error, "referenceId", { value: failure.referenceId, enumerable: true });
   Object.defineProperty(error, "stage", { value: failure.stage, enumerable: true });
+  if (failure.diagnostics !== undefined) Object.defineProperty(error, "diagnostics", { value: failure.diagnostics, enumerable: true });
   return error;
 }

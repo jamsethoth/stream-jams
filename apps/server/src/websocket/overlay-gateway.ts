@@ -1,4 +1,4 @@
-import { serializeException, overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
+import { playbackTimingDiagnosticsSchema, type PlaybackTimingDiagnostics, serializeException, overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayAccessDenialReason,
   OverlayAccessService,
@@ -54,6 +54,7 @@ export interface OverlayGatewayDeliveryResult {
 }
 
 export interface OverlayGatewayPlaybackReport {
+  readonly diagnostics?: PlaybackTimingDiagnostics;
   readonly clientId: string;
   readonly instructionId: string;
   readonly status: "started" | "completed" | "failed";
@@ -64,7 +65,17 @@ export interface OverlayGatewayPlaybackReport {
   readonly targetProfileId: OverlayTargetProfileId | null;
 }
 
+export interface OverlayTransportDiagnostic {
+  readonly clientId: string;
+  readonly operation: "send" | "close" | "connect";
+  readonly exception: SerializedException | null;
+  readonly closeCode: number | null;
+  readonly closeReason: string | null;
+  readonly outcome: "disconnected" | "reconnected";
+}
+
 export interface OverlayGatewayDependencies {
+  readonly onTransportDiagnostic?: (diagnostic: OverlayTransportDiagnostic) => void;
   readonly overlayAccessService: Pick<OverlayAccessService, "verifyRouteAccess">;
   readonly generateClientId: () => string;
   readonly clock?: () => Date;
@@ -75,6 +86,7 @@ export interface OverlayGatewayDependencies {
 
 interface RegisteredOverlayGatewayClient extends OverlayGatewayClient {
   readonly socket: OverlayGatewaySocket;
+  readonly sanitize: (text: string) => string;
 }
 
 type OverlayGatewayMessage =
@@ -121,6 +133,7 @@ export class OverlayGateway {
   readonly #clock: () => Date;
   readonly #onClientDisconnected: (clientId: string) => void;
   readonly #onPlaybackReport: (report: OverlayGatewayPlaybackReport) => void;
+  readonly #onTransportDiagnostic: (diagnostic: OverlayTransportDiagnostic) => void;
   readonly #clients = new Map<string, RegisteredOverlayGatewayClient>();
   readonly #recentClientsByOutput = new Map<string, OverlayGatewayClientState>();
   readonly #preparations = new Map<string, PlaybackPreparation>();
@@ -128,6 +141,7 @@ export class OverlayGateway {
   readonly #surfaceLayers = new Map<string, readonly SurfaceLayer[]>();
 
   constructor(dependencies: OverlayGatewayDependencies) {
+    this.#onTransportDiagnostic = dependencies.onTransportDiagnostic ?? (() => undefined);
     this.#overlayAccessService = dependencies.overlayAccessService;
     this.#generateClientId = dependencies.generateClientId;
     this.#clock = dependencies.clock ?? (() => new Date());
@@ -175,6 +189,7 @@ export class OverlayGateway {
     const client: RegisteredOverlayGatewayClient = {
       id: clientId,
       socket,
+      sanitize: text => text.replaceAll(registration.rawKey, "[redacted]").replace(/(?:https?|wss?):\/\/[^\s]+/giu, "[redacted-url]").slice(0, 512),
       overlayId: registration.overlayId,
       moduleId: registration.moduleId,
       purpose: registration.purpose,
@@ -185,8 +200,8 @@ export class OverlayGateway {
       userAgent: metadata.userAgent ?? null
     };
     this.#clients.set(clientId, client);
-    this.#recentClientsByOutput.delete(outputStateKey(client));
-    sendGatewayMessage(socket, {
+    const reconnecting = this.#recentClientsByOutput.delete(outputStateKey(client));
+    this.#send(client, {
       type: "overlay.connected",
       clientId,
       overlayId: registration.overlayId,
@@ -197,14 +212,16 @@ export class OverlayGateway {
         ? {}
         : { targetProfileId: registration.targetProfileId })
     });
-    sendGatewayMessage(socket, {
+    this.#send(client, {
       type: "overlay.playback.audio-state",
       muted: this.#playbackMuted
     });
     const layers = this.#surfaceLayers.get(registration.overlayId);
     if (registration.scope === "unified" && layers !== undefined) {
-      sendGatewayMessage(socket, { type: "overlay.surface-layers", layers });
+      this.#send(client, { type: "overlay.surface-layers", layers });
     }
+
+    if (reconnecting && this.#clients.has(clientId)) this.#onTransportDiagnostic({ clientId, operation: "connect", exception: null, closeCode: null, closeReason: null, outcome: "reconnected" });
 
     return {
       authorized: true,
@@ -212,12 +229,14 @@ export class OverlayGateway {
     };
   }
 
-  unregisterClient(clientId: string): void {
+  unregisterClient(clientId: string, close?: { readonly code: number; readonly reason: string }): void {
     const client = this.#clients.get(clientId);
     if (client === undefined) {
       return;
     }
 
+    if (close !== undefined) this.#onTransportDiagnostic({ clientId, operation: "close", exception: null,
+      closeCode: close.code, closeReason: client.sanitize(close.reason), outcome: "disconnected" });
     this.#clients.delete(clientId);
     for (const [instructionId, preparation] of this.#preparations) {
       preparation.pending.get(clientId)?.(false);
@@ -251,7 +270,7 @@ export class OverlayGateway {
           referenceId: `err_${crypto.randomUUID()}`, stage: "decode", exception: serializeException(new Error("Browser media readiness was not acknowledged within 6000ms.")), targetProfileId: client.targetProfileId ?? null });
         try { sendGatewayMessage(client.socket, { type: "overlay.playback.stop", instructionIds: [instruction.id] }); }
         // error-provenance: allow expected -- failed transport is retired and never included in prepared recipients
-        catch { this.unregisterClient(client.id); }
+        catch (error) { this.#sendFailed(client.id, error); }
         finish(false);
       }, 6000);
       pending.set(client.id, finish);
@@ -259,7 +278,7 @@ export class OverlayGateway {
     for (const client of recipients) {
       try { sendGatewayMessage(client.socket, { type: "overlay.playback.prepare", instruction }); }
       // error-provenance: allow expected -- failed transport is retired and never included in prepared recipients
-      catch { this.unregisterClient(client.id); }
+      catch (error) { this.#sendFailed(client.id, error); }
     }
     const ready = await Promise.all(readiness);
     const current = () => this.#preparations.get(instruction.id) === preparation;
@@ -282,9 +301,25 @@ export class OverlayGateway {
         if (client === undefined || !eligible.has(id)) continue;
         try { sendGatewayMessage(client.socket, { type: "overlay.playback.start", instructionId: instruction.id, startsAtEpochMs }); }
         // error-provenance: allow expected -- failed current transport is retired without affecting healthy recipients
-        catch { this.unregisterClient(id); }
+        catch (error) { this.#sendFailed(id, error); }
       }
     } };
+  }
+
+  #send(client: RegisteredOverlayGatewayClient, message: OverlayGatewayMessage): boolean {
+    if (!this.#clients.has(client.id)) return false;
+    try { sendGatewayMessage(client.socket, message); return true; }
+    // error-provenance: allow expected -- bounded sanitized cause is recorded before retiring the connection
+    catch (error) { this.#sendFailed(client.id, error); return false; }
+  }
+
+  #sendFailed(clientId: string, error: unknown): void {
+    const client = this.#clients.get(clientId);
+    if (client === undefined) return;
+    const exception = JSON.parse(JSON.stringify(serializeException(error, { messageCharacters: 512, stackCharacters: 2048, totalUtf8Bytes: 8192 }),
+      (_key, value: unknown) => typeof value === "string" ? client.sanitize(value) : value)) as SerializedException;
+    this.#onTransportDiagnostic({ clientId, operation: "send", exception, closeCode: null, closeReason: null, outcome: "disconnected" });
+    this.unregisterClient(clientId);
   }
 
   #cancelPreparation(instructionId: string, preparation: PlaybackPreparation): void {
@@ -301,11 +336,8 @@ export class OverlayGateway {
 
     for (const client of this.#clients.values()) {
       if (clientMatchesInstruction(client, instruction)) {
-        sendGatewayMessage(client.socket, {
-          type: "overlay.playback",
-          instruction
-        });
-        deliveredClientIds.push(client.id);
+        if (this.#send(client, { type: "overlay.playback", instruction })) deliveredClientIds.push(client.id);
+        else skippedClientIds.push(client.id);
       } else {
         skippedClientIds.push(client.id);
       }
@@ -326,13 +358,13 @@ export class OverlayGateway {
       (client.scope === "module" && composition.modules.some(module => module.moduleId !== client.moduleId))) return false;
     try { sendGatewayMessage(client.socket, { type: "overlay.composition", composition }); return true; }
     // error-provenance: allow expected -- a failed current-client send is converted to disconnect and a false delivery result
-    catch { this.unregisterClient(clientId); return false; }
+    catch (error) { this.#sendFailed(clientId, error); return false; }
   }
 
   setPlaybackMuted(muted: boolean): void {
     this.#playbackMuted = muted;
     for (const client of this.#clients.values()) {
-      sendGatewayMessage(client.socket, { type: "overlay.playback.audio-state", muted });
+      this.#send(client, { type: "overlay.playback.audio-state", muted });
     }
   }
 
@@ -344,7 +376,7 @@ export class OverlayGateway {
       if (client.scope === "unified" && client.overlayId === surface.overlayId) {
         try { sendGatewayMessage(client.socket, { type: "overlay.surface-layers", layers: surface.layers }); }
         // error-provenance: allow expected -- failure is intentionally converted to the bounded fallback at this boundary
-        catch { this.unregisterClient(client.id); }
+        catch (error) { this.#sendFailed(client.id, error); }
       }
     }
   }
@@ -360,7 +392,7 @@ export class OverlayGateway {
       if (preparation !== undefined) this.#cancelPreparation(id, preparation);
     }
     for (const client of this.#clients.values()) {
-      sendGatewayMessage(client.socket, {
+      this.#send(client, {
         type: "overlay.playback.stop",
         instructionIds: uniqueInstructionIds
       });
@@ -469,6 +501,7 @@ function parsePlaybackReport(client: RegisteredOverlayGatewayClient, rawMessage:
     readonly referenceId?: unknown;
     readonly stage?: unknown;
     readonly exception?: unknown;
+    readonly diagnostics?: unknown;
   };
   if (typeof candidate.type !== "string" || typeof candidate.instructionId !== "string") {
     return null;
@@ -492,7 +525,10 @@ function parsePlaybackReport(client: RegisteredOverlayGatewayClient, rawMessage:
     : null;
   if (candidate.type === "overlay.playback.failed" && (failure === null || !failure.success)) return null;
 
+  const diagnostics = candidate.diagnostics === undefined ? undefined : playbackTimingDiagnosticsSchema.safeParse(candidate.diagnostics);
+  if (diagnostics !== undefined && !diagnostics.success) return null;
   return {
+    ...(diagnostics?.success === true ? { diagnostics: diagnostics.data } : {}),
     clientId: client.id,
     instructionId: candidate.instructionId,
     status: candidate.type.replace("overlay.playback.", "") as OverlayGatewayPlaybackReport["status"],

@@ -79,7 +79,9 @@ it("waits for mounted media readiness and retains it while committing a fresh fu
   expect(controller.getSnapshot().occurrences[0]!.assetUrls).toBe(view.assetUrls);
   await vi.advanceTimersByTimeAsync(2199); expect(asset.dispose).not.toHaveBeenCalled();
   await vi.advanceTimersByTimeAsync(171); expect(asset.dispose).not.toHaveBeenCalled();
-  controller.complete(value.key, value.instructions[0]!.id);
+  const diagnostics = { preparationDurationMs: 1800, scheduledStartEpochMs: 2200, actualStartEpochMs: 2370, terminalOutcome: "completed" as const, completionReason: "configured-duration" as const };
+  controller.complete(value.key, value.instructions[0]!.id, diagnostics);
+  expect(report.mock.lastCall?.[0]).toMatchObject({ result: { type: "complete", diagnostics } });
   expect(asset.dispose).toHaveBeenCalledOnce();
   controller.dispose(); expect(vi.getTimerCount()).toBe(0);
 });

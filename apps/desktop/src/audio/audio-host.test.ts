@@ -211,3 +211,16 @@ it("forwards prepared batches without replaying handles after renderer loss", as
   await host.close();
   expect(vi.getTimerCount()).toBe(0);
 });
+
+it("preserves renderer timing across the audio host boundary", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(0);
+  const { host, ports } = harness();
+  const playing = host.play(payload);
+  await vi.advanceTimersByTimeAsync(0);
+  const request = ports[0]!.sent.find(value => value.command.type === "play")!;
+  const diagnostics = { preparationDurationMs: 20, scheduledStartEpochMs: 100, actualStartEpochMs: 104, terminalOutcome: "completed" };
+  const outputDiagnostics = [{ routeIds: ["selected"], layerId: "intro", assetId: "clip", diagnostics }];
+  ports[0]!.callbacks.onReply({ generation: request.generation, requestId: request.requestId, result: { type: "played", failedRouteIds: [], diagnostics, outputDiagnostics } });
+  expect(await playing).toEqual({ failedRouteIds: [], diagnostics, outputDiagnostics });
+  await host.close();
+});
