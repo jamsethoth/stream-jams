@@ -343,6 +343,21 @@ describe("OverlaySurface", () => {
     expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", false);
   });
 
+  it("keeps Screen Effect video sound exclusively on its normalized audio element", () => {
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
+    const value = { ...instruction(), moduleId: "screen-effects", visual: {
+      assetId: "effect-video", mediaType: "video" as const,
+      layout: { x: 0, y: 0, width: 320, height: 180, zIndex: 1 }
+    }, audio: { assetId: "effect-video", volume: 1, sourceKind: "video-soundtrack" as const } };
+    const { rerender } = render(<OverlaySurface composition={composition(value)} muted={false} resolveAssetUrl={(id) => `/assets/${id}`} />);
+
+    expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", true);
+    expect(screen.getByTestId("overlay-audio-instruction-1")).toHaveProperty("muted", false);
+    rerender(<OverlaySurface composition={composition({ ...value, audio: null })} muted={false} resolveAssetUrl={(id) => `/assets/${id}`} />);
+    expect(screen.getByTestId("overlay-video-instruction-1")).toHaveProperty("muted", true);
+    expect(screen.queryByTestId("overlay-audio-instruction-1")).not.toBeInTheDocument();
+  });
+
   it("renders animated shapes with target-profile geometry and preset timing", () => {
     render(
       <OverlaySurface
@@ -509,7 +524,8 @@ describe("OverlaySurface", () => {
     expect(play).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(onPlaybackEvent).toHaveBeenCalledWith({
       instructionId: "instruction-1",
-      status: "started"
+      status: "started",
+      diagnostics: expect.objectContaining({ actualStartEpochMs: expect.any(Number) })
     }));
     expect(screen.queryByRole("button", { name: "Enable alert audio" })).not.toBeInTheDocument();
   });

@@ -6,7 +6,7 @@ import type { AlertAudioOutputs, AudioOutputDevice, AudioOutputRoute, DeviceAudi
 
 export const mediaVolumeSchema = z.number().finite().min(0).max(2);
 
-export const audioRouteIdSchema = z.string().min(1).refine(value => value.trim() === value, "IDs must not contain surrounding whitespace");
+export const audioRouteIdSchema = z.string().min(1).max(256).refine(value => value.trim() === value, "IDs must not contain surrounding whitespace");
 export const explicitAudioDeviceIdSchema = audioRouteIdSchema.refine(
   id => id !== "default" && id !== "communications",
   "Choose an explicit output device, not a default or communications alias"
@@ -53,7 +53,7 @@ export const audioOutputRoutePatchSchema = z.object({
 }).strict().refine(patch => patch.name !== undefined || patch.deviceId !== undefined || patch.autoFollowDeviceName !== undefined, "Choose a name, device binding, or automatic-follow preference to change");
 
 export const audioOutputRouteTestSchema = z.object({}).strict().default({});
-const uniqueIds = z.array(audioRouteIdSchema).refine(ids => new Set(ids).size === ids.length, "IDs must be unique");
+const uniqueIds = z.array(audioRouteIdSchema).max(64).refine(ids => new Set(ids).size === ids.length, "IDs must be unique");
 export const resolvedAudioLayerSchema = z.object({
   sourceKind: z.enum(["audio", "video-soundtrack"]).default("audio"),
   layerId: audioRouteIdSchema,
@@ -88,9 +88,9 @@ export const deviceAudioBatchSchema = z.object({
 }).strict() satisfies z.ZodType<DeviceAudioBatch>;
 export const deviceAudioResultSchema = z.object({
   outputDiagnostics: z.array(z.object({
-    routeIds: z.array(audioRouteIdSchema.max(256)).min(1).max(64).refine(ids => new Set(ids).size === ids.length),
-    layerId: audioRouteIdSchema.max(256),
-    assetId: audioRouteIdSchema.max(256),
+    routeIds: uniqueIds.min(1),
+    layerId: audioRouteIdSchema,
+    assetId: audioRouteIdSchema,
     diagnostics: playbackTimingDiagnosticsSchema
   }).strict()).max(64).optional(),
   diagnostics: playbackTimingDiagnosticsSchema.optional(),

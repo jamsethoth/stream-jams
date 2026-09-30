@@ -35,3 +35,10 @@
 - [x] 6.4 Preserve and deduplicate transport send/close/reconnect diagnostics with redaction.
 - [x] 6.5 Recover valid runtime records around corrupt lines and expose incomplete coverage without raw damaged data.
 - [x] 6.6 Run affected and repository gates, reconcile specs and publish the follow-up to PR 137.
+
+## 7. Independent review corrections
+
+- [x] 7.1 Keep Screen Effect visual video elements internally muted so only the normalized selected Browser Source or device audio instruction can emit soundtrack audio.
+- [x] 7.2 Re-bootstrap authoritative composition after every successful browser-source reconnect and verify fresh prepare/start/completion playback.
+- [x] 7.3 Preserve bounded preparation, scheduled-start and actual-onset evidence at the browser started milestone for watchdog correlation.
+- [x] 7.4 Bound every audio-result route, layer and asset identity at the IPC schema boundary; rerun repository and browser-visible gates.

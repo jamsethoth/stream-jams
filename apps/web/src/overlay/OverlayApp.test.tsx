@@ -83,7 +83,8 @@ describe("OverlaySurface", () => {
     await waitFor(() =>
       expect(onPlaybackEvent).toHaveBeenCalledWith({
         instructionId: "image-instruction",
-        status: "started"
+        status: "started",
+        diagnostics: expect.objectContaining({ actualStartEpochMs: expect.any(Number) })
       })
     );
   });
@@ -148,20 +149,25 @@ describe("OverlaySurface", () => {
 });
 
 describe("OverlayApp transport integration", () => {
-  it("clears visible output when the real client socket closes unexpectedly", async () => {
+  it("rebootstraps and completes fresh prepared playback after the real client socket reconnects", async () => {
     AppFakeWebSocket.instances.length = 0;
     window.history.replaceState(null, "", "/overlay/modules/alerts/live/ovl_live?profile=landscape");
     vi.stubGlobal("WebSocket", AppFakeWebSocket);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    const fetcher = vi.fn().mockResolvedValue({
       ok: true,
       json: vi.fn().mockResolvedValue({
         ...createComposition([createInstruction("visible-instruction", { text: "Visible before close" })]),
         targetProfileId: "landscape"
       })
-    }));
+    });
+    vi.stubGlobal("fetch", fetcher);
 
     render(<OverlayApp />);
-    act(() => AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.playback.audio-state", muted: false }));
+    await act(async () => {
+      AppFakeWebSocket.instances[0]!.emitOpen();
+      AppFakeWebSocket.instances[0]!.emitMessage({ type: "overlay.playback.audio-state", muted: false });
+      await Promise.resolve();
+    });
     expect(await screen.findByText("Visible before close")).toBeInTheDocument();
     vi.useFakeTimers();
 
@@ -171,6 +177,27 @@ describe("OverlayApp transport integration", () => {
     expect(AppFakeWebSocket.instances).toHaveLength(1);
     act(() => vi.advanceTimersByTime(1));
     expect(AppFakeWebSocket.instances).toHaveLength(2);
+    const reconnected = AppFakeWebSocket.instances[1]!;
+    await act(async () => {
+      reconnected.emitOpen();
+      reconnected.emitMessage({ type: "overlay.playback.audio-state", muted: false });
+      await Promise.resolve();
+    });
+    const instruction = { ...createInstruction("after-reconnect", { text: "Recovered playback" }), purpose: "live" as const, targetProfileId: "landscape" as const };
+    act(() => reconnected.emitMessage({ type: "overlay.playback.prepare", instruction }));
+    await act(async () => {});
+    expect(reconnected.sent.map(message => JSON.parse(message))).toContainEqual({ type: "overlay.playback.ready", instructionId: "after-reconnect" });
+    act(() => reconnected.emitMessage({ type: "overlay.playback.start", instructionId: "after-reconnect", startsAtEpochMs: Date.now() + 100 }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+    expect(screen.getByText("Recovered playback")).toBeVisible();
+    expect(reconnected.sent.map(message => JSON.parse(message))).toContainEqual(expect.objectContaining({
+      type: "overlay.playback.started", instructionId: "after-reconnect", diagnostics: expect.objectContaining({ actualStartEpochMs: expect.any(Number) })
+    }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(reconnected.sent.map(message => JSON.parse(message))).toContainEqual(expect.objectContaining({
+      type: "overlay.playback.completed", instructionId: "after-reconnect"
+    }));
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -268,6 +295,11 @@ class AppFakeWebSocket {
   emitClose(code: number): void {
     this.readyState = AppFakeWebSocket.CLOSED;
     for (const listener of this.#listeners.get("close") ?? []) listener({ code } as CloseEvent);
+  }
+
+  emitOpen(): void {
+    this.readyState = AppFakeWebSocket.OPEN;
+    for (const listener of this.#listeners.get("open") ?? []) listener(new Event("open"));
   }
 
   emitMessage(message: unknown): void {

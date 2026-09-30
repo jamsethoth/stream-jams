@@ -115,10 +115,15 @@ it("bounds and validates audio failure evidence at the IPC boundary", () => {
   const result = { failedRouteIds: ["selected"], failures: [failure] };
   expect(core.deviceAudioResultSchema.parse(result)).toEqual(result);
   const longIdentity = { ...failure, layerId: "layer".repeat(100), assetId: "asset".repeat(100) };
-  expect(core.deviceAudioResultSchema.parse({ ...result, failures: [longIdentity] })).toEqual({ ...result, failures: [longIdentity] });
+  expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: [longIdentity] }).success).toBe(false);
   expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: Array.from({ length: 64 }, () => failure) }).success).toBe(true);
   expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: Array.from({ length: 65 }, () => failure) }).success).toBe(false);
-  for (const invalid of [{ ...failure, stage: "unknown" }, { ...failure, secret: "forbidden" }, { ...failure, routeIds: ["selected", "selected"] }, { ...failure, exception: "unstructured" }]) {
+  for (const invalidResult of [{ ...result, failedRouteIds: Array.from({ length: 65 }, (_, index) => `route-${index}`) },
+    { ...result, failedRouteIds: ["route".repeat(100)] }]) {
+    expect(core.deviceAudioResultSchema.safeParse(invalidResult).success).toBe(false);
+  }
+  for (const invalid of [{ ...failure, stage: "unknown" }, { ...failure, secret: "forbidden" }, { ...failure, routeIds: ["selected", "selected"] },
+    { ...failure, routeIds: Array.from({ length: 65 }, (_, index) => `route-${index}`) }, { ...failure, exception: "unstructured" }]) {
     expect(core.deviceAudioResultSchema.safeParse({ ...result, failures: [invalid] }).success).toBe(false);
   }
 });

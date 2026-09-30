@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties } from "re
 import "../overlay.css";
 import { monitorMediaProgress, prepareMediaAtStart, rgbaColorSchema, serializeException, targetProfileDefinitions, timerStackProjectionSchema, TimedMediaPreparationError } from "@stream-jams/core";
 import type {
+  PlaybackTimingMilestone,
   PlaybackTimingDiagnostics,
   OverlayComposition,
   OverlayElementLayout,
@@ -14,11 +15,11 @@ import { alertTextLayerStyle } from "./alert-text-style.js";
 import { useMediaVolumeEnvelope } from "../../media/use-media-volume-envelope.js";
 import { TimerStack } from "./TimerStack.js";
 
-export type OverlayPlaybackEvent = { readonly diagnostics?: PlaybackTimingDiagnostics } & (
+export type OverlayPlaybackEvent =
   | { readonly instructionId: string; readonly status: "ready" }
-  | { readonly instructionId: string; readonly status: "started" }
-  | { readonly instructionId: string; readonly status: "completed" }
-  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure });
+  | { readonly instructionId: string; readonly status: "started"; readonly diagnostics?: PlaybackTimingMilestone }
+  | { readonly instructionId: string; readonly status: "completed"; readonly diagnostics?: PlaybackTimingDiagnostics }
+  | { readonly instructionId: string; readonly status: "failed"; readonly failure: OverlayPlaybackFailure; readonly diagnostics?: PlaybackTimingDiagnostics };
 
 export interface OverlaySurfaceProps {
   readonly composition: OverlayComposition;
@@ -322,7 +323,11 @@ function OverlayInstructionLayer({
     if (!startedReportedRef.current) {
       startedReportedRef.current = true;
       diagnosticsRef.current.actualStartEpochMs ??= Date.now();
-      onPlaybackEvent?.({ instructionId: instruction.id, status: "started" });
+      onPlaybackEvent?.({ instructionId: instruction.id, status: "started", diagnostics: {
+        ...(diagnosticsRef.current.preparationDurationMs === undefined ? {} : { preparationDurationMs: diagnosticsRef.current.preparationDurationMs }),
+        ...(diagnosticsRef.current.scheduledStartEpochMs === undefined ? {} : { scheduledStartEpochMs: diagnosticsRef.current.scheduledStartEpochMs }),
+        actualStartEpochMs: diagnosticsRef.current.actualStartEpochMs
+      } });
     }
     const timeoutId = window.setTimeout(() => {
       if (completionReportedRef.current) {
@@ -488,7 +493,7 @@ function OverlayInstructionLayer({
           loop={instruction.visual.loop ?? false}
           ref={videoElementRef}
           data-testid={`overlay-video-${instruction.id}`}
-          muted={preparing || instruction.moduleId === "alerts" || muted}
+          muted={preparing || instruction.moduleId === "alerts" || instruction.moduleId === "screen-effects" || muted}
           onPlay={(event) => { if (startsAt === undefined && !preparing) observeMedia(event.currentTarget); }}
           onEnded={(event) => { if (!visualLoop) { naturalEnd(event.currentTarget); setVideoEnded(true); } }}
           onError={(event) => reportFailure("source-load", "Video playback failed", event.currentTarget.error ?? event.nativeEvent)}

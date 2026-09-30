@@ -357,5 +357,5 @@ export * from "./screen-effects/authoring.js";
 export * from "./screen-effects/effect-queue.js";
 export * from "./screen-effects/sets.js";
 
-export { playbackTimingDiagnosticsSchema, type PlaybackTimingDiagnostics } from "./diagnostics/playback-timing-diagnostics.js";
+export { playbackTimingDiagnosticsSchema, playbackTimingMilestoneSchema, type PlaybackTimingDiagnostics, type PlaybackTimingMilestone } from "./diagnostics/playback-timing-diagnostics.js";
 export { monitorMediaProgress } from "./audio/media-progress.js";

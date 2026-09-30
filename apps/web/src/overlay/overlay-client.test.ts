@@ -101,7 +101,7 @@ describe("overlay-client", () => {
     const socket = new RecordingWebSocket();
     const reporter = createOverlayPlaybackReporter(socket);
 
-    reporter.reportStarted("instruction-1");
+    reporter.reportStarted("instruction-1", { preparationDurationMs: 25, scheduledStartEpochMs: 100, actualStartEpochMs: 105 });
     reporter.reportCompleted("instruction-1");
     reporter.reportFailed("instruction-2", {
       referenceId: "err_failure",
@@ -113,7 +113,8 @@ describe("overlay-client", () => {
     expect(socket.sent).toEqual([
       {
         type: "overlay.playback.started",
-        instructionId: "instruction-1"
+        instructionId: "instruction-1",
+        diagnostics: { preparationDurationMs: 25, scheduledStartEpochMs: 100, actualStartEpochMs: 105 }
       },
       {
         type: "overlay.playback.completed",
@@ -172,6 +173,28 @@ describe("overlay-client", () => {
     expect(FakeWebSocket.instances).toHaveLength(3);
     vi.advanceTimersByTime(1);
     expect(FakeWebSocket.instances).toHaveLength(4);
+  });
+
+  it("fetches a fresh authoritative composition after every successful connection", async () => {
+    const onMessage = vi.fn();
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: vi.fn().mockResolvedValue({
+      overlayId: "default", purpose: "live", scope: "module", targetProfileId: "landscape", modules: []
+    }) });
+    connectOverlayClient({
+      route: parseOverlayRoute("/overlay/modules/alerts/live/ovl_reconnect?profile=landscape")!,
+      fetcher: fetcher as unknown as typeof fetch,
+      WebSocketCtor: FakeWebSocket as unknown as typeof WebSocket,
+      onMessage
+    });
+    FakeWebSocket.instances[0]!.emit("open");
+    await vi.advanceTimersByTimeAsync(0);
+    FakeWebSocket.instances[0]!.emit("close");
+    vi.advanceTimersByTime(1_000);
+    FakeWebSocket.instances[1]!.emit("open");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(onMessage.mock.calls.filter(([message]) => message.type === "composition")).toHaveLength(2);
   });
 
   it("cancels reconnect and closes the active socket when disposed", () => {

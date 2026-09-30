@@ -493,6 +493,11 @@ describe("OverlayGateway", () => {
       gateway.handleClientMessage("client-1", JSON.stringify({ type: "overlay.playback.completed", instructionId: "one", diagnostics: invalid }));
     }
     expect(onPlaybackReport).toHaveBeenCalledTimes(1);
+    const started = { preparationDurationMs: 30, scheduledStartEpochMs: 1000, actualStartEpochMs: 1008 };
+    gateway.handleClientMessage("client-1", JSON.stringify({ type: "overlay.playback.started", instructionId: "two", diagnostics: started }));
+    expect(onPlaybackReport).toHaveBeenLastCalledWith(expect.objectContaining({ status: "started", diagnostics: started }));
+    gateway.handleClientMessage("client-1", JSON.stringify({ type: "overlay.playback.started", instructionId: "two", diagnostics: { ...started, terminalOutcome: "completed" } }));
+    expect(onPlaybackReport).toHaveBeenCalledTimes(2);
   });
 
   it("records playback lifecycle reports from registered clients", async () => {

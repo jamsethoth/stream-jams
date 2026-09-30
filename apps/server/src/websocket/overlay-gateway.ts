@@ -1,4 +1,4 @@
-import { playbackTimingDiagnosticsSchema, type PlaybackTimingDiagnostics, serializeException, overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
+import { playbackTimingDiagnosticsSchema, playbackTimingMilestoneSchema, type PlaybackTimingDiagnostics, type PlaybackTimingMilestone, serializeException, overlayCompositionSchema, surfaceConfigurationSchema, type OverlayComposition, type SurfaceLayer } from "@stream-jams/core";
 import type {
   OverlayAccessDenialReason,
   OverlayAccessService,
@@ -54,7 +54,7 @@ export interface OverlayGatewayDeliveryResult {
 }
 
 export interface OverlayGatewayPlaybackReport {
-  readonly diagnostics?: PlaybackTimingDiagnostics;
+  readonly diagnostics?: PlaybackTimingDiagnostics | PlaybackTimingMilestone;
   readonly clientId: string;
   readonly instructionId: string;
   readonly status: "started" | "completed" | "failed";
@@ -525,7 +525,8 @@ function parsePlaybackReport(client: RegisteredOverlayGatewayClient, rawMessage:
     : null;
   if (candidate.type === "overlay.playback.failed" && (failure === null || !failure.success)) return null;
 
-  const diagnostics = candidate.diagnostics === undefined ? undefined : playbackTimingDiagnosticsSchema.safeParse(candidate.diagnostics);
+  const diagnosticsSchema = candidate.type === "overlay.playback.started" ? playbackTimingMilestoneSchema : playbackTimingDiagnosticsSchema;
+  const diagnostics = candidate.diagnostics === undefined ? undefined : diagnosticsSchema.safeParse(candidate.diagnostics);
   if (diagnostics !== undefined && !diagnostics.success) return null;
   return {
     ...(diagnostics?.success === true ? { diagnostics: diagnostics.data } : {}),

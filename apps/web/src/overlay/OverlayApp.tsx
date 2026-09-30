@@ -124,7 +124,7 @@ export function OverlayApp() {
     if (event.status === "ready") {
       reporter.reportReady(event.instructionId);
     } else if (event.status === "started") {
-      reporter.reportStarted(event.instructionId);
+      reporter.reportStarted(event.instructionId, event.diagnostics);
     } else if (event.status === "completed") {
       reporter.reportCompleted(event.instructionId, event.diagnostics);
     } else {

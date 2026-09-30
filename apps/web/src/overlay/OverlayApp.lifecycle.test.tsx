@@ -137,7 +137,7 @@ describe("OverlayApp playback lifecycle", () => {
     });
 
     expect(screen.getByText("Temporary test alert")).toBeInTheDocument();
-    expect(clientHarness.reportStarted).toHaveBeenCalledWith("instruction-test");
+    expect(clientHarness.reportStarted).toHaveBeenCalledWith("instruction-test", expect.objectContaining({ actualStartEpochMs: expect.any(Number) }));
 
     act(() => vi.advanceTimersByTime(250));
 

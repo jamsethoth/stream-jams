@@ -432,6 +432,12 @@ export async function createRuntimeAppComposition(options: RuntimeAppComposition
       effectPlaybackCoordinator.reportClientDisconnected(clientId);
     },
     onPlaybackReport(report) {
+      if (report.diagnostics !== undefined && report.status === "started") {
+        void runtimeLogger.info("Browser overlay playback started.", {
+          module: "overlay", source: "overlay.playback.started", correlationId: report.instructionId, processingId: null,
+          metadata: { clientId: report.clientId, instructionId: report.instructionId, targetProfileId: report.targetProfileId, ...report.diagnostics }
+        });
+      }
       if (report.diagnostics !== undefined && (report.status === "completed" || report.status === "failed")) {
         void runtimeLogger.info("Browser overlay playback timing.", {
           module: "overlay", source: "overlay.playback.timing", correlationId: report.instructionId, processingId: null,
