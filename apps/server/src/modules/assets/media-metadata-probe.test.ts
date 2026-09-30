@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { MusicMetadataProbe } from "./media-metadata-probe.js";
 
 describe("MusicMetadataProbe", () => {
-  it("reads a positive duration from MP4 metadata", async () => {
+  it("reads the full duration from MP4 metadata", async () => {
     const filename = "neutral-with-audio.mp4";
     const mimeType = "video/mp4";
     const bytes = await readFile(resolve("tests/fixtures/media", filename));
@@ -15,8 +15,7 @@ describe("MusicMetadataProbe", () => {
       bytes
     });
 
-    expect(result.durationMs).toEqual(expect.any(Number));
-    expect(result.durationMs).toBeGreaterThan(0);
+    expect(result.durationMs).toBe(9941);
   });
 
   it("returns null when a valid WebM omits container duration metadata", async () => {

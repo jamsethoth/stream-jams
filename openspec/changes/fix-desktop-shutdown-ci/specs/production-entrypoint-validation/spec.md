@@ -25,3 +25,8 @@ Desktop lifecycle validation SHALL isolate healthy-renderer quit decisions from 
 - **THEN** the primary error remains visible alongside the cleanup error
 - **AND** available bounded shutdown phase evidence is retained under the uploaded test-results directory even when cleanup throws
 - **AND** an unexpected native confirmation cannot count as a successful healthy-renderer quit test
+
+#### Scenario: Neutral MP4 fixture metadata matches decoded duration
+- **WHEN** desktop validation imports the neutral MP4 soundtrack fixture
+- **THEN** its media-header durations use track timescale units and metadata reports the full 9941 ms duration
+- **AND** fixture repair preserves encoded media samples and existing silent decoder assertions

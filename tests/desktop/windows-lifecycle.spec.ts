@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
-import { windowByUrl } from "./audio-harness.js";
+import { windowByUrl, withCleanup } from "./audio-harness.js";
+import { observeGuardReady } from "./guard-ready.js";
 
 const executablePath = resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe");
 
@@ -107,7 +108,7 @@ test("an unavailable renderer requires native confirmation before service shutdo
     ]));
     await expect.poll(async () => {
       const entries = await runtimeLogEntries(join(fixture.root, "data", "logs"));
-      return entries.some((entry) => entry.event === "desktop.renderer.gone" && entry.details?.reason === "crashed" && typeof entry.details.exitCode === "number");
+      return entries.some((entry) => entry.event === "desktop.renderer.gone" && typeof entry.correlationId === "string" && /^err_/u.test(entry.correlationId) && entry.details?.reason === "crashed" && typeof entry.details.exitCode === "number");
     }).toBe(true);
     await expectHealth(fixture.port, true);
 
@@ -182,8 +183,20 @@ test("native dialog replies target the requested pending dialog rather than the 
     await replyToNativeDialog(desktop, "startup failure", 0);
     expect(await desktop.evaluate(() => (globalThis as typeof globalThis & { dialogReplies?: unknown[] }).dialogReplies))
       .toEqual([{ message: "quit confirmation", response: 1 }, { message: "startup failure", response: 0 }]);
+    // load completion can precede the initial React guard registration. This
+    // clean helper fixture reloads under observation before its ordinary Quit.
+    await desktop.evaluate(observeGuardReady, { origin: `http://127.0.0.1:${fixture.port}`, afterNavigation: true as const });
+    await withCleanup(async () => {
+      await management.reload();
+      await expect.poll(() => desktop!.evaluate(() => (globalThis as typeof globalThis & { shutdownGuard?: { ready: boolean } }).shutdownGuard?.ready)).toBe(true);
+    }, async () => {
+      await desktop!.evaluate(() => (globalThis as typeof globalThis & { shutdownGuard?: { dispose(): void } }).shutdownGuard?.dispose());
+    });
     await quit(desktop, fixture.port);
     desktop = undefined;
+  } catch (error) {
+    console.info("Dialog-helper quit observation:", desktop === undefined ? [] : await nativeDialogMessages(desktop).catch(() => []));
+    throw error;
   } finally {
     await cleanup(desktop, mainPid, fixture.root);
   }
@@ -223,12 +236,12 @@ function launch(fixture: DesktopFixture): Promise<ElectronApplication> {
   });
 }
 
-async function runtimeLogEntries(directory: string): Promise<Array<{ event?: string; details?: Record<string, unknown> }>> {
+async function runtimeLogEntries(directory: string): Promise<Array<{ event?: string; correlationId?: string; details?: Record<string, unknown> }>> {
   const files = await readdir(directory).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   });
-  const entries: Array<{ event?: string; details?: Record<string, unknown> }> = [];
+  const entries: Array<{ event?: string; correlationId?: string; details?: Record<string, unknown> }> = [];
   for (const file of files.filter((candidate) => /^runtime-\d{10}\.jsonl$/u.test(candidate))) {
     const text = await readFile(join(directory, file), "utf8");
     for (const line of text.split("\n").filter(Boolean)) entries.push(JSON.parse(line));

@@ -25,3 +25,9 @@ A local boundary probe exercised the current production ManagementWindow class w
 - Crash coverage must remain real: extend the existing `forcefullyCrashRenderer()` scenario, including raw runtime log reference validation.
 - Cleanup can fail independently: report both errors and retain evidence before returning; maintain the no-force-kill policy of this diagnostics test.
 - Current CI runs desktop tests only on workflow_dispatch. Local package verification is required; a new remote run is not assumed from ordinary CI success.
+
+## Additional Validation Defects Found During Implementation
+
+The first full suite exposed an initial quit-guard ordering defect in the native-dialog helper fixture. A controlled packaged probe held genuine initial registration: ordinary Quit selected native confirmation and kept the service alive; releasing the real registration enabled renderer decisions. That clean fixture now observes a deliberate reload before Quit. Other lifecycle fixtures are unchanged.
+
+The same suite exposed malformed neutral MP4 fixture media-header durations. `mdhd` version 1 durations must use the track timescale, but the fixture stored movie milliseconds. The with-audio header made MusicMetadataProbe report 207 ms while the browser decoded about 9.93 seconds, allowing production completion before the soundtrack poll observed it. Correct only the three known duration fields; keep sample bytes, production parser, and codec assertions unchanged. A precise 9941 ms metadata assertion failed at 207 ms before repair and passed afterward. The trackless parser currently returns null because it has no audio metadata; its corrected video header is verified by existing decoder coverage.

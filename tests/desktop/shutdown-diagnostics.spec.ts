@@ -4,9 +4,12 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { _electron, expect, test, type ElectronApplication } from "@playwright/test";
-import { windowByUrl } from "./audio-harness.js";
+import { windowByUrl, withCleanup } from "./audio-harness.js";
+import { observeGuardReady } from "./guard-ready.js";
+import { withShutdownEvidence } from "./shutdown-evidence.js";
 
 test("opt-in shutdown evidence separates Cancel from cleanup and native exit", async () => {
+  const testInfo = test.info();
   const root = await mkdtemp(join(tmpdir(), "stream-jams-shutdown-phases-"));
   const file = join(root, "phases.jsonl");
   const server = createServer();
@@ -29,46 +32,39 @@ test("opt-in shutdown evidence separates Cancel from cleanup and native exit", a
     const text = await readFile(file, "utf8").catch((error: unknown) => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return ""; throw error; });
     return text.split("\n").slice(0, -1).map(line => JSON.parse(line) as { phase: string; attempt: number });
   };
-  try {
+  await withShutdownEvidence(async () => {
     desktop = await _electron.launch({ executablePath: resolve("apps/desktop/out/Stream Jams-win32-x64/Stream Jams.exe"), cwd: root, env, chromiumSandbox: true, timeout: 30_000 });
     child = desktop.process();
+    if (child.pid !== undefined) pids.add(child.pid);
+    await desktop.evaluate(({ dialog }) => {
+      const observed = globalThis as typeof globalThis & { shutdownDialogs?: Array<{ message: string; respond: ((response: number) => void) | null }> };
+      observed.shutdownDialogs = [];
+      const original = dialog.showMessageBox.bind(dialog);
+      dialog.showMessageBox = ((...args: Parameters<typeof dialog.showMessageBox>) => {
+        const options = args.at(-1) as Electron.MessageBoxOptions;
+        if (!options.message?.includes("Management cannot confirm whether your changes are saved")) return original(...args);
+        return new Promise<Electron.MessageBoxReturnValue>(resolve => observed.shutdownDialogs!.push({ message: options.message!, respond: response => resolve({ response, checkboxChecked: false }) }));
+      }) as typeof dialog.showMessageBox;
+    });
     expect(await desktop.evaluate(({ crashReporter }) => crashReporter.getUploadToServer())).toBe(false);
     const page = await windowByUrl(desktop, `http://127.0.0.1:${port}/manage`);
     await page.waitForLoadState("load");
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(page.getByRole("checkbox", { name: "Close window to tray" })).toBeVisible();
-    const diagnosticSessionId = await page.evaluate(async () => {
-      const response = await fetch("/auth/management/sessions", { method: "POST" });
-      if (!response.ok) throw new Error("Could not establish the diagnostic test session");
-      return ((await response.json()) as { id: string }).id;
+    await desktop.evaluate(observeGuardReady, `http://127.0.0.1:${port}`);
+    await withCleanup(async () => {
+      await page.getByRole("checkbox", { name: "Close window to tray" }).uncheck();
+      await expect.poll(() => desktop!.evaluate(() => (globalThis as typeof globalThis & { shutdownGuard?: { ready: boolean } }).shutdownGuard?.ready)).toBe(true);
+    }, async () => {
+      await desktop!.evaluate(() => (globalThis as typeof globalThis & { shutdownGuard?: { dispose(): void } }).shutdownGuard?.dispose());
     });
-    await desktop.evaluate(({ BrowserWindow }) => {
-      const managementWindow = BrowserWindow.getAllWindows().find((candidate) => candidate.webContents.getURL().includes("/manage"));
-      if (managementWindow === undefined) throw new Error("Expected the packaged management renderer");
-      managementWindow.webContents.emit("render-process-gone", {} as Electron.Event, {
-        reason: "crashed",
-        exitCode: -1
-      });
-    });
-    await expect.poll(async () => page.evaluate(async (sessionId) => {
-      const workspace = await fetch("/management/diagnostics/workspace", {
-        headers: { authorization: `Bearer ${sessionId}` }
-      }).then(response => response.json()) as {
-        rawLogs: Array<{ event: string; referenceId: string | null; data: { reason?: string; exitCode?: number } }>;
-      };
-      return workspace.rawLogs.find((entry) => entry.event === "desktop.renderer.gone") ?? null;
-    }, diagnosticSessionId)).toMatchObject({
-      event: "desktop.renderer.gone",
-      referenceId: expect.stringMatching(/^err_/),
-      data: { reason: "crashed", exitCode: -1 }
-    });
-    await page.getByRole("checkbox", { name: "Close window to tray" }).uncheck();
     const identities = await desktop.evaluate(({ app, BrowserWindow }) => ({ pids: app.getAppMetrics().map(entry => entry.pid), persistent: BrowserWindow.getAllWindows().map(window => window.webContents.session.isPersistent()) }));
     identities.pids.forEach(pid => pids.add(pid));
     expect(identities.persistent.every(Boolean)).toBe(true);
     await desktop.evaluate(({ app }) => app.quit());
     const decision = page.getByRole("dialog", { name: "Leave with unsaved changes?" });
     await decision.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await desktop.evaluate(() => (globalThis as typeof globalThis & { shutdownDialogs?: unknown[] }).shutdownDialogs)).toEqual([]);
     expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200);
     await expect.poll(async () => (await rows()).some(row => row.phase === "decision-cancelled")).toBe(true);
     expect((await rows()).some(row => row.phase === "service-stop-requested")).toBe(false);
@@ -86,18 +82,31 @@ test("opt-in shutdown evidence separates Cancel from cleanup and native exit", a
     const expected = ["quit-requested", "decision-accepted", "service-stop-requested", "service-stop-completed", "audio-close-requested", "audio-closed", "windows-destroy-requested", "windows-destroyed", "electron-quit-requested", "electron-will-quit", "electron-quit"];
     expect(evidence.filter(row => row.attempt === 2 && expected.includes(row.phase)).map(row => row.phase)).toEqual(expected);
     expect(await fetch(`http://127.0.0.1:${port}/health`).then(() => true, () => false)).toBe(false);
-  } finally {
+  }, async () => {
     // Preserve diagnostics. Only request ordinary Quit; a timeout is not permission to kill.
     if (desktop !== undefined && child?.exitCode === null) {
       const closed = desktop.waitForEvent("close", { timeout: 15_000 });
       void closed.catch(() => undefined);
       await desktop.evaluate(({ app }) => app.quit()).catch(() => undefined);
+      await desktop.evaluate(() => {
+        const observed = globalThis as typeof globalThis & { shutdownDialogs?: Array<{ respond: ((response: number) => void) | null }> };
+        for (const dialog of observed.shutdownDialogs ?? []) { dialog.respond?.(1); dialog.respond = null; }
+      }).catch(() => undefined);
       const page = desktop.windows().find(page => page.url().startsWith(`http://127.0.0.1:${port}/manage`));
       if (page !== undefined) await page.getByRole("dialog", { name: "Leave with unsaved changes?" }).getByRole("button", { name: "Discard", exact: true }).click({ timeout: 2000 }).catch(() => undefined);
       await closed;
     }
+  }, async () => {
     console.info("Shutdown phase evidence retained:", root, "captured PIDs:", [...pids]);
-  }
+    const bounded = (await readFile(file, "utf8").catch(() => "")).slice(0, 64 * 1024);
+    const phases = bounded.slice(0, bounded.lastIndexOf("\n") + 1);
+    const phaseArtifact = testInfo.outputPath("shutdown-phases.jsonl");
+    const fixtureArtifact = testInfo.outputPath("shutdown-fixture.json");
+    await writeFile(phaseArtifact, phases);
+    await writeFile(fixtureArtifact, JSON.stringify({ root, pids: [...pids], exitCode: child?.exitCode }));
+    await testInfo.attach("shutdown-phases", { path: phaseArtifact, contentType: "application/x-ndjson" });
+    await testInfo.attach("shutdown-fixture", { path: fixtureArtifact, contentType: "application/json" });
+  });
 });
 
 function isAlive(pid: number): boolean {

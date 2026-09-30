@@ -7,6 +7,7 @@ Windows desktop validation intermittently waits for a renderer dialog after its 
 - Isolate healthy-renderer Cancel/Discard validation from renderer-loss diagnostic validation.
 - Synchronize quit requests with the real renderer guard registration rather than incidental React timing.
 - Preserve primary failures alongside cleanup failures and retain phase evidence in uploaded test results.
+- Correct malformed MP4 test-fixture media-header duration units and assert the full metadata duration.
 - Keep native process exit and listener shutdown assertions, without adding retries or increasing deadlines.
 
 ## Capabilities
@@ -21,4 +22,4 @@ None.
 
 ## Impact
 
-Desktop Playwright tests and their test-only helpers. Production shutdown policy, UI, dependencies, packaging publication, and the manual-only desktop workflow remain unchanged. This addresses the CI test race, not the separately tracked BL-044 native shutdown investigation.
+Desktop Playwright tests, test-only helpers, neutral MP4 fixture headers, and the metadata regression test. Production shutdown policy, UI, dependencies, packaging publication, and the manual-only desktop workflow remain unchanged. This addresses the CI test race, not the separately tracked BL-044 native shutdown investigation.
