@@ -21,4 +21,3 @@ Desktop work SHALL be scoped by surface, module, occurrence and renderer generat
 - **THEN** the desktop host restores display availability without requiring an app restart
 - **AND** it preserves the saved display configuration and bounded recovery backoff, recreates the renderer only when new work requires it, and does not replay interrupted visuals
 - **AND** leases from an old worker generation or during shutdown cannot restore ownership
-
