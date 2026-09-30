@@ -26,3 +26,12 @@
 - [x] 5.3 Coordinate shared start after preparation for Alerts and Screen Effects; preserve full media intervals and fades from actual onset, retain separate watchdogs, and exclude reconnect replay.
 - [x] 5.4 Add repeated-failure recovery tests and remove permanent renderer lockouts while bounding recreation and respecting shutdown.
 - [x] 5.5 Run affected tests and repository/UI gates; rebuild and verify actual browser media startup, including the previously failing short clip; document physical output verification limits.
+
+## 6. Diagnostic completeness follow-up
+
+- [ ] 6.1 Log watchdog expiry with outstanding recipient evidence even after successful cleanup.
+- [ ] 6.2 Detect sustained post-start stalls without treating them as successful completion; test loop, transient buffering and cleanup.
+- [ ] 6.3 Preserve bounded preparation, scheduled/observed start and terminal outcome evidence across output boundaries.
+- [ ] 6.4 Preserve and deduplicate transport send/close/reconnect diagnostics with redaction.
+- [ ] 6.5 Recover valid runtime records around corrupt lines and expose incomplete coverage without raw damaged data.
+- [ ] 6.6 Run affected and repository gates, reconcile specs and publish the follow-up to PR 137.
